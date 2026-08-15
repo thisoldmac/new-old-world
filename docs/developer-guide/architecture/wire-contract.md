@@ -94,11 +94,12 @@ state, and publishes only when the generation set is coherent and current.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
-sources-sha1: 4bfbf40a0c9e88688dca4193424eaecaa2d5381d
-sources-sha1: 4bfbf40a0c9e88688dca4193424eaecaa2d5381d
-sources-sha1: 4bfbf40a0c9e88688dca4193424eaecaa2d5381d
-sources-sha1: 4bfbf40a0c9e88688dca4193424eaecaa2d5381d
-sources-sha1: 4bfbf40a0c9e88688dca4193424eaecaa2d5381d
+sources-sha1: 2b4f920454fc5be79e355e6a822bbdf1c887f4b2
+sources-sha1: 2b4f920454fc5be79e355e6a822bbdf1c887f4b2
+sources-sha1: 2b4f920454fc5be79e355e6a822bbdf1c887f4b2
+sources-sha1: 2b4f920454fc5be79e355e6a822bbdf1c887f4b2
+sources-sha1: 2b4f920454fc5be79e355e6a822bbdf1c887f4b2
+sources-sha1: 2b4f920454fc5be79e355e6a822bbdf1c887f4b2
 derive contract-summary sha256=8f6f7fd03ea8af70207e29b42fafeee48c4c5b823cc760563374216d5eb10b18 lines=6
     scripts/docs-source-group contract
 rederived: pending
@@ -212,6 +213,7 @@ rederived: 2026-08-14T12:47:23-0400 804be291 sources
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
 rederived: 2026-08-14T14:27:57-0400 6d037a57 sources
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
 rederived: 2026-08-14T16:58:27-0400 cf962dbb sources, contract-summary 6->6
 rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
@@ -249,4 +251,13 @@ rederived: 2026-08-15T02:20:03-0400 de5812ab unchanged
 rederived: 2026-08-15T01:36:38-0400 34192244 unchanged
 rederived: 2026-08-15T02:20:59-0400 c87b3288 unchanged
 rederived: 2026-08-15T02:26:41-0400 2749aab1 unchanged
+rederived: 2026-08-14T19:50:32-0400 d20eee81 sources
+rederived: 2026-08-14T19:50:53-0400 d20eee81 unchanged
+rederived: 2026-08-14T20:02:53-0400 068ca7fd sources
+rederived: 2026-08-14T21:00:58-0400 ab304cb2 sources
+rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
+rederived: 2026-08-15T00:30:15-0400 f4dab407 unchanged
+rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:57:58-0400 5d767dce sources, sources, sources, sources, sources, sources
 -->

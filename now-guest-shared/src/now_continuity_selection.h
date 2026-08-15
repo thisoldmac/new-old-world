@@ -79,6 +79,77 @@ int now_continuity_stub_same(const NowContinuityStubItem *a,
 int now_continuity_stub_observe(NowContinuityStubTable *table,
                                 const NowContinuityStubItem *item);
 
+/* --- the grant that outlives its epoch ------------------------------------
+
+   THE GESTURE ENDS THE EPOCH IT STARTED IN, and that is by design: the
+   pointer crossing back to the host is exactly what ends host ownership.
+   So the drag a person is still physically holding is, from the guest's
+   side, a drag whose epoch is already over — measured on metal 2026-08-14,
+   where `selection dropped: the Continuity epoch ended` fired as the
+   pointer crossed and every later grab would have been refused bad-epoch
+   for a gesture that had not been released yet.
+
+   The rule, stated once here: the LAST generation of an ending epoch stays
+   grantable for one in-flight gesture, bounded by a timer and cancelled by
+   the next epoch publishing a selection of its own. Everything else about
+   consent is unchanged — the item is still the one the person selected with
+   their own hand, still exactly one generation, still no path. What expires
+   is the window in which it can be redeemed, not the breadth of what it
+   names. */
+
+/* How long a grant survives its epoch. A held drag is a human action:
+   generous enough for someone to think about where to drop, short enough
+   that a forgotten gesture is not a standing grant. Ticks, ~60/second. */
+#define kNowContinuityGrantTicks 1800UL
+
+typedef struct {
+    unsigned long epoch;          /* 0 when nothing is held */
+    unsigned long generation;
+    unsigned long expires_at;     /* TickCount() deadline */
+    NowContinuityStubItem item;
+} NowContinuityGrantHold;
+
+/* Take the ending epoch's final grant out of the dying table.
+   A table with no item holds nothing, and holding nothing is recorded as
+   nothing rather than as an empty grant. */
+void now_continuity_grant_hold(NowContinuityGrantHold *hold,
+                               const NowContinuityStubTable *table,
+                               unsigned long now_ticks);
+
+/* Move the table to `live_epoch`, taking the grant out of the epoch that
+   just ended. Returns 1 when the table actually moved.
+
+   EVERY READER OF THE LIVE EPOCH SETTLES, NOT JUST THE POLL, and that is
+   the whole point of this being a function rather than three lines inside
+   the Finder poll. It was three lines inside the poll, and the poll runs
+   AFTER the guest has dispatched the frames it read in the same pass — so
+   a host that sent continuity.disarm and continuity.grab together (which is
+   what a host does when it stands down for a drag it is still holding) had
+   its grab answered while the hold was still empty, and got bad-epoch for
+   the one gesture the hold exists to serve. Measured on metal 2026-08-15
+   01:04: the grab arrived three seconds into a thirty-second window and was
+   refused anyway.
+
+   So the transition is edge-triggered on OBSERVATION rather than on the
+   poll's cadence: whoever notices the epoch moved settles it, and the grab
+   path notices before it decides.
+
+   The window therefore starts when the epoch end is NOTICED, not when it
+   happened, which is worth saying because the two are not the same clock.
+   They are within a service pass of each other — the poll runs every pass
+   and only loses this race by the width of one frame dispatch — and the
+   error is in the generous direction, which for a bounded consent window a
+   person is holding in their hand is the right way to be wrong. */
+int now_continuity_selection_settle(NowContinuityStubTable *table,
+                                    NowContinuityGrantHold *hold,
+                                    unsigned long *table_epoch,
+                                    unsigned long live_epoch,
+                                    unsigned long now_ticks);
+
+/* Drop it: a new epoch published its own selection, the link went away, or
+   the gesture was redeemed. */
+void now_continuity_grant_release(NowContinuityGrantHold *hold);
+
 enum {
     kNowGrabOK = 0,
     /* The epoch is not the live one — the consent has expired with the
@@ -92,7 +163,12 @@ enum {
     kNowGrabNoSelection = 3,
     /* The named item is a folder. The stub says so, so the host can see
        this coming; refusing by name beats serving an empty file. */
-    kNowGrabFolderNotYet = 4
+    kNowGrabFolderNotYet = 4,
+    /* The grant named the last generation of an epoch that has ENDED, and
+       its in-flight window has closed. Distinct from bad-epoch on purpose:
+       this one says the request was the right shape and arrived too late,
+       which is a sentence a person can act on. */
+    kNowGrabGrantExpired = 5
 };
 
 /* May this grab be served? `live_epoch` is 0 when no epoch is running,
@@ -102,6 +178,31 @@ int now_continuity_grab_check(const NowContinuityStubTable *table,
                               unsigned long live_epoch,
                               unsigned long asked_epoch,
                               unsigned long asked_generation);
+
+/* The whole decision, live table and held grant together, and the one the
+   wire calls.
+
+   `item_out` receives the stub to serve — the table's or the hold's — so
+   the caller cannot resolve the wrong one; `after_epoch_out` is set to 1
+   when the answer came from the hold, which the caller must say out loud.
+   Both are optional. The hold is consulted ONLY where the live check said
+   bad-epoch, so nothing about a running epoch changes shape.
+
+   IT SETTLES BEFORE IT DECIDES, which is why the table, the hold and the
+   table's epoch arrive by pointer rather than by const pointer. A grab is
+   the one request that can outrun the poll — see
+   now_continuity_selection_settle. Settling here rather than at the call
+   site is deliberate: there is then no version of this decision that can be
+   made against a table nobody has moved yet. */
+int now_continuity_grab_resolve(NowContinuityStubTable *table,
+                                NowContinuityGrantHold *hold,
+                                unsigned long *table_epoch,
+                                unsigned long live_epoch,
+                                unsigned long asked_epoch,
+                                unsigned long asked_generation,
+                                unsigned long now_ticks,
+                                const NowContinuityStubItem **item_out,
+                                int *after_epoch_out);
 
 /* The refusal's contract code, for the wire. NULL for kNowGrabOK. */
 const char *now_continuity_grab_code(int verdict);

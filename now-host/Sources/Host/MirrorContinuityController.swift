@@ -132,6 +132,42 @@ final class MirrorContinuityController: ObservableObject,
 
     func beginEdgeMode() {
         guard !edgeModeActive else { return }
+        /* Asked here, not at launch or construction: the system dialog is
+           the loud, one-shot kind, and firing it before the person has
+           asked for the feature that needs it is the defect this change
+           exists to fix in the other direction — a prompt nobody asked for
+           is as unhelpful as no prompt at all. Guarded so a second
+           `beginEdgeMode` this launch (after a manual toggle off and on)
+           does not re-show a dialog macOS already answered by putting the
+           app in the Accessibility pane. */
+        /* Every branch below says so out loud. The 2026-08-14 metal round
+           could not tell "the prompt never fired" from "the prompt fired
+           and macOS suppressed it", because the change that added the
+           prompt logged nothing at all about the decision — 31 lines
+           naming the missing permission and not one naming what was done
+           about it. A decision this cheap to record must never be
+           unreadable again. */
+        if accessibility.isProcessTrusted() {
+            audit(.info, "Accessibility is already granted; host input "
+                + "capture needs no permission request")
+        } else if hasPromptedForAccessibilityThisLaunch {
+            audit(.info, "Accessibility is still missing, but this launch "
+                + "has already asked; not re-showing the system prompt. "
+                + "Use Open Accessibility Settings on the Continuity page")
+        } else {
+            hasPromptedForAccessibilityThisLaunch = true
+            /* macOS shows this dialog only while TCC holds no decision
+               record for this bundle id. An app that has been granted and
+               reset even once never sees it again, and the call returns in
+               silence — so the audit says ASKED, never SHOWN, and the page
+               offers the Settings link regardless. */
+            audit(.info, "Accessibility is missing; asking macOS for it "
+                + "(the system dialog appears only if macOS holds no "
+                + "earlier decision for this app)")
+            accessibility.promptForTrust()
+            audit(.info, "asked macOS for Accessibility; still trusted="
+                + "\(accessibility.isProcessTrusted())")
+        }
         edgeModeActive = true
         maintainsOptInAfterGuestExit = true
         isEnabled = true
@@ -144,6 +180,29 @@ final class MirrorContinuityController: ObservableObject,
         edge.stop(reason: reason)
         maintainsOptInAfterGuestExit = false
         isEnabled = mirrorCursorActive
+    }
+
+    /// The app came back to the foreground. If host input capture is
+    /// currently sitting out because it lacked Accessibility permission,
+    /// and that permission has since been granted in System Settings, pick
+    /// the tap back up without waiting for the next edge crossing — the
+    /// person should not have to toggle Continuity off and on to collect
+    /// what they just granted.
+    func applicationDidBecomeActive() {
+        edge.retryInputCaptureAfterBecomingActive()
+    }
+
+    /// The affordance that always works. `promptForTrust` is a one-shot
+    /// macOS may already have spent — on this project's own Mac it has,
+    /// across eleven builds in a day — so the Continuity page carries an
+    /// explicit control that opens the Accessibility pane, and it is this.
+    /// Unlike the prompt it has no TCC state behind it and cannot be
+    /// silently declined.
+    func openAccessibilitySettings() {
+        audit(.info, "opening System Settings at the Accessibility pane at "
+            + "the person's request; trusted="
+            + "\(accessibility.isProcessTrusted())")
+        accessibility.openAccessibilitySettings()
     }
 
     func setMirrorCursorActive(_ active: Bool) {
@@ -299,7 +358,8 @@ final class MirrorContinuityController: ObservableObject,
 
     private(set) lazy var edge: ContinuityEdgeController = {
         let edge = ContinuityEdgeController(
-            layout: layout, driver: self, audit: audit)
+            layout: layout, driver: self, accessibility: accessibility,
+            runningCopy: runningCopy, audit: audit)
         onPhaseChanged = { [weak edge] phase in
             edge?.transportPhaseChanged(phase)
         }
@@ -322,6 +382,13 @@ final class MirrorContinuityController: ObservableObject,
     /// churn ownership, but a dead receive path cannot leave the UI active.
     private let acknowledgementTimeout: TimeInterval
     private weak var localNetworkAccess: LocalNetworkAccessController?
+    private let accessibility: AccessibilityAuthorization
+    private let runningCopy: RunningCopy
+    /// Whether `beginEdgeMode` has already asked macOS's Accessibility
+    /// dialog this launch. Instance-scoped rather than a global: this
+    /// controller is constructed once per app launch by `HostAppState`, and
+    /// a test that wants a second "launch" constructs a second controller.
+    private var hasPromptedForAccessibilityThisLaunch = false
     private var target: GuestListener.ContinuityTarget?
     private var armID: Int?
     private var nonceHi: UInt32 = 0
@@ -334,6 +401,11 @@ final class MirrorContinuityController: ObservableObject,
     private var previousButtonGeneration: UInt32 = 0
     private var previousButtonDown = false
     private var keyGeneration: UInt32 = 0
+    /// The modifier word the guest was last told about, used to suppress the
+    /// flagsChanged repeats the classic word cannot distinguish. Epoch-scoped
+    /// with `keyGeneration`: a new epoch's guest holds nothing, so a stale
+    /// baseline here would swallow the first real change of the next session.
+    private var lastForwardedModifiers: UInt16 = 0
     private var buttonCycleActive = false
     private var wireButtonDown = false
     private var pressAcknowledged = false
@@ -375,12 +447,16 @@ final class MirrorContinuityController: ObservableObject,
     init(listener: GuestListener,
          defaults: UserDefaults = ProductIdentity.defaults,
          localNetworkAccess: LocalNetworkAccessController? = nil,
+         accessibility: AccessibilityAuthorization? = nil,
+         runningCopy: RunningCopy = .current,
          acknowledgementTimeout: TimeInterval = 3,
          audit: Audit? = nil) {
         self.listener = listener
         self.defaults = defaults
         self.layout = ContinuityDisplayLayout(defaults: defaults)
         self.localNetworkAccess = localNetworkAccess
+        self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
+        self.runningCopy = runningCopy
         self.acknowledgementTimeout = acknowledgementTimeout
         self.audit = audit ?? {
             HostLog.shared.write($0, "continuity", $1)
@@ -421,6 +497,24 @@ final class MirrorContinuityController: ObservableObject,
 
     func keyboardEvent(_ sample: HostKeySample) -> Bool {
         guard phase == .active, sample.code <= 127 else { return false }
+        /* A modifier message is state, so an unchanged word says nothing the
+           guest does not already hold. macOS raises flagsChanged for keys the
+           classic word has no bit for — Fn, the numeric-pad flag, left versus
+           right of the same modifier — and forwarding those would put a
+           packet on the reliable stream for every one of them. Dropping a
+           repeat is safe precisely because the payload is absolute: the next
+           real change carries the whole word again. */
+        if sample.action == .modifiers {
+            guard sample.modifiers != lastForwardedModifiers else {
+                audit(.info, "modifier change not forwarded, word unchanged: "
+                    + "modifiers=0x\(String(sample.modifiers, radix: 16))")
+                return true
+            }
+            audit(.info, "modifier state forwarded: "
+                + "was=0x\(String(lastForwardedModifiers, radix: 16)), "
+                + "now=0x\(String(sample.modifiers, radix: 16))")
+        }
+        lastForwardedModifiers = sample.modifiers
         keyGeneration = nextNonzero(keyGeneration)
         guard listener.sendContinuityKey(
             epoch: epoch, generation: keyGeneration,
@@ -522,6 +616,31 @@ final class MirrorContinuityController: ObservableObject,
                event. The newest held point is sent immediately afterwards. */
             deferredButtonPoint = point
         }
+        return true
+    }
+
+    /// Sends the held pointer's position NOW, in a packet carrying no button
+    /// change, so whatever the caller sends next is a separate wire fact.
+    ///
+    /// The cross-edge file handoff is the caller this exists for. It returns
+    /// the guest pointer to the press origin and then releases; if both rode
+    /// one packet the guest could apply the release first and complete the
+    /// Finder's move at the shared edge — cosmetic on the desktop, a real
+    /// relocation out of a Finder window (metal, 2026-08-14).
+    @discardableResult
+    func settleHeldPosition(to point: MirrorKit.Point) -> Bool {
+        guard phase == .active, buttonCycleActive else { return false }
+        primaryDragged(to: point)
+        guard pressAcknowledged else {
+            /* The press point is deliberately stable until the guest
+               confirms its down; `primaryDragged` has parked the origin in
+               the deferred slot and the release below carries it. */
+            return true
+        }
+        advancePositionIfNeeded()
+        sendState(inside: true, keepalive: false)
+        audit(.info, "held position settled before release: "
+            + "\(point.x),\(point.y)")
         return true
     }
 
@@ -1297,6 +1416,7 @@ final class MirrorContinuityController: ObservableObject,
         previousButtonDown = false
         resetButtonState(.transport, reason: "authority epoch ended")
         keyGeneration = 0
+        lastForwardedModifiers = 0
         /* A grab expires with the epoch by contract. Dropping the stub here
            is that rule made mechanical: the next epoch gets its own
            generation 1 and cannot redeem consent given in the last one. */

@@ -35,11 +35,21 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                 return "Another file is already crossing from "
                     + MachineNaming.simpleReference + "."
             case .wire(let code, let message):
-                return code == "stale-selection"
-                    ? MachineNaming.startingSentence(
+                switch code {
+                case "stale-selection":
+                    return MachineNaming.startingSentence(
                         "the selection on \(MachineNaming.simpleReference) changed before the "
                         + "file could be copied.")
-                    : message
+                case "grant-expired":
+                    /* The one refusal that is about TIME. The drag was
+                       held past the window the guest keeps open after
+                       Continuity ends, which is a thing a person can
+                       simply do again. */
+                    return "The drag was held too long after Continuity "
+                        + "ended. Try dragging it across again."
+                default:
+                    return message
+                }
             }
         }
     }

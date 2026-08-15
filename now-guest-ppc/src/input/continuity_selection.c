@@ -9,6 +9,10 @@
 #include "pump.h"
 
 static NowContinuityStubTable g_table;
+/* The ending epoch's last grant, kept for one in-flight gesture. See
+   now_continuity_selection.h for the rule and why the epoch is already
+   over by the time the drag is released. */
+static NowContinuityGrantHold g_hold;
 static unsigned long g_table_epoch;
 static unsigned long g_next_poll;
 static int g_poll_seeded;
@@ -18,11 +22,52 @@ const NowContinuityStubTable *now_continuity_selection_table(void)
     return &g_table;
 }
 
-void now_continuity_selection_forget(void)
+/* The table alone. The epoch ending is not the grant ending, so the two
+   are separate acts and every caller says which one it means. */
+static void forget_table(void)
 {
     now_continuity_stub_reset(&g_table, 0);
     g_table_epoch = 0;
     g_poll_seeded = 0;
+}
+
+/* Move the table onto `live_epoch`, handing the dying epoch's final
+   generation to the hold on the way. A crossing gesture is still
+   physically held at this instant; without this the grab it is about to
+   make is refused for an epoch the crossing itself ended.
+
+   THE POLL IS NO LONGER THE ONLY CALLER. now_continuity_grab_resolve
+   settles too, because a grab arrives on the same wire as the disarm and
+   is dispatched before the poll runs; see now_continuity_selection.h. The
+   log below therefore also fires from the grab path, which is where the
+   evidence is worth having. */
+static void settle_to_epoch(unsigned long live_epoch)
+{
+    unsigned long was = g_table_epoch;
+
+    if (!now_continuity_selection_settle(&g_table, &g_hold, &g_table_epoch,
+                                         live_epoch,
+                                         (unsigned long)TickCount())) {
+        return;
+    }
+    /* A fresh table has nothing polled into it yet, so the next pass must
+       ask the Finder rather than wait out a cadence set under the old
+       epoch. */
+    g_poll_seeded = 0;
+    if (was != 0 && g_hold.epoch != 0) {
+        now_log(kLogInfo, "mirror",
+                "grant held past epoch=%lu gen=%lu for %lu ticks %.31s",
+                g_hold.epoch, g_hold.generation,
+                (unsigned long)kNowContinuityGrantTicks, g_hold.item.name);
+    }
+}
+
+void now_continuity_selection_forget(void)
+{
+    forget_table();
+    /* The link, not the epoch. A grant is consent given to ONE host over
+       ONE connection, so nothing survives a disconnect. */
+    now_continuity_grant_release(&g_hold);
 }
 
 /* --- the Apple Event ------------------------------------------------------
@@ -214,6 +259,21 @@ static OSErr stub_from_spec(const FSSpec *spec, NowContinuityStubItem *out)
     return noErr;
 }
 
+/* The other end of the grant's life: a NEW epoch has published a
+   selection of its own, so the previous gesture is over however it ended
+   and the held grant is no longer anybody's in-flight drag. The clock is
+   the backstop, this is the ordinary case. */
+static void release_grant_for_new_epoch(unsigned long live_epoch)
+{
+    if (g_hold.epoch == 0 || g_hold.epoch == live_epoch) {
+        return;
+    }
+    now_log(kLogInfo, "mirror",
+            "grant released epoch=%lu gen=%lu: epoch %lu published its own "
+            "selection", g_hold.epoch, g_hold.generation, live_epoch);
+    now_continuity_grant_release(&g_hold);
+}
+
 int now_continuity_selection_poll(unsigned long live_epoch)
 {
     FSSpec spec;
@@ -222,20 +282,15 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     OSErr err;
     unsigned long now;
 
+    /* Settling here rather than at the disarm handler is what makes the
+       gate true however the epoch ended, including the ways nobody calls a
+       handler for (lease expiry, a resident reset, the host walking away).
+       It is no longer the ONLY place that settles — the grab resolves
+       through the same function — but it is still the backstop for the
+       endings no frame announces. */
+    settle_to_epoch(live_epoch);
     if (live_epoch == 0) {
-        /* NO EPOCH, NO POLL — and no table either. Forgetting here rather
-           than at the disarm handler is what makes the gate true however
-           the epoch ended, including the ways nobody calls a handler for
-           (lease expiry, a resident reset, the host walking away). */
-        if (g_table_epoch != 0) {
-            now_continuity_selection_forget();
-        }
-        return 0;
-    }
-    if (live_epoch != g_table_epoch) {
-        now_continuity_stub_reset(&g_table, live_epoch);
-        g_table_epoch = live_epoch;
-        g_poll_seeded = 0;
+        return 0;                  /* no epoch, no poll */
     }
     if (now_continuity_button_is_down()) {
         /* Mid-gesture. Do not touch the deadline: the next pass after the
@@ -265,6 +320,7 @@ int now_continuity_selection_poll(unsigned long live_epoch)
         if (!now_continuity_stub_observe(&g_table, &item)) {
             return 0;
         }
+        release_grant_for_new_epoch(live_epoch);
         now_log(kLogInfo, "mirror",
                 "selection epoch=%lu gen=%lu %.31s%s",
                 live_epoch, g_table.generation, g_table.item.name,
@@ -274,6 +330,7 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     if (!now_continuity_stub_observe(&g_table, (const NowContinuityStubItem *)0)) {
         return 0;
     }
+    release_grant_for_new_epoch(live_epoch);
     now_log(kLogInfo, "mirror", "selection epoch=%lu gen=%lu cleared",
             live_epoch, g_table.generation);
     return 1;
@@ -285,23 +342,48 @@ int now_continuity_selection_grab(unsigned long live_epoch,
                                   FSSpec *out)
 {
     Str63 name;
-    int verdict = now_continuity_grab_check(&g_table, live_epoch, epoch,
-                                            generation);
+    const NowContinuityStubItem *serve = (const NowContinuityStubItem *)0;
+    int after_epoch = 0;
+    int verdict;
     unsigned long len;
 
+    /* The settle the resolve does is not silent: it can be the moment the
+       grant is taken, and this is the only path that reaches it before the
+       poll does. Take the transition through the glue so the log fires, then
+       decide against a table that has already moved. */
+    settle_to_epoch(live_epoch);
+    verdict = now_continuity_grab_resolve(&g_table, &g_hold, &g_table_epoch,
+                                          live_epoch, epoch, generation,
+                                          (unsigned long)TickCount(),
+                                          &serve, &after_epoch);
+
+    if (verdict == kNowGrabGrantExpired) {
+        now_log(kLogWarn, "mirror",
+                "grant expired epoch=%lu gen=%lu: the gesture outlived its "
+                "%lu-tick window", epoch, generation,
+                (unsigned long)kNowContinuityGrantTicks);
+        return verdict;
+    }
     if (verdict != kNowGrabOK) {
         return verdict;
     }
-    len = strlen(g_table.item.name);
+    if (after_epoch) {
+        /* Named, because this is the one place a grab is served under an
+           epoch that has already ended, and a log that cannot show the
+           difference cannot show the rule working either. */
+        now_log(kLogInfo, "mirror",
+                "grant honored after epoch=%lu gen=%lu live=%lu %.31s",
+                epoch, generation, live_epoch, serve->name);
+    }
+    len = strlen(serve->name);
     name[0] = (unsigned char)len;
-    BlockMoveData(g_table.item.name, name + 1, (long)len);
+    BlockMoveData(serve->name, name + 1, (long)len);
     /* Resolved from the identity triple every time rather than from a
        stored FSSpec, so an item moved or renamed since the stub was
        published fails HERE. The alternative — a spec that still points
        somewhere — would serve whatever now sits at that name under a
        consent given for something else. */
-    if (FSMakeFSSpec(g_table.item.volume_ref, g_table.item.dir_id,
-                     name, out) != noErr) {
+    if (FSMakeFSSpec(serve->volume_ref, serve->dir_id, name, out) != noErr) {
         return kNowGrabStaleSelection;
     }
     return kNowGrabOK;

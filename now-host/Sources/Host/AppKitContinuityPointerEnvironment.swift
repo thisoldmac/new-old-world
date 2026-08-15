@@ -187,8 +187,17 @@ final class AppKitContinuityPointerEnvironment:
         }
     }
 
-    nonisolated private static func sample(
-        _ event: CGEvent, type: CGEventType, flipHeight: CGFloat
+    /// Whether the session's primary button is physically held. Read only
+    /// where the event type cannot answer, and injectable so the rule below
+    /// is testable without a mouse.
+    nonisolated static func primaryButtonIsHeld() -> Bool {
+        CGEventSource.buttonState(.combinedSessionState, button: .left)
+    }
+
+    nonisolated static func sample(
+        _ event: CGEvent, type: CGEventType, flipHeight: CGFloat,
+        primaryHeld: () -> Bool = AppKitContinuityPointerEnvironment
+            .primaryButtonIsHeld
     ) -> HostPointerSample? {
         let kind: HostPointerSample.Kind
         let buttonsDown: Bool
@@ -198,18 +207,37 @@ final class AppKitContinuityPointerEnvironment:
             buttonsDown = true
         case .leftMouseUp:
             kind = .primaryUp
+            /* The type is authoritative HERE and the button state is not: a
+               read taken as the release goes by can still say "held" and
+               would resurrect a press that has ended. */
             buttonsDown = false
         case .leftMouseDragged:
             kind = .moved
             buttonsDown = true
         case .mouseMoved:
             kind = .moved
-            buttonsDown = false
+            /* **A MOUSE-MOVED IS NOT A RELEASE.** A cursor warp synthesizes
+               one whatever the button is doing, and a guest pass issues one
+               warp per sample (`pinHostCursor` — 130 to 222 of them in a
+               single crossing on metal). Reading the button off the event
+               type therefore reports a release the human never made.
+
+               The NSEvent adapter below has always answered this from
+               `pressedMouseButtons`, so the two producers of one struct
+               disagreed about its most load-bearing field — and only the
+               NSEvent one ran, because the tap needs Accessibility and this
+               Mac had never granted it. The morning it was granted, three
+               guest→host file drags in a row died at
+               `the button was released before this Mac saw a real mouse
+               event` with the button still down (metal, 2026-08-15). */
+            buttonsDown = primaryHeld()
         case .rightMouseDragged, .otherMouseDragged:
-            /* The pointer really is moving, so the guest must follow — but
-               only the primary button drags, on a machine that has one. */
+            /* The pointer really is moving, so the guest must follow. Asking
+               the session keeps the documented rule — only the primary
+               button drags, on a machine that has one — while no longer
+               calling a primary button that IS held released. */
             kind = .moved
-            buttonsDown = false
+            buttonsDown = primaryHeld()
         default:
             return nil
         }
@@ -255,8 +283,8 @@ final class AppKitContinuityPointerEnvironment:
     }
 
     func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                       sourceEvent: NSEvent) -> Bool {
-        guard let edge = activeFileEdge else { return false }
+                       sourceEvent: NSEvent) -> ContinuityDragSeed? {
+        guard let edge = activeFileEdge else { return nil }
         return edge.beginFileDrag(item, at: screenPoint,
                                   sourceEvent: sourceEvent)
     }

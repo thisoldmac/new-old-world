@@ -46,8 +46,9 @@ deferral may permit a branch checkpoint but never the landing.
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 34254a5220e0cb2a42a2f3bbe43f4ba018ce14cd
-sources-sha1: 34254a5220e0cb2a42a2f3bbe43f4ba018ce14cd
+sources-sha1: 18dd8f398bf06c2a5f8b4e0c063ad4cffcfa84be
+sources-sha1: 18dd8f398bf06c2a5f8b4e0c063ad4cffcfa84be
+sources-sha1: 18dd8f398bf06c2a5f8b4e0c063ad4cffcfa84be
 derive resident-contract sha256=94aa1ceb2d2998a0973bc7f381405e008f6bcfcd416bac1a70e2b26d14ef97f8 lines=12
     scripts/docs-source-group resident
 rederived: pending
@@ -161,6 +162,7 @@ rederived: 2026-08-14T12:47:23-0400 804be291 unchanged
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:42-0400 90cfd8fa unchanged
 rederived: 2026-08-14T14:27:57-0400 6d037a57 unchanged
+rederived: 2026-08-14T15:56:43-0400 835e6acf unchanged
 rederived: 2026-08-14T16:58:27-0400 cf962dbb unchanged
 rederived: 2026-08-14T17:12:27-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
@@ -198,4 +200,13 @@ rederived: 2026-08-15T02:20:02-0400 de5812ab unchanged
 rederived: 2026-08-15T01:36:37-0400 34192244 unchanged
 rederived: 2026-08-15T02:20:59-0400 c87b3288 unchanged
 rederived: 2026-08-15T02:26:41-0400 2749aab1 unchanged
+rederived: 2026-08-14T19:50:31-0400 d20eee81 unchanged
+rederived: 2026-08-14T19:50:53-0400 d20eee81 unchanged
+rederived: 2026-08-14T20:02:53-0400 068ca7fd sources
+rederived: 2026-08-14T21:00:58-0400 ab304cb2 unchanged
+rederived: 2026-08-14T21:15:08-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:31-0400 9d85a31d unchanged
+rederived: 2026-08-15T00:30:15-0400 f4dab407 unchanged
+rederived: 2026-08-15T01:11:35-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:57:58-0400 5d767dce sources, sources, sources
 -->

@@ -190,7 +190,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `scene.begin` / `scene.end` | — | — | **The ANSWERER's half, and neither guest handles one inbound.** The PPC guest SENDS them (`wire.c:1786` and the transfer it brackets); a host never sends them to a guest, so these can never grow guest-handling ticks. The answer's transfer pair. `scene.begin` gained `digest` / `delta` / `baseline` / `wholeBytes` on 2026-08-06 |
 | `scene.same` | — | — | Same: SENT by the PPC guest (`wire.c:1826`), handled by neither. The no-change answer, added 2026-08-06: a control frame with no transfer, sent only in answer to a request that quoted `since`. See [scene-deltas.md](scene-deltas.md) |
 | `mirror.invalidate` | — | — | Optional symmetric event, currently SENT by the PPC guest from ordinary wire service and handled by the host; neither guest handles one inbound. It carries monotonic domain generations and sampled/gap/unknown evidence quality, never replacement state. NOW-68K emits none and old peers continue cadence polling |
-| `continuity.arm` / `continuity.disarm` / `continuity.key` | ✅ | ❌ | the optional pointer/keyboard plane. Host-to-guest authority throughout: the PPC guest serves all three and answers `continuity.report` / `continuity.keyReport`, which it SENDS and never handles. NOW-68K has no Continuity plane at all - no resident, no UDP lane - so this is a subsystem asymmetry rather than three rows |
+| `continuity.arm` / `continuity.disarm` / `continuity.key` | ✅ | ❌ | the optional pointer/keyboard plane. Host-to-guest authority throughout: the PPC guest serves all three and answers `continuity.report` / `continuity.keyReport`, which it SENDS and never handles. NOW-68K has no Continuity plane at all - no resident, no UDP lane - so this is a subsystem asymmetry rather than three rows. `continuity.key` carries FOUR actions and the PPC guest names all four: `down`, `up`, `repeat`, and `modifiers` - a bare modifier change, which is served by holding the word rather than by queueing an event. Written out because the count above cannot see it: the row held at one while what the guest accepts grew, which is the shape-versus-count blindness the derived-doc block guards with a source digest |
 | `continuity.grab` | ✅ | ❌ | **The one place a guest reads outside the Files share on the host's word**, and it is inside the row above rather than beside it: a grab is valid only for a generation the guest itself published, during the live epoch, and dies with it. The host names no path, so the reachable set is exactly what a person selected by hand. Served by PPC through the ORDINARY file lane (`file.begin` / bulk / `file.end` / `file.refuse`), which is why a grabbed file cancels and reports progress like a Files pull. NOW-68K serves nothing of Continuity |
 | `continuity.selection` | — | — | The Finder-selection stub, SENT by the PPC guest while an epoch is live and handled by neither guest - a host never sends one. It exists because a drag cannot ask: the Finder holds its own nested Drag Manager loop for the whole gesture, so the facts a cross-the-edge drag needs must be on the wire before the press. v1 carries the FIRST item of a multiple selection only, declared in the contract |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
@@ -1363,9 +1363,10 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 66fec17b00b54b66783b937ae3d26afb6e76a7cd
-sources-sha1: 66fec17b00b54b66783b937ae3d26afb6e76a7cd
-sources-sha1: 66fec17b00b54b66783b937ae3d26afb6e76a7cd
+sources-sha1: 88748aaf6fb5db23866512a2bb6eef1ede5006d5
+sources-sha1: 88748aaf6fb5db23866512a2bb6eef1ede5006d5
+sources-sha1: 88748aaf6fb5db23866512a2bb6eef1ede5006d5
+sources-sha1: 88748aaf6fb5db23866512a2bb6eef1ede5006d5
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1527,6 +1528,7 @@ rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:13-0400 90cfd8fa sources
 rederived: 2026-08-14T13:16:42-0400 90cfd8fa unchanged
 rederived: 2026-08-14T14:27:57-0400 6d037a57 sources
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
 rederived: 2026-08-14T16:31:02-0400 b8f808e4 sources, ppc-inbound-types 53->54
 rederived: 2026-08-14T16:31:39-0400 b8f808e4 unchanged
 rederived: 2026-08-14T16:58:27-0400 cf962dbb unchanged
@@ -1567,4 +1569,13 @@ rederived: 2026-08-15T02:20:02-0400 de5812ab unchanged
 rederived: 2026-08-15T01:36:37-0400 34192244 unchanged
 rederived: 2026-08-15T02:20:59-0400 c87b3288 unchanged
 rederived: 2026-08-15T02:26:41-0400 2749aab1 unchanged
+rederived: 2026-08-14T19:50:31-0400 d20eee81 sources
+rederived: 2026-08-14T19:50:53-0400 d20eee81 unchanged
+rederived: 2026-08-14T20:02:53-0400 068ca7fd unchanged
+rederived: 2026-08-14T21:00:57-0400 ab304cb2 sources
+rederived: 2026-08-14T21:15:08-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:31-0400 9d85a31d unchanged
+rederived: 2026-08-15T00:30:14-0400 f4dab407 unchanged
+rederived: 2026-08-15T01:11:35-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:57:57-0400 5d767dce sources, sources, sources, sources
 -->

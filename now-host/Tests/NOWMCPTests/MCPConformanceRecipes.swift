@@ -195,6 +195,17 @@ enum MCPConformanceRecipes {
                 + "2026-08-07.",
             ["lines": 5]),
 
+        /* Beside the guest's log for the reason the catalog puts the rows
+           beside each other, and it proves something none of its neighbours
+           can: this one answers with no Macintosh connected at all, because
+           the ring it reads belongs to the host serving the call. A conformance
+           run that reached it through the socket has also proven the answer did
+           not come from the MCP server's own near-empty ring. */
+        "now_host_log_tail": .fixed(
+            "The host's own ring. Answers whether or not a Mac is connected "
+                + "and whether or not disk logging is on.",
+            ["lines": 5]),
+
         // MARK: Costly observation
 
         "now_capture_screen": .fixed(

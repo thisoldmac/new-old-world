@@ -2,9 +2,14 @@
 
 # Continuity mode
 
-Continuity is the Mirror module's screen-edge input mode. Selecting it removes
-the live Mirror render and shows an arrangement editor containing the read-only
-host displays plus one movable, scaled guest display. Crossing outward through
+Continuity is a host module of its own, beside Mirror rather than inside it
+(2026-08-14; it began as a Mirror mode, and older sections below still speak
+that way). Its page is an arrangement editor containing the read-only host
+displays plus one movable guest display, sized **Native** or **Fit** — the
+numeric 50/100/200/400 % zoom was retired with the mode. It needs no live
+state from Mirror and neither module needs the other running; the app-owned
+controller arbitrates, so edge mode and the Mirror's in-picture cursor are
+exclusive and edge mode wins. Crossing outward through
 a real shared edge asks the PowerPC guest for temporary pointer ownership;
 after the guest accepts, relative host motion drives the guest pointer until
 the pointer crosses back or native guest input takes over. Primary down, held
@@ -30,7 +35,7 @@ tracking corrections; idle settlement is the measured cadence correction.
 They are product behavior now, not experiments.
 
 Fast Pump and the deep-click probe remain default off in the Logs module's
-advanced diagnostic tier, not in Mirror's ordinary controls. Fast Pump changes
+advanced diagnostic tier, not among the module's ordinary controls. Fast Pump changes
 the guest's cooperative scheduling cadence for a bounded comparison; deep
 click records unusually detailed mouse-event and low-memory evidence. The
 rolling button-timing ring and front-process-at-down evidence remain bounded
@@ -357,6 +362,32 @@ Turning forwarding off leaves ordinary keys on the host but keeps that escape
 chord active. Key codes outside the classic 0–127 table are also left on the
 host rather than sent as malformed guest input.
 
+**Forwarding and swallowing are two decisions, not one.** The tap also
+captures `flagsChanged` — a modifier pressed or released while no key moves —
+and sends it as `continuity.key`'s `modifiers` action. That one is *copied*
+rather than swallowed: a modifier is state, not an edge, and suppressing it
+would leave macOS's own idea of what is held drifting for as long as the
+pointer is on the guest, and wrong at the moment control returns. Nothing on
+the host acts on a bare modifier, so there is nothing to swallow it for.
+An unchanged word is not re-sent, because macOS raises `flagsChanged` for
+keys the classic five-bit word cannot name.
+
+It exists because the classic Event Manager **has no modifier event at all**.
+Modifier state reaches a classic application on the events that carry it and
+through `GetKeys`/`KeyMap`, and nothing else — so without this action the
+guest's word could only advance when some other key happened to travel.
+
+**The word is held and is not yet visible to `GetKeys`.** The PowerPC
+application is Carbon: it can neither post an event nor write the low-memory
+key map, so it keeps the live word and logs every change, naming on both
+edges whether a modifier was forwarded or skipped. Until a resident half
+reads it, a modifier pressed **mid-drag** changes the word and changes nothing
+the Finder can see — which is the case that motivated the action, because
+move / copy / alias is chosen inside the Drag Manager's own tracking loop from
+live modifier state rather than from an event. Treat that half as
+**unimplemented**, not as tested-and-working; the log line is what tells the
+two apart on metal.
+
 Keys travel on the reliable TCP conversation, not the coalescing UDP pointer
 lane. The PPC application verifies the live epoch, resolves the foreground
 process and its A5 world, and publishes into a fixed 16-entry V8 resident queue.
@@ -368,7 +399,9 @@ also flush or abandon pending input.
 
 This first slice models Event Manager input, including modifiers on ordinary
 key events. It does not synthesize `GetKeys`, physical ADB keyboard state, or
-hardware-level repeat. `continuity.keyReport` means the event was accepted by
+hardware-level repeat — and the resident stamps synthetic **mouse** events
+with a fixed word (`0x0080` on the release, `0` on the press), so a held
+modifier is absent from a guest drag on both routes it could take. `continuity.keyReport` means the event was accepted by
 the bounded queue; resident applied/failed/dropped counters remain the evidence
 for delivery on the guest. An attended PowerBook run of the exact `2207f3da`
 host, guest, and resident package confirmed the keyboard-control slice end to
@@ -376,6 +409,66 @@ end, including return of control to the host. The route is metal-verified for
 the Event Manager scope above.
 
 ## Evidence and remaining work
+
+### Where the cross-edge file drag stands (2026-08-14)
+
+The pointer, click, held-drag and keyboard rows are covered by the dated
+material below and in the engineering ledger. This subsection is only about
+carrying a **file** across the edge, because it is the one arc in flight and
+the sections below predate its rewrite.
+
+**Guest to host: the session starts on metal, and no drop has completed.**
+Two attended rounds this day, on the rewritten lane rather than the v1
+implementation the older sections describe:
+
+- Round 2 established four things that had never been observed. A real
+  type-6 event seeds the drag, so the synthesized-gesture class is closed.
+  The 1400c's Finder answers the selection Apple Event and this side caches
+  the stub — derivable from the host log's `selection dropped`, which cannot
+  fire without a cached stub. The drag image then froze for 101 stand-down
+  samples and the session ended `operation=nobody`. And separately, the
+  consuming input tap was dead for the whole pass.
+- Round 3 fixed two causes and re-measured neither. The seed's window
+  provenance was never recorded — the only log line described the TRIGGER
+  event, which belongs to a foreign application by construction, so its
+  `ourWindow=no` was true and uninformative; `beginFileDrag` now returns a
+  seed naming the anchor window and the panel is widened, fronted and made
+  key before it is built. The gesture's consent also expired before the
+  gesture did: crossing back ends the epoch by design, so a held drag always
+  names an epoch that is over, and the guest now keeps the last generation
+  grantable for 30 seconds or until the next epoch publishes, refusing a late
+  one `grant-expired`.
+- The dead tap was neither of those. Accessibility is granted per signed
+  binary identity, so a new DMG is a new subject; nothing in this app asks
+  for the permission, and the round was run on a fresh signed build.
+
+**What round 4 must answer**, in the order that makes each answer worth
+having:
+
+1. Grant Accessibility to that exact binary first, then confirm the tap is
+   alive — otherwise nothing else the round measures about input is evidence.
+2. Does the seed line now read `ourWindow=yes`? If it does not, the fix did
+   not take and nothing downstream is worth reading.
+3. With an own-window seed, does AppKit actually **track** the drag image? A
+   yes settles the last standing hypothesis. A no is the trigger to switch to
+   the other shape — let the catch panel receive the real `mouseDragged`
+   itself and begin the session from its own first-mouse override, which is
+   `PointerCapture`'s proven form and is deliberately not what shipped,
+   because a seed is assertable in a test process and a physical handoff to a
+   borderless non-activating panel is not.
+4. Does a drop complete, and does `continuity.grab` redeem it? The grab has
+   never been answered by a Macintosh at all — the selection half has, the
+   redemption half has not.
+5. Is 30 seconds generous or tight for the post-epoch grant, and does the
+   guest icon visibly snap back at its press origin?
+
+**Host to guest is not built in this lane.** v1's frozen entry point was
+retired with the rest of v1; the steered catch-window direction is slice 5
+and untouched. Folders are refused `folder-not-yet` by name in both
+directions (slice 6), and a multiple selection reports its first item. Guest
+drag modifiers — holding Option or Command mid-drag to switch to copy or
+alias — carry across the edge on the host side and are read by nothing on the
+guest side, which is unimplemented rather than broken.
 
 **Continuity is isolated on its feature branch and will enter the product only
 through a release-candidate branch.** It does not land independently on

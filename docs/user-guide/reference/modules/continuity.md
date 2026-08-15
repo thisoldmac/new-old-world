@@ -67,8 +67,9 @@ hardware.
 ## Common tasks
 
 - **Arrange the displays.** Drag the blue classic display to the edge of
-  a host display where the pointer should pass, and pick a layout scale
-  if the classic screen should count for more or fewer host points.
+  a host display where the pointer should pass, and choose **Native** so
+  it counts for its own pixels or **Fit** so it grows until its attached
+  edge spans the whole host edge.
 - **Hand the pointer over.** Turn Continuity on and move the pointer
   through the shared edge. Clicks, double-clicks, and held drags follow
   it.

@@ -42,6 +42,20 @@ int now_continuity_disarm(long id, unsigned long epoch);
 int now_continuity_key(unsigned long epoch, unsigned long generation,
                        unsigned long action, unsigned long key_code,
                        unsigned long character, unsigned long modifiers);
+/* The host's live modifier word, reported by continuity.key's `modifiers`
+   action - a bare modifier change, which the classic Event Manager has no
+   event for. It is state and not an edge: the whole word arrives each time
+   and the newest one wins.
+
+   IT DOES NOT REACH GetKeys. This application is Carbon and cannot post an
+   event or touch the low-memory key map; holding the word here is the half
+   of the route that can be built without the resident. Until the resident
+   reads it, a modifier pressed mid-drag changes the word and changes nothing
+   the Finder can see. Said the same way in continuity-mode.md. */
+int now_continuity_modifiers(unsigned long epoch, unsigned long generation,
+                             unsigned long modifiers);
+/* The word above, or 0 when no epoch is live. */
+unsigned long now_continuity_host_modifiers(void);
 void now_continuity_disconnect(void);
 void now_continuity_shutdown(void);
 int now_continuity_take_report(NowContinuityReport *out);

@@ -161,6 +161,7 @@ The test compares both against the code literally.
 | `now_semantic_ui_wait_for_settlement` | — | — | none; waits on the native Mirror operation journal by attempt identity, including terminal late success or refusal, without another guest request |
 | `now_semantic_ui_act` | — | — | command; the verb depends on the gesture the plan resolves to (`winact`, `menuact`, `key`, or a Finder script), so the row declares no requirement: demanding all four would make a keystroke unavailable on a guest that serves `key` and not `script`. The executor's own refusal names the missing half. |
 | `now_guest_log_tail` | `tail` | `tail` | command |
+| `now_host_log_tail` | — | — | none; the host's own in-memory log ring for this launch, live whether or not a Mac is connected and whether or not disk logging is on |
 | `now_capture_screen` | `capture.request` | `capture.request` | message family |
 | `now_stream_screen` | `stream.start`, `stream.stop`, `stream.refresh` | `stream.start`, `stream.stop`, `stream.refresh` | message family |
 | `now_catalog_search` | `catsearch` | `catsearch` | command |
@@ -1194,9 +1195,10 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 7f23a6628158a96372836f8e9444a219af90cb66
-sources-sha1: 7f23a6628158a96372836f8e9444a219af90cb66
-sources-sha1: 7f23a6628158a96372836f8e9444a219af90cb66
+sources-sha1: f970528dfbb06653278806331b75f7151b744ac4
+sources-sha1: f970528dfbb06653278806331b75f7151b744ac4
+sources-sha1: f970528dfbb06653278806331b75f7151b744ac4
+sources-sha1: f970528dfbb06653278806331b75f7151b744ac4
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1350,6 +1352,7 @@ rederived: 2026-08-14T12:47:23-0400 804be291 sources
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
 rederived: 2026-08-14T14:27:57-0400 6d037a57 sources
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
 rederived: 2026-08-14T16:58:27-0400 cf962dbb sources, ppc-inbound-types 53->54, disposition-census 3->3
 rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
@@ -1387,4 +1390,13 @@ rederived: 2026-08-15T02:20:04-0400 de5812ab unchanged
 rederived: 2026-08-15T01:36:39-0400 34192244 unchanged
 rederived: 2026-08-15T02:21:00-0400 c87b3288 unchanged
 rederived: 2026-08-15T02:26:43-0400 2749aab1 unchanged
+rederived: 2026-08-14T19:50:32-0400 d20eee81 sources
+rederived: 2026-08-14T19:50:54-0400 d20eee81 unchanged
+rederived: 2026-08-14T20:02:53-0400 068ca7fd unchanged
+rederived: 2026-08-14T21:00:58-0400 ab304cb2 sources
+rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
+rederived: 2026-08-15T00:30:15-0400 f4dab407 sources
+rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:57:59-0400 5d767dce sources, sources, sources, sources
 -->

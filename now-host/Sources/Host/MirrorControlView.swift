@@ -314,15 +314,20 @@ private struct MirrorAssetIngestCard: View {
                     else { ingestion.ingest(machineName: label) }
                 }
                 .disabled(!canReachGuest && !ingestion.isRunning)
-                /* Says what it does and what it has NOT been shown to do.
-                   No pack has been built from a real Macintosh yet — over
-                   emulation or on metal — and a control that reads as
-                   finished work is how this project has been bitten. */
+                /* States the PRECONDITION, because that is what the
+                   1400c run turned up: the art has to be inside the
+                   folder the classic Mac shares, and on a real desk it
+                   usually is not. Saying so here is cheaper than the
+                   refusal that used to arrive mid-transfer. */
                 .help("Copy this Mac's own System file, theme and fonts "
                       + "over the wire and build an asset pack from them. "
-                      + "Minutes, not seconds. Never yet run against a "
-                      + "real Macintosh — the transport is proven, this "
-                      + "use of it is not.")
+                      + "Around half a minute. The classic Mac must be "
+                      + "sharing its whole disk rather than one folder, "
+                      + "or its System Folder is out of reach — NOW "
+                      + "checks and says so before copying anything. "
+                      + "Tried once on a PowerBook 1400c and refused for "
+                      + "exactly that reason; no pack has been built from "
+                      + "a real Macintosh yet.")
                 if ingestion.isRunning {
                     ProgressView().controlSize(.small)
                 }

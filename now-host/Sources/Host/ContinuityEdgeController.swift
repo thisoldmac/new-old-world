@@ -72,16 +72,23 @@ protocol ContinuityPointerEnvironment: AnyObject {
     /// Two physical pixels are enough to DETECT a crossing and far too few
     /// to CATCH one: the returning pointer is already moving, and the drag
     /// must begin over a real view of ours. The surface is widened for the
-    /// length of one handoff only, so the rest of the time the boundary
-    /// pixel pair is all this app takes from whatever is underneath.
+    /// length of one handoff — arming to the end of the drag session it
+    /// starts — so the rest of the time the boundary pixel pair is all this
+    /// app takes from whatever is underneath.
     func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool)
     /// Starts the native drag from a REAL host mouse event. Non-optional on
     /// purpose: AppKit owns a gesture only when it can see the event that
     /// began it, and a synthesized stand-in is the shape that failed
     /// attended testing. A caller with no event must refuse out loud instead
     /// of calling this.
+    ///
+    /// Returns what the session was actually seeded with, or nil when
+    /// nothing was started. The seed is a RETURN VALUE rather than a line
+    /// written inside the implementation because the caller is the one that
+    /// audits, and round 2 shipped with provenance for the trigger event and
+    /// none at all for the seed.
     func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                       sourceEvent: NSEvent) -> Bool
+                       sourceEvent: NSEvent) -> ContinuityDragSeed?
 }
 
 
@@ -94,6 +101,18 @@ protocol ContinuityEdgeDriving: AnyObject {
     func primaryDown(at point: MirrorKit.Point, inMenuBar: Bool,
                      sourceUptime: TimeInterval?) -> Bool
     func primaryDragged(to point: MirrorKit.Point) -> Bool
+    /// Puts a held pointer at `point` in a packet of its own, ahead of
+    /// whatever the caller does next.
+    ///
+    /// `primaryDragged` only marks the position dirty and lets the cadence
+    /// clock carry it, so a drag followed immediately by a release rides ONE
+    /// packet — the guest sees the new position and the button edge together
+    /// and is free to apply them in either order. The one place that
+    /// difference is load-bearing is the cross-edge handoff: the Finder
+    /// completes a move to wherever the pointer is when the button comes up,
+    /// and "wherever the pointer is" must be the press origin, settled
+    /// first, on the wire, as its own fact.
+    func settleHeldPosition(to point: MirrorKit.Point) -> Bool
     func primaryUp(at point: MirrorKit.Point) -> Bool
     func keyboardEvent(_ sample: HostKeySample) -> Bool
 }
@@ -123,10 +142,30 @@ final class ContinuityEdgeController: ObservableObject {
     @Published private(set) var state: State = .disabled
     @Published private(set) var status = "off"
 
+    /// Why the consuming tap most recently failed to start. It answers two
+    /// questions, not one. Is a later retry worth attempting —
+    /// `missingPermission` is retried automatically the next time the app
+    /// becomes active and the process is now trusted, `relaunchNeeded`
+    /// never is, because macOS did not accept the grant this launch and
+    /// asking again would just fail the same way. And, since it is
+    /// published, whether the Continuity page should be showing the person
+    /// a way OUT of the state: the prompt is a one-shot macOS may already
+    /// have spent, so a status string is not an affordance and the page
+    /// needs to know when to offer the Settings deep link instead.
+    enum CaptureFailureReason: Equatable {
+        case missingPermission
+        case relaunchNeeded
+    }
+
     private let layout: ContinuityDisplayLayout
     private weak var driver: ContinuityEdgeDriving?
     private let environment: ContinuityPointerEnvironment
     private let keyboardEnvironment: ContinuityKeyboardEnvironment
+    private let accessibility: AccessibilityAuthorization
+    /// Read by the page as well as the log: which copy is speaking is
+    /// the one fact that separates "never granted" from "granted, but
+    /// to a different copy of this app".
+    let runningCopy: RunningCopy
     private let audit: Audit
     private let uptime: () -> TimeInterval
     private var monitor: AnyObject?
@@ -136,17 +175,51 @@ final class ContinuityEdgeController: ObservableObject {
     private var ownership: Ownership?
     private var cursorHiddenOn: UInt32?
     private var inputCapture: AnyObject?
+    @Published private(set) var captureFailureReason: CaptureFailureReason?
     private var cursorDissociated = false
     private var keyboardMonitor: AnyObject?
     private var pendingCursorWarp: PendingCursorWarp?
     private var suppressedCursorWarps: UInt32 = 0
     private var hostFileDrag = false
     private var guestFileCandidate: HostFileDragItem?
+    /// Where on the guest the held gesture began. The cross returns the
+    /// pointer here before releasing, so the Finder completes its move where
+    /// the item already was. Nil whenever no press is held.
+    private var pressOrigin: CGPoint?
     private var guestFileAtPoint: ((MirrorKit.Point) -> HostFileDragItem?)?
     private var guestSelectionItem: (() -> HostFileDragItem?)?
     private var hostFilesDropped:
         ((NSPasteboard, MirrorKit.Point) -> Bool)?
     private var pendingReturnDrag: PendingReturnDrag?
+    /// A drag session THIS app started and macOS has not finished. While it
+    /// is live every input path here stands down: the gesture belongs to
+    /// AppKit, and anything of ours still reacting to the pointer is
+    /// competing with the drag it just handed over.
+    private var hostDragSessionLive = false
+    private var standDownSamples: UInt32 = 0
+    private var announcedOwnDragRefusal = false
+    private var heldGesture: HeldGestureCustody?
+    /// The last button state any sample reported. The escape chord arrives
+    /// through the keyboard tap, which cannot see the mouse, and a handback
+    /// taken with the button down is the one that needs custody.
+    private var hostButtonsDown = false
+
+    /// The host pointer came back while the physical button was still held.
+    ///
+    /// Nothing in macOS owns that press: the consuming tap swallowed its
+    /// mouse-down, so no application holds the gesture and the first thing
+    /// under the returning pointer inherits it — on metal, a host window
+    /// touching the shared edge got DRAGGED. Custody keeps the tap alive so
+    /// the held button reaches nothing at all, and ends at the physical
+    /// release. The file handoff is the one exception, and it is the second
+    /// half of the same rule rather than a hole in it: there the gesture is
+    /// claimed by a drag session, which needs the real events the tap would
+    /// swallow — so the catch surface is armed in front of the pointer
+    /// FIRST, and the only window that can inherit the press is ours.
+    private struct HeldGestureCustody {
+        let reason: String
+        var swallowed: UInt32 = 0
+    }
 
     /// A crossing whose guest press has been released and whose host drag is
     /// waiting for the first REAL mouse event.
@@ -167,6 +240,8 @@ final class ContinuityEdgeController: ObservableObject {
          driver: ContinuityEdgeDriving,
          environment: ContinuityPointerEnvironment? = nil,
          keyboardEnvironment: ContinuityKeyboardEnvironment? = nil,
+         accessibility: AccessibilityAuthorization? = nil,
+         runningCopy: RunningCopy = .current,
          audit: Audit? = nil,
          uptime: @escaping () -> TimeInterval = {
              ProcessInfo.processInfo.systemUptime
@@ -177,6 +252,8 @@ final class ContinuityEdgeController: ObservableObject {
             ?? AppKitContinuityPointerEnvironment()
         self.keyboardEnvironment = keyboardEnvironment
             ?? AppKitContinuityKeyboardEnvironment()
+        self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
+        self.runningCopy = runningCopy
         self.audit = audit ?? { HostLog.shared.write($0, "continuity", $1) }
         self.uptime = uptime
         layoutSubscription = layout.objectWillChange.sink { [weak self] _ in
@@ -242,6 +319,9 @@ final class ContinuityEdgeController: ObservableObject {
 
     func stop(reason: String = "Continuity Mode disabled") {
         if state == .arming || state == .active { driver?.pointerLeft() }
+        endHeldCustody(reason: "Continuity stopped")
+        hostDragSessionLive = false
+        announcedOwnDragRefusal = false
         endOwnership(nextState: .disabled, status: reason)
         if let monitor { environment.stop(monitor) }
         monitor = nil
@@ -289,9 +369,21 @@ final class ContinuityEdgeController: ObservableObject {
 
     private func received(_ sample: HostPointerSample,
                           sourceEvent: NSEvent?) {
+        hostButtonsDown = sample.buttonsDown
+        if hostDragSessionLive {
+            /* Counted rather than logged per sample: a burst would bury the
+               line that matters, and the count at the end is the evidence
+               that this gate was doing something. */
+            standDownSamples &+= 1
+            return
+        }
         if consumeExpectedCursorWarp(sample) { return }
         if pendingReturnDrag != nil,
            resumeReturnDrag(with: sample, sourceEvent: sourceEvent) {
+            return
+        }
+        if heldGesture != nil {
+            holdGesture(sample)
             return
         }
         switch state {
@@ -345,12 +437,14 @@ final class ContinuityEdgeController: ObservableObject {
                 sourceUptime: sample.eventUptime > 0
                     ? sample.eventUptime : nil) ?? false
             if !consumed { guestFileCandidate = nil }
+            pressOrigin = consumed ? ownership.guestPoint : nil
             pinHostCursor(for: ownership)
             return
         }
         if sample.kind == .primaryUp {
             _ = driver?.primaryUp(at: mirrorPoint(ownership.guestPoint))
             guestFileCandidate = nil
+            pressOrigin = nil
             pinHostCursor(for: ownership)
             return
         }
@@ -397,23 +491,82 @@ final class ContinuityEdgeController: ObservableObject {
     private func returnToHost(_ ownership: Ownership, reason: String) {
         audit(.info, "returning pointer to host: reason=\(reason), guest="
             + "\(Int(ownership.guestPoint.x)),\(Int(ownership.guestPoint.y)), "
-            + "suppressedWarps=\(suppressedCursorWarps)")
+            + "suppressedWarps=\(suppressedCursorWarps), "
+            + "buttonsDown=\(hostButtonsDown ? 1 : 0)")
+        /* A held button is nobody's until the human lets go. `hostFileDrag`
+           is excluded because there the held gesture is a foreign app's drag
+           session which this app never captured and must not interrupt. */
+        let held = hostButtonsDown && !hostFileDrag
+        if held, let origin = pressOrigin {
+            /* Metal, 2026-08-15: this was reached with NOTHING bound and so
+               did none of it, and the guest Finder put up "an item named
+               main.c already exists" — the release completed a real move to
+               wherever the pointer had wandered. Not moving somebody's files
+               is not a property of the file-transfer feature. */
+            audit(.warn, "held press released without a file handoff: "
+                + "returning the guest pointer to the press origin first so "
+                + "the Mac completes no Finder move — reason=\(reason), "
+                + "boundFile=\(guestFileCandidate == nil ? "none" : "held")")
+            releaseGuestPressAtOrigin(mirrorPoint(origin),
+                                      cross: ownership.guestPoint)
+        }
         driver?.pointerLeft()
+        if held { beginHeldCustody(reason: reason) }
         endOwnership(
             nextState: .ready,
-            status: "Returned at the shared edge (\(reason))")
+            status: held
+                ? "Let go of the button to use this Mac again"
+                : "Returned at the shared edge (\(reason))",
+            keepInputCapture: held)
+    }
+
+    /// Takes the held press out of circulation. See `HeldGestureCustody`.
+    private func beginHeldCustody(reason: String) {
+        guard heldGesture == nil else { return }
+        heldGesture = HeldGestureCustody(reason: reason)
+        startConsumingTap()
+        audit(inputCapture == nil ? .warn : .info,
+              "host pointer came back with the button held (\(reason)); "
+                + (inputCapture == nil
+                    ? "this Mac has no input capture, so the held press will "
+                        + "reach whatever is under the pointer"
+                    : "this Mac's input stays captured until the button is "
+                        + "released, so no window inherits the press"))
+    }
+
+    private func holdGesture(_ sample: HostPointerSample) {
+        guard var custody = heldGesture else { return }
+        guard sample.buttonsDown, sample.kind != .primaryUp else {
+            endHeldCustody(reason: "the button was released")
+            return
+        }
+        custody.swallowed &+= 1
+        heldGesture = custody
+    }
+
+    private func endHeldCustody(reason: String) {
+        guard let custody = heldGesture else { return }
+        heldGesture = nil
+        audit(.info, "held-button custody ended: reason=\(reason), "
+            + "began=\(custody.reason), swallowed=\(custody.swallowed)")
+        endHostInputCapture()
+        reassociateHostCursor()
+        refreshReadyStatus()
     }
 
     /// Releases every resource scoped to guest pointer ownership. Callers
     /// remain responsible for transport-specific work such as sending
     /// `pointerLeft` or removing the observation monitor.
-    private func endOwnership(nextState: State, status nextStatus: String?) {
-        restoreHostCursor(from: ownership ?? pending)
+    private func endOwnership(nextState: State, status nextStatus: String?,
+                              keepInputCapture: Bool = false) {
+        restoreHostCursor(from: ownership ?? pending,
+                          keepInputCapture: keepInputCapture)
         stopKeyboardCapture()
         pending = nil
         ownership = nil
         hostFileDrag = false
         guestFileCandidate = nil
+        pressOrigin = nil
         state = nextState
         if let nextStatus {
             status = nextStatus
@@ -433,19 +586,29 @@ final class ContinuityEdgeController: ObservableObject {
             handler: { [weak self] sample in
                 guard let self, self.state == .active,
                       let driver = self.driver else { return }
-                if driver.escapeShortcut.matches(sample) {
+                /* One policy decides, in one place. The tap has already
+                   applied it to choose whether to swallow the original; this
+                   side must reach the same verdict or the two halves
+                   disagree about an event that is already gone. */
+                switch policy.disposition(sample) {
+                case .chord:
                     if let ownership = self.ownership {
                         self.returnToHost(
                             ownership, reason: "escape shortcut")
                     }
-                    return
-                }
-                guard driver.keyboardForwardingEnabled else { return }
-                if !driver.keyboardEvent(sample) {
+                case .ignored:
                     self.audit(
-                        .error,
-                        "captured keyboard event could not be queued: "
-                            + "action=\(sample.action), code=\(sample.code)")
+                        .info,
+                        "keyboard sample left on the host: "
+                            + "action=\(sample.action.rawValue), "
+                            + "code=\(sample.code), forwarding=off")
+                case .forwarded, .modifierState:
+                    if !driver.keyboardEvent(sample) {
+                        self.audit(
+                            .error,
+                            "captured keyboard event could not be queued: "
+                                + "action=\(sample.action), code=\(sample.code)")
+                    }
                 }
             }, tapDisabled: { [weak self] reason in
                 self?.audit(
@@ -471,41 +634,81 @@ final class ContinuityEdgeController: ObservableObject {
         self.keyboardMonitor = nil
     }
 
+    /// Settles the held guest pointer back onto the press origin and only
+    /// then releases the button. Two packets, in that order.
+    ///
+    /// **This is a file-system safety property, not a step of the file
+    /// handoff**, and it is one implementation because it was two: the
+    /// Finder completes a move to wherever the pointer is when the button
+    /// comes up, so releasing at the cross point drops the icon at the
+    /// screen edge — cosmetic from the desktop and a REAL relocation when
+    /// the drag began inside a Finder window (metal, 2026-08-14). Released
+    /// at the origin it completes a no-op move onto the spot the item
+    /// already occupies. Living only on the bound path, it was skipped on
+    /// 2026-08-15 for a press the Mac had published no selection for, and
+    /// the guest Finder offered to replace the file at the cross point.
+    ///
+    /// The release itself goes down the ordinary driver lane — the same one
+    /// a click sends — because there is no second way to end a press. v1
+    /// never sent it at all and the item stayed stuck to the Finder's
+    /// cursor on the other machine.
+    private func releaseGuestPressAtOrigin(_ origin: MirrorKit.Point,
+                                           cross: CGPoint) {
+        _ = driver?.settleHeldPosition(to: origin)
+        audit(.info, "guest pointer returned to the press origin before the "
+            + "release: origin=\(origin.x),\(origin.y), cross="
+            + "\(Int(cross.x)),\(Int(cross.y))"
+            + " — releasing at the cross point completes a Finder move to "
+            + "the screen edge")
+        _ = driver?.primaryUp(at: origin)
+        audit(.info, "guest press released before the cross: guest="
+            + "\(origin.x),\(origin.y) — the dragged icon must snap "
+            + "back on the Mac")
+    }
+
     /// Hands a held guest item to AppKit as the pointer crosses back.
     ///
     /// The order is the whole mechanism, so it is stated once here and
     /// pinned by a test:
     ///
-    /// 1. **Release the guest button first.** v1 never did, and the item
-    ///    stayed stuck to the Finder's cursor on the other machine. It goes
-    ///    down the ordinary driver lane — the same release an ordinary
-    ///    click sends — because there is no second way to end a press.
-    /// 2. Tear the pass down exactly as an ordinary return does: pointer
+    /// 0. **Settle to the press origin and release**, before anything else,
+    ///    per `releaseGuestPressAtOrigin` — which every held handback does,
+    ///    file or no file.
+    /// 1. Tear the pass down exactly as an ordinary return does: pointer
     ///    left, cursor restored, tap stopped, ownership dropped.
-    /// 3. Only THEN start the native drag, and only from a real event. The
+    /// 2. Only THEN start the native drag, and only from a real event. The
     ///    crossing sample usually arrives through the consuming tap, which
     ///    has no NSEvent by construction; the physical button is still held,
     ///    so the first real `mouseDragged` after the tap dies is the gesture
-    ///    AppKit can own. The strip widens into a catch surface for that
-    ///    instant so the returning pointer is over a view of ours.
+    ///    AppKit can own. The strip widens into a catch surface BEFORE the
+    ///    tap dies, so the window under the returning pointer is ours and
+    ///    not whatever it is about to inherit the press, and it stays wide
+    ///    until the session ends — narrowing it at the start moved the drag
+    ///    source's own window out from under a live drag.
     private func returnGuestFileToHost(_ item: HostFileDragItem,
                                        from ownership: Ownership,
                                        sourceEvent: NSEvent?) {
         let returnPoint = ContinuityDisplayGeometry.hostReturnPoint(
             for: ownership.guestPoint, edge: ownership.edge,
             guestFrame: layout.guestFrame, scale: layout.guestScale)
-        let guestPoint = mirrorPoint(ownership.guestPoint)
-        _ = driver?.primaryUp(at: guestPoint)
-        audit(.info, "guest press released before the cross: guest="
-            + "\(guestPoint.x),\(guestPoint.y) — the dragged icon must snap "
-            + "back on the Mac")
+        releaseGuestPressAtOrigin(
+            mirrorPoint(pressOrigin ?? ownership.guestPoint),
+            cross: ownership.guestPoint)
         driver?.pointerLeft()
+        /* The catch surface is armed BEFORE the tap comes down, not after.
+           Between those two instants the physical button is held and no
+           application owns it, so whatever is under the pointer inherits
+           the gesture — the same defect that drags a host window on an
+           ordinary held handback. Widened first, the window under the
+           pointer is ours. */
+        setFileEdgeCatching(true)
         restoreHostCursor(from: ownership)
+        stopKeyboardCapture()
         self.ownership = nil
         pending = nil
         guestFileCandidate = nil
+        pressOrigin = nil
         state = .ready
-        setFileEdgeCatching(true)
         pendingReturnDrag = PendingReturnDrag(item: item,
                                               returnPoint: returnPoint)
         if let sourceEvent {
@@ -551,17 +754,76 @@ final class ContinuityEdgeController: ObservableObject {
         guard let waiting = pendingReturnDrag else { return }
         pendingReturnDrag = nil
         let point = waiting.returnPoint
-        if environment.beginFileDrag(waiting.item, at: point,
-                                     sourceEvent: sourceEvent) {
+        /* The seed's provenance, before anything is done with it. A global
+           monitor delivers events belonging to OTHER applications, so the
+           window this gesture came from is the first thing to know when a
+           session starts and then does nothing — and the first metal round
+           had no line saying which it was. */
+        audit(.info, "host drag seed event: type=\(sourceEvent.type.rawValue)"
+            + ", windowNumber=\(sourceEvent.windowNumber), "
+            + "ourWindow=\(sourceEvent.window == nil ? "no" : "yes"), "
+            + "clickCount=\(sourceEvent.clickCount)")
+        if let seed = environment.beginFileDrag(waiting.item, at: point,
+                                                sourceEvent: sourceEvent) {
+            /* The line the round-2 audit did not have. The trigger event is
+               a foreign application's by construction — a global monitor
+               has no other kind — so it is the SEED that has to be ours,
+               and this says which it was rather than leaving both readings
+               of `ourWindow=no` open. */
+            audit(seed.ownWindow ? .info : .error,
+                  "host drag session seed: \(seed.summary)")
+            if !seed.ownWindow {
+                audit(.error, "the drag session was anchored to a window "
+                    + "this app does not own; the drag image will freeze "
+                    + "and nothing will accept the file")
+            }
+            /* Custody passes to AppKit here, which is the OTHER half of the
+               held-button rule: nothing of ours may keep reacting to a
+               pointer that now belongs to a drag session. */
+            heldGesture = nil
+            hostDragSessionLive = true
+            standDownSamples = 0
             audit(.info, "host file drag started from a real mouse event at "
-                + "\(Int(point.x)),\(Int(point.y))")
+                + "\(Int(point.x)),\(Int(point.y)); this app stands down "
+                + "until the session ends")
             status = "Copying the guest file to this Mac on release"
-        } else {
-            audit(.error, "the host file drag was refused by AppKit at "
-                + "\(Int(point.x)),\(Int(point.y))")
-            status = "Could not start the host file drag"
+            /* The catch surface stays wide for the length of the session.
+               Narrowing it here moved the drag source's own window out from
+               under a live drag, one frame after starting it. */
+            return
         }
+        audit(.error, "the host file drag was refused by AppKit at "
+            + "\(Int(point.x)),\(Int(point.y))")
+        status = "Could not start the host file drag"
         setFileEdgeCatching(false)
+        endHeldCustody(reason: "AppKit refused the drag")
+    }
+
+    /// macOS finished with the session this app started, however it ended.
+    private func hostDragSessionEnded(_ operation: NSDragOperation,
+                                      at screenPoint: CGPoint) {
+        guard hostDragSessionLive else { return }
+        hostDragSessionLive = false
+        announcedOwnDragRefusal = false
+        setFileEdgeCatching(false)
+        let took = operation.isEmpty ? "nobody" : "\(operation.rawValue)"
+        audit(operation.isEmpty ? .warn : .info,
+              "host file drag session ended at "
+                + "\(Int(screenPoint.x)),\(Int(screenPoint.y)): "
+                + "operation=\(took), standDownSamples=\(standDownSamples)"
+                + (operation.isEmpty
+                    ? " — nothing accepted the file, so no promise was ever "
+                        + "asked for"
+                    : " — the promise lane owns the outcome from here"))
+        standDownSamples = 0
+        if operation.isEmpty {
+            status = "Nothing on this Mac took the guest file"
+        }
+        /* The button may already be up by now; if it is not, the gesture is
+           back to being nobody's and custody applies again. */
+        if hostButtonsDown { beginHeldCustody(reason: "the drag session ended "
+            + "with the button still held") }
+        refreshReadyStatus()
     }
 
     private func setFileEdgeCatching(_ catching: Bool) {
@@ -620,27 +882,91 @@ final class ContinuityEdgeController: ObservableObject {
                     + "mouse; warp-echo suppression is carrying this pass")
             }
         }
+        startConsumingTap()
+    }
+
+    /// The consuming tap on its own, without touching the cursor. Held-button
+    /// custody wants exactly this half: the events must stop reaching other
+    /// applications, and the human must still be able to move the pointer.
+    private func startConsumingTap() {
         guard inputCapture == nil else { return }
         inputCapture = environment.startInputCapture(
             handler: { [weak self] sample, sourceEvent in
                 /* The tap hops to the main actor, so a sample can outlive the
-                   pass that captured it. */
-                guard let self, self.state == .active else { return }
+                   pass that captured it — but not the custody that outlives
+                   the pass ON PURPOSE. A capture still swallowing events
+                   whose samples this controller drops is the worst of both:
+                   the human's input reaches nothing, and nothing here can
+                   see the release that would give it back. */
+                guard let self,
+                      self.state == .active || self.heldGesture != nil
+                        || self.pendingReturnDrag != nil else { return }
                 self.received(sample, sourceEvent: sourceEvent)
             },
             tapDisabled: { [weak self] reason in
                 self?.audit(.warn, "pointer event tap was disabled by "
                     + "\(reason); re-enabled immediately")
             })
-        if inputCapture == nil {
-            /* Degraded, not broken: the observe-only monitor still drives the
-               guest. Name the consequence, because a leak nobody can see is
-               how this one survived to be measured on metal. */
-            audit(.error, "could not capture host input (Accessibility "
-                + "permission); host clicks will also reach host apps")
-            status = "Pointer is on the guest display; host clicks also "
-                + "reach this Mac without Accessibility permission"
+        if inputCapture != nil {
+            if captureFailureReason != nil, !hostFileDrag {
+                /* Only touched on RECOVERY, not on every ordinary successful
+                   start: a plain first-time success has nothing degraded to
+                   clear, and clobbering the status here would race whatever
+                   else set it for the same crossing. */
+                status = "Pointer is on the guest display"
+            }
+            captureFailureReason = nil
+            return
         }
+        /* Degraded, not broken: the observe-only monitor still drives the
+           guest. Name the consequence, because a leak nobody can see is how
+           this one survived to be measured on metal. Which message applies
+           depends on whether the process is trusted RIGHT NOW: a still-untrusted
+           process can be fixed by granting permission and coming back to
+           this app, but a trusted process whose tap still failed to create
+           needs a relaunch — macOS reads Accessibility trust at process
+           start for this API, and no amount of retrying in place changes
+           that. */
+        if accessibility.isProcessTrusted() {
+            captureFailureReason = .relaunchNeeded
+            audit(.error, "could not capture host input even though this "
+                + "app is trusted for Accessibility; macOS did not pick up "
+                + "the grant for this process and a relaunch is needed")
+            status = "Pointer is on the guest display; host input capture "
+                + "needs this app relaunched before it can take effect"
+        } else {
+            captureFailureReason = .missingPermission
+            /* The path is the whole point of this line. Accessibility is
+               granted to a COPY, so a person looking at a switched-on
+               toggle in System Settings and an app insisting the
+               permission is missing needs exactly one fact to resolve it:
+               which executable is speaking. Without it this exchange is a
+               screenshot-and-guess; with it, seeing /Volumes/... is a
+               five-second read. */
+            audit(.error, "could not capture host input (Accessibility "
+                + "permission); host clicks will also reach host apps. "
+                + "Accessibility is granted per copy of an app and this "
+                + "one is running from \(runningCopy.path)")
+            status = "host input capture needs Accessibility permission; "
+                + "the pointer still crosses, but host clicks also reach "
+                + "host apps and window-drag protection is off"
+        }
+    }
+
+    /// See `MirrorContinuityController.applicationDidBecomeActive`. Retries
+    /// exactly once per activation, only while a tap is both currently
+    /// wanted (the cursor is hidden for an active pass, or a button is held
+    /// in custody) and absent, and only when the reason it is absent is one
+    /// a later attempt can actually fix.
+    func retryInputCaptureAfterBecomingActive() {
+        guard captureFailureReason == .missingPermission else { return }
+        guard inputCapture == nil else { return }
+        guard cursorHiddenOn != nil || heldGesture != nil else { return }
+        guard accessibility.isProcessTrusted() else { return }
+        audit(.info, "Accessibility permission is now granted; picking up "
+            + "host input capture without waiting for the next edge "
+            + "crossing")
+        startConsumingTap()
     }
 
     private func endHostInputCapture() {
@@ -673,8 +999,9 @@ final class ContinuityEdgeController: ObservableObject {
     /// guard on purpose: a host file drag arms neither, and an exit that
     /// skipped the teardown because nothing was hidden would leave the mouse
     /// detached.
-    private func restoreHostCursor(from ownership: Ownership?) {
-        endHostInputCapture()
+    private func restoreHostCursor(from ownership: Ownership?,
+                                   keepInputCapture: Bool = false) {
+        if !keepInputCapture { endHostInputCapture() }
         if let id = cursorHiddenOn {
             if let ownership {
                 let hostPoint = ContinuityDisplayGeometry.hostReturnPoint(
@@ -726,6 +1053,9 @@ final class ContinuityEdgeController: ObservableObject {
             exited: { [weak self] in self?.hostFileExited() },
             dropped: { [weak self] pasteboard in
                 self?.hostFileDropped(pasteboard) ?? false
+            },
+            dragEnded: { [weak self] operation, point in
+                self?.hostDragSessionEnded(operation, at: point)
             })
     }
 
@@ -746,6 +1076,19 @@ final class ContinuityEdgeController: ObservableObject {
     }
 
     private func hostFileEntered(at hostPoint: CGPoint) -> Bool {
+        /* The strip is a destination for FOREIGN drags. A drag this app
+           started is refused by identity in the view itself; this is the
+           second door onto the same rule, because a host→guest pass armed
+           during our own guest→host handoff would steer the guest with the
+           file that is on its way here. */
+        if hostDragSessionLive || pendingReturnDrag != nil {
+            if !announcedOwnDragRefusal {
+                announcedOwnDragRefusal = true
+                audit(.info, "the shared edge refused an incoming file: this "
+                    + "Mac is in the middle of taking one FROM the guest")
+            }
+            return false
+        }
         if hostFileDrag { return state == .arming || state == .active }
         guard state == .ready, let edge = layout.sharedEdge else {
             return false

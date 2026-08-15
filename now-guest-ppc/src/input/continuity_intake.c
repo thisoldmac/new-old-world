@@ -29,6 +29,9 @@ static unsigned short gBoundPort;
 static volatile NowCU32 gNonceHi;
 static volatile NowCU32 gNonceLo;
 static volatile NowCU32 gEpoch;
+/* The host's live modifier word. Epoch-scoped, because a word carried over
+   from a finished session is a modifier the person is no longer holding. */
+static volatile NowCU32 gHostModifiers;
 static int gFastPump;
 static volatile NowCU32 gMalformed;
 static volatile NowCU32 gRejected;
@@ -427,6 +430,17 @@ int now_continuity_arm(long id, unsigned short port,
     /* Publish notifier authority only after the resident accepted the same
        epoch. A datagram can never outrun construction of its consumer. */
     gEpoch = (NowCU32)epoch;
+    gHostModifiers = 0;            /* a new epoch holds nothing */
+    {
+        NowPeekContinuityCell *shared = cell();
+    
+        if (shared != NULL) {
+            shared->host_modifiers = 0;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
     gFastPump = fast_pump != 0;
     /* double-active is GetDblTime() AFTER the resident armed: with the wide
        window bit set it must read the widened value, so this line is the
@@ -454,6 +468,17 @@ int now_continuity_disarm(long id, unsigned long epoch)
         return 0;
     }
     gEpoch = 0;                    /* datagrams lose authority first */
+    gHostModifiers = 0;
+    {
+        NowPeekContinuityCell *shared = cell();
+    
+        if (shared != NULL) {
+            shared->host_modifiers = 0;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
     gFastPump = 0;
     now_continuity_keyboard_flush(shared);
     now_peek_release(kNowPeekOwnerContinuity,
@@ -614,11 +639,64 @@ int now_continuity_key(unsigned long epoch, unsigned long generation,
     return kNowContinuityKeyMalformed;
 }
 
+int now_continuity_modifiers(unsigned long epoch, unsigned long generation,
+                             unsigned long modifiers)
+{
+    NowPeekContinuityCell *shared = cell();
+
+    if (shared == NULL || epoch == 0 || generation == 0
+            || modifiers > 65535UL)
+        return kNowContinuityKeyMalformed;
+    if (gEpoch == 0 || (NowCU32)epoch != gEpoch || !shared->enabled
+            || (shared->state != (NowPeekU32)kNowPeekContinuityStateArmed
+                && shared->state
+                    != (NowPeekU32)kNowPeekContinuityStateActive))
+        return kNowContinuityKeyBadEpoch;
+    /* Named on both edges deliberately: a modifier that produced no guest
+       behaviour has exactly two explanations from here - it never arrived,
+       or it arrived and nothing reads it - and only the log separates
+       them. */
+    now_log(kLogInfo, "mirror",
+            "continuity host modifiers 0x%04lx (was 0x%04lx), generation=%lu;"
+            " held only, not visible to GetKeys",
+            modifiers, (unsigned long)gHostModifiers, generation);
+    gHostModifiers = (NowCU32)modifiers;
+    {
+        NowPeekContinuityCell *shared = cell();
+
+        if (shared != NULL) {
+            /* The resident reads word-then-seq; publish the seq LAST so a
+               torn pair reads as the previous word, never half a new one. */
+            shared->host_modifiers = (NowPeekU32)modifiers;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
+    return kNowContinuityKeyQueued;
+}
+
+unsigned long now_continuity_host_modifiers(void)
+{
+    return gEpoch == 0 ? 0UL : (unsigned long)gHostModifiers;
+}
+
 void now_continuity_disconnect(void)
 {
     NowPeekContinuityCell *shared;
 
     gEpoch = 0;                    /* revoke before table or transport work */
+    gHostModifiers = 0;
+    {
+        NowPeekContinuityCell *shared = cell();
+    
+        if (shared != NULL) {
+            shared->host_modifiers = 0;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
     gFastPump = 0;
     now_peek_release(kNowPeekOwnerContinuity,
                      (unsigned long)kNowPeekCapAnchors);
@@ -645,6 +723,17 @@ void now_continuity_disconnect(void)
 void now_continuity_shutdown(void)
 {
     gEpoch = 0;
+    gHostModifiers = 0;
+    {
+        NowPeekContinuityCell *shared = cell();
+    
+        if (shared != NULL) {
+            shared->host_modifiers = 0;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
     gFastPump = 0;
     gNotifierCell = NULL;
     now_peek_release(kNowPeekOwnerContinuity,

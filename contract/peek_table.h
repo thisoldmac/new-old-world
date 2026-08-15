@@ -958,6 +958,12 @@ enum {
        when == MBTicks exactly while compressed synthetic downs diverge
        by up to 110 ticks. */
     kNowPeekContinuityFormatV12 = 12,
+    /* V13 appends the live host modifier word so mid-drag copy/alias and
+       modifier-gated Finder commands see the same modifiers the host
+       holds. Logging and stamping only; nothing owns the KeyMap - the
+       ADB driver rewrites it on real transitions and the co-write
+       re-asserts per pass while an epoch runs. */
+    kNowPeekContinuityFormatV13 = 13,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -970,7 +976,7 @@ enum {
    contain a new application and an older resident while every artifact was
    individually well formed.  The update manifests also publish this value,
    so a stack assembler can reject that pair before it reaches a Macintosh. */
-#define NOW_CONTINUITY_FORMAT_CURRENT 12u
+#define NOW_CONTINUITY_FORMAT_CURRENT 13u
 
 enum {
     kNowPeekContinuityExitNone = 0,
@@ -1468,6 +1474,15 @@ typedef struct {
        race where an interrupt delivery cancels a manager up the
        application has already read and is about to serve. */
     NowPeekU32 button_manager_busy;
+    /* V13 live host modifier word. The application publishes the word the
+       host last forwarded (seq bumped LAST); the resident stamps it into
+       synthetic mouse events and co-writes the four modifier bits of the
+       low-memory KeyMap from the keyboard plane's target-context pass -
+       because the Finder chooses move/copy/alias inside the Drag Manager
+       loop from live key state, not from the press event's modifiers.
+       Zeroed at every epoch boundary the keyboard word already observes. */
+    NowPeekU32 host_modifiers;
+    NowPeekU32 host_modifiers_seq;
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -2393,7 +2408,7 @@ _Static_assert(sizeof(NowPeekContinuityEventTiming) == 56,
                "continuity event timing ABI drift");
 _Static_assert(sizeof(NowPeekContinuityClickProbe) == 84,
                "continuity click probe ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 4444,
+_Static_assert(sizeof(NowPeekContinuityCell) == 4452,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -2449,6 +2464,8 @@ _Static_assert(offsetof(NowPeekContinuityCell, click_probe) == 2424,
                "continuity V11 click probe ring offset");
 _Static_assert(offsetof(NowPeekContinuityCell, button_manager_busy) == 4440,
                "continuity V12 manager-busy handshake offset");
+_Static_assert(offsetof(NowPeekContinuityCell, host_modifiers) == 4444,
+               "continuity V13 host modifier word offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

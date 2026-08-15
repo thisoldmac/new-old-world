@@ -58,6 +58,46 @@ public enum HostProjectionAuthorityDomain: Equatable, Sendable {
     case guest
     case hostProjects
     case hostProjectsAndGuest
+    /// This Mac's own application state — not project storage, and nothing a
+    /// guest has standing over. `now_host_log_tail` reads the host's own log
+    /// ring, which exists whether or not any Macintosh is connected and says
+    /// nothing about one.
+    ///
+    /// Its own case rather than borrowing `hostProjects`: they agree on the
+    /// consequence (guest consent is not consulted) and disagree on the
+    /// fact, and the refusal a caller reads when they name a guest quotes
+    /// that fact. Answering "operates on host-owned project storage" for the
+    /// host's log would send somebody to the wrong half of the product.
+    case hostApplication
+
+    /// Whether a connected guest's `hello.agent` answer has any bearing on
+    /// this row.
+    ///
+    /// Derived from the domain rather than declared a second time. It is
+    /// false for the two host-owned domains for one reason: a machine that
+    /// declined to be read has declined about ITSELF, and applying that to
+    /// this Mac's own storage would be a refusal with nothing behind it that
+    /// a caller could act on.
+    public var isGuestConsentRelevant: Bool {
+        switch self {
+        case .guest, .hostProjectsAndGuest: return true
+        case .hostProjects, .hostApplication: return false
+        }
+    }
+
+    /// The half-sentence a face uses when refusing a `guest` selector on a
+    /// row that takes none. Beside the enum so the two host-owned domains
+    /// cannot drift into one wording that is wrong for one of them.
+    public var addressingRefusalSubject: String {
+        switch self {
+        case .hostProjects, .hostProjectsAndGuest:
+            return "operates on host-owned project storage"
+        case .hostApplication:
+            return "reads this Mac's own application state"
+        case .guest:
+            return "operates on the connected Macintosh"
+        }
+    }
 }
 
 /// Whether one `HostCapabilityFace` reaches one capability, and the evidence

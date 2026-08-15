@@ -8,12 +8,51 @@ struct HostKeySample: Equatable, Sendable {
     let modifiers: UInt16
 }
 
+/// What the host does with one captured sample, named so the decision can be
+/// logged rather than inferred. Two of the four leave the event on the host,
+/// and they are NOT the same thing: `ignored` means the plane wants nothing,
+/// `modifierState` means the plane wants a copy and the host keeps the
+/// original.
+enum ContinuityKeyDisposition: String, Equatable, Sendable {
+    /// The host-owned escape chord. Consumed here; never reaches the guest.
+    case chord
+    /// A key event: forwarded to the guest and swallowed on this machine.
+    case forwarded
+    /// A bare modifier change: forwarded to the guest AND left on the host.
+    ///
+    /// It is copied rather than swallowed because a modifier is state, not an
+    /// edge. Suppressing the `flagsChanged` would leave macOS believing the
+    /// key never moved, so its own idea of what is held would drift for as
+    /// long as the pointer stays on the guest — and would be wrong at the
+    /// exact moment control returns. Nothing on the host acts on a modifier
+    /// alone, so there is nothing to swallow it for.
+    case modifierState
+    /// Not this plane's event; the host keeps it untouched.
+    case ignored
+
+    var forwards: Bool { self == .forwarded || self == .modifierState }
+    /// Whether the tap swallows the original.
+    var consumesOnHost: Bool { self == .chord || self == .forwarded }
+}
+
 struct ContinuityKeyboardCapturePolicy: Equatable, Sendable {
     let forwardingEnabled: Bool
     let escapeShortcut: ContinuityEscapeShortcut
 
+    /// The chord is tested FIRST and unconditionally, which is the whole
+    /// coexistence argument: the way out of the guest cannot depend on a
+    /// forwarding switch, and no combination of held modifiers can shadow it.
+    /// Everything the chord does not claim passes through by its own kind, so
+    /// a Command combination is forwarded exactly like an unmodified key —
+    /// this matcher has never had a partial-match rule and must not grow one.
+    func disposition(_ sample: HostKeySample) -> ContinuityKeyDisposition {
+        if escapeShortcut.matches(sample) { return .chord }
+        guard forwardingEnabled else { return .ignored }
+        return sample.action == .modifiers ? .modifierState : .forwarded
+    }
+
     func captures(_ sample: HostKeySample) -> Bool {
-        forwardingEnabled || escapeShortcut.matches(sample)
+        disposition(sample) != .ignored
     }
 }
 
@@ -162,8 +201,15 @@ final class AppKitContinuityKeyboardEnvironment:
     ) -> AnyObject? {
         let context = Context(policy: policy, handler: handler,
                               tapDisabled: tapDisabled)
+        /* flagsChanged is in the mask for the case a key event cannot
+           express: a modifier pressed or released while no key moves. The
+           classic Event Manager has no such event, so without this the
+           guest's modifier word can only advance when some other key happens
+           to travel — and a modifier held down mid-drag, which is how the
+           Finder is told to copy rather than move, moves nothing. */
         let mask = (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.keyUp.rawValue)
+            | (1 << CGEventType.flagsChanged.rawValue)
         guard let port = CGEvent.tapCreate(
             tap: .cgSessionEventTap, place: .headInsertEventTap,
             options: .defaultTap, eventsOfInterest: CGEventMask(mask),
@@ -188,7 +234,8 @@ final class AppKitContinuityKeyboardEnvironment:
                     event, type: type) else {
                     return Unmanaged.passUnretained(event)
                 }
-                guard context.policy.captures(sample) else {
+                let disposition = context.policy.disposition(sample)
+                guard disposition.forwards || disposition == .chord else {
                     return Unmanaged.passUnretained(event)
                 }
                 /* The tap's watchdog covers this callback, not the later main
@@ -196,7 +243,8 @@ final class AppKitContinuityKeyboardEnvironment:
                    let the normal controller enqueue the reliable wire event. */
                 let deliver = context.handler
                 Task { @MainActor in deliver(sample) }
-                return nil
+                return disposition.consumesOnHost
+                    ? nil : Unmanaged.passUnretained(event)
             }, userInfo: Unmanaged.passUnretained(context).toOpaque()) else {
             return nil
         }
@@ -219,6 +267,14 @@ final class AppKitContinuityKeyboardEnvironment:
 
     private static func sample(_ event: CGEvent,
                                type: CGEventType) -> HostKeySample? {
+        /* flagsChanged is answered from the CGEvent's own flags and never
+           through NSEvent. `NSEvent.characters` is defined only for key
+           events and RAISES on a flagsChanged one, so the shared path below
+           cannot simply widen its guard to admit it. */
+        if type == .flagsChanged {
+            return HostKeySample(action: .modifiers, code: 0, character: 0,
+                                 modifiers: classicModifiers(event.flags))
+        }
         guard type == .keyDown || type == .keyUp,
               let appEvent = NSEvent(cgEvent: event) else { return nil }
         let action: ContinuityKey.Action
@@ -235,17 +291,19 @@ final class AppKitContinuityKeyboardEnvironment:
             code: code,
             character: ClassicKeyByte.character(forVirtualCode: code,
                                                 characters: appEvent.characters),
-            modifiers: classicModifiers(appEvent.modifierFlags))
+            modifiers: classicModifiers(event.flags))
     }
 
-    private static func classicModifiers(_ flags: NSEvent.ModifierFlags)
-        -> UInt16 {
+    /// The one place the modifier word is built, taken from the CGEvent
+    /// rather than the NSEvent so that key events and flagsChanged — which
+    /// cannot become an NSEvent safely — answer through the same table.
+    private static func classicModifiers(_ flags: CGEventFlags) -> UInt16 {
         var value: UInt16 = 0
-        if flags.contains(.command) { value |= 1 << 8 }
-        if flags.contains(.shift) { value |= 1 << 9 }
-        if flags.contains(.capsLock) { value |= 1 << 10 }
-        if flags.contains(.option) { value |= 1 << 11 }
-        if flags.contains(.control) { value |= 1 << 12 }
+        if flags.contains(.maskCommand) { value |= 1 << 8 }
+        if flags.contains(.maskShift) { value |= 1 << 9 }
+        if flags.contains(.maskAlphaShift) { value |= 1 << 10 }
+        if flags.contains(.maskAlternate) { value |= 1 << 11 }
+        if flags.contains(.maskControl) { value |= 1 << 12 }
         return value
     }
 }

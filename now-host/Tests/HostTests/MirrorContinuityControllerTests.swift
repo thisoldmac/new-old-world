@@ -899,6 +899,53 @@ final class MirrorContinuityControllerTests: XCTestCase {
         }, sentKeys, "unrepresentable host keys must remain host-owned")
     }
 
+    /// A bare modifier change crosses as state, and only when it is news.
+    ///
+    /// macOS raises flagsChanged for keys the classic word has no bit for —
+    /// Fn, the numeric-pad flag, left versus right of the same modifier — so
+    /// without the comparison every one of them would put a packet on the
+    /// reliable stream saying exactly what the guest already held.
+    func testOnlyAChangedModifierWordReachesTheGuest() async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig { audit.append(($0, $1)) }
+        defer { rig.udp.stop() }
+
+        func modifierMessages() -> [ContinuityKey] {
+            rig.guest.received.compactMap {
+                guard case .continuityKey(let key) = $0,
+                      key.action == .modifiers else { return nil }
+                return key
+            }
+        }
+
+        /* Option down, Option down again (macOS says this for keys the
+           classic word cannot name), then Command joins it. All three are
+           accepted; only two are news. Asserted as the WHOLE sequence after
+           the last one has landed rather than as a count between sends: a
+           count sampled mid-flight reads correct while the extra packet is
+           still on the wire, which is how this test first passed against the
+           very mutation it exists for. */
+        for word: UInt16 in [1 << 11, 1 << 11, (1 << 8) | (1 << 11)] {
+            XCTAssertTrue(rig.controller.keyboardEvent(
+                .init(action: .modifiers, code: 0, character: 0,
+                      modifiers: word)))
+        }
+        try await waitUntil("the changed word arrived") {
+            modifierMessages().last?.modifiers == (1 << 8) | (1 << 11)
+        }
+        XCTAssertEqual(modifierMessages().map(\.modifiers),
+                       [1 << 11, (1 << 8) | (1 << 11)],
+                       "the repeated word must not reach the wire")
+        XCTAssertEqual(modifierMessages().map(\.code), [0, 0])
+        XCTAssertEqual(modifierMessages().map(\.character), [0, 0])
+        XCTAssertTrue(audit.contains {
+            $0.1.contains("modifier change not forwarded, word unchanged")
+        }, "the skipped decision must be named, not silent")
+        XCTAssertTrue(audit.contains {
+            $0.1.contains("modifier state forwarded")
+        })
+    }
+
     func testLeavingV0DisarmsImmediately() async throws {
         var audit: [(HostLog.LogLevel, String)] = []
         let rig = try await makeActiveRig {
@@ -1063,5 +1110,134 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(reopened.escapeShortcut, .controlOptionReturn)
         XCTAssertFalse(reopened.isEnabled,
                        "opening a new Mirror session must not seize input")
+    }
+
+    /// Item 1 of the Continuity Accessibility fix: the system dialog is
+    /// asked for only when the feature that needs it is actually turned
+    /// on, and only once per launch — a second `beginEdgeMode` (a manual
+    /// toggle off and on) must not re-show a dialog macOS already answered
+    /// by listing the app in the Accessibility pane.
+    func testBeginEdgeModePromptsForAccessibilityOncePerLaunch() {
+        let accessibility = AccessibilityFake()
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility)
+
+        controller.beginEdgeMode()
+        XCTAssertEqual(accessibility.promptCount, 1)
+
+        controller.endEdgeMode(reason: "test toggle off")
+        controller.beginEdgeMode()
+        XCTAssertEqual(accessibility.promptCount, 1,
+                       "the same launch must not prompt a second time")
+    }
+
+    /// A process already trusted for Accessibility needs no dialog at all —
+    /// prompting an already-granted person would be noise, not a request.
+    func testBeginEdgeModeDoesNotPromptWhenAlreadyTrusted() {
+        let accessibility = AccessibilityFake()
+        accessibility.trusted = true
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility)
+
+        controller.beginEdgeMode()
+
+        XCTAssertEqual(accessibility.promptCount, 0)
+    }
+
+    /// The other half of "only when the feature is turned on": constructing
+    /// the controller — which happens once at app launch, in
+    /// `HostAppState` — must not itself ask for Accessibility. Only
+    /// `beginEdgeMode` may.
+    func testConstructingTheControllerNeverPrompts() {
+        let accessibility = AccessibilityFake()
+        _ = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility)
+
+        XCTAssertEqual(accessibility.promptCount, 0)
+    }
+
+    /// The half the 2026-08-14 metal round did not have. That log carried
+    /// 31 lines naming the missing permission and NOT ONE naming what the
+    /// app did about it, so nothing could distinguish "the prompt never
+    /// fired" from "the prompt fired and macOS suppressed it". Each branch
+    /// of the decision must say which branch it took.
+    func testBeginEdgeModeAuditsThePromptDecision() {
+        let accessibility = AccessibilityFake()
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility,
+            audit: { audits.append(($0, $1)) })
+
+        controller.beginEdgeMode()
+        XCTAssertTrue(audits.contains { $0.1.contains("asking macOS for it") },
+                      "the untrusted first ask must be named: \(audits)")
+        XCTAssertTrue(audits.contains { $0.1.contains("asked macOS") },
+                      "the outcome of the ask must be named: \(audits)")
+
+        // Second turn-on this launch: suppressed by the once-per-launch
+        // guard, and that suppression is the reading a metal round needs.
+        audits.removeAll()
+        controller.endEdgeMode(reason: "test toggle off")
+        controller.beginEdgeMode()
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("already asked")
+        }, "the launch guard suppressing the prompt must be named: \(audits)")
+    }
+
+    /// The already-trusted branch is the one that looks identical to a
+    /// broken prompt in a log that says nothing: no dialog appears, and
+    /// without this line there is no way to tell that from a prompt macOS
+    /// swallowed.
+    func testBeginEdgeModeAuditsAlreadyTrusted() {
+        let accessibility = AccessibilityFake()
+        accessibility.trusted = true
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility,
+            audit: { audits.append(($0, $1)) })
+
+        controller.beginEdgeMode()
+
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("already granted")
+        }, "an already-trusted launch must say so: \(audits)")
+        XCTAssertFalse(audits.contains { $0.1.contains("asking macOS") })
+    }
+
+    /// The affordance that always works, unlike the one-shot prompt. It
+    /// goes through the seam so a test never opens System Settings for
+    /// real, and so the audit records that the person asked.
+    func testOpenAccessibilitySettingsGoesThroughTheSeamAndIsAudited() {
+        let accessibility = AccessibilityFake()
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility,
+            audit: { audits.append(($0, $1)) })
+
+        controller.openAccessibilitySettings()
+
+        XCTAssertEqual(accessibility.openSettingsCount, 1)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("Accessibility pane")
+        }, "the person's escape hatch must be readable in the log: \(audits)")
+    }
+
+    /// Fakes the two AX calls `beginEdgeMode` depends on, without ever
+    /// touching the real system prompt.
+    final class AccessibilityFake: AccessibilityAuthorization, @unchecked Sendable {
+        var trusted = false
+        var promptCount = 0
+
+        var openSettingsCount = 0
+
+        func isProcessTrusted() -> Bool { trusted }
+        func promptForTrust() { promptCount += 1 }
+        func openAccessibilitySettings() { openSettingsCount += 1 }
     }
 }

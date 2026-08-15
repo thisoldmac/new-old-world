@@ -266,7 +266,15 @@ final class MetalAgentLocalSurface {
                 be measuring nothing. */
              .census, .softwareInventory, .guestFileDownload,
              .bringToFront, .guestFileMutation, .transferCancel,
-             .guestLogTail, .machineFacts, .developmentEnvironment,
+             .guestLogTail,
+             /* And the HOST's own log, refused here for a reason unlike
+                every neighbour's: it is served on the real host and reads
+                nothing from a guest at all. This rig is not the app, so its
+                ring is not the log anybody wants — answering out of it
+                would be the exact substitution `SocketAgentIntegrationClient`
+                refuses to make. */
+             .hostLogTail,
+             .machineFacts, .developmentEnvironment,
              .catalogSearch, .revealItem,
              .diagnostics, .mirrorRead, .mirrorDrive,
              /* And opening the Mirror, refused here for a reason unlike

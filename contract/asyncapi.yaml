@@ -130,6 +130,13 @@
 #   them for the foreground process and the resident posts them only from that
 #   process's target-context jGNE pass. They model Event Manager input, not
 #   physical ADB state or GetKeys.
+#   The `modifiers` action on that same message reports a bare modifier
+#   change — the thing macOS calls flagsChanged and the classic Event Manager
+#   has no event for. It is the ONLY way the guest learns that a modifier
+#   moved while no key did, which is the case a Finder drag reads to choose
+#   between move, copy and alias. Carrying it does not by itself make
+#   `GetKeys` answer with it; see continuity-mode.md for what the resident
+#   does and does not do with the live word.
 # - Control messages that expect an answer carry `id`; answers echo it.
 # - Bulk transfers are announced on control (`capture.begin`), stream on the
 #   bulk channel in chunks (default 8192 bytes, negotiable in hello), and
@@ -2429,22 +2436,54 @@ components:
         id: { type: integer }
         epoch: { type: integer, minimum: 1, maximum: 4294967295 }
         generation: { type: integer, minimum: 1, maximum: 4294967295 }
-        action: { enum: [down, up, repeat] }
+        action:
+          enum: [down, up, repeat, modifiers]
+          description: >
+            `down`/`up`/`repeat` are key events and carry a real `code`.
+
+            `modifiers` IS NOT A KEY. It reports that the person's held
+            modifiers changed while no key moved, and it exists because the
+            two machines disagree about whether that is an event at all.
+            macOS raises `flagsChanged`; the classic Event Manager has no
+            such event, so a classic application learns a bare modifier
+            change only by reading `GetKeys`/`KeyMap` — which is exactly
+            what a Finder drag does when it decides between move, copy and
+            alias mid-gesture. Without this action the guest's live
+            modifier word can only advance when some other key happens to
+            move, and a modifier pressed during a drag is invisible.
+
+            A `modifiers` message sends `code: 0` and `character: 0`; both
+            are meaningless and a receiver must not post a key event for
+            it. It is state, not an edge: it carries the whole modifier
+            word after the change rather than which modifier moved, so a
+            dropped one is corrected by the next.
+
+            ADDITIVE — no version bump. A receiver that has never heard of
+            it parses no known action and answers `refused`/`malformed` on
+            the existing `continuity.keyReport`, which costs that guest
+            nothing it had.
         code:
           type: integer
           minimum: 0
           maximum: 127
-          description: Classic virtual key code; macOS inherits this table.
+          description: >
+            Classic virtual key code; macOS inherits this table. Zero and
+            meaningless when `action` is `modifiers`.
         character:
           type: integer
           minimum: 0
           maximum: 255
-          description: MacRoman byte placed in the EventRecord message.
+          description: >
+            MacRoman byte placed in the EventRecord message. Zero and
+            meaningless when `action` is `modifiers`.
         modifiers:
           type: integer
           minimum: 0
           maximum: 65535
-          description: Classic Event Manager modifier bits.
+          description: >
+            Classic Event Manager modifier bits. On a key action these are
+            the modifiers held while that key moved; on `modifiers` they
+            are the whole live word and the entire payload.
     ContinuityKeyReport:
       type: object
       required: [type, version, id, epoch, generation, state]
@@ -2572,8 +2611,21 @@ components:
           - It is bound to ONE generation. The guest serves the item its
             own cache holds under that number and nothing else; a
             generation it does not hold is refused, not resolved.
-          - It expires with the epoch. Continuity ending revokes every
-            grant, so a grab cannot outlive the session that consented.
+          - It expires with the epoch, plus ONE in-flight gesture. The
+            crossing that carries a file to the host is also what ends host
+            ownership, so the drag a person is still holding always names
+            an epoch that is already over — refusing it bad-epoch would
+            refuse every guest→host drag there is (measured on metal
+            2026-08-14). The guest therefore keeps the LAST generation of
+            an ending epoch grantable for a bounded window: 30 seconds, or
+            until the next epoch publishes a selection of its own,
+            whichever comes first. Nothing else about the grant widens —
+            same one generation, same item, no path — and a request
+            arriving after that window is refused `grant-expired` rather
+            than served. Every other way an epoch can end (disarm, lease
+            expiry, guest input) holds the same grant for the same window;
+            the LINK dropping does not, because consent is given to one
+            host over one connection.
           - It names no path. The host cannot ASK for an arbitrary file
             here — it can only ask for the one the guest already told it
             about, so the reachable set is whatever a human selected.
@@ -4000,7 +4052,8 @@ components:
         code:
           enum: [busy, exists, bad-path, not-found, io-error, too-big,
                  changed, bad-source, project-file-unavailable,
-                 bad-epoch, stale-selection, no-selection, folder-not-yet]
+                 bad-epoch, stale-selection, no-selection, folder-not-yet,
+                 grant-expired]
           description: >
             The first seven are the file lane's own answers. The rest name
             a REQUEST SHAPE the responder would not resolve, and they are
@@ -4016,6 +4069,14 @@ components:
             selection stub carries isFolder, so a host can see a folder
             coming, and a folder grab is refused by name rather than
             served as an empty file.
+
+            grant-expired is bad-epoch's other half, and the two are kept
+            apart deliberately: bad-epoch means the request names an epoch
+            this guest never had or never finished, while grant-expired
+            means it named the right one and arrived after the in-flight
+            window closed. A person whose drag took too long and a host
+            asking for something that was never granted are different
+            sentences, and only one of them is worth trying again.
         reason: { type: string }
     FileBegin:
       type: object

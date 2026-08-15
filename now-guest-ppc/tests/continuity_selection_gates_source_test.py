@@ -32,6 +32,11 @@ added to now_wire_pump's bounce path, and the AESend's idle proc
 replaced with NULL. Four checks, four distinct failure texts - a guard
 watched failing against ONE mutation has only been watched against that
 one, and this file makes four claims.
+
+Check 6 gained a half on 2026-08-15: the grab must settle the epoch
+transition too, not just the poll. Watched failing against exactly that
+mutation - settle_to_epoch removed from now_continuity_selection_grab,
+and separately the settle removed from now_continuity_grab_resolve.
 """
 
 import re
@@ -61,6 +66,12 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 POLL_C = uncommented((SRC / "input" / "continuity_selection.c").read_text())
 POLL_H = uncommented((SRC / "input" / "continuity_selection.h").read_text())
 WIRE = uncommented((SRC / "core" / "wire.c").read_text())
+# The state machine itself lives in now-guest-shared, compiled into both
+# guests. The wiring question this file asks spans the two files.
+SHARED = uncommented(
+    (SRC.parents[1] / "now-guest-shared" / "src"
+     / "now_continuity_selection.c").read_text()
+)
 
 
 def function_body(text: str, signature: str, where: str) -> str:
@@ -174,6 +185,88 @@ if "now_pump_ae_idle()" not in send:
     raise SystemExit(
         "the selection AESend has no idle proc, so the wire stops for the "
         "whole bounded wait. pump.h's rule: any new nested loop pumps."
+    )
+
+# --- 6. the grant outlives the epoch, and only the epoch ----------------
+#
+# The arithmetic is watched by now_continuity_selection_test.c on the host
+# cc. What cannot be watched there is the WIRING: which of the poll's exits
+# hands the grant to the hold, and which of them drops it. Both epoch exits
+# must hold; the disconnect must not.
+grab = function_body(
+    POLL_C,
+    "int now_continuity_selection_grab(unsigned long live_epoch,",
+    "continuity_selection.c",
+)
+forget = function_body(
+    POLL_C, "void now_continuity_selection_forget(void)",
+    "continuity_selection.c",
+)
+
+if "settle_to_epoch" not in poll:
+    raise SystemExit(
+        "the selection poll no longer settles the epoch transition, so "
+        "nothing hands the ending epoch's grant to the hold for the "
+        "endings no frame announces - lease expiry, a resident reset, the "
+        "host walking away. Crossing back ends the epoch by design, so the "
+        "exit nobody covers is a held drag refused bad-epoch."
+    )
+
+# AND THE GRAB SETTLES TOO, which is the half that cost a metal round.
+# The poll runs AFTER the guest dispatches the frames it read in the same
+# pass, and a host that stands down for a drag it is still holding sends
+# continuity.disarm and continuity.grab together - so the grab is the first
+# code to notice the epoch ended. It noticed by answering bad-epoch.
+if "settle_to_epoch" not in grab:
+    raise SystemExit(
+        "the grab no longer settles the epoch transition before deciding. "
+        "continuity.disarm and continuity.grab arrive in the same pass and "
+        "are dispatched before the poll runs, so a grab that reads the "
+        "hold without settling reads an EMPTY hold and refuses bad-epoch - "
+        "measured on metal 2026-08-15 01:04, three seconds into a "
+        "thirty-second window."
+    )
+
+if "now_continuity_selection_settle" not in function_body(
+    SHARED,
+    "int now_continuity_grab_resolve(NowContinuityStubTable *table,",
+    "now_continuity_selection.c",
+):
+    raise SystemExit(
+        "now_continuity_grab_resolve no longer settles before it decides. "
+        "The glue calling settle first is not enough on its own: this is "
+        "the one decision that can outrun the poll, so there must be no "
+        "version of it that a caller can make against a table nobody has "
+        "moved yet."
+    )
+
+if "now_continuity_grant_release" not in forget:
+    raise SystemExit(
+        "now_continuity_selection_forget no longer releases the grant. It "
+        "is called when the LINK drops, and consent is given to one host "
+        "over one connection - a grant surviving a reconnect would let "
+        "the next session collect a drag the previous one set up."
+    )
+
+if "release_grant_for_new_epoch" not in poll:
+    raise SystemExit(
+        "nothing releases the held grant when a new epoch publishes its "
+        "own selection, so the clock is the only backstop and a grant "
+        "outlives the gesture it was held for."
+    )
+
+if "now_continuity_grab_resolve" not in grab:
+    raise SystemExit(
+        "the grab no longer consults the held grant, so a drag released "
+        "after the crossing that ended its epoch is refused bad-epoch - "
+        "the round-2 metal symptom this rule exists to answer."
+    )
+
+if "grant honored after epoch" not in POLL_C or "grant expired" not in POLL_C:
+    raise SystemExit(
+        "the two grant outcomes are no longer named in the log. A grab "
+        "served after its epoch ended and one refused for arriving late "
+        "are the only evidence this rule is working or not."
     )
 
 print("continuity selection gates ok")

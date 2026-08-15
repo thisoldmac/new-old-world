@@ -176,7 +176,7 @@ struct HostShown: Codable, Equatable, Sendable {
 
 enum ContinuityContract {
     static let version = Int(ContinuityStateDatagram.version)
-    static let residentTableVersion = 12
+    static let residentTableVersion = 13
     static let residentVersion = "1.3"
 }
 
@@ -246,6 +246,9 @@ struct ContinuityKey: Codable, Equatable, Sendable {
         case down
         case up
         case repeatKey = "repeat"
+        /// A bare modifier change — macOS `flagsChanged`. Not a key: `code`
+        /// and `character` are zero and the receiver posts no key event.
+        case modifiers
     }
 
     var version: Int
