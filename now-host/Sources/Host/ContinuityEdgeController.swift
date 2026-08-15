@@ -493,11 +493,24 @@ final class ContinuityEdgeController: ObservableObject {
             + "\(Int(ownership.guestPoint.x)),\(Int(ownership.guestPoint.y)), "
             + "suppressedWarps=\(suppressedCursorWarps), "
             + "buttonsDown=\(hostButtonsDown ? 1 : 0)")
-        driver?.pointerLeft()
         /* A held button is nobody's until the human lets go. `hostFileDrag`
            is excluded because there the held gesture is a foreign app's drag
            session which this app never captured and must not interrupt. */
         let held = hostButtonsDown && !hostFileDrag
+        if held, let origin = pressOrigin {
+            /* Metal, 2026-08-15: this was reached with NOTHING bound and so
+               did none of it, and the guest Finder put up "an item named
+               main.c already exists" — the release completed a real move to
+               wherever the pointer had wandered. Not moving somebody's files
+               is not a property of the file-transfer feature. */
+            audit(.warn, "held press released without a file handoff: "
+                + "returning the guest pointer to the press origin first so "
+                + "the Mac completes no Finder move — reason=\(reason), "
+                + "boundFile=\(guestFileCandidate == nil ? "none" : "held")")
+            releaseGuestPressAtOrigin(mirrorPoint(origin),
+                                      cross: ownership.guestPoint)
+        }
+        driver?.pointerLeft()
         if held { beginHeldCustody(reason: reason) }
         endOwnership(
             nextState: .ready,
@@ -621,25 +634,49 @@ final class ContinuityEdgeController: ObservableObject {
         self.keyboardMonitor = nil
     }
 
+    /// Settles the held guest pointer back onto the press origin and only
+    /// then releases the button. Two packets, in that order.
+    ///
+    /// **This is a file-system safety property, not a step of the file
+    /// handoff**, and it is one implementation because it was two: the
+    /// Finder completes a move to wherever the pointer is when the button
+    /// comes up, so releasing at the cross point drops the icon at the
+    /// screen edge — cosmetic from the desktop and a REAL relocation when
+    /// the drag began inside a Finder window (metal, 2026-08-14). Released
+    /// at the origin it completes a no-op move onto the spot the item
+    /// already occupies. Living only on the bound path, it was skipped on
+    /// 2026-08-15 for a press the Mac had published no selection for, and
+    /// the guest Finder offered to replace the file at the cross point.
+    ///
+    /// The release itself goes down the ordinary driver lane — the same one
+    /// a click sends — because there is no second way to end a press. v1
+    /// never sent it at all and the item stayed stuck to the Finder's
+    /// cursor on the other machine.
+    private func releaseGuestPressAtOrigin(_ origin: MirrorKit.Point,
+                                           cross: CGPoint) {
+        _ = driver?.settleHeldPosition(to: origin)
+        audit(.info, "guest pointer returned to the press origin before the "
+            + "release: origin=\(origin.x),\(origin.y), cross="
+            + "\(Int(cross.x)),\(Int(cross.y))"
+            + " — releasing at the cross point completes a Finder move to "
+            + "the screen edge")
+        _ = driver?.primaryUp(at: origin)
+        audit(.info, "guest press released before the cross: guest="
+            + "\(origin.x),\(origin.y) — the dragged icon must snap "
+            + "back on the Mac")
+    }
+
     /// Hands a held guest item to AppKit as the pointer crosses back.
     ///
     /// The order is the whole mechanism, so it is stated once here and
     /// pinned by a test:
     ///
-    /// 0. **Put the guest pointer back where the press began**, in a packet
-    ///    of its own, before anything else. The Finder completes a move to
-    ///    wherever the pointer is when the button comes up: releasing at the
-    ///    cross point drops the icon at the screen edge, which is cosmetic
-    ///    from the desktop and a REAL file relocation when the drag started
-    ///    inside a Finder window (metal, 2026-08-14). Released at the origin
-    ///    it completes a no-op move onto the spot the item already occupies.
-    /// 1. **Release the guest button.** v1 never did, and the item
-    ///    stayed stuck to the Finder's cursor on the other machine. It goes
-    ///    down the ordinary driver lane — the same release an ordinary
-    ///    click sends — because there is no second way to end a press.
-    /// 2. Tear the pass down exactly as an ordinary return does: pointer
+    /// 0. **Settle to the press origin and release**, before anything else,
+    ///    per `releaseGuestPressAtOrigin` — which every held handback does,
+    ///    file or no file.
+    /// 1. Tear the pass down exactly as an ordinary return does: pointer
     ///    left, cursor restored, tap stopped, ownership dropped.
-    /// 3. Only THEN start the native drag, and only from a real event. The
+    /// 2. Only THEN start the native drag, and only from a real event. The
     ///    crossing sample usually arrives through the consuming tap, which
     ///    has no NSEvent by construction; the physical button is still held,
     ///    so the first real `mouseDragged` after the tap dies is the gesture
@@ -654,17 +691,9 @@ final class ContinuityEdgeController: ObservableObject {
         let returnPoint = ContinuityDisplayGeometry.hostReturnPoint(
             for: ownership.guestPoint, edge: ownership.edge,
             guestFrame: layout.guestFrame, scale: layout.guestScale)
-        let origin = mirrorPoint(pressOrigin ?? ownership.guestPoint)
-        _ = driver?.settleHeldPosition(to: origin)
-        audit(.info, "guest pointer returned to the press origin before the "
-            + "release: origin=\(origin.x),\(origin.y), cross="
-            + "\(Int(ownership.guestPoint.x)),\(Int(ownership.guestPoint.y))"
-            + " — releasing at the cross point completes a Finder move to "
-            + "the screen edge")
-        _ = driver?.primaryUp(at: origin)
-        audit(.info, "guest press released before the cross: guest="
-            + "\(origin.x),\(origin.y) — the dragged icon must snap "
-            + "back on the Mac")
+        releaseGuestPressAtOrigin(
+            mirrorPoint(pressOrigin ?? ownership.guestPoint),
+            cross: ownership.guestPoint)
         driver?.pointerLeft()
         /* The catch surface is armed BEFORE the tap comes down, not after.
            Between those two instants the physical button is held and no

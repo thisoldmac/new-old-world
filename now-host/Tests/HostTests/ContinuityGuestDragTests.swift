@@ -147,6 +147,79 @@ final class ContinuityGuestDragTests: XCTestCase {
 
     // MARK: - The cross
 
+    /// **An UNBOUND held cross releases at the press origin too.**
+    ///
+    /// Metal, 2026-08-15 01:16: the Mac had published no selection for the
+    /// epoch, so nothing was bound, so the origin-return below was skipped —
+    /// the press crossed with the button still down, stayed down for six
+    /// seconds, and the guest Finder offered to replace `main.c` at wherever
+    /// the pointer ended up. Returning to the origin is about not moving the
+    /// person's files; it was never a detail of the file-transfer feature,
+    /// and gating it on a bound item made a missing selection into a
+    /// destructive one.
+    func testAnUnboundHeldCrossReleasesAtThePressOriginNotTheCrossPoint()
+        throws {
+        let rig = Rig()                     /* nothing published, nothing bound */
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+
+        let settle = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(
+                of: .guestReturnedToPressOrigin(Rig.pressOrigin)),
+            "the guest pointer was never returned to the press origin, so "
+                + "the Finder completes its move wherever the release lands")
+        let release = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .guestPrimaryUp(Rig.pressOrigin)),
+            "the held press was never released, or not at the origin")
+        let left = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .guestPointerLeft))
+        XCTAssertLessThan(settle, release,
+                          "the origin must be its own wire fact ahead of the "
+                            + "release, not ride the same packet")
+        XCTAssertLessThan(release, left,
+                          "the press must end before this app stops driving "
+                            + "the guest at all")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn
+                && $0.1.contains("held press released without a file handoff")
+                && $0.1.contains("boundFile=none")
+        }, "the degradation must be loud: an unbound cross carries no file, "
+            + "and an info line is how this shipped destructive")
+    }
+
+    /// The unbound path borrows the order and nothing else. Arming the catch
+    /// surface or starting an AppKit session for a press carrying no file
+    /// would be a drag of nothing over the host.
+    func testAnUnboundHeldCrossStartsNoHostDragAndArmsNoCatchSurface() {
+        let rig = Rig()
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.environment.fileDrags.isEmpty,
+                      "there is no file to hand to AppKit")
+        XCTAssertEqual(rig.environment.catchChanges, [],
+                       "the catch surface belongs to a file handoff")
+    }
+
+    /// A press the guest never took is not a press to release: sending an
+    /// unpaired button-up would be this app inventing a click on the Mac.
+    func testACrossWithNoGuestPressSendsNoRelease() {
+        let rig = Rig()
+        rig.enterGuest()
+        rig.driver.acceptPresses = false
+        rig.press()
+        rig.crossBackHolding()
+
+        XCTAssertFalse(rig.ledger.steps.contains {
+            if case .guestPrimaryUp = $0 { return true }
+            return false
+        }, "nothing was pressed on the Mac, so nothing may be released")
+    }
+
     /// **The release comes first.** v1 never released the guest button, so
     /// the dragged icon stayed stuck to the Finder's cursor on the other
     /// machine. Order is the whole mechanism, so the order is what is
@@ -809,6 +882,9 @@ private final class Rig {
     final class Driver: ContinuityEdgeDriving {
         var keyboardForwardingEnabled = true
         var escapeShortcut = ContinuityEscapeShortcut.controlOptionEscape
+        /// A guest that declines the press — the transport not being active
+        /// is the ordinary way. Nothing is held on the Mac afterwards.
+        var acceptPresses = true
         private let ledger: Ledger
 
         init(ledger: Ledger) { self.ledger = ledger }
@@ -818,6 +894,7 @@ private final class Rig {
         func primaryDown(at point: MirrorKit.Point, inMenuBar: Bool,
                          sourceUptime: TimeInterval?) -> Bool {
             _ = (point, inMenuBar, sourceUptime)
+            guard acceptPresses else { return false }
             ledger.steps.append(.guestPrimaryDown)
             return true
         }

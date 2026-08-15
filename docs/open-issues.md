@@ -166,6 +166,135 @@ remain UNMEASURED. The metal script is in the round's report; the line
 that would prove it is `grant held past epoch=N` BEFORE `grab granted`,
 where round 4 had them in the other order.
 
+## FIXED, UNVERIFIED ON METAL — the permission that made things worse: the event tap read a cursor warp as a button release (2026-08-15, `fix/continuity-unbound-cross-release`)
+
+Accessibility was granted on this Mac for the first time on 2026-08-15
+(`~/Library/Logs/now-logs/2026-08-15 012911.log` — zero `could not
+capture host input` lines). **Three guest→host file drags in a row then
+failed**, identically, and in a way no earlier round had produced: the
+bound path ran perfectly — press bound, origin settled, released before
+the cross — and then
+
+    guest file crossed with no host mouse event yet; waiting for the
+      first real one now the tap is down
+    ? the guest file drag was abandoned: the button was released before
+      this Mac saw a real mouse event to start the drag from
+
+in the same second, with no `host drag seed event` line at all, while
+Michelle was still holding the button. The round before it (01:04)
+completed a drop — **with Accessibility broken**, so no tap existed.
+
+**One `HostPointerSample`, two producers, and they disagreed about
+`buttonsDown`.** The CGEvent tap derived it from the event TYPE, so
+`.mouseMoved` meant button-up; the NSEvent adapter has always read
+`NSEvent.pressedMouseButtons`. A cursor warp synthesizes a `.mouseMoved`
+whatever the button is doing, and a guest pass issues one warp per sample
+— `suppressedWarps` read 130, 151 and 222 in single crossings that night.
+So with the tap live, a held drag delivers a stream of samples claiming
+the human let go, and `resumeReturnDrag` believes the first one.
+
+The fix is in the adapter, not in the consumer: the type still wins where
+the type knows (a `leftMouseUp` is a release even if the session's button
+state has not caught up; a `leftMouseDragged` needs no second opinion),
+and only `.mouseMoved` and the secondary drags — the types that say
+nothing about the primary button — ask
+`CGEventSource.buttonState`.
+
+**The generalisable half, and it is the more useful one.** Two producers
+of one struct disagreed about its most load-bearing field, and the
+disagreement was undetectable because **only one of them had ever run** —
+the tap requires a permission this Mac had not granted. That is
+`two-halves-never-met-in-a-test` with a permission gate standing in for
+the wire. It also means the 01:04 success, and every guest→host drag
+result recorded before 2026-08-15, was measured on a code path that is
+not the one a permitted Mac uses. **Re-measure rather than compare.**
+
+The same bad field ended held-button custody on any warp echo, so
+`held-button custody ended: reason=the button was released` was
+untrustworthy on a capturing Mac.
+
+**What is proven.** Host suites green. Four mutations, each built and
+each run, watched failing against the guard that names it: `.mouseMoved`
+back to a hard false (reproduces the metal abandon), `leftMouseUp`
+honouring a stale held read, a secondary drag hiding a held primary, and
+`leftMouseDragged` asking instead of knowing. **Metal-verified: no**, and
+this one can only be verified on a Mac with Accessibility granted — which
+is now this one.
+
+## FIXED, UNVERIFIED ON METAL — NOW MOVED A PERSON'S FILE: an unbound cross-edge press released wherever the pointer ended (2026-08-15, `fix/continuity-unbound-cross-release`)
+
+**This one is a safety defect, not a fidelity one.** On metal at
+2026-08-15 01:16 (`~/Library/Logs/now-logs/2026-08-15 011445.log`)
+Michelle dragged `main.c` across the shared edge and the guest Finder put
+up *"An item named 'main.c' already exists in this location. Do you want
+to replace it with the one you're moving?"* — an unrequested, potentially
+destructive file operation on her own machine, offered by NOW.
+
+The sequence, and it is all in one log: `no guest file is bound to this
+press: the Mac has published no Finder selection for this epoch`, then
+`primary down sent`, then `shared edge crossing`, then `returning pointer
+to host: … buttonsDown=1`, then six seconds of `held-button custody`
+before the release landed.
+
+**The protection already existed, was correct, and did not run.**
+`returnGuestFileToHost` settles the guest pointer back onto the press
+origin and releases it there before anything else, because the Finder
+completes a move to wherever the pointer is when the button comes up. Its
+own doc comment says the consequence in as many words — cosmetic from the
+desktop, a real relocation from inside a Finder window (metal,
+2026-08-14). It took a **bound** `HostFileDragItem`, so the ordinary
+held handback in `returnToHost` — the unbound path — did none of it.
+
+Not moving somebody's files is not a property of the file-transfer
+feature. `releaseGuestPressAtOrigin` is now the one implementation of
+"settle to origin, then release", called by both. Only those two packets
+are shared: the catch surface, the pending return drag and the AppKit
+session stay on the bound path, because there is no file to hand over on
+the other one. The unbound cross also **warns** now, naming the reason
+and whether anything was bound; it reached metal with a single info line.
+
+**Why nothing was bound, and it is not the timing race it looks like.**
+The epoch armed at 01:16:02 and the press landed at 01:16:04 with no
+`selection cached` in between — but no poll cadence would have helped.
+`now_continuity_selection_poll` publishes only on a CHANGE
+(`now_continuity_stub_observe`), an epoch's reset table starts empty, and
+an empty Finder selection at arm therefore publishes **nothing at all**;
+the poll is then gated off entirely for the length of the gesture
+(`now_continuity_button_is_down`). So a press that both SELECTS an icon
+and drags it — click on the icon, drag straight out — can never be bound
+on its first pass, because the click that creates the selection is the
+same button-down that suppresses the poll. The working run six minutes
+earlier (`2026-08-15 010146.log`) had `selection cached` before its press
+only because a previous epoch's click had already selected `main.c`.
+
+**That half is NOT fixed here.** Closing it needs a guest change — a
+selection poll at the down edge before the Finder enters its drag loop,
+or a grab resolved by point rather than by published stub — and
+`now-guest-ppc/src/core/wire.c` is another lane's file this week. What
+this change buys is that the degradation is now safe and loud instead of
+silent and destructive: the drag is refused, the press is released where
+it started, and the log says so at warn.
+
+A second, smaller thing this leaves open: with the stub lane configured
+it wins outright and there is no fallback to the scene hit test
+(`ContinuityEdgeController.driveGuest`), which is deliberate and
+documented — but it means an unpublished selection refuses the drag even
+when the Mirror could have resolved the item under the pointer.
+
+**What is proven.** Host suites green. The key guard —
+`testAnUnboundHeldCrossReleasesAtThePressOriginNotTheCrossPoint` — was
+written first and **watched failing against today's code** with the
+message it names. Seven mutations, each built and each run: skipping the
+release, releasing at the cross point instead of the origin, releasing
+before the settle, dropping the warn to info, inventing a release for a
+press the guest never took, arming the catch surface on the unbound path,
+and the bound path releasing at the cross point. **Metal-verified: no.**
+The metal script is a drag across the edge with no selection published —
+press immediately after arming — confirming the icon snaps back rather
+than relocating, and that the log carries `held press released without a
+file handoff … boundFile=none` and `guest press released before the
+cross`.
+
 ## TWO METAL CAUSES FIXED, NEITHER RE-MEASURED ON METAL: the guest→host drag's anchor window and its consent lifetime (2026-08-14, `fix/continuity-drag-round3`)
 
 Round 2 of the guest→host cross-edge drag was attended and produced three
