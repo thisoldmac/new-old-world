@@ -298,9 +298,17 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
 
     func springLoadingEntered(_ draggingInfo: any NSDraggingInfo)
         -> NSSpringLoadingOptions {
-        guard let target = springLoadingTarget(draggingInfo) else { return [] }
+        guard let target = springLoadingTarget(draggingInfo) else {
+            clearSpringLoadArming()
+            return []
+        }
         if springFeedback.target != target { springFeedback.enter(target) }
-        return .enabled
+        // Continuous activation because arming and activation now answer to
+        // different questions: the row stays armed wherever the pointer is,
+        // while activation waits for it to be over the row's own band. A
+        // single activation spent while the person was aiming at the gap
+        // above the row would otherwise be the only one this entry ever got.
+        return [.enabled, .continuousActivation]
     }
 
     func springLoadingUpdated(_ draggingInfo: any NSDraggingInfo)
@@ -310,12 +318,32 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
 
     func springLoadingActivated(_ activated: Bool,
                                 draggingInfo: any NSDraggingInfo) {
-        let target = springLoadingTarget(draggingInfo)
+        guard let target = springLoadingTarget(draggingInfo),
+              pointerIsOverRowsOwnTarget(draggingInfo, target: target) else {
+            return
+        }
         guard NavigationSpringLoadActivation.shouldActivate(
             activated: activated, acceptedTarget: target,
             feedback: &springFeedback) else { return }
         flashTwice()
         configuration?.springLoad?()
+    }
+
+    /// Whether the pointer is resting on the row itself rather than on the
+    /// gap either side of it.
+    ///
+    /// Arming deliberately ignores the bands — that is what keeps AppKit's
+    /// dwell running across a boundary crossing — but *opening* the row on a
+    /// dwell spent aiming at an insertion would be the H7 defect wearing a
+    /// different hat: the shelf springs open, the sidebar relayouts, and the
+    /// stack moves out from under a pointer that was aiming between two rows.
+    /// Finder shows the same restraint; an insertion line does not open
+    /// anything.
+    private func pointerIsOverRowsOwnTarget(
+        _ sender: any NSDraggingInfo, target: NavigationDropTarget
+    ) -> Bool {
+        guard configuration?.rowDropTargets != nil else { return true }
+        return accepted(sender)?.1 == target
     }
 
     /// What this row would spring-load into, independent of which insertion
