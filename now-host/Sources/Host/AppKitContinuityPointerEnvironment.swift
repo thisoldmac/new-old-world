@@ -61,6 +61,26 @@ final class AppKitContinuityPointerEnvironment:
         monitors.global = nil
     }
 
+    func postSyntheticPrimaryButton(down: Bool,
+                                    at screenPoint: CGPoint) -> Bool {
+        /* AppKit global (bottom-left origin) to CG global (top-left of the
+           primary display) — the same flip the tap's samples undo. */
+        let flipHeight = NSScreen.screens.first?.frame.maxY ?? 0
+        let point = CGPoint(x: screenPoint.x,
+                            y: flipHeight - screenPoint.y)
+        guard let event = CGEvent(
+            mouseEventSource: nil,
+            mouseType: down ? .leftMouseDown : .leftMouseUp,
+            mouseCursorPosition: point, mouseButton: .left) else {
+            return false
+        }
+        /* The session tap, not the HID one: the point is to correct the
+           SESSION's belief about the button, which this app's own consuming
+           tap starved. The HID level already carries the truth. */
+        event.post(tap: .cgSessionEventTap)
+        return true
+    }
+
     func hideCursor(on displayID: UInt32) {
         CGDisplayHideCursor(CGDirectDisplayID(displayID))
     }
