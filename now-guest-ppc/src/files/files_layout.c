@@ -74,12 +74,14 @@ void files_layout_compute(const Rect *body, FilesLayoutRects *out)
     set_rect(&out->change_btn,
              (short)(out->open_btn.left - kFilesRowGap - kFilesChangeWidth),
              row, (short)(out->open_btn.left - kFilesRowGap), bottom);
+    /* Full row height, not a 14-tall text box at the top of it: the
+       baseline is then centred the way a push button centres its own
+       title, and the label reads as being ON the row with the two
+       buttons rather than floating above them. */
     set_rect(&out->into_label, left, row,
-             (short)(left + kFilesIntoLabelWidth),
-             (short)(row + kFilesTextHeight));
+             (short)(left + kFilesIntoLabelWidth), bottom);
     set_rect(&out->into_value, (short)(out->into_label.right + 4), row,
-             (short)(out->change_btn.left - kFilesGap),
-             (short)(row + kFilesTextHeight));
+             (short)(out->change_btn.left - kFilesGap), bottom);
 
     /* Sending, with its own bar beside it. The bar used to float above
        the buttons saying nothing about which direction it measured; here
@@ -124,8 +126,11 @@ void files_layout_compute(const Rect *body, FilesLayoutRects *out)
     set_rect(&out->mine_caption, (short)(out->mine_heading.right + kFilesGap),
              row, right, (short)(row + kFilesHeadingHeight));
 
+    /* Two pixels tall, not one: the Appearance separator is a dark line
+       over a light one, and a one-pixel rect gives it nowhere to draw
+       the second. */
     set_rect(&out->divider, left, (short)(row - kFilesSectionGap), right,
-             (short)(row - kFilesSectionGap + 1));
+             (short)(row - kFilesSectionGap + 2));
 
     /* --- and the listing takes everything between them ------------------ */
 
