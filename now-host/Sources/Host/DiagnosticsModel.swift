@@ -156,19 +156,21 @@ enum GuestDiagnostics {
                 + "medians — a cooperatively scheduled Mac has a tail that "
                 + "one number hides, and the tail is what a person feels."
             },
+            /* The read-only sentence rides on the cost line rather than
+               becoming a second caveat: exactly one diagnostic here carries
+               one, because a caveat on every card is a caveat nobody reads
+               (`testTheFramebufferCardWarnsAgainstReadingItAsACaptureFailure`).
+               It is said at all because a person who knows the verb will
+               look for the two knobs and deserves to be told where they
+               went, rather than finding an absence (034, G-1). */
             cost: "Free — the loop keeps these counters as it runs, so "
-                + "reading them costs a round trip and nothing else.",
-            /* Read-only here on purpose (034, G-1). The verb also SETS the
-               two things it measures, and both knobs change how that Mac
-               schedules every application on it — a setting that belongs
-               where somebody is sitting at the machine, not behind a button
-               on this one. Said here rather than left as an absence,
-               because a person who knows the verb will look for them. */
-            caveat: "This page only reads. The same verb can also change "
-                + "that Mac's idle sleep and turn its wake notifier off, "
-                + "and those stay on its own console: they alter how it "
+                + "reading them costs a round trip and nothing else. This "
+                + "page only reads: the same verb can also change that "
+                + "Mac's idle sleep and turn its wake notifier off, and "
+                + "those knobs stay on its own console — they alter how it "
                 + "schedules every application it is running, including "
-                + "the one answering you."),
+                + "the one answering you.",
+            caveat: nil),
     ]
 }
 
@@ -244,8 +246,14 @@ struct WirestatReading: Equatable {
            row has proved that `pass` is a distribution. Deciding on the
            first pass would file "Sleep now" and "pass mean" the same way. */
         for row in rows {
+            /* A key earns the name "distribution" only from a row that is a
+               COUNT in a labelled range. A bucket-shaped label whose value
+               is not a number proves nothing — and registering the key on it
+               would open an empty histogram and quietly file that key's
+               other rows under it. */
             guard let (key, rest) = Self.split(row.label),
-                  Self.bucketRange(rest) != nil else { continue }
+                  Self.bucketRange(rest) != nil, Int(row.value) != nil
+            else { continue }
             if found[key] == nil {
                 found[key] = Histogram(id: key)
                 order.append(key)
