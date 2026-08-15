@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Hardware dossier: the guest's census, run and read from this Mac. A
 /// probe list on the left, the selected probe's rows on the right. It mirrors
@@ -45,7 +46,7 @@ struct CensusModuleView: View {
                         .padding(.trailing, 4)
                 }
                 Button {
-                    model.dumpROM()
+                    dumpROM()
                 } label: {
                     Label("Dump ROM", systemImage: "memorychip")
                 }
@@ -68,16 +69,29 @@ struct CensusModuleView: View {
         case .idle:
             EmptyView()
         case .writing:
-            Label("Reading the ROM into the guest Files share…",
-                  systemImage: "internaldrive")
-                .font(.caption).foregroundStyle(.secondary)
+            // No wire signal exists for this phase (a synchronous guest-side
+            // File Manager read) — indeterminate is the honest picture.
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Reading the ROM into the guest Files share…")
+            }
+            .font(.caption).foregroundStyle(.secondary)
         case .transferring:
-            Label("Transferring the ROM to this Mac…",
-                  systemImage: "arrow.down.circle")
-                .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                if let progress = model.romDumpProgress, progress.expected > 0 {
+                    ProgressView(value: progress.fraction)
+                        .frame(maxWidth: 260)
+                    Text("Transferring the ROM to this Mac… "
+                         + byteCaption(progress))
+                } else {
+                    ProgressView().frame(maxWidth: 260)
+                    Text("Transferring the ROM to this Mac…")
+                }
+            }
+            .font(.caption).foregroundStyle(.secondary)
         case .saved(let url):
             HStack(spacing: 6) {
-                Label("Saved \(url.lastPathComponent) in Downloads",
+                Label("Saved \(url.lastPathComponent)",
                       systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.secondary)
                 Button("Show in Finder") {
@@ -89,6 +103,25 @@ struct CensusModuleView: View {
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption).foregroundStyle(.red)
+        }
+    }
+
+    /// "1.2/4.0 MB" — `received`/`expected` are already bytes.
+    private func byteCaption(_ progress: GuestListener.CaptureProgress) -> String {
+        let mb = 1_048_576.0
+        return String(format: "%.1f/%.1f MB",
+                      Double(progress.received) / mb, Double(progress.expected) / mb)
+    }
+
+    /// `NSSavePanel` for destination + filename, then hands off to
+    /// `dumpROM(to:)`. One artifact shape (raw `.bin`) — no format picker.
+    private func dumpROM() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.data]
+        panel.directoryURL = model.romDumpDirectory
+        panel.nameFieldStringValue = model.suggestedROMDumpURL.lastPathComponent
+        if panel.runModal() == .OK, let url = panel.url {
+            model.dumpROM(to: url)
         }
     }
 
