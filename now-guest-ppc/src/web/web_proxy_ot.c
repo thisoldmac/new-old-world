@@ -8,6 +8,7 @@
 #include "nowlog.h"
 #include "ot_carbon.h"
 #include "wire.h"
+#include "web_accept.h"
 #include "web_proxy_request.h"
 
 enum {
@@ -43,7 +44,26 @@ typedef struct {
     char header[kHeaderCap];
     long header_bytes;
     long header_sent;
-    char status[128];
+    char stage[128];
+    /* What Open Transport GRANTED, not what was asked for. The shipped
+       code asked for 127.0.0.1 and told the page it had got it; nothing
+       ever looked. */
+    unsigned long bound_host;
+    unsigned short bound_port;
+    Boolean bound_known;
+    /* The last refused call, recorded raw. Formatting happens in
+       now_web_proxy_status at task time - the notifier can run at
+       deferred-task time and does no more work than it must. */
+    Boolean refusal_seen;
+    unsigned long refusal_host;
+    NowWebAcceptDecision refusal_code;
+    long refused_count;
+    long served_count;
+    /* The last thing the modern Mac said about a page. This is all the
+       guest can honestly know about the host's Web service today: there
+       is no host->guest status message, so a round trip is the evidence.
+       See the ledger's web.status proposal. */
+    char host_note[112];
 } WebProxyState;
 
 static WebProxyState g_web;
@@ -110,10 +130,21 @@ static void finish_client(void)
     g_web.peer_closed = false;
     clear_exchange();
     if (g_web.running && open_worker() != noErr) {
-        snprintf(g_web.status, sizeof g_web.status,
+        snprintf(g_web.stage, sizeof g_web.stage,
                  "The loopback listener could not re-arm.");
         now_web_proxy_stop();
     }
+}
+
+/* Called from the notifier: record only, format later. A refusal that
+   says nothing is indistinguishable from "no browser has tried yet",
+   which is exactly how this module's whole failure hid. */
+static void note_refusal(unsigned long peer, NowWebAcceptDecision why)
+{
+    g_web.refusal_seen = true;
+    g_web.refusal_host = peer;
+    g_web.refusal_code = why;
+    ++g_web.refused_count;
 }
 
 static void refuse_call(void)
@@ -135,16 +166,29 @@ static pascal void web_notifier(void *context, OTEventCode code,
             g_web.call.addr.buf = (UInt8 *)&g_web.peer;
             g_web.call.addr.maxlen = sizeof g_web.peer;
             if (gNowOT.listen(g_web.listener, &g_web.call) != noErr) return;
-            if (g_web.peer.fHost == (InetHost)kLoopbackHost
-                && !g_web.active && g_web.worker != kOTInvalidEndpointRef
-                && gNowOT.getEndpointState(g_web.worker) == T_IDLE
-                && gNowOT.accept(g_web.listener, g_web.worker,
-                                  &g_web.call) == noErr) {
-                g_web.accepted = true;
-            } else {
-                refuse_call();
+            {
+                Boolean worker_open =
+                    (Boolean)(g_web.worker != kOTInvalidEndpointRef);
+                NowWebAcceptDecision decision = now_web_proxy_should_accept(
+                    (unsigned long)g_web.peer.fHost, g_web.active,
+                    worker_open,
+                    worker_open
+                        && gNowOT.getEndpointState(g_web.worker) == T_IDLE);
+                if (decision == kNowWebAcceptOk
+                    && gNowOT.accept(g_web.listener, g_web.worker,
+                                     &g_web.call) == noErr) {
+                    g_web.accepted = true;
+                } else {
+                    note_refusal((unsigned long)g_web.peer.fHost,
+                                 decision == kNowWebAcceptOk
+                                     ? kNowWebRefuseEndpointError
+                                     : decision);
+                    refuse_call();
+                }
             }
         } else if (code == T_ACCEPTCOMPLETE && result != noErr) {
+            note_refusal((unsigned long)g_web.peer.fHost,
+                         kNowWebRefuseEndpointError);
             refuse_call();
         }
         return;
@@ -169,7 +213,10 @@ int now_web_proxy_start(unsigned short port, char *reason, long cap)
 {
     OSStatus err = -1;
     InetAddress address;
+    InetAddress granted;
     TBind bind;
+    TBind bound;
+    char host_text[24];
 
     if (g_web.running && g_web.port == port) return 0;
     now_web_proxy_stop();
@@ -196,13 +243,37 @@ int now_web_proxy_start(unsigned short port, char *reason, long cap)
     bind.addr.buf = (UInt8 *)&address;
     bind.addr.len = sizeof address;
     bind.qlen = 1;
-    if ((err = gNowOT.bind(g_web.listener, &bind, NULL)) != noErr
+    /* Ask what Open Transport actually GAVE us. The shipped code passed
+       NULL here and then told the page it was listening on 127.0.0.1
+       because that is what it had asked for - so no boot could ever
+       disagree with the request. Three lines, one boot, one bug. */
+    OTMemzero(&granted, sizeof granted);
+    OTMemzero(&bound, sizeof bound);
+    bound.addr.buf = (UInt8 *)&granted;
+    bound.addr.maxlen = sizeof granted;
+    if ((err = gNowOT.bind(g_web.listener, &bind, &bound)) != noErr
         || (err = gNowOT.setAsynchronous(g_web.listener)) != noErr
         || (err = gNowOT.setNonBlocking(g_web.listener)) != noErr
         || (err = open_worker()) != noErr) goto fail;
+    if (bound.addr.len >= (UInt32)sizeof granted) {
+        g_web.bound_host = (unsigned long)granted.fHost;
+        g_web.bound_port = granted.fPort;
+        g_web.bound_known = true;
+    } else {
+        /* OT answered without an address. Say what was asked for, and do
+           not pretend it was confirmed. */
+        g_web.bound_host = (unsigned long)kLoopbackHost;
+        g_web.bound_port = port;
+        g_web.bound_known = false;
+    }
     g_web.running = true;
-    snprintf(g_web.status, sizeof g_web.status,
-             "Listening on 127.0.0.1:%u", port);
+    now_web_format_host(g_web.bound_host, host_text, sizeof host_text);
+    now_log(kLogInfo, "web", "bind asked %u got host %s port %u%s",
+            (unsigned)port, host_text, (unsigned)g_web.bound_port,
+            g_web.bound_known ? "" : " (not reported)");
+    snprintf(g_web.stage, sizeof g_web.stage, "Listening on %s:%u%s",
+             host_text, (unsigned)g_web.bound_port,
+             g_web.bound_known ? "" : " (address not confirmed)");
     return 0;
 fail:
     snprintf(reason, (size_t)cap, "Could not open loopback proxy (OT %ld)",
@@ -266,7 +337,7 @@ static void read_request(void)
             return;
         }
         g_web.deadline = TickCount() + kResponseTimeoutTicks;
-        strcpy(g_web.status, "Loading through this Mac...");
+        strcpy(g_web.stage, "Loading through this Mac...");
     }
 }
 
@@ -318,7 +389,8 @@ static void send_response(void)
     }
     if (g_web.header_bytes > 0
         && g_web.response_sent == g_web.response_expected) {
-        strcpy(g_web.status, "Ready for the next browser request");
+        ++g_web.served_count;
+        strcpy(g_web.stage, "Ready for the next browser request");
         finish_client();
     }
 }
@@ -333,6 +405,9 @@ void now_web_proxy_service(void)
     if (g_web.active && g_web.deadline != 0
         && TickCount() > g_web.deadline) {
         now_wire_web_cancel(g_web.request_id);
+        /* A silence is a host observation too, and it is the guest's own,
+           not a wire code. */
+        strcpy(g_web.host_note, "did not answer the last page");
         now_web_proxy_response_end(g_web.request_id, false,
                                    "The host renderer did not answer");
     }
@@ -342,12 +417,64 @@ void now_web_proxy_service(void)
 Boolean now_web_proxy_is_running(void) { return g_web.running; }
 Boolean now_web_proxy_is_busy(void) { return g_web.active; }
 
+void now_web_proxy_endpoint(char *out, long cap)
+{
+    char host[24];
+    if (out == NULL || cap <= 0) return;
+    if (!g_web.running) { out[0] = '\0'; return; }
+    now_web_format_host(g_web.bound_host, host, sizeof host);
+    snprintf(out, (size_t)cap, "%s:%u", host, (unsigned)g_web.bound_port);
+}
+
 void now_web_proxy_status(char *out, long cap)
 {
-    const char *status = g_web.status[0] != '\0' ? g_web.status
-        : "The loopback proxy is stopped";
-    if (cap <= 0) return;
-    strncpy(out, status, (size_t)cap - 1); out[cap - 1] = '\0';
+    char text[320];
+    long used;
+
+    if (out == NULL || cap <= 0) return;
+    used = (long)snprintf(text, sizeof text, "%s",
+                          g_web.stage[0] != '\0'
+                              ? g_web.stage : "The loopback proxy is stopped");
+    if (g_web.refusal_seen) {
+        char host[24];
+        now_web_format_host(g_web.refusal_host, host, sizeof host);
+        used += (long)snprintf(text + used, sizeof text - (size_t)used,
+                               " - refused a browser request from %s (%s)",
+                               host,
+                               now_web_proxy_refusal_reason(g_web.refusal_code));
+    } else if (g_web.running && g_web.served_count == 0 && !g_web.active) {
+        /* Not decoration: silence here used to mean either "nobody has
+           tried" or "every request was refused", and a browser cannot
+           tell those apart either. */
+        used += (long)snprintf(text + used, sizeof text - (size_t)used,
+                               " - no browser has connected yet");
+    }
+    if (g_web.host_note[0] != '\0') {
+        (void)snprintf(text + used, sizeof text - (size_t)used,
+                       " - Modern Mac: %s", g_web.host_note);
+    }
+    strncpy(out, text, (size_t)cap - 1); out[cap - 1] = '\0';
+}
+
+void now_web_proxy_note_host(Boolean ok, const char *code, const char *reason)
+{
+    /* The only honest host-side status the guest has today. There is no
+       host->guest Web status message in the contract, so what the modern
+       Mac last SAID about a page is the evidence - and `code` was already
+       declared on web.response.end and simply never read here. Absent
+       means unknown, and unknown renders as nothing. */
+    if (ok) {
+        strcpy(g_web.host_note, "answered the last page");
+        return;
+    }
+    if (reason != NULL && reason[0] != '\0') {
+        snprintf(g_web.host_note, sizeof g_web.host_note, "%s", reason);
+    } else if (code != NULL && code[0] != '\0') {
+        snprintf(g_web.host_note, sizeof g_web.host_note,
+                 "refused the last page (%s)", code);
+    } else {
+        strcpy(g_web.host_note, "refused the last page");
+    }
 }
 
 void now_web_proxy_response_begin(long id, long status,
