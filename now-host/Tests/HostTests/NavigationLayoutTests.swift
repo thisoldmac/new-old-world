@@ -121,7 +121,16 @@ final class NavigationLayoutTests: XCTestCase {
         assertTotalPartition(repaired, registry: .standard)
     }
 
-    func testMovingNetworkHeroBackToNetworkCanDecomposeAUserShelf() {
+    /// Settings put on a shelf of one's own stays there.
+    ///
+    /// This asserted the reverse while Connections had a fixed hero:
+    /// `enforceSpecialHeroes` hunted Settings down wherever it was, dragged
+    /// it back to the front of Connections, and left the user shelf with one
+    /// member to be decomposed — an arrangement overwritten by a rule, on
+    /// every save. Heroes are now the first tab of whatever the person
+    /// arranged, so a shelf keeps what was put on it and Connections opens on
+    /// its own first tab.
+    func testAUserShelfKeepsSettingsRatherThanLosingItToConnections() {
         let userID = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
         let stored = NavigationLayout(
             upper: [.shelf(NavigationShelf(id: .user(userID), title: "Online",
@@ -131,9 +140,10 @@ final class NavigationLayoutTests: XCTestCase {
 
         let repaired = stored.sanitised(for: .standard)
 
-        XCTAssertEqual(repaired.shelf(id: .network)?.moduleIDs.first, "settings")
-        XCTAssertNil(repaired.shelf(id: .user(userID)))
-        XCTAssertTrue(repaired.upper.contains(.module("chat")))
+        XCTAssertEqual(repaired.shelf(id: .user(userID))?.moduleIDs,
+                       ["settings", "chat"])
+        XCTAssertEqual(repaired.shelf(id: .network)?.moduleIDs.first, "web")
+        XCTAssertEqual(repaired.shelf(id: .network)?.hero, .module("web"))
         assertTotalPartition(repaired, registry: .standard)
     }
 

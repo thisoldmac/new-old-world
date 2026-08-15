@@ -133,9 +133,6 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(extracted.shelf(id: .screen)?.moduleIDs,
                        ["screen", "continuity"])
 
-        // Not "before settings": that is the shelf's fixed hero, and the
-        // save path undoes it — see
-        // testDroppingBeforeAShelfHeroSurvivesTheSaveOrIsRefused.
         let reordered = try layout.applying(try XCTUnwrap(
             NavigationDragCoordinator.command(
                 for: .module("web"),
@@ -146,51 +143,104 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                        ["settings", "web", "mcp"])
     }
 
-    /// A drop the save path would undo must be refused, not swallowed.
+    /// A drop in front of a shelf's first tab is accepted AND survives saving.
     ///
-    /// `sanitised` runs `enforceSpecialHeroes`, which re-prepends each fixed
-    /// hero to its shelf, and `SidebarPreferences.replaceLayout` returns
-    /// early when the canonical result equals what was already stored. So a
-    /// drop in front of the Settings pill — the Connections shelf's hero,
-    /// its leftmost tab, and the natural aim point for "put it first" — was
-    /// accepted by `performDragOperation`, animated by AppKit, and then
-    /// reverted with no state change at all.
+    /// This asserted the opposite until heroes became movable: `sanitised`
+    /// ran `enforceSpecialHeroes`, which re-prepended each fixed hero, and
+    /// `SidebarPreferences.replaceLayout` returned early because the
+    /// canonical result equalled what was already stored — so a drop in
+    /// front of the Settings pill (the Connections shelf's leftmost tab, and
+    /// the natural aim point for "put it first") was accepted by
+    /// `performDragOperation`, animated by AppKit, and reverted with no state
+    /// change at all. The interim fix refused it up front; the decision was
+    /// to let the person decide tab order instead.
     ///
-    /// The suite could not see it: every existing case asserted
-    /// `applying(command)` and stopped there. This one goes through the save.
-    func testDroppingBeforeAShelfHeroSurvivesTheSaveOrIsRefused() throws {
+    /// The suite could not see any of this: every other case asserts
+    /// `applying(command)` and stops there. This one goes through the save,
+    /// which is the half where the reorder used to die.
+    func testDroppingBeforeAShelfHeroSurvivesTheSave() throws {
         let layout = NavigationLayout.standard(for: .standard)
 
-        XCTAssertNil(NavigationDragCoordinator.command(
+        let command = try XCTUnwrap(NavigationDragCoordinator.command(
             for: .module("mcp"),
             droppingOn: .shelf(.network, beforeModuleID: "settings"),
             in: layout,
             makeShelfID: { self.shelfUUID }),
-                     "a drop the save path would undo must not be accepted")
+                                    "displacing a shelf's first tab is a "
+                                      + "valid drop")
 
-        // Why it is refused rather than allowed: the save really does undo
-        // it. This is the assertion that proves the refusal above is about
-        // the hero rule and not about some other guard.
-        let wouldBeUndone = try layout.applying(
-            .insert(moduleID: "mcp", into: .network,
-                    beforeModuleID: "settings"))
-        XCTAssertEqual(wouldBeUndone.shelf(id: .network)?.moduleIDs,
+        let applied = try layout.applying(command)
+        XCTAssertEqual(applied.shelf(id: .network)?.moduleIDs,
                        ["mcp", "settings", "web"])
-        XCTAssertEqual(wouldBeUndone.sanitised(for: .standard)
+        XCTAssertEqual(applied.sanitised(for: .standard)
                         .shelf(id: .network)?.moduleIDs,
-                       ["settings", "mcp", "web"],
-                       "enforceSpecialHeroes re-prepends the hero on save")
+                       ["mcp", "settings", "web"],
+                       "the save must not re-prepend a hero over the order "
+                         + "the person arranged")
 
-        // And a drop that displaces nothing fixed is accepted AND survives.
-        let command = try XCTUnwrap(NavigationDragCoordinator.command(
+        // And the shelf now opens on the tab they put first.
+        XCTAssertEqual(applied.sanitised(for: .standard)
+                        .shelf(id: .network)?.hero,
+                       .module("mcp"))
+
+        // A drop that displaces nothing still survives, unchanged.
+        let later = try XCTUnwrap(NavigationDragCoordinator.command(
             for: .module("web"),
             droppingOn: .shelf(.network, beforeModuleID: "mcp"),
             in: layout,
             makeShelfID: { self.shelfUUID }))
-        let saved = try layout.applying(command).sanitised(for: .standard)
+        let saved = try layout.applying(later).sanitised(for: .standard)
         XCTAssertEqual(saved.shelf(id: .network)?.moduleIDs,
-                       ["settings", "web", "mcp"],
-                       "a drop that is accepted must survive the save")
+                       ["settings", "web", "mcp"])
+    }
+
+    /// The same round trip for the other two shelves that had a fixed hero,
+    /// because the rule they shared was per-shelf and deleting it must not
+    /// have been half-deleted.
+    func testScreenAndFilesHeroesAlsoSurviveBeingDisplaced() throws {
+        let layout = NavigationLayout.standard(for: .standard)
+
+        let screen = try layout.applying(try XCTUnwrap(
+            NavigationDragCoordinator.command(
+                for: .module("mirror"),
+                droppingOn: .shelf(.screen, beforeModuleID: "screen"),
+                in: layout,
+                makeShelfID: { self.shelfUUID }))).sanitised(for: .standard)
+        XCTAssertEqual(screen.shelf(id: .screen)?.moduleIDs,
+                       ["mirror", "screen", "continuity"])
+        XCTAssertEqual(screen.shelf(id: .screen)?.hero, .module("mirror"))
+
+        let files = try layout.applying(try XCTUnwrap(
+            NavigationDragCoordinator.command(
+                for: .module("icloud"),
+                droppingOn: .shelf(.files, beforeModuleID: "files"),
+                in: layout,
+                makeShelfID: { self.shelfUUID }))).sanitised(for: .standard)
+        XCTAssertEqual(files.shelf(id: .files)?.moduleIDs,
+                       ["icloud", "files"])
+        XCTAssertEqual(files.shelf(id: .files)?.hero, .module("icloud"))
+    }
+
+    /// The machine shelf's hero is not a module and does not move.
+    ///
+    /// It is different in KIND, not by policy: Overview is a page the shelf
+    /// owns, so there is no module for a person to put in front of it. The
+    /// fixed-hero rule that just went away never applied here, and a sweep
+    /// that deleted this distinction too would leak a pseudo module id into
+    /// selection.
+    func testTheMachineShelfHeroIsStillTheOverviewPage() throws {
+        let layout = NavigationLayout.standard(for: .standard)
+        XCTAssertEqual(layout.shelf(id: .machine)?.hero, .overview)
+
+        let reordered = try layout.applying(try XCTUnwrap(
+            NavigationDragCoordinator.command(
+                for: .module("software"),
+                droppingOn: .shelf(.machine, beforeModuleID: "census"),
+                in: layout,
+                makeShelfID: { self.shelfUUID }))).sanitised(for: .standard)
+        XCTAssertEqual(reordered.shelf(id: .machine)?.moduleIDs.first,
+                       "software")
+        XCTAssertEqual(reordered.shelf(id: .machine)?.hero, .overview)
     }
 
     func testTwoMemberUserShelfCanReorderWithoutDecomposing() throws {
@@ -256,12 +306,15 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(baseline.shelf(id: .network)?.moduleIDs,
                        ["settings", "mcp", "web"])
 
-        // The hero's own pill previews nothing, because its drop is refused.
-        XCTAssertNil(NavigationDragPreview(
+        // The first pill previews like any other. It used to preview nothing
+        // because a drop in front of a fixed hero was refused.
+        let beforeTheFirstTab = try XCTUnwrap(NavigationDragPreview(
             dragged: .module("web"),
             target: .shelf(.network, beforeModuleID: "settings"),
             baseline: baseline,
             makeShelfID: { self.shelfUUID }))
+        XCTAssertEqual(beforeTheFirstTab.layout.shelf(id: .network)?.moduleIDs,
+                       ["web", "settings", "mcp"])
     }
 
     /// Hovering a shelf must not lift the dragged row out of the stack.
@@ -359,15 +412,34 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(preview.target, .module("chat"))
     }
 
-    func testFixedModuleHeroesCannotProduceDragCommands() {
+    /// A former fixed hero drags like any other pill, out of its shelf and
+    /// across zones, and the shelf it left opens on whatever is now first.
+    ///
+    /// The inverse of this used to be the assertion — these three modules
+    /// could produce no drag command at all, which is what made Screen, Files
+    /// and Connections partly immovable rather than merely awkward.
+    func testAFormerFixedHeroDragsOutAndTheShelfPromotesTheNextTab() throws {
         let layout = NavigationLayout.standard(for: .standard)
+        let cases: [(module: String, shelf: NavigationShelfID, next: String)] = [
+            ("screen", .screen, "mirror"),
+            ("files", .files, "icloud"),
+            ("settings", .network, "mcp"),
+        ]
 
-        for moduleID in ["screen", "files", "settings"] {
-            XCTAssertNil(NavigationDragCoordinator.command(
+        for (moduleID, shelfID, next) in cases {
+            let command = try XCTUnwrap(NavigationDragCoordinator.command(
                 for: .module(moduleID),
                 droppingOn: .zone(.lower, index: 0),
                 in: layout,
-                makeShelfID: { shelfUUID }))
+                makeShelfID: { shelfUUID }),
+                                        "\(moduleID) must be draggable")
+            let saved = try layout.applying(command).sanitised(for: .standard)
+
+            XCTAssertEqual(saved.lower.first, .module(moduleID))
+            XCTAssertFalse(
+                saved.shelf(id: shelfID)?.moduleIDs.contains(moduleID) ?? true,
+                "\(moduleID) must not be pulled back onto \(shelfID.rawValue)")
+            XCTAssertEqual(saved.shelf(id: shelfID)?.hero, .module(next))
         }
     }
 
