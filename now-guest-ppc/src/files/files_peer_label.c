@@ -3,31 +3,18 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "peer_name.h"
+
 #if TARGET_API_MAC_CARBON
 #include "wire.h"
 #endif
 
-static const char k_unknown[] = "Other Mac";
-
 void now_files_peer_label(const char *reported, char *out, long cap)
 {
-    long i = 0;
-
-    if (out == NULL || cap <= 0) {
-        return;
-    }
-    if (reported != NULL) {
-        /* A name of nothing but spaces is not a name. Whatever a machine
-           sent, a heading has to read as one. */
-        while (reported[i] == ' ' || reported[i] == '\t') {
-            ++i;
-        }
-    }
-    if (reported == NULL || reported[i] == '\0') {
-        snprintf(out, (size_t)cap, "%s", k_unknown);
-        return;
-    }
-    snprintf(out, (size_t)cap, "%s", reported + i);
+    /* One converter for the whole app: core/peer_name.c owns the
+       trim-and-fallback rule ("Other Mac"). This wrapper survives only
+       as the module's local name for it. */
+    now_peer_name(reported, out, cap);
 }
 
 void now_files_their_heading(const char *peer, char *out, long cap)
@@ -60,9 +47,8 @@ void files_peer_label(char *out, long cap)
 {
     ConnSnapshot snap;
 
-    /* The snapshot's own peer_name, not conn_peer_label(): that one
-       degrades to the sentence fragment "the other Mac" for use mid
-       sentence, and a heading wants a name. One place converts. */
+    /* The snapshot's raw peer_name, converted through the one shared
+       rule in core/peer_name.c. */
     conn_snapshot(&snap);
     now_files_peer_label(snap.peer_name, out, cap);
 }
