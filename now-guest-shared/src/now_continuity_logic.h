@@ -28,6 +28,28 @@ NowPeekU32 now_continuity_release_due(NowPeekU32 applied_generation,
                                       NowPeekU32 previous_flags,
                                       NowPeekU32 current_generation,
                                       NowPeekU32 current_flags);
+/* A button edge may not be applied until the position it rides with has been
+   EXPOSED to what the guest's own drag loops sample, not merely applied to
+   the Cursor Device. See now_continuity_button_barrier. */
+enum {
+    kNowContinuityBarrierExposed = 0,
+    kNowContinuityBarrierWait = 1,
+    kNowContinuityBarrierExpired = 2
+};
+/* Four ticks. The Cursor Device record is upstream of the mouse global and
+   the propagation is VBL-paced, so a lag that is going to clear clears in
+   one or two; four leaves room for a loaded machine and is still short
+   enough that a delayed release is imperceptible. A release held longer
+   than this is a worse failure than a release at a stale point, so the
+   barrier expires rather than blocking. */
+enum { kNowContinuityExposureDeadlineTicks = 4 };
+
+int now_continuity_button_barrier(int have_request, int have_observed,
+                                  NowPeekI32 request_h, NowPeekI32 request_v,
+                                  NowPeekI32 observed_h, NowPeekI32 observed_v,
+                                  NowPeekU32 waited_ticks,
+                                  NowPeekU32 deadline_ticks);
+
 NowPeekU32 now_continuity_exit_due(
     NowPeekU32 ticks, NowPeekU32 last_arrival, NowPeekU32 lease,
     int have_physical, int expected_valid,

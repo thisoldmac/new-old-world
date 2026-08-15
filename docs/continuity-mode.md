@@ -42,6 +42,22 @@ rolling button-timing ring and front-process-at-down evidence remain bounded
 diagnostics. The noisy per-epoch Cursor Device interval table does not print on
 the ordinary path.
 
+**A button edge waits for its own position to be exposed**, and this is
+not one of the optional mechanisms — there is no opt-out and no
+per-machine flag. Applying a point is not exposing it: `now_cdm_move_to`
+returns when the Cursor Device record takes it, and the record then
+propagates to the mouse global that every guest tracking loop samples.
+Acting on an edge inside that window dispatches it against the point the
+guest still believes in, which on 2026-08-15 dropped a dragged file at
+the screen edge instead of the settled press origin. The barrier is
+`now_continuity_button_barrier` (the pure decision) and
+`now_continuity_cursor_await_exposure` (the bounded spin); it asks the
+record and the global, reports the further-back one, and expires at four
+ticks rather than holding an edge forever. Every edge writes one
+uploadable `button edge … applied=… exposed=… via=… waited=…` line, which
+is what a metal round reads. The full account is in
+[open-issues.md](open-issues.md).
+
 The following experimental mechanisms are retired from the implementation and
 wire surface; their contract slots remain reserved so an older field can never
 be reinterpreted: timer pinning of the held point, the `_GetMouse` answer path,

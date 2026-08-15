@@ -18,6 +18,7 @@
 
 #include "continuity_cdm_transition.h"
 #include "mirror_debug.h"
+#include "now_continuity_logic.h"
 #include "nowlog.h"
 
 enum {
@@ -230,6 +231,84 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
                        epoch, gMoveCount, sequence, after - before);
     }
     return (long)err;
+}
+
+/* THE BARRIER BETWEEN A POSITION AND THE EDGE THAT ACTS ON IT.
+ *
+ * `now_cdm_move_to` returning noErr says the manager took the point, not
+ * that anything else can see it: the device record is upstream of the mouse
+ * global, and the diagnostics above already count the window where the two
+ * disagree (after_lag_pending). Every guest tracking loop - the Finder's
+ * drag loop above all - samples the GLOBAL. So the question a button edge
+ * must ask is not "did my move succeed" but "has it been exposed".
+ *
+ * TWO STAGES, AND BOTH MUST HAVE IT. The manager takes the point into the
+ * device record and the record propagates to the global; the record is
+ * upstream, so it can be behind while the global is not yet even asked. A
+ * QEMU run on 2026-08-15 measured exactly that split - `CDM settle
+ * immediate-lag=5 caught-up=4` against `CDM exposure waits=0`, so the
+ * record lagged five times while the global was never behind at an edge.
+ * A barrier that asked only the global would have been silent through all
+ * five. The reported point is the FURTHER-BACK stage, because naming the
+ * nearer one hides the other.
+ *
+ * GetGlobalMouse and not LMGetMouseLocation, for the reason input_cmds.c
+ * states at `mouseloc`: this guest is Carbon and LowMem.h names this
+ * accessor as the Carbon usage. Same number; only one of them is promised
+ * to keep answering here.
+ *
+ * A spin, not a yield. The propagation is interrupt-paced and runs whether
+ * or not this application gives up its task time, while the caller that
+ * needs this barrier most is a release during a Finder drag loop - the
+ * exact case where further task time may not come back to us at all.
+ * Yielding here would trade a wrong drop point for a stuck drag. The spin
+ * is bounded by the barrier's own deadline and touches nothing reentrant. */
+int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out)
+{
+    NowContinuityCursorExposure state;
+    unsigned long start;
+    Point global;
+    Point record;
+    int verdict;
+
+    memset(&state, 0, sizeof state);
+    state.request_valid = gDiagnostics.requested_valid;
+    state.request_h = gDiagnostics.requested_h;
+    state.request_v = gDiagnostics.requested_v;
+    start = TickCount();
+    for (;;) {
+        GetGlobalMouse(&global);
+        state.observed_valid = 1;
+        state.observed_h = global.h;
+        state.observed_v = global.v;
+        state.observed_is_record = 0;
+        if (device_point(&record)
+                && (record.h != (short)state.request_h
+                    || record.v != (short)state.request_v)) {
+            state.observed_h = record.h;
+            state.observed_v = record.v;
+            state.observed_is_record = 1;
+        }
+        state.waited_ticks = (unsigned long)(TickCount() - start);
+        verdict = now_continuity_button_barrier(
+            state.request_valid, state.observed_valid,
+            (NowPeekI32)state.request_h, (NowPeekI32)state.request_v,
+            (NowPeekI32)state.observed_h, (NowPeekI32)state.observed_v,
+            (NowPeekU32)state.waited_ticks,
+            (NowPeekU32)kNowContinuityExposureDeadlineTicks);
+        if (verdict != kNowContinuityBarrierWait)
+            break;
+    }
+    state.verdict = verdict;
+    if (state.waited_ticks != 0) {
+        gDiagnostics.exposure_waits++;
+        gDiagnostics.exposure_wait_ticks += state.waited_ticks;
+    }
+    if (verdict == kNowContinuityBarrierExpired)
+        gDiagnostics.exposure_expired++;
+    if (out != NULL)
+        *out = state;
+    return verdict;
 }
 
 void now_continuity_cursor_diagnostics(NowContinuityCursorDiagnostics *out)
