@@ -354,6 +354,24 @@ final class ConnectionsModel: ObservableObject {
         let component: UpdateProvider.Component
     }
 
+    /// The build this Mac told the guest to install, kept per key from the
+    /// moment `installUpdate` sends the command until the guest's own
+    /// reconnect proves it is running it — or until the session that
+    /// installed it disconnects, at which point a fresh session's ordinary
+    /// `.current`/`.replacement` read is the honest answer.
+    ///
+    /// It exists because `update.result` carries `ok` and `action`
+    /// (`relaunch-required`/`restart-required`) but no build — the contract
+    /// is explicit that an application install "remains connected" running
+    /// the OLD code "until the person quits and relaunches it", so this
+    /// side cannot infer completion from the result alone. The only proof
+    /// this Mac gets is the SAME session later reporting the new build at a
+    /// fresh `hello`, which for an unrelaunched guest never arrives — a
+    /// one-shot "Installed." notice would then sit there being read as
+    /// current forever, which is exactly the silent-stale-build defect this
+    /// tracks against.
+    private var pendingRelaunches: [UpdateKey: String] = [:]
+
     private let listener: GuestListener
     private let resolve: (String) -> AgentIntegrationUnavailable?
     private let select: (GuestKey) -> Bool
@@ -418,6 +436,7 @@ final class ConnectionsModel: ObservableObject {
     /// Recomputes the page. Also the seam a test drives directly.
     func refresh() {
         noteDepartures(listener.guests)
+        resolvePendingRelaunches()
         snapshot = ConnectionsSnapshot.make(
             state: listener.state,
             guests: listener.guests,
@@ -529,6 +548,13 @@ final class ConnectionsModel: ObservableObject {
         let key = UpdateKey(guest: guest, component: component)
         pendingUpdates.insert(key)
         updateNotices[key] = "Downloading and installing…"
+        /* Recorded before the request leaves, from the offer this row is
+           actually showing — the only place the target build is known,
+           since `update.result` never carries one. */
+        if case .replacement(let offer) = updateAvailability(
+            for: row, component: component) {
+            pendingRelaunches[key] = offer.build
+        }
         let installed = component == .application
             ? (row.version, row.build)
             : (row.extensionVersion, row.extensionBuild)
@@ -537,6 +563,7 @@ final class ConnectionsModel: ObservableObject {
             installedBuild: installed.1) { [weak self] result in
                 guard let self, !result.ok else { return }
                 self.pendingUpdates.remove(key)
+                self.pendingRelaunches.removeValue(forKey: key)
                 self.updateNotices[key] = result.error?.message
                     ?? "The guest refused the update."
             }
@@ -555,24 +582,89 @@ final class ConnectionsModel: ObservableObject {
             UpdateKey(guest: guest, component: component))
     }
 
+    /// True while this row installed a component and this Mac has not yet
+    /// seen the reconnect proof that it is running it. Meant for a
+    /// lightweight badge that reads even when nobody has opened the update
+    /// section's own notice text.
+    func isAwaitingRelaunch(for row: ConnectionRow,
+                            component: UpdateProvider.Component) -> Bool {
+        guard let guest = row.key else { return false }
+        return pendingRelaunches[UpdateKey(guest: guest,
+                                           component: component)] != nil
+    }
+
     private func finishUpdate(key guest: GuestKey, result: UpdateResult) {
         guard let component = UpdateProvider.Component(
             rawValue: result.component) else { return }
         let key = UpdateKey(guest: guest, component: component)
         pendingUpdates.remove(key)
         if result.ok {
-            updateNotices[key] = component == .application
-                ? "Installed. Quit NOW on the guest, then launch it again."
-                : "Installed. Restart the guest Mac to activate it."
+            updateNotices[key] = relaunchNotice(for: key)
         } else {
+            pendingRelaunches.removeValue(forKey: key)
             updateNotices[key] = result.reason ?? result.code
                 ?? "The guest could not install the update."
+        }
+    }
+
+    /// Re-derives every outstanding relaunch notice against this Mac's
+    /// current view of the guest, on every refresh — never a value set once
+    /// and left to go stale while the guest sits unrelaunched underneath it.
+    private func resolvePendingRelaunches() {
+        guard !pendingRelaunches.isEmpty else { return }
+        for key in pendingRelaunches.keys {
+            updateNotices[key] = relaunchNotice(for: key)
+        }
+    }
+
+    /// The honest sentence for one pending install: confirmed by a matching
+    /// build on THIS session's latest report, or plainly not yet — never
+    /// silence, and never a claim this Mac cannot back with the guest's own
+    /// word. The contract is explicit that installing an application never
+    /// relaunches it and installing an extension never restarts the Mac
+    /// (`update.result.action` is `relaunch-required`/`restart-required`,
+    /// not `relaunch`/`restarted`), so "installed" and "running the new
+    /// build" are two different facts and this says which one is true.
+    private func relaunchNotice(for key: UpdateKey) -> String {
+        guard let targetBuild = pendingRelaunches[key] else {
+            return key.component == .application
+                ? "Installed. Quit NOW on the guest, then launch it again."
+                : "Installed. Restart the guest Mac to activate it."
+        }
+        if let guest = listener.guests.first(where: { $0.key == key.guest }) {
+            let reported = key.component == .application
+                ? guest.build : guest.extensionBuild
+            if let reported, reported == targetBuild {
+                pendingRelaunches.removeValue(forKey: key)
+                return key.component == .application
+                    ? "Relaunched — this session is now running the "
+                        + "installed build."
+                    : "Restarted — this Mac now reports the installed "
+                        + "NOW Extension."
+            }
+        }
+        switch key.component {
+        case .application:
+            return "Installed, but NOT relaunched: the guest app on the "
+                + "classic Mac is still running the OLD build. Quit it on "
+                + "the guest, then launch it again to pick up "
+                + "\(targetBuild.prefix(12))."
+        case .extensionComponent:
+            return "Installed, but NOT active: restart the guest Mac to "
+                + "load \(targetBuild.prefix(12)) — the running Extension "
+                + "is still the old one."
         }
     }
 
     private func abandonUpdates(for guest: GuestKey) {
         pendingUpdates = pendingUpdates.filter { $0.guest != guest }
         updateNotices = updateNotices.filter { $0.key.guest != guest }
+        /* The session that installed it is gone. A genuine relaunch opens a
+           NEW session, whose row reads `.current`/`.replacement` fresh from
+           its own reported build — there is nothing left for this key to
+           watch, and holding onto it would only let a stale warning outlive
+           the row it described. */
+        pendingRelaunches = pendingRelaunches.filter { $0.key.guest != guest }
     }
 
     /// The failure in the words of what to do about it. `taken` names the

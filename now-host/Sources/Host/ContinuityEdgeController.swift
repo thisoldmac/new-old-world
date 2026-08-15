@@ -1531,6 +1531,25 @@ final class ContinuityEdgeController: ObservableObject {
         return accepted
     }
 
+    /// The file-PROMISE lane's own outcome, once AppKit has handed a
+    /// promise off to whatever accepted the drag and this Mac's copy of the
+    /// guest file either arrives or is refused.
+    ///
+    /// It exists apart from `hostDragSessionEnded`'s status line because
+    /// the two answer different questions at different times, on different
+    /// queues. Session-end only knows whether something ACCEPTED the
+    /// promise, and settles the status back to ready right after — see the
+    /// comment there ("the promise lane owns the outcome from here"). What
+    /// happened to the BYTES is redeemed asynchronously by
+    /// `ContinuityGrabTransfer`, often well after the session line has
+    /// already been overwritten, and a grab refused by the guest
+    /// (`stale-selection`, `grant-expired`, …) used to end there: the drag
+    /// vanished with nothing on screen to say why. This is that sentence,
+    /// in the same register as every other status line here.
+    func reportFileGrabOutcome(_ message: String) {
+        status = message
+    }
+
     private func refreshReadyStatus() {
         guard state != .disabled else { return }
         if let edge = layout.sharedEdge {
