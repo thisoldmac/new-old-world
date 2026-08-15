@@ -213,7 +213,29 @@ final class CommandRegistryTests: XCTestCase {
     /// this list should normally be in, and the machinery is what makes the
     /// NEXT declared-ahead verb cost a reason rather than a silent
     /// subtraction.
-    private static let servedByNoGuestYet: [String: String] = [:]
+    ///
+    /// **Not empty again as of 2026-08-15**: `offer` is the console face of
+    /// the host→guest crossing, declared with the contract slice that
+    /// invents `continuity.offer` and before the guest slice that answers
+    /// it. The reason is the one this list is for — the contract goes first
+    /// — and the debt is real: until a guest serves it, a person typing
+    /// `offer` gets `unknown-command` from a verb the schema publishes.
+    private static let servedByNoGuestYet: [String: String] = [
+        "offer": """
+            The console face of the inverted crossing: report the file the \
+            host is holding out over the shared edge, or `--take` it. \
+            Declared 2026-08-15 with `continuity.offer`, the offer \
+            lifetime and `offer-expired`, because a behaviour change \
+            starts in the contract and the guest slice that answers it is \
+            the next one. It is a DEBT and not a division of labour — no \
+            guest answers it today, and the same slice that teaches the \
+            PowerPC guest to take an offer deletes this entry, adds the \
+            row to cmd_help.c, and puts the three halves back under \
+            comparison. If that slice is dropped, drop the declaration \
+            with it rather than leaving a verb the schema publishes and \
+            no machine has.
+            """,
+    ]
 
     func testTheThreeHalvesAgreeOnTheCommandSet() throws {
         let declared = try declared()
