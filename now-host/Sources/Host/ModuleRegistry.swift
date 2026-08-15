@@ -63,6 +63,7 @@ struct ModuleRegistry {
         "agent": "mcp",
         "screenshots": "screen",
         "connections": "settings",
+        "development": "projects",
     ]
 
     /// The module a saved selection means today, following one rename.

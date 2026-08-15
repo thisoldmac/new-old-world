@@ -315,7 +315,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
     func testDevelopmentDefinitionOwnsItsRuntimeAndMetadata() {
         let definition = DevelopmentHostModule.definition
 
-        XCTAssertEqual(definition.descriptor.id, "development")
+        XCTAssertEqual(definition.descriptor.id, "projects")
         XCTAssertEqual(definition.descriptor.tier, .experimental)
         XCTAssertNotNil(definition.makeRuntime)
         XCTAssertNotNil(definition.makeView)
@@ -336,7 +336,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(registry.contains("k_development_definition"))
         assertPPCRegistryComposes(
             "development_module_definition", in: registry)
-        XCTAssertTrue(definition.contains("\"development\""))
+        XCTAssertTrue(definition.contains("\"projects\""))
         XCTAssertTrue(definition.contains("development_module_ops"))
     }
 

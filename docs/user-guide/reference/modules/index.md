@@ -28,7 +28,7 @@ is:
 | Upper sidebar | Screen | Screen, Mirror |
 | Upper sidebar | Files | Files, iCloud |
 | Upper sidebar | Chat | Chat |
-| Upper sidebar | Development | Development |
+| Upper sidebar | Projects | Projects |
 | Lower pinned stack | Debug | Console, Logs |
 | Lower pinned stack | Connections | Connections, Networking, MCP, Web Proxy |
 
@@ -102,9 +102,11 @@ work; it does not mean NOW-68K ships in the alpha.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: f047e4cb8296d632467b8c6bce8b5317311f0c12
-sources-sha1: f047e4cb8296d632467b8c6bce8b5317311f0c12
-derive module-map sha256=3b57e881222000fab312e382a5aefc83bea65b0f54433d1133b145824fd27922 lines=17
+sources-sha1: fa2311665751bed7639f075f2baf21edb8675837
+sources-sha1: fa2311665751bed7639f075f2baf21edb8675837
+derive module-map sha256=03dd8a0eabf715800bf6f0c52d475342279647d27fef813faa4a4bb5f4b49062 lines=17
+sources-sha1: fa2311665751bed7639f075f2baf21edb8675837
+derive module-map sha256=03dd8a0eabf715800bf6f0c52d475342279647d27fef813faa4a4bb5f4b49062 lines=17
     scripts/docs-inventory
 rederived: pending
 rederived: 2026-08-09T16:10:26-0400 e74b3ab1 sources, module-map 14->14
@@ -249,4 +251,6 @@ rederived: 2026-08-14T22:19:02-0400 fe3d18a0 sources
 rederived: 2026-08-14T23:33:01-0400 09abc942 sources, sources
 rederived: 2026-08-14T22:27:26-0400 67772e4a unchanged
 rederived: 2026-08-14T23:33:52-0400 521b590f unchanged
+rederived: 2026-08-14T22:17:24-0400 4495cfb2 sources, module-map 17->17
+rederived: 2026-08-14T23:35:19-0400 61505862 sources, sources, module-map 17->17, sources, module-map 17->17
 -->

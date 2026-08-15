@@ -1,30 +1,30 @@
 ---
-page_id: development-module-reference
-title: Development module
+page_id: projects-module-reference
+title: Projects module
 description: Manage bounded projects, select a classic toolchain, and build or run software on the PowerPC Mac.
 doc_type: reference
 audience: operator
 lifecycle: experimental
 authority: [docs/development.md, contract/project/README.md]
-module_ids: [development]
+module_ids: [projects]
 source_dependencies: [docs/development.md, contract/project/README.md, now-host/Sources/Host/Projects, now-guest-ppc/src/development, now-host/Sources/NOWAgentIntegration/Projection/DevelopmentProjection.swift]
-media_ids: [development-host, development-ppc]
-last_verified: 2026-08-10
+media_ids: [projects-host, projects-ppc]
+last_verified: 2026-08-14
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
 
-# Development module
+# Projects module
 
 ## What it does
 
-Development keeps source and recoverable Git history in a NOW-owned directory
+Projects keeps source and recoverable Git history in a NOW-owned directory
 on the modern Mac while using a human-selected toolchain on the PowerPC Mac.
 It can stage an inactive candidate, build it through MPW ToolServer, verify the
 classic product's data fork, resource fork, type, creator, and digest, and then
 launch that exact product.
 
-![The macOS Development module showing project and build state](../../../assets/screenshots/modules/development/host.svg){ .now-placeholder }
+![The macOS Projects module showing project and build state](../../../assets/screenshots/modules/projects/host.svg){ .now-placeholder }
 
 ## Availability
 
@@ -46,7 +46,7 @@ ToolServer and the compiler before qualifying the toolchain. Projects pin that
 measured identity; neither a project nor an agent can register an arbitrary
 guest path.
 
-![The PowerPC Development page showing the selected projects folder and MPW toolchain](../../../assets/screenshots/modules/development/ppc.svg){ .now-placeholder }
+![The PowerPC Projects page showing the selected projects folder and MPW toolchain](../../../assets/screenshots/modules/projects/ppc.svg){ .now-placeholder }
 
 ## Common tasks
 

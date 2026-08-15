@@ -10,7 +10,7 @@ final class NavigationLayoutTests: XCTestCase {
             [NavigationShelfID.machine.rawValue,
              NavigationShelfID.screen.rawValue,
              NavigationShelfID.files.rawValue,
-             "module.chat", "module.development"])
+             "module.chat", "module.projects"])
         XCTAssertEqual(layout.lower.map(\.id),
             [NavigationShelfID.debug.rawValue,
              NavigationShelfID.network.rawValue])
@@ -363,15 +363,15 @@ final class NavigationLayoutStoreTests: XCTestCase {
         let id = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
         var layout = store.load()
         layout.upper.removeAll { $0 == .module("chat")
-            || $0 == .module("development") }
+            || $0 == .module("projects") }
         layout.upper.append(.shelf(NavigationShelf(id: .user(id), title: "Work",
-            moduleIDs: ["chat", "development"])))
+            moduleIDs: ["chat", "projects"])))
         store.save(layout)
 
         let reopened = NavigationLayoutStore(defaults: defaults,
             registry: .standard).load()
         XCTAssertEqual(reopened.shelf(id: .user(id))?.title, "Work")
         XCTAssertEqual(reopened.shelf(id: .user(id))?.moduleIDs,
-                       ["chat", "development"])
+                       ["chat", "projects"])
     }
 }

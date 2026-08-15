@@ -255,18 +255,18 @@ images:
     surface: PowerPC Chat page
     state: Streaming reply and cancel control
     machine: Mac OS 9
-  - id: development-host
-    path: assets/screenshots/modules/development/host.svg
+  - id: projects-host
+    path: assets/screenshots/modules/projects/host.svg
     width: 980
     height: 650
-    surface: macOS Development module
+    surface: macOS Projects module
     state: Project revision, qualified toolchain, candidate, and build receipt
     machine: modern macOS
-  - id: development-ppc
-    path: assets/screenshots/modules/development/ppc.svg
+  - id: projects-ppc
+    path: assets/screenshots/modules/projects/ppc.svg
     width: 744
     height: 478
-    surface: PowerPC Development page
+    surface: PowerPC Projects page
     state: Projects folder, qualified MPW toolchain, and active build job
     machine: Mac OS 9
   - id: hardware-host
