@@ -35,6 +35,13 @@ def invoke(repo: Path, channel: str = "development",
         "--lifecycle-define", "NOW_PRODUCT_LIFECYCLE",
         "--lifecycle-number-define", "NOW_PRODUCT_LIFECYCLE_NUMBER",
         "--identity-header", "identity.h", "--identity-define", "NOW_BUILD_ID",
+        "--continuity-header", "contract/continuity_udp.h",
+        "--continuity-version-define", "NOW_CONTINUITY_VERSION",
+        "--peek-header", "contract/peek_table.h",
+        "--continuity-format-define", "NOW_CONTINUITY_FORMAT_CURRENT",
+        "--resident-version-header", "contract/resident_version.h",
+        "--resident-version-major", "NOW_RESIDENT_VERSION_MAJOR",
+        "--resident-version-minor", "NOW_RESIDENT_VERSION_MINOR",
         "--channel", channel, "--repo-root", str(repo),
     ]
     if candidate_number is not None:
@@ -56,6 +63,13 @@ def main() -> int:
             "#define NOW_PRODUCT_VERSION_PATCH 3\n"
             '#define NOW_PRODUCT_LIFECYCLE "prealpha"\n'
             "#define NOW_PRODUCT_LIFECYCLE_NUMBER 4\n")
+        (repo / "contract/continuity_udp.h").write_text(
+            "#define NOW_CONTINUITY_VERSION 4u\n")
+        (repo / "contract/peek_table.h").write_text(
+            "#define NOW_CONTINUITY_FORMAT_CURRENT 9u\n")
+        (repo / "contract/resident_version.h").write_text(
+            "#define NOW_RESIDENT_VERSION_MAJOR 1\n"
+            "#define NOW_RESIDENT_VERSION_MINOR 3\n")
         (repo / "identity.h").write_text(f'#define NOW_BUILD_ID "{BUILD}"\n')
         artifact = repo / "New Old World.bin"
         artifact.write_bytes(b"release bytes")
@@ -74,12 +88,21 @@ def main() -> int:
             raise AssertionError(development.stdout + development.stderr)
         manifest = json.loads(
             (repo / "New Old World.bin.now-update.json").read_text())
-        if manifest["build"] != BUILD or manifest["sha256"] != digest:
+        if (manifest["build"] != BUILD or manifest["sha256"] != digest
+                or manifest["sourceRevision"]
+                != run("git", "rev-parse", "HEAD", cwd=repo,
+                       check=True).stdout.strip()):
             raise AssertionError("development sidecar lost exact identities")
         if (manifest["displayVersion"] != "1.2.3-prealpha.4"
                 or manifest["lifecycle"] != "prealpha"
                 or manifest["lifecycleNumber"] != 4):
             raise AssertionError("development sidecar lost product lifecycle")
+        if manifest["compatibility"] != {
+                "continuityWire": 4,
+                "continuityTable": 9,
+                "resident": "1.3",
+        }:
+            raise AssertionError("development sidecar lost stack compatibility")
 
         no_tag = invoke(repo, "release")
         if no_tag.returncode == 0 or "annotated tag" not in no_tag.stderr:

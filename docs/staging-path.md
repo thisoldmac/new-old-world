@@ -28,7 +28,7 @@ wrong trap ABI does not crash, it lies*, could not be run at all.
 
 | Piece | What it does |
 | --- | --- |
-| `tools/stage-ext.py` | Pushes `NowExt.bin` into `System Folder:Extensions` and the app beside it, through the lab's baked anchor worker. Verifies **by fork size and Finder type**, read back off the guest. |
+| `tools/stage-ext.py` | Pushes `NOW Extension.bin` into `System Folder:Extensions` and the app beside it, through the lab's baked anchor worker. Verifies **by fork size and Finder type**, read back off the guest. |
 | `scripts/spin-up-ppc` | Fresh session-private clone → stage → **guest-clean shutdown and relaunch** → re-verify → launch NOW → interrogate. |
 | `tools/guest-shutdown` | A 68K fallback applet that calls `ShutDwnPower()`. It can start shutdown before NOW's wire exists, but disk quiet on this route does not prove a clean HFS unmount. |
 | `tools/shutdown-guest.py` | Uses NOW's wire to drive Finder Special > Shut Down, the measured clean route; otherwise launches the fallback applet. It verifies the HFS unmounted bit before returning success. |

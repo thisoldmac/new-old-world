@@ -25,11 +25,11 @@
    plane's format word. Capabilities are bits, never inferred from
    versions - a plane can ship dark before it is metal-verified.
 
-   Write discipline: the extension's filter writes every field except
-   arm_request, which only the application writes. One writer per word,
-   both sides big-endian (same machine), no locks; stamp fields are the
-   ordering signal - a reader treats a slot as valid only when its
-   stamp is nonzero and fresh enough for the reader's purpose.
+   Write discipline: every cell names its writer; P9 is split explicitly
+   into an application-owned mailbox and a resident-owned status block.
+   One writer per word, both sides big-endian (same machine), no locks;
+   stamp fields are the ordering signal - a reader treats a slot as valid
+   only when its stamp is nonzero and fresh enough for the reader's purpose.
    Freshness is per-slot and honest: anchors are captured when a
    process pumps its event loop, so a faceless or wedged app has an
    absent or stale slot - distinct states, both rendered truthfully. */
@@ -175,7 +175,11 @@ enum {
        Without it every act and every drag behaves exactly as before,
        which is the resident-component charter's rule, and the picture is
        the only thing missing. */
-    kNowPeekTableCapCursor = 1u << 8
+    kNowPeekTableCapCursor = 1u << 8,
+    /* P9: Continuity's resident input vehicle. The PowerPC application
+       owns network intake; this bit says the resident can consume its
+       bounded latest-state cell while another application is tracking. */
+    kNowPeekTableCapContinuity = 1u << 9
 };
 
 /* P3 asked for 1u << 2 and for its field at the head of the appended
@@ -847,7 +851,12 @@ enum {
        never yield to another mover - mid-drag, the plane IS the mover. */
     kNowCursorPlaceOwned = 1u << 0,
     /* No Toolbox beyond low-memory accessors may be called. */
-    kNowCursorPlaceInterrupt = 1u << 1
+    kNowCursorPlaceInterrupt = 1u << 1,
+    /* The PowerPC NOW application, not the global jGNE filter, owns the
+       balanced task-time redraw for this placement. Continuity uses this
+       route so its resident never enters Cursor Device, QuickDraw, or Event
+       Manager code on behalf of an arbitrary foreground process. */
+    kNowCursorPlaceApplicationRedraw = 1u << 2
 };
 
 enum {
@@ -890,6 +899,591 @@ typedef struct {
        published FROM. */
     NowPeekU32 device_found;
 } NowPeekCursorCell;
+
+enum {
+    kNowPeekContinuityFormatV1 = 1,
+    /* V2 appends a resident 68K service entry. The PPC application invokes
+       it through Mixed Mode from its cooperative wire pump; V1 is the
+       metal-failed Time Manager route and must never be inferred as V2. */
+    kNowPeekContinuityFormatV2 = 2,
+    /* V3 moves Cursor Device ownership and placement into the PPC application.
+       Apple requires PowerPC callers to use CursorDevicesGlue because the
+       original ROM Mixed Mode transition for this manager is wrong. The
+       resident now publishes a requested point, the app calls the official
+       glue from cooperative task time, and the resident commits the result. */
+    kNowPeekContinuityFormatV3 = 3,
+    /* V4 activates the primary-button generation already carried by the UDP
+       wire. Cursor Device Manager calls remain in the cooperative PPC
+       application; the resident owns only tracking-loop MouseLocation and an
+       unconditional MBState-up escape. */
+    kNowPeekContinuityFormatV4 = 4,
+    /* V5 appends host-selected tracking experiments and their counters. The
+       experiments are inactive by default and never mutate a physical Cursor
+       Device or ADB-owned global. */
+    kNowPeekContinuityFormatV5 = 5,
+    /* V6 appends a passive ADB service-routine observer. The resident keeps
+       the incumbent device handler and data pointer intact, records the
+       packet and low-memory cursor state around that handler, and never
+       changes an ADB packet. This is diagnostic scaffolding for determining
+       which cursor authority owns the PowerBook drag snap-back. */
+    kNowPeekContinuityFormatV6 = 6,
+    /* V7 appended fields for a retired ADB substitution experiment. Its bit
+       and tail remain reserved so later formats never reinterpret them. */
+    kNowPeekContinuityFormatV7 = 7,
+    /* V8 appends a bounded keyboard queue. The PPC application resolves the
+       foreground process and publishes keys; the resident drains them only
+       from that process's target-context jGNE pass, where PPostEvent is legal.
+       This is Event Manager delivery, not ADB or GetKeys state synthesis. */
+    kNowPeekContinuityFormatV8 = 8,
+    /* V9 appends the preceding wire button transition and resident-owned
+       deferral/tracking telemetry. It preserves an intervening mouse-up when
+       the lossy lane has already advanced to the next double-click down. */
+    kNowPeekContinuityFormatV9 = 9,
+    /* V10 appended tracking-conflict latches, synthetic-device settlement,
+       and a bounded button timing chain. The conflict latches are dormant;
+       settlement and button timing remain live. */
+    kNowPeekContinuityFormatV10 = 10,
+    /* V11 appends the deep click probe: a rolling, logging-only record of
+       every mouse event at the jGNE boundary with the click-relevant
+       low-memory state beside it, armed by tracking bit 9 and latched past
+       epoch exit so native comparison clicks land in the same ring. It
+       changes no default behaviour and injects nothing. */
+    kNowPeekContinuityFormatV11 = 11,
+    /* V12 appends the manager-call busy handshake and rebuilds interrupt
+       press delivery on it: the timer now reads the notifier-written wire
+       edges directly (the V11 deferred-slot handshake was structurally
+       unreachable - task time set it and the same invoke consumed it),
+       and both halves keep MBTicks coherent with the shaped event `when`,
+       because the 015913 probe run showed native downs satisfy
+       when == MBTicks exactly while compressed synthetic downs diverge
+       by up to 110 ticks. */
+    kNowPeekContinuityFormatV12 = 12,
+    /* V13 appends the live host modifier word so mid-drag copy/alias and
+       modifier-gated Finder commands see the same modifiers the host
+       holds. Logging and stamping only; nothing owns the KeyMap - the
+       ADB driver rewrites it on real transitions and the co-write
+       re-asserts per pass while an epoch runs. */
+    kNowPeekContinuityFormatV13 = 13,
+    kNowPeekContinuityStateInactive = 0,
+    kNowPeekContinuityStateArmed = 1,
+    kNowPeekContinuityStateActive = 2,
+    kNowPeekContinuityStateExited = 3,
+    kNowPeekContinuityStateRefused = 4
+};
+
+/* The application and resident must compare against one named current
+   format.  Spelling V9 independently in both halves would allow a handoff to
+   contain a new application and an older resident while every artifact was
+   individually well formed.  The update manifests also publish this value,
+   so a stack assembler can reject that pair before it reaches a Macintosh. */
+#define NOW_CONTINUITY_FORMAT_CURRENT 13u
+
+enum {
+    kNowPeekContinuityExitNone = 0,
+    kNowPeekContinuityExitHostLeft = 1,
+    kNowPeekContinuityExitGuestInput = 2,
+    kNowPeekContinuityExitLeaseExpired = 3,
+    kNowPeekContinuityExitDisarmed = 4,
+    kNowPeekContinuityExitUnavailable = 5
+};
+
+enum {
+    kNowPeekContinuityKeyDown = 1,
+    kNowPeekContinuityKeyUp = 2,
+    kNowPeekContinuityKeyRepeat = 3,
+    kNowPeekContinuityKeyQueueCapacity = 16
+};
+
+enum {
+    kNowPeekContinuityKeyErrorNone = 0,
+    kNowPeekContinuityKeyErrorPostFailed = 1,
+    kNowPeekContinuityKeyErrorInvalid = 2
+};
+
+/* V8 queue entry. `queue_seq` is written LAST by the PPC application and is
+   the resident's tear detector. Every other value is a four-byte contract
+   word so the PPC and 68K compilers agree without packing directives. */
+typedef struct {
+    NowPeekU32 queue_seq;
+    NowPeekU32 generation;
+    NowPeekU32 target_a5;
+    NowPeekU32 target_psn_high;
+    NowPeekU32 target_psn_low;
+    NowPeekU32 action;
+    NowPeekU32 key_code;
+    NowPeekU32 character;
+    NowPeekU32 modifiers;
+} NowPeekContinuityKeyEntry;
+
+enum {
+    kNowPeekContinuityInside = 1u << 0,
+    kNowPeekContinuityPrimaryDown = 1u << 1,
+    kNowPeekContinuityKeepalive = 1u << 2,
+    kNowPeekContinuityLeaseMinTicks = 15,
+    kNowPeekContinuityLeaseMaxTicks = 600,
+    kNowPeekContinuityLeaseDefaultTicks = 90,
+    /* Authority has crossed TCP but UDP is not live yet. No button can be
+       held in this state, so setup gets a separate bounded grace instead of
+       spending the live-input release lease before its first packet. */
+    kNowPeekContinuityArmGraceTicks = 300,
+    kNowPeekContinuityTickMs = 16,
+    /* The recognition window the resident installs while an epoch runs with
+       kNowPeekContinuityTrackingWideDoubleTime set. Cooperative scheduling
+       stretches a 165 ms host double-click to 40-45 guest ticks between
+       manager downs (2026-08-13 metal run); the target compares that gap
+       against low-memory DoubleTime, so the window - not the click - is the
+       half Continuity can honestly control. One second: wide enough for the
+       measured starvation tail, narrow enough that click-pause-click still
+       reads as two clicks. The human's own value is saved and restored on
+       every epoch exit, forced ones included. */
+    kNowPeekContinuityWideDoubleTimeTicks = 60,
+    /* The spacing a compressed synthetic click pair reads as. Small
+       enough to pass any plausible private window, large enough that
+       event order stays unambiguous. */
+    kNowPeekContinuityCompressedClickTicks = 4,
+    /* The chain window for an up FOLLOWING its own down. A held click's
+       up is late by hold time plus manager starvation - measured 55-60
+       ticks on a plain click (gen 5/6, 2026-08-13 221822), which broke a
+       chain windowed at the recognition width exactly where compression
+       was needed. Downs keep the strict recognition window; only the
+       down-to-its-own-up leg gets this slack, and never for a gesture
+       that moved beyond click slop. */
+    kNowPeekContinuityHeldUpChainTicks = 120,
+    /* A gesture that moved farther than this from its press point is a
+       drag; its up keeps real timing. */
+    kNowPeekContinuityClickSlopPixels = 6
+};
+
+enum {
+    /* Reserved after the held-point pin was superseded by synthetic-device
+       settlement. The value remains a tombstone and is never reused. */
+    kNowPeekContinuityTrackingPinHeldPoint = 1u << 0,
+    /* Reserved after the target-context GetMouse override was superseded by
+       the same settlement mechanism. The value is never reused. */
+    kNowPeekContinuityTrackingVirtualGetMouse = 1u << 1,
+    /* Reserved after the rejected cursor-hiding experiment. Keep the bit
+       named and numbered so an older application cannot accidentally arm a
+       future mechanism by sending its former option. Current residents
+       ignore it. */
+    kNowPeekContinuityTrackingHideGuestCursor = 1u << 2,
+    /* Reserved after the rejected virtual-ADB carrier experiment. Its
+       observer and injection code are retired; the accretive bit remains a
+       tombstone and is never reused. */
+    kNowPeekContinuityTrackingVirtualADB = 1u << 3,
+    kNowPeekContinuityTrackingSettleSyntheticDevice = 1u << 4,
+    kNowPeekContinuityTrackingWideDoubleTime = 1u << 5,
+    /* Ordinary motion is smooth exactly where the settle machinery drives
+       the device (drags, menus) and hitches where it rides the PPC
+       application's own scheduling. When set, the jGNE pass settles the
+       NOWc device to the freshest wire point whenever the application is
+       behind, in whatever process is pumping. */
+    kNowPeekContinuityTrackingSettleIdleCursor = 1u << 6,
+    /* Rewrite synthetic mouse-event `when`s at the jGNE boundary so any
+       consumer's click-pairing arithmetic accepts a pair we produced
+       within the wide window. Finder pairs against a PRIVATE copy of the
+       double-click time (a 56-tick pair failed under an active 60-tick
+       window, 2026-08-13), so the interval itself must shrink; widening
+       the global cannot reach a private copy. */
+    kNowPeekContinuityTrackingCompressClickWhen = 1u << 7,
+    /* Deliver a deferred second press from the resident's interrupt timer:
+       mouseUp event, MBState down, mouseDown event, with the pending
+       manager-up canceled and the ledger reconciling at the next task-time
+       boundary. Exists because the Finder pairs clicks by ITS OWN CLOCK at
+       processing time, not by event.when - a compressed pair reading 8
+       ticks apart still failed while its dequeue spacing was 54 ticks
+       (2026-08-13 225207) - and during the Finder's own click processing
+       nothing cooperative runs anywhere, so interrupt time is the only
+       context that can put the second press in the queue before the
+       Finder's stopwatch runs out. This is the metal-verified double-click
+       mechanism and host policy now selects it by default. */
+    kNowPeekContinuityTrackingInterruptPress = 1u << 8,
+    /* Diagnostic spike, logging only. Record EVERY mouse event the jGNE
+       filter sees - native or synthetic - with the full event record and
+       the click-relevant low-memory state at that instant. Exists because
+       both timestamp theories of the Finder double-click failure are now
+       eliminated by measurement: a pair 8 ticks apart by `when` AND 54
+       ticks apart by dequeue failed under an active 60-tick window
+       (2026-08-13 235658), so whatever distinguishes our pair from a
+       native one is not a clock. The discriminating field has to be
+       CAPTURED, not theorized about.
+
+       LATCH SEMANTICS, deliberate: the resident arms this at epoch start
+       and does NOT clear it on epoch exit - only the next arm without the
+       bit stops it. A native comparison click can only happen after
+       guest-input takeover has exited the epoch, so a capture that died
+       with the epoch could never record the other half of the diff. */
+    kNowPeekContinuityTrackingDeepClickLog = 1u << 9,
+    kNowPeekContinuityTrackingKnownMask =
+        kNowPeekContinuityTrackingPinHeldPoint
+            | kNowPeekContinuityTrackingVirtualGetMouse
+            | kNowPeekContinuityTrackingHideGuestCursor
+            | kNowPeekContinuityTrackingVirtualADB
+            | kNowPeekContinuityTrackingSettleSyntheticDevice
+            | kNowPeekContinuityTrackingWideDoubleTime
+            | kNowPeekContinuityTrackingSettleIdleCursor
+            | kNowPeekContinuityTrackingCompressClickWhen
+            | kNowPeekContinuityTrackingInterruptPress
+            | kNowPeekContinuityTrackingDeepClickLog
+};
+
+enum {
+    kNowPeekContinuityTraceServiceEnter = 1,
+    kNowPeekContinuityTraceControl = 2,
+    kNowPeekContinuityTraceRequest = 3,
+    kNowPeekContinuityTraceApplied = 4,
+    kNowPeekContinuityTraceApplyError = 5,
+    kNowPeekContinuityTraceExit = 6,
+    kNowPeekContinuityTraceReentry = 7,
+    /* Task-time evidence from the target process. Coordinates are packed as
+       signed 16-bit h/v pairs: arg0 is the live MouseLocation observed on
+       entry, arg1 is the held source that the hook restores. */
+    kNowPeekContinuityTraceTrackingConflict = 8,
+    /* arg0 is the key generation. arg1 packs action in the high 16 bits and
+       the kNowPeekContinuityKeyError* result in the low 16 bits. */
+    kNowPeekContinuityTraceKeyboardResult = 9,
+    /* Sampled from the jGNE idle-settle spike: arg0 is the cumulative
+       settle count, arg1 the largest tick gap between consecutive settles
+       since the previous sample - the spike's own cadence, which bounds
+       how short it can cut a hitch. */
+    kNowPeekContinuityTraceIdleSettle = 10,
+    /* One entry per synthetic mouse event the jGNE observer matches:
+       arg0 packs the down flag in the high 16 bits and the event's low 16
+       bits of `when`; arg1 is the first four bytes of the observing
+       process's CurApName - WHO dequeued the event, which no other
+       instrument records. */
+    kNowPeekContinuityTraceEventObserved = 11,
+    /* An interrupt-time deferred-press delivery: arg0 is the generation
+       delivered, arg1 the tick it entered the queue. */
+    kNowPeekContinuityTraceInterruptPress = 12,
+    kNowPeekContinuityTraceCapacity = 8
+};
+
+/* Resident-only, allocation-free flight recorder. `seq` commits an entry
+   last. The PPC application drains it only after the synchronous resident
+   service returns, then serializes it through the normal task-time logger. */
+typedef struct {
+    NowPeekU32 seq;
+    NowPeekU32 event;
+    NowPeekU32 ticks;
+    NowPeekI32 arg0;
+    NowPeekI32 arg1;
+} NowPeekContinuityTraceEntry;
+
+enum {
+    kNowPeekADBObserverUnavailable = 0,
+    kNowPeekADBObserverInstalled = 1,
+    kNowPeekADBObserverRecording = 2,
+    kNowPeekADBObserverConflict = 3,
+    kNowPeekADBObserverInstallFailed = 4,
+    kNowPeekADBTraceCapacity = 8
+};
+
+/* V6's interrupt-owned ADB flight recorder. The service shim snapshots the
+   three cursor globals before and after the incumbent relative-device handler
+   and commits `seq` last. `data_0_3` and `data_4_7` preserve all eight bytes
+   after the ADB Manager's Pascal length byte in wire order. */
+typedef struct {
+    NowPeekU32 seq;
+    NowPeekU32 epoch;
+    NowPeekU32 ticks;
+    NowPeekU32 command;
+    NowPeekU32 data_length;
+    NowPeekU32 data_0_3;
+    NowPeekU32 data_4_7;
+    NowPeekI32 before_mouse_h;
+    NowPeekI32 before_mouse_v;
+    NowPeekI32 before_raw_h;
+    NowPeekI32 before_raw_v;
+    NowPeekI32 before_temp_h;
+    NowPeekI32 before_temp_v;
+    NowPeekU32 before_button;
+    NowPeekI32 after_mouse_h;
+    NowPeekI32 after_mouse_v;
+    NowPeekI32 after_raw_h;
+    NowPeekI32 after_raw_v;
+    NowPeekI32 after_temp_h;
+    NowPeekI32 after_temp_v;
+    NowPeekU32 after_button;
+} NowPeekADBTraceEntry;
+
+enum { kNowPeekContinuityEventTimingCapacity = 8 };
+
+enum { kNowPeekContinuityClickProbeCapacity = 24 };
+
+/* V11's deep click probe: one entry per mouse event observed at the jGNE
+   boundary while the deep-click latch is armed, native and synthetic alike.
+   The record is captured POST-shape - the `when` here is the one the
+   dequeuing application received. Everything else is the state a click
+   consumer could possibly consult at that instant; the point of the ring
+   is to DIFF a native double-click's entries against a synthetic one's,
+   field by field, and read off the discriminator instead of guessing it.
+   `write_seq` is odd during the write and even when committed; the ring is
+   ROLLING (index = total count % capacity) with an overwrite counter,
+   because the first-N mistake already hid the attempts that mattered once
+   (event_timing, 2026-08-13). */
+typedef struct {
+    NowPeekU32 write_seq;
+    NowPeekU32 ticks;             /* TickCount at observation */
+    NowPeekU32 what;              /* mouseDown / mouseUp */
+    NowPeekU32 message;           /* full 32-bit event message, unparsed */
+    NowPeekU32 when;              /* post-shape, as the application saw it */
+    NowPeekI32 where_h;
+    NowPeekI32 where_v;
+    NowPeekU32 modifiers;         /* full 16 bits incl. btnState, zero-extended */
+    NowPeekU32 mb_state;          /* low-memory MBState byte */
+    NowPeekU32 mb_ticks;          /* low-memory MBTicks: tick of last button change */
+    NowPeekI32 mouse_h;           /* Mouse */
+    NowPeekI32 mouse_v;
+    NowPeekI32 raw_h;             /* RawMouse */
+    NowPeekI32 raw_v;
+    NowPeekI32 temp_h;            /* MTemp */
+    NowPeekI32 temp_v;
+    NowPeekU32 double_time;       /* live DoubleTime at observation */
+    NowPeekU32 queue_mouse_depth; /* mouse events still in the raw event queue */
+    NowPeekU32 queue_next_when;   /* `when` of the oldest queued mouse event, 0=none */
+    NowPeekU32 observer;          /* first four CurApName bytes: who dequeued */
+    NowPeekU32 cell_state;        /* continuity state at capture: separates phases */
+} NowPeekContinuityClickProbe;
+
+/* V10's non-overwriting button timing chain. All times are guest TickCount
+   values: the host logs its own monotonic source/send/ack chain separately,
+   and neither side pretends the clocks share an epoch. `write_seq` is odd
+   while either task-time writer updates the record and even when stable. */
+typedef struct {
+    NowPeekU32 write_seq;
+    NowPeekU32 generation;
+    NowPeekU32 down;
+    NowPeekI32 request_h;
+    NowPeekI32 request_v;
+    NowPeekU32 arrival_ticks;
+    NowPeekU32 exposure_ticks;
+    NowPeekU32 manager_begin_ticks;
+    NowPeekU32 manager_end_ticks;
+    NowPeekI32 manager_error;
+    NowPeekU32 event_when;
+    NowPeekU32 event_observed_ticks;
+    NowPeekI32 event_h;
+    NowPeekI32 event_v;
+} NowPeekContinuityEventTiming;
+
+/* P9. One app-owned latest-state mailbox and one resident-owned status
+   block. The application commits control_seq and packet_seq LAST; the
+   resident commits status_seq odd/even around its half. Every field is
+   four bytes so the PPC and 68K compilers cannot disagree about padding. */
+typedef struct {
+    /* ---- written by the APPLICATION -------------------------------- */
+    NowPeekU32 control_seq;
+    NowPeekU32 enabled;
+    NowPeekU32 epoch;
+    NowPeekU32 lease_ticks;
+    NowPeekU32 requested_hz;
+    NowPeekU32 packet_seq;
+    NowPeekU32 packet_epoch;
+    NowPeekU32 position_seq;
+    NowPeekI32 want_h;
+    NowPeekI32 want_v;
+    NowPeekU32 button_generation;
+    NowPeekU32 flags;
+    NowPeekU32 arrival_ticks;
+
+    /* ---- written by the RESIDENT ----------------------------------- */
+    NowPeekU32 status_seq;
+    NowPeekU32 state;
+    NowPeekU32 observed_control_seq;
+    NowPeekU32 observed_packet_seq;
+    NowPeekU32 applied_position_seq;
+    NowPeekU32 applied_button_generation;
+    NowPeekI32 at_h;
+    NowPeekI32 at_v;
+    NowPeekU32 last_arrival_ticks;
+    NowPeekU32 apply_ticks;
+    NowPeekU32 exit_reason;
+    NowPeekU32 accepted_packets;
+    NowPeekU32 stale_packets;
+    NowPeekU32 timer_ticks;
+    NowPeekU32 local_takeovers;
+    NowPeekU32 button_down;
+    NowPeekU32 accepted_hz;
+    /* Safety telemetry. These distinguish a lease/reset that recovered from
+       an Event Manager failure from a clean pointer-only session. */
+    NowPeekU32 tasktime_cursor_applies;
+    NowPeekU32 forced_resets;
+    NowPeekU32 event_down_posts;
+    NowPeekU32 event_up_posts;
+    NowPeekU32 event_post_failures;
+    NowPeekU32 event_reset_generation;
+    /* Native takeover/reset diagnostics. Appended because this cell is the
+       table tail; every preceding resident offset remains stable. */
+    NowPeekU32 native_input_samples;
+    NowPeekU32 native_input_changes;
+    NowPeekU32 native_input_trigger;
+    NowPeekI32 native_input_h;
+    NowPeekI32 native_input_v;
+    NowPeekI32 native_owned_h;
+    NowPeekI32 native_owned_v;
+    NowPeekU32 native_buttons;
+    NowPeekU32 native_physical_valid;
+    NowPeekU32 native_owned_valid;
+    NowPeekU32 cursor_debt_cancels;
+    /* V2 resident-owned tail. `service_proc` is a raw, relocated 68K code
+       address, not a UPP and never called as a PPC function pointer. The app
+       wraps it in a kM68kISA|kOld68kRTA RoutineDescriptor and reaches it only
+       with CallUniversalProc from cooperative task time. Stable for the boot. */
+    NowPeekU32 service_proc;
+    NowPeekU32 service_calls;
+    /* V3 application result. `apply_result_seq` commits `apply_result_err`
+       last, after CursorDevicesGlue returns to the PPC task-time caller. */
+    NowPeekU32 apply_result_seq;
+    NowPeekI32 apply_result_err;
+    /* V3 resident request. The application snapshots these only after the
+       synchronous service returns and confirms the active state. */
+    NowPeekU32 request_position_seq;
+    NowPeekI32 request_h;
+    NowPeekI32 request_v;
+    NowPeekU32 service_reentries;
+    NowPeekU32 trace_write_seq;
+    NowPeekContinuityTraceEntry trace[kNowPeekContinuityTraceCapacity];
+    /* V4 button transition tail. The resident requests one task-time Cursor
+       Device transition and the PPC application commits its result. A timer
+       may make MBState up first; pending_mouseup keeps the later manager debt
+       explicit. The event_* names are retained because this table is
+       accretive; they do not mean Event Manager calls in V4. */
+    NowPeekU32 event_request_generation;
+    NowPeekU32 event_request_down;
+    NowPeekU32 event_result_generation;
+    NowPeekU32 event_result_down;
+    NowPeekI32 event_result_err;
+    NowPeekU32 pending_mouseup;
+    NowPeekU32 button_timer_ticks;
+    NowPeekU32 button_forced_releases;
+    NowPeekU32 button_release_reason;
+    /* V5 tracking tail. The option word remains live; the pin/GetMouse
+       counters are dormant tombstones for retired mechanisms. */
+    NowPeekU32 tracking_options;
+    NowPeekU32 tracking_pin_writes;
+    NowPeekU32 tracking_getmouse_answers;
+    /* V6 passive ADB observer tail, retained as dormant tombstones after the
+       observer was retired. No producer or reader may reinterpret them. */
+    NowPeekU32 adb_observer_state;
+    NowPeekI32 adb_observer_address;
+    NowPeekI32 adb_observer_handler_id;
+    NowPeekU32 adb_observer_device_count;
+    NowPeekI32 adb_observer_install_result;
+    NowPeekU32 adb_observer_installs;
+    NowPeekU32 adb_observer_callbacks;
+    NowPeekU32 adb_observer_reentries;
+    NowPeekU32 adb_observer_epoch;
+    NowPeekU32 adb_trace_write_seq;
+    NowPeekADBTraceEntry adb_trace[kNowPeekADBTraceCapacity];
+    /* V7 ADB substitution diagnostics, retained as dormant tombstones. */
+    NowPeekU32 adb_injection_packets;
+    NowPeekU32 adb_injection_carriers;
+    NowPeekU32 adb_injection_physical;
+    NowPeekU32 adb_injection_clamps;
+    /* V8 keyboard queue. The application owns write_seq, floor_seq and the
+       target identity. Advancing floor_seq atomically abandons every older
+       slot on process switch or control release. The resident owns read_seq,
+       result generations, errors and counters. */
+    NowPeekU32 key_write_seq;
+    NowPeekU32 key_floor_seq;
+    NowPeekU32 key_target_a5;
+    NowPeekU32 key_target_psn_high;
+    NowPeekU32 key_target_psn_low;
+    NowPeekU32 key_read_seq;
+    NowPeekU32 key_applied_generation;
+    NowPeekU32 key_failed_generation;
+    NowPeekI32 key_last_error;
+    NowPeekU32 key_enqueued;
+    NowPeekU32 key_applied;
+    NowPeekU32 key_failures;
+    NowPeekU32 key_dropped;
+    NowPeekU32 key_flushes;
+    NowPeekContinuityKeyEntry key_queue[kNowPeekContinuityKeyQueueCapacity];
+    /* V9 latest-state edge history. The application writes the preceding
+       transition before packet_seq; the resident consumes it before the
+       current button_generation and may defer one press behind a pending up. */
+    NowPeekU32 previous_button_generation;
+    NowPeekU32 previous_button_flags;
+    NowPeekU32 button_edge_deferrals;
+    NowPeekU32 button_edge_overflows;
+    /* V9 tracking-settle evidence. These counters distinguish a tracking-loop
+       redraw/reassertion from cursor-record lag that self-settled by the next
+       task-time service pass. */
+    NowPeekU32 tracking_settle_calls;
+    NowPeekU32 tracking_settle_moved;
+    NowPeekU32 tracking_settle_redraws;
+    NowPeekU32 tracking_settle_reasserts;
+    /* V10 tracking-conflict latches, retained as dormant tombstones. */
+    NowPeekU32 tracking_conflict_current_run;
+    NowPeekU32 tracking_conflict_max_run;
+    NowPeekU32 tracking_conflict_first_ticks;
+    NowPeekI32 tracking_conflict_first_live_h;
+    NowPeekI32 tracking_conflict_first_live_v;
+    NowPeekI32 tracking_conflict_first_held_h;
+    NowPeekI32 tracking_conflict_first_held_v;
+    NowPeekU32 tracking_conflict_last_ticks;
+    NowPeekI32 tracking_conflict_last_live_h;
+    NowPeekI32 tracking_conflict_last_live_v;
+    NowPeekI32 tracking_conflict_last_held_h;
+    NowPeekI32 tracking_conflict_last_held_v;
+    NowPeekU32 tracking_press_return_count;
+    NowPeekU32 tracking_press_return_first_ticks;
+    NowPeekI32 tracking_press_return_first_live_h;
+    NowPeekI32 tracking_press_return_first_live_v;
+    NowPeekI32 tracking_press_return_first_held_h;
+    NowPeekI32 tracking_press_return_first_held_v;
+    /* The settle-device experiment discovers the app-owned NOWc device at
+       task time. It is epoch-bound, reentrancy-guarded and disabled unless
+       the host explicitly selects its option bit. */
+    NowPeekU32 tracking_device_attempts;
+    NowPeekU32 tracking_device_found;
+    NowPeekU32 tracking_device_moves;
+    NowPeekU32 tracking_device_failures;
+    NowPeekU32 tracking_device_reentries;
+    NowPeekI32 tracking_device_last_error;
+    NowPeekI32 tracking_device_last_before_h;
+    NowPeekI32 tracking_device_last_before_v;
+    NowPeekI32 tracking_device_last_after_h;
+    NowPeekI32 tracking_device_last_after_v;
+    NowPeekI32 tracking_device_last_held_h;
+    NowPeekI32 tracking_device_last_held_v;
+    NowPeekU32 tracking_device_last_ticks;
+    /* Guest-domain timing for the first eight button edges. Capacity is
+       a ROLLING window of the last capacity edges - the original first-N
+       choice predates rapid-click testing and hid exactly the late-epoch
+       attempts that mattered; `dropped` counts overwritten entries. */
+    NowPeekU32 double_time_ticks;
+    NowPeekU32 event_request_arrival_ticks;
+    NowPeekU32 event_request_exposure_ticks;
+    NowPeekU32 event_timing_count;
+    NowPeekU32 event_timing_dropped;
+    NowPeekContinuityEventTiming
+        event_timing[kNowPeekContinuityEventTimingCapacity];
+    /* V11 deep click probe. `click_probe_count` is the TOTAL ever captured
+       (the ring index derives from it); `click_probe_overwritten` counts
+       entries the rolling window discarded before the drain read them. */
+    NowPeekU32 click_probe_count;
+    NowPeekU32 click_probe_overwritten;
+    NowPeekContinuityClickProbe
+        click_probe[kNowPeekContinuityClickProbeCapacity];
+    /* V12 manager-call handshake. The application sets this NONZERO around
+       its CursorDeviceButton* call - which runs BETWEEN resident service
+       invokes, where status_seq is even and the old mid-invoke guard sees
+       nothing - and rechecks the exposed request after setting it. The
+       interrupt-press delivery refuses while it is set. This closes the
+       race where an interrupt delivery cancels a manager up the
+       application has already read and is about to serve. */
+    NowPeekU32 button_manager_busy;
+    /* V13 live host modifier word. The application publishes the word the
+       host last forwarded (seq bumped LAST); the resident stamps it into
+       synthetic mouse events and co-writes the four modifier bits of the
+       low-memory KeyMap from the keyboard plane's target-context pass -
+       because the Finder chooses move/copy/alias inside the Drag Manager
+       loop from live key state, not from the press event's modifiers.
+       Zeroed at every epoch boundary the keyboard word already observes. */
+    NowPeekU32 host_modifiers;
+    NowPeekU32 host_modifiers_seq;
+} NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
    process's context is current - the only place its low-memory
@@ -1475,6 +2069,11 @@ typedef struct {
     NowPeekU16 rest_format;
     NowPeekU16 rest_state;
     NowPeekU32 gne_passes;
+    /* U14 P9 append. The resident consumes only this bounded cell; the
+       Open Transport endpoint and all datagram parsing remain in the PPC
+       application, outside interrupt context. */
+    NowPeekU32 continuity_format;
+    NowPeekContinuityCell continuity;
 } NowPeekTable;
 
 /* What the resident currently HAS INSTALLED. A bitmask rather than a
@@ -1515,7 +2114,17 @@ enum {
     kNowPeekRestActPatched    = 1u << 5,
     /* The NewGWorld trap patch (record mode) is in. Same one-way rule as
        the act patches, and for the same reason. */
-    kNowPeekRestQDExtPatched  = 1u << 6
+    kNowPeekRestQDExtPatched  = 1u << 6,
+    /* Continuity's GetMouse, StillDown, and Button chain hooks are in.
+       Installed lazily on the first accepted Continuity arm and never
+       removed until reboot; idle hooks perform only a byte test and tail
+       jump to the incumbent. */
+    kNowPeekRestCursorTrackingPatched = 1u << 7,
+    /* Reserved. V6 installed a passive wrapper around the relative ADB
+       device's incumbent service routine. The observer was retired after it
+       could not coexist with two pointing devices; the accretive rest bit is
+       retained so its old meaning is never reassigned. */
+    kNowPeekRestADBObserverInstalled = 1u << 8
 };
 
 /* What the resident's own liveness channel is doing. Values are the
@@ -1789,8 +2398,83 @@ _Static_assert(offsetof(NowPeekTable, rest_format)
 _Static_assert(offsetof(NowPeekTable, gne_passes)
                    == offsetof(NowPeekTable, rest_format) + 4,
                "the filter pass counter follows the rest-state pair");
-_Static_assert(sizeof(NowPeekTable)
+_Static_assert(sizeof(NowPeekContinuityTraceEntry) == 20,
+               "continuity trace ABI drift");
+_Static_assert(sizeof(NowPeekADBTraceEntry) == 84,
+               "ADB observer trace ABI drift");
+_Static_assert(sizeof(NowPeekContinuityKeyEntry) == 36,
+               "continuity key entry ABI drift");
+_Static_assert(sizeof(NowPeekContinuityEventTiming) == 56,
+               "continuity event timing ABI drift");
+_Static_assert(sizeof(NowPeekContinuityClickProbe) == 84,
+               "continuity click probe ABI drift");
+_Static_assert(sizeof(NowPeekContinuityCell) == 4452,
+               "continuity cell size");
+_Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
+               "continuity packet commit offset");
+_Static_assert(offsetof(NowPeekContinuityCell, status_seq) == 52,
+               "continuity resident half offset");
+_Static_assert(offsetof(NowPeekContinuityCell, service_proc) == 188,
+               "continuity V2 service offset");
+_Static_assert(offsetof(NowPeekContinuityCell, apply_result_seq) == 196,
+               "continuity V3 application result offset");
+_Static_assert(offsetof(NowPeekContinuityCell, request_position_seq) == 204,
+               "continuity V3 resident request offset");
+_Static_assert(offsetof(NowPeekContinuityCell, trace) == 224,
+               "continuity V3 trace offset");
+_Static_assert(offsetof(NowPeekContinuityCell, event_request_generation) == 384,
+               "continuity V4 button request offset");
+_Static_assert(offsetof(NowPeekContinuityCell, pending_mouseup) == 404,
+               "continuity V4 release debt offset");
+_Static_assert(offsetof(NowPeekContinuityCell, button_release_reason) == 416,
+               "continuity V4 release reason offset");
+_Static_assert(offsetof(NowPeekContinuityCell, tracking_options) == 420,
+               "continuity V5 tracking options offset");
+_Static_assert(offsetof(NowPeekContinuityCell, tracking_pin_writes) == 424,
+               "continuity V5 pin counter offset");
+_Static_assert(offsetof(NowPeekContinuityCell, tracking_getmouse_answers) == 428,
+               "continuity V5 GetMouse counter offset");
+_Static_assert(offsetof(NowPeekContinuityCell, adb_observer_state) == 432,
+               "continuity V6 ADB observer offset");
+_Static_assert(offsetof(NowPeekContinuityCell, adb_trace) == 472,
+               "continuity V6 ADB trace offset");
+_Static_assert(offsetof(NowPeekContinuityCell, adb_injection_packets) == 1144,
+               "continuity V7 ADB injection offset");
+_Static_assert(offsetof(NowPeekContinuityCell, key_write_seq) == 1160,
+               "continuity V8 keyboard queue offset");
+_Static_assert(offsetof(NowPeekContinuityCell, key_queue) == 1216,
+               "continuity V8 keyboard entries offset");
+_Static_assert(offsetof(NowPeekContinuityCell, previous_button_generation) == 1792,
+               "continuity V9 previous button edge offset");
+_Static_assert(offsetof(NowPeekContinuityCell, tracking_settle_calls) == 1808,
+               "continuity V9 tracking-settle counter offset");
+_Static_assert(offsetof(NowPeekContinuityCell,
+                        tracking_conflict_current_run) == 1824,
+               "continuity V10 durable conflict offset");
+_Static_assert(offsetof(NowPeekContinuityCell,
+                        tracking_device_attempts) == 1896,
+               "continuity V10 settle-device offset");
+_Static_assert(offsetof(NowPeekContinuityCell, double_time_ticks) == 1948,
+               "continuity V10 timing header offset");
+_Static_assert(offsetof(NowPeekContinuityCell, event_timing) == 1968,
+               "continuity V10 timing ring offset");
+_Static_assert(offsetof(NowPeekContinuityCell, click_probe_count) == 2416,
+               "continuity V11 click probe header offset");
+_Static_assert(offsetof(NowPeekContinuityCell, click_probe) == 2424,
+               "continuity V11 click probe ring offset");
+_Static_assert(offsetof(NowPeekContinuityCell, button_manager_busy) == 4440,
+               "continuity V12 manager-busy handshake offset");
+_Static_assert(offsetof(NowPeekContinuityCell, host_modifiers) == 4444,
+               "continuity V13 host modifier word offset");
+_Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
-               "the filter pass counter is the new tail");
+               "continuity appends behind the pass counter");
+_Static_assert(offsetof(NowPeekTable, continuity)
+                   == offsetof(NowPeekTable, continuity_format) + 4,
+               "continuity cell offset");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, continuity)
+                          + sizeof(NowPeekContinuityCell),
+               "the continuity cell is the new tail");
 
 #endif /* NOW_PEEK_TABLE_H */

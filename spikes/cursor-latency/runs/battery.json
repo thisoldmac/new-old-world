@@ -1,0 +1,267 @@
+[
+ {
+  "load": "idle",
+  "seed": 7,
+  "rate": 60,
+  "seconds": 15.0,
+  "sent": 900,
+  "received": 900,
+  "applied_count": 852,
+  "coalesced": 47,
+  "ring_dropped": 0,
+  "out_of_order": 0,
+  "backwards_in_tail": 0,
+  "timer_ticks": 1961,
+  "app_passes": 82,
+  "gne_passes": 290632,
+  "redraws": 845,
+  "redraw_calls": 845,
+  "caps": 15,
+  "place_route": 3,
+  "staleness_ticks": {
+   "n": 852,
+   "min": 0,
+   "p50": 0,
+   "p90": 1,
+   "p99": 1,
+   "max": 1
+  },
+  "staleness_hist": {
+   "0": 443,
+   "1": 409
+  },
+  "picture_lag_ticks": {
+   "n": 845,
+   "min": 0,
+   "p50": 0,
+   "p90": 0,
+   "p99": 1,
+   "max": 1
+  },
+  "arrival_gap_ticks": {
+   "n": 899,
+   "min": 0,
+   "p50": 1,
+   "p90": 1,
+   "p99": 2,
+   "max": 2
+  },
+  "arrival_gap_hist": {
+   "1": 826,
+   "2": 38,
+   "0": 35
+  }
+ },
+ {
+  "load": "spin",
+  "seed": 7,
+  "rate": 60,
+  "seconds": 15.0,
+  "sent": 900,
+  "received": 900,
+  "applied_count": 876,
+  "coalesced": 23,
+  "ring_dropped": 0,
+  "out_of_order": 0,
+  "backwards_in_tail": 0,
+  "timer_ticks": 2005,
+  "app_passes": 41,
+  "gne_passes": 470502,
+  "redraws": 1,
+  "redraw_calls": 1,
+  "caps": 15,
+  "place_route": 3,
+  "staleness_ticks": {
+   "n": 876,
+   "min": 0,
+   "p50": 0,
+   "p90": 1,
+   "p99": 1,
+   "max": 1
+  },
+  "staleness_hist": {
+   "0": 505,
+   "1": 371
+  },
+  "picture_lag_ticks": {
+   "n": 1,
+   "min": 100,
+   "p50": 100,
+   "p90": 100,
+   "p99": 100,
+   "max": 100
+  },
+  "arrival_gap_ticks": {
+   "n": 899,
+   "min": 0,
+   "p50": 1,
+   "p90": 1,
+   "p99": 2,
+   "max": 2
+  },
+  "arrival_gap_hist": {
+   "1": 792,
+   "2": 55,
+   "0": 52
+  }
+ },
+ {
+  "load": "tracking",
+  "seed": 7,
+  "rate": 60,
+  "seconds": 15.0,
+  "sent": 900,
+  "received": 900,
+  "applied_count": 889,
+  "coalesced": 10,
+  "ring_dropped": 0,
+  "out_of_order": 0,
+  "backwards_in_tail": 0,
+  "timer_ticks": 2007,
+  "app_passes": 41,
+  "gne_passes": 648584,
+  "redraws": 889,
+  "redraw_calls": 889,
+  "caps": 15,
+  "place_route": 3,
+  "staleness_ticks": {
+   "n": 889,
+   "min": 0,
+   "p50": 1,
+   "p90": 1,
+   "p99": 1,
+   "max": 1
+  },
+  "staleness_hist": {
+   "1": 575,
+   "0": 314
+  },
+  "picture_lag_ticks": {
+   "n": 889,
+   "min": 0,
+   "p50": 0,
+   "p90": 0,
+   "p99": 1,
+   "max": 1
+  },
+  "arrival_gap_ticks": {
+   "n": 899,
+   "min": 0,
+   "p50": 1,
+   "p90": 1,
+   "p99": 2,
+   "max": 2
+  },
+  "arrival_gap_hist": {
+   "1": 804,
+   "2": 49,
+   "0": 46
+  }
+ },
+ {
+  "load": "drawing",
+  "seed": 7,
+  "rate": 60,
+  "seconds": 15.0,
+  "sent": 900,
+  "received": 900,
+  "applied_count": 821,
+  "coalesced": 78,
+  "ring_dropped": 0,
+  "out_of_order": 0,
+  "backwards_in_tail": 0,
+  "timer_ticks": 2006,
+  "app_passes": 41,
+  "gne_passes": 824352,
+  "redraws": 1,
+  "redraw_calls": 1,
+  "caps": 15,
+  "place_route": 3,
+  "staleness_ticks": {
+   "n": 821,
+   "min": 0,
+   "p50": 1,
+   "p90": 1,
+   "p99": 1,
+   "max": 1
+  },
+  "staleness_hist": {
+   "1": 434,
+   "0": 387
+  },
+  "picture_lag_ticks": {
+   "n": 1,
+   "min": 100,
+   "p50": 100,
+   "p90": 100,
+   "p99": 100,
+   "max": 100
+  },
+  "arrival_gap_ticks": {
+   "n": 899,
+   "min": 0,
+   "p50": 1,
+   "p90": 1,
+   "p99": 2,
+   "max": 2
+  },
+  "arrival_gap_hist": {
+   "1": 793,
+   "2": 54,
+   "0": 52
+  }
+ },
+ {
+  "load": "polite",
+  "seed": 7,
+  "rate": 60,
+  "seconds": 15.0,
+  "sent": 900,
+  "received": 900,
+  "applied_count": 883,
+  "coalesced": 16,
+  "ring_dropped": 0,
+  "out_of_order": 0,
+  "backwards_in_tail": 0,
+  "timer_ticks": 1989,
+  "app_passes": 84,
+  "gne_passes": 1066178,
+  "redraws": 883,
+  "redraw_calls": 883,
+  "caps": 15,
+  "place_route": 3,
+  "staleness_ticks": {
+   "n": 883,
+   "min": 0,
+   "p50": 1,
+   "p90": 1,
+   "p99": 1,
+   "max": 1
+  },
+  "staleness_hist": {
+   "1": 488,
+   "0": 395
+  },
+  "picture_lag_ticks": {
+   "n": 883,
+   "min": 0,
+   "p50": 0,
+   "p90": 0,
+   "p99": 0,
+   "max": 0
+  },
+  "arrival_gap_ticks": {
+   "n": 899,
+   "min": 0,
+   "p50": 1,
+   "p90": 1,
+   "p99": 2,
+   "max": 2
+  },
+  "arrival_gap_hist": {
+   "1": 818,
+   "2": 42,
+   "0": 39
+  }
+ }
+]

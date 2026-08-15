@@ -35,6 +35,8 @@ add_application(now-guest-ppc
     ../now-guest-shared/src/macbinary_lengths.c
     src/screenshots/capture.c
     src/files/fileshare.c
+    src/files/trash_move.c
+    src/files/files_drop.c
     src/files/files_module_definition.c
     src/files/files_capacity.c
     src/core/pump.c
@@ -56,6 +58,8 @@ add_application(now-guest-ppc
     src/screenshots/screenshots_module_definition.c
     src/census/census_module.c
     src/census/census_module_definition.c
+    src/census/hardware_sizes.c
+    src/census/rom_dump.c
     src/census/census_probes.c
     src/census/census_trap.c
     src/logs/logs_module.c
@@ -94,8 +98,10 @@ add_application(now-guest-ppc
     src/cloud/cloud_contacts_card.c
     src/cloud/cloud_contacts_view.c
     src/mirror/mirror_anchor.c
+    src/mirror/mirror_debug.c
     src/mirror/mirror_layout.c
     src/mirror/mirror_log.c
+    src/mirror/mirror_consent.c
     src/mirror/mirror_policy.c
     src/mirror/mirror_json.c
     src/mirror/mirror_probe.c
@@ -104,6 +110,9 @@ add_application(now-guest-ppc
     src/development/development_contract.c
     src/development/development_build.c
     src/development/development_project.c
+    src/development/development_projects.c
+    src/development/development_projects_rows.c
+    src/development/development_history.c
     src/development/development_candidate.c
     src/development/development_sha256.c
     src/development/development_open.c
@@ -114,6 +123,9 @@ add_application(now-guest-ppc
     src/development/development_module.c
     src/development/development_module_definition.c
     src/web/web_model.c
+    src/web/web_accept.c
+    src/web/web_proxy_request.c
+    src/web/web_proxy_ot.c
     src/web/web_port_dialog.c
     src/web/web_module.c
     src/web/web_module_definition.c
@@ -123,26 +135,37 @@ add_application(now-guest-ppc
     src/files/files_module.c
     src/files/files_browser_view.c
     src/files/files_path_label.c
+    src/files/files_layout.c
+    src/files/files_run.c
+    src/files/files_status.c
+    src/files/files_peer_label.c
     src/files/files_share_view.c
     src/files/files_pull.c
     src/workshop/confirm.c
+    src/workshop/about_box.c
+    src/workshop/receive_progress.c
     src/core/ot_carbon.c
     src/core/json.c
     src/core/screen_bounds.c
     src/core/loopstat.c
     src/core/wire_sleep.c
+    src/core/peer_name.c
     src/core/wirestat_cmd.c
     src/core/nowlog.c
+    src/core/logquery.c
     ../now-guest-shared/src/log_retention.c
     ../now-guest-shared/src/log_retention_classic.c
     src/core/wire.c
     src/core/prefs.c
+    src/core/carbon_warning_model.c
+    src/core/carbon_warning.c
     src/connection/conn_fields.c
     src/connection/conn_edit_dialog.c
     src/connection/connection_module.c
     src/update/sha256.c
     src/update/update_model.c
     src/update/update_install.c
+    src/update/update_activation.c
     src/update/update_status.c
     src/peek/peek.c
     src/peek/peek_lease.c
@@ -170,7 +193,10 @@ add_application(now-guest-ppc
     src/workshop/workshop_construct.c
     src/workshop/workshop_registry.c
     src/workshop/workshop_layout.c
+    src/workshop/workshop_order.c
     src/workshop/workshop_sidebar.c
+    src/workshop/workshop_scene_text.c
+    src/workshop/workshop_drop.c
     src/workshop/workshop_window.c
     src/scene/scene_build.c
     src/scene/scene_digest.c
@@ -257,6 +283,16 @@ add_application(now-guest-ppc
     # input_cmds.c is the thin Toolbox layer over it.
     src/input/input_args.c
     src/input/input_cmds.c
+    src/input/continuity_intake.c
+    src/input/continuity_cdm_transition.c
+    src/input/continuity_cursor.c
+    src/input/continuity_service.c
+    src/input/continuity_report_logic.c
+    src/input/continuity_selection.c
+    ../now-guest-shared/src/now_continuity_selection.c
+    ../now-guest-shared/src/now_continuity_wire.c
+    ../now-guest-shared/src/now_continuity_logic.c
+    ../now-guest-shared/src/now_continuity_keyboard_logic.c
     resources/app.r
     # The application icon family, generated from the artwork by
     # assets/icons/classic/rez.py and shared with any other target that
@@ -437,6 +473,16 @@ if(PYTHON3_EXECUTABLE)
                 --lifecycle-number-define NOW_PRODUCT_LIFECYCLE_NUMBER
                 --identity-header "${_buildstamp_header}"
                 --identity-define NOW_BUILD_ID
+                --continuity-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/continuity_udp.h"
+                --continuity-version-define NOW_CONTINUITY_VERSION
+                --peek-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/peek_table.h"
+                --continuity-format-define NOW_CONTINUITY_FORMAT_CURRENT
+                --resident-version-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/resident_version.h"
+                --resident-version-major NOW_RESIDENT_VERSION_MAJOR
+                --resident-version-minor NOW_RESIDENT_VERSION_MINOR
                 --channel ${NOW_UPDATE_CHANNEL}
                 ${_update_candidate_args}
                 --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/.."

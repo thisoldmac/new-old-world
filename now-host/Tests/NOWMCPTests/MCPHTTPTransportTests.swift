@@ -12,17 +12,36 @@ final class MCPHTTPTransportTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         let preferences = MCPTransportPreferences(defaults: defaults)
 
-        XCTAssertTrue(preferences.stdioEnabled)
-        XCTAssertFalse(preferences.httpEnabled)
+        XCTAssertTrue(preferences.stdioStartsAutomatically)
+        XCTAssertFalse(preferences.httpStartsAutomatically)
         XCTAssertEqual(preferences.httpPort, 5254)
-        preferences.stdioEnabled = false
-        preferences.httpEnabled = true
+        preferences.stdioStartsAutomatically = false
+        preferences.httpStartsAutomatically = true
         preferences.httpPort = 6254
 
         let restored = MCPTransportPreferences(defaults: defaults)
-        XCTAssertFalse(restored.stdioEnabled)
-        XCTAssertTrue(restored.httpEnabled)
+        XCTAssertFalse(restored.stdioStartsAutomatically)
+        XCTAssertTrue(restored.httpStartsAutomatically)
         XCTAssertEqual(restored.httpPort, 6254)
+    }
+
+    @MainActor
+    func testEditableSettingsPersistWithoutConflatingTransportState() throws {
+        let name = "mcp-settings-model-tests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let settings = MCPTransportSettingsModel(defaults: defaults)
+
+        settings.stdioStartsAutomatically = false
+        settings.httpStartsAutomatically = true
+        settings.httpPort = 6354
+        settings.httpPort = 0
+
+        let restored = MCPTransportPreferences(defaults: defaults)
+        XCTAssertFalse(restored.stdioStartsAutomatically)
+        XCTAssertTrue(restored.httpStartsAutomatically)
+        XCTAssertEqual(restored.httpPort, 6354)
+        XCTAssertEqual(settings.httpPort, 6354)
     }
 
     func testNOWCreatesOnePrivatePersistentHTTPToken() throws {

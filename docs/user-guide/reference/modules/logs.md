@@ -7,9 +7,9 @@ audience: operator
 lifecycle: current
 authority: [docs/architecture.md, docs/status.md]
 module_ids: [logs]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/logs, now-guest-68k/src/core/log.c, docs/architecture.md]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/LogsHostModule.swift, now-host/Sources/Host/HostLog.swift, now-host/Sources/Host/LogsModuleView.swift, now-host/Sources/Host/LogsModel.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/MirrorContinuityController.swift, now-guest-ppc/src/logs, now-guest-68k/src/core/log.c, docs/architecture.md]
 media_ids: [logs-host, logs-ppc]
-last_verified: 2026-08-09
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -30,8 +30,21 @@ important evidence through its console rather than a matching page.
 
 ## On the modern Mac
 
-The host can filter by session and subsystem. A useful line identifies which
-machine and operation it describes.
+The host shows its bounded 2,000-line in-memory scrollback and follows the
+newest line. Invert changes the reading canvas here, beside the output it
+repaints; whether the same lines also reach a per-launch file on disk is a
+**Settings…** button away, in the Logs tab of the Settings window, and does
+not turn off the in-memory ring either way. Lines carry a short subsystem tag,
+but this page does not currently provide filtering.
+
+An **Advanced Continuity diagnostics** disclosure owns the retained input
+probes. These controls are normally left off: they increase evidence volume and
+exist to diagnose a matched guest session, not to configure Mirror's normal
+pointer behavior. Fast Pump changes cooperative scheduling cadence for a
+bounded comparison. The deep-click probe can record every mouse event at the
+guest jGNE boundary with click-relevant low-memory state. Product mechanisms
+such as interrupt-time press delivery and idle cursor settlement default on
+and remain with the Continuity controls as explicit regression opt-outs.
 
 ## On the classic Mac
 
@@ -42,7 +55,8 @@ its partition and repeats critical state in the visible console.
 
 ## Common tasks
 
-- Filter to the named session and time window before copying evidence.
+- Use the subsystem tag and timestamp to isolate a session before copying
+  evidence; filtering is currently external (for example, in the saved file).
 - Pair a log with the later authoritative state when diagnosing an action.
 
 ## Safety, consent, and privacy
@@ -58,7 +72,9 @@ different from an operation failure described by a retained line.
 ## Current limitations
 
 Logging is evidence, not authority. A line saying a request was sent does not
-prove the target state changed.
+prove the target state changed. Advanced Continuity probes are default off and
+can produce dense evidence; enable them only for a bounded reproduction and
+turn them off before interpreting ordinary timing or log volume.
 
 ## For developers
 

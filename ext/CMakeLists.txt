@@ -8,8 +8,9 @@ cmake_minimum_required(VERSION 3.13)
 #     ~/Lab/Tools/Retro68-build-68k/toolchain/m68k-apple-macos/cmake/retro68.toolchain.cmake ext
 #   cmake --build build
 #
-# Produces NowExt.bin (MacBinary, deploy channel) and NowExt.dsk. Deploy
-# NowExt.bin into System Folder:Extensions and COLD-boot: INITs load at
+# Produces "NOW Extension.bin" (MacBinary, deploy channel) and
+# "NOW Extension.dsk". Deploy "NOW Extension.bin" into System
+# Folder:Extensions and COLD-boot: INITs load at
 # boot only, and OS 9 ignores a soft power-down.
 
 project(NowExtension C ASM)
@@ -100,6 +101,14 @@ add_executable(NowExt
     # manager as TWOWORDINLINE traps this compiler ignores.
     src/now_ext_cursor.c
     src/now_ext_cursor_cdm.S
+    src/now_ext_cursor_tracking.S
+    # P9 Continuity: the app owns UDP intake and every Cursor Device Manager
+    # call. A held button adds one resident Time Manager vehicle whose complete
+    # surface is tracking-loop MouseLocation plus dead-man MBState-up; it
+    # cannot call managers or impersonate the physical ADB/PMU input path.
+    src/now_ext_continuity.c
+    src/now_ext_continuity_keyboard.c
+    src/now_ext_continuity_tm.S
     src/now_content_qdext.S
     ../now-guest-shared/src/now_act_guard.c
     # P7's decisions, where the host cc can compile them and
@@ -108,6 +117,12 @@ add_executable(NowExt
     # P8's one decision - "is somebody else driving this pointer" - where
     # the host cc can compile it and a test can watch it yield.
     ../now-guest-shared/src/now_cursor_logic.c
+    # P7 and P9 both write the mouse button. This is the one arbitration
+    # word between them; neither plane guesses from the other's cell.
+    ../now-guest-shared/src/now_input_owner.c
+    ../now-guest-shared/src/now_continuity_logic.c
+    ../now-guest-shared/src/now_continuity_event_match.c
+    ../now-guest-shared/src/now_continuity_keyboard_logic.c
     ../now-guest-shared/src/now_semantic_guard.c)
 add_dependencies(NowExt generate_now_ext_identity)
 set_source_files_properties(src/now_ext.c
@@ -124,23 +139,23 @@ set_target_properties(NowExt PROPERTIES
 # INIT 128 in a file of type INIT, creator 'NOWx' (the extension's own,
 # distinct from the app's 'NOWo'). Rez reads the built flat blob.
 add_custom_command(
-    OUTPUT NowExt.bin NowExt.dsk
+    OUTPUT "NOW Extension.bin" "NOW Extension.dsk"
     COMMAND ${REZ} -I${REZ_INCLUDE_PATH} -I${CMAKE_CURRENT_BINARY_DIR}
                    ${CMAKE_CURRENT_SOURCE_DIR}/src/now_ext.r
-                   -o NowExt.bin
-                   --cc NowExt.dsk
+                   -o "NOW Extension.bin"
+                   --cc "NOW Extension.dsk"
                    -t INIT -c NOWx
     DEPENDS NowExt src/now_ext.r ${_identity_rez})
 
-add_custom_target(NowExt_INIT ALL DEPENDS NowExt.dsk)
+add_custom_target(NowExt_INIT ALL DEPENDS "NOW Extension.dsk")
 
 find_program(PYTHON3_EXECUTABLE NAMES python3 python)
 if(PYTHON3_EXECUTABLE)
     add_custom_command(
-        OUTPUT NowExt.bin.now-update.json
+        OUTPUT "NOW Extension.bin.now-update.json"
         COMMAND ${PYTHON3_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
-                --artifact NowExt.bin
+                --artifact "NOW Extension.bin"
                 --component extension
                 --version-header
                     "${CMAKE_CURRENT_SOURCE_DIR}/../contract/resident_version.h"
@@ -148,13 +163,23 @@ if(PYTHON3_EXECUTABLE)
                 --version-minor NOW_RESIDENT_VERSION_MINOR
                 --identity-header "${_identity_header}"
                 --identity-define NOW_EXT_BUILD_ID
+                --continuity-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/continuity_udp.h"
+                --continuity-version-define NOW_CONTINUITY_VERSION
+                --peek-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/peek_table.h"
+                --continuity-format-define NOW_CONTINUITY_FORMAT_CURRENT
+                --resident-version-header
+                    "${CMAKE_CURRENT_SOURCE_DIR}/../contract/resident_version.h"
+                --resident-version-major NOW_RESIDENT_VERSION_MAJOR
+                --resident-version-minor NOW_RESIDENT_VERSION_MINOR
                 --channel ${NOW_UPDATE_CHANNEL}
                 ${_update_candidate_args}
                 --repo-root "${CMAKE_CURRENT_SOURCE_DIR}/.."
-        DEPENDS NowExt.bin ${_identity_header}
+        DEPENDS "NOW Extension.bin" ${_identity_header}
                 "${CMAKE_CURRENT_SOURCE_DIR}/../tools/write-update-manifest.py"
         COMMENT "Writing extension update identity"
         VERBATIM)
     add_custom_target(NowExt_update_manifest ALL
-        DEPENDS NowExt.bin.now-update.json)
+        DEPENDS "NOW Extension.bin.now-update.json")
 endif()

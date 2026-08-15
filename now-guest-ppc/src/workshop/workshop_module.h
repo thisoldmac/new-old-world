@@ -3,6 +3,7 @@
 
 #include <Carbon.h>
 #include "product_features.generated.h"
+#include "workshop_module_ids.h"
 #include "workshop_scene.h"
 
 /* The contract between the Workshop window and the modules that live
@@ -12,46 +13,6 @@
    then hidden rather than disposed, so switching away never loses
    Console history, a file listing, or capture settings. */
 
-typedef enum {
-    kWorkshopScreenshots = 1,
-    kWorkshopFiles = 2,
-    kWorkshopConsole = 3,
-    kWorkshopProcesses = 4,
-    kWorkshopHardware = 5,
-    kWorkshopSoftware = 6,
-    kWorkshopMCP = 7,
-    kWorkshopDiagnostics = 8,
-    kWorkshopNetworking = 9,
-    kWorkshopCloud = 10,
-    kWorkshopChat = 11,
-    kWorkshopMirror = 12,    /* the last nav row, above the pinned group */
-    kWorkshopDevelopment = 13,
-    kWorkshopWeb = 14,
-
-    /* The pinned group, in the order it sits at the foot of the rail.
-       These three are NOT in the person's rearrangeable order: the rail
-       is theirs to arrange above the divider, and the utilities below it
-       stay where they are put. */
-    kWorkshopPreferences = 15,
-    kWorkshopLogs = 16,
-    kWorkshopConnection = 17 /* pinned; every nav insertion pushes this
-                                and Logs down — iCloud moved the prefs
-                                format to 17, Chat to 18, the Preferences
-                                page to 19, Mirror to 21 (20 was the
-                                rail's collapsed state, which renumbered
-                                nothing), Development to 23 and Web to 24;
-                                see now_prefs_load */
-} WorkshopModuleID;
-
-enum { kWorkshopModuleCount = 17 };
-
-/* The nav range is a CONTIGUOUS prefix, 1..kWorkshopNavRows, and the
-   pinned group is everything after it. The sidebar's saved order stores
-   ids from this range, so the range must stay a prefix: a new page goes
-   in before Preferences (extending the nav range) or after Connection,
-   never in between. */
-#define kWorkshopIsNavModule(m) \
-    ((int)(m) >= 1 && (int)(m) < (int)kWorkshopPreferences)
 
 typedef struct WorkshopModuleOps {
     OSErr (*create)(WindowRef owner, const Rect *body);
@@ -69,6 +30,28 @@ typedef struct WorkshopModuleOps {
     /* Semantic content the module draws by hand. Optional; child controls
        remain Control Manager facts and must not be repeated here. */
     void (*describe_scene)(const WorkshopSceneWriter *writer);
+    /* "What is selected on me, as plain text." Answers Edit>Copy, which
+       is greyed on a page that leaves this NULL - honest, because a page
+       with nothing worth handing someone should not pretend otherwise.
+
+       The MODULE answers, not a focused field: this window has no
+       keyboard-focus machinery, so "the selection" is whatever the page
+       itself decides is worth copying, which for most pages is the whole
+       page as text.
+
+       Contract: write at most `cap - 1` bytes plus a terminator into the
+       CALLER's buffer and return the length written (0 = nothing to
+       copy, which the Workshop treats as a refusal and leaves the scrap
+       alone). The buffer is the caller's so a page never has to own one,
+       and length-capped so a page with a long scrollback cannot decide
+       how much memory this costs.
+
+       Deliberate: that signature is also a wire payload. A future
+       cross-device copy - this Mac's selection landing on the other
+       Mac's clipboard - reads exactly this, so a page implementing it
+       for the local scrap has already served the wire half. Text only;
+       no PICT, no styles, no flavor negotiation. */
+    long (*copy_text)(char *out, long cap);
 } WorkshopModuleOps;
 
 typedef enum {

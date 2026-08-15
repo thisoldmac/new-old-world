@@ -24,6 +24,7 @@
 #include "commands.h"
 #include "fileshare.h"
 #include "json.h"
+#include "logquery.h"
 #include "nowlog.h"
 #include "prefs.h"
 #include "screenshot.h"
@@ -358,8 +359,12 @@ static void chat_verb_note(int kind, const char *reply)
         if (n < 0) {
             console_model_append("  chat: unreadable catalog");
         } else if (n == 0) {
-            console_model_append(
-                "  the other Mac serves chat but has nothing configured");
+            char peer[40];
+
+            conn_peer_label(peer, sizeof peer);
+            snprintf(line, sizeof line,
+                     "  %.30s serves chat but has nothing configured", peer);
+            console_model_append(line);
         }
         for (i = 0; i < n; ++i) {
             if (strcmp(rows[i].state, "serving") == 0) {
@@ -830,6 +835,10 @@ static void console_model_dispatch(const char *input)
         run_gestalt_view(group, full, save);
         return;
     }
+    if (strcmp(name, "romdump") == 0) {
+        run_shared_verb(name, raw_args);
+        return;
+    }
     if (strcmp(name, "screenshot") == 0) {
         run_screenshot_local(depth_flag, bands_flag, no_save);
         return;
@@ -1089,31 +1098,43 @@ static void console_model_dispatch(const char *input)
         return;
     }
     if (strcmp(name, "tail") == 0) {
-        char lines[2600];
-        long count = target[0] != '\0' ? strtol(target, NULL, 10) : 20;
-        const char *p;
-        int got;
+        /* One grammar and one selection, shared with the wire face
+           (logquery.c) — this branch only renders. "tail [lines] [area]
+           [before N]" pages the whole 2000-line ring from a keyboard,
+           which used to take the Logs page. */
+        LogQuery q;
+        LogPage page;
+        int ti;
 
-        if (count < 1) { count = 1; }
-        if (count > 40) { count = 40; }
-        got = now_log_tail((int)count, lines, sizeof lines);
+        now_logquery_defaults(&q);
+        now_logquery_parse_line(target, &q);
+        now_logquery_select(&q, &page);
+
         snprintf(line, sizeof line, "  %s", now_log_path());
         console_model_append(line);
-        if (got == 0) {
-            console_model_append("  (nothing logged yet)");
+        if (page.matching == 0) {
+            console_model_append(q.area[0] != '\0'
+                                     ? "  (no lines in that area)"
+                                     : "  (nothing logged yet)");
             return;
         }
-        for (p = lines; *p != '\0'; ) {
-            const char *nl = strchr(p, '\n');
-            long len = nl != NULL ? (long)(nl - p) : (long)strlen(p);
-
-            if (len > (long)sizeof line - 3) {
-                len = (long)sizeof line - 3;
-            }
-            memcpy(line, p, (size_t)len);
-            line[len] = '\0';
+        if (page.returned == 0) {
+            console_model_append("  (nothing older than that cursor)");
+            return;
+        }
+        for (ti = 0; ti < page.returned; ++ti) {
+            snprintf(line, sizeof line, "  %.117s",
+                     now_log_line(page.idx[ti]));
             console_model_append(line);
-            p = nl != NULL ? nl + 1 : p + strlen(p);
+        }
+        if (page.older > 0) {
+            /* The next page, spelled as the command that fetches it. */
+            snprintf(line, sizeof line,
+                     "  ... %ld older match; tail %ld %.6s%sbefore %lu",
+                     page.older, q.lines, q.area,
+                     q.area[0] != '\0' ? " " : "",
+                     page.seq[0]);
+            console_model_append(line);
         }
         return;
     }
@@ -1576,6 +1597,36 @@ static void console_model_dispatch(const char *input)
             return;
         }
         console_model_append("  offered; the File Sharing panel reports the rest");
+        return;
+    }
+    /* The other end of a transfer, in whichever direction it is going —
+       the same two implementations the Workshop's Cancel buttons call,
+       not a third. Takes no argument for NOW-68K's reason (run_cancel,
+       commands68.c): the wire's file.cancel names an id, and a person
+       has neither a way to know one nor a second transfer to confuse it
+       with. Console-only on this guest, like `put`: a host cancels
+       through file.cancel itself. */
+    if (strcmp(name, "cancel") == 0) {
+        char why[128];
+
+        if (now_wire_put_cancel(why, sizeof why) == 0) {
+            console_model_append("  stopped receiving");
+            return;
+        }
+        if (now_wire_get_cancel(why, sizeof why) == 0) {
+            console_model_append("  stopped the transfer we asked for");
+            return;
+        }
+        /* Said plainly rather than folded into "nothing to cancel": an
+           outbound send has no guest-originated stop yet, and reporting
+           a machine as quiet while a file is leaving it would be the
+           one answer here worse than a refusal. */
+        if (now_wire_send_state(NULL, NULL, NULL, 0) != kSendNothing) {
+            console_model_append(
+                "cancel: a file being sent cannot be stopped from here yet");
+            return;
+        }
+        console_model_append("cancel: nothing is being transferred");
         return;
     }
     /* `development` takes no line and uses the generic row renderer below.

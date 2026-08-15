@@ -13,9 +13,6 @@ final class WebBridgeModelTests: XCTestCase {
         let (defaults, name) = defaults()
         defer { defaults.removePersistentDomain(forName: name) }
         let model = WebBridgeModel(defaults: defaults, environment: [:])
-        model.bindAddress = "192.168.1.20"
-        model.port = 5188
-        model.allowedClient = "192.168.1.44"
         model.engine = .playwright
         model.profile = .macweb
         model.lens = .reader
@@ -27,11 +24,11 @@ final class WebBridgeModelTests: XCTestCase {
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: data) as? [String: Any])
 
-        XCTAssertEqual(object["host"] as? String, "192.168.1.20")
-        XCTAssertEqual(object["port"] as? Int, 5188)
+        XCTAssertEqual(object["host"] as? String, "127.0.0.1")
+        XCTAssertEqual(object["port"] as? Int, 0)
         XCTAssertEqual(object["engine"] as? String, "playwright")
         XCTAssertEqual(object["allowed_clients"] as? [String],
-                       ["192.168.1.44"])
+                       ["127.0.0.1", "::1"])
         XCTAssertEqual(object["ai_plan_command"] as? [String],
                        ["/tmp/layout-plan"])
         XCTAssertEqual(object["allow_private_destinations"] as? Bool, true)
@@ -40,26 +37,33 @@ final class WebBridgeModelTests: XCTestCase {
         XCTAssertEqual(object["handlers_enabled"] as? Bool, false)
     }
 
-    func testLoopbackIsNotPresentedAsClassicMacReachable() {
+    func testStartsAutomaticallyDefaultsOffAndRoundTripsThroughDefaults() {
+        // H1b: unlike MCP stdio (default on), the web relay is a heavier
+        // bundled process, so an unset preference must read false — and the
+        // key App.swift's launch hook reads directly must be the same one
+        // this model persists to.
         let (defaults, name) = defaults()
         defer { defaults.removePersistentDomain(forName: name) }
-        let model = WebBridgeModel(defaults: defaults, environment: [:])
-        model.bindAddress = "127.0.0.1"
 
-        XCTAssertTrue(model.proxyInstruction.contains("not reachable"))
-        XCTAssertFalse(model.proxyInstruction.contains("Set the classic"))
+        XCTAssertFalse(WebBridgeModel(defaults: defaults, environment: [:])
+            .startsAutomatically)
+
+        let model = WebBridgeModel(defaults: defaults, environment: [:])
+        model.startsAutomatically = true
+        XCTAssertTrue(defaults.bool(
+            forKey: WebBridgeModel.startsAutomaticallyDefaultsKey))
+
+        let reloaded = WebBridgeModel(defaults: defaults, environment: [:])
+        XCTAssertTrue(reloaded.startsAutomatically)
     }
 
-    func testLANListenerWithoutPeerRestrictionIsVisible() {
+    func testRendererIsInternalAndUsesReadinessEndpoint() {
         let (defaults, name) = defaults()
         defer { defaults.removePersistentDomain(forName: name) }
         let model = WebBridgeModel(defaults: defaults, environment: [:])
-        model.bindAddress = "192.168.1.20"
-        model.allowedClient = ""
-
-        XCTAssertTrue(model.exposesLANWithoutPeerRestriction)
-        model.allowedClient = "192.168.1.44"
-        XCTAssertFalse(model.exposesLANWithoutPeerRestriction)
+        model.acceptOutput("NOW_WEB_READY now-web-bridge/1 127.0.0.1:53144\n")
+        XCTAssertEqual(model.rendererEndpoint?.absoluteString,
+                       "http://127.0.0.1:53144")
     }
 
     func testReadinessRequiresExactProtocol() {
@@ -83,5 +87,24 @@ final class WebBridgeModelTests: XCTestCase {
 
         XCTAssertEqual(model.lifecycle,
                        .ready(address: "192.168.1.20", port: 5180))
+    }
+
+    func testWireAbsoluteTargetRoutesThroughInternalRenderer() throws {
+        let request = WebRequest(
+            id: 1, method: "GET", target: "https://example.com/a?q=1")
+        let url = try XCTUnwrap(WebWireService.rendererURL(
+            for: request, endpoint: URL(string: "http://127.0.0.1:53144")!,
+            profile: .macweb, lens: .reader, handlersEnabled: false))
+        let parts = try XCTUnwrap(URLComponents(url: url,
+                                                resolvingAgainstBaseURL: false))
+        XCTAssertEqual(parts.path, "/go")
+        XCTAssertEqual(parts.queryItems?.first { $0.name == "u" }?.value,
+                       request.target)
+        XCTAssertEqual(parts.queryItems?.first { $0.name == "profile" }?.value,
+                       "macweb")
+        XCTAssertEqual(parts.queryItems?.first { $0.name == "lens" }?.value,
+                       "reader")
+        XCTAssertEqual(parts.queryItems?.first { $0.name == "handlers" }?.value,
+                       "off")
     }
 }

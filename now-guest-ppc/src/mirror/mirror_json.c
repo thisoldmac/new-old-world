@@ -2,6 +2,7 @@
 
 #include "json.h"
 #include "mirror_anchor.h"
+#include "mirror_consent.h"
 #include "peek_table.h"
 
 #include <stdio.h>
@@ -199,14 +200,25 @@ long now_mirror_json(const MirrorFacts *facts, long id, char *out, long cap)
         }
     }
     if (n < cap) {
+        /* `enabled` is the field; the four beside it are the retired
+           per-plane gates, still sent and every one of them the master.
+           They are not decoration: a host built before this change
+           declares all four REQUIRED and would fail to decode the whole
+           facts object without them - the same defect class as a field
+           one side has never heard of, arriving from the other
+           direction. now_mirror_consent_to_gates() is what writes them,
+           so the wire and the preferences file cannot disagree about
+           what the compatibility value is. */
+        const char *word = facts->policy.enabled ? "true" : "false";
+        const char *gate =
+            now_mirror_consent_to_gates(facts->policy.enabled) ? "true"
+                                                               : "false";
+
         n += snprintf(out + n, (size_t)(cap - n),
-                      "},\"policy\":{\"structure\":%s,"
+                      "},\"policy\":{\"enabled\":%s,\"structure\":%s,"
                       "\"finderComplements\":%s,\"content\":%s,"
                       "\"foregroundCycle\":%s},\"planes\":[",
-                      facts->policy.structure ? "true" : "false",
-                      facts->policy.finder_complements ? "true" : "false",
-                      facts->policy.content ? "true" : "false",
-                      facts->policy.foreground_cycle ? "true" : "false");
+                      word, gate, gate, gate, gate);
     }
     for (i = 0; i < kMirrorPlaneCount && n < cap; ++i) {
         const MirrorPlaneFact *plane = &facts->planes[i];

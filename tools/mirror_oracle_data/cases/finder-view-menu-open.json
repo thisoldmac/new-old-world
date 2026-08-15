@@ -1,0 +1,20 @@
+{
+  "id": "finder-view-menu-open",
+  "profile": "platinum.macos-8.6.default",
+  "title": "Finder View menu open",
+  "requiredState": [
+    "Finder is frontmost",
+    "No Finder item is selected",
+    "The View menu is open"
+  ],
+  "inputSequence": "finder-clean-desktop",
+  "inputActions": ["move 130 10", "down 0"],
+  "regions": [
+    {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
+    {"name": "view-menu", "source": "screen", "rect": [109, 19, 288, 183]}
+  ],
+  "masks": [
+    {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}
+  ],
+  "render": {"openMenu": 3}
+}

@@ -16,7 +16,7 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | ID | Address | Purpose |
 |---|---:|---|
 | `control` | `0` | JSON control messages, framed on channel 0. |
-| `bulk` | `1` | Raw payload bytes on channel 1, correlated by the frame header's transfer id. Four payload kinds ride it: capture pixel data (rows top-to-bottom, rowBytes apart; depth 8 uses the guest's palette; 16 is RGB555 big-endian; 32 is xRGB8888 big-endian), file content (file.begin describes the container), a scene document (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion — or, when scene.begin says delta:true, a delta against the baseline the request named), and a cloud preview (preview.begin: raw indexed rows, top-to-bottom, rowBytes apart, already dithered by the HOST to the depth the guest asked — no palette block, because the target is the classic system table for that depth, which both sides already own). The control message that began the transfer says which. |
+| `bulk` | `1` | Raw payload bytes on channel 1, correlated by the frame header's transfer id. Four payload kinds ride it: capture pixel data (rows top-to-bottom, rowBytes apart; depth 8 uses the guest's palette; 16 is RGB555 big-endian; 32 is xRGB8888 big-endian), file content (file.begin describes the container), a scene document (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion — or, when scene.begin says delta:true, a delta against the baseline the request named), with menu rows carrying an additive optional `submenu` boolean. Classic Menu Manager records overload the hierarchical row's command byte and store the submenu id in the mark byte, so `submenu:true` and `mark:true` are distinct visual and interaction facts rather than two readings of the same byte. and a cloud preview (preview.begin: raw indexed rows, top-to-bottom, rowBytes apart, already dithered by the HOST to the depth the guest asked — no palette block, because the target is the classic system table for that depth, which both sides already own). The control message that began the transfer says which. |
 
 ## Operations
 
@@ -49,8 +49,12 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `hostServesCloud` | `receive` | `control` | `cloudReport`, `cloudListing`, `cloudCard`, `cloudRefuse`, `previewBegin`, `previewEnd` |
 | `guestAsksChat` | `send` | `control` | `chatModels`, `chatSend`, `chatCancel`, `chatReset` |
 | `hostServesChat` | `receive` | `control` | `chatCatalog`, `chatDelta`, `chatStatus`, `chatResult` |
+| `guestAsksWeb` | `send` | `control` | `webRequest`, `webCancel` |
+| `hostServesWeb` | `receive` | `control` | `webResponseBegin`, `webResponseChunk`, `webResponseEnd` |
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
 | `hostServesHostSurface` | `receive` | `control` | `hostShown` |
+| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey`, `continuityGrab` |
+| `guestReportsContinuity` | `receive` | `control` | `continuityReport`, `continuityKeyReport`, `continuitySelection` |
 | `peerAnnouncesMirrorInvalidation` | `send` | `control` | `mirrorInvalidate` |
 | `peerReceivesMirrorInvalidation` | `receive` | `control` | `mirrorInvalidate` |
 
@@ -117,6 +121,13 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `softwareList` | `software.list` | `SoftwareList` |
 | `softwareListing` | `software.listing` | `SoftwareListing` |
 | `agentAccess` | `agent.access` | `AgentAccess` |
+| `continuityArm` | `continuity.arm` | `ContinuityArm` |
+| `continuityReport` | `continuity.report` | `ContinuityReport` |
+| `continuityDisarm` | `continuity.disarm` | `ContinuityDisarm` |
+| `continuityKey` | `continuity.key` | `ContinuityKey` |
+| `continuityKeyReport` | `continuity.keyReport` | `ContinuityKeyReport` |
+| `continuitySelection` | `continuity.selection` | `ContinuitySelection` |
+| `continuityGrab` | `continuity.grab` | `ContinuityGrab` |
 | `cloudServices` | `cloud.services` | `CloudServices` |
 | `cloudReport` | `cloud.report` | `CloudReport` |
 | `cloudList` | `cloud.list` | `CloudList` |
@@ -134,6 +145,11 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `chatResult` | `chat.result` | `ChatResult` |
 | `chatCancel` | `chat.cancel` | `ChatCancel` |
 | `chatReset` | `chat.reset` | `ChatReset` |
+| `webRequest` | `web.request` | `WebRequest` |
+| `webResponseBegin` | `web.response.begin` | `WebResponseBegin` |
+| `webResponseChunk` | `web.response.chunk` | `WebResponseChunk` |
+| `webResponseEnd` | `web.response.end` | `WebResponseEnd` |
+| `webCancel` | `web.cancel` | `WebCancel` |
 | `previewBegin` | `preview.begin` | `PreviewBegin` |
 | `previewEnd` | `preview.end` | `PreviewEnd` |
 | `hostShow` | `host.show` | `HostShow` |
@@ -148,14 +164,15 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 |---|---|---|---|
 | `development` | — | `development` | The PPC guest's human-registered Projects and MPW environment. |
 | `development-build` | `action` (required), `projectID`, `candidateID` | `development-build` | Starts, observes or cancels the PPC guest's page-neutral MPW ToolServer service. |
-| `development-project` | `projectID` (required), `cursor` | `development-project` | Measures and pages one active source tree beneath the human-selected Projects root. |
+| `development-project` | `action`, `projectID`, `cursor` | `development-project` | Lists the active projects beneath the human-selected Projects root, or measures and pages one of them. |
 | `development-stage` | `action` (required), `candidateID` (required), `projectID`, `expectedDigest`, `expectedFiles`, `baseGuestDigest` | `development-stage` | Prepares, observes or discards one inactive guest project candidate. |
 | `development-run` | `productRef` (required) | `development-run` | Launches only the unchanged opaque product measured by the last successful Development build. |
 | `development-test` | `productRef` (required) | `development-test` | Executes the closed test plan declared by the Project.ckp that produced the unchanged opaque product. |
 | `development-open` | `projectID` (required) | `development-open` | Optionally locates and launches CodeKitten through the classic Desktop database, then sends the active Project.ckp for one opaque project ID using the standard open-documents Apple Event. |
 | `help` | `topic` | `help` | What commands THIS machine serves, asked of the machine that serves them. |
-| `update` | `component` | `update` | Reads the exact application and extension builds the connected host has published. |
+| `update` | `component`, `hostApproved` | `update` | Reads the exact application and extension builds the connected host has published. |
 | `gestalt` | — | `snapshot`, `cpu`, `memory`, `os`, `network`, `hw`, `notice` | The guest's own account of itself, via the Gestalt Manager. |
+| `romdump` | — | `romdump` | Writes the responder's complete ROM to `New Old World ROM.bin` under its configured Files share. |
 | `ls` | `path` | `ls` | List a folder in the guest's share. |
 | `put` | `name` | `put` | Send a file from the guest to the host. |
 | `cancel` | — | `cancel` | Abandon the transfer in flight, in whichever direction it is going. |
@@ -163,7 +180,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | `putstat` | — | `putstat` | Where the last file the guest RECEIVED spent its time: bytes, chunk and write counts, and the milliseconds inside FSWrite against the whole receive path. |
 | `desktop` | — | `desktop`, `source`, `hasPattern`, `hasPicture`, `patternBytes`, `patternCarried`, `note` | What the guest's desktop is actually drawn from, asked of the running machine rather than read out of a resource. |
 | `wirestat` | `action`, `value` | `wirestat` | How long the guest takes to NOTICE a request, as two distributions it alone can take: the interval between its own wire service passes, and the delay from Open Transport announcing that data arrived to its event loop reading it. |
-| `tail` | `lines` | `tail` | The last lines of the guest's log for this launch. |
+| `tail` | `lines`, `area`, `before` | `tail`, `log` | Lines of the guest's log for this launch, read from the in-memory ring — 2000 lines (the guest's kLogKept, restated here so both sides read one number), live even when disk logging is off. |
 | `vprobe` | — | `vprobe` | Measure the guest's VRAM read cost by access method: raw framebuffer reads at 8/16/32/64-bit widths against the CopyBits baseline, reread caching, partial-read linearity, and pixel fidelity. |
 | `screenshot` | `depth`, `save` | `screenshot` | Capture the guest's screen. |
 | `shotdiag` | — | `shotdiag` | Stage a capture down the guest's real wire path and report where it read from: the framebuffer base as the guest resolved it, StripAddress of that base, whether the machine is in 32-bit addressing at the moment of the walk, and the first sixteen bytes of row 0 as the walk sees them beside the same row as CopyBits copies it. |
@@ -202,6 +219,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | `axsnap` | — | `axsnap` | The cheap one: who is front, whether the reference layer can see it, and how many references are live. |
 | `cycle` | — | `cycle` | Brings each application on the guest forward in turn, with the anchor plane armed, so that it executes its own event loop once and the resident captures its anchor — then restores the application that was frontmost. |
 | `mirror` | — | `mirror` | The guest's read-only lifecycle view of the ONE optional NOW Extension and its data planes. |
+| `mirrorlog` | `action` | `mirrorlog` | The `mirror` log area's DEBUG TIER, on one session-scoped switch that is OFF each launch. |
 
 ## Change discipline
 

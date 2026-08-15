@@ -33,8 +33,15 @@ Boolean files_browser_at_root(void);
 void files_browser_path_text(char *out, long cap);
 /* The live listing state for the path row: "Reading...", "N items". */
 void files_browser_count_text(char *out, long cap);
-/* Transfer commentary and errors, for the status placard. */
+/* This view's own errors, for the page's browse status channel. Empty
+   when it has nothing to say; the transfer's commentary is a different
+   channel and comes from the pull, not from here. */
 void files_browser_note_text(char *out, long cap);
+
+/* True ONCE, for a pass in which the path, the count or the note
+   changed. The path row belongs to the module, so this is how a listing
+   that arrived asks for it to be repainted. */
+Boolean files_browser_chrome_changed(void);
 
 /* --- the pull in flight -------------------------------------------------
    The view is what starts a pull (a double-click, or Return on a

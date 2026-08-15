@@ -29,13 +29,14 @@ static void test_layout(void)
         check(layout.plane_rows[i - 1].bottom <= layout.plane_rows[i].top,
               "plane rows do not overlap");
     }
-    for (i = 1; i < kMirrorPolicyCount; ++i) {
-        check(layout.policy_rows[i - 1].bottom <= layout.policy_rows[i].top,
-              "policy controls do not overlap");
-    }
-    check(layout.policy_rows[kMirrorPolicyCount - 1].bottom
-              <= layout.show_button.top,
-          "policy controls precede host button");
+    check(layout.policy_heading.bottom <= layout.consent_row.top,
+          "the consent heading precedes its checkbox");
+    check(layout.consent_row.bottom <= layout.consent_note.top,
+          "the consent sentence sits under its checkbox");
+    check(layout.consent_note.bottom <= layout.policy_status.top,
+          "the consent sentence and its status line do not overlap");
+    check(layout.consent_row.bottom <= layout.show_button.top,
+          "consent precedes host button");
     check(layout.note[0].bottom <= body.bottom,
           "policy note fits the Workshop");
 }
@@ -135,6 +136,7 @@ static void test_rest_words(void)
 {
     MirrorFacts facts;
     char out[160];
+    char tiny[8];
 
     memset(&facts, 0, sizeof facts);
 
@@ -168,6 +170,23 @@ static void test_rest_words(void)
     check(strncmp(out, "Trap patches in", 15) == 0
               && strstr(out, "restart") != NULL,
           "the one-way door leads the line and says restart");
+
+    facts.rest_state |= kNowPeekRestCursorTrackingPatched;
+    now_mirror_rest_text(&facts, out, sizeof out);
+    check(strncmp(out, "Cursor tracking patched", 23) == 0
+              && strstr(out, "act traps patched") != NULL
+              && strstr(out, "restart") != NULL,
+          "Continuity's permanent tracking hooks are named first");
+
+    facts.rest_state |= kNowPeekRestADBObserverInstalled;
+    now_mirror_rest_text(&facts, out, sizeof out);
+    check(strstr(out, "ADB observer") == NULL
+              && strstr(out, "Cursor tracking patched") != NULL,
+          "the retired passive ADB bit remains a silent tombstone");
+    memset(tiny, 'x', sizeof tiny);
+    now_mirror_rest_text(&facts, tiny, sizeof tiny);
+    check(tiny[sizeof tiny - 1] == '\0',
+          "a truncated permanent-hook diagnostic remains terminated");
 
     facts.rest_state |= kNowPeekRestLivenessTicking | kNowPeekRestTransport;
     now_mirror_rest_text(&facts, out, sizeof out);
@@ -207,6 +226,38 @@ static void test_display_change_detection(void)
           "a plane state transition repaints the page");
 }
 
+/* The sentence under the consent checkbox. It is tested because it is the
+   one line on this page that can mislead in the dangerous direction: a
+   person who reads "on" as "everything about this Mac is being captured"
+   turns it off; a person who reads it as "nothing happens until the other
+   Mac asks" leaves it on. Both sentences must name the other machine, and
+   neither may claim capture. */
+static void test_consent_note(void)
+{
+    char line[160];
+
+    now_mirror_consent_note(true, "Michelle's MacBook Pro", line,
+                            (long)sizeof line);
+    check(strstr(line, "Michelle's MacBook Pro") != NULL,
+          "consent-on names the connected machine");
+    check(strstr(line, "which planes") != NULL,
+          "consent-on says the other Mac still chooses the planes");
+
+    now_mirror_consent_note(false, "Michelle's MacBook Pro", line,
+                            (long)sizeof line);
+    check(strstr(line, "cannot mirror") != NULL,
+          "consent-off states the refusal");
+
+    /* Disconnected, and the declared fallback rather than an empty gap
+       where a machine name should be. */
+    now_mirror_consent_note(true, "", line, (long)sizeof line);
+    check(strstr(line, "Other Mac") != NULL,
+          "an unnamed peer falls back to the declared name");
+    now_mirror_consent_note(false, NULL, line, (long)sizeof line);
+    check(strstr(line, "Other Mac") != NULL,
+          "a NULL peer is the same fallback, not a crash");
+}
+
 int main(void)
 {
     printf("mirror_layout_test\n");
@@ -214,6 +265,7 @@ int main(void)
     test_lifecycle_words();
     test_plane_words();
     test_rest_words();
+    test_consent_note();
     test_display_change_detection();
     if (failures) {
         printf("%d failure(s)\n", failures);

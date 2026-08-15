@@ -10,6 +10,7 @@
 #include "proc_actions.h"
 #include "workshop_layout.h"
 #include "workshop_construct.h"
+#include "workshop_drop.h"
 #include "workshop_registry.h"
 #include "workshop_sidebar.h"
 #include "wire.h"
@@ -277,19 +278,28 @@ Boolean workshop_open(void)
         }
         workshop_sidebar_set_selection(g_selected);
     }
+    /* Drops last, and its refusal is not this function's failure: a
+       window without the Drag Manager is a window a person can still use
+       every other way, and Files > Send File... is still the way in. */
+    (void)now_drop_install(g_window);
     ShowWindow(g_window);
     SelectWindow(g_window);
     return true;
 }
 
-void workshop_close(void)
+void workshop_close(Boolean quitting)
 {
     int i;
 
     if (g_window == NULL) {
         return;
     }
-    /* The session rides in the prefs file, like the old windows'. */
+    /* The session rides in the prefs file, like the old windows'. A
+       user-close (quitting false) and quit teardown (quitting true, and
+       we are only here because the window still existed) both write
+       workshop_open_at_quit directly from the argument: the field means
+       exactly "was the Workshop open when this session last ended", and
+       that is precisely what each caller knows at its own call site. */
     {
         NowPrefs prefs;
         Rect bounds;
@@ -298,8 +308,14 @@ void workshop_close(void)
         GetWindowBounds(g_window, kWindowContentRgn, &bounds);
         prefs.workshop_rect = bounds;
         prefs.workshop_module = (short)g_selected;
+        prefs.workshop_open_at_quit = quitting;
         now_prefs_save(&prefs);
     }
+    /* Before the window goes: RemoveTrackingHandler takes a WindowRef,
+       and a handler left installed on a disposed window is a Drag
+       Manager holding a stale reference for the next drag over that
+       screen position. */
+    now_drop_remove();
     for (i = 1; i <= kWorkshopModuleCount; ++i) {
         WorkshopModuleInstance *instance = &g_modules[i];
 
@@ -339,6 +355,10 @@ void workshop_select_module(WorkshopModuleID module)
     if (module == g_selected) {
         return;
     }
+    /* A drop's outcome is news on the page it happened on. Carrying it
+       onto the next page would be a stale sentence in the one place this
+       window puts current ones. */
+    now_drop_clear_note();
     /* HideControl erases each control on the spot and ShowControl
        paints it back, so a switch used to repaint the pane piecemeal
        and then a second time at the update event. Clip the direct
@@ -408,23 +428,43 @@ static void draw_header(void)
     }
 }
 
-static void draw_status(void)
+/* The one line the placard shows, asked in one place so the draw, the
+   idle repaint test and the scene cannot disagree about it.
+ *
+   A dropped file's outcome comes FIRST. It is the most recent thing the
+   person did, it belongs to the window rather than to whichever page
+   happens to be showing (a file dropped on NOW means "send this",
+   wherever it lands), and without this line a drop with no session
+   connected would be a gesture that produced nothing and said nothing.
+   It yields back to the page's own line as soon as the queue has
+   nothing left to report - see workshop_drop.h. */
+static void status_line(char *out, long cap)
 {
     WorkshopModuleInstance *instance = selected_instance();
+    const WorkshopModuleOps *ops = selected_ops();
+
+    now_drop_status(out, cap);
+    if (out[0] != '\0') {
+        return;
+    }
+    if (instance != NULL && ops != NULL && instance->created
+        && ops->status_text != NULL) {
+        ops->status_text(out, cap);
+    } else {
+        strcpy(out, "Nothing to report yet.");
+    }
+}
+
+static void draw_status(void)
+{
     Str255 text;
     char line[120];
-    const WorkshopModuleOps *ops = selected_ops();
 
     DrawThemePlacard(&g_lay.status,
                      g_active ? kThemeStateActive : kThemeStateInactive);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     MoveTo((short)(g_lay.status.left + 10), (short)(g_lay.status.top + 15));
-    if (instance != NULL && ops != NULL && instance->created
-        && ops->status_text != NULL) {
-        ops->status_text(line, sizeof line);
-    } else {
-        strcpy(line, "Nothing to report yet.");
-    }
+    status_line(line, sizeof line);
     CopyCStringToPascal(line, text);
     TruncString((short)(g_lay.grow_safe.left - g_lay.status.left - 14),
                 text, truncEnd);
@@ -594,7 +634,6 @@ void workshop_idle(void)
     char peer[40];
     char status[120];
     static char shown_status[120];
-    const WorkshopModuleOps *ops;
     int i;
 
     if (g_window == NULL) {
@@ -618,19 +657,16 @@ void workshop_idle(void)
             instance->ops->idle();
         }
     }
-    /* The status placard mirrors the selected module's line; repaint
-       only on change, and only the placard. */
-    ops = selected_ops();
-    {
-        WorkshopModuleInstance *instance = selected_instance();
-        if (instance != NULL && ops != NULL && instance->created
-            && ops->status_text != NULL) {
-            ops->status_text(status, sizeof status);
-            if (strcmp(status, shown_status) != 0) {
-                strcpy(shown_status, status);
-                InvalWindowRect(g_window, &g_lay.status);
-            }
-        }
+    /* The status placard mirrors whatever status_line settles on -
+       the drop queue's line or the selected module's; repaint only on
+       change, and only the placard. It is asked unconditionally now: the
+       old form only looked when the page HAD a status_text, so a drop
+       onto a page without one would never have repainted the placard it
+       had just changed. */
+    status_line(status, sizeof status);
+    if (strcmp(status, shown_status) != 0) {
+        strcpy(shown_status, status);
+        InvalWindowRect(g_window, &g_lay.status);
     }
 }
 
@@ -655,6 +691,79 @@ void workshop_resized(void)
     SetPortWindowPort(g_window);
     GetWindowPortBounds(g_window, &content);
     InvalWindowRect(g_window, &content);
+}
+
+/* Edit>Copy's two halves. The MENU asks the first, every time it is
+   pulled down; the item is greyed when the answer is no, which is this
+   application saying plainly that this page has nothing worth handing
+   someone rather than offering a command that quietly does nothing.
+
+   The buffer is the WINDOW's, not the page's: a page answers into what
+   it is given (workshop_module.h states the contract), so no page has to
+   own a copy buffer and no page decides how much memory copying costs.
+   8 KB is deliberate - a console scrollback or a census detail is a few
+   hundred lines of short lines, and the cap truncating a very long page
+   is a better failure than a page-sized allocation on a 32 MB machine.
+
+   Capability: ClearCurrentScrap, GetCurrentScrap and PutScrapFlavor are
+   each "CarbonLib 1.0 and later" in Scrap.h, comfortably below this
+   application's 1.6 floor, and are core CarbonLib rather than a lazily
+   loaded backing library - so no Gestalt gate. Every one is checked for
+   its OSStatus anyway: a scrap that refused is reported as a Copy that
+   did not happen. */
+enum { kWorkshopCopyCap = 8192 };
+
+Boolean workshop_can_copy(void)
+{
+    WorkshopModuleInstance *instance = selected_instance();
+    const WorkshopModuleOps *ops = selected_ops();
+
+    return (Boolean)(g_window != NULL && instance != NULL && ops != NULL
+                     && instance->created && ops->copy_text != NULL);
+}
+
+Boolean workshop_copy(void)
+{
+    const WorkshopModuleOps *ops = selected_ops();
+    Handle text;
+    long len;
+    OSStatus err;
+
+    if (!workshop_can_copy()) {
+        return false;
+    }
+    text = NewHandle(kWorkshopCopyCap);
+    if (text == NULL) {
+        return false;
+    }
+    HLock(text);
+    len = ops->copy_text(*text, kWorkshopCopyCap);
+    HUnlock(text);
+    if (len <= 0) {
+        /* Nothing to copy. The scrap is left exactly as it was: clearing
+           it to say "no" would destroy whatever else a person had on the
+           clipboard, which is a worse answer than silence. */
+        DisposeHandle(text);
+        return false;
+    }
+    if (len > kWorkshopCopyCap - 1) {
+        len = kWorkshopCopyCap - 1;   /* a page that ignored the cap */
+    }
+    SetHandleSize(text, len);
+    err = ClearCurrentScrap();
+    if (err == noErr) {
+        ScrapRef scrap = NULL;
+
+        err = GetCurrentScrap(&scrap);
+        if (err == noErr) {
+            HLock(text);
+            err = PutScrapFlavor(scrap, kScrapFlavorTypeText,
+                                 kScrapFlavorMaskNone, len, *text);
+            HUnlock(text);
+        }
+    }
+    DisposeHandle(text);
+    return (Boolean)(err == noErr);
 }
 
 void workshop_describe_scene(const WorkshopSceneWriter *writer)
@@ -710,12 +819,7 @@ void workshop_describe_scene(const WorkshopSceneWriter *writer)
                            selected_placeholder(), &text, true);
     }
 
-    if (instance != NULL && ops != NULL && instance->created
-        && ops->status_text != NULL) {
-        ops->status_text(line, sizeof line);
-    } else {
-        strcpy(line, "Nothing to report yet.");
-    }
+    status_line(line, sizeof line);
     SetRect(&text, (short)(g_lay.status.left + 10),
             (short)(g_lay.status.top + 3),
             (short)(g_lay.grow_safe.left - 4),

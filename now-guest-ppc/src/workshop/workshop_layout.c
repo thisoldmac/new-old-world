@@ -48,13 +48,8 @@ void workshop_layout_compute(const Rect *content, const WorkshopRailSpec *rail_s
     short row_top;
     int i;
 
-    if (collapsed) {
-        row_h = kWorkshopSidebarIconRowHeight;
-    } else if (rail_spec != NULL && rail_spec->compact) {
-        row_h = kWorkshopSidebarCompactRowHeight;
-    } else {
-        row_h = kWorkshopSidebarRowHeight;
-    }
+    row_h = collapsed ? kWorkshopSidebarIconRowHeight
+                      : kWorkshopSidebarRowHeight;
     out->row_height = row_h;
     out->collapsed = collapsed;
 

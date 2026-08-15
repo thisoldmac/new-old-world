@@ -175,6 +175,18 @@ final class FinderItemsTests: XCTestCase {
         }
     }
 
+    func testButtonsActivateOnOnePrimaryClickButOtherFinderViewsSelect() {
+        var window = Self.folderWindow(items: [Self.item("System Folder", 20, 8)])
+        window.finder = .init(path: "Macintosh HD:", view: .button)
+        XCTAssertTrue(FinderItems.activatesOnPrimaryClick(window))
+
+        for view in [Scene.FinderPresentation.View.icon, .name, .smallIcon] {
+            window.finder?.view = view
+            XCTAssertFalse(FinderItems.activatesOnPrimaryClick(window),
+                           "\(view) keeps select then double-click semantics")
+        }
+    }
+
     /// A scrollbar drawn over the icon field is still a scrollbar. The order
     /// matters: resolving an icon first would make the scrollbar unclickable
     /// on any window whose icons run under it.

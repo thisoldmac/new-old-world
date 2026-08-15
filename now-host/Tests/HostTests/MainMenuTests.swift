@@ -138,7 +138,7 @@ final class MainMenuTests: XCTestCase {
     /// that only make sense with a window (settings, module navigation) do
     /// not. This pins the split so it is a decision, not an accident.
     func testGuestVerbsAreInTheGuestMenu() throws {
-        let guest = try submenu("Old World Mac", in: menu())
+        let guest = try submenu("Guest", in: menu())
         let titles = guest.items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertEqual(titles, ["Drive", "Capture Screen", "Start Listening"])
         XCTAssertEqual(guest.items.first { $0.title == "Capture Screen" }?
@@ -199,7 +199,7 @@ final class MainMenuTests: XCTestCase {
         XCTAssertFalse(titles.contains { $0.contains("Help") && $0.contains(
             ProductIdentity.displayName) },
             "a \"NOW Help\" item would open an empty help book")
-        XCTAssertEqual(titles, ["Ask the Old World Mac What It Serves",
+        XCTAssertEqual(titles, ["Ask the Guest What It Serves",
                                 "Reveal This Mac's Log Folder"])
     }
 

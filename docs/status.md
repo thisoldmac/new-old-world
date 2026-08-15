@@ -2,28 +2,49 @@
 
 # Status: what works and what does not
 
-## 2026-08-10 — NOW Web Direct is tested; classic-browser behavior is unverified
+## 2026-08-14 — Hardware, MCP, Files appearance, and shelf navigation are tested; runtime follow-up remains
 
-The macOS host now supervises a bundled plain-HTTP Web bridge. The helper owns
+PowerPC volume census now prefers the wide HFS volume API, avoiding the legacy
+2 GB ceiling. PowerBook 1400 ROM presentation retains the measured 3 MiB
+Toolbox region and identifies its separate 1 MiB boot region; **Dump ROM**
+writes the complete image into the guest Files share and transfers it through
+the existing file protocol. These paths build and have native and host model
+coverage, but the expected approximately 64 GB volume, 4 MiB dump, and corpus
+checksum have not yet been observed on the physical PowerBook.
+
+The host MCP module now presents independent start, stop, and persisted
+automatic-start controls for stdio and HTTP. HTTP exposes an editable loopback
+port while stopped and a derived copyable URL; stdio exposes its copyable
+client command and private socket. Transport behavior is tested and the app
+builds, but launch restoration has not been visually exercised in this bundle.
+
+Files sidebar rows now bridge the active SwiftUI appearance explicitly into
+their AppKit labels and template symbols, including live Aqua/Dark Aqua
+changes. Shelf icons open a native menu of their modules: selection navigates
+directly and a menu row exports the same drag payload used elsewhere. Automated
+appearance and navigation tests pass; the exact light-mode rendering and menu
+drag gesture remain GUI-unverified.
+
+## 2026-08-14 — NOW Web uses the guest loopback and NOW wire; browser behavior is unverified
+
+The macOS host supervises a bundled internal Web renderer. The helper owns
 modern TLS and optional JavaScript fetch, emits bounded HTML profiles for
 Classilla, MacWeb and conservative 68K browsers, and offers Compatible Page,
 Reader and structurally constrained AI Layout lenses. Wikipedia and Reddit
 have optional handlers with generic fallback. The preserved 633 MB local MLX
 layout model can be selected by directory; its weights are not distributed.
 
-The PowerPC Workshop has a native Web page and a version-24 preferences
-migration for proxy port, browser profile and lens. Its address is the existing
-Connection host: `10.0.2.2` is correct for this repository's QEMU user network,
-while physical hardware must use the modern Mac's LAN address. The page never
-claims that classic-Mac loopback is available.
+The PowerPC Workshop runs an Open Transport HTTP proxy on `127.0.0.1` at its
+saved Web port. Classilla connects only to that guest-local endpoint. Bounded
+GET and HEAD requests cross the existing NOW control connection; the host
+applies its selected browser profile, lens, and handler policy, then returns
+sequenced response chunks without acquiring the shared bulk lane.
 
-This slice is **tested**, not emulator- or metal-verified. Helper integration,
-host model tests, Debug/Release app builds, both guest cross-builds and the docs
-gate pass. No Classilla or MacWeb request has yet crossed a real or emulated
-classic TCP stack. Guest-local Open Transport and MacTCP relay remain
-probe-gated and no relay contract was added. NOW-68K has no Web configuration
-surface in the excluded-from-alpha source sibling; Direct browsing there uses
-MacWeb's own proxy preferences.
+This slice is **tested**, not emulator- or metal-verified. The pure request
+parser, wire codec and host route have automated coverage and the PowerPC guest
+cross-builds. No Classilla request has yet crossed the Open Transport listener,
+and no claim is made that classic loopback works until that runtime row passes.
+NOW-68K has no Web surface or MacTCP relay in the excluded-from-alpha sibling.
 
 ## 2026-08-09 — Onboarding carries optional CodeKitten; its runtime gate remains open
 
@@ -209,6 +230,88 @@ parallel availability lists.
   enforces something, that file says how much.
 
 ## What works today
+
+- **Mirror Continuity is isolated on a release-candidate-bound feature branch**
+  (updated 2026-08-11). Its contract, host UI, and transport are implemented.
+  An attended direct-pointer pass subsequently delivered raw clicks and a
+  Finder drag on the PowerBook without a system wedge. It exposed a hidden
+  cursor wake bug, a tracking-loop sprite stranded at the press point, an
+  over-aggressive mouse-up timeout, and a lost rapid second click. The next
+  tested candidate wakes an obscured cursor from task time, gives manager-up
+  five seconds to settle, buffers one following click cycle, and adds optional
+  per-guest epoch reconnect plus experimental one-tick Fast Pump. The
+  tracking-loop sprite fix now integrates the cursor research spike's
+  permanent chain-only tracking hooks lazily on the first accepted arm. Their
+  bounded settle surface and exact tail chains are mutation-guarded; emulator
+  PMU/USB and CUDA/ADB now verify logical drag settlement, permanent-hook
+  reporting, and framebuffer changes at both held-drag endpoints. The exact
+  `e51bba923373…` resident is also verified in the clean branch-private
+  `now-stage-continuity-tracking-hooks.qcow2` bake; no shared image or receipt
+  was changed. Metal behavior remains unverified. These post-metal corrections
+  are not yet metal-verified.
+  V0 hover movement uses a
+  TCP-authorized, same-numbered UDP lane at a user-selected 15/30/60 Hz. The
+  resident releases on host departure, focus loss, link loss, lease expiry, or
+  physical guest mouse input; guest input also switches the host toggle off
+  rather than allowing a troubled host to keep ownership. The first PowerBook
+  first three runs ruled out cursor-task reentry, reporting through the
+  physical ADB device, and global jGNE settlement. The fourth reproduced the
+  wedge with only direct interrupt-time mouse-global writes remaining.
+  Branch resident 1.14 instead creates a separate absolute Cursor Device and
+  reports only through that owned record. PMU/USB and CUDA/ADB emulator rigs
+  pass movement, click-only and motion takeover, disarm, native return, TCP
+  reconnect and re-arm with zero rejects. Its first attended PB1400c run then
+  completed one host-pointer movement and returned control through native
+  trackpad input, but the next 30 Hz run produced about one second of smooth
+  motion before a fifth system-wide wedge stopped native pointer, click, and
+  keyboard input and both connections died. Resident 1.16 removes both
+  remaining 1.14 mechanisms: there is no Continuity timer or global jGNE path,
+  and the PPC pump no longer calls `HideCursor`/`ShowCursor`. Instead the pump
+  enters one no-argument resident service through Mixed Mode, which moves only
+  the owned absolute device and returns. Fresh PMU/USB and CUDA/ADB boots each
+  passed native-input preflight plus 900 points over 30 seconds at 30 Hz,
+  takeover, disarm, native return, TCP reconnect, re-arm, and clean shutdown.
+  A branch-private bake also verified that exact 1.16 fingerprint, full census,
+  clean HFS shutdown, and qcow integrity without touching the shared oracle.
+  Nevertheless the attended 1.16 run briefly moved before a leave/re-enter
+  cycle ended in the sixth system-wide wedge. The audit then found that Apple
+  requires PowerPC clients to use `CursorDevicesGlue` because the original ROM
+  Mixed Mode transition is wrong. Resident 1.17 / Continuity V3 leaves only
+  arbitration, native takeover, and a trace ring in the Extension; the PPC app
+  owns the synthetic device and uses Apple's corrected fallback transition,
+  with a request/result handshake and durable pre/post-call breadcrumbs. The
+  final PEF guard refuses the load-time InterfaceLib dependency that made the
+  Carbon app unload before `main`. The notifier no longer resolves that shared
+  cell through Process Manager or performs logging from callback context; its
+  task-time owner publishes and revokes one cached pointer. Independent cold
+  PMU/USB and CUDA/ADB runs of exact app build `55302ed3deef`, resident
+  fingerprint `31fba85add055dfed4c7581af559c42904d916b1`, each completed 900
+  streamed points at 30 Hz, click and movement takeover, disarm, authority-lane
+  reconnect, re-arm, native return, and clean Finder shutdown with zero rejected
+  datagrams. The CUDA platter log had 19 sampled call entries and 19 matching
+  returns, with zero notifier-context writer refusals. The complete repository
+  gate passes, and a branch-private
+  bake at commit `286104bb` verified the exact resident, full census survival,
+  Finder shutdown, clean HFS volume, and clean qcow2 without touching the
+  shared oracle. An attended PowerBook 1400c run then moved accurately without
+  wedging; motion remained somewhat jittery and the selected 15/30/60 Hz rate
+  did not produce a clearly different cadence. This is bounded positive metal
+  evidence, not sustained-motion or rate-fidelity qualification. There is no
+  direct `main` landing: the feature branch targets a release-candidate branch,
+  where recovery and release packaging remain gates. Wire version 2 / resident
+  V4 now implement direct click and held drag with acknowledged button
+  generations. Private PMU/USB and CUDA/ADB runs passed click, a 30-point drag,
+  lease-expiry release, native return, and clean shutdown with no held or
+  pending button; CUDA/ADB also observed physical-input takeover and 16
+  immediate click cycles / 32 settled transitions. Direct click and drag then
+  reached the PowerBook, exposing an ADB/PMU tracking alternation between the
+  press point and current host point. A new Tested candidate makes the held
+  point an explicit coherent source and reasserts it from the existing
+  chain-only `_GetMouse`, `_StillDown`, and `_Button` hooks before their
+  original traps run. PMU/USB and CUDA/ADB passed the full
+  click/rapid-click/drag/release/native-return campaign; CUDA observed real
+  held takeover. The PowerBook correction itself remains unverified.
+  [continuity-mode.md](continuity-mode.md) carries the boundary.
 
 - **Mirror human work has a session-wide priority boundary and attributable
   clocks** (2026-08-09, Tested locally; not emulator- or Metal-verified).

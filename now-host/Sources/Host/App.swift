@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// on 2026-08-05 by running two suites at once: one run's port guard
     /// named the other's `xctest` holding 5250 (docs/open-issues.md).
     private let defaults: UserDefaults
+    private lazy var appearancePreferences = AppearancePreferences(
+        defaults: defaults)
     private lazy var state = HostAppState(registry: registry,
                                           defaults: defaults)
     /* The same defaults the rest of the delegate writes to, so the
@@ -33,6 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private lazy var sidebarPreferences = SidebarPreferences(
         defaults: defaults,
         registry: registry)
+    /// Owned here, beside `appearancePreferences`, and for the same reason:
+    /// a module's "Settings…" button reaches this through `HostAppState`'s
+    /// `settingsPresenter` closure and must land on the one navigation
+    /// object the window's pill reads, not a copy that SwiftUI would
+    /// otherwise reconstruct with `HostSettingsView` itself.
+    private lazy var settingsNavigation = HostSettingsNavigation()
 
     init(defaults: UserDefaults = UserDefaults(
         suiteName: ProductIdentity.preferencesSuite) ?? .standard,
@@ -43,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
     private var statusItem: NSStatusItem?
     private var window: NSWindow?
+    private(set) var settingsWindowController: SettingsWindowController?
     private var flash: StatusItemFlash?
     private var statusWatch: AnyCancellable?
     private var mcpStdioBridgeServer: AgentIntegrationLocalServer?
@@ -52,6 +61,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Appearance is application-wide and must be set before either
+        // hosting controller creates its first view hierarchy.
+        _ = appearancePreferences
         installMainMenu()
         installStatusItem()
         /* The MCP pane's buttons, wired before the window opens so a person
@@ -63,17 +75,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             stopStdio: { [weak self] in self?.stopMCPStdio() },
             startHTTP: { [weak self] in self?.startMCPHTTP() },
             stopHTTP: { [weak self] in self?.stopMCPHTTP() })
+        /* The deep-link seam: a module's "Settings…" button reaches
+           `HostModuleContext.showSettings`, which calls
+           `state.settingsPresenter`, which lands here. Wired before any
+           module view can be shown, same as the MCP transports above. */
+        state.settingsPresenter = { [weak self] tab in
+            self?.openSettings(selecting: tab)
+        }
         /* Not the activating variant. A launch the person performed is
            activated by macOS itself, and a launch they did NOT perform — a
            background `open`, a script restarting the app while they work
            elsewhere — should stay where it was put. */
         openMainWindow()
+        /* Local Network is an app capability used by the guest link and
+           optional modules. Ask at the app boundary, before starting any
+           configured network service; Continuity may verify its own direct
+           UDP path but must never own this permission. */
+        state.localNetworkAccess.request()
         let preferences = MCPTransportPreferences(defaults: defaults)
-        if preferences.stdioEnabled { startMCPStdio() }
-        if preferences.httpEnabled { startMCPHTTP() }
+        if preferences.stdioStartsAutomatically { startMCPStdio() }
+        if preferences.httpStartsAutomatically { startMCPHTTP() }
+        // Web's own model owns its UserDefaults key, unlike MCP's separate
+        // preferences struct — reading the key directly here (rather than
+        // forcing the "web" runtime into existence just to ask it) keeps the
+        // off-by-default case free of the runtime's listener registration.
+        if defaults.bool(forKey: WebBridgeModel.startsAutomaticallyDefaultsKey) {
+            state.moduleRuntime(for: "web", as: WebHostModuleRuntime.self)?
+                .model.start()
+        }
+    }
+
+    /// A person granting Accessibility in System Settings brings THIS app
+    /// back to the foreground to do it — Settings is a separate app, so
+    /// returning here always fires activation. Continuity's edge controller
+    /// uses the moment to pick its consuming tap back up without the person
+    /// needing to toggle Continuity off and on to collect what they just
+    /// granted.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        state.continuity.applicationDidBecomeActive()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        state.localNetworkAccess.cancel()
         state.shutDownModules()
         state.onboarding.stop()
         mcpStdioBridgeServer?.stop()
@@ -148,11 +191,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         NSApp.orderFrontStandardAboutPanel(nil)
     }
 
-    /// Settings are a page in the window, not a separate panel: the wire's
-    /// port and state belong beside the modules that run over it. ⌘, opens
-    /// the window on that page, which is what the standard item promises.
+    /// Application appearance is a native window. Connection settings retain
+    /// their stable module identity and later become Connections' hero.
     @objc func showSettings() {
-        show(moduleID: "settings")
+        openSettings(selecting: nil)
+    }
+
+    /// The deep-link seam every module's "Settings…" button and Cmd-,
+    /// itself share. `tab == nil` opens (or raises) the window on whatever
+    /// tab it was last showing, exactly like the old zero-argument
+    /// `showSettings()` always did. Named apart from `showSettings()`
+    /// itself so `#selector(showSettings)` above stays unambiguous — Swift
+    /// resolves a bare name against every overload, default arguments or
+    /// not.
+    func openSettings(selecting tab: HostSettingsTab?) {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController(
+                preferences: appearancePreferences,
+                navigation: settingsNavigation,
+                sidebar: sidebarPreferences,
+                state: state,
+                registry: registry,
+                defaults: defaults)
+        }
+        if let tab {
+            settingsWindowController?.select(tab)
+        }
+        settingsWindowController?.showWindow(self)
     }
 
     @objc func showModule(_ sender: NSMenuItem) {
@@ -409,8 +474,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     @objc func openMainWindow() {
         if window == nil {
-            let root = HostRootView(registry: registry, state: state,
-                                    sidebar: sidebarPreferences)
+            let root = GlassPreferenceScope(
+                preferences: appearancePreferences,
+                content: HostRootView(registry: registry, state: state,
+                                      sidebar: sidebarPreferences))
             let controller = NSHostingController(rootView: root)
             /* The WINDOW owns its size, not whichever pane is showing.
                NSHostingController defaults to .preferredContentSize, which
@@ -428,6 +495,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             controller.sizingOptions = []
             let newWindow = NSWindow(contentViewController: controller)
             newWindow.title = ProductIdentity.displayName
+            /* The split view is the window's shell, so its chrome belongs to
+               the window rather than to simulated bars inside the sidebar.
+               A unified full-size titlebar lets AppKit carry the sidebar
+               material through the toolbar on current macOS while
+               NavigationSplitView still supplies the Ventura layout. */
+            newWindow.styleMask.insert(.fullSizeContentView)
+            newWindow.titleVisibility = .hidden
+            newWindow.titlebarAppearsTransparent = true
+            newWindow.toolbarStyle = .unified
+            newWindow.titlebarSeparatorStyle = .none
             newWindow.setContentSize(NSSize(width: 980, height: 650))
             /* A floor, so the window cannot be dragged down to a size where
                the sidebar and the detail pane have nothing left to render. */
@@ -478,7 +555,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            serving, which is a worse outcome than a button that does nothing
            because there is nothing to do. */
         guard mcpStdioBridgeServer == nil else { return }
-        MCPTransportPreferences(defaults: defaults).stdioEnabled = true
         do {
             let server = try AgentIntegrationLocalServer(
                 /* The ledger is written on the accept thread; the pane that
@@ -502,9 +578,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                    asks nothing of any guest, and a line about a call that
                    was refused BECAUSE no machine answered is exactly the
                    line the person needs. */
+                /* And `hostLogTail` for the projects reason, one step
+                   further: it reads this Mac's own log ring and reaches no
+                   guest, so refusing it for naming a machine would deny the
+                   record that says WHY that machine could not be
+                   addressed. */
                 if request.operation != .sessionHealth,
                    request.operation != .audit,
                    request.operation != .projects,
+                   request.operation != .hostLogTail,
                    let refusal = agentIntegration.addressingRefusal(
                        request.guestSelector) {
                     return .notAddressed(refusal)
@@ -827,7 +909,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                        what makes this the shortest branch in the switch. */
                     return .guestLogTail(
                         await agentIntegration.tailGuestLog(
-                            lines: request.logLineCount))
+                            lines: request.logLineCount,
+                            area: request.logArea))
                 case .census:
                     /* P1 #2. The probe is REQUIRED by the contract and by
                        the codec, so a request without one never reached a
@@ -843,6 +926,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .census(
                         await agentIntegration.census(
                             probe: probe, cursor: request.censusCursor))
+                case .hostLogTail:
+                    /* The host sibling of the branch above, and the one
+                       read in this switch that asks no Macintosh anything:
+                       it renders THIS process's own log ring. The codec has
+                       already bounded both optional fields, and a request
+                       that named neither is complete. The hop to the main
+                       actor is here because that is where the ring lives. */
+                    return .hostLogTail(.completed(
+                        await MainActor.run {
+                            HostLogTailReader.read(
+                                lines: request.hostLogLineCount,
+                                area: request.hostLogArea)
+                        }))
                 case .machineFacts:
                     /* P1 #10. Takes nothing, by the contract: `gestalt` has
                        `args: {}` and a typed call with no line returns every
@@ -1002,7 +1098,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// this Mac is not undone by closing the door it came through, so the
     /// activity stream and the presence ledger are left exactly as they are.
     private func stopMCPStdio() {
-        MCPTransportPreferences(defaults: defaults).stdioEnabled = false
         guard let server = mcpStdioBridgeServer else {
             state.agentActivity.stdioStopped()
             return
@@ -1020,7 +1115,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func startMCPHTTP() {
         guard mcpHTTPListener == nil else { return }
         let preferences = MCPTransportPreferences(defaults: defaults)
-        preferences.httpEnabled = true
         guard let mcpTokenStore else {
             state.agentActivity.httpUnavailable(
                 "Application Support is unavailable for the MCP token.")
@@ -1098,7 +1192,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     }
 
     private func stopMCPHTTP() {
-        MCPTransportPreferences(defaults: defaults).httpEnabled = false
         mcpHTTPRunID = nil
         mcpHTTPListener?.stop()
         mcpHTTPListener = nil

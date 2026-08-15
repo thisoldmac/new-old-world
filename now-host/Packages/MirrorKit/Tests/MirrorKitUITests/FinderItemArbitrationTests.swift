@@ -183,6 +183,19 @@ final class FinderItemArbitrationTests: XCTestCase {
             "an oversized report must not claim the window")
     }
 
+    /// The state-proven OS 8.6 Finder target draws a default volume from
+    /// y=47 through y=56 in an icon box beginning at y=27. The name begins at
+    /// y=60. Pinning the internal face keeps the fallback from growing back
+    /// into the full cell and pushing the label down by twelve pixels.
+    ///
+    /// **Watched to fail against**: restoring the old 2/7/4/12 insets.
+    func testDefaultDiskFaceUsesTheMeasuredFinderGeometry() {
+        XCTAssertEqual(
+            SceneRenderer.diskBodyRect(
+                CGRect(x: 736, y: 27, width: 32, height: 32)),
+            CGRect(x: 736, y: 47, width: 32, height: 10))
+    }
+
     /// A list row's NAME is a column the machine wrote, level with the row
     /// icon rather than under it. Ours is centred underneath, so drawing it
     /// there is a second name in the wrong place.
@@ -272,6 +285,151 @@ final class FinderItemArbitrationTests: XCTestCase {
                        "list view cannot depend on Finder P3 to supply names")
     }
 
+    func testButtonViewDrawsTheRaisedWellAndLabelBelowIt() throws {
+        var win = Self.folder(items: [
+            Self.item("Documents", x: 40, y: 50, w: 48, h: 48),
+        ])
+        win.finder = .init(path: "Macintosh HD:", view: .button)
+        let png = try RenderShot.png(scene: Self.scene([win]))
+        var icon = win
+        icon.finder?.view = .icon
+        let iconPNG = try RenderShot.png(scene: Self.scene([icon]))
+        let o = Self.contentOrigin
+        XCTAssertGreaterThan(
+            differences(png, iconPNG,
+                        in: CGRect(x: o.x + 40, y: o.y + 50,
+                                   width: 48, height: 48)),
+            100, "Buttons must own a raised well, not reuse icon view")
+        let label = CGRect(x: o.x, y: o.y + 90,
+                           width: 150, height: 35)
+        var unnamed = win
+        unnamed.items?[0].name = ""
+        let unnamedPNG = try RenderShot.png(scene: Self.scene([unnamed]))
+        XCTAssertGreaterThan(differences(png, unnamedPNG, in: label), 0,
+                             "Buttons has a centred label below the raised well")
+    }
+
+    func testListViewDrawsTheCountBarAndRuledFinderField() throws {
+        var win = Self.folder(
+            items: [Self.item("Documents", x: 26, y: 44, w: 16, h: 16)],
+            controls: [
+                .init(ref: "name", role: "control", title: "Name",
+                      rect: Rect(l: 0, t: 23, r: 180, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "v", role: "scrollbar", title: "",
+                      rect: Rect(l: 304, t: 43, r: 320, b: 204),
+                      enabled: true, visible: true),
+                .init(ref: "h", role: "scrollbar", title: "",
+                      rect: Rect(l: 0, t: 204, r: 304, b: 220),
+                      enabled: true, visible: true),
+            ])
+        win.finder = .init(path: "Macintosh HD:", view: .name)
+        let png = try RenderShot.png(scene: Self.scene([win]))
+        let o = Self.contentOrigin
+        let info = try XCTUnwrap(pixel(png, x: o.x + 8, y: o.y + 8))
+        XCTAssertFalse(info.0 == 255 && info.1 == 255 && info.2 == 255,
+                       "the item-count bar is Finder chrome, not bare paper")
+        let field = try XCTUnwrap(pixel(png, x: o.x + 220, y: o.y + 50))
+        XCTAssertTrue(field.0 == 238 && field.1 == 238 && field.2 == 238,
+                      "the 8.6 list field is light grey")
+        XCTAssertFalse(darkPixels(
+            png, in: CGRect(x: o.x + 12, y: o.y + 47,
+                            width: 8, height: 12)).isEmpty,
+            "folder list rows carry disclosure triangles")
+    }
+
+    func testAvailableSpaceReachesTheInfoStripInEveryFinderView() throws {
+        for view in [Scene.FinderPresentation.View.icon, .button, .name] {
+            var without = Self.folder(items: [
+                Self.item("Documents", x: 40, y: 60),
+            ], controls: [
+                .init(ref: "v", role: "scrollbar", title: "",
+                      rect: Rect(l: 304, t: 23, r: 320, b: 204),
+                      enabled: true, visible: true),
+            ])
+            without.finder = .init(path: "Macintosh HD:", view: view)
+            var with = without
+            with.finder?.availableBytes = 1_073_741_824
+
+            let plain = try RenderShot.png(scene: Self.scene([without]))
+            let available = try RenderShot.png(scene: Self.scene([with]))
+            let o = Self.contentOrigin
+            XCTAssertGreaterThan(differences(
+                plain, available,
+                in: CGRect(x: o.x, y: o.y, width: 320, height: 20)), 0,
+                "\(view) must render the shared available-space semantics")
+        }
+    }
+
+    func testListViewDrawsCatalogMetadataInSemanticColumns() throws {
+        var win = Self.folder(
+            items: [Self.item("Read Me", x: 26, y: 44, w: 16, h: 16,
+                              kind: "file")],
+            controls: [
+                .init(ref: "name", role: "control", title: "Name",
+                      rect: Rect(l: 0, t: 23, r: 150, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "date", role: "control", title: "Date Modified",
+                      rect: Rect(l: 150, t: 23, r: 235, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "size", role: "control", title: "Size",
+                      rect: Rect(l: 235, t: 23, r: 275, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "kind", role: "control", title: "Kind",
+                      rect: Rect(l: 275, t: 23, r: 304, b: 43),
+                      enabled: true, visible: true,
+                      semantic: .init(knowledge: .known,
+                                      kind: "columnHeader")),
+                .init(ref: "v", role: "scrollbar", title: "",
+                      rect: Rect(l: 304, t: 43, r: 320, b: 204),
+                      enabled: true, visible: true),
+                .init(ref: "h", role: "scrollbar", title: "",
+                      rect: Rect(l: 0, t: 204, r: 304, b: 220),
+                      enabled: true, visible: true),
+            ])
+        win.finder = .init(
+            path: "Macintosh HD:", view: .name,
+            itemMetadata: ["Read Me": .init(
+                dataBytes: 2_048, rsrcBytes: 0, modified: 2_082_844_800)])
+        var scene = Self.scene([win])
+        scene.capturedAt = 0
+
+        let png = try RenderShot.png(scene: scene)
+        let o = Self.contentOrigin
+        XCTAssertFalse(darkPixels(
+            png, in: CGRect(x: o.x + 153, y: o.y + 44,
+                            width: 78, height: 16)).isEmpty,
+            "the modification date must reach its declared column")
+        XCTAssertFalse(darkPixels(
+            png, in: CGRect(x: o.x + 238, y: o.y + 44,
+                            width: 34, height: 16)).isEmpty,
+            "the two-fork size must reach its declared column")
+        XCTAssertFalse(darkPixels(
+            png, in: CGRect(x: o.x + 278, y: o.y + 44,
+                            width: 24, height: 16)).isEmpty,
+            "the item kind must reach its declared column")
+    }
+
+    func testFinderMetadataFormattingUsesClassicEpochAndForkTotal() {
+        XCTAssertEqual(SceneRenderer.finderModifiedString(
+            2_082_844_800, relativeTo: 0), "Today, 12:00 AM")
+        XCTAssertEqual(SceneRenderer.finderSizeString(.init(
+            dataBytes: 1_024, rsrcBytes: 1_025)), "3 K")
+        XCTAssertNil(SceneRenderer.finderSizeString(.init()))
+        XCTAssertEqual(SceneRenderer.finderAvailableString(1_073_741_824),
+                       "1.00 GB")
+        XCTAssertEqual(SceneRenderer.finderAvailableString(1_073_637_376),
+                       "1,023.9 MB")
+    }
+
     func testFinderSnapshotSelectionChangesTheSemanticRow() throws {
         var plain = Self.folder(items: [
             Self.item("Documents", x: 40, y: 60, w: 16, h: 16),
@@ -285,6 +443,37 @@ final class FinderItemArbitrationTests: XCTestCase {
         XCTAssertGreaterThan(
             differences(a, b, in: CGRect(x: o.x + 40, y: o.y + 60,
                                          width: 112, height: 18)), 0)
+    }
+
+    func testIconSelectionChangesTheRenderedIcon() throws {
+        var plain = Self.folder(items: [
+            Self.item("System Folder", x: 40, y: 60),
+        ])
+        plain.finder = .init(path: "Macintosh HD:", view: .icon)
+        var selected = plain
+        selected.finder?.selectedNames = ["System Folder"]
+
+        let a = try RenderShot.png(scene: Self.scene([plain]))
+        let b = try RenderShot.png(scene: Self.scene([selected]))
+        let o = Self.contentOrigin
+        let box = CGRect(x: o.x + 40, y: o.y + 60,
+                         width: 32, height: 32)
+        XCTAssertGreaterThan(differences(a, b, in: box), 20,
+                             "selection must alter icon ink, not only its label")
+    }
+
+    func testSelectedBitmapHalvesEightBitColourChannels() throws {
+        var sourceBytes: [UInt8] = [0x66, 0xCC, 0xFE, 0xFF]
+        let source = try XCTUnwrap(CGContext(
+            data: &sourceBytes, width: 1, height: 1,
+            bitsPerComponent: 8, bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+        let selected = try XCTUnwrap(IconAtlas.selectedAppearance(source))
+        let data = try XCTUnwrap(selected.dataProvider?.data)
+        let bytes = CFDataGetBytePtr(data)!
+        XCTAssertEqual(Array(UnsafeBufferPointer(start: bytes, count: 4)),
+                       [0x33, 0x66, 0x7F, 0xFF])
     }
 
     /// Finder semantics now own the whole interior. Historical display ops

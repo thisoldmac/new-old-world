@@ -1,7 +1,38 @@
 import Foundation
 import Combine
+import AppKit
 import MirrorKit
+import NOWAgentIntegration
 import SwiftUI
+
+enum HostProcessIssueProbe {
+    static func issues(processIdentifiers: [pid_t])
+        -> [AgentIntegrationHostIssue] {
+        let identifiers = Array(Set(processIdentifiers)).sorted()
+        guard identifiers.count > 1 else { return [] }
+        return [.init(
+            code: "now-host-session-collision",
+            severity: .error,
+            message: "Multiple New Old World host applications are running. "
+                + "MCP may be connected to a different host than the visible "
+                + "window, while that window reports Address already in use.",
+            processIDs: identifiers)]
+    }
+
+    static func current() -> [AgentIntegrationHostIssue] {
+        let executableNames = Set(["Host", ProductIdentity.displayName])
+        return issues(processIdentifiers: NSWorkspace.shared
+            .runningApplications
+            .filter {
+                !$0.isTerminated
+                    && ($0.bundleIdentifier == ProductIdentity.bundleIdentifier
+                        || $0.executableURL.map {
+                            executableNames.contains($0.lastPathComponent)
+                        } == true)
+            }
+            .map(\.processIdentifier))
+    }
+}
 
 @MainActor
 final class HostAppState: ObservableObject {
@@ -32,7 +63,26 @@ final class HostAppState: ObservableObject {
     /// Not lazy: constructing it applies the saved disk-persistence switch
     /// to HostLog before the first wire event has a line to write.
     let logs: LogsModel
+    /// One app-owned Local Network permission lifecycle, shared by every
+    /// module that needs to prove a direct path to the guest.
+    let localNetworkAccess: LocalNetworkAccessController
     let listener: GuestListener
+    /// One continuity transport and preference owner, shared by Mirror's
+    /// product controls and Logs' diagnostic controls. Keeping it here avoids
+    /// constructing the Mirror runtime merely to change a logging probe.
+    let continuity: MirrorContinuityController
+    /// The one host-side file lane. App-owned rather than Mirror-owned
+    /// because the Continuity edge seam copies files with no Mirror page
+    /// constructed, and because its cache dies with the connection, not
+    /// with a page.
+    let fileTransfer: MirrorFileTransferModel
+    /// Redeems a cross-edge drag over `continuity.grab`. App-owned for the
+    /// same reason the lane above is: the gesture it answers to happens at
+    /// the shared edge, where no page need ever have been opened.
+    let continuityGrab: ContinuityGrabTransfer
+    /// The guest whose saved continuity settings are currently loaded.
+    /// Link events for another connected Mac must not reset active ownership.
+    private var continuityGuestKey: GuestKey?
     let mirrorEngines: MirrorStateEngineRegistry
     let agentIntegration: AgentIntegrationHostAdapter
     /// Who has been driving this host over the local agent endpoint. Fed by
@@ -138,6 +188,14 @@ final class HostAppState: ObservableObject {
     /// The one subscription that re-focuses every constructed module runtime.
     private var focusWatch: HostEventSubscription?
 
+    /// Set once by the app delegate, after it constructs the Settings
+    /// window controller, the same way `configureMCPTransports` hands the
+    /// delegate-owned socket lifecycles to the MCP runtime. nil in a
+    /// preview or a test with no window to open — `HostModuleContext`'s
+    /// `showSettings` closure below is a no-op until this is set, which is
+    /// the same shape `selectModule`'s default no-op takes there.
+    var settingsPresenter: ((HostSettingsTab?) -> Void)?
+
     private lazy var moduleRuntimes = HostModuleRuntimeStore(
         registry: moduleRegistry,
         context: HostModuleContext(
@@ -150,8 +208,11 @@ final class HostAppState: ObservableObject {
             agentActivity: agentActivity,
             agentCompanions: agentCompanions,
             logs: logs,
+            continuity: continuity,
+            fileTransfer: fileTransfer,
             settings: settings,
             onboarding: onboarding,
+            localNetworkAccess: localNetworkAccess,
             guestScreen: { [weak self] in
                 await MainActor.run {
                     self?.guestScreenIfKnown.flatMap {
@@ -162,6 +223,7 @@ final class HostAppState: ObservableObject {
             mirrorEngines: mirrorEngines,
             selectedModuleID: { [unowned self] in self.selectedModuleID },
             selectModule: { [unowned self] in self.selectedModuleID = $0 },
+            showSettings: { [unowned self] in self.settingsPresenter?($0) },
             selectGuest: { [unowned self] in self.selectGuest($0) },
             startListening: { [unowned self] in self.startListening() },
             stopListening: { [unowned self] in self.stopListening() },
@@ -179,6 +241,11 @@ final class HostAppState: ObservableObject {
     @discardableResult
     func selectGuest(_ key: GuestKey) -> Bool {
         listener.selectGuest(key) { [weak self] in
+            self?.continuity.edge.stop(
+                reason: "the selected Mac is changing")
+            self?.continuity.sessionWillEnd(
+                reason: "the selected Mac is changing")
+            self?.fileTransfer.activeGuestWillChange()
             self?.existingMirrorRuntime?.activeGuestWillChange()
         }
     }
@@ -191,6 +258,7 @@ final class HostAppState: ObservableObject {
         settings = SettingsModel(defaults: defaults)
         onboarding = OnboardingPortal()
         logs = LogsModel(log: .shared, defaults: defaults)
+        localNetworkAccess = LocalNetworkAccessController()
         mirrorEngines = MirrorStateEngineRegistry()
         listener = GuestListener(
             identity: .init(
@@ -201,11 +269,17 @@ final class HostAppState: ObservableObject {
                memory-only default and cannot write into a real desk's
                book of Macs. */
             registry: GuestRegistry(defaults: defaults))
+        continuity = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            localNetworkAccess: localNetworkAccess)
+        fileTransfer = MirrorFileTransferModel(listener: listener)
+        continuityGrab = ContinuityGrabTransfer(listener: listener)
         artifactApprovals = try? AgentIntegrationArtifactApprovalStore()
         let integration = AgentIntegrationHostAdapter(
             listener: listener,
             artifactApprovals: artifactApprovals,
-            mirrorEngines: mirrorEngines)
+            mirrorEngines: mirrorEngines,
+            hostIssues: HostProcessIssueProbe.current)
         agentIntegration = integration
         guestFiles = GuestFilesCommandService(
             listener: listener,
@@ -289,6 +363,23 @@ final class HostAppState: ObservableObject {
         integration.bindMirrorMetrics { [weak self] in
             self?.existingMirrorRuntime?.metrics
         }
+        /* Installed here, once, for the length of the app: the AppKit drop
+           destination at the shared edge exists whenever edge mode runs, and
+           no longer waits for somebody to open the Mirror page. The scene it
+           resolves against is still Mirror's, and is read WITHOUT
+           constructing it — a missing scene is a named refusal, not an
+           absent destination. */
+        fileTransfer.connection = currentConnection
+        ContinuityFileDrag.configure(
+            edge: continuity.edge, fileTransfer: fileTransfer,
+            scene: { [weak self] in self?.existingMirrorRuntime?.sceneIfKnown },
+            /* The guest→host lane reads the stub, never the scene: what a
+               person selected is knowable before the press, and a scene is
+               not. The epoch scoping lives inside the controller. */
+            selection: { [weak self] in
+                self?.continuity.bindableSelection() ?? .failure(.noSelection)
+            },
+            grab: continuityGrab)
         if settings.listenAtLaunch {
             startListening()
         }
@@ -315,7 +406,13 @@ final class HostAppState: ObservableObject {
     /// moment, or the window shows two machines at once for a frame.
     private func repointModels() {
         let state = listener.state
-        let connection = Self.guestState(from: state, key: listener.activeKey)
+        let activeKey = listener.activeKey
+        let connection = Self.guestState(from: state, key: activeKey)
+        if activeKey != continuityGuestKey {
+            continuityGuestKey = activeKey
+            continuity.sessionDidChange()
+        }
+        fileTransfer.connection = connection
         moduleRuntimes.focus(on: connection)
         captureSmokeIfRequested(state)
         /* Re-attached at the 019 integration, when this body moved out of

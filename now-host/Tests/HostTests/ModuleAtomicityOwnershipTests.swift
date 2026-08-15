@@ -315,7 +315,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
     func testDevelopmentDefinitionOwnsItsRuntimeAndMetadata() {
         let definition = DevelopmentHostModule.definition
 
-        XCTAssertEqual(definition.descriptor.id, "development")
+        XCTAssertEqual(definition.descriptor.id, "projects")
         XCTAssertEqual(definition.descriptor.tier, .experimental)
         XCTAssertNotNil(definition.makeRuntime)
         XCTAssertNotNil(definition.makeView)
@@ -336,7 +336,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         XCTAssertFalse(registry.contains("k_development_definition"))
         assertPPCRegistryComposes(
             "development_module_definition", in: registry)
-        XCTAssertTrue(definition.contains("\"development\""))
+        XCTAssertTrue(definition.contains("\"projects\""))
         XCTAssertTrue(definition.contains("development_module_ops"))
     }
 
@@ -484,13 +484,18 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(false, forKey: "logsPersistsToDisk")
         let logs = LogsModel(log: .shared, defaults: defaults)
+        let continuity = MirrorContinuityController(
+            listener: listener, defaults: defaults)
         let runtime = try LogsHostModuleRuntime(context: HostModuleContext(
             listener: listener,
             currentConnection: { .disconnected },
-            logs: logs))
+            logs: logs,
+            continuity: continuity))
 
         XCTAssertTrue(runtime.model === logs,
                       "the module must reference the eager logging service")
+        XCTAssertTrue(runtime.continuity === continuity,
+                      "Logs must share the app continuity service")
     }
 
     func testLogsPageOwnershipDidNotRemainAtEitherCompositionRoot() throws {

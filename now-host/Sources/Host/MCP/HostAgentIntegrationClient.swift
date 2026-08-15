@@ -104,10 +104,10 @@ struct HostAgentIntegrationClient: AgentIntegrationClient {
         return await adapter.development(request)
     }
 
-    func tailGuestLog(lines: Int?) async
-        -> AgentIntegrationGuestRowReportResult {
+    func tailGuestLog(lines: Int?, area: String?) async
+        -> AgentIntegrationGuestLogRetrievalResult {
         if let refusal = await refusal() { return .unavailable(refusal) }
-        return await adapter.tailGuestLog(lines: lines)
+        return await adapter.tailGuestLog(lines: lines, area: area)
     }
 
     func catalogSearch() async -> AgentIntegrationGuestRowReportResult {
@@ -281,6 +281,16 @@ struct HostAgentIntegrationClient: AgentIntegrationClient {
             return .init(unavailable: refusal)
         }
         return await adapter.driveMirror(request)
+    }
+
+    /// This Mac's own log. No addressing refusal in front of it, unlike
+    /// every guest lane above: there is no guest in this answer, and a
+    /// selector was already refused at the face for a row that takes none.
+    func hostLogTail(lines: Int?, area: String?) async
+        -> AgentIntegrationHostLogTailResult {
+        .completed(await MainActor.run {
+            HostLogTailReader.read(lines: lines, area: area)
+        })
     }
 
     func mirrorOpen() async -> AgentIntegrationMirrorOpenResult {

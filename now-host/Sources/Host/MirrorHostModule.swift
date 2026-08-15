@@ -1,4 +1,5 @@
 import MirrorKit
+import MirrorKitUI
 import NOWAgentIntegration
 import SwiftUI
 
@@ -14,6 +15,7 @@ private enum MirrorHostModuleError: Error, CustomStringConvertible {
 final class MirrorHostModuleRuntime: HostModuleRuntime {
     let model: MirrorControlModel
     let presentation: MirrorPresentation
+    let fileTransfer: MirrorFileTransferModel
     private let context: HostModuleContext
     private let engines: MirrorStateEngineRegistry
     private(set) var madeSource = false
@@ -28,15 +30,22 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
                 currentSessionID: { [unowned self] in
                     self.context.agentIntegration?.connectedSessionID()
                 }),
+            continuity: context.continuity,
+            localNetworkAccess: context.localNetworkAccess,
             planePolicy: { [unowned self] key in
                 self.model.requestedPlaneIDs(for: key)
             },
             finderComplementPolicy: { [unowned self] key in
-                self.model.finderComplementsAllowed(for: key)
+                self.model.mirroringAllowed(for: key)
             },
             lifecycleDidChange: { [weak self] in
                 self?.model.refreshLifecycle()
             })
+        /* The cross-edge file callbacks used to be installed here, which
+           made an AppKit drop destination exist only once somebody had
+           opened the Mirror page. They belong to edge mode's lifetime and
+           now live in ContinuityFileDragWiring, app-owned; this runtime
+           supplies only the thing that genuinely is Mirror's — the scene. */
         model.bindPolicyProjection { [weak source] in
             source?.planePolicyDidChange()
         }
@@ -45,7 +54,12 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
     private(set) lazy var run = MirrorRunControl(
         source: source, defaults: context.defaults)
     private(set) lazy var window = NOWMirrorWindow(
-        source: source, presentation: presentation)
+        source: source, presentation: presentation,
+        fileTransfer: fileTransfer)
+    /* Page-owned, unlike `fileTransfer`: an ingestion is started from the
+       Asset Packs card and has no life outside somebody looking at it. */
+    private(set) lazy var assetIngestion = MirrorAssetIngestion(
+        listener: context.listener)
 
     init(context: HostModuleContext) throws {
         guard let engines = context.mirrorEngines,
@@ -57,6 +71,9 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
         model = MirrorControlModel(
             guestProbe: MirrorGuestWireProbe(listener: context.listener))
         presentation = MirrorPresentation(defaults: context.defaults)
+        /* App-owned: the file lane outlives this page, and the edge seam
+           needs it whether or not anybody ever opens the Mirror. */
+        fileTransfer = context.fileTransfer
     }
 
     func activeGuestWillChange() {
@@ -65,8 +82,16 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
     }
 
     func focus(on connection: GuestConnectionState) {
+        model.connection = connection
         guard madeSource else { return }
         run.activeGuestDidChange()
+    }
+
+    /// The live guest scene, without constructing anything to get it. Asking
+    /// what has been seen must not create the thing that sees.
+    var sceneIfKnown: MirrorKit.Scene? {
+        guard madeSource else { return nil }
+        return source.scene
     }
 
     var guestScreenIfKnown: MirrorKit.Scene.ScreenSize? {
@@ -173,8 +198,10 @@ enum MirrorHostModule {
                 model: runtime.model, source: runtime.source,
                 run: runtime.run, presentation: runtime.presentation,
                 window: runtime.window,
+                fileTransfer: runtime.fileTransfer,
                 connectedMachineName: runtime.connectedMachineName,
                 timeline: runtime.source.actTimeline,
-                cycles: runtime.source.cycleTimeline))
+                cycles: runtime.source.cycleTimeline,
+                assetIngestion: runtime.assetIngestion))
         })
 }

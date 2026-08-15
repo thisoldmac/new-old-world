@@ -254,6 +254,74 @@ final class NOWMirrorSourceTests: XCTestCase {
                        "all toggles coalesce into one follow-up scene")
     }
 
+    // MARK: - What each surface arms on the Macintosh
+
+    /// **Indexed through XCTUnwrap, because the mutation these tests are
+    /// written against is "the request never went out".**
+    ///
+    /// Subscripting the harness for a request a mutation suppressed is a
+    /// fatal index crash, and a crashed test process reports nothing about
+    /// the rest of the run — a mutation that reads as a silent green
+    /// elsewhere is exactly the failure mode this project has already paid
+    /// for once.
+    private func sceneRequest(_ index: Int, of harness: MirrorCycleHarness)
+        throws -> (GuestKey, Bool, Bool) {
+        try XCTUnwrap(harness.sceneRequests.indices.contains(index)
+                      ? harness.sceneRequests[index] : nil,
+                      "scene request #\(index) was never made")
+    }
+
+    private func completeScene(_ index: Int, of harness: MirrorCycleHarness,
+                               for key: GuestKey) throws {
+        _ = try sceneRequest(index, of: harness)
+        harness.completeScene(index,
+                              with: .success(try fixtureDelivery(for: key)))
+    }
+
+    /* The two mode-narrowing gates that lived here
+       (testContinuityArmsOnlyTheStructuralPlane,
+       testReturningToMirrorRearmsEveryPolicyPlane) died with Continuity
+       Mode itself: screen-edge Continuity is its own module and arms no
+       Mirror planes at all - its guest intake claims its one plane on its
+       own wire. The cost they guarded against (planes paid for by the
+       Macintosh and read by nobody) is now impossible by construction
+       rather than enforced by intersection. The policy CEILING is still
+       gated below. */
+
+    /// **Policy is the ceiling.** The Mirror may never ask for a plane a
+    /// person or the guest has refused, whatever it would like to render.
+    /// (The other direction - a mode narrowing below policy - died with
+    /// Continuity Mode; the module arms no Mirror planes at all.)
+    func testTheArmedSetNeverExceedsPolicy() throws {
+        let key = GuestKey.synthetic("armed-intersection")
+        let harness = MirrorCycleHarness(activeKey: key)
+        let listener = testListener()
+        let planes = PlanePolicyBox([.structure, .content])
+        let source = NOWMirrorSource(
+            listener: listener, engineRegistry: MirrorStateEngineRegistry(),
+            act: testAct(listener), interval: 3_600,
+            planePolicy: { _ in planes.value },
+            finderRefreshOverride: { _, _, completion in completion() },
+            visibilityRefreshOverride: { _, _, completion in completion() },
+            cycleIO: harness.io)
+        defer { source.stop() }
+
+        source.start()
+        let narrowed = try sceneRequest(0, of: harness)
+        XCTAssertFalse(narrowed.1, "Mirror may not widen the walk past policy")
+        XCTAssertFalse(narrowed.2,
+                       "Mirror may not arm the act plane past policy")
+        try completeScene(0, of: harness, for: key)
+        XCTAssertEqual(harness.joinedScenes.count, 1,
+                       "content is allowed here, and Mirror reads it")
+        harness.completeJoin(0)
+    }
+
+    /* testContinuityEndsTheTransitionTailItNoLongerReads is gone with the
+       mode: no mode change hands the P5 tail back anymore, because
+       Continuity never borrows the Mirror's planes. The tail still ends
+       with the Mirror stopping, which its own lifecycle tests cover. */
+
     /// **THE CADENCE INVARIANT: a slow Finder may not slow the scene.**
     ///
     /// The anchor plane's owner lease is 600 ticks — ten seconds — and the
@@ -1680,6 +1748,15 @@ final class NOWMirrorIconParsingTests: XCTestCase {
         XCTAssertEqual(metadata.selectedNames, ["Extensions"])
         XCTAssertEqual(NOWMirrorSource.parseIcons(page).map(\.name),
                        ["Extensions", "Finder"])
+    }
+
+    func testFinderPageKeepsMacOS86ButtonsDistinctFromSmallIcons() {
+        XCTAssertEqual(NOWMirrorSource.finderPageMetadata(
+            "\"V\tbutton\rP\tMacintosh HD:\r\"").view, .button)
+        XCTAssertEqual(NOWMirrorSource.finderPageMetadata(
+            "\"V\tbuttons\rP\tMacintosh HD:\r\"").view, .button)
+        XCTAssertEqual(NOWMirrorSource.finderPageMetadata(
+            "\"V\tsmall icon\rP\tMacintosh HD:\r\"").view, .smallIcon)
     }
 
     /// The Macintosh HD list view, exactly as the Finder answered it: rows at

@@ -5,8 +5,10 @@ import Foundation
 ///
 /// **The pack is a dependency, not repository content.** It is Apple's
 /// bitmaps — the System file's icons and cursors, each application's own
-/// `icl8`, the NFNT strikes the guest draws its text with — pulled off a
-/// disk image by `tools/extract-assets-offline`. The rule it inherits
+/// `icl8`, Finder items' custom icon forks, and the NFNT strikes the guest
+/// draws its text with — acquired by a pack adapter. The implemented bulk
+/// adapter is `tools/extract-assets-offline`; a connected guest will feed the
+/// same domain parsers and manifest rather than a second runtime format. The rule it inherits
 /// (docs/mirror-assets.md) is that it stays private, never ships as an
 /// artifact and never goes upstream, and it was committed to this
 /// repository as a side effect of wiring the pack up rather than as a
@@ -53,8 +55,8 @@ public enum AssetPack {
     }
 
     /// The environment variable that wins over everything. Point it at a
-    /// directory holding `fonts/`, `icons/`, `appicons/`, `cursors/`,
-    /// `patterns/` and `manifest.json`.
+    /// directory holding `fonts/`, `icons/`, `appicons/`, `fileicons/`,
+    /// `cursors/`, `patterns/` and `manifest.json`.
     public static let environmentKey = "NOW_MIRROR_ASSETS"
     public static let storeEnvironmentKey = "NOW_MIRROR_ASSET_STORE"
     public static let selectionDefaultsKey = "NOWSelectedMirrorAssetPack"

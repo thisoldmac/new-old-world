@@ -1,0 +1,20 @@
+{
+  "id": "finder-special-menu-open",
+  "profile": "platinum.macos-8.6.default",
+  "title": "Finder Special menu open",
+  "requiredState": [
+    "Finder is frontmost",
+    "No Finder item is selected",
+    "The Special menu is open"
+  ],
+  "inputSequence": "finder-clean-desktop",
+  "inputActions": ["move 185 10", "down 0"],
+  "regions": [
+    {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
+    {"name": "special-menu", "source": "screen", "rect": [153, 19, 273, 129]}
+  ],
+  "masks": [
+    {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}
+  ],
+  "render": {"openMenu": 4}
+}

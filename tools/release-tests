@@ -1,0 +1,444 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import plistlib
+import re
+import runpy
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from tools.release.artifacts import (  # noqa: E402
+    ComponentArtifact,
+    LicensedInput,
+    copy_exact,
+    sha256,
+)
+from tools.release.manifest import write_checksums, write_manifest  # noqa: E402
+from tools.release.image import (  # noqa: E402
+    MacBinaryFile,
+    build_generic_image,
+    ndif_macbinary,
+    populate_generic,
+    write_ndif_macbinary,
+)
+from tools.release.profile import DistributionProfile, ReleaseRefusal  # noqa: E402
+
+
+class ReleaseTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory(prefix="now-release-test-")
+        self.root = Path(self.temp.name)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def component(self, name: str = "New Old World.bin",
+                  component: str = "application", version: str = "0.2.0",
+                  revision: str = "a" * 40) -> Path:
+        artifact = self.root / name
+        if component == "application":
+            encoded = MacBinaryFile(
+                "New Old World", b"APPL", b"NOWo", 0,
+                b"application", b"application resources").encode()
+        else:
+            encoded = MacBinaryFile(
+                "NowExt", b"INIT", b"NOWx", 0,
+                b"", b"extension resources").encode()
+        artifact.write_bytes(encoded)
+        sidecar = {
+            "schema": 1,
+            "component": component,
+            "version": version,
+            "build": "b" * 64,
+            "sha256": sha256(artifact),
+            "bytes": artifact.stat().st_size,
+            "channel": "development",
+            "signed": False,
+            "sourceRevision": revision,
+            "compatibility": {
+                "continuityTable": 12,
+                "continuityWire": 4,
+                "resident": self.resident_version(),
+            },
+        }
+        if component == "application":
+            sidecar.update({
+                "displayVersion": "0.2.0-prealpha.1",
+                "lifecycle": "prealpha",
+                "lifecycleNumber": 1,
+            })
+        artifact.with_name(artifact.name + ".now-update.json").write_text(
+            json.dumps(sidecar))
+        return artifact
+
+    def licensed(self) -> Path:
+        artifact = self.root / "CarbonLib 1.6 Installer.bin"
+        artifact.write_bytes(b"original apple installer")
+        license_file = self.root / "Apple License.txt"
+        license_file.write_text("license")
+        descriptor = self.root / "carbonlib.json"
+        descriptor.write_text(json.dumps({
+            "schema": 1,
+            "id": "carbonlib_1_6_installer",
+            "artifact": artifact.name,
+            "sha256": sha256(artifact),
+            "provenance": {
+                "url": "https://support.apple.com/",
+                "retrievedAt": "2026-08-13",
+            },
+            "licenseFiles": [license_file.name],
+            "licenseAcceptance": "user",
+        }))
+        return descriptor
+
+    def resident_version(self) -> str:
+        source = (ROOT / "contract/resident_version.h").read_text()
+        major = re.search(
+            r"^#define NOW_RESIDENT_VERSION_MAJOR (\d+)$", source,
+            re.MULTILINE)
+        minor = re.search(
+            r"^#define NOW_RESIDENT_VERSION_MINOR (\d+)$", source,
+            re.MULTILINE)
+        self.assertIsNotNone(major)
+        self.assertIsNotNone(minor)
+        return f"{major.group(1)}.{minor.group(1)}"
+
+    def test_live_profile_is_the_alpha_contract(self) -> None:
+        profile = DistributionProfile.load(ROOT)
+        self.assertEqual(profile.product_version, "0.2.0")
+        self.assertEqual(profile.filename("generic_classic_image"),
+                         "new-old-world-classic-0.2.0.img.bin")
+
+    def test_component_sidecar_binds_exact_bytes(self) -> None:
+        artifact = self.component()
+        loaded = ComponentArtifact.load(artifact, "application", "0.2.0",
+                                        "a" * 40)
+        self.assertEqual(loaded.metadata["build"], "b" * 64)
+        self.assertEqual(
+            loaded.manifest_row()["compatibility"]["continuityWire"], 4)
+        self.assertEqual(
+            loaded.manifest_row()["displayVersion"], "0.2.0-prealpha.1")
+        artifact.write_bytes(b"mutated")
+        with self.assertRaisesRegex(ReleaseRefusal, "stale artifact identity"):
+            ComponentArtifact.load(artifact, "application", "0.2.0",
+                                   "a" * 40)
+
+    def test_component_refuses_mixed_recorded_revision(self) -> None:
+        artifact = self.component()
+        sidecar = artifact.with_name(artifact.name + ".now-update.json")
+        document = json.loads(sidecar.read_text())
+        document["sourceRevision"] = "f" * 40
+        sidecar.write_text(json.dumps(document))
+        with self.assertRaisesRegex(ReleaseRefusal, "does not match HEAD"):
+            ComponentArtifact.load(artifact, "application", "0.2.0",
+                                   "a" * 40)
+
+    def test_component_refuses_non_object_sidecar(self) -> None:
+        artifact = self.component()
+        artifact.with_name(artifact.name + ".now-update.json").write_text("[]")
+        with self.assertRaisesRegex(ReleaseRefusal,
+                                    "top level must be an object"):
+            ComponentArtifact.load(artifact, "application", "0.2.0",
+                                   "a" * 40)
+
+    def test_carbonlib_requires_original_checksum_and_license(self) -> None:
+        descriptor = self.licensed()
+        loaded = LicensedInput.load(descriptor)
+        copied = self.root / "copy" / loaded.artifact.name
+        copy_exact(loaded.artifact, copied)
+        self.assertEqual(copied.read_bytes(), b"original apple installer")
+        loaded.artifact.write_bytes(b"repacked")
+        with self.assertRaisesRegex(ReleaseRefusal, "checksum mismatch"):
+            LicensedInput.load(descriptor)
+
+    def test_carbonlib_descriptor_refuses_unknown_fields(self) -> None:
+        descriptor = self.licensed()
+        document = json.loads(descriptor.read_text())
+        document["codekitten"] = "convenience"
+        descriptor.write_text(json.dumps(document))
+        with self.assertRaisesRegex(ReleaseRefusal, "fields must be exactly"):
+            LicensedInput.load(descriptor)
+
+    def test_carbonlib_descriptor_refuses_non_object(self) -> None:
+        descriptor = self.licensed()
+        descriptor.write_text('"not an object"')
+        with self.assertRaisesRegex(ReleaseRefusal,
+                                    "top level must be an object"):
+            LicensedInput.load(descriptor)
+
+    def test_manifest_and_checksum_projection_bind_outputs(self) -> None:
+        first = self.root / "first.bin"
+        second = self.root / "second.dmg"
+        first.write_bytes(b"first")
+        second.write_bytes(b"second")
+        manifest = self.root / "release-manifest.json"
+        checksums = self.root / "SHA256SUMS"
+        old = os.environ.get("SOURCE_DATE_EPOCH")
+        os.environ["SOURCE_DATE_EPOCH"] = "0"
+        try:
+            write_manifest(
+                manifest, version="0.2.0", channel="development",
+                source_revision="a" * 40, components=[], licensed_inputs=[],
+                outputs=[second, first])
+        finally:
+            if old is None:
+                os.environ.pop("SOURCE_DATE_EPOCH", None)
+            else:
+                os.environ["SOURCE_DATE_EPOCH"] = old
+        write_checksums(checksums, [manifest, first, second])
+        document = json.loads(manifest.read_text())
+        self.assertEqual(document["sourceDate"], "1970-01-01T00:00:00Z")
+        self.assertEqual([row["filename"] for row in document["outputs"]],
+                         ["first.bin", "second.dmg"])
+        self.assertIn(sha256(manifest), checksums.read_text())
+
+    def test_generic_image_payload_has_no_preferences_or_codekitten(self) -> None:
+        app = self.root / "New Old World.bin"
+        extension = self.root / "NOW Extension.bin"
+        carbon = self.root / "CarbonLib.bin"
+        license_file = self.root / "Apple License.txt"
+        app.write_bytes(MacBinaryFile(
+            "New Old World", b"APPL", b"NOWo", 0,
+            b"app", b"app resources").encode())
+        extension.write_bytes(MacBinaryFile(
+            "NowExt", b"INIT", b"NOWx", 0,
+            b"", b"extension resources").encode())
+        carbon.write_bytes(MacBinaryFile(
+            "CarbonLib Installer", b"APPL", b"appl", 0,
+            b"installer", b"").encode())
+        license_file.write_text("license")
+        contents = self.root / "contents"
+        populate_generic(contents, app, extension, carbon, (license_file,))
+        self.assertTrue((contents / "New Old World").is_file())
+        self.assertTrue((contents / "NOW Extension").is_file())
+        self.assertTrue((contents / "Dependencies/CarbonLib Installer").is_file())
+        self.assertFalse((contents / "New Old World Prefs").exists())
+        self.assertFalse((contents / "CodeKitten").exists())
+
+    def test_generic_payload_refuses_path_bearing_macbinary_name(self) -> None:
+        application = self.root / "New Old World.bin"
+        extension = self.root / "NOW Extension.bin"
+        carbon = self.root / "CarbonLib.bin"
+        license_file = self.root / "Apple License.txt"
+        application.write_bytes(MacBinaryFile(
+            "New Old World", b"APPL", b"NOWo", 0, b"app", b"").encode())
+        extension.write_bytes(MacBinaryFile(
+            "NowExt", b"INIT", b"NOWx", 0, b"", b"ext").encode())
+        carbon.write_bytes(MacBinaryFile(
+            "../escape", b"APPL", b"appl", 0, b"installer", b"").encode())
+        license_file.write_text("license")
+        with self.assertRaisesRegex(ReleaseRefusal,
+                                    "must not contain a path"):
+            populate_generic(self.root / "contents", application, extension,
+                             carbon, (license_file,))
+        self.assertFalse((self.root / "escape").exists())
+
+    def test_ndif_envelope_records_the_complete_raw_disk(self) -> None:
+        disk = bytes(1024)
+        envelope = ndif_macbinary("New Old World Setup.img", "NOW Setup", disk)
+        decoded = MacBinaryFile.decode(envelope)
+        self.assertEqual(decoded.file_type, b"rohd")
+        self.assertEqual(decoded.creator, b"ddsk")
+        self.assertEqual(decoded.data_fork, disk)
+        self.assertIn(b"bcem", decoded.resource_fork)
+
+    def test_streamed_ndif_envelope_matches_in_memory_encoder(self) -> None:
+        disk = bytes(range(256)) * 4
+        raw_disk = self.root / "disk.raw"
+        output = self.root / "disk.img.bin"
+        raw_disk.write_bytes(disk)
+        write_ndif_macbinary(
+            output, "New Old World Setup.img", "NOW Setup", raw_disk)
+        self.assertEqual(
+            output.read_bytes(),
+            ndif_macbinary("New Old World Setup.img", "NOW Setup", disk))
+
+    def test_generic_image_builder_produces_ndif_macbinary(self) -> None:
+        app = self.root / "New Old World.bin"
+        extension = self.root / "NOW Extension.bin"
+        carbon = self.root / "CarbonLib.bin"
+        license_file = self.root / "Apple License.txt"
+        app.write_bytes(MacBinaryFile(
+            "New Old World", b"APPL", b"NOWo", 0, b"app", b"").encode())
+        extension.write_bytes(MacBinaryFile(
+            "NowExt", b"INIT", b"NOWx", 0, b"", b"ext").encode())
+        carbon.write_bytes(MacBinaryFile(
+            "CarbonLib Installer", b"APPL", b"appl", 0,
+            b"installer", b"").encode())
+        license_file.write_text("license")
+        output = self.root / "classic.img.bin"
+        build_generic_image(output, app, extension, carbon, (license_file,))
+        decoded = MacBinaryFile.decode(output.read_bytes())
+        self.assertEqual(decoded.name, "New Old World Setup.img")
+        self.assertGreaterEqual(len(decoded.data_fork), 2 * 1024 * 1024)
+
+    def test_identity_signature_requires_a_provision_profile(self) -> None:
+        # The first identity-signed DMG shipped with restricted
+        # entitlements and no embedded profile: AMFI killed it at spawn,
+        # the Finder said only "can't be opened", and every gate read
+        # green (2026-08-14). The refusal must arrive at assembly time,
+        # named, not at the user's double-click.
+        namespace = runpy.run_path(str(ROOT / "scripts/assemble-release"))
+        with self.assertRaises(namespace["ReleaseRefusal"]) as refusal:
+            namespace["sign_host"](self.root / "New Old World.app",
+                                   "Any Identity", False, self.root, None)
+        self.assertIn("needs --provision-profile", str(refusal.exception))
+
+    def test_adhoc_signature_refuses_a_provision_profile(self) -> None:
+        namespace = runpy.run_path(str(ROOT / "scripts/assemble-release"))
+        with self.assertRaises(namespace["ReleaseRefusal"]) as refusal:
+            namespace["sign_host"](self.root / "New Old World.app",
+                                   None, True, self.root,
+                                   self.root / "any.provisionprofile")
+        self.assertIn("meaningless with --adhoc", str(refusal.exception))
+
+    def test_provision_profile_must_be_a_macos_team_profile(self) -> None:
+        # An iOS wildcard profile sits in the same Xcode directory and
+        # differs only in its Platform array; embedding it produces the
+        # identical unlaunchable app. Wrong-platform and wrong-team are
+        # refused by name before signing.
+        profile = self.root / "wrong.provisionprofile"
+        profile.write_bytes(b"not a cms blob")
+        namespace = runpy.run_path(str(ROOT / "scripts/assemble-release"))
+        with self.assertRaises(namespace["ReleaseRefusal"]) as refusal:
+            namespace["validate_provision_profile"](profile)
+        self.assertIn("not a readable provisioning profile",
+                      str(refusal.exception))
+
+    def test_release_channel_refuses_prepared_inputs(self) -> None:
+        command = [
+            sys.executable, str(ROOT / "scripts/assemble-release"),
+            "--output", str(self.root / "publication"),
+            "--carbonlib-descriptor", str(self.root / "carbonlib.json"),
+            "--channel", "release", "--sign-identity", "test",
+            "--application", str(self.root / "app.bin"),
+            "--extension", str(self.root / "ext.bin"),
+            "--host-app", str(self.root / "New Old World.app"),
+        ]
+        result = subprocess.run(command, text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("release channel cannot use prepared inputs",
+                      result.stderr)
+
+    def test_component_build_discards_stale_revision_sidecars(self) -> None:
+        build_root = self.root / "guest-build"
+        application = build_root / "ppc/New Old World.bin"
+        extension = build_root / "ext/NOW Extension.bin"
+        for artifact in (application, extension):
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_bytes(b"unchanged component")
+            artifact.with_name(artifact.name + ".now-update.json").write_text(
+                '{"sourceRevision":"stale"}')
+        namespace = runpy.run_path(str(ROOT / "scripts/assemble-release"))
+
+        namespace["discard_stale_component_sidecars"](build_root)
+
+        self.assertTrue(application.is_file())
+        self.assertTrue(extension.is_file())
+        self.assertFalse(application.with_name(
+            application.name + ".now-update.json").exists())
+        self.assertFalse(extension.with_name(
+            extension.name + ".now-update.json").exists())
+
+    def test_assembler_publishes_consumable_development_bundle(self) -> None:
+        checkout = self.root / "checkout"
+        subprocess.run([
+            "git", "clone", "--quiet", "--shared", str(ROOT), str(checkout),
+        ], check=True)
+        revision = subprocess.run([
+            "git", "-C", str(checkout), "rev-parse", "HEAD",
+        ], check=True, text=True, capture_output=True).stdout.strip()
+        application = self.component(revision=revision)
+        extension = self.component(
+            "NOW Extension.bin", "extension", self.resident_version(),
+            revision)
+        descriptor = self.licensed()
+        host = self.root / "New Old World.app"
+        executable = host / "Contents/MacOS/New Old World"
+        executable.parent.mkdir(parents=True)
+        shutil.copyfile("/usr/bin/true", executable)
+        executable.chmod(0o755)
+        (host / "Contents/Info.plist").write_bytes(plistlib.dumps({
+            "CFBundleExecutable": "New Old World",
+            "CFBundleIdentifier": "dev.newoldworld.now.release-test",
+            "CFBundleName": "New Old World",
+            "CFBundlePackageType": "APPL",
+        }))
+        publication = self.root / "publication"
+        result = subprocess.run([
+            sys.executable, str(checkout / "scripts/assemble-release"),
+            "--output", str(publication),
+            "--carbonlib-descriptor", str(descriptor),
+            "--application", str(application),
+            "--extension", str(extension),
+            "--host-app", str(host), "--adhoc",
+        ], text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        expected = {
+            "New-Old-World-0.2.0.dmg",
+            "new-old-world-classic-0.2.0.img.bin",
+            "New Old World.bin", "New Old World.bin.now-update.json",
+            "NOW Extension.bin", "NOW Extension.bin.now-update.json",
+            "release-manifest.json", "SHA256SUMS",
+        }
+        self.assertEqual({path.name for path in publication.iterdir()}, expected)
+        manifest = json.loads(
+            (publication / "release-manifest.json").read_text())
+        self.assertEqual(manifest["sourceRevision"], revision)
+        checksum_rows = (publication / "SHA256SUMS").read_text().splitlines()
+        self.assertEqual(len(checksum_rows), 7)
+        for row in checksum_rows:
+            digest, filename = row.split("  ", 1)
+            self.assertEqual(digest, sha256(publication / filename))
+
+        attach = subprocess.run([
+            "/usr/bin/hdiutil", "attach", "-plist", "-nobrowse", "-readonly",
+            str(publication / "New-Old-World-0.2.0.dmg"),
+        ], check=True, capture_output=True).stdout
+        entities = plistlib.loads(attach)["system-entities"]
+        mount = next(Path(row["mount-point"]) for row in entities
+                     if "mount-point" in row)
+        device = next(row["dev-entry"] for row in entities
+                      if "dev-entry" in row)
+        try:
+            onboarding = mount / "New Old World.app/Contents/Resources/Onboarding"
+            executable = mount / "New Old World.app/Contents/MacOS/New Old World"
+            launched = subprocess.run([str(executable)], capture_output=True)
+            self.assertEqual(
+                launched.returncode, 0,
+                "mounted ad-hoc app was not executable: "
+                + launched.stderr.decode(errors="replace"))
+            self.assertEqual(
+                (onboarding / "New Old World.bin").read_bytes(),
+                application.read_bytes())
+            self.assertEqual(
+                (onboarding / "NOW Extension.bin").read_bytes(),
+                extension.read_bytes())
+            self.assertTrue((onboarding / "Dependencies/License Material"
+                             / "Apple License.txt").is_file())
+            # The image builder must carry symlinks across verbatim, not
+            # dereference them: the drag-to-install alias is an absolute
+            # link out of the volume, and a copy of /Applications instead
+            # would be a silently broken DMG that still mounts.
+            alias = mount / "Applications"
+            self.assertTrue(alias.is_symlink(),
+                            "drag-to-install alias is not a symlink")
+            self.assertEqual(os.readlink(alias), "/Applications")
+        finally:
+            subprocess.run([
+                "/usr/bin/hdiutil", "detach", "-force", device,
+            ], check=True, capture_output=True)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

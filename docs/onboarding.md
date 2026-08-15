@@ -6,6 +6,11 @@ NOW's host can temporarily serve the PPC application and its setup files to
 an old browser on the local network. This is distribution, not a new NOW wire
 message, so it does not change `contract/asyncapi.yaml`.
 
+The release also carries a generic `new-old-world-classic-VERSION.img.bin`.
+That static image contains the same release app, Extension, and approved
+CarbonLib installer but no generated preferences. The flow below is the
+host-created personalized alternative.
+
 ## Use it
 
 1. Open **Connections** in the host and choose **Set Up a New Mac…**.
@@ -41,12 +46,13 @@ links the same bytes at `/now/setup.img.bin` for an explicitly MacBinary-aware
 fallback path. This is the unavoidable first bootstrap boundary: HTTP itself
 cannot create a Finder type or resource fork on the receiving HFS volume.
 
-The setup volume contains the application, generated preferences, optional
-CodeKitten IDE, extension and whichever prepared dependencies are selected, as
-native classic files. New Old World itself is required; every optional
-installed row is a checkbox. CodeKitten is selected by default when present,
-but remains a standalone application: the headless Projects and Development
-services do not depend on it. The host decodes each MacBinary envelope while
+The personalized setup volume contains the application, generated preferences,
+optional locally supplied CodeKitten IDE, Extension and whichever prepared
+dependencies are selected, as native classic files. New Old World itself is
+required; every optional installed row is a checkbox. CodeKitten is not in the
+release profile; when an operator supplies it for development, it remains a
+standalone application and the headless Projects and Development services do
+not depend on it. The host decodes each MacBinary envelope while
 constructing the HFS Plus filesystem, so no archive or fork-restoration utility
 is required on the guest after Disk Copy mounts it. **Save a Copy…** saves the
 exact currently served image as `New Old World Setup.img.bin` for a separate
@@ -55,9 +61,9 @@ MacBinary-preserving transfer.
 The builder keeps one completed image in memory. `/now/setup.img` and its
 explicit `.bin` fallback serve those exact cached bytes; changing a checkbox
 marks the image as having pending changes, and **Rebuild Install Image** swaps
-in the replacement only after it finishes. For the shipped application,
-extension and native CarbonLib package, the raw HFS disk is calculated from
-the native files after their forks have been restored. The builder measures
+in the replacement only after it finishes. The application and Extension are
+restored as native classic files, while the approved CarbonLib installer is
+preserved in its admitted form. The builder measures
 that prepared directory, lets HFS account for its catalog and allocation
 structures, and then measures the formatted volume's free blocks and tightens
 it to at most 64 KiB free. If the filesystem refuses the first size, the host
@@ -85,15 +91,19 @@ portal does not imply that it is a supported choice here.
 
 ## Package store
 
-Copyrighted or locally licensed dependencies do not belong in Git. The portal
-combines two stores, with the local store taking precedence:
+Copyrighted or locally licensed dependencies do not belong in Git. A release
+may embed an approved external installer only through the distribution
+profile's checksum, provenance, and license-material gate. The portal combines
+two stores, with the sealed release catalog taking precedence:
 
-1. `~/Library/Application Support/New Old World/Onboarding/`
-2. `New Old World.app/Contents/Resources/Onboarding/`
+1. `New Old World.app/Contents/Resources/Onboarding/`
+2. `~/Library/Application Support/New Old World/Onboarding/`
 
-**Open Packages Folder** creates and opens the first. A release packager can
-put the second into the application before signing it. The recognized product
-names are:
+**Open Packages Folder** creates and opens the second. Release assembly places
+the first inside the application before its final signature. A stale writable
+application, Extension, or dependency with the same name cannot mask the
+sealed release copy; writable-only dependencies still augment it. The
+recognized product names are:
 
 | File | Portal role |
 |---|---|
@@ -102,6 +112,7 @@ names are:
 | `NowExt.bin` or `NOW Extension.bin` | optional resident |
 | `Dependencies/CarbonLib.bin` | optional host-prepared native CarbonLib; avoids archive extraction at image-build time |
 | `Dependencies/CarbonLib_161.sit.bin` | checksum-verified CarbonLib StuffIt archive in a MacBinary envelope |
+| `Dependencies/<approved installer>` | descriptor-approved release CarbonLib installer, preserved unchanged with license material |
 | `Dependencies/*` | other operator-provided dependencies, each listed separately and served as supplied |
 
 Set `NOW_ONBOARDING_ASSETS` to an alternate root for a development or test
@@ -113,23 +124,18 @@ downloads into the local `Dependencies/` folder; a package is admitted only if
 its bytes match the catalogued checksum. A newly acquired dependency is
 selected for the next build by default.
 
-The repository and its GitHub source or binary releases do not redistribute
-CarbonLib. The public install and build instructions point to
-[CarbonLib 1.6.1 on Macintosh Repository](https://www.macintoshrepository.org/17069-carbonlib).
-The host's current catalog entry downloads the same StuffIt archive from the
-Macintosh Garden mirror and requires SHA-1
-`8a80248cb9acd2b26a3c7cf7af5dbde56b96fa3e`, which Macintosh Repository also
-publishes.
+The source repository does not contain or redistribute CarbonLib. Release
+assembly may bundle the exact Apple installer named by an external descriptor,
+along with its license material; the user accepts that installer license on
+the classic Mac. Separately, the development catalog entry downloads
+the 1.6.1 StuffIt archive from the Macintosh Garden mirror and requires SHA-1
+`8a80248cb9acd2b26a3c7cf7af5dbde56b96fa3e`, which is also published by
+[Macintosh Repository](https://www.macintoshrepository.org/17069-carbonlib).
 NOW then puts those unchanged `.sit` bytes in the data fork of
 `CarbonLib_161.sit.bin`, with Finder type `SIT5` and creator `SIT!`. Decoding
 the MacBinary therefore yields a native StuffIt archive.
-The **Source…** button remains available because this is still a third-party
-download, not an Apple redistribution grant.
-
-The owner intends to host a combined binaries-plus-CarbonLib convenience
-package outside GitHub. It is not a release input until that external package
-has a stable URL, an exact contents inventory, and a published checksum; these
-docs do not claim that the package exists before those facts are recorded.
+The **Source…** button remains available because that development fallback is
+a third-party download and is not the approved release input.
 
 ## StuffIt and BinHex boundary
 
@@ -147,11 +153,11 @@ extractor at image-build time. If neither is available, the original archive
 is included honestly in the Dependencies folder rather than silently losing
 its forks; that fallback does require a guest archive handler.
 
-The test kit prepares CarbonLib as `CarbonLib.bin`, so its complete setup disk
-does not depend on StuffIt or `unar` at runtime. A distributable host release
-can either carry similarly prepared licensed packages outside Git or bundle a
-pinned open-source `unar` build. The latter packaging and update policy is not
-settled yet.
+The older test kit prepares CarbonLib as `CarbonLib.bin`, so its personalized
+setup disk does not depend on StuffIt or `unar` at runtime. A distributable
+host release instead carries the descriptor-approved Apple installer
+unchanged, plus the license material a person must review. Bundling `unar`
+remains outside the current release profile.
 
 NOW does not currently create StuffIt archives. The open-source
 [stuffit-rs](https://github.com/benletchford/stuffit-rs) can write StuffIt 5,

@@ -13,6 +13,8 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# Keep the workflow token read-only unless a job explicitly narrows or
+# elevates it for the Pages deployment operation below.
 permissions:
   contents: read
 

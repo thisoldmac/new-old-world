@@ -113,11 +113,28 @@ echo "==> [2/8] release and staged-image discipline gates"
     || fail "component build identity gate"
 "$script_dir/../tools/update-manifest-tests" \
     || fail "update manifest release gate"
+"$script_dir/../tools/continuity-stack-gate-tests" \
+    || fail "Continuity atomic-stack gate"
 "$script_dir/../tools/host-signing-policy-tests" \
     || fail "host signing policy gate"
 "$script_dir/../tools/main-policy-tests" \
     || fail "protected GitHub main and local-mirror gates"
 "$script_dir/../tools/ci-policy-test" || fail "GitHub Actions policy gate"
+"$script_dir/../tools/sheepshaver-86-tests" \
+    || fail "SheepShaver 8.6 harness gate"
+"$script_dir/../tools/emulator-router-tests" \
+    || fail "emulator domain router gate"
+"$script_dir/../tools/sheepshaver-package-tests" \
+    || fail "self-contained SheepShaver package gate"
+python3 "$script_dir/../tools/asset-pack-tests.py" \
+    || fail "shared asset-pack parser gate"
+PYTHONPYCACHEPREFIX="${TMPDIR:-/tmp}/now-mirror-oracle-pycache" \
+    python3 "$script_dir/../tools/mirror-oracle-tests.py" \
+    || fail "Mirror visual-oracle tooling gate"
+python3 "$script_dir/../tools/macbinary-identity-tests.py" \
+    || fail "MacBinary artifact identity gate"
+"$script_dir/../tools/release-tests" \
+    || fail "distribution assembler gate"
 
 echo
 echo "==> [3/8] Web Bridge gate"

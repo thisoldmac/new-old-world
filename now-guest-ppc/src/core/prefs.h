@@ -8,6 +8,11 @@
    move every field after it. Eleven nav rows use it today. */
 enum { kNowSidebarOrderMax = 24 };
 
+/* A project identity is 32 lower-case hex characters; the cap is that
+   plus its terminator, stated here because the record's layout depends
+   on it and every later field sits after it. */
+enum { kNowProjectIDCap = 33 };
+
 typedef struct {
     char host[64];            /* dotted quad, C string */
     unsigned short port;
@@ -98,21 +103,22 @@ typedef struct {
        nav range; only the pinned ids at the foot have ever been
        renumbered, and those are not in here. */
     short sidebar_order[kNowSidebarOrderMax];
-    Boolean sidebar_compact;  /* one line per row instead of icon + two */
-    /* Collapsed to icons only. Separate from the density rather than a
-       third value of it: collapsing and then expanding must give back
-       the density the person chose, not forget it. */
+    /* Collapsed to icons only - the rail's one shape choice. The density
+       that used to sit beside it is gone (the rail is one line per row
+       everywhere); its slot in the format-19 record is kept and written
+       as zero rather than reclaimed, which is the accretive rule the rest
+       of this file follows. */
     Boolean sidebar_collapsed;
 
-    /* Mirror observation policy, owned by the Mirror page and enforced at
-       each operation's guest-side boundary. These are four independent
-       permissions rather than one broad switch because passive anchor
+    /* This Mac's consent to being mirrored at all, owned by the Mirror
+       page and enforced at every Mirror operation's guest-side boundary.
+       ONE switch since format 29, and the reason is not that anchor
        capture, Finder AppleScript, QuickDraw tracing and SetFrontProcess
-       have materially different risk. */
-    Boolean mirror_structure;
-    Boolean mirror_finder_complements;
-    Boolean mirror_content;
-    Boolean mirror_foreground_cycle;
+       stopped differing in risk — it is that the four gates which named
+       those risks never mapped onto the five planes the host offers, so
+       neither page could predict the other. The risks are still told
+       apart; they are told apart on the side that schedules the work. */
+    Boolean mirror_enabled;
 
     /* Development roots are chosen on this Mac. The display path is never
        resolved as authority; the volume/ref pair and directory ID are the
@@ -132,6 +138,32 @@ typedef struct {
     unsigned short web_proxy_port;
     short web_profile;        /* NowWebProfile; stored raw, model sanitizes */
     short web_lens;           /* NowWebLens; stored raw, model sanitizes */
+
+    /* An Extension exchange is complete before its resident code can be.
+       Keep the full release identity across application relaunches; startup
+       clears it only after the active table reports the same 160-bit prefix. */
+    char pending_extension_build[65];
+
+    /* CarbonLib warnings are advisory and may be dismissed permanently on a
+       machine whose owner has deliberately chosen an older runtime. */
+    Boolean carbon_warning_suppressed;
+
+    /* Whether the Workshop was open the last time this session ended,
+       user-close and quit teardown both write it (workshop_close's
+       'quitting' argument tells them apart) so a deliberate close stays
+       closed across relaunch and an open window comes back. Default true:
+       every existing machine already sees it open at launch, and a file
+       that predates the field must not change that. */
+    Boolean workshop_open_at_quit;
+
+    /* Which project this Mac is working on, as the opaque identity the
+       Projects walk mints - not a folder reference. A project that has
+       been renamed, moved within the root or deleted costs one failed
+       lookup, where a stored vRefNum/dirID would quietly point at
+       whatever occupies that directory next. Empty means none chosen,
+       which is what a file predating the field says and what a machine
+       with a fresh Projects root means. */
+    char active_project_id[kNowProjectIDCap];
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
@@ -147,7 +179,10 @@ typedef struct {
    renumbering), v22 (the four Mirror policy domains), and v23
    (Development roots plus its module-id renumbering), and v24 (Web's port,
    browser profile and lens plus its module-id renumbering), and v25
-   (shared guest-log retention count). */
+   (shared guest-log retention count), v26 (pending Extension activation
+   identity and the CarbonLib warning choice), and v27 (whether the
+   Workshop was open when the session last ended), and v28 (the chosen
+   active project's opaque identity). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

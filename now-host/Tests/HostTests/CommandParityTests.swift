@@ -246,6 +246,12 @@ final class CommandParityTests: XCTestCase {
         "trash": "file.* family from the host side, not an x-command",
         "untrash": "file.* family from the host side, not an x-command",
         "mkdir": "file.* family from the host side, not an x-command",
+        // Stopping a transfer, the same way and for the same reason: the
+        // host originates file.cancel itself, so it has nothing to type
+        // at this Mac. The console face exists because the person who
+        // most needs to stop a transfer is standing at a machine whose
+        // host is the thing that stopped answering.
+        "cancel": "file.cancel from the host side, not an x-command",
         // NOW-68K's own console face on the file.* family. The host does
         // not reach it as a command — it pushes a file and reads the
         // file.progress / file.done it gets back — so this is a
@@ -293,11 +299,12 @@ final class CommandParityTests: XCTestCase {
     /// console face, not merely that an unknown verb can reach the fallback.
     private static let reachedByFallback: [String: String] = [
         "putstat": "no arguments; renders as rows through console_reply.c",
+        "mirrorlog": "closed on/off/status grammar is the raw line's first word",
         "mouseloc": "no arguments; renders as rows through console_reply.c",
         "desktop": "no arguments; renders as rows through console_reply.c",
         "development-build": "closed status, cancel or start grammar is the raw line",
         "development-stage": "closed candidate action grammar is the raw line",
-        "development-project": "one opaque project ID is the raw line",
+        "development-project": "catalog, or one opaque project ID, is the raw line",
         "development-run": "one opaque product reference is the raw line",
         "development-test": "one opaque product reference is the raw line",
         "development-open": "one opaque project ID is the raw line",

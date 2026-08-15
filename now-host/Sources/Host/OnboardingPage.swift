@@ -83,7 +83,7 @@ enum OnboardingPage {
         a MacBinary-aware transfer or decoding tool.</p>
         <ul>
         \(downloads)</ul>
-        <h2>Set up the classic Mac</h2>
+        <h2>Set up the \(MachineNaming.commonNoun)</h2>
         <ol>
         <li>From the mounted setup disk, copy <b>New Old World</b>.</li>
         <li>Put
@@ -100,8 +100,8 @@ enum OnboardingPage {
         <h2>Optional extension and dependencies</h2>
         <ul>
         \(dependencies)</ul>
-        <p>Put the NOW Extension in System Folder:Extensions and restart the
-        classic Mac. The application works without it, with fewer resident
+        <p>Put the NOW Extension in System Folder:Extensions and restart
+        \(MachineNaming.simpleReference). The application works without it, with fewer resident
         capabilities.</p>
         <hr>
         <p><small>This temporary server accepts only setup downloads. Stop it

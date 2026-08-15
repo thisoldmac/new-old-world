@@ -273,7 +273,7 @@ final class ConnectionsModelTests: XCTestCase {
             resolve: resolver(driving: nil, connected: []))
         XCTAssertTrue(listening.isIdle)
         XCTAssertEqual(listening.headline,
-                       "Listening on 1400 — no old world mac connected")
+                       "Listening on 1400 — no guest connected")
 
         let stopped = ConnectionsSnapshot.make(
             state: .idle, guests: [], known: [], ended: [:],
@@ -302,7 +302,7 @@ final class ConnectionsModelTests: XCTestCase {
             resolve: resolver(driving: nil, connected: []))
 
         XCTAssertTrue(snapshot.isIdle)
-        XCTAssertEqual(snapshot.headline, "No old world mac connected")
+        XCTAssertEqual(snapshot.headline, "No guest connected")
     }
 
     /// One Mac is the common case, and it must not be dressed up as a
@@ -313,7 +313,7 @@ final class ConnectionsModelTests: XCTestCase {
             guests: [guest("pb1400c", active: true)], known: [], ended: [:],
             resolve: resolver(driving: "pb1400c", connected: ["pb1400c"]))
 
-        XCTAssertEqual(snapshot.headline, "1 old world mac connected")
+        XCTAssertEqual(snapshot.headline, "1 guest connected")
         XCTAssertFalse(snapshot.isIdle)
     }
 
@@ -332,7 +332,7 @@ final class ConnectionsModelTests: XCTestCase {
                               connected: ["pb1400c", "q950"]))
 
         XCTAssertEqual(snapshot.headline,
-                       "2 old world macs connected — driving pb1400c")
+                       "2 guests connected — driving pb1400c")
         XCTAssertEqual(snapshot.rows.first?.machineID, "pb1400c",
                        "the machine being driven leads, and does not move "
                        + "when another Mac dials in")

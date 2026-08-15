@@ -7,72 +7,2476 @@ search:
 
 # Open issues
 
-## TESTED: pre-RC repository and module foundations (2026-08-11, `chore/pre-rc-foundation-audit`)
 
-The foundation slice is locally complete without cutting or publishing an RC.
-New work uses creator-neutral Conventional Git branch and commit names; the
-pre-rewrite documentation state is retained at
-`archive/docs-pre-rewrite-2026-08-11`; every tracked Markdown file declares
-provenance; product feature policy is generated from one schema into Swift and
-C; and the module catalog carries independent tier, domain and feature
-metadata. The current taxonomy is `core`, `experimental` and `debug`; those
-labels describe maturity and do not silently disable a module.
+## EMULATOR-OBSERVED WHERE IT COUNTS: 035 fix wave — the Web proxy serves its first page ever, the footer joins the drop system, drags stop wedging (2026-08-15 overnight, four lanes merged, gate green)
 
-All 16 host modules and all 17 PowerPC Workshop pages now own their metadata
-and construction wiring. The central host and Workshop files contain product
-order only, not module-specific dispatch switches. Listener, logging,
-settings, onboarding and other true application services remain at the host
-composition boundary; module-owned models, views, cleanup and PowerPC ops stay
-with their definitions. New modules therefore extend the ordered catalogs and
-their own files rather than adding cases to `HostRootView`, `HostAppState` or a
-Workshop page switch.
+Round 2's fix wave, plan 035. `scripts/test-all` green on the merged
+tree, which also re-merged `refactor/mirror-continuity-split` @ 79468368
+(second inherited bake deferral recorded; cmd_help union was the only
+source conflict; the guest compiles the sibling's mirror-log-gate clean
+against G-7's master consent).
 
-`scripts/test-all` passed at source `e6f7bda0`: documentation and mutation
-gates, release/staged-image discipline, Web Bridge, 176 native tests with 0
-failed and 0 unselected, MirrorKit, seven guest cross-build targets, and the
-host SwiftPM plus Debug/Release Xcode gate. The live-guest stage explicitly
-skipped because `NOW_GUEST_LIVE` was unset, so this result is **tested, not
-metal-verified**. The complete physical-hardware module sweep remains an RC1
-qualification item after the other planned RC1 features land. The provenance
-inventory is mechanically complete but still reports 251 generated pages and
-0 human-reviewed pages; the later editorial provenance pass must promote pages
-individually rather than treating this foundation result as review.
+- **C1 Web proxy** (`035-web`): the module had NEVER served a page on
+  any guest — `web_proxy_ot.c` required the peer to be 127.0.0.1, and
+  OT on OS 9.1 reports an in-guest loopback connection's peer as the
+  machine's PRIMARY address. The condition is gone with no replacement
+  (the 127.0.0.1 BIND is the measured boundary — a hostfwd curl cannot
+  reach it). Emulator re-verified on this branch's build: an in-guest
+  HTTP client fetched through 127.0.0.1:5180, the wire carried
+  web.request, the host's bytes landed in a guest file. Three
+  diagnostics ensure the silence is unrepeatable: TBind readback (the
+  page shows what OT GRANTED), last-refused-call in status, and the
+  guest finally reads web.response.end's code for a "Modern Mac: …"
+  clause. New pure accept seam + native test whose FIRST assertion is
+  that a non-loopback peer is accepted. Metal remains the final word
+  (peer address choice is per-machine TCP/IP config). Classilla has
+  still never driven it; the host render pipeline is still unproven
+  past a marker page. S2 (real host status) wants one contract message
+  (web.status, chat.status-shaped) — written up, not built.
+- **C2 footer/drag** (`035-footer`): `.move` previews now render the
+  baseline (the insertion line says where the row lands) — the same
+  decision wave 1 made for `.insert`, which had left every zone band
+  live; the pinned stack gets its own drop geometry (lower fallback
+  APPENDS, mirroring the upper half); hero-displacing drops are refused
+  up front (cursor says no) instead of accepted-then-silently-reverted
+  by enforceSpecialHeroes; the pill bar catches its own near-misses.
+  T1–T6 landed, the failing ones watched failing pre-fix. TWO MORNING
+  CALLS FOR MICHELLE: (1) should shelf heroes become movable (delete
+  fixedModuleHeroID; un-freezes Screen/Files/Connections tab order) —
+  option 1 shipped so nothing is swallowed meanwhile; (2) the one
+  live-only question — does the footer's Debug row show drop feedback
+  during a drag at all? If never, the footer's NSViews aren't being
+  hit-tested and a bigger fix (out of the safeAreaInset) is next.
+- **S4 files drag** (`fix/files-drag-out-promises` — renamed mid-run:
+  git-policy now refuses creator-prefixed branches for new merge
+  bases): getFile has the busy-guard its three siblings had, promise
+  completions can no longer be orphaned (the "ghost" was Finder's own
+  placeholder), a watchdog frees a lost reply instead of wedging every
+  later drag-out; promise metadata derives UTType from the osType with
+  the curated table as overrides and the promised filename gets a
+  consistent extension; acceptDrop handles NSFilePromiseReceiver
+  sources (Photos etc.) and validateDrop only claims what it can read.
+  Request-id keying deferred WITH REASON (single bulk receiver = one
+  waiter by construction once guarded). CHEAPEST LIVE CONFIRMATIONS:
+  drag an extension-less TEXT file onto TextEdit; two quick drag-outs in
+  succession; drag a photo out of Photos.app into the browser.
+- **S1 + V3-gap** (`035-smalls`): the Connections roster toggle lives
+  in the roster's own header (Files' placement), placement-pinned by a
+  mutation-watched test; the Volumes probe and ATA drive line scale
+  through census_size_mib (code-consistent with the live-proven
+  overview path, itself unobserved).
 
-## DEFERRED: release-branch protection and private-history fleet retirement (2026-08-11, `chore/pre-rc-foundation-integration`)
+Morning addendum — heroes: CLOSED as option 2 (Michelle: "let the user
+decide"). `hero` is `moduleIDs.first` everywhere but the machine shelf
+(whose Overview hero is a page, not a module — pinned by its own test);
+fixedModuleHeroID, enforceSpecialHeroes and both drag guards (including
+the overnight refuse-up-front) are deleted. A drop in front of a first
+pill is accepted, previewed live, and survives the save; Settings on a
+user shelf stays put now. No migration, no version bump: every layout
+the old build wrote was already canonical under the old rule, so the new
+rule reads the same arrangement from the same bytes (a store test pins
+that loading does not rewrite them). Four pinning tests inverted into
+user-order-wins coverage; mutation-watched by reintroducing a minimal
+enforceSpecialHeroes and watching the rewritten T4 name the reorder.
+Unwatched: the feel of a pill sliding out from under the bar, and the
+untested path where an empty non-machine shelf renders `unavailable`.
 
-GitHub `main` has an active, bypass-free ruleset requiring pull requests,
-resolved conversations, linear history and the repository CI jobs. The
-committed policy and local mirror guards are part of the integration line. Two
-adjacent tasks are deliberately not folded into that change.
+C3 closed earlier as stale-binary (install the current guest). S3
+(multi-root projects) intentionally waits on Michelle's prefs-shape
+call. Ideas N1–N6 are issues #29–#34.
 
-No `release/v*` branch exists yet. Before the first one is cut, apply the same
-protection pattern to it and decide whether qualification concurrency justifies
-strict up-to-date checks or a merge queue. Required signed commits remain
-deferred until local human, agent and GitHub-generated commits all have a
-verified signing route.
+Post-wave addendum: a granted mirror get / continuity grab was cancelled
+by the host's own begin guard (sendMirrorFileGet/sendContinuityGrab never
+set activeFileGetID) — found by the files lane, confirmed end-to-end by
+the DMG-migration session, fixed @ c752cb99 with the success-path tests
+the API never had. Why nothing saw it: refusals route ungated
+(Session:657 → GuestListener:3347, fromActive() only) while successes
+were gated — so the API's only test asserted a refusal. The next API on
+this lane gets tested success-first for exactly that reason.
 
-The pre-public private-history checkout remains an offline archive with its
-unrelated root and existing worktree fleet. The 2026-08-11 census found 93
-worktree-local `core.hooksPath` overrides. They were not rewritten underneath
-active work. Inventory, reconcile and retire that fleet separately; it is not
-a prerequisite for the canonical GitHub clone to enforce the current policy.
+## TESTED, THE ONE DELIBERATE REGRESSION UNWATCHED: Mirror consent is one switch on the Mac, planes on the host (2026-08-15, `claude/034w5-mirror`, closes plan 034 G-7)
 
-## UNVERIFIED: NOW Web Direct needs Classilla and MacWeb acceptance (2026-08-10, `codex/web-proxy`)
+Mirror consent (plan 034 G-7, 2026-08-15). The guest's half of the two-key consent is now ONE master switch; the four per-plane guest gates retired and the host's plane policy is the sole granularity. Both sides must still permit — the guest's veto is untouched, only its granularity moved. Field fates, all decided explicitly: `policy.enabled` is new and required; `structure`/`finderComplements`/`content`/`foregroundCycle` are retired but STILL SENT by a current guest, all four set to the master, because a host built before this change declares them required and would fail to decode the entire facts object without them. A host reading a guest that predates `enabled` collapses the four by the guest's own migration rule (consent only when ALL FOUR were on), stated once per side because two sides guessing differently would grant a permission that Mac's own preferences deny, silently, since every plane would simply work. Prefs reach V29; the V22 slots stay and are written from the master, so the rule is its own inverse and a file round-trips through a format-28 build unchanged. UNVERIFIED, and it is the interesting half: the migration is conservative by design, so almost every existing preferences file collapses to consent OFF — only structure was ever on by default — meaning a person who upgrades finds mirroring refused until they tick one box, and nobody has watched that happen on a real machine. Also unverified on metal: the host's `content` plane default flipped to OFF to inherit the guest's old default (P3 is metal-proven to crash the Finder on the PB1400c), so a fresh pair of machines should behave exactly as before; that equivalence is argued from code, not observed. Neither guest page nor host page has been seen rendered — no emulator or metal pass ran for this change.
 
-The Direct implementation, host supervision, PowerPC Workshop page, semantic
+## RESOLVED: the DMG assembler no longer uses the deprecated `hdiutil create` (2026-08-15, `build/dmg-diskutil-migration`)
+
+`scripts/assemble-release :: create_dmg` now shells out to `diskutil
+image create from --format UDZO --volumeName "New Old World" <source>
+<destination>`. The flags did map across after all: `UDZO` is one of
+`diskutil`'s own accepted format names, `-volname` becomes
+`--volumeName`, and the source folder and destination become positional.
+Both spellings were built from the same stub folder and compared on
+macOS 27 — UDIF read-only compressed (zlib), GUID partition scheme, APFS
+filesystem, symlinks carried across rather than dereferenced — so this
+is an equivalent image, not a similar one.
+
+The `tools/release-tests` mount-and-inspect case gained the assertion the
+swap actually needed: the drag-to-install `/Applications` alias is a
+symlink with that exact target. A builder that dereferenced it would
+still produce a DMG that mounts and passes every other assertion. Both
+halves were watched failing — a mutation that made the alias a real
+directory, and one that pointed it elsewhere.
+
+The gate clones `HEAD` rather than reading the worktree, which is worth
+knowing before trusting it: the first green run of this change tested
+the unmodified committed script and proved nothing. Commit, then run.
+
+Not closed by this: `tools/release/image.py` still calls `hdiutil
+create` for the generic classic-Mac setup image, and cannot move. It
+needs `-fs HFS+`, `-size` and `-layout NONE`; `diskutil image create
+from` has no equivalent of any of the three and produces APFS only.
+Worse, `diskutil listFilesystems` on macOS 27 no longer offers an HFS+
+personality at all, so the replacement tool has retired the capability
+the classic image depends on rather than merely not grown it yet. That
+is a different problem from this one, tracked as
+[issue #28](https://github.com/thisoldmac/new-old-world/issues/28), and
+it is unsolved rather than deferred.
+
+## EMULATOR-OBSERVED AT BEST, METAL NOT AT ALL: 034 wave 4 — the Files cocktail, one name rule, files drop in from outside (2026-08-15, five lanes merged, gate green)
+
+Wave 4 of plan 034, the last implementation wave; `scripts/test-all`
+green on the merged tree.
+
+- **Files rebuild** (`034w4-files`): two named halves, no disclosure
+  triangle; the four-writer status placard became per-channel storage
+  with one priority rule (`files_status.c`), so a clearing channel
+  uncovers unread news instead of falling to "Ready." Emulator-observed
+  drawing — the observation is recorded in commit 85340049's message;
+  the screenshot itself was a gitignored artifact in the lane's worktree
+  and was lost when the merged worktrees were removed. Nothing
+  with a file actually moving was exercised. Three corrections it forced:
+  the research claim "catsearch.c is dead" was WRONG (live console+wire
+  verb; kept); the share half's hand-drawn text had NEVER reached the
+  observation plane (helper files are invisible to the describe gate —
+  the gate's own stated limit, now having cost one real gap); and the
+  hidden send progress bar reports `visible:true` in the scene while the
+  pixels show none — an observation-plane fidelity nit, pre-existing,
+  unowned.
+- **Naming** (`034w4-naming` + merge-time consolidation): the hostname
+  was already on the wire (`Hello.name` → `g.peer_name`) — no contract
+  change. `core/peer_name.c` owns the one conversion (This Mac / trimmed
+  hostname / "Other Mac"); `conn_peer_label()` and the Files label both
+  delegate. The retired "the other Mac" phrasing is test-pinned against
+  return.
+- **Drag, drop-first** (`034w4-drag`): Drag Manager tracking/receive on
+  the Workshop window (real UPPs, runtime-gated on Gestalt; absence is a
+  supported state), `flavorTypeHFS` accepted, and `kAEOpenDocuments`
+  answered for the first time (the app had sent it in four places and
+  never served it). NEITHER handler sends: drops land in a ring drained
+  from the idle loop into the existing send path. Finder icon drops via
+  the new documents FREF/BNDL. **This slice's automated gates can be
+  green while the feature does nothing** — Drag Manager behavior is
+  invisible to all of them; Emulator QA and Metal QA statuses are
+  required by repository policy before the PR merges.
+- **Cloud describe + copy** (`034w4-cloud`): `CloudViewOps` gained a
+  describe entry across all four views; iCloud no longer reports its
+  card pane as a bare rect, and Chat/Mirror/Projects/Processes/Software
+  now serve `copy_text`. All 17 pages describe; 11 serve Copy.
+- **Chevron** (`034w4-chevron`): H10's symbol bounce on the shared
+  rail's icon, macOS 14-gated over a macOS 13 floor, Reduce-Motion
+  aware. Build-verified; the visual is unwatched.
+
+What remains of plan 034: G-7 (mirror consent contract change — gated on
+`refactor/mirror-continuity-split` landing), the guest chat sidebar
+(gated on the guest-browsing contract decision), and the verification
+debt this ledger keeps repeating: one structured emulator pass over the
+whole guest app, then the metal pass, then the Emulator/Metal QA
+statuses for the PR.
+
+## TESTED, NOTHING WATCHED ON A MACHINE: 034 wave 3 — every page can say what it drew, Copy exists, Connections reorg, saved chats, Settings window (2026-08-15, four lanes merged at `0bfdee71`)
+
+Wave 3 of plan 034; `scripts/test-all` green on the merged tree.
+
+- **Guest citizenship** (`034w3-citizenship`): all 17 Workshop pages
+  implement `describe_scene` — each page is ONE walk taken twice (draw on
+  a NULL writer, describe on a real one), so the description cannot
+  disagree with the pixels; a source gate fails any module that draws
+  text while the entry is NULL, and it looks the ops field up BY NAME
+  after its first version read "last element" and broke on the very next
+  appended field — one commit from reading green off the wrong member.
+  Edit▸Copy exists for the first time (`copy_text(out, cap)` ops entry,
+  the MODULE answers, no focus machinery): served on Console, Hardware,
+  Diagnostics, Connection, Networking; greyed elsewhere. Declared
+  partial: iCloud describes its card pane as a rect only — CloudViewOps
+  has no describe entry (four sibling files, follow-up owned by wave 4);
+  Files/Chat/Mirror/Projects/Processes/Software could serve copy_text
+  cheaply and do not yet.
+- **Connections reorg** (`034w3-conn`): the Files right-sidebar became a
+  shared `RightSidebarSplitView` with Files and Connections both
+  consuming it; the roster is a collapsible right sidebar (collapse
+  persisted); `ConnectionLinkSection`/`ConnectionListenerLog` moved out
+  of `SettingsModuleView.swift`; one guard was rewritten after PASSING
+  its own mutation (substring match accepted a forked alias — now
+  word-boundary).
+- **Saved chats** (`034w3-chat`): ChatStore persists chat metadata with
+  transcripts in per-chat files loaded only on selection; projects are
+  folders on disk with an optional `linkedProjectID`; first launch
+  adopts the live conversation as chat #1. Privacy surface a reader
+  must not rediscover: transcripts can contain guest-screen content and
+  now persist in Application Support, local-only.
+- **Settings window** (`034w3-settings`): the ⌘, window is a pill-tab
+  switcher (Appearance / Sidebar / MCP / Web / Logs / New Connections)
+  with deep-link routing; Continuity gained a global seeded-defaults
+  store for new connections; Mirror's slot is a deliberate placeholder
+  (its controls stay in-module while the feature is unsettled).
+
+None of it has been watched on a running host or guest.
+
+## TESTED ACROSS THE BOARD, NOTHING WATCHED ON A MACHINE: 034 wave 2 — update-in-place, guest citizenship, module moves, Projects (2026-08-14, seven lanes merged at `c8b1d827`)
+
+Wave 2 of plan 034; `scripts/test-all` green on the merged tree, every
+stage run. Per lane, with the honest status:
+
+- **H4 update-in-place** (`034w2-b-update`): `now_trash_move_busy`
+  (files/trash_move.c) is the one shared "trash a possibly-running APPL
+  without renaming it" primitive; the rename WAS the bug. Two extra
+  defects fixed on the way: `put_abort()` left `g_update.pending` stuck
+  (one cancelled update wedged all later ones until relaunch), and the
+  host's update progress never correlated by `putId` (it rides
+  `onOutboundProgress`). Host adds a 3-minute watchdog, determinate
+  progress, Cancel, all converging through one `finishUpdate` seam that
+  also refuses a late answer resurrecting a settled notice. fBsyErr is
+  system-dependent: nothing here is metal-verified.
+- **About box + View keys** (`034w2-f-menu`): Apple menu with About
+  (movable modal, build stamp), ⌘1-0 removed. `OpenDeskAcc` is not
+  declared under Carbon, so Apple-Menu-Items selections deliberately
+  highlight and do nothing — honest degradation, commented in place.
+- **Rail** (`034w2-f-rail`): compact-only (all 14 rows fit at 640×480 —
+  arithmetic, not observation), description in the hover tag, tier marks
+  in the rail, plain-drag rearrange, curated default order in
+  `workshop_order.c` with the adjacency argument in prose. The page enum
+  moved to `workshop_module_ids.h` so the host cc can read it.
+- **Title gate** (`034w2-f-gate`): docs-gate compares `title` now; the
+  three known drifts proved deliberate and are recorded as gate-validated
+  `title_overrides` with reasons that go stale if titles converge.
+- **G-1** (`034w2-g1a-host` + `034w2-g1b-guest`): Networking on the
+  Machine shelf (layout v4 migration lifts only the default placement);
+  Diagnostics grew `wirestat` (read-only, shape-decoded so a guest can
+  grow a distribution without a host change) plus the link timing rows;
+  guest Connection page gained Test/round-trip via the same heartbeat
+  send the cadence uses; guest Networking dropped its link card from the
+  PAGE while `run_net`'s wire rows are unchanged (the host reads them).
+  The g1b lane died before reporting; its work was verified by
+  cross-compile + native tests afterward. No wirestat decode has ever
+  seen a real guest's answer.
+- **G-2** (`034w2-g2a-rename` + `034w2-g2b-projects`): the module is
+  Projects everywhere a person reads (ids/titles/docs; type and file
+  names deliberately kept; MCP tool names deliberately kept — decided
+  separately). The guest lists its projects (`development-project
+  catalog` — regularized, not a new verb: the contract now declares the
+  action the guest always served, and the console face `help` advertised
+  was implemented at last), remembers the active one (NowPrefs V28),
+  keeps a session ring of 8 settled jobs, and has Build/Run against the
+  selection. The Workshop Projects page has never been drawn on any
+  machine.
+
+Prefs formats V27 (workshop open-state) and V28 (active project) are
+taken; the next persisted field is V29.
+
+## TESTED, THE CURE NOT YET WATCHED: the Connect button lied only to pages born after auto-connect (2026-08-14, `claude/034-inv-conn`)
+
+Assessment item G8 of plan 034. Michelle reported from a running guest
+that the Connection page's button read "Connect" while the link was
+active and healthy — while `conn_idle()` visibly polls the wire and
+flips the title every tick, and the disconnect action already worked.
+
+The mechanism was neither of the briefed hypotheses (idle not running;
+module state diverging from the wire). `conn_is_connected()` IS wire
+truth. The defect was **seeding**: Workshop pages are created lazily,
+and the page cached the wire STATE while creating the button with a
+hardcoded "Connect" — so a Connection page first opened *after* prefs
+auto-connect was born with cache and title already in agreement about
+the wrong thing, and a restamp-on-change idle never saw a change to
+stamp. The fix caches the TITLE rather than the state, synced through
+one helper at create, at show, and on tick, with the decision extracted
+to a Toolbox-free seam (`conn_fields.c`) whose test was watched failing
+against both mutations it names. Connect-on-edit landed in the same
+commit: committing a new address/port now calls the same force-connect
+path the button uses instead of staging behind "Save to keep it."
+
+**Not proven:** nobody has yet opened the page for the first time after
+an auto-connect on a running guest and read "Disconnect". That single
+observation is the remaining verification, and it is exactly the
+scenario the bug lived in. The connect-on-edit path is unverified by
+test (pure Toolbox click handling, no seam).
+
+## BUILDS AND TESTED, NEVER RUN ON ANY MACINTOSH: a receive on the PowerPC guest can be seen and stopped (2026-08-14, `claude/034-slice-e3`)
+
+Slice E of plan 034, items G11b and G11a. The receive plumbing in
+`wire.c` had been complete for months with only the Cloud page reading
+it, filtered to receives answering its own `cloud.get`: a plain push
+from the host landed with no bar, no name and no way to stop it.
+
+`now_wire_put_cancel` is `now_wire_get_cancel` one lane over — the
+outbound `file.cancel` first, then the same `put_abort` teardown an
+inbound `file.cancel` already runs, so the host hears `file.done`
+`ok:false` rather than inferring the end from the bytes stopping. A
+floating windoid (`workshop/receive_progress.c`) shows it, from the idle
+tick, whether or not the Workshop is open. The console gains `cancel`
+over the same implementation, so the capability has both faces.
+
+**What is proven.** `scripts/test-all` is green with all eight stages
+RUN — none skipped, including MirrorKit and the guest cross-builds, so
+both guests compile. `put_cancel_source_test.py` is registered in
+`scripts/test-native` and was watched failing against all three
+mutations it claims: the two halves reordered, the frame keyed `id`, and
+the console verb losing its receive half.
+
+**A mutation harness that lies by hitting the wrong function.** The
+first attempt at the `id` mutation reported the guard PASSING against
+it, which would have read as a hole in the test. It was not: `wire.c`
+carries the *identical* cancel frame twice — `g_get.id` at :3862 and
+`g_put.id` at :4755 — and a non-global substitution silently mutated the
+first, which no assertion in this guard covers. The file changed, the
+diffstat confirmed a change, and the mutation still never reached the
+code under test. This is the repository's own rule paid for again from a
+new direction: confirming the mutation *applied* is not the check —
+confirming it applied **where the guard is looking** is. Where a source
+literal appears more than once, anchor the mutation to the line.
+
+**NOT proven, and it is all of the interaction risk: no window has ever
+appeared.** Nothing here has run on the emulator or on metal. The
+windoid's class and attributes (`kFloatingWindowClass`, no
+`kWindowStandardHandlerAttribute`, `kWindowNoActivatesAttribute`), the
+`TrackControl` that pumps the wire, the six-second outcome dwell, the
+close-box latch, and `front_document_window()` in `main.c` — which
+exists because `FrontWindow()` includes a floating window and would
+otherwise point Cmd-W and every keystroke away from the Workshop for the
+length of every transfer — are all asserted by reading, not by watching.
+The `main.c` routing is the highest-risk half: it changes behaviour for
+the Workshop whether or not a transfer is running.
+
+**Deliberately not built.** An outbound SEND still has no
+guest-originated stop; the console verb says so by name rather than
+reporting a quiet machine. Cloud-page receives stay with the Cloud page,
+since two windows reporting one transfer is worse than one.
+
+## TESTED, THE SYMPTOM ITSELF NOT YET WATCHED: sidebar spring loading was armed against the wrong thing (2026-08-14, `claude/034-inv-drag`)
+
+Assessment items H6, H7 and H16. Michelle reported from a running build
+that the Finder-style double flash never appears, that the connections
+shelf cannot be spring-loaded into because it moves out of the way, and
+that a shelf's dropdown leaves its row lit after closing. All three had
+implementation and passing tests; the code read as correct.
+
+**H6's cause is best-supported, not confirmed.** The chain: her own H7
+report is live evidence that `draggingUpdated` reaches
+`NativeNavigationDragView` and that `previewDrop` applies moves on
+screen, so the drag plumbing is not the problem. What was gated is the
+arming. `springLoadingEntered` resolved the drop target from the *band*
+under the pointer and refused `.enabled` unless that band supported
+spring loading — and two of a row's three bands are `.zone` insertions,
+which never do. A drag entering a shelf row anywhere but its middle
+third told AppKit "no spring loading here", and every band crossing
+revoked the arm and restarted the dwell. `flashTwice()` is reached only
+from `springLoadingActivated`, so it had nothing to fire from. Arming now
+asks the row (`NavigationRowDropTargets.springLoadingTarget`) and keeps
+its own feedback state, disarmed only when the drag leaves or ends.
+
+Arming and activating had to be split apart to do that, and they answer
+different questions. The row arms wherever the pointer is, so AppKit's
+dwell survives a band crossing; the *activation* still asks the band,
+because a dwell spent aiming at the gap between two rows is aiming at an
+insertion, and springing a shelf open there would expand it under a
+pointer deliberately held still — H7 in another costume. The options
+gained `.continuousActivation` so that the single activation an entry
+would otherwise be given is not spent while the person was aiming at a
+gap.
+
+Nobody has watched the flash fire. If it still does not appear with the
+arming fixed, the next suspect is the flash itself rather than the
+gate — 0.28-alpha accent for 0.13s over `nowGlassShelf()` material may
+simply not read, and U3 sketched the brightening and the icon scale pulse
+that would answer that. Do not add a second animation before looking.
+
+**H7 has two mechanisms and the sharper one is not about bands at all.**
+The whole sidebar renders `dragPreview.layout`, so any preview that
+changes the layout moves rows live. Dropping a module INTO a shelf is an
+`.insert`, and applying it takes that module out of the top-level stack:
+its row closes up and every row below rises — including the shelf the
+pointer is resting on. The drag then leaves the row it was aimed at,
+which is both "the connections shelf gets out of the way" and a
+spring-load dwell that can never finish. An insert now previews the
+baseline unchanged when the module is a top-level row, the way `.combine`
+already did; a module already inside the shelf still reflows its tabs
+live, because that displaces nothing and is the affordance
+`testPreviewReflowsShelfTabsBeforeDrop` was written for.
+
+The second mechanism is the bands, and it is the one that fires before
+the pointer has settled: they shrink from a third of the row each to 20%,
+and to 10% on first contact, so arriving on a row resolves the row rather
+than an insertion whose `.move` really does reorder the stack. Both fixes
+are deliberately general rather than a network-shelf special case — the
+connections shelf is only the row most likely to reproduce it, being the
+last one before the window edge.
+
+H16 is the ordinary AppKit trap: `NSMenu.popUp` runs its own tracking
+loop and the `mouseExited` that would clear the row highlight is spent
+inside it. The row's hover is now recomputed after `popUp` returns, from
+where the pointer actually is rather than forced to `false`, so
+dismissing with the pointer still on the row keeps it lit.
+
+One thing this work found about itself, and it is the reason the
+interrupted run's "the host gate passed" line is not repeated here: it
+had not. `NavigationShelfTabTests` gates the spring-load handler by
+reading this source, and the refactor moved the check inside
+`springLoadingTarget`, where it reads unwrapped — so the string the gate
+looked for was gone. The compile error in a later run masked it. A gate
+that reads source is worth its line, and it is also a second place to be
+wrong.
+
+Still open: none of the three has been watched on screen. Nine claims
+here are pinned by a mutation somebody watched fail, each against the
+claim its own test names and each confirmed to have built and run first.
+The three that carry the arming argument
+are driven through a stub `NSDraggingInfo` rather than read out of the
+source, so they fail on behaviour: arm from the band again and the row's
+edges stop arming; share one feedback state and a band round-trip springs
+an already-sprung row a second time; drop the activation gate and a dwell
+over an insertion opens the shelf.
+
+## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
+## SHIPPED: the guest's log ring is retrievable over the wire, and what that leaves unverified (2026-08-15, `feat/guest-log-retrieval`)
+
+Diagnosing a guest defect used to mean saving the Logs page to a file on
+the PowerBook, FTPing it off, and pasting it to an agent — five times in
+one night on 2026-08-14. Now `tail` pages its 2000-line ring
+(`area` exact-tag filter applied guest-side, `before` sequence cursor,
+still 40 lines per 4 KB answer), the selection is one implementation
+under both guest faces (`logquery.c`), and `now_guest_log_tail` walks
+the cursors so an agent asks for 200 lines in one call —
+`{"lines": 200}`, optionally `{"area": "files"}` — and gets whole lines
+in the host log's shape (`shown`, `matching`, `ringCapacity`, `pages`).
+Local protocol v13.
+
+Verified: native tests (grammar, exact-match padding, once-and-only-once
+paging, cursor-over-roll) and host tests mutation-checked; end-to-end on
+an OS 9.1 emulator clone — 186 of 186 ring lines over 19 pages, a
+150-line `proc` filter over 14, content and ordering checked against the
+traffic that generated them (rig: the run's `provenance.md`).
+
+Still unverified:
+
+- **Nothing here is metal-verified.** The walk's cost on a real
+  PowerBook link — a full-ring retrieval is tens of `tail` round trips,
+  and metal RTTs are larger than the emulator's — and the behaviour of a
+  deep walk while a transfer holds the lane have not been watched on
+  hardware. The walk was not timed on the emulator either; nobody
+  should quote a duration for it yet.
+- The guest's own console face of the new grammar (`tail 40 files
+  before N` typed at the machine) is proven by the shared parser's
+  native test, not by a hand on the real keyboard.
+- A guest older than this build answers one page with no cursor; the
+  host serves it as a complete single-page answer. Exercised in tests,
+  never against an actually-old binary.
+
+## FIXED, AND EVERY GATE WAS GREEN FOR ITS WHOLE LIFE: the MCP agent surface published schemas no conforming client would accept (2026-08-15, `fix/mcp-outputschema-root-type`)
+
+29 of the 46 tools rendered an `outputSchema` whose only root key was
+`oneOf` — a discriminated outcome union, every branch object-shaped, and
+no `type` at the root. The MCP specification restricts both `inputSchema`
+and `outputSchema` to `type: "object"` at the root ("Currently restricted
+to type: object at the root level"), and a client validates `tools/list`
+as **one document**: it rejected the whole response. Not 29 rows of 46 —
+**zero of 46**. Nothing about NOW was reachable from Claude Code for as
+long as this shipped.
+
+The fix is one edit, at `NOWMCPServer.tools`: the same seam that already
+injects each row's `name` and `guest` selector now supplies the root
+type, because it is a property of the MCP envelope rather than of any
+capability. It fills the type only where a row left it unstated; a row
+declaring a root type that is *not* object is stating something false
+about its own result and is failed rather than repaired.
+
+**The defect is not the interesting part — its invisibility is.** Three
+things read green or healthy throughout:
+
+- every gate in this tree, because none had ever validated the payload
+  the server publishes, only the transport that carries it;
+- the host's own MCP page, which reports "Running" whatever the payload
+  contains — reachability is not validity, and the page cannot tell them
+  apart;
+- the hand-rolled `curl` client used to check the transport by hand,
+  which does no schema validation at all and so agreed with the app.
+
+This is the observing-rig rule from AGENTS.md arriving one layer up: an
+instrument that reads a live machine must assert the plane armed, and a
+gate over a *published payload* must validate it the way its consumer
+does. A client that never got a tool and a host with no tools to give
+report identically to everything we had.
+
+`NOWMCPServerTests.testEveryRenderedToolSchemaSatisfiesTheMCPRootType-
+Requirement` closes it, deriving its tool list from
+`HostProjectionCatalog` through the rendered `tools/list` rather than a
+fixture, so a capability added tomorrow is covered by nobody. Its
+companion `testNoProjectionDeclaresANonObjectSchemaRoot` keeps the
+injection from becoming a repair.
+
+### What is proven, and what is not
+
+**Tested**, and beyond that verified against the real client on this Mac:
+the post-fix payload was served to Claude Code from a stub endpoint and
+accepted (`Status: Connected`), and the same stub serving the *pre-fix*
+payload reproduced the original verdict verbatim —
+`Invalid input: expected "object" (at tools.1.outputSchema.type) (+28
+more)`. That control is what makes the acceptance mean something.
+
+**Not done, and it is the last mile:** the NOW app running on this desk
+still serves the pre-fix payload. It was left alone deliberately rather
+than rebuilt and restarted underneath a person and two sibling lanes.
+Until someone rebuilds and restarts the host, `claude mcp get now` still
+reports the failure, and the fix is real only in the tree.
+
+The other 17 tools were clean, and no `inputSchema` was wrong at the
+root — checked against the live server before the change and against the
+rendered payload after.
+
+## TESTED, NOT EXERCISED THROUGH A LIVE MCP CLIENT: an agent can read this side's log (2026-08-15, `feat/mcp-host-log-tail`)
+
+`now_host_log_tail` is the host sibling of `now_guest_log_tail`. It serves
+`HostLog`'s in-memory ring — not the optional per-launch file — with an
+optional area filter and a count bounded by the ring's own capacity, and a
+cut answer says so in `shown`.
+
+**Why it exists.** On 2026-08-14 a Continuity Accessibility-permission defect
+was diagnosable only because an agent went looking for
+`~/Library/Logs/now-logs/*.log` on the filesystem by hand, and only because
+the disk switch happened to be on. With it off the evidence is in a ring the
+Logs page renders and nothing else could reach.
+
+What is proven and what is not:
+
+- **Tested.** 22 behaviour tests against the real `HostLog` ring, plus eleven
+  mutations each watched failing the test that names it — including one that
+  SURVIVED first: the boolean-count guard was asserted with a Swift `Bool`,
+  which never casts to `Int` anyway, so the test passed with the guard
+  deleted. It now goes through `JSONSerialization`, which is what the MCP
+  face actually hands a projection.
+- **Not exercised end to end.** No `MCPClientConformance` run has called it
+  through a live socket; its recipe is in the book and the totality gate
+  demands one, but that suite needs a running host. So the projection, the
+  codec and the reader are tested, and the `App.swift` branch that serves
+  `host_log_tail` over the socket — including its exemption from addressing —
+  is covered only by inspection.
+- **Untested by design, worth knowing.** The row reports
+  `persistsToDisk` from `HostLog`'s ACTUAL state, and `LogsModel` defaults
+  that switch to ON rather than off. So most launches do have a file; the row
+  does not depend on it either way.
+- **One shared type gained a case.** `HostProjectionAuthorityDomain` now has
+  `hostApplication`, and the dispatch's consent exemption reads a derived
+  `isGuestConsentRelevant` rather than matching `hostProjects` by hand. Any
+  future row that reads this Mac's own state gets the exemption by declaring
+  the domain; nothing else moved.
+
+## FIXED, NOT RE-MEASURED ON METAL: the grant that survives an epoch was unreachable at the exact moment it exists for (2026-08-15, `fix/continuity-grab-grant-window`)
+
+Round 4 was attended and got further than any round before it: the press
+bound, the drag tracked, the seed read `ourWindow=yes, resolved=yes,
+panelKey=yes, panelCoversPoint=yes`, and AppKit completed the drop
+(`operation=1`). Then the guest refused to hand over the bytes —
+`code=bad-epoch`, three seconds into a thirty-second window.
+
+**The 30-second grant was implemented, correct, and unreachable.** Not
+reading 2 (never built) and not an arithmetic error: the guest's own ring
+shows the window working all evening (`grant held past epoch=N`, `grant
+honored after epoch=N gen=1 live=0`, `grab granted`). It shows the failure
+too, and the failure is an ORDERING, ten lines apart in the same second:
+
+    01:04:47 mirror ? grab refused #1 epoch=2/0 gen=1: bad-epoch
+    01:04:47 mirror grant held past epoch=2 gen=1 for 1800 ticks main.c
+
+The guest held the grant it had just refused. `hold_grant_for_gesture()`
+lived inside the Finder-selection poll, and `conn_service` runs that poll
+AFTER `service_connected_io()` has dispatched every frame it read in the
+same pass. A host that stands down for a drag it is still holding sends
+`continuity.disarm` and `continuity.grab` together — so the grab was the
+first code to notice the epoch had ended, and it noticed by answering
+`bad-epoch` against a hold nobody had filled yet. Note `epoch=2/0`: asked
+2, live 0, the disarm having landed microseconds earlier. The successful
+grabs at 22:30 differ only in that the grab lagged the disarm by a service
+pass.
+
+**The fix is where the transition is noticed, not where it is polled.**
+`now_continuity_selection_settle()` in `now-guest-shared` is called by the
+poll — still the backstop for the endings no frame announces, lease expiry
+and the rest — and by `now_continuity_grab_resolve()` itself, so there is
+no version of the decision a caller can make against a table nobody has
+moved. `bad-epoch` and `grant-expired` keep their own cases. One
+consequence stated plainly: the window now starts when the end is NOTICED
+rather than when it happened, which is at most one frame dispatch of
+generosity.
+
+**Why no test had it.** The unit test constructed the settled state it
+then asserted on — it called `now_continuity_grant_hold` itself and handed
+`resolve` a table somebody had already moved. That is the shape AGENTS.md
+names: a test that constructs the message it then parses. The new block
+settles nothing on purpose.
+
+**What is proven.** `scripts/test-native` green, `scripts/build-guests`
+cross-compiles both guests and the extension. Four mutations watched
+failing against the claim each names: the settle removed from
+`now_continuity_grab_resolve` (fails at the exact CHECK that says a grab
+must be served when nobody polled), removed from the glue's grab, removed
+from the poll, and `grant-expired` collapsed back into `bad-epoch`. The
+first attempt at mutation one did not BUILD, so it was redone until it
+ran — a green that never ran, caught in miniature for the second round
+running.
+
+**NOT proven.** Nobody has dragged a file with a hand on a mouse since
+the fix. Whether the content then arrives, whether MacBinary decoding on
+the host side is right, and whether thirty seconds is generous or tight
+remain UNMEASURED. The metal script is in the round's report; the line
+that would prove it is `grant held past epoch=N` BEFORE `grab granted`,
+where round 4 had them in the other order.
+
+## THE SAME CAUSE, THIRD LAYER: AppKit's drag session is also a session-state reader, and it cannot be taught the HID (2026-08-15 04:17 round, `fix/continuity-unbound-cross-release`)
+
+The 04:17 round (658d77e9, signed, Accessibility granted,
+`~/Library/Logs/now-logs/2026-08-15 041754.log`) confirmed the HID fix —
+the abandon is gone, sessions start — and produced the next layer, in
+two shapes from one cause:
+
+- **Five sessions ended instantly** with `operation=1` wherever the
+  cursor stood, every one "ended with the button still held", ending
+  100+ px from the edge within the same second they began. Two of them
+  fired real grabs (a drop landed on whatever sat under the pointer near
+  the edge — host-side clutter, not guest damage).
+- **One session ran three seconds pinned at its seed point** (x=1→2
+  while y moved 36) and ended `operation=nobody`.
+
+**Cursor dissociation is exonerated by the log itself**: the instant
+sessions' end points moved 100+ px in under a second, which a
+dissociated cursor cannot do, and no "could not re-attach" line exists.
+
+The cause is the tap-poisoning defect one layer further. The consuming
+tap swallows the physical `leftMouseDown`; the window server's session
+state therefore believes no button is held for the entire handoff. The
+02:48 fix taught **our** readers to ask the HID level — but an
+`NSDraggingSession` is a session-state reader that cannot be taught: it
+is driven by session-level `leftMouseDragged`/`leftMouseUp`. Under a
+state that says "up", the server synthesizes `mouseMoved` instead of
+`leftMouseDragged` (nothing for the session to track: the pinned shape),
+treats the physical release as a no-op transition (no session ends on
+it: "ended with the button still held", six for six), and a session
+begun under that state can complete immediately at the cursor's position
+(the five instant `operation=1` endings).
+
+Fixed by correcting the session's belief rather than working around it:
+after the tap is down and the catch surface is wide and key, and before
+any session can begin, `returnGuestFileToHost` posts a synthetic primary
+down into the session stream at the return point (audited: `session
+button state re-armed`). From there session state matches the HID —
+motion arrives as `leftMouseDragged`, the session tracks, and the
+physical release is a real `leftMouseUp` ending it at the drop point.
+No balancing synthetic up is needed: once the states agree, the release
+itself keeps them agreeing. The unbound path posts nothing (no session
+to drive), and a failed post is an error naming the consequence.
+
+**What is proven.** Host suites green; four mutations, each built and
+run, watched failing against the guard that names them: the re-arm
+removed (the exact 04:17 shipped behavior), the re-arm posted after the
+session starts, the failed post degrading quietly, and the unbound path
+posting one too. **Metal-verified: no.** The line the next round should
+look for is `session button state re-armed: synthetic primary down
+posted at X,Y` between `host file drag started` and a session end that
+happens at the human's release — a completed drop, `operation` naming
+the acceptor, and no "ended with the button still held". If the drag
+still misbehaves, the absent or present `leftMouseDragged` tracking and
+that one line split the remaining hypotheses.
+
+## PARTIALLY CONFIRMED ON METAL, THEN FIXED ONE LAYER DEEPER: the tap poisons every session-level button read (2026-08-15 02:48 round, `fix/continuity-unbound-cross-release`)
+
+The 02:48 metal round (merged build 7b7c3b82, Accessibility granted,
+`~/Library/Logs/now-logs/2026-08-15 024813.log`) split this branch's two
+fixes:
+
+- **The unbound safety fix is METAL-CONFIRMED** — 02:49:42 shows `held
+  press released without a file handoff … boundFile=none` then the
+  origin-return pair, and no Finder dialog. The origin-return also ran
+  on every bound attempt.
+- **The warp-as-release fix did not clear the drag abandonment.** All
+  four bound attempts abandoned in the SAME SECOND as their crossing,
+  button held throughout.
+
+**The mechanism is one layer deeper than the constructor, and it is
+this app's own tap.** The consuming tap swallows the physical
+`leftMouseDown` — its job — and a swallowed down never reaches the
+session's event state. So for the whole captured gesture,
+`NSEvent.pressedMouseButtons` reads 0 and
+`CGEventSource.buttonState(.combinedSessionState)` — which the previous
+fix asked — reads up. Three metal facts fall out of that one cause: the
+window server synthesizes plain `mouseMoved` instead of
+`leftMouseDragged` while it believes the button is up, so "the first
+real mouseDragged after the tap dies" structurally never arrives; the
+first post-teardown monitor sample carries `buttonsDown=false`, so the
+abandon fires in the same second as the cross; and pre-Accessibility
+runs never saw any of it, because with no tap nothing was swallowed.
+Only `.hidSystemState` sits beneath our own session tap.
+
+Fixed three ways: `primaryButtonIsHeld` reads `.hidSystemState`; the
+NSEvent monitor constructor derives `buttonsDown` type-first with a
+hardware read for plain `mouseMoved`; and the abandon decision requires
+corroboration — a motion sample claiming released while the HID says
+held is treated as an echo of our own tap and audited once with
+everything the decision read, while a real `primaryUp` still abandons
+outright. The abandon line itself now carries `kind`,
+`sampleButtonsDown`, `sourceEvent` type and `hidPrimaryHeld`, so the
+next metal round is decisive whichever way it goes.
+
+**What is proven.** Host suites green; six mutations (corroboration
+removed — the exact shipped behavior, watched failing with the metal
+signature; suspect echo silent; `primaryUp` vetoed by a lagging HID
+read; monitor `mouseMoved` back to session-state-only; monitor
+`leftMouseUp` asking the hardware; monitor dragged asking instead of
+knowing), each confirmed built and run. **Metal-verified: no.** The one
+line no test can reach is the `.hidSystemState` default itself — a unit
+test machine has no held button — which is exactly what the provenance
+on the abandon line exists to prove or refute on the next round.
+
+## FIXED, UNVERIFIED ON METAL — the permission that made things worse: the event tap read a cursor warp as a button release (2026-08-15, `fix/continuity-unbound-cross-release`)
+
+Accessibility was granted on this Mac for the first time on 2026-08-15
+(`~/Library/Logs/now-logs/2026-08-15 012911.log` — zero `could not
+capture host input` lines). **Three guest→host file drags in a row then
+failed**, identically, and in a way no earlier round had produced: the
+bound path ran perfectly — press bound, origin settled, released before
+the cross — and then
+
+    guest file crossed with no host mouse event yet; waiting for the
+      first real one now the tap is down
+    ? the guest file drag was abandoned: the button was released before
+      this Mac saw a real mouse event to start the drag from
+
+in the same second, with no `host drag seed event` line at all, while
+Michelle was still holding the button. The round before it (01:04)
+completed a drop — **with Accessibility broken**, so no tap existed.
+
+**One `HostPointerSample`, two producers, and they disagreed about
+`buttonsDown`.** The CGEvent tap derived it from the event TYPE, so
+`.mouseMoved` meant button-up; the NSEvent adapter has always read
+`NSEvent.pressedMouseButtons`. A cursor warp synthesizes a `.mouseMoved`
+whatever the button is doing, and a guest pass issues one warp per sample
+— `suppressedWarps` read 130, 151 and 222 in single crossings that night.
+So with the tap live, a held drag delivers a stream of samples claiming
+the human let go, and `resumeReturnDrag` believes the first one.
+
+The fix is in the adapter, not in the consumer: the type still wins where
+the type knows (a `leftMouseUp` is a release even if the session's button
+state has not caught up; a `leftMouseDragged` needs no second opinion),
+and only `.mouseMoved` and the secondary drags — the types that say
+nothing about the primary button — ask
+`CGEventSource.buttonState`.
+
+**The generalisable half, and it is the more useful one.** Two producers
+of one struct disagreed about its most load-bearing field, and the
+disagreement was undetectable because **only one of them had ever run** —
+the tap requires a permission this Mac had not granted. That is
+`two-halves-never-met-in-a-test` with a permission gate standing in for
+the wire. It also means the 01:04 success, and every guest→host drag
+result recorded before 2026-08-15, was measured on a code path that is
+not the one a permitted Mac uses. **Re-measure rather than compare.**
+
+The same bad field ended held-button custody on any warp echo, so
+`held-button custody ended: reason=the button was released` was
+untrustworthy on a capturing Mac.
+
+**What is proven.** Host suites green. Four mutations, each built and
+each run, watched failing against the guard that names it: `.mouseMoved`
+back to a hard false (reproduces the metal abandon), `leftMouseUp`
+honouring a stale held read, a secondary drag hiding a held primary, and
+`leftMouseDragged` asking instead of knowing. **Metal-verified: no**, and
+this one can only be verified on a Mac with Accessibility granted — which
+is now this one.
+
+## FIXED, UNVERIFIED ON METAL — NOW MOVED A PERSON'S FILE: an unbound cross-edge press released wherever the pointer ended (2026-08-15, `fix/continuity-unbound-cross-release`)
+
+**This one is a safety defect, not a fidelity one.** On metal at
+2026-08-15 01:16 (`~/Library/Logs/now-logs/2026-08-15 011445.log`)
+Michelle dragged `main.c` across the shared edge and the guest Finder put
+up *"An item named 'main.c' already exists in this location. Do you want
+to replace it with the one you're moving?"* — an unrequested, potentially
+destructive file operation on her own machine, offered by NOW.
+
+The sequence, and it is all in one log: `no guest file is bound to this
+press: the Mac has published no Finder selection for this epoch`, then
+`primary down sent`, then `shared edge crossing`, then `returning pointer
+to host: … buttonsDown=1`, then six seconds of `held-button custody`
+before the release landed.
+
+**The protection already existed, was correct, and did not run.**
+`returnGuestFileToHost` settles the guest pointer back onto the press
+origin and releases it there before anything else, because the Finder
+completes a move to wherever the pointer is when the button comes up. Its
+own doc comment says the consequence in as many words — cosmetic from the
+desktop, a real relocation from inside a Finder window (metal,
+2026-08-14). It took a **bound** `HostFileDragItem`, so the ordinary
+held handback in `returnToHost` — the unbound path — did none of it.
+
+Not moving somebody's files is not a property of the file-transfer
+feature. `releaseGuestPressAtOrigin` is now the one implementation of
+"settle to origin, then release", called by both. Only those two packets
+are shared: the catch surface, the pending return drag and the AppKit
+session stay on the bound path, because there is no file to hand over on
+the other one. The unbound cross also **warns** now, naming the reason
+and whether anything was bound; it reached metal with a single info line.
+
+**Why nothing was bound, and it is not the timing race it looks like.**
+The epoch armed at 01:16:02 and the press landed at 01:16:04 with no
+`selection cached` in between — but no poll cadence would have helped.
+`now_continuity_selection_poll` publishes only on a CHANGE
+(`now_continuity_stub_observe`), an epoch's reset table starts empty, and
+an empty Finder selection at arm therefore publishes **nothing at all**;
+the poll is then gated off entirely for the length of the gesture
+(`now_continuity_button_is_down`). So a press that both SELECTS an icon
+and drags it — click on the icon, drag straight out — can never be bound
+on its first pass, because the click that creates the selection is the
+same button-down that suppresses the poll. The working run six minutes
+earlier (`2026-08-15 010146.log`) had `selection cached` before its press
+only because a previous epoch's click had already selected `main.c`.
+
+**That half is NOT fixed here.** Closing it needs a guest change — a
+selection poll at the down edge before the Finder enters its drag loop,
+or a grab resolved by point rather than by published stub — and
+`now-guest-ppc/src/core/wire.c` is another lane's file this week. What
+this change buys is that the degradation is now safe and loud instead of
+silent and destructive: the drag is refused, the press is released where
+it started, and the log says so at warn.
+
+A second, smaller thing this leaves open: with the stub lane configured
+it wins outright and there is no fallback to the scene hit test
+(`ContinuityEdgeController.driveGuest`), which is deliberate and
+documented — but it means an unpublished selection refuses the drag even
+when the Mirror could have resolved the item under the pointer.
+
+**What is proven.** Host suites green. The key guard —
+`testAnUnboundHeldCrossReleasesAtThePressOriginNotTheCrossPoint` — was
+written first and **watched failing against today's code** with the
+message it names. Seven mutations, each built and each run: skipping the
+release, releasing at the cross point instead of the origin, releasing
+before the settle, dropping the warn to info, inventing a release for a
+press the guest never took, arming the catch surface on the unbound path,
+and the bound path releasing at the cross point. **Metal-verified: no.**
+The metal script is a drag across the edge with no selection published —
+press immediately after arming — confirming the icon snaps back rather
+than relocating, and that the log carries `held press released without a
+file handoff … boundFile=none` and `guest press released before the
+cross`.
+
+## TWO METAL CAUSES FIXED, NEITHER RE-MEASURED ON METAL: the guest→host drag's anchor window and its consent lifetime (2026-08-14, `fix/continuity-drag-round3`)
+
+Round 2 of the guest→host cross-edge drag was attended and produced three
+facts that had been missing: the session now starts from a real type-6
+event, its seed line read `windowNumber=14932, ourWindow=no`, the drag
+image froze for 101 stand-down samples, and it ended `operation=nobody`.
+Separately, `selection dropped: the Continuity epoch ended` fired as the
+pointer crossed BACK — before any drop could occur.
+
+**Two causes, and both were invisible rather than subtle.**
+
+- **The seed's provenance was never recorded.** The seed already carried
+  the catch panel's window number; the only line in the log described the
+  TRIGGER event, which belongs to a foreign application by construction —
+  a global monitor has no other kind — so `ourWindow=no` was both true and
+  uninformative. `beginFileDrag` now returns a `ContinuityDragSeed` naming
+  the anchor window, the panel's own, whether AppKit resolved it, whether
+  the panel was key and whether it covered the point; the controller
+  audits it, as an ERROR when the anchor is not ours. The panel is
+  widened, fronted and made key inside `ContinuityFileEdge` before the
+  seed is built, so the ordering is enforced where it happens.
+
+  **Why the synthesized-but-ours seed rather than PointerCapture's
+  shape** (let the panel receive the real `mouseDragged` itself and begin
+  the session from its own override): the seed is assertable here and the
+  handoff is not. `makeSeed` runs against a real AppKit panel in the test
+  process and answers whose window the session would carry; a first-mouse
+  handoff can only be asserted against a fake, because whether a physical
+  event reaches a borderless non-activating panel at speed is precisely
+  the thing no test in this repository can know. If metal round 4 shows
+  an own-window seed still not tracking, that is the next shape to try
+  and the log line now distinguishes the two outcomes.
+- **The gesture's consent expired before the gesture did.** Crossing back
+  ends the epoch by design, so a held drag ALWAYS names an epoch that is
+  over; refusing it `bad-epoch` would refuse every guest→host drag there
+  is. The guest now keeps the last generation of an ending epoch grantable
+  for 30 seconds or until the next epoch publishes its own selection,
+  whichever comes first, and refuses a late one `grant-expired` — a new
+  contract code, kept apart from `bad-epoch` because only one of them is
+  worth retrying. The host side needed nothing: the stub is bound into the
+  promise at press time and outlives the cache, which is now asserted
+  rather than assumed.
+
+**What is proven.** `now-host` green, `scripts/test-native` 202/202,
+`scripts/build-guests` cross-compiles both guests and the extension. Five
+mutations watched failing against the guard that names them: seeding from
+`sourceEvent.windowNumber` (reproduces `windowNumber=14932`), deleting the
+seed audit line, dropping `provider.userInfo = stub`, closing the
+post-epoch door in `now_continuity_grab_resolve`, and a grant window that
+never expires. One mutation was rejected for failing to BUILD rather than
+to fail — a green that never ran, in miniature.
+
+**NOT proven, and it is the whole point of the round.** Nobody has done
+this with a hand on a mouse since the fix. Whether an own-window seed
+actually makes AppKit track the drag image, whether anything then accepts
+the file, and whether the 30-second window is generous or tight are all
+UNMEASURED. The Accessibility-permission tap failure seen in round 2 is
+operational and untouched here; the session-start path works either way,
+which is also unmeasured on metal.
+
+## BROKEN ON METAL, CAUSE KNOWN, NOTHING ASKS FOR THE PERMISSION: a newly signed build is a new Accessibility subject (2026-08-14, round 2)
+
+The operational half of round 2, separated from the entry above because it
+is not a defect in the drag at all and will outlive it.
+
+Round 2 ran from a fresh identity-signed DMG. The consuming CGEvent tap was
+dead for the whole attended pass, so host clicks reached host applications
+while the pointer was on the guest — the exact leak
+`ContinuityEdgeController` names when `startInputCapture` returns nil. The
+cause is macOS, not this code: **Accessibility is granted per signed binary
+identity, so a new build is a new subject and an existing grant does not
+carry over.** Every DMG this desk now produces is a new subject by
+construction, which is a direct consequence of the signing work landed the
+same day.
+
+**What exists.** The degradation is honest where a person can see it: the
+controller writes `could not capture host input (Accessibility permission);
+host clicks will also reach host apps` as an ERROR and puts the same
+sentence in the module's status line. Nothing is silent.
+
+**What does not exist, and it is the whole of this entry.** Nothing ever
+ASKS. There is no `AXIsProcessTrustedWithOptions` prompt anywhere on this
+side, so a person meeting the degraded status has to know that System
+Settings is where the answer lives, and has to know to re-grant after every
+new build. The remedy is not in the status line either. Until a prompt
+exists, **every attended round on a new DMG must grant Accessibility to
+that binary before the first crossing**, or its input evidence is void —
+and the failure looks like a product defect, which is how it cost round 2.
+
+## MEASURED ON METAL, CAUSE ESTABLISHED, REMEDY TESTED ONLY: the pane says granted, the app says missing, and both are right (2026-08-15, `fix/continuity-ax-affordance`)
+
+The third and sharpest turn of the entry below, found the same night. After
+the affordance landed, Michelle granted Accessibility and System Settings
+showed **New Old World.app switched ON** — and the app logged the untrusted
+branch on every arm of the 01:01:46 launch anyway.
+
+Not a defect in the check. **macOS attaches Accessibility trust to a copy on
+disk, not to a bundle identifier.** The running process was PID 82098 at
+`/Volumes/New Old World 10/New Old World.app`; `/Applications/New Old
+World.app` also existed and was not running. Both were the same build —
+identical `dev.newoldworld.now`, team `B93A9CG7F9`, signed
+`Aug 14, 2026 23:32:08`. Eleven DMG volumes were mounted, so every
+launch-from-DMG that day had run from a different path. The person did
+everything right and the app still said the permission was missing.
+
+**The general shape, which is worth more than the incident.** Two true
+statements can compose into a state that reads as a defect in both, and the
+only thing that resolves it is a fact neither side was reporting: *which
+copy is speaking*. Identity is not location, and any permission granted per
+copy will produce this exact confusion on any desk that runs builds from
+disk images — which is every desk here.
+
+**What now exists.** The untrusted audit line names
+`Bundle.main.bundleURL.path` and says the grant is per copy, so
+`/Volumes/...` in the log is a five-second read instead of a
+screenshot-and-`ps` exchange. The Continuity page adds the same fact, plus
+the one remedy the Accessibility pane cannot give, when the copy is
+untrusted **and** running outside `/Applications` — the case where "Open
+Accessibility Settings…" is not merely insufficient but misleading, because
+it opens onto a toggle that is already on.
+
+**Deliberately not built.** No App Translocation detection, no enumerating
+other copies on disk, no claim about where the grant actually went. Naming
+the path we are running from is a fact; the rest would be a guess dressed as
+a diagnosis, and a confident wrong diagnosis is worse here than none.
+
+**Status.** The CAUSE is metal-established. The REMEDY is tested only — 2
+new tests, each watched failing against the mutation it names. Nobody has
+yet watched the new log line or the new page row on the machine that
+produced the confusion.
+
+## TESTED, NOT METAL-VERIFIED, AND THE FIRST FIX FOR IT WAS INERT: a prompt is not an affordance, because macOS only prompts once ever (2026-08-15, `claude/continuity-ax-affordance`)
+
+Closes the "nothing asks" half of the entry above, and corrects it. That
+entry called for a prompt; `b244758e` added one; **the prompt changed
+nothing on metal and never could have.**
+
+`AXIsProcessTrustedWithOptions(prompt:)` is not deprecated and was called
+correctly. But its dialog is shown only while TCC holds **no decision
+record** for the bundle identifier. `dev.newoldworld.now` has been granted
+and reset repeatedly across eleven DMG builds in a day, so the record
+exists, the call returns in silence, and it will do so forever on that Mac.
+The measurement is unambiguous — the 2026-08-14 23:36:19 host log carries
+29 arm requests, 31 `could not capture host input (Accessibility
+permission)` lines, **zero** trusted-but-tap-failed lines and **zero**
+grant-arrived lines. `AXIsProcessTrusted()` was false the whole launch.
+
+**The generalisable half: a one-shot system prompt is a request, not a
+remedy.** Any macOS permission whose only affordance is a prompt is
+un-recoverable for exactly the population that needs it most — the people
+who have already answered it once, which on a development desk is
+everyone. A permission affordance must include a path with no TCC state
+behind it. Ours is now an explicit `Open Accessibility Settings…` control
+on the Continuity page (`x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`,
+the same scheme Connections already uses for Local Network), shown exactly
+while the tap is out for want of permission and never on the
+trusted-but-failing case, where the pane would show a checkbox already on.
+The prompt is kept as the cheap first attempt.
+
+**The second half, and the reason the metal round was unreadable.** The
+prompt shipped with no observability whatsoever, so "the prompt never
+fired" and "the prompt fired and macOS suppressed it" produced identical
+logs — the round could not distinguish them and neither could anyone
+reading it afterwards. Every branch of the decision now audits itself:
+already trusted, asking now, suppressed by the once-per-launch guard. The
+ask records that it **asked**, never that a dialog was **shown**, because
+the API does not tell us and a line claiming otherwise would be the same
+class of lie. *A change whose whole purpose is to trigger an external
+system's behaviour must log the decision, or the round that tests it
+cannot report anything.*
+
+**Evaluated and rejected: `CGRequestPostEventAccess`.** Both taps in this
+tree (`AppKitContinuityPointerEnvironment`, `ContinuityKeyboard`) are
+`.cgSessionEventTap` with `.defaultTap`, i.e. consuming, so Accessibility
+is the right permission and `AXIsProcessTrusted` a correct predicate —
+confirmed by direct call: on a trusted process `AXIsProcessTrusted`,
+`CGPreflightPostEventAccess` and a `.defaultTap` session tap all succeed
+together. But the CG path is backed by the same TCC service and its own
+header hedges identically (`potentially prompting`), so there is no
+grounded reason to believe it re-prompts where the AX call does not. It
+was not adopted: it would be churn on a correct predicate, sold on a
+property nobody has demonstrated.
+
+**Status.** Tested — 5 new tests, each watched failing against the exact
+mutation it names, with the mutation confirmed built and the test confirmed
+run. **Nothing here has run on the Mac where the permission failed**, and
+the claim "the permission problem is fixed" is not available to anyone
+until it has. The next attended round should confirm the log now names the
+prompt branch it took, and that the page offers the Settings button while
+capture is degraded.
+
+## OPEN: the derived-doc gate re-runs a severed derivation, gets nothing, and records the nothing as current (2026-08-14, found healing `9676be3f`)
+
+A gap in the gate this repository built precisely so a derived table could
+not rot unnoticed. It is recorded here rather than fixed because arming a
+new refusal into a live fleet is a decision, not a lane's judgement.
+
+**What happened.** The lineage-crossing cherry-pick sequence committed 31
+conflict blocks across eight derived documents. In two of them the conflict
+fell between a `derive` header and its command lines, severing the command
+from the header. `tools/derived-doc-gate rederive` then did exactly what it
+is written to do: it ran the (now empty) command, got an empty answer,
+hashed it, and wrote the answer down as current. The record is still legible
+in the document's own log — `docs/contract-coverage.md` carries
+`ppc-inbound-types 54->0` at `60bb3427` and `0->57` at the heal — so the
+gate did not merely fail to notice, it **certified** a census of nothing.
+
+**What caught it was incidental.** `tools/mirror-gate-tests/test_public_ci_portability.py
+:: test_disposition_census_has_canonical_spacing` parses the
+`disposition-census` command out of `docs/mcp-coverage.md`, runs it itself,
+and asserts `len(rows) > 0` before checking the row shape. It was written
+against a BSD-versus-GNU `uniq -c` padding mutation — its own docstring says
+so — and caught a severed command only because a non-empty assertion had to
+exist for the spacing check to mean anything. It covers **one** derivation
+of **one** document; the second severed census (`ppc-inbound-types`, in a
+document that test never reads) was found by looking for the same shape
+afterwards, not by any gate.
+
+**It had already recurred, and this pass found it by grepping.** The heal
+above collapsed the markers it could see; the picks that followed it the same
+evening left **eight more** published documents carrying a half-collapsed
+conflict — `=======`, one orphaned `rederived:` line from `835e6acf`, and
+`>>>>>>> 95841394` — in the rederivation log of their own `derived-doc`
+blocks. Those eight sat in the tree through every later commit with
+`scripts/test-docs` reporting `all 8 declared documents are current` and
+`mkdocs build --strict` raising nothing, because a marker inside a log the
+gate only appends to is not something any gate reads, and `--strict` renders
+it as ordinary prose. They are healed in this commit, and the digest that had
+canonized a marker-bearing `docs/mcp-coverage.md` re-derived on the repair —
+which is the gate working exactly as designed, one document too late.
+
+So the missing check is not only "did the command survive": it is **"is this
+block still the shape of a block"**. A cheap grep for conflict markers over
+tracked Markdown belongs in `scripts/test-docs`, ahead of everything
+expensive, on the same argument that puts the frame codec first in
+`test-all`. That one is unambiguous and could be armed without a fleet-wide
+decision.
+
+**The proposed closure** for the severed-command half, which is a one-place
+edit and is not made here:
+a `derive` block asserts its answer is non-empty unless it declares itself
+empty. `lines=0` becomes a refusal in `check` and in `rederive` rather than
+a value, with an explicit flag beside `published` for the block that
+genuinely derives nothing (`tools/derived-doc-gate-selftest`'s fixture
+already writes `lines=0` and would need it). The general lesson is the one
+this file keeps re-buying under new names: **a derivation that reads its own
+answer for currency cannot tell "the source changed" from "the question
+stopped being asked."** Re-running a command is not the same as running a
+question.
+
+## HOST DONE, GUEST HALF UNIMPLEMENTED: a bare modifier change now crosses the edge (2026-08-14, `fix/continuity-modifier-passthrough`)
+
+Reported from metal: during Continuity, Command-Backspace does not move a
+guest Finder item to the Trash, and holding a modifier mid-drag does not
+switch the guest drag to copy or alias. They are **two different defects**
+and only one of them is fixed here.
+
+**(b), the drag modifier — root cause found, host half landed.** macOS raises
+`flagsChanged` when a modifier moves while no key does. The tap's mask was
+`keyDown | keyUp`, so that event was never sampled, never forwarded, and the
+guest's modifier word could only advance when some other key happened to
+travel. `continuity.key` gains a fourth action, `modifiers`, additively; the
+host forwards the whole word on every real change and, deliberately, does
+**not** swallow the original, because a modifier is state rather than an edge
+and suppressing it leaves macOS's own idea of what is held wrong at the
+moment control returns.
+
+That is only half the route, and the missing half is the one that produces
+behaviour. The classic Finder chooses move / copy / alias **inside the Drag
+Manager's tracking loop**, from live modifier state — `GetKeys`/`KeyMap` —
+not from an event record, and the resident stamps synthetic mouse events with
+a fixed word (`0x0080` on the release, `0` on the press). The PowerPC
+application is Carbon and can write neither, so it holds the word and logs
+every change. **Nothing reads it yet.** The resident change needed is stated
+in the handoff below; until it lands, treat guest drag modifiers as
+unimplemented rather than as broken.
+
+**(a), Command-Backspace — the host was NOT the cause, and that is a
+finding.** The prime suspect was a chord matcher eating non-matching modifier
+combinations, and it is innocent: the matcher requires an exact code AND an
+exact masked-modifier equality, has no partial-match rule, and everything it
+does not claim is forwarded by its own kind. The modifier word was then
+traced whole through `sendContinuityKey`, the JSON, `serve_continuity_key`,
+`now_continuity_key`, the V8 queue slot and into `evtQModifiers` on the
+posted queue element. **Every link carries it.** A guard now pins the
+Command combination crossing intact, and it was watched failing against the
+matcher mutation it was written for.
+
+So (a) is still open and its remaining suspects are all resident-side. The
+sharpest one is already written down in this tree: `now_ext_act.c` spins a
+bounded three ticks between a key-down and its key-up because *"the modifier
+stamp was measured unreliable when the up event followed in the same tick"*,
+and the Continuity drain posts up to four queued entries in one jGNE pass
+with no spacing at all. The other is that the Finder may read `GetKeys` here
+too, which would make (a) and (b) one defect with one fix. **Neither is
+distinguishable from this side without metal**, which is why every modifier
+decision on both halves now emits a named log line: "never arrived" and
+"arrived and nothing reads it" were previously the same silence.
+
+**What is proven.** `now-host` is 2484/0. `scripts/build-guests` cross-
+compiles both guests and the extension. Five mutations were watched failing
+against the guard that names them — and **two of those guards passed their
+own mutation first**: the dedupe counted messages between two sends and read
+correct while the extra packet was still in flight, and the contract-to-guest
+action gate searched for the quoted word `modifiers`, which is also the name
+of a field that same function reads, so it stayed green with the dispatch arm
+deleted. Both are recorded because the failure mode is the one this
+repository keeps paying for.
+
+**Not proven:** nothing has run on metal, no guest has received a `modifiers`
+message, and the tap mask is covered only by a source guard because every
+other test here drives a stub environment.
+
+## SUPERSEDED, IT HAS SINCE BEEN ATTEMPTED: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
+
+**Its "never attempted with a hand on a mouse" status held for hours.**
+Round 2 attended this code the same evening and rounds 2 and 3 are the
+dated record; read the two entries at the top of this file for what a
+Macintosh has actually shown. What survives here is the design argument and
+the list of what slice 4 deliberately did not build — both still true. What
+does not survive is the risk paragraph's framing: the session start, the
+real-`mouseDragged` handoff to the widened panel, and the tap's death are no
+longer unmeasured, and the seed-provenance line named below as an
+unmeasured hope is now the line that decoded the round-2 failure.
+
+Slice 4 of the cross-edge file drag plan, and the consumer the entry
+below ends by saying does not exist: `Session.onContinuitySelection` is
+wired, the stub is cached under the epoch that published it, a press
+binds to it, and the drop is redeemed over `continuity.grab` through the
+one bulk receiver this side already has. Host only — no guest, contract
+or resident file was touched.
+
+**The cross is an ORDER, and that is the whole repair.** v1 started the
+host drag while the guest still held its press, so the dragged icon
+stayed stuck to the Finder's cursor on the other machine. The sequence
+is now: release the guest button down the ordinary driver lane, tear the
+pass down exactly as an ordinary return does, and only then begin the
+native drag — from a REAL mouse event, never a synthesized one. The
+crossing sample usually arrives through the consuming CGEvent tap, which
+has no NSEvent by construction, so the handoff WAITS for the first
+physical `mouseDragged` after the tap dies, and the 2-point sentinel
+strip widens into a catch surface for that instant.
+
+**What is proven and what is not.**
+
+- Proven here: `now-host` is 2438/0 and `scripts/test-host` is green
+  (both suites plus the Xcode app target, Debug and Release). Three
+  mutations were watched failing against the guard that names them — the
+  release deferred past `beginDraggingSession`, a wire refusal finished
+  as success, and the unusable-stub audit deleted.
+- NOT proven, and it is most of the risk: **nobody has done this with a
+  hand on a mouse.** Every step past the tap's death is asserted against
+  a fake environment. Whether a real `mouseDragged` reaches the widened
+  panel at all, whether 160 points is enough surface at speed, whether
+  AppKit accepts a session seeded from a global-monitor event on a
+  non-key panel, and whether the guest icon visibly snaps back are all
+  UNMEASURED. Named audit lines exist on every gate for exactly that
+  pass: v1's attended round produced no per-direction symptom because
+  each of these paths was a silent nil.
+
+**Deliberately not built.** Folders are refused `folder-not-yet` by name
+(slice 6). A multiple selection is its first item, as the contract says.
+The drag image is the generic icon for the type the OSType named,
+because stub icon extraction is declared and unsent. Host-to-guest is
+slice 5 and is untouched here — the sentinel still freezes the entry
+point, which is that direction's known defect.
+
+## SUPERSEDED, A MACINTOSH HAS SINCE RUN IT: the Finder-selection stub and its gesture-scoped grab (2026-08-14, `feat/continuity-selection-stub`)
+
+**"Never run on any Macintosh" was true when written and false by that
+evening**, and the proof is derivable rather than remembered: round 2's host
+log carries `selection dropped: the Continuity epoch ended`, and
+`ContinuitySelectionCache.clear` returns early unless a stub is already
+cached. A cached stub means the 1400c's Finder answered the Apple Event
+described below, the guest published a `continuity.selection`, and this side
+decoded it. That closes the largest of the unknowns listed here — the reply
+coercion path — for at least one item on one machine. The grab redemption is
+a separate question and is **still** unanswered, because no drop has yet
+completed; the dated round-2 and round-3 entries at the top of this file are
+authoritative for that.
+
+Slices 2 and 3 of the cross-edge file drag plan. The contract gains
+`continuity.selection` (guest to host, unsolicited while an epoch is
+live) and `continuity.grab` (host to guest, answered through the
+existing file lane), and the PowerPC guest polls the Finder's selection
+and serves a grab against it.
+
+**Why a stub exists at all**, since it is the part that looks like extra
+machinery: during a drag the guest is unqueryable. The Finder sits in
+its own nested Drag Manager loop and will not answer an Apple Event
+until the gesture ends, so everything the host needs at cross-the-edge
+time has to be on the wire BEFORE the press. That makes selection, not
+the drag, the thing worth watching.
+
+**The consent boundary, decided and written down.** `file.get` is
+share-scoped and a Finder selection can name anything on the machine, so
+a grab is deliberately not a wider `file.get`: it names no path, only a
+generation the guest itself published, it must match the guest's CURRENT
+generation, and it dies with the epoch. The drag gesture is the consent,
+exactly as a host-to-guest drop already is. That argument is in
+`contract/asyncapi.yaml` beside the schema, where both halves read it.
+
+**What is proven and what is not, stated separately.**
+
+- Proven here: both guests cross-compile; `scripts/test-native` is
+  197/197; `now-host` is 2403/0. The stub table's change rule and all
+  four grab refusals are watched failing against their own mutations
+  (`now_continuity_selection_test.c`), and the poll's epoch gate, button
+  gate, caller and idle proc are watched failing against theirs
+  (`continuity_selection_gates_source_test.py`).
+- NOT proven, and this is the whole of the risk: **no Macintosh, real or
+  emulated, has ever run this code.** The Apple Event itself - a `getd`
+  of the `sele` property with `keyAERequestedType` of `typeAlias`, sent
+  to `MACS` - is the classic AppleScript idiom written in C, and it has
+  never been answered by an actual Finder. Whether the reply arrives as
+  an alias list, whether the `typeFSS` coercion or the `ResolveAlias`
+  fallback is the live path, and whether the 2-second bounded wait is
+  generous or tight are all UNMEASURED. The named log lines exist so the
+  first metal pass produces a symptom rather than a shrug, which is the
+  v1 post-mortem's one durable complaint.
+- Also unmeasured: the 90-tick cadence. It was chosen against the
+  measured neighbour - the host asks this guest for a scene every 0.75 s
+  while armed - rather than against an observed cost of the poll itself.
+
+**Deliberately not built.** The `icon` field is declared in the contract
+and sent by nothing: extraction from the desktop database costs more
+than the rest of the poll, so its shape is fixed and its work deferred.
+A multiple selection reports its FIRST item only. A folder grab is
+refused `folder-not-yet` by name; folders are slice 6. The host decodes
+the stub and does nothing with it - `Session.onContinuitySelection` is
+nil, which is why it is a `var` and not an init parameter.
+
+## REFUSED ON METAL, CAUSE FIXED, STILL NO PACK FROM A MACINTOSH: ingesting an asset pack from the connected machine (2026-08-14, `feat/mirror-asset-ingestion`)
+
+**The metal result came back a refusal**, on an attended run against the
+PowerBook 1400c: `The classic Mac would not send System Folder/System: no
+such item in the share.`
+
+The refusal machinery was right; the addressing was wrong, and the error
+is worth naming exactly because it is a cheap one to repeat. Grounding
+read `now_files_share_root` returning `fsRtDirID` and concluded the share
+was the volume root. **That is the fallback for a machine that has chosen
+no share folder.** The 1400c has chosen one — `Lab`, where deploys land —
+so the System Folder was outside the share and no path could reach it.
+A default read as an invariant.
+
+Fixed by asking first: ingestion now lists the share root before any bytes
+move and refuses with a remedy ("set NOW's shared folder to the whole disk
+— the volume itself rather than a folder inside it"), naming what the
+share currently is. The old refusal was honest but arrived mid-transfer
+and named a path instead of an action.
+
+**A system-scoped read path was evaluated and deliberately not used.**
+`file.get`'s `mirrorSource` resolves an absolute HFS path outside the
+share — `now_files_mirror_stage` → `absolute_folder` does an
+unconstrained `FSMakeFSSpec`. The contract scopes that field to "a source
+chosen by a person dragging an item out of Mirror" and says it "is not a
+general absolute-path `file.get`", so using it for system files would
+make the contract prose false. It needs a decision, not a lane's
+judgement. `software.list`/`sw` enumerates the System Folder's special
+folders but cannot read forks ("versions need a resource fork open per
+file and are deliberately not here"), so it is not a route either.
+
+**Unresolved, and separable from this work: the guest does not enforce
+what that prose claims.** There is no share containment check and no test
+that a Finder window is open behind `mirrorSource`; "an unknown Finder
+path fails closed" means only that a bad path fails. Any host that sends
+a well-formed `mirrorSource` can read any file on the volume. Worth a
+decision on its own.
+
+### What is proven, and what is still untouched
+
+Everything measured below came off a **stopped Mac OS 8.6 disk image**
+mounted directly on this Mac — not 9.1, and with no share and no wire
+involved. The required-file list has therefore never been checked against
+what a 1400c under 9.1 actually holds.
+
+- Transport swap changes nothing: full mount vs `--from-tree` over that
+  same mount gave 834 files, byte-identical, differing only in the
+  acquisition receipt.
+- The bounded pull (6 files, 7.6 MB of fork) passes every hard gate.
+- Host suite green with pack gates ENFORCED.
+
+**The pull, the staging and the extraction have still never run against a
+Macintosh.** Only the refusal path has metal behind it. Next: an attended
+run with the 1400c sharing its volume root.
+
+## TESTED, NOT RELEASED OR METAL-VERIFIED: recorded bundle and update slice (2026-08-13, `codex/bundle-update-slice`)
+
+The alpha distribution now has one machine-readable profile and one curated
+standard. A fail-closed assembler takes committed PPC app and Extension
+artifacts plus an external checksum-pinned CarbonLib descriptor, preserves the
+Apple installer and license files byte-for-byte, embeds that exact catalog in
+the unsigned Release host before final signing, and emits a DMG, generic
+MacBinary-wrapped HFS image, loose app/Extension update pairs, release manifest,
+and `SHA256SUMS`. CodeKitten and NOW-68K are excluded from this profile. A
+synthetic end-to-end assembly produced all eight public files; the DMG passed
+`hdiutil imageinfo`, every checksum verified, and the generic image's actual
+HFS/NDIF construction passed. This is release-tool evidence, not a real signed
+release with Apple's CarbonLib bytes.
+
+The host treats its sealed `Contents/Resources/Onboarding` catalog as the
+release baseline. A stale Application Support app, Extension, or same-named
+dependency cannot mask the embedded copy, while writable-only dependencies
+still augment it and `NOW_ONBOARDING_ASSETS` remains an explicit single-root
+development override. Generic release images omit preferences and CodeKitten;
+host-created personalized images carry the selected host and port.
+
+Application and Extension remain independent update actions. After Extension
+exchange the guest persists the offered full build identity and retains
+**restart required** across application relaunch and wire reconnect; only a
+later boot whose resident fingerprint matches clears it. CarbonLib below 1.6
+produces an advisory launch warning with a durable **Don't Warn Again** choice.
+The integrated continuity branch stores these additions in preference format
+26 because format 25 already owns launch-log retention.
+
+The native host shell now keeps a 120-point collapsed source-list rail clear
+of AppKit's traffic lights, presents the selected guest and live connection
+status in the toolbar, uses AppKit tracking areas for hover, spring-loads
+closed shelves into their indexed tab targets, and renders drag snapshots
+under the source view's effective appearance. Collapsed rows disclose their
+expanded identity in a delayed transient AppKit popover without changing the
+rail's geometry. Shelves remain selectable drop destinations with a subtle
+clear-glass or material surface; source-list group rows were rejected because
+their native semantics are supplementary headers. Shelves and modules may move
+between both visible sidebar stacks, while the drawer control remains fixed.
+
+The Liquid Glass preference now stores and exposes a continuous value instead
+of snapping its slider to three positions, including migration of the previous
+three-state preference. Apple's public SDK still exposes discrete material,
+clear and regular glass styles rather than an arbitrary intensity, so rendering
+selects the nearest native style while preserving the person's exact value.
+The host gate passed and the shell was visually observed in dark and light
+appearances on macOS 27. The 120-point rail cleared the traffic lights, and the
+slider was driven to and reported an exact intermediate 37% value before the
+test preference was restored. The actual spring-loaded drag gesture,
+cross-stack drag, drag image and delayed disclosure remain UI-unverified, and
+the Ventura fallback is built and tested but not runtime-observed.
+
+Still open: a real release assembly using the intended Apple installer and
+signing identity; notarization and website publication; classic-browser direct
+download of the generic image; rollback and low-disk acceptance; host
+self-update after canonical deployed releases have a trust/channel policy; and
+the full lifecycle on the PowerBook 1400c.
+
+## TESTED, NOT METAL-VERIFIED: Continuity is its own module, and the split created one regression it also fixed (2026-08-14, `refactor/mirror-continuity-split`)
+
+The structural change the rest of the day's work sits on, recorded because
+nothing else in this file says it happened and several entries above and
+below still describe Continuity as a mode of Mirror.
+
+**Continuity is a module beside Mirror, not a surface inside it.** The guest
+evidence argued for it first — the all-planes-off run proved continuity needs
+no live state from Mirror, and its intake claims its one plane on its own
+wire. `MirrorSurfaceMode` is deleted with the mode; the Mirror is the only
+surface left and arms exactly what policy permits, so the two
+mode-narrowing plane gates are gone and their cost is impossible by
+construction. `continuity.report` gains the guest's main-display bounds on
+the pointer plane's own wire, so the arrangement editor works without Mirror
+having decoded a scene first. The app-owned controller stays shared and
+becomes the arbiter: edge mode and the Mirror's in-picture cursor are
+exclusive inside it, edge mode winning, and stopping Mirror no longer tears
+down a session it does not own. Renaming `MirrorContinuityController` is
+deliberately deferred — a broad mechanical diff against live sibling
+branches.
+
+**The split created a silent regression, which is the part worth keeping.**
+The cross-edge file-drag callbacks were installed inside
+`MirrorHostModuleRuntime`'s lazy `source`, so the AppKit drop destination
+existed only once somebody had opened the Mirror page. After the split, edge
+mode starts from the Continuity module and Mirror's runtime may never be
+constructed: the "both callbacks installed" precondition was never met and
+**no destination was created at all** — silently, because an absent strip
+refuses nothing and logs nothing. Ownership moved to the app, whose lifetime
+matches edge mode's. What genuinely is Mirror's — the live scene both
+directions resolve a point against — is now read WITHOUT constructing it,
+and its absence is a named refusal. `beginFileDrag` takes its source
+`NSEvent` explicitly and non-optionally, retiring a mutable environment field
+that was provably nil on the one path that needed it.
+
+The arrangement editor's numeric zoom went with the mode too: the 50 / 100 /
+200 / 400 % picker is replaced by a **Native / Fit** pill, where Fit is a
+real coordinate scale derived from the shared edge rather than a drawing
+trick, and the stored numeric preference is read once only to be discarded.
+Screen previews in the arrangement tiles are behind a default-OFF toggle, so
+an idle Continuity page performs no capture and asks for no screen-recording
+permission.
+
+**Verification.** `scripts/test-host` green including the Xcode app target;
+each new guard on the file seam watched failing against the mutation it
+names (configuration removed from the app, the no-scene drop made silent,
+the nil-event refusal made silent, the source event dropped in transit).
+The module manifest, page, nav, both screenshot slots and the derived tables
+rode along per their gates. **Nothing here is metal-verified**, and the seam
+this repaired is the one rounds 2 and 3 above are still measuring.
+
+## FIXED BEFORE A PERSON MET IT, AND EVERY GATE WAS GREEN WHILE IT WAS BROKEN: the first identity-signed DMG would not launch (2026-08-14, `feat/release-signing`)
+
+Worth a heading of its own because the failure shape is this file's oldest
+recurring one, in a corner nothing else here covers.
+
+The first identity-signed DMG shipped **unlaunchable** with the whole
+release gate green. `sign_host` wrote restricted entitlements with no
+embedded macOS provisioning profile, AMFI killed the app at spawn, and the
+only thing a person saw was the Finder saying it "can't be opened" — a
+sentence that names neither the cause nor a remedy. Every check that ran
+was checking assembly, not launch.
+
+The assembler now requires `--provision-profile` with an identity (refused
+against `--adhoc`), validates that the profile is a readable macOS profile
+for this team and unexpired, and embeds it before signing — **every refusal
+named at assembly time rather than at the user's double-click**.
+`scripts/release-dmg` formalizes the desk half: identity, descriptor and
+profile live in `.env.lab` and a missing key is refused by name, following
+`scripts/deploy-68k`'s pattern, so a signed development DMG is one command
+instead of a hunt across a keychain, an app bundle and a prior manifest.
+Three new release-gate pins, each watched failing against the mutation it
+names.
+
+**Still open.** Nothing here is notarization, and no gate launches the
+signed artifact — the closing check is still a human double-clicking the
+DMG. A signed build is also a new Accessibility subject, which is its own
+entry above.
+
+## TESTED, EMULATOR SAFETY PASSED, NOT METAL-VERIFIED: the Continuity resident is consolidated to one product path (2026-08-14, `refactor/continuity-consolidation`)
+
+The experiment surface has been reduced after the attended evidence below
+identified the mechanisms that actually carry the product. Synthetic-device
+settlement, widened DoubleTime, coherent `when`/`MBTicks` compression,
+interrupt-time press delivery, and idle cursor settlement now default on with
+explicit per-machine opt-outs. Fast Pump and deep-click capture remain default
+off in the Logs module's advanced diagnostic tier. The bounded rolling button-
+timing ring and front-process-at-down record remain; the noisy per-epoch Cursor
+Device interval table is no longer an ordinary teardown dump.
+
+Timer pinning of the held point, the target-context `_GetMouse` answer,
+guest-cursor hiding, virtual ADB injection, and the passive ADB observer are
+retired. Their wire/contract positions stay reserved; they cannot be reused for
+a new meaning. The task-time deferred-press path remains as the fallback when
+interrupt-time delivery is explicitly disabled.
+
+This classification follows the consolidation plan and does not turn absence
+of physical access into a false result. Focused native guards and both classic
+cross-builds pass on the consolidated source. A private mac99/OS 9.1 clone of
+`e66db808` cold-booted resident fingerprint `5188f43addfc`, reported lifecycle
+`active` and capabilities `1023`, and passed the act-plane ABI oracle. The V4
+fault rig then applied 180 positions, observed native click and motion revoke
+ownership with reason `guest-input`, disarmed a fresh epoch, reconnected the
+reliable wire, armed and disarmed again, and completed with `failure: null`.
+The Finder performed both shutdowns and the HFS volume was cleanly unmounted.
+This is the bounded post-prune transport, takeover, reconnect, and lifecycle
+sweep; attended click, double-click, drag, keyboard, and edge-transition rows
+remain for the PowerBook rather than being inferred from headless QMP input.
+The next attended PowerBook 1400c pass must repeat those rows before the
+combination is called metal-verified.
+
+One concern is carried forward rather than used as an overnight blocker. The
+plan originally made retirement of timer pinning and the `_GetMouse` answer
+conditional on an emulator plus PowerBook A/B with the blessed set enabled.
+Those experiments predate the later settlement mechanisms and are removed now,
+but tonight has no Metal access. Tomorrow's attended pass therefore owes the
+physical comparison, with drag/menu tracking and native takeover as the sharp
+regression rows. A failure reopens the disposition; it does not justify
+quietly restoring all of the retired writers.
+
+The post-prune INIT review found no new unbounded interrupt path and corrected
+the timer header to name its one confined Event Manager exception. Shared-cell
+layout remains statically asserted and cross-built by both compilers; keyboard
+delivery remains target-context jGNE work behind the A5/front-process checks.
+One performance claim remains deliberately open: the deep-click queue walk is
+bounded to 32 entries and unreachable while its diagnostic option is off, but
+the complete jGNE pass has not yet been timed on this exact emulator build.
+The emulator sweep must record that cost before absence of a cadence regression
+is claimed.
+
+The emulator run also exposed an instrument defect rather than a product
+failure: `tools/emulator-continuity-fault.py` inserts `scripts/probes` and then
+`tools` at index zero, so `tools/nowwire.py` shadows the intended probe module
+and has no `GuestLink`. The recorded run preloaded `scripts/probes/nowwire.py`
+explicitly without changing the product. Repairing that import order and
+pinning the helper's own startup path remain harness cleanup.
+
+Mixed-version V4 behavior is explicit rather than hidden: an older host may
+still send a retired option as `true`, and the consolidated V4 guest accepts
+the arm while ignoring that deprecated field. This preserves the plan's
+accretive tombstones and avoids making an experimental option a protocol-wide
+version barrier, but it does not preserve the retired behavior for a mismatched
+host/guest pair. A comparison that specifically needs that old experiment must
+use a matched legacy pair; ordinary product interop uses the blessed fields.
+
+## PARTLY FIXED, NOT METAL-VERIFIED: the Continuity pointer stops once a second because the guest is serving a scene (2026-08-13, `claude/swarm-pump-stall`)
+
+With the resident's idle-settle spike off, the pointer moves in a
+smooth-smooth-stop rhythm. It is a loop that is not running, not a loop
+running slowly: guest log `2026-08-13 223323`, epoch 12, has position
+applies 48-72 ticks apart with a clean 1-tick cadence between them, and
+17 applies in 900 ticks where the wire asked `WaitNextEvent` for one.
+
+**The thief is the host's own Mirror cycle, and it is structural.**
+`NOWMirrorSource.swift:447` polls `scene.request` on a **gap-based**
+0.75 s cadence — it sleeps 0.75 s *after* the previous cycle publishes —
+and it deliberately does not stand down while Continuity is armed,
+because the anchor plane's 600-tick owner lease renews on that request
+alone (`NOWMirrorSource.swift:1355-1361`). The guest serves it inline:
+`serve_scene` waits up to `kNowSceneArmSettleTicks` (30) for the plane's
+echo (`wire.c:2113`) and then walks the machine without yielding, by
+design, because foreign addresses are live (`wire.c:2132-2140`). Period
+and duration both fall out of that: 0.75 s plus one serve, and the serve
+itself.
+
+**What is fixed here is the half that was pure waiting.** The position
+pump was reachable from `conn_service` alone, so it inherited the wire's
+reentrancy guard — inside a request `now_wire_pump()` bounced and pumped
+*nothing*, though `continuity_intake.c` already claimed the renewal
+happened "from the ordinary and nested wire pump". `now_continuity_pump()`
+is now that seam, the bounce calls it, and `now_peek_settle` — a nested
+loop that yielded without pumping at all — pumps after its yield. Pinned
+by `continuity_nested_pump_source_test.py`, watched failing against three
+mutations.
+
+**What is not fixed.** The walk itself still owns the machine for its
+duration and nothing here shortens it. Three options, none taken:
+
+- **Host-side, cheapest:** back the scene cycle off while Continuity is
+  armed and the pointer is moving. The lease is 600 ticks and the poll is
+  45; there is a wide margin to spend.
+- **Resident-side:** the idle-settle spike already bridges the stall from
+  other processes' jGNE passes, which is why it hides this. Making it the
+  default is a decision about `ext/`, not about the application.
+- **Guest-side:** interleave a cursor pump between the walk's phases.
+  `wire.c:2135-2140` says plainly that it does not yield while foreign
+  addresses are live, so this is a redesign of the walk, not an insertion.
+
+**Two instruments are blind to this and were not changed.**
+`kSlowSceneLogMs` is 2000 (`wire.c:71`), above the ~1 s stall, so a walk
+that eats a full second of task time writes nothing; and `kStarvedPassTicks`
+is 600 (`wire.c:67`), so the loop's own starvation guard cannot see it
+either. Neither can currently tell "a request took a second" from "we were
+not scheduled for a second", which is the exact distinction
+`service_heartbeat`'s own comment turns on.
+
+## INTEGRATED CANDIDATE: Continuity, keyboard, screen-edge and Mirror file dragging share one continuation point (2026-08-12, `feat/continuity-integration-candidate`)
+
+The parked screen-edge lane through `a5211f98` and metal-verified keyboard lane
+through `ede337d0` were already ancestors of the direct-pointer tree. The
+Mirror file-drag lane through `11a72dde` was merged as `aeaf750a`. Its host
+composition conflict was resolved by preserving both ownership boundaries:
+ordinary screen-edge pointer ownership hides the host cursor and begins V8
+keyboard capture, while a host-file drag crossing the same edge does neither.
+The shared pointer wire, current resident table, Extension input mechanism and
+guest file-transfer contract did not acquire a second implementation.
+
+The complete local gate passed with the documented test-only override for this
+private clone's unarmed shared hooks: documentation and mutation gates, release
+and image discipline, Web Bridge, 190 native tests, MirrorKit, both guests and
+all resident/instrument cross-builds, the host suites, isolated socket test,
+and Debug and Release app builds. The gate's live-guest stage skipped because
+`NOW_GUEST_LIVE` was not requested. The override does not repair the clone's
+hook configuration; `tools/hooks-doctor --fix` would rewrite shared Git
+configuration and remains an explicit operator action.
+
+A private clone of SheepShaver seal
+`os86-carbon16-now020-codekitten-5d404f7-rgbv2` was made under the build
+handoff rather than modifying the sealed profile. The exact integrated
+`New Old World` artifact was installed, Mac OS 8.6 plus CarbonLib 1.6 booted,
+the Workshop opened, the app quit, Finder remained responsive, and the guest
+shut down cleanly. That is an emulator-observed application/lifecycle result,
+not Continuity transport evidence: no second host was launched while another
+NOW instance owned the normal listener, and the clone's saved network endpoint
+did not establish the matched host session.
+
+The drive exposed a useful harness boundary. A batch containing move, down and
+up can receive a successful native-renderer receipt while Finder misses the
+selection. One action per receipt, with the tool's normal settlement interval,
+reliably selected icons, opened folders, launched NOW and invoked Command-Q.
+Future Continuity automation should preserve that paced primitive and add an
+observable matched-session prerequisite before attempting pointer ownership.
+
+No additional drag-position writer or experimental toggle was added during
+integration. The current PowerBook evidence already rules out the passive ADB
+service routine as the snap-back path, and the rejected virtual-ADB carrier
+lacks an idle clock. The integrated diagnostic instead measures the synthetic
+Cursor Device record immediately before and after `CursorDeviceMoveTo`; it
+needs one attended log before the investigation can move outward to Event
+Manager/tracking state. Until then the accepted product status is explicit:
+cursor, click, keyboard and logical drag work on metal, but held drags may
+flicker between origin and current position, double-click is intermittent, and
+cooperative scheduling produces periodic motion hitches. (Superseded where
+dated entries below say otherwise — the drag flicker and double-click lines
+were resolved 2026-08-13/14; the dated record is authoritative.) Those hitches have
+not been observed while a drag is held, which is a useful discriminator for
+the input-pump investigation rather than evidence that cooperative scheduling
+alone is the cause. Mirror guest-to-host native file drag and Continuity edge
+file drag do not share one status: the revised Mirror-native drag remains
+metal-unverified, while attended testing has established that Continuity edge
+file dragging does not work in either direction. (Also superseded: that
+sentence describes the v1 implementation, which was replaced on 2026-08-14.
+Guest-to-host now starts a real drag session on metal and does not complete a
+drop; host-to-guest is unbuilt in the new lane rather than broken in it. The
+dated 2026-08-14 entries are authoritative.)
+
+**2026-08-13 metal follow-up — open regressions and interaction debt:**
+
+- A menu-bar title clicked through the direct pointer opens on mouse-down and
+  closes again on mouse-up. This is a regression of the OS 8/9 click-open
+  behavior described below; do not classify it as expected System 6/7
+  hold-to-track behavior.
+- Mirror does not refresh a desktop item's rendered position after that item
+  is dragged with Mirror Cursor. The guest move completes, but the host scene
+  retains the old desktop layout; whether any later refresh repairs it has not
+  yet been measured. This predates the Continuity work. Track it against
+  Mirror's Finder-complement invalidation without attributing it to the
+  resident drag mechanism.
+- Screen-edge acquisition is too magnetic. Before ownership transfers, host
+  motion away from the configured edge should cancel the pending handoff
+  immediately. Apply the same cancellation guest-side only if it does not add
+  meaningful work to the already constrained guest input path.
+
+**Closed in the same metal follow-up:** guest-native menu opening and
+semantic Mirror-only menu opening now remain synchronized in both directions.
+The earlier transport-gap entry in `docs/continuity-mode.md` is superseded.
+This does not close the separate direct-pointer regression above, where a menu
+title can still close on mouse-up.
+
+**2026-08-13 host-tested retest candidate (`codex/pr27-continuity-retest`):**
+
+- Continuity Mode now classifies a driven point against the guest menu-bar
+  height, matching Mirror Cursor instead of hard-coding every edge click as
+  content. The existing OS 8/9 click-open latch therefore receives edge-mode
+  menu clicks. The exact hard-coded-false mutation fails the edge ownership
+  test; this remains metal-unverified until the next bundle is tried.
+- Continuity wire V4 appends the immediately preceding button generation and
+  direction. An AppKit-confirmed second click may now follow the first up
+  without waiting for its delayed manager acknowledgement; the lossy latest
+  state still carries that intervening up. Resident table V9 consumes history
+  oldest-first, defers one second press behind the manager-up, and counts a
+  second distinct deferral as overflow. Ordinary rapid clicks that AppKit does
+  not classify together retain the previous settle-before-next-click policy.
+- The 500 ms lease keepalive now runs on the serial UDP queue independently of
+  the main actor. When UDP acknowledgements stop but the existing resident
+  liveness channel proves the same machine is answering, the host names guest
+  application starvation and keeps the safety lease armed. A recovered ACK is
+  logged with the starvation duration. Edge-mode arm timeout also preserves
+  opt-in and directs the person to dismiss the busy interaction or alert before
+  crossing again, rather than presenting a permanent attachment refusal.
+- Drag diagnosis remains one-writer. The PPC Cursor Device log now separates
+  immediate record lag into caught-up-by-next-sample, persisted, and still
+  pending. The same V9 resident tail counts target tracking-loop calls,
+  displacement, cursor redraws and held-point reassertions, plus button-edge
+  deferral/overflow. The next attended log can therefore distinguish delayed
+  Cursor Device record publication from outward tracking/redraw behavior; it
+  does not yet claim the held-drag flicker or either Continuity file drag fixed.
+
+The wire vector, ordered edge consumption, bounded deferral, independent
+heartbeat, resident-liveness recovery, menu classification, AppKit-confirmed
+double click, and drag telemetry are covered by focused host/native tests and
+both guests plus the Extension cross-build. They are **tested, not
+metal-verified** pending the fresh stack bundle.
+
+**2026-08-13 attended retest and follow-up candidate:** the menu classification
+change is now metal-verified. Nothing else in that retest met acceptance:
+double-clicks still did not open their targets, the pointer returned to the
+host unexpectedly, Command-O opened on the host rather than the guest, and
+modal starvation still ended or prevented Continuity ownership. The paired
+host and guest logs separated four causes that the earlier candidate combined:
+
+- The independent host keepalive remained punctual (maximum observed gap about
+  502 ms), but resident service checked the previously admitted arrival before
+  consuming a coherent keepalive already published by the Open Transport
+  notifier. The resident now admits a same-epoch packet before lease expiry;
+  stale epochs still cannot renew authority and host-left still wins.
+- The host cursor-pin warp could return as an AppKit movement sample and be
+  integrated as physical relative motion. A short-lived, point-and-time-matched
+  warp token now discards only that synthetic sample. Edge-return logs include
+  guest point, source delta, host point and the number of suppressed warps.
+- Only one Command-O edge reached the guest and its target-context `PPostEvent`
+  failed. The CG event-tap callback previously performed the reliable send
+  synchronously and silently passed through a watchdog-disable notification.
+  Capture ownership is now decided synchronously, both key edges are suppressed
+  as a pair, forwarding hops asynchronously to the main actor, and tap disables
+  plus each queued key edge are logged.
+- The resident correctly deferred an AppKit-confirmed second press behind the
+  first manager-up, but the host applied its ordinary one-second press deadline
+  and tore down the epoch. Only this already-accounted-for deferred press now
+  receives the five-second settlement window; ordinary first presses retain
+  the one-second safety deadline.
+
+The exact stale-arrival, warp-feedback, key-up-loss and one-second-deferred-
+press mutations each fail their focused guard. Targeted host suites and the
+Continuity native subset pass. These four repairs remain **tested, not
+metal-verified** until the next attended bundle. Modal attachment itself still
+requires the Carbon application to schedule its reliable arm service; this
+candidate prevents an already-active lease from being falsely expired after
+starvation but does not claim resident-only arm while an alert owns the
+application event loop. Continuity file dragging and held-drag visual fidelity
+also remain open and unchanged.
+
+**2026-08-13 second attended retest and next candidate:** Command-O/Command-W
+now reach the guest and no false edge return was observed, so those two repairs
+are metal-verified for the attended cases. Menus also remain corrected. The
+remaining failures became more specific:
+
+- The host delivered the second down about 174 ms after the first, and the
+  resident correctly deferred it behind the preceding manager-up. The PPC
+  bridge applied that up, re-entered the resident, and then returned without
+  reading the down request the resident had just emitted. Its generation was
+  never acknowledged, so the host absorbed following clicks for the
+  candidate's five-second exception. The bridge now drains up to four
+  application-result rounds and performs the final resident commit in the same
+  cooperative call. Every down again has the ordinary one-second fail-safe;
+  the exact one-round and five-second mutations fail their guards.
+- Dragging does not exhibit the periodic non-drag pause. Instead the visible
+  guest cursor jitters between the current host point and another point while
+  the logical gesture continues. An open menu shows the same dual-position
+  jitter between the current point and its opening click. The synthetic Cursor
+  Device record did not return to the press point in the attended log, so the
+  new bounded resident trace records the live point inherited by each target
+  tracking hook beside the source it reasserts. This is diagnostic only.
+- The keyboard queue reported four events accepted but only two applied and
+  two failed. Each target-context keyboard result now records generation,
+  action and error in the resident flight recorder, so the next log identifies
+  which edge failed rather than leaving only aggregate counts.
+
+The bounded edge drain, prompt fail-safe, cursor-conflict trace and keyboard
+result trace build in both classic artifacts and pass their focused guards.
+They are **tested, not metal-verified** pending the next matched bundle. Modal
+attachment and Continuity file dragging remain open and unchanged.
+
+**2026-08-13 V10 diagnostic bundle for the remaining three symptoms:** this
+candidate does not choose a cursor or double-click theory. It makes one
+attended pass capable of separating the observed stages:
+
+- Tracking conflict evidence now has non-overwriting first, last, maximum-run
+  and press-point-return latches outside the eight-entry resident trace. A long
+  nested menu or drag loop therefore cannot erase the fact that it conflicted.
+- A new **Settle synthetic device** host toggle is off by default. When selected,
+  the target-context hook discovers the app-owned `NOWc` Cursor Device through
+  a bounded `CursorDeviceNextDevice` walk, binds it to the active epoch, guards
+  reentry, and records before/after/error counters around `CursorDeviceMoveTo`.
+  The Extension still receives no PPC pointer. This is an attended experiment,
+  not a product default or claimed fix.
+- The first eight button edges retain guest-domain arrival, resident exposure,
+  PPC manager begin/end, manager result, synthetic `EventRecord.when`, event
+  observation tick and actual event coordinates. The host separately records
+  AppKit source, UDP send and acknowledgement in its own monotonic domain. The
+  log does not subtract those unrelated clock epochs or label the remainder
+  one-way wire latency. `LMGetDoubleTime()` is recorded beside the chain.
+- A preallocated 32-entry PPC ring records the interval between consecutive
+  `CursorDeviceMoveTo` calls, while a separate maximum latch survives ring
+  wrap. This lets the ordinary-motion pause be correlated with the manager-call
+  cadence without adding disk I/O to the live path.
+
+The 16:32 attended log contains two explicit right-edge host returns; the
+operator confirms at least one crossing was intentional. Treat that record as
+mixed intentional/test traffic, not as two established ownership leaks. The
+three unresolved acceptance items remain dual-position cursor jitter during
+drag/menu tracking, ordinary-motion pauses, and broken double-click behavior.
+This V10 stack is **built and tested, not metal-verified**.
+
+**2026-08-13 pre-PR review:** the full integration diff received local
+correctness, reliability, contract, security, performance, test, Swift and
+maintainability review. The bounded defects were repaired in the candidate:
+UDP acknowledgement loss now ends ownership, old guests are refused before a
+Mirror-specific file descriptor is sent, promise batches retain their shared
+staging root until every sibling is consumed, guest switches invalidate late
+promise callbacks, file conversion and reads leave the main actor, modification
+dates are captured before cleanup, and the global pointer monitor returns to
+the main actor through an invalidatable generation instead of asserting actor
+isolation.
+
+Three review findings deliberately remain open rather than being hidden in an
+overnight refactor:
+
+- Mirror file identity is still authorized by the current rendered scene and
+  host gesture only. The guest resolves the host-provided desktop/Finder item
+  but does not yet require a short-lived, guest-issued scene/gesture token.
+  Adding one changes the security and wire authority model and needs an owned
+  design decision before implementation.
+- `MirrorContinuityController` still combines preference/UI state, TCP
+  authority, UDP transport, button/menu state and keyboard/edge orchestration.
+  Split transport and input-state ownership before the feature grows again;
+  do not perform that high-risk rewrite in the same change that stabilizes the
+  integrated candidate.
+- The PPC Mirror drop resolver's closed target table is covered indirectly by
+  host contract tests and cross-builds, not by an executable guest-native
+  decision-table test. Extract a Toolbox-free resolver seam before extending
+  its target kinds. The host's validated update availability is likewise not
+  yet projected read-only through MCP; installation must remain human-only
+  when that observability is added.
+
+**2026-08-13 17:48 attended V10 run, and the response bundle
+(`claude/mirror-continuity-input-47eb68`):** the diagnostic build answered
+three questions and the operator reported overall feel as worse than before.
+
+- **The dual-cursor press-point writer is now measured, not inferred.** In the
+  0x3 drag epoch the non-overwriting latches recorded the live low-memory
+  point returning to exactly the press point 219 times while the held point
+  advanced, with the synthetic Cursor Device record sitting at that same press
+  point and zero wrapped ADB callbacks. With **Settle synthetic device** on
+  (0x13 epochs), 567 hook-context `CursorDeviceMoveTo` calls ran with zero
+  failures/reentries/errors and press-point returns went to zero. One attended
+  run, one machine; the human's per-epoch visual report is absent, so this is
+  strong instrument evidence for the frozen-device-record mechanism and for
+  the settlement as remedy, not yet a metal-verified fix.
+- **Double-click failure is arithmetic.** `LMGetDoubleTime()` is 32 ticks;
+  AppKit-classified double-clicks at 165-213 ms reached the guest as manager
+  downs 40-45 ticks apart in every completed attempt, because the second
+  cycle rides application task time that the click's own target is holding
+  (up exposure-to-manager lag 36-37 ticks in exactly those sequences). No
+  handshake defect remained in the completed sequences.
+- **The felt regression was mostly host policy.** Three epochs died to the
+  1-second down-acknowledgement teardown mid-double-click (measured second
+  downs ran 520-630 ms source-to-ack), each bouncing ownership back to the
+  host, plus two right-edge returns with heavy suppressed-warp counts.
+
+The response bundle: `wideDoubleTime` (bit 0x20, host default on) saves the
+guest's DoubleTime at arm and installs the 60-tick window stated once in
+`peek_table.h`, restored on every exit path including forced releases and
+rollback; the host down-ack timeout rises to 3 s and abandons the cycle -
+forcing the wire button up inside the epoch - instead of tearing the epoch
+down; `settleSyntheticDevice` defaults on. A resident-delivered second press
+was designed and rejected: the safety pins forbidding Event Manager calls
+and any non-up `MBState` write from the resident are wedge history, and under
+that architecture press latency is irreducibly app-scheduling-bound, which is
+why widening the recognition window is the coherent fix rather than a
+workaround. Guards in `continuity_event_safety_source_test.py` pin all of
+the above and were each watched failing against the mutation they name
+(7/7). This bundle is **tested (source guards, native suite, both guest
+cross-builds), not metal-verified**; the open questions it does not touch
+are ordinary-motion pauses (interval ring correlation still unread against a
+paused run), the missing per-epoch human visual report for settle-device,
+and the fresh-press-while-starved case, which now degrades to a late click
+instead of an epoch death.
+
+**2026-08-13 18:50 attended run and the click-reliability redesign
+(`claude/mirror-continuity-input-47eb68`):** the operator confirmed the
+dual-position cursor is FIXED during drags and menus with settle-device on —
+that mechanism is now metal-verified (73,652 settles in one epoch, zero
+errors, press-point returns at 0-1 per epoch). Two remaining failures were
+measured precisely enough to replace the click machinery rather than patch
+it again:
+
+- **Spam-click drag pile-up:** epoch 11's gen-20 up arrived in the same tick
+  as its press and was not exposed for 302 ticks, because the interrupt
+  timer read only the packet's current edge — which under rapid clicking is
+  already the next press, leaving the needed release in the previous slot
+  that only starved task time could apply. The release path now reads both
+  v4 edge slots (`now_continuity_release_due`, timer-side).
+- **Stuck drag across reconnect:** the manager button ledger outlived its
+  epoch asserting a hold, and the Cursor Device record — upstream of low
+  memory, same law as the press-point jitter — kept republishing MBState
+  down until physical trackpad input rewrote it. The PPC side now records
+  the ledger on every manager transition and settles it at arm, at the
+  service pump whenever the epoch is not active, and at shutdown.
+- **Host declassification:** the buffered-cycle and AppKit-clickCount
+  machinery is deleted; the host streams numbered edges immediately,
+  including the release, which no longer waits for the press
+  acknowledgement. Ordering belongs to generations, the v4
+  previous/current pair, and the resident's two-slot release. A burst
+  beyond two in-flight edges degrades to a missed click, never a stuck
+  drag.
+
+Ordinary-motion hitching is unchanged by the human's report, with one sharp
+observation now driving the plan: motion is smooth during drags and menus —
+exactly where the settle machinery drives the device from the pumping
+process's task time — and hitches only where the sprite rides the PPC
+application's own scheduling. Two additions target it: a motion-aware gap
+histogram (gaps counted only between moves whose points differ, because
+stationary and starved read identically in the raw interval ring), and a
+default-off **Settle device while idle** spike (`settleIdleCursor`, bit
+0x40): the jGNE pass settles the NOWc device to the freshest wire point
+when the application is provably behind, in whatever process is pumping.
+All of this is **tested, not metal-verified**; the histogram has not yet
+been read against a run with human-reported hitch timing, and the spike's
+smoothness claim is exactly what the next attended pass exists to answer.
+
+**2026-08-13 20:49 attended run:** the entry inset ended the click-returns
+(operator-confirmed, zero suspect crossings), and the run eliminated the
+last timing suspects for double-click: epoch 2 carries a pair with down
+events NINE ticks apart, the posted up event five ticks between them, at
+the identical pixel, under an active 60-tick window and a human-set
+48-tick original - and recognition still failed. Timing, spacing, event
+completeness and window width are all now excluded. The dequeuer identity
+instrument was routed to the guest's memory log rather than the uploaded
+file (the same split that keeps CDM button begin/return lines out of
+uploads), so WHO receives the synthetic events is still unanswered; the
+routing is corrected and that answer is one attended pass away.
+
+Two new open items from the same run:
+
+- **BROKEN: guest clicks can raise a host window touching the shared
+  edge.** The host cursor is pinned at the edge anchor while the guest
+  owns the pointer, and the host listens with an observe-only global
+  monitor, which cannot consume events - so every guest click also lands
+  as a real host click at the anchor. A host window under that point gets
+  raised. The fix is a consuming CGEventTap during ownership; not yet
+  implemented.
+- **BROKEN: guest sliders do not track** - neither click-to-spot nor
+  thumb drags (found in the Mouse control panel; the operator adjusted it
+  with the physical trackpad instead). Control tracking loops are served
+  by the hooks and ordinary drags work, so a slider-specific mouse-state
+  source is being missed. Uninvestigated.
+
+**2026-08-13 late-evening swarm round (`claude/mirror-continuity-input-47eb68`),
+all tested-not-metal-verified:** six changes landed in one round after the
+20:49 log proved the Finder wall (`app=Find` dequeued a complete, correctly
+timed stream and recognition still failed; SimpleText accepted the same
+stream) and the human confirmed the entry inset ended the click-returns.
+
+- **compressClickWhen (bit 0x80, default on):** the resident rewrites
+  synthetic mouse-event `when`s at the jGNE boundary so any consumer's
+  pairing arithmetic — including a private cached window like Finder's —
+  accepts a pair produced within the wide window. Option/state/kind gated,
+  never forward in time, shaped before the observer records.
+- **Host input capture:** while the guest owns the pointer, the host
+  cursor is dissociated (`CGAssociateMouseAndMouseCursorPosition`) and a
+  consuming tap eats mouse/scroll events, so guest clicks can no longer
+  raise host windows and warp echoes can no longer integrate phantom
+  deltas. Keyboard mask deliberately untouched so the escape chord's own
+  consuming tap keeps first claim. Falls back to the observe-only monitor
+  with an audited warning when the tap cannot be created. Every ownership
+  exit path funnels through one restore, mutation-proven per-exit. While
+  owned, the host's own UI is unclickable by design; escape chord and
+  edge-return remain the ways out.
+- **Keyboard specials fixed:** arrows/backspace/nav were sent as lossy
+  Mac-Roman conversions of AppKit function-key scalars — every arrow
+  arrived as `?` (0x3F). A virtual-code-keyed table now sends the classic
+  bytes (0x1C-0x1F arrows, 0x08 backspace, ...). Separately, the guest
+  counted PPostEvent's `evtNotEnb` on keyUp as failure — keyUp is masked
+  out of the system event mask by default, and 79 of the run's 174 edges
+  "failed" by that arithmetic alone; now counted as applied, matching the
+  tree's two other keyboard posters. Still open guest-side: a 16-slot
+  queue drained 4 per pass drops edges on typing bursts (`dropped=5`).
+- **Reconnect delay configurable** (0.1–5 s, per machine, default 0.75 s).
+- **Handback obscures the guest sprite** (ObscureCursor — hidden until the
+  next real mouse move), excluding guest-input takeovers.
+- The distinguishability principle is now durable: parent corpus finding
+  `injected-input-diverges-below-the-api` and a section in
+  [docs/mirror-knowledge.md](mirror-knowledge.md).
+
+**2026-08-13 22:38 run — the double-click failure moved above the input
+stack entirely.** The dequeuer trace shows the pair's first down consumed
+by `app=New ` (this application was frontmost) and only the second click
+reaching `app=Find`: the first click of every attempt is being spent as a
+LAYER-ACTIVATION click, exactly as it would be on a physically-driven Mac
+whose Finder is backgrounded. The click stack itself is now provably
+faithful end to end — events complete, when-compression firing (9358
+rewritten to 9306 in the same rows), SimpleText fully usable — so "are
+synthetic clicks too abstract" is answered NO by measurement; the residual
+defect is that this application (and the plane machinery keeping it busy)
+keeps taking the guest's front layer during Continuity. Companion
+measurement, same evening (223137/223323 A/B): the idle-settle spike ON
+removes the rhythmic hitch (97% of applies at <=2-tick cadence,
+human-confirmed smooth); OFF reproduces ~50-72-tick stalls at ~1 s period
+in the application's own pump. Untested pending front-layer discipline:
+double-click with Finder already frontmost (protocol: single-click the
+desktop first, then double-click).
+
+**2026-08-13 23:xx convergence round (four parallel lanes plus the
+orchestrator), all tested-not-metal-verified:** the three remaining
+symptom threads turned out to share one root. The pump-stall lane traced
+the once-per-second motion stall to the host's 0.75 s Mirror scene poll,
+served synchronously by the guest (30-tick settle plus an unyielding
+walk); the plane-gating lane found `service_shot()` re-fronting this
+application 45 ticks after every `process.shot`, and measured that
+Continuity's guest intake claims exactly ONE plane while the host armed
+five. Continuity surface mode now arms only `.structure` (an
+intersection - a mode can narrow policy, never widen it), the P5 tail is
+explicitly handed back, and the nested wire pump gained a
+continuity-only path so request handlers renew the lease mid-serve.
+Expected on metal, unverified: the rhythmic stall gone at its source,
+entry-lag gone, no more uninvited front-layer changes, and possibly
+double-click working with no further help - the ~54-tick post-click
+starvation matches the scene-serve signature, not Finder's own
+processing.
+
+If double-click still fails with the planes quiet, the fallback shipped
+in the same round: **interruptPress** (bit 0x100, default off) - the
+resident's interrupt timer delivers a deferred second press itself
+(mouseUp event, MBState down, mouseDown event; pending manager-up
+canceled; ledger reconciles at the next task-time boundary), because the
+Finder pairs clicks by ITS OWN CLOCK at processing time (proven 225207:
+an 8-tick when-compressed pair failed while dequeue spacing was 54
+ticks) and no task-time route can reach the queue while it processes
+click one. This deliberately NARROWED the two oldest resident safety
+pins (no Event Manager, no MBState-down) to confinement pins on one
+function, with the keyboard plane's shipping PPostEvent as precedent and
+the matured release safety (two-slot release, ledger corrective - fired
+live tonight - and host cycle abandon) as the argument. Also landed:
+single-driver position authority (the spike and the pump are now
+exclusive by sequence, with the spike advancing the ack currency), an
+honest observer matcher (most-recent-applied-edge rule, extracted pure
+and native-tested), the button-timing ring now ROLLING so late-epoch
+attempts stop vanishing, and per-down true-front process logging.
+
+**2026-08-14 — METAL-VERIFIED: Finder double-click over Continuity
+works, and the mechanism that fixed it is recorded because two theories
+died first.** The 235658 run killed BOTH timestamp theories by
+measurement: a pair 8 ticks apart by `when` AND 54 ticks apart by
+dequeue failed under an active 60-tick window, so nothing temporal
+distinguished our pair — and the honest reaction was to stop theorizing
+and capture fields. The V11 deep click probe (tracking bit 0x200,
+logging only, latched past epoch exit so native comparison clicks land
+in the same ring) recorded every mouse event at the jGNE boundary with
+the full record and the click-relevant low memory beside it. One run
+(015913: wire clicks, then trackpad, then an external ADB mouse, whose
+two native phases proved field-identical) produced exactly two
+discriminators:
+
+- **`when == MBTicks` holds on every native down (26/26) and broke on
+  ours by up to 110 ticks** — when-compression forged one timestamp and
+  left the driver's cross-check behind. Fixed: the shape rewrite moves
+  MBTicks with the shaped `when`, and the interrupt press moves it with
+  MBState; exactly two writers, count-pinned.
+- **Native fast clicks pile the second click INTO the raw event queue
+  (depth 1-4) while the first is processed; ours arrived one at a time
+  at task time (depth 0)** — so any peek-ahead sees a queued pair
+  natively and nothing from us. Fixed: interrupt press delivery rebuilt
+  to read the notifier-written wire edges directly (the V10/V11
+  deferred-slot gate NEVER FIRED on metal — 11 then 3 deferrals, zero
+  deliveries — because task time set the slot and the same service
+  invoke consumed it; that gate is now pin-banned), guarded by a V12
+  `button_manager_busy` handshake the PPC application brackets its
+  CursorDeviceButton calls with, plus a newer-generation guard so a
+  settled older up cannot regress an interrupt-delivered press.
+
+The 023932 verification run shows the whole chain live: manager timing
+ring holds only generations 1 and 6 while generations 2-5 were
+interrupt-delivered; the probe recorded `q=1` at the up's dequeue with
+the second down consumed the SAME tick; every synthetic down reads
+`when == mbt`. Human-attested working on the PowerBook 1400c.
+
+Still open from this arc, in rough priority: the ordinary-motion cursor
+hitch (plane gating removed the once-per-second stall; a residual
+~10-second guest-wide starvation fires ONCE at continuity entry — `wire
+? not scheduled for 10s` — then motion is smooth; and the human wants
+the remaining texture investigated); control-panel sliders (probe
+evidence exonerates event delivery — the Mouse cpanel received clean
+downs at the thumb — and shows RawMouse/MTemp never track synthetic
+input, so a CDEF reading RawMouse is the standing suspect); the passive
+ADB observer fails to install with an external ADB mouse present
+(`state=3 err=-50 devices=2` — it assumed one pointing device); and the
+experiment-flag surface itself now needs pruning to a blessed set — ten
+tracking bits exist and at most five belong in the product
+configuration (see the 2026-08-14 consolidation plan).
+
+## METAL-VERIFIED: screen-edge Continuity forwards keyboard input with a host-owned return chord (2026-08-12, `feat/continuity-keyboard`)
+
+While the guest owns the pointer, the host now captures key-down, key-up, and
+repeat events behind a per-guest **Send keyboard input to guest** toggle that
+defaults on. A per-guest **Return all controls** chord is configurable from four
+explicit Control-Option combinations. It is matched before forwarding, never
+sent to the guest, and returns pointer and keyboard ownership together. The
+capture exists only for an active screen-edge ownership session; turning
+forwarding off leaves ordinary keys host-owned while preserving the return
+chord. Unsupported host key codes outside the classic 0–127 table also remain
+on the host.
+
+The reliable contract is version 3 and adds `continuity.key` plus the immediate
+queued/refused `continuity.keyReport`. The PowerPC application verifies the
+epoch, resolves the foreground process and A5 world, and writes a bounded
+16-entry V8 resident queue. The NOW Extension drains at most four entries from
+that process's target-context jGNE pass, uses `PPostEvent`, and stamps classic
+modifiers on the returned event element. It flushes on a foreground-process
+mismatch, and the application/resident boundaries flush on disarm, disconnect,
+lease loss, guest takeover, target change, and epoch end. The queue reports
+resident applied/failed/dropped/flush counters in the guest log.
+
+The escape guard, target-context drain, queue bound, and process-switch fence
+were each mutation-checked against the regression they name. Focused host,
+native, and guest/extension cross-build gates pass. An attended PowerBook run
+of the exact `2207f3da` host, guest, and resident package then confirmed the
+keyboard-control slice end to end; the user reported that it worked correctly.
+This establishes the real macOS capture, reliable wire, PPC queue, resident
+target-context post, and host-owned return path as **metal-verified**. The first
+slice covers Event Manager consumers and modifier bits; it deliberately does
+not synthesize `GetKeys`, physical ADB key state, or hardware repeat.
+
+## METAL-VERIFIED CORE; LAYOUT HARDENING TESTED: Mirror Cursor and Continuity Mode are separate host surfaces (2026-08-12, `feat/continuity-screen-edge`)
+
+The Mirror module now names its rendered-screen pointer option **Mirror
+Cursor**. It remains off by default and is exposed to `LiveMirrorView` only
+while the rendered Mirror is showing. **Continuity Mode** is a separate module
+surface: selecting it removes the Mirror render and replaces it with an
+arrangement editor derived from `NSScreen.screens`. Host displays are fixed and
+read-only; one movable guest display takes its pixel dimensions from the live
+scene and supports 50%, 100%, 200%, and 400% layout scales. A placement counts
+only when the virtual display has a positive-length shared edge with one host
+display and overlaps no host display. Dragging now resolves live against the
+whole host arrangement: nearby display edges align magnetically, and a deep
+overlap is projected to the nearest collision-free attached position rather
+than being saved as an invalid arrangement. Stored placements are checked by
+the same rule when loaded.
+
+The host-wide edge controller reuses the existing Continuity TCP/UDP transport;
+it changes no wire message, resident table, extension, or guest input path. An
+outward crossing arms at the corresponding guest boundary coordinate. The host
+cursor is hidden only after guest ownership becomes active, then pinned at the
+entry edge while relative host motion drives the guest. Crossing back through
+that shared edge releases the guest and restores the host cursor at the
+corresponding edge point. A guest-input exit reported by the existing transport
+performs the same restoration and leaves Continuity Mode ready for a later
+crossing. A native host click no longer releases ownership; the existing
+Continuity button transport now receives primary down, held motion, and up at
+the driven guest point. File traversal between systems remains explicitly
+outside this slice.
+
+Pure geometry and fake-cursor tests cover host topology, guest sizing and
+scaling, edge snapping, scaled coordinate mapping, mutually exclusive Mirror
+Cursor/Continuity entry surfaces, collision-free placement across multiple host
+displays, stored-placement repair, cursor hide/drive/return, and native-button
+ownership retention. The shipping module's Continuity layout renders offscreen
+at 900×720.
+The hide guard was mutation-checked: reversing it made the exact ownership test
+fail on the absent hide/show calls, and restoration made it pass. The full
+The initial `scripts/test-host` gate passed both 2,221-test asset modes, the
+isolated socket test, and unsigned Debug and Release app builds. This was
+therefore **tested, not metal-verified** at commit `38564f9e` before the
+hardware run. After the feedback corrections, the same gate passed both
+2,226-test modes, the isolated socket test, and both app builds at `a8ff7031`.
+
+The signed `38564f9e` host was then run with the existing PowerBook guest and
+resident. The user reported that the complete screen-edge feature worked on the
+first attempt; the same run specifically observed that a native host click
+returned ownership, exposing the policy defect corrected above. That establishes
+the real macOS event path, outward edge acquisition, visible cursor ownership,
+and PowerBook response as **metal-verified**. Reverse-edge return and physical
+PowerBook-input return were not separately called out in the report, and the
+new snapping/collision/button-retention corrections remain host-tested until the
+next packaged run. The run also exposed one resident-side defect: if the guest
+cursor was already hidden, acquiring it across the edge drove its position but
+did not redraw it. The integrated candidate now includes the task-time reveal
+correction from the resident/input lane. It is tested in the emulator and still
+needs a PowerBook rerun before the visibility case is metal-verified.
+
+## BROKEN ON METAL, AND THE IMPLEMENTATION IT DESCRIBES NO LONGER EXISTS: Continuity edge file dragging does not complete (2026-08-13, `feat/continuity-integration-candidate`)
+
+**This is the v1 record.** Its post-mortem was the input to a rewrite that
+landed 2026-08-14 as slices 1 through 4 of the cross-edge file drag plan, so
+nothing described below is the code under test now: the two-point strip, the
+synthesized drag seed and the frozen host-to-guest entry point are all
+retired. It is kept because the paragraph naming what the next investigation
+had to establish separately is what the rewrite was built against, and
+because "does not complete" with no per-direction symptom is the complaint
+that made per-direction audit lines a deliverable. For current status read
+the dated 2026-08-14 entries at the top of this file; they are authoritative.
+
+Continuity Mode now gives the configured shared display boundary a two-point,
+transparent AppKit drag destination. A native macOS file URL or file promise
+entering that edge retains its host pasteboard while the existing relative
+pointer lane drives the visible guest target; release resolves the current
+guest desktop, exact Finder folder, or application identity before reusing the
+existing symmetric copy contract. In the other direction, mouse-down on an
+exact guest regular file retains that source while the normal Continuity
+pointer performs the guest drag. Crossing back through the shared edge
+releases the guest button and begins a native `NSFilePromiseProvider` drag at
+the corresponding host point with the guest icon when available. Finder, the
+host desktop, or the host application under release then owns the destination.
+
+No new wire field, guest handler, resident table, Extension code, ADB path, or
+keyboard feature is involved. Both directions converge on
+`MirrorFileTransferModel`, so they retain copy-only behavior, conversion,
+single-lane progress, exact source/target refusal, and the existing PowerPC-only
+and regular-file-only limits. Ordinary Continuity pointer gestures retain their
+existing path when mouse-down does not resolve a transferable guest item.
+
+The two ownership tests were watched failing against their exact mutations:
+disabling takeover at the guest return edge produced no host native drag, and
+routing an inbound host pasteboard as a guest held-item gesture produced an
+unexpected guest dragged point. After restoring both guards, the 15-test
+Continuity suite, MirrorKit gate, both 2,232-test host asset modes (56 and 73
+expected skips), isolated socket test, and unsigned Debug and Release app
+builds pass. Those tests establish internal ownership boundaries only; they do
+not establish the product behavior. Attended PowerBook testing subsequently
+found that neither host-to-guest nor guest-to-host Continuity edge dragging
+completes. The feature is therefore **broken on metal**, not merely unverified.
+The next investigation must separately establish AppKit delivery to the
+transparent edge, native drag-session continuation from an already-held guest
+gesture, icon placement, and both release targets before changing this status.
+
+## TESTED: Mirror mode has a copy-on-drop file lane (2026-08-12, `feat/mirror-drag-drop`)
+
+With Mirror Cursor off, the host now binds the resolved guest file to a native
+file promise at mouse-down and begins an AppKit drag as soon as movement crosses
+the six-pixel threshold, without waiting for the Mirror edge. It also accepts
+host file URLs released over the mirrored desktop, exact Finder folder, or
+application. The PPC guest independently resolves the closed source or
+destination identity, then reuses the checked symmetric file bulk lane. Text
+and MacBinary conversion, original icon when available, progress, and explicit
+application refusal are carried through the existing host services. This
+version copies regular files only: no folder traversal, move, overwrite,
+NOW-68K, or Continuity screen-edge drop is implied.
+
+The resolver was watched failing when an exact Finder path was mutated to a
+window title, the application-settlement guard was watched failing when
+`kAEOpenDocuments` was mutated, and the app-UI reachability guard was watched
+failing when the Mirror call-site token was removed. The complete repository
+gate passes locally: 186 native tests, MirrorKit, every guest and resident
+cross-build, 2,225 host tests in asset mode (56 expected skips), honest-
+degradation mode, the isolated socket test, and unsigned Debug and Release app
+builds. An attended PowerBook pass on `d44491f5` proved host-to-guest copy, then
+found guest-to-host could not attach to its source; the `b8fc1bb2` input-order
+correction did not change that result. That exposed the mistaken prerequisite:
+the copy path was trying to begin a resident-backed guest item drag and only
+converted it to an AppKit drag after crossing the Mirror edge, while Mirror's
+own item dragging has not been established as working. `23bc0610` removes that
+dependency. The promise writer retains the exact guest source; the scene item
+only supplies selection geometry and its original icon. At drag threshold the
+host selects the guest item and gives the writer directly to AppKit. Mirror
+Cursor still owns its own gestures, and no guest item-drag, ADB, direct-pointer,
+or resident path participates. The mode guard and edge-independence guard were
+each watched failing against their exact mutations, and the MirrorKit gate
+passes; guest-to-host now needs the attended metal retest.
+
+## TESTED: Continuity now sits on the atomic module foundation (2026-08-12, `feat/continuity-direct-pointer`)
+
+The Continuity and SheepShaver work has been merged with the public pre-RC
+foundation. That foundation made all 16 host modules and all 17 PowerPC
+Workshop pages own their metadata and construction wiring: the central host and
+Workshop files retain product order and application-wide services, while each
+module owns its runtime, model, view, cleanup and guest operations.
+
+The merge preserves that boundary. Local Network permission remains an
+application-owned service because the guest link and more than one optional
+module use it; it is injected through `HostModuleContext`. The Mirror module
+continues to own the Continuity controller, source, run control, presentation
+and cleanup. The Connections module receives the same permission service for
+its human-facing controls. Continuity therefore adds no dispatch case back to
+`HostRootView` or module-owned model back to `HostAppState`.
+
+The integrated revision passed `scripts/test-all` stages 1–7 using the
+documented test-only override for this private clone's unarmed shared hooks:
+documentation and mutation gates, release and image discipline, Web Bridge,
+186 native tests, MirrorKit, all seven guest/resident cross-build targets, 2,211
+host tests in both asset modes, the isolated socket test, and Debug/Release app
+builds. Stage 8 explicitly skipped because no live guest was requested. This is
+therefore **tested, not metal-verified**; metal behavior is unchanged by the
+merge and must not be inferred from the local pass.
+
+## UNVERIFIED: the Mac OS 8.6 Finder/menu-bar oracle has one accepted pair and eleven replayable breadth cases (2026-08-12, `codex/sheepshaver-86-tooling`)
+
+The repository now has one visual-oracle loop shared by SheepShaver and QEMU:
+sealed-image clone verification, disposable `.sheepvm` runs, masked
+consecutive-frame settlement, attributable success and failure receipts, an
+executable over MirrorKitUI's production `RenderShot`, and exact named-region
+diffs with pair and heatmap artifacts. Dependency-free mutation-shaped tests
+cover image formats, masking, instability refusal, input cleanup, dynamic
+window regions, receipts, QEMU input refusal and the command surface; the real
+Swift executable builds and renders an 800×600 scene fixture, whose
+self-comparison is exact. A disposable clone of the sealed image also booted,
+produced three consecutive matching masked framebuffers with the sealed parent
+receipt in capture provenance, and shut down cleanly through separately
+settled native ADB transitions. `scripts/test-all` then passed stages 1–7,
+including 161 native tests, MirrorKit's full suite, both guest builds, every
+resident/rig target, and the host suites plus Debug/Release app builds. Stage 8
+correctly skipped because no `NOW_GUEST_LIVE` session was requested; the
+separate SheepShaver rung above is emulator-observed, not metal verification.
+
+One later disposable-clone framebuffer supplies a bounded visual calibration,
+not state acceptance: its color-correct BMP SHA-256 is
+`cdddab6c4e1de1d43b57580f2c2ccd2e2c0a54d8898ca91910b91e893e2bc09a`,
+but the capture is `reference-only` because a transfer window remained open
+and no state proof was attached. The unobscured menu-bar region is independently
+useful. A full OS 8.6 pack extracted read-only from the clone's `.hfv`, plus
+profile-declared Apple/Finder chrome crops from that BMP, brings the production
+renderer to 35 changed pixels out of 13,500 unmasked menu pixels (0.259%). All
+35 are confined to Charcoal “View”; the other menu titles, marks, divider and
+bezel are exact in this reference. The profile also proves the extracted
+`Mac OS Default` tile and its origin against 69,160 unobscured background
+pixels, with zero differences. That is a background fidelity result, not a
+full desktop result: the semantic calibration scene has no windows or desktop
+items while the source capture still has both. The original capture beginning
+`db968889...` and its derived color assets are invalidated because its SDL BMP
+masks exchanged red and blue; V2 capture receipts now make that defect a hard
+refusal.
+
+The resting Finder desktop is now the first accepted pair. The sealed
+`os86-carbon16-now020-codekitten-5d404f7-rgbv2` rig freezes and hashes all five
+inputs—boot and transfer disks, preferences, ROM and installed-app manifest—so
+later staging cannot rewrite an old experiment. Its validated action sequence
+reached masked framebuffer SHA-256 `6071bd241484d30c7eb1253d28791aaf7cb508a0bb992cab4d1de73cd9487841`
+on two fresh clones; the accepted target file is
+`6867dd8c0c8d09d1efb598c904238a9906f257b63958081e6d44623223aca60a`.
+The state proof covers Finder frontmost, no open menu, no selection and no
+modal; the tool validates its schema, exact case/profile/digest, observer,
+timezone and one evidenced assertion per requirement before writing success.
+`state-template` produces the deliberately unobserved form from a reference
+receipt so nobody has to copy hashes or requirement text by hand.
+
+The paired semantic scene carries all eight visible desktop items. The current
+production render differs by 35/13,500 unmasked menu pixels (0.259%),
+7,495/416,000 main-desktop pixels (1.802%), 8,760/22,080 Control Strip pixels
+(39.674%), and 1,233/25,920 bottom-desktop pixels (4.757%). Separate regions
+make the largest ownership gap explicit: Control Strip is not represented in
+the scene contract. The first renderer correction is also measured—the default
+volume face is a 32×10 glyph low in its 32×32 Finder cell, not a tall drive
+filling most of it. That correction removes 2,163 changed main-desktop pixels.
+The next correction is resource-backed rather than screenshot-backed: three
+desktop files' own custom icon suites, the exact `TVOD/MooV` application icon,
+and Geneva 9 italic alias labels remove a further 3,150. The remaining alias
+badge is not guessed from Finder resource 8213: that plausible resource failed
+the pixel comparison. A profile-scoped cross-proof instead requires three
+independent source icons to leave identical target pixels before deriving the
+7×8 overlay. It removes another 295 wrong pixels; Browse, Mail, Register, and
+Get QuickTime now each match their native 32×32 icon region exactly.
+
+This is **tested tooling plus one accepted pair**, not an accepted corpus. The
+corpus now spans twelve cases rather than six: the original desktop, inactive
+window, File and Apple cases; all three Finder folder views, with Buttons kept
+distinct from small icons; a selected Icons case; and Edit, View, Special and Help. A shared
+Command-Option-W reset makes every case replayable without depending on how
+many Finder windows the profile saved. All three view cases and all five core
+menus were stable-captured on the running 8.6 profile, and checked-in semantic
+fixtures exercise the production renderer for Icons, Buttons, List, File,
+Edit, View, Special and Help. The host's synthetic Finder menu now carries the
+measured full rows, separators, enablement, shortcuts and submenu arrows rather
+than an OS-9-shaped approximation.
+
+The view cases now encode interaction as well as geometry. Icons explicitly
+chooses Finder's `as Icons` command instead of inheriting a folder's saved view.
+An attributable selected/unselected pair measures the icon treatment as an
+exact 128/255 multiply per colour channel, with a tight black label patch and
+white Geneva text; a mutation back to the former Platinum-grey multiplier is
+named by the render test. A fresh List capture confirms that only the name cell
+selects black, not the full row. Buttons is not a persistent-selection view at
+all: one primary click activates the item immediately. The host now follows that
+rule while Icons, List and Small Icons retain select-then-double-click. These
+new captures are still reference-only until their required-state observations
+are independently completed.
+
+The broad Finder rendering pass also adds the item-count strip, light-grey
+ruled list field, folder disclosure triangles, and semantic list metadata.
+The host joins `file.list`'s classic modification timestamp and both fork sizes
+onto the Finder presentation shelf; the shelf and its Apple-menu icon identity
+companion are both frozen as explicitly host-only and tests prove neither can
+encode onto the scene wire. List dates, sizes and kinds are drawn only when the
+corresponding semantic columns exist.
+
+Inactive Finder chrome now has an unobstructed, deterministic reference:
+Calculator is opened from the Apple menu and moved clear of the folder window,
+replacing the QuickTime first-run promotion that covered the target. The host
+now uses the measured inactive header ramp, withdraws both scrollbar arrows
+and thumbs into flat troughs, and omits the grow box while leaving the folder
+contents crisp. Named-region mismatch fell from 100% to 59.4% for the header,
+45.3% to 24.4% for the vertical scrollbar, and 44.3% to 25.4% for the
+horizontal scrollbar. A distinct guard preserves dimmed arrows for a disabled
+scrollbar in an active window. This capture is still reference-only because it
+has no independent state proof.
+
+The Apple case now carries the complete observed 22-row 8.6 surface, including
+the separator and six hierarchy rows. `AppleMenuProfile.macOS86` decorates only
+known titles with explicit creator/type, System-file resource ID, or generic
+folder identity. `IconAtlas` then resolves those identities against the
+repeatable offline pack's native 16×16 resources; unknown titles remain
+undecorated. The production render therefore composes the full menu locally
+rather than cropping menu pixels from the framebuffer.
+
+The current named gaps are exact per-folder custom icons beyond the current
+extraction roots and exact catalog metadata for reference fixtures rather than
+measured transcription. `file.listing.freeBytes` now carries responder-observed volume capacity
+as optional presentation metadata, and Icons, Buttons and List all derive the
+native Finder count-and-available strip locally. None of the eleven
+new captures has a validated state proof yet. Close this row only when all
+twelve receipts name the sealed parent, state proof, source revision, visual
+profile, accepted consecutive hashes, and per-region result.
+
+The first full-window mismatch baselines are now reproducible: Icons
+28,573/101,844 (28.06%), Buttons 43,564/101,844 (42.78%), List
+69,640/101,844 (68.38%), and File-menu region 10,712/94,300 (11.36%). These
+are breadth measurements over the whole named regions, not acceptance
+thresholds. The large view residuals are consistent with the gaps named above
+and with generic art where the Finder uses per-folder custom icons.
+
+## BROKEN: CodeKitten does not launch on supported Mac OS 8.6 plus CarbonLib 1.6 (2026-08-11, `codex/codekitten-os86-support`)
+
+The dedicated SheepShaver minimum-floor oracle clean-booted Mac OS 8.6 after
+the CarbonLib Update 1.6 installer and opened New Old World's Workshop. The
+same profile does not open CodeKitten's initial window, so its required menu
+acceptance is blocked by a product bug. Mac OS 8.6 plus CarbonLib 1.6 remains
+a supported CodeKitten runtime.
+
+The first corrected-floor artifact (`747a81d`) failed because the CFM loader
+could not find standalone fragment `Textension`. The current artifact
+(`5d404f7`, MacBinary SHA-256
+`c4a6f8466f0cb7cc8ba8c4d0b60a62b469ea7bee4fde80ff1877e3a657264a01`)
+instead imports all 32 MLTE symbols from CarbonLib's embedded
+`Textension_CL` fragment, but launch still stops in Finder with `CarbonLib`
+not found. Inspection while the guest was stopped proved that the installed
+data and resource forks exactly match the artifact, the installed system file
+identifies itself as CarbonLib Update 1.6, and every imported symbol assigned
+to the main `CarbonLib` fragment exists there. The remaining failure is
+unresolved CFM dependency/load ownership; it is not evidence that the
+application or updater is stale, and it must not be reclassified as an 8.6
+limitation.
+
+The private bring-up ledger retains the exact capture paths, disk identities,
+fragment inventories, and install receipt. The next diagnosis should inspect
+the embedded `Textension_CL` fragment's own import closure at load time before
+changing another application import library.
+## UNVERIFIED: NOW Web guest relay needs Classilla acceptance (updated 2026-08-14, `feat/bundle-update-slice`)
+
+The guest-loopback implementation, host supervision, PowerPC Workshop page, semantic
 rewriter, Reader, Wikipedia/Reddit handlers and optional local-model adapter
 are built and covered by local gates. None has crossed an actual classic
-browser yet. The first required rows are mac99/Classilla, PB1400c/Classilla,
-q800/MacWeb and PB180c/MacWeb. Each must record the request form the browser
+browser yet. The first required rows are mac99/Classilla and PB1400c/Classilla.
+Each must record the request form the browser
 actually sends, navigation through rewritten links, page byte/chunk behavior,
 and cooperative liveness while NOW's dialogs and controls are active.
 
-The address boundary is intentionally unresolved rather than guessed.
-`10.0.2.2` is the modern host as seen by this repository's QEMU user network;
-physical machines use the host's LAN address. No code calls `127.0.0.1` a
-classic-Mac endpoint. Open Transport and MacTCP listener/connect behavior for
-loopback and the guest's own address still require separate target probes, so
-there is no guest-local relay or relay wire contract.
+The product boundary is now explicit: the PowerPC guest accepts the browser at
+`127.0.0.1`, carries requests and bounded response chunks over NOW's existing
+connection, and the host owns fetching and translation behind an internal
+ephemeral loopback renderer. There is no second host LAN listener. The Open
+Transport listener and Classilla's actual loopback behavior are build-tested,
+not runtime-proven. NOW-68K's MacTCP row remains unimplemented.
 
 Other open rows: forms, logins, cookies, uploads, CONNECT tunneling, a complete
 image transcoder, DNS-rebinding-resistant destination pinning, a persistent
@@ -439,6 +2843,58 @@ rollback-file recovery also remain suite-tested rather than emulator-accepted.
 Physical-hardware acceptance still owes the whole lifecycle on the PowerBook
 1400c.
 
+**2026-08-12 host-repair update:** repeated handoff packs exposed that the
+guest-only update controls could not repair the mismatch from the Mac where it
+was diagnosed, and automatic application relaunch hid the last recoverable
+state from the person testing it. Connections now compares the selected
+guest's application version/full build and active Extension version/160-bit
+build against the host's validated artifacts. A difference produces two
+separate, explicit buttons: **Replace Guest App…** and **Replace NOW
+Extension…**. Their command carries `hostApproved:true`; absent/false remains a
+refusal. The product host emits true only from the confirmed UI action, but the
+plaintext trusted-LAN wire cannot authenticate that claim and a hostile raw
+peer could forge it. The PPC hello now reports the active resident identity
+when it can read one.
+
+Both installers now move the old canonical item to that volume's Trash under a
+collision-free recovery name before the verified staged item takes its exact
+place. The running application stays connected and reports
+`relaunch-required`; the person quits and relaunches it. Extension replacement
+reports `restart-required`. Failure attempts to restore the original name and
+reports whether the old item instead remains recoverable under its recovery
+name. Host unit/loopback tests, the critical C source-ordering test, and all
+guest cross-builds pass at the working checkpoint; emulator and PowerBook
+replacement remain unverified. This is forward repair: a guest predating
+`hostApproved` needs one manual upgrade before future host-side repair can
+bootstrap itself. Artifact injection into the signed host bundle also remains
+packaging work; a validated Application Support catalog is supported now.
+
+**2026-08-13 attended bundle-integration observation:** the signed host from the
+Continuity retest stack was launched against the preceding guest application
+and Extension. Connections displayed both installed versions and build
+identities correctly, so guest identity reporting and host comparison were
+present. Both Software Updates rows nevertheless said `No validated artifact
+is installed on this host.` and exposed no replacement action.
+
+This is the observed consequence of an unformalized bundle, not an updater
+defect: the current output is a checked handoff set, not yet an installation or
+publication unit. `scripts/build-continuity-stack` places the two canonical
+MacBinary artifacts and their sidecars beside `NOW Continuity.app.zip`, but
+`OnboardingAssetCatalog.live()` searches only the app's signed
+`Contents/Resources/Onboarding` directory and
+`~/Library/Application Support/New Old World/Onboarding`. The sibling handoff
+directory is intentionally not a catalog root, and no formal bundle step
+populates either searched location. GitHub
+[issue #13](https://github.com/thisoldmac/new-old-world/issues/13) owns the
+formal bundle work. That host/bundle round must deliberately choose between
+embedding validated artifacts before signing and importing them into
+Application Support through an explicit host-owned flow. Its acceptance test
+is an ordinary freshly installed host, with no environment override or manual
+catalog seeding, offering both exact replacements when connected to a guest
+whose reported application and Extension identities differ. The test must
+also prove that each offered artifact was revalidated against its adjacent
+sidecar rather than merely discovered by filename.
+
 Product release 0.2.0 is stated coherently in the shared guest header, PPC
 `vers` resource, host catalog and both host build paths; the wire-contract
 revision remains independent. Main-reference hooks reject incoherent copies,
@@ -479,8 +2935,8 @@ internal links, while the Mermaid initializer subscribes to each navigation
 update. User-guide navigation begins with a Getting started group: connect a
 classic Mac first, then review core features and Extension coverage. The
 coverage page now renders 15 user-facing feature rows from
-`product/features.yaml`, including app-only coverage, whether the Extension
-is required, and current maturity or evidence. The technical P0–P8 inventory
+`docs/feature-catalog.yaml`, including app-only coverage, whether the Extension
+is required, and current maturity or evidence. The technical P0–P9 inventory
 remains in developer documentation. The docs gate maps every human-facing
 Extension row back to the complete resident capability inventory and its
 mutation suite proves that navigation, script lifecycle, or capability
@@ -493,7 +2949,7 @@ Logs as distinct features and hiding Hardware and Software behind one
 "inventory" label. The page now renders a 14-row application table and a
 separate nine-row Extension table. The gate compares the application row IDs
 exactly with `docs/module-manifest.yaml`, while the existing capability check
-continues to compare the Extension rows with P0–P8; its mutation suite has
+continues to compare the Extension rows with P0–P9; its mutation suite has
 watched both omissions refuse by name.
 
 **Corrected again later on 2026-08-09:** “initial alpha availability” was
@@ -541,10 +2997,10 @@ metadata cannot prove that a paragraph serves the right reader.
 
 ## PLANNED RELEASE CONTROL: documentation has a feature profile; runtime flags do not yet exist (2026-08-09, `codex/pre-alpha-docs-audit-plan`)
 
-`product/features.yaml` now declares the alpha product boundary:
+`docs/feature-catalog.yaml` now declares the alpha product boundary:
 the PowerPC Carbon guest is included, NOW Extension is optional, and the stale
 NOW-68K/pre-Carbon build is excluded. MkDocs renders those states on owning
-pages and generates the public release table and P0–P8 extension inventory from
+pages and generates the public release table and P0–P9 extension inventory from
 the catalog. The documentation gate rejects an incomplete profile, a page
 bound to an unknown feature, or an extension capability list that differs from
 `contract/peek_table.h`; its mutation suite has watched each refusal run.
@@ -660,6 +3116,699 @@ cost, and who decided. Several of its rows draw their evidence from
 entries here and link back rather than restating them. The split is by
 what the reader is being told: broken-or-unverified means nobody chose
 this, and a row over there means somebody did.
+
+## BOUNDED METAL PASS AFTER SIX WEDGES; CADENCE JITTER OPEN; CAPABILITY QUARANTINED: Mirror Continuity mode (2026-08-09, `codex/continuity-mode-plan`)
+
+**2026-08-11 direct-pointer update:** wire version 2 and resident table V4 now
+implement direct primary down/up and held dragging on top of the metal-proven
+movement route. Mirror semantic clicks are bypassed only after the raw lane is
+active. Button generations are ordered and acknowledged; the host does not move
+past a press or send its release until down is acknowledged. The PPC application
+owns the synthetic Cursor Device and all Cursor Device Manager calls. A held
+gesture's resident timer writes only `MouseLocation` for tracking loops and may
+force `MBState` up; it never writes `RawMouse` or `MTemp`, never asserts down,
+and makes no manager, allocation, network, or logging call.
+
+Independent private PMU/USB and CUDA/ADB runs of guest build
+`40129a13127a…` and resident fingerprint `90e16cd29b67…` passed click, a
+30-point held drag, lease-expiry release, native return, post-exit wire liveness,
+clean Finder shutdown, and clean-volume inspection. CUDA/ADB additionally
+observed physical-input takeover while held; PMU's held QMP stimulus was not
+observable and is credited only for its dead-man fallback. A second CUDA pass
+completed 16 immediate click cycles / 32 ordered transitions on one epoch, then
+repeated the complete drag/release/takeover gate. Every safety exit ended button
+up with no pending release.
+This closes the emulator gates for v0.5a/v0.5b; direct click and drag remain
+unverified on the PowerBook 1400c and the capability remains quarantined for a
+bounded attended metal pass. The private receipts are named in
+[continuity-mode.md](continuity-mode.md). No shared image was modified.
+
+**2026-08-11 attended click/drag update:** raw click and a Finder drag both ran
+on the PowerBook without reproducing the prior system wedge. The drag's logical
+position was accurate, but its drawn cursor remained at the press point except
+for brief flashes at the current point; mouse-up then ended the Continuity
+epoch. A hidden OS 9 cursor also stayed hidden until native trackpad movement,
+and a second rapid click was lost. The next candidate clears `CrsrObscure` and
+balances the cursor only from the PPC application's synchronous resident
+service, permits five seconds for a manager-up delayed by a tracking loop,
+buffers exactly one following click cycle, and offers optional per-guest epoch
+reconnect. These changes are tested, not yet metal-verified. The stale drag
+sprite is a separate cooperative-starvation problem: the preserved cursor
+research measured chain-only `GetMouse`/`StillDown`/`Button` hooks as the
+task-time redraw vehicle during tracking. Those hooks are now integrated
+lazily on the first accepted Continuity arm. They preserve registers, settle
+only a pre-published QuickDraw debt, tail-chain the incumbent, and remain until
+reboot; `rest_state` reports that one-way installation. The source guard was
+watched failing when one tail jump was mutated to a subroutine call. The
+Extension builds, but visible tracking behavior and whole-system safety still
+require emulator and attended metal verification.
+
+The first PMU hook run passed click and 16 rapid click cycles, then exited a
+held drag at point 17 as `guest-input`. Recovery worked—the button was forced
+up and the wire remained live—but the trace showed an older synthetic Cursor
+Device point had aged out of the eight-point ownership history. The history is
+now 64 reports (over one second at 60 Hz) and searched newest-first, preserving
+immediate takeover for any point absent from both owned histories. This
+correction awaits the repeated PMU/CUDA campaign below.
+
+That repeat is now green on exact guest `95f2428fa2f6…` / resident
+`e51bba923373…`. PMU/USB and CUDA/ADB each passed native preflight, click, 32
+rapid ordered edges, a 30-point held drag, dead-man release, native return,
+wire liveness, and clean button settlement. CUDA additionally exited on real
+held ADB takeover. Both reported the permanent-hook rest bit and both
+framebuffer oracles saw 93 changed pixels near the press point and 97 near the
+final point while held. The two receipts are named in `continuity-mode.md`.
+PowerBook behavior remains unverified.
+
+**2026-08-12 held-point metal update:** Pin Held Point and Virtual GetMouse
+each improved the PowerBook drag slightly; enabled together, the drag became
+mostly usable and the drop remained accurate. The native cursor sprite still
+alternated between the press point and current point, however, and sometimes
+returned to the press point after the dragged item had moved successfully.
+This is now bounded as a cursor-owner/release-handoff defect rather than the
+earlier logical tracker defect. The next candidate retains the final held point
+through the safe PPC final-move/manager-up handshake, with a one-second
+interrupt-safe source watchdog, and offers an off-by-default option to hide the
+guest sprite during the held gesture. Forced and physical-input exits still
+clear the source immediately. This candidate is Builds + Tested only, not
+metal-verified.
+
+The same pass found the agent-observability failure was not guest or module
+atomization: the live `--mcp-stdio` process still mapped the executable vnode
+from 16:02 while the stable app path and running host mapped the replacement
+from 16:04. The host socket answered `session_health` directly and its SHA-256
+matched the replacement. Future stdio companions now detect that exact
+in-place replacement before sending a call, return
+`now-mcp-companion-stale` / `reach: notSent`, and exit for supervisor restart.
+The generation guard was watched fail when forced to report every vnode as
+current. The already-running old companion still requires its one initial
+restart; code cannot retrofit itself into that process.
+
+Fast Pump is now an optional experimental arm field. It adds armed Continuity
+to the existing one-tick cooperative sleep predicate and resets on every
+disarm, disconnect, and shutdown. This can test the observed roughly 500 ms
+periodic stalls without moving work into the notifier or Time Manager task.
+The 15/30/60 Hz cadence and CPU/fairness effects remain open metal measurements.
+
+The attended follow-up found that Fast Pump makes 30/60 Hz movement nearly
+native between stalls but does not reduce the roughly 500 ms periodic hitches.
+The guest flight recorder explained that split: sampled cursor moves called
+`FlushVol` every 30 applies (twice per second at 60 Hz, once at 30 Hz), and
+every button transition flushed immediately before entering Cursor Device
+Manager. Those live-input breadcrumbs are now memory-only; errors and terminal
+summaries remain durable. A source guard rejects disk logging or `FlushVol` in
+the cursor move/button paths. This correction is tested, not yet metal-verified.
+
+That pass also confirmed raw menu-title clicks had regressed to System 6/7
+hold-to-track behavior on the OS 9 guest. The host now identifies the menubar
+from MirrorKit's existing hit-test boundary: a stationary first click latches
+native tracking until the selection click releases, while click-drag-release,
+pointer departure, and teardown retain their ordinary forced-up behavior.
+Double-clicks remain one bounded following cycle with no single-click
+classification delay; removing the button-path volume flush is the present
+timing fix, pending metal verification before adding a wider edge queue.
+
+A focus-demanding host alert can still interrupt pointer connection. It is an
+edge case deferred from this slice rather than folded into button-state logic.
+
+Independent private PMU/USB and CUDA/ADB cold boots then exercised Fast Pump
+against guest build `582abf3ee6e2…` and resident fingerprint `e500d393bf76…`.
+Both passed click, 16 rapid cycles / 32 ordered edges, a 30-point drag,
+dead-man release, native return, wire liveness, Finder shutdown, and clean HFS
+inspection with zero rejects and no pending manager-up. CUDA additionally
+reported actual `guest-input` takeover; PMU retained its known held-QMP-input
+limitation and is credited only for lease release. The receipts are named in
+[continuity-mode.md](continuity-mode.md). This is emulator safety evidence,
+not a claim that Fast Pump improves PowerBook cadence.
+
+The final tracking-hook resident was privately baked as
+`agent-stage/now-stage-continuity-tracking-hooks.qcow2`, SHA-256
+`0f8b8eaeaf00c8d13f88733d2d84346bf6d7fcd1556a5cbfd1e18a481620eec6`.
+It reported fingerprint `e51bba923373…`, all 1023 capabilities, survived the
+full census, shut down through Finder, left a clean HFS volume, and passed
+`qemu-img check`. No shared image or shared receipt was modified.
+
+**2026-08-11 transport and metal update:** the first resident 1.17 host handoff armed
+over TCP but delivered no UDP packet to the guest: 70 host sends, zero guest
+accepted/stale/malformed packets, zero ACK attempts, and zero resident applies.
+The guest was reporting its requested TCP preference as `udpPort` instead of
+validating and publishing the address returned by `OTBind`. Commit `b0c9386b`
+reports the actual bound port. A private mac99 run accepted/applied one state,
+ACKed it with zero rejects, disarmed, and shut down through Finder. The next
+attended PowerBook 1400c run then produced accurate repeated movement without
+the immediate whole-system wedge seen in the six preceding routes. Repeated v0
+movement through resident 1.17's V3 PPC path is therefore metal-verified.
+Motion remained visibly jittery, however, and 15/30/60 Hz produced roughly the
+same perceived smoothness. A longer pass remained accurate and reliable but
+froze for about 500 ms every few seconds. V3 applies only from New Old World's
+cooperative `conn_service()` path; active Continuity is not currently part of
+the event loop's fast-pump predicate. That is a tracked scheduling hypothesis,
+not yet a root cause, and no low-level cadence patch is part of this slice.
+Sustained stability, rate fidelity, teardown and recovery remain open, so
+quarantine is unchanged. Exact evidence and the next per-stage timing
+measurements are in [continuity-mode.md](continuity-mode.md).
+
+The optional Continuity lane previously exposed v0 movement only. Reliable TCP
+grants and revokes a nonce/epoch;
+fixed-state UDP uses the same numeric port in its own protocol namespace. The
+update rate is selectable at 15/30/60 Hz, default 30, and is remembered per
+stable guest identity. P9 owns a
+clamped dead-man and yields immediately to physical guest movement; delayed
+button bookkeeping is diagnostic until button-only takeover is proven;
+P7 drag and P9 Continuity arbitrate one resident input owner.
+
+**2026-08-13 atomic-stack correction:** repeated handoffs paired a newly built
+PowerPC application with an older active NOW Extension. The first combination
+reported a control-version mismatch; replacing only the application advanced
+that failure to generic `unsupported`, because the application required the V8
+resident table and the loaded Extension did not publish it. Both files were
+individually valid, so the existing product, component-build, signing, and
+update-manifest gates all passed. The missing unit was the stack.
+
+The emulator instruments were also stale in the opposite direction:
+`continuity-probe.py` and `emulator-direct-pointer.py` still emitted wire V2,
+and their focused test asserted the literal V2 bytes even though the product
+contract was V3. That green test therefore proved only that two stale copies
+agreed. Both instruments now read `contract/continuity_udp.h` through
+`tools/continuity_contract.py`; the focused fixture asserts the derived current
+version rather than another handwritten number.
+
+Application and Extension update manifests now carry the same Continuity wire,
+resident-table, and resident-release tuple. `tools/continuity-stack-gate`
+compares both artifacts with the host source/signing identity and refuses the
+exact V8-application/V7-Extension mutation; `scripts/build-continuity-stack`
+assembles into a new directory and writes `NOW-stack.json`. The guest refusal
+is now `resident-unavailable`, which the host renders with the Extension
+replacement and restart recovery. The Extension release identity advances from
+1.2 to 1.3 at this integration boundary. Development fingerprints may still
+distinguish builds within a release, but a packaged resident-format generation
+must no longer remain hidden behind the previous human-facing version. This
+closes silent mixed-pack assembly. It
+does not prove what resident a PowerBook loaded: the exact stack still needs an
+Extension replacement, restart, and post-boot identity observation before its
+Continuity behavior becomes metal-verified.
+
+The 1.3 private bake was identity-checked rather than inferred from copied
+files. After a cold boot, the mac99/OS 9.1 guest reported application build
+`f3d0f61dbb43…`, Extension 1.3 build `520a93277726…`, lifecycle `active`, table
+length 7920 and capability word 1023. The full census completed and the guest
+event loop still answered. The first attempt was correctly refused because its
+fallback shutdown left HFS dirty; a clean-base retry used Finder shutdown at
+both reboot boundaries, passed `qemu-img check`, and left HFS clean. The
+accepted private image is
+`agent-stage/now-stage-continuity-stack-atomic-1.3.qcow2`, SHA-256
+`ae30b4a11e99611ca9b3af649f7fad3b738cf33bb11fd11de0b7e0913db15dee`.
+The shared oracle was not changed.
+
+**2026-08-13 hard-coded-speaker correction:** the first atomic-stack gate
+named two known Python instruments and checked only their assigned version
+constant. That was not the defect shape. `continuity-probe.py` still put the
+literal version 2 directly into its arm and disarm messages, and
+`emulator-continuity-fault.py` was an unlisted third speaker with local copies
+of version 2, both magics, both packet layouts, flags, ACK states and exit
+reasons. The gate now discovers speakers by behavior and refuses inline
+control versions, datagram magic, packet layouts, and state values. All Python
+speakers use one header-reading codec; the host's unavoidable Swift copies of
+version, sizes, magic, flags, ACK states and exit reasons are checked against
+the same C header. Mutations add an entirely new speaker with an inline V2 arm
+and then a copied packet layout; both fail without changing an allowlist.
+
+The C/Swift wire codecs, pure takeover/lease logic, owner arbitration, TCP
+routing, explicit control-contract version, and real loopback TCP+UDP
+press/ACK/release sequence pass. A private scrap-image bake cold-booted
+mac99/OS 9.1 and the guest reported resident lifecycle `active`, capabilities
+`1023`, source manifest `24e137184757`, and fingerprint `6a5fd22b092b`, then
+Finder shut down guest-cleanly to a clean HFS volume. That private image is
+`agent-stage/now-stage-continuity-cursor-fix.qcow2`, SHA-256 `14b98852e4d9…`.
+The shared oracle was not touched; it is not promoted until this work lands on
+`main`.
+
+A host protocol probe then made version `2` fail as `wrong-version`, armed
+version `1`, read back the two requested cursor positions through the guest's
+own `mouseloc`, and observed move, down, held drag, and up generations applied
+by P9. That was useful emulator evidence and it did not survive first contact
+with the PowerBook.
+
+On 2026-08-10 the first metal run connected and moved the pointer a few times,
+then the PowerBook stayed on the wristwatch and stopped accepting clicks. Its
+physical trackpad could still move the arrow, but the cooperative UI remained
+partially wedged and required a reboot. The resident was calling the foreign
+cursor task through `JCrsrTask` directly inside its 16 ms Time Manager
+callback. If that call does not return, the same callback cannot notice local
+input, expire the lease, or release a held button. The imported cursor spike
+never made that call: it performed bounded low-memory and
+`CursorDeviceMoveTo` placement at interrupt time and deferred QuickDraw redraw
+to task time.
+
+The repaired candidate removes the cursor-task call and its assembly
+trampoline. Emulator stress then found two additional false assumptions before
+another metal build was handed out: `CursorData.where` changes during the
+manager's own settlement and falsely reported `guest-input`, and closing then
+immediately recreating an asynchronous Open Transport endpoint at each
+disarm/re-arm partially wedged an OS 9 VM. Movement takeover now reads
+`RawMouse`, button takeover reads `CursorData.buttonCount`, disarm invalidates
+the nonce/epoch without tearing transport down, and TCP disconnect remains the
+endpoint teardown boundary.
+
+A fresh private clone reported source manifest `e2a48cb67346` and fingerprint
+`c4b55adcdcdb` with capabilities `1023`. Guest build `64345c292ce4` then held
+15, 30, and 60 Hz epochs active, applied click generations 1/2 and drag
+generations 3/4, released a held generation after `lease-expired`, answered
+`mouseloc` afterwards, and accepted a new epoch. All datagrams were accepted
+with zero rejects and zero transport retries. This is emulator data-path
+evidence, not a claim that the repaired resident is metal-verified. Physical
+movement/button takeover and a visible application click/drag remain part of
+the PowerBook retest. The same exact resident was baked into the private image
+`agent-stage/now-stage-continuity-cursor-safe.qcow2` (SHA-256
+`2800a280d3c1835bf9cb7bf42ff633906f39e75a4e06a5fd8e4045d8de1e55e3`),
+which passed exact identity/capability, ABI, census, container, clean shutdown,
+and clean-volume gates. The shared oracle was not touched. See
+[continuity-mode.md](continuity-mode.md).
+
+The second metal run on 2026-08-10 falsified that repair. It connected and
+accepted one host move; the pointer remained an arrow rather than changing to
+the wristwatch, but the PowerBook then stopped accepting native clicks and the
+guest's TCP control connection dropped. This is a whole-system liveness
+failure. With `JCrsrTask` gone, the remaining foreign manager call in the 16 ms
+Time Manager placement path is `CursorDeviceMoveTo`. Its behavior in the OS 9
+emulator was not evidence that it was safe from this interrupt context on the
+1400c.
+
+The candidate bundle and private image were renamed
+`UNSAFE-DO-NOT-DEPLOY`. The containment source at that point left the P9
+capability bit clear and did not install its Time Manager task, causing the PPC
+application to refuse an arm before it opened UDP. No third metal retest was
+pending. Re-enabling the capability required a task-time-only placement design
+and staged physical evidence that independently preserves native input and the
+TCP loop.
+
+The third attended run falsified that wording too. Resident 1.11 moved the
+foreign Cursor Device and QuickDraw operations out of the timer, but paid their
+debt from the global jGNE filter. At 15:58:01 the host's UDP lane was genuinely
+ready on `en7`; it cancelled about 4.8 seconds later. The resident connection
+died at 15:58:48 and the PPC application at 15:58:55, while the PowerBook sat on
+the wristwatch, accepted no native clicks, and rendered an empty Force Quit
+modal frame. Permissions and UDP setup are ruled out. “Task time” inside Event
+Manager's own global filter is still reentrant Event Manager context and is not
+a safe settlement owner.
+
+The replacement is a new boundary, not another relocation of the same call:
+movement-only v0 never consumes button fields, writes `MBState`, or posts an
+event; its timer writes low-memory position without creating global jGNE debt;
+the PPC NOW application balances the QuickDraw redraw from its own cooperative
+pump; and native takeover reads `RawMouse` without touching the physical ADB
+trackpad's CursorDevice record.
+
+Resident 1.12 fingerprint `d0ef99d20320b8352a6472764414cfc6e71d1ec5`
+passed cold PMU/USB and CUDA/ADB campaigns: 180 movement updates at 30 Hz,
+native click plus wire liveness, optimistic native-motion exit, disarm and
+native motion, TCP loss/reconnect, fresh epoch, and final disarm. The first PMU
+attempt exposed a real false takeover because the new RawMouse-only sampler
+mistook the timer's own write for physical input; recent owned low-memory points
+are now excluded and the timer samples immediately before overwriting RawMouse.
+The exact button-global, timer CursorDevice, and jGNE-debt mutations each made
+their source guard fail. This is emulator evidence only. The first private bake
+attempt stopped on an anchor reset and was guest-cleanly recovered through its
+own QMP socket. The retry verified the exact fingerprint into
+`agent-stage/now-stage-continuity-v0-1.12-no-event-manager.qcow2` (SHA-256
+`55bdb4237d46ce11d223f41834a7c5e03f5604ac5c33fb9cc582ea80abaa0eae`) with
+guest identity/capability, full-census survival, `qemu-img check`, guest-clean
+shutdown, and clean HFS-volume gates. No shared image was touched by this lane.
+
+The first signed 1.12 handoff was blocked before a metal cursor test. Its
+app-owned `NWBrowser` reported `.ready` at 17:22:05, but at 17:25:25 the actual
+Continuity UDP path was unsatisfied with `Network.NWError` 50, `Local network
+prohibited`, on `en7`. The signed bundle carried the expected Local Network
+usage text, Bonjour declaration, `B93A9CG7F9` team and application identifier;
+the defect was treating browser readiness as a permission verdict. A unique
+self-publication was an improvement but not a final proof: the 1.16 handoff
+later discovered its own Bonjour service at 21:48:18, then the actual unicast
+UDP lane was refused at 21:48:26 as `Local network prohibited` on `en7`. The
+real lane was therefore the only operation that could provide useful evidence.
+
+The replacement handoff still produced no prompt because its publication
+listener failed at 17:40:17 with POSIX `EINVAL` before Local Network privacy
+could evaluate it. A TCP `NWListener` requires `newConnectionHandler` before
+`start` even when the probe carries no application data. The probe now installs
+a bounded handler that immediately cancels any connection; removing it made the
+runtime test reproduce the exact `EINVAL`.
+
+The 14:45 signed handoff showed that the direct operation cannot reliably own
+the prompt on this macOS build either. It queued content to the active guest,
+and macOS immediately returned `Local network prohibited` on `en7` without a
+prompt. The next build separates responsibilities: an app-owned Bonjour
+browse/advertise operation exists only to solicit macOS privacy UI, while the
+guest-targeted UDP connection remains the only authorization proof. Browser
+readiness, listener readiness, and self-discovery cannot set the ready state.
+Both operations remain alive until the direct path settles.
+
+Network.framework selects and logs the viable interface; simultaneous Wi-Fi
+and Ethernet are supported without naming either in code. Focused runtime tests
+inject both operations. Source, plist, identity, and signed-build gates require
+the Bonjour prompt declaration, an app-owned launch request without a guest,
+and a separate real UDP verification send; they refuse interface pinning and
+feature ownership of the app request, and require the stable team, application
+identifier, usage text, and executable UUID. The complete ownership and
+evidence rules live in the
+[Local Network access contract](local-network-access.md). This is tested host
+behavior, not evidence from the PowerBook.
+
+The signed `1db72e80` handoff did not justify assigning the failure to macOS.
+At 14:59:31 its listener and browser reached `.ready`, while the guest path was
+`Local network prohibited` on `en7`; macOS 27 beta 4 build `26A5388g` does have
+Apple-known Local Network privacy defect `r. 181140179`. But NOW had prompted
+successfully on this machine before. History showed the application regression:
+`f46c18fd` and `96513cc6` made the request an app-launch responsibility;
+`33d19759` deleted it, transferred solicitation to Continuity, removed the
+Bonjour declarations, and inverted the guard to reject the known-good shape.
+`1db72e80` restored the mechanism without restoring ownership.
+
+The repaired contract requests at app launch with no guest target, then lets
+Continuity verify the direct path without owning privacy. A source/build guard
+requires both halves and fails if the optional feature calls the app request.
+Apple's beta defect remains a separate environment risk to retest on offered
+build `26A5406e`; it is not treated as the root cause of this regression. Do not
+use the unsupported SIP-disable-and-delete privacy database workaround: it
+destroys the evidence Apple asks to receive in a sysdiagnose.
+
+The hardware-specific ownership error is now explicit rather than left as
+“possibly ADB.” The PowerBook 1400 trackpad translates motion into ADB
+commands through the machine's power-management path. P9 retained the first
+Cursor Device Manager record, which was therefore a physical device it did
+not create, and called `CursorDeviceMoveTo` on it from interrupt context. The
+replacement contract forbids Cursor Device, Event, QuickDraw, Open Transport,
+Memory and Resource Manager calls from the timer. v0 is movement-only;
+epoch-scoped click settlement belongs to v0.5a and is not present in this
+candidate. Bounded resident counters plus task-time guest logs cover every v0
+teardown stage. The detailed derivation and reset rules live in
+[continuity-mode.md](continuity-mode.md).
+
+The containment build itself was privately baked and guest-verified with
+capabilities `511` (P9 absent), source manifest `6c9a1df22adc`, and fingerprint
+`0c81a3cc5cc1`. It passed the ABI oracle, all 14 census probes, guest-clean
+shutdown, clean HFS-volume inspection, and `qemu-img check`; the private image
+is `agent-stage/now-stage-continuity-quarantined.qcow2`, SHA-256
+`f2de4f653451be46adde69a76248404307fe23c4b1a944303b772d055bac95cd`.
+The shared oracle remains unchanged.
+
+Resident 1.12 then produced the same wedge with every Cursor Device, Event,
+QuickDraw, and Event Manager call removed from its timer. The fresh host
+identity confirmed Local Network access at 17:58:45, connected the PPC app at
+17:58:46 and resident 1.12 at 17:58:56, and opened a ready UDP lane at
+17:59:07. The person observed the same system-wide input failure; resident
+liveness was lost at 18:00:11 and the PPC app at 18:00:19. The remaining
+mechanism was direct interrupt-time writes to `MTemp`, `RawMouse`, and
+`MouseLocation`. Three PowerBook failures had already ruled out foreign
+Cursor Device and Event Manager contexts; the fourth now rules out treating
+the physical ADB path's downstream low-memory globals as an injection API.
+
+Resident 1.13 clears P9 again. The next candidate must create and configure
+its own absolute Cursor Device, never retain the first physical trackpad
+record, and never write those low-memory position globals directly. That
+owned-device direction was still emulator- and metal-unverified at that point.
+
+Resident 1.14 implements that direction without changing P8's existing
+task-time visual service. P9 creates its own absolute Cursor Device at boot,
+configures it before publishing capability, disposes partial setup, and moves
+only that record. The timer no longer writes `MTemp`, `RawMouse`, or
+`MouseLocation`; it does not allocate, configure, or dispose a device and
+reaches no QuickDraw or Event Manager API. Retargeting the placement to the
+first physical device made the ownership source guard fail by name.
+
+The exact 1.14 resident fingerprint `1d5317ff7380bda7891d9c27de08fff9d307343d`
+reported capabilities `1023` on cold PMU/USB and CUDA/ADB boots. Both rigs
+proved their native device first, completed 180 points at 30 Hz, revoked P9 on
+a physical button press with the wire still live, independently revoked on
+physical movement, disarmed, returned to native input, survived TCP loss and
+reconnect, re-armed, and shut down through Finder. Rejected datagrams were zero
+on both. At that point this was emulator evidence only, and no fifth PowerBook
+run was authorized until the private bake and complete local gates passed.
+
+Those gates now pass. `scripts/test-all` completed all documentation, image
+discipline, 162 native, MirrorKit, guest cross-build, and Debug/Release host
+stages. The exact resident was privately baked into
+`agent-stage/now-stage-continuity-owned-1.14.qcow2`, SHA-256
+`e383b794bdf862cde2aced7135663a0df186adc0e15762e9138e9c5cc3c27a8a`;
+the guest verified its fingerprint and capabilities, survived all 14 census
+probes, shut down through Finder, passed `qemu-img check`, and left a clean HFS
+volume. The shared oracle remains untouched.
+
+The first attended PowerBook 1400c run of that exact 1.14 pair completed one
+host-pointer placement, then returned control to native trackpad input
+guest-side. This is bounded metal evidence for owned-device placement and
+optimistic physical takeover. It is not a general safety close: repeated and
+sustained movement, 15/30/60 Hz cadence, click-only takeover, lease/TCP-loss
+recovery, repeated boot/shutdown, disable/removal, host click pass-through, and
+drag remain open. The next run must widen one row at a time and stop on any
+native-input or system-liveness regression.
+
+That wider run failed. At 30 Hz the same exact pair produced roughly one second
+of smooth motion and then wedged the PowerBook with the pointer cursor still
+drawn. Native pointer input, clicks, and keyboard stopped; the PPC connection
+was lost at 19:20:11 and resident liveness at 19:20:17. Resident 1.14 still
+combined interrupt-time `CursorDeviceMoveTo` on its owned device with a legacy
+PPC-pump `HideCursor`/`ShowCursor` redraw. This run cannot distinguish those two
+operations, so neither is allowed in the replacement. Resident 1.15 clears P9;
+there was no current metal candidate at that containment point.
+
+Resident 1.16 is now the emulator-qualified replacement, not a metal result.
+It removes Continuity's Time Manager task, global jGNE service, downstream
+mouse-global writes, and PPC `HideCursor`/`ShowCursor` redraw. The ordinary and
+nested PPC wire pumps enter one no-argument resident 68K service through Mixed
+Mode; the resident applies the latest point only to its owned absolute Cursor
+Device and returns. The new app refuses the metal-failed V1 resident format.
+The owned-device and cooperative-pump guards were mutation-proved, and the full
+local gate passed.
+
+On independent cold boots, PMU/USB and CUDA/ADB each proved native input first,
+then ran a fresh 900-position/30-second campaign at 30 Hz. Both passed native
+click and movement takeover, explicit disarm, native return, TCP loss and
+reconnect, fresh arm/disarm, zero rejected datagrams, and Finder shutdown. The
+receipts are under `run/continuity-app-pump-{pmu,cuda}-1.16/`. This does not
+close the issue: all failed metal routes also passed emulation. A private bake
+has now verified fingerprint `17b5b866d60e` into
+`agent-stage/now-stage-continuity-app-pump-1.16.qcow2`, SHA-256
+`5c62381f29a42929a6dbfc71115bf48819cee102358cecf100ea1a969b00e6f7`,
+with guest identity/capability, full census, clean Finder shutdown, clean HFS
+volume, and `qemu-img check`. The shared oracle was untouched. A deliberately
+bounded attended PowerBook run remains required.
+
+That 1.16 metal run failed. It moved briefly, released when the host left the
+Mirror, moved briefly again after re-entry, and then wedged on the wristwatch.
+Native pointer, click, and keyboard input stopped and both NOW connections
+died. This is the sixth PowerBook wedge and revokes the raw resident CDM route,
+not merely another scheduling location for it.
+
+The subsequent audit found an ABI requirement the route had bypassed. Apple's
+Universal Interfaces `CursorDevices.h` says PowerPC callers must link
+`CursorDevicesGlue.o` plus InterfaceLib because the original ROM Mixed Mode
+transition for Cursor Device Manager was wrong. Resident 1.16 crossed a
+generic PPC-to-68K routine descriptor and dispatched AADB from resident C.
+QEMU passing that shape was not evidence that the hardware transition was
+valid.
+
+Resident 1.17 / Continuity V3 moves CDM ownership completely into the
+cooperative PPC application. The Extension publishes a requested point,
+returns, and later commits only the matching PPC result. It owns no P9 device
+and performs no post-boot P9 manager call. The app reproduces the corrected
+fallback transition in Apple's supplied `CursorDevicesGlue.o` for its five
+calls: runtime-resolved `NGetTrapAddress($AADB, ToolTrap)` plus
+`CallUniversalProc`, using Apple's exact selectors and `ProcInfoType` values.
+The supplied object could not be linked wholesale: Retro68's monolithic
+InterfaceLib import member made the Carbon app unload before `main` on OS 9.1.
+The final-PEF build guard now refuses any load-time InterfaceLib import. A
+fixed resident trace ring and sampled, in-memory guest `move begin`/`move
+return` lines bracket the risky call without stalling live input; manager
+errors and terminal summaries remain durable. The V3 handshake, the exact transition,
+and absence of resident CDM are source-tested. Both cold-boot emulator rigs and
+the branch-private bake now pass. This qualifies a bounded seventh attended
+run, not PowerBook safety.
+
+A subsequent clean-boot PMU stream reproduced the wedge at sequence 416 and
+made the earlier callback claim falsifiable. The offline platter log repeated
+`writer: REFUSED - binary is not 'New Old World'` once per packet and ended at
+`move begin n=120 seq=413` without a return. `accept_datagram()` was calling
+`cell()` from the OT notifier; that resolved the table through Process Manager
+identity, writer-lease publication, and disk logging. The notifier now uses a
+cell pointer published by task-time arm and is source-guarded against table
+resolution, logging, allocation, Process Manager calls, and volume flushes.
+Independent cold PMU/USB and CUDA/ADB runs then each completed 900 streamed
+positions at 30 Hz, both takeover modes, disarm, authority-lane reconnect,
+re-arm, native return, and clean Finder shutdown with zero rejected datagrams.
+The CUDA platter trace paired all 19 sampled move entries with returns and
+contained no writer refusal. These runs qualify the emulator boundary; they do
+not establish PowerBook safety.
+
+The complete repository gate then passed. A branch-private bake at commit
+`286104bb` verified the exact resident fingerprint, all 1023 capabilities, full
+census survival, Finder shutdown, a clean HFS volume, and a clean qcow2 at
+`agent-stage/now-stage-continuity-1.17-callback-safe.qcow2` (SHA-256
+`6dd741efe4f31ab29ed9b32236fd8adcbc10bd6c7d3b50c0d29f6ed4185014e1`).
+The shared oracle was not modified.
+
+**Updated 2026-08-11, first positive attended V3 result:** the corrected route
+moved the PowerBook 1400c pointer accurately without wedging the machine.
+Motion remained somewhat jittery, with no clear cadence difference between
+15, 30, and 60 Hz. This closes the claim that V3 has no positive metal result;
+it does not close sustained-motion stability, rate fidelity, recovery, or
+release qualification. Continuity remains isolated on a feature branch that
+will target a release-candidate branch rather than landing independently on
+`main`.
+
+The 2026-08-10 emulator input-controller isolation did not reproduce either
+metal wedge. Basic native control passed first on PMU/USB and CUDA/ADB,
+including guest-observed movement and held-button release. The exact unsafe
+resident then applied 180 positions at 30 Hz on each rig, disarmed, and
+returned to native movement with zero rejected datagrams. The PMU-ADB
+diagnostic did not pass the prerequisite: QEMU delivered and Mac OS
+acknowledged an ADB mouse autopoll packet, but the guest cursor never moved, so
+P9 was not armed there. Exact results and the distinction between negative
+emulator evidence and physical safety are in
+[continuity-mode.md](continuity-mode.md). The quarantine remains unchanged.
+
+**Updated 2026-08-10, task-time candidate ready for attended metal retest:**
+resident 1.11 removes Cursor Device, QuickDraw, and Event Manager work from the
+Time Manager callback. Task-time jGNE owns manager placement and checked,
+epoch-scoped down/up posting; every reset forces low-memory up immediately and
+cancels stale cursor debt. Native takeover samples both `CursorData.where` and
+`RawMouse` with separate baselines, excluding the pending host point and eight
+recent owned points.
+
+The emulator campaign also reproduced a guest-wide communications failure in
+the PPC application at 78/84 positions: `OTSndUData` was called inside the
+asynchronous UDP notifier. A `T_GODATA` retry alone passed once and then
+reproduced. Commit `f72b9358` makes the notifier publish only the latest ACK
+debt/address and sends one bounded attempt from each task-time wire pump.
+Source guards for that boundary and the low-memory takeover path were each
+mutation-checked.
+
+Guest build `7b6806dca802`, resident source manifest `59430281706f`, and
+fingerprint `69fabb4c5718` passed the complete 180-position fault campaign on
+both PMU/USB and CUDA/ADB: synthetic click, movement-triggered `guest-input`,
+held-button disarm, native motion, held-button TCP loss, reconnect, native
+motion after reconnect, and a fresh fourth epoch. The independent anchor
+answered after each run and both guests shut down through Finder. CUDA native
+motion/button control was separately proven on a clean boot so its click could
+not contaminate the Continuity run.
+
+The verified branch-private image is
+`agent-stage/now-stage-continuity-1.11-tasktime-safe.qcow2`, SHA-256
+`7c7f64af5da9d42bca2160d51b1e9fc2c74c81df877e46e1cfb1751d05c07783`.
+Nothing shared was baked or promoted. This changes the status from “no third
+metal retest pending” to “attended metal retest candidate available”; it does
+not erase the two negative PowerBook runs or make the feature metal-verified.
+
+**Updated 2026-08-12, held tracking alternation remains metal-open:** direct
+click and Finder drag reached the PowerBook, but the tracked cursor and dragged
+item alternated between the press point and current host point. An open menu
+showed the same alternation. The shared mechanism is ADB/PMU republishing its
+stationary physical location between Continuity writes; the original
+chain-only hooks redrew but did not ensure the incumbent trap saw one sourced
+point. The next candidate keeps a coherent held point and reasserts it in all
+three hooks immediately before their unchanged tail chains. Release and every
+authority exit clear it; the hooks never replace a trap result. The exact
+active-source mutation failed its guard by name. PMU/USB and CUDA/ADB cold
+boots of guest `59e96d42f941…` / resident `31b390c96132…` passed click, rapid
+clicks, held drag, lease release, native return, wire liveness, visual endpoint
+checks, and clean shutdown; CUDA also proved held physical takeover. Those
+rigs do not reproduce stationary PowerBook ADB republishing, so this remains
+Tested and not metal-verified.
+
+**Updated 2026-08-12, passive ADB authority observer in progress:** Pin held
+point and Virtual GetMouse together made PowerBook dragging mostly usable but
+did not remove the alternating origin/current cursor, and hiding the guest
+cursor hid both sprites without changing it. The next branch no longer adds a
+fourth coordinate reassertion. Continuity table V6 wraps exactly one relative
+ADB device's incumbent service routine, retains its handler packet and data
+pointer unchanged, and records the ADB packet plus `Mouse`, `RawMouse`,
+`MTemp`, and `MBState` around the incumbent call. The callback is bounded and
+preallocated; only PPC task time drains or persists samples. Disarm stops
+recording but deliberately leaves the passive link installed until reboot.
+CUDA/ADB installed handler ID 2 and observed two callbacks for two native QMP
+transitions. PMU/USB exposed a dormant address-3 handler ID 1, so installation
+also succeeded there, but native USB movement bypassed it and left callbacks at
+zero. Both completed the direct-pointer lifecycle and returned to native input;
+the emulator result proves transparent chaining and an ADB/USB control, not the
+source of the PowerBook's stationary republishing. On CUDA the `0x3C` two-byte
+register-0 packet left every sampled cursor global unchanged across the handler
+call even though the cursor moved later. That rules out invoking the incumbent
+from the Time Manager as an equivalent injection path: the handler feeds a
+later system update whose context must be preserved. Packet substitution on the
+real autopoll lane is the next emulator-only experiment. No PowerBook has run
+this observer yet.
+
+**Updated 2026-08-12, CUDA carrier-substitution result:** Continuity table V7
+adds an explicit `virtualADB` arm experiment, absent/off in the product host.
+It bypasses the Cursor Device position request and substitutes only tiny
+two-byte ADB register-0 carrier packets with bounded deltas toward the latest
+host point; larger physical deltas pass through. The CUDA fault instrument
+reached exact absolute move and drag targets, settled down/up with no button
+debt, recorded zero Cursor Device position applies, then passed a larger native
+delta through and exited `guest-input`. This is Tested in a private CUDA clone,
+not metal-verified. It proves the ADB handler path removes the competing
+coordinate publisher. It does not provide an idle packet clock: QEMU, and
+possibly the PowerBook trackpad, reports nothing while stationary. Do not
+enable this on metal until the passive trace establishes the PowerBook's idle
+packet behavior; the product mechanism may need a real virtual ADB device or a
+controller-level injection source rather than carrier substitution.
+
+The final gate streams held states without awaiting task-time acknowledgement
+inside Finder's cooperative tracking loop, then sends up and requires the
+settled position/generation. It also requires zero false native-input changes,
+zero new forced releases, zero Cursor Device applies, and one wrapper-attributed
+physical packet for takeover. It did not prohibit the held-time low-memory
+writer and therefore did not establish exclusive pointer authority. A related
+screen-edge metal report found that a
+previously hidden guest cursor could remain hidden: the task-time reveal path
+now redraws on every applied point even when `CrsrObscure` was already zero.
+That visibility correction is Tested, not yet rechecked on the PowerBook.
+
+**Falsified on the PowerBook, 2026-08-12:** host checkpoint `4d9ba67d` exposed
+V7 for an attended run. It moved only while a host button was held or when a
+native click supplied an ADB callback, and it did not remove the alternating
+drag-origin/current-position cursor. This is explained by the implementation,
+not a rate problem: packet substitution has no clock of its own, and the held
+gesture still uses the pre-existing Time Manager `MouseLocation` writer. The
+CUDA instrument manufactured carrier callbacks and prohibited Cursor Device
+position applies, but did not prohibit that held-point writer, so its claim of
+ADB-owned authority was overstated. The result demotes V7 to rejected research.
+Do not integrate the host toggle as a working Continuity option. Retain the
+passive observer long enough to learn whether the PowerBook snap-back traverses
+the wrapped handler; choose a physical-report ownership fence only if the trace
+proves that it does.
+
+**PowerBook observer result and next split, 2026-08-12:** the passive wrapper
+installed and entered recording state on the sole address-3 device, but its
+callback, reentry, and trace counters all remained zero during the reproduced
+drag. That epoch still applied 28 positions; Pin held point ran 11 times and
+Virtual GetMouse answered 18 calls. Requested and synthetic-owned coordinates
+both ended at `(730,101)`, distinct from the retained physical baseline
+`(621,303)`. The remaining alternation therefore does not traverse the wrapped
+ADB service routine, and neither tracking patch was dormant. The physical row
+is a retained baseline rather than proof of a live reader, so the next build
+does not patch Event Manager speculatively. It records the synthetic PPC Cursor
+Device's `CursorData.where` before and after each move, counting general
+divergence, exact drag-origin returns, and post-move disagreement. This is a
+diagnostic guest-only probe; a zero result moves the investigation outward to
+Event Manager/tracking state.
+
+**Corrected 2026-08-12, target-context installation:** that candidate installed
+the three tracking hooks once from NOW's arm service even though this resident's
+act plane has already measured Toolbox trap dispatch differing by process
+context. Finder could therefore enter its tracking loop without any of the
+three reassertions. The active-source jGNE pass now installs the complete set in
+the target before returning its synthetic mouseDown; already-installed is a
+no-op and a partial set fails closed. The exact missing target-install mutation
+fails the native source guard. NOW-68K and NOW Extension cross-build;
+the focused host controller tests and 282-test MirrorKit gate pass. This is a
+new Tested candidate, not PowerBook evidence.
+
+The same slice synchronizes the menu state the host actually knows: a title
+press consumed by Continuity opens Mirror's dropdown, title crossing switches
+it, and selection/exit/cancel closes it. **Corrected by the 2026-08-13 metal
+follow-up:** independently opened guest menus and semantic Mirror-only menu
+opening now synchronize as well. The earlier conclusion that this required a
+new resident-to-host transport is superseded and is no longer open work.
 
 ## PRE-MERGE CONSOLIDATION: Mirror is NOW-owned; the standalone product is archived (2026-08-09, `codex/mirror-session-teardown`)
 
@@ -1286,6 +4435,14 @@ a bounded count of Finder-complement scripts; and after Stop plus Quit. Also run
 the same-duration Mirror session with automatic Finder details disabled. That
 distinguishes fixed extension cost, application-partition accounting, OSA-driven
 growth, and unrelated OS/Finder growth without adding polling to the scene loop.
+
+**2026-08-11 Continuity-session observation.** After Internet Explorer was
+opened and quit during a direct-pointer pass, Finder raised an out-of-memory
+exception and the system required restart. This is consistent with the
+pre-existing system-memory-pressure row but does not attribute the growth to
+Continuity, IE, Finder, or the OSA complement path. The next attended run must
+record the four memory boundaries above; Continuity hot paths must not add a
+polling allocator probe in an attempt to explain it.
 
 ### TESTED: the suspect mechanisms are now separate guest policy domains
 
@@ -11337,6 +14494,32 @@ older reply cannot append a duplicate row. This settles the reported duplicate
 render at the state-machine level. The remaining useful check is a live host
 UI pass for the AppKit key events and sidebar redraw; no guest behavior or wire
 message changed.
+
+**2026-08-12 successor -- tested locally, not metal-verified.** Running `APPL`
+replacement is no longer the refusal path described above. Both guests now
+move an in-use application to the same volume's Trash after the authorized
+overwrite, rename the complete staging file into place, and return
+`relaunchRequired`; the host says that the still-running process must be quit
+and relaunched. The contract field is optional for older peers. A shared
+source guard pins the APPL/fBsyErr/move/rename order on both Toolbox
+implementations, and the host transfer test pins the single-prompt success
+notice.
+
+The host Files surface is also now a resizable guest/This Mac peer workspace.
+Each side owns its native sidebar and browser navigation; the right pane can
+switch between Browser, Settings, and Sharing. The guest offers icon, list,
+tree, and full-width three-column views, while both browsers support active-
+Place highlighting and Place drop targets. The guest persists root/last/custom
+startup behavior and uses larger, accessibility-aware glass breadcrumb chrome.
+Drag promises infer their type from classic Finder metadata and lazily rebuild
+forked files instead of handing non-Finder apps a generic MacBinary skeleton.
+Focused host and native tests cover the state and contract seams.
+
+Still unverified: the replacement has not run against an application actually
+executing on either classic guest, and promised fork reconstruction has not
+been redeemed by a representative set of third-party macOS app drop targets.
+Those are metal/live-app checks; builds and source ordering do not prove File
+Manager behavior or destination-specific drag negotiation.
 
 ## Multi-guest host controls: tested, not visually or metal-verified (2026-08-08)
 

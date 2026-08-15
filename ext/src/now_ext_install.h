@@ -20,6 +20,8 @@ typedef struct NowExtInstallOps {
     void (*rollback_drag)(void *context, NowPeekTable *table);
     int (*prepare_cursor)(void *context, NowPeekTable *table);
     void (*rollback_cursor)(void *context, NowPeekTable *table);
+    int (*prepare_continuity)(void *context, NowPeekTable *table);
+    void (*rollback_continuity)(void *context, NowPeekTable *table);
     int (*prepare_liveness)(void *context, NowPeekTable *table);
     void (*rollback_liveness)(void *context, NowPeekTable *table);
     int (*publish)(void *context, NowPeekTable *table);

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# check - the rig's own gate: the logic test, then every mutation it claims
+# to catch.
+#
+# A test watched to fail against ONE mutation is not watched to fail. Each
+# entry below reintroduces a specific defect by patching a COPY of
+# cursor_rig_logic.c (the source stays clean), rebuilds, and requires the
+# test to go red naming something. A mutation the test survives is
+# reported as a hole, loudly, and fails this script - that is the whole
+# point of running it.
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+CC="${CC:-cc}"
+rc=0
+
+build_and_run () {   # $1 = logic source, $2 = label; echoes PASS|FAIL
+    if ! $CC -Wall -Wextra -I"$HERE/contract" -o "$WORK/t" \
+            "$HERE/tests/rig_logic_native_test.c" "$1" >"$WORK/build.log" 2>&1; then
+        echo "BUILD-FAIL"
+        return
+    fi
+    if "$WORK/t" >"$WORK/run.log" 2>&1; then echo "PASS"; else echo "FAIL"; fi
+}
+
+echo "== clean =="
+verdict=$(build_and_run "$HERE/contract/cursor_rig_logic.c" clean)
+if [ "$verdict" != PASS ]; then
+    echo "the logic test does not pass on clean source:"
+    cat "$WORK/build.log" "$WORK/run.log" 2>/dev/null
+    exit 1
+fi
+$CC -I"$HERE/contract" -o "$WORK/t" "$HERE/tests/rig_logic_native_test.c" \
+    "$HERE/contract/cursor_rig_logic.c" 2>/dev/null && "$WORK/t"
+
+# Each mutation is a sed expression and the guard it must break.
+run_mutation () {   # $1 = name, $2 = sed script
+    local name="$1" script="$2" v
+    sed "$script" "$HERE/contract/cursor_rig_logic.c" > "$WORK/mutant.c"
+    if cmp -s "$WORK/mutant.c" "$HERE/contract/cursor_rig_logic.c"; then
+        echo "  $name: SED MATCHED NOTHING — the mutation is stale, not the code"
+        rc=1
+        return
+    fi
+    v=$(build_and_run "$WORK/mutant.c" "$name")
+    case "$v" in
+        FAIL)       echo "  $name: caught" ;;
+        PASS)       echo "  $name: NOT CAUGHT — the guard is a hole"; rc=1 ;;
+        BUILD-FAIL) echo "  $name: mutant did not compile (rewrite it)"; rc=1 ;;
+    esac
+}
+
+echo
+echo "== mutations =="
+# The burst count collapses to 1: ten coalesced commands report one.
+run_mutation "coalesce-loses-the-count" \
+    's/carried = (RigU16)(prev->coalesced + 1);/carried = 1;/'
+# The ring overflows silently, which reports a clean tail by discarding
+# the interesting part.
+run_mutation "ring-overflow-silent" \
+    's/^        t->ring_dropped++;/        ;/'
+# Out-of-order application stops being flagged.
+run_mutation "out-of-order-unflagged" \
+    's/^        t->out_of_order++;/        ;/'
+# A stale apply stamps whatever recycled its ring slot.
+run_mutation "apply-after-wrap-corrupts" \
+    's/if (s->seq == box->seq) {   \/\* still ours; the ring may have wrapped \*\//if (1) {/'
+# The picture debt settles against an unapplied sample.
+run_mutation "redraw-without-apply" \
+    's/        if (s->flags \& kRigSampleApplied) {/        if (1) {/'
+# Coalescing keeps the OLDEST rather than the newest: the mailbox stops
+# being a mailbox and becomes a one-deep queue.
+run_mutation "mailbox-keeps-the-oldest" \
+    's/^    t->mailbox.seq = cmd->seq;/    if (t->mailbox.pending) return idx;\n    t->mailbox.seq = cmd->seq;/'
+
+# The lookback collapses to "newest entry only" - the exact defect that
+# reported `redraws 0` under load on a guest.
+run_mutation "redraw-newest-entry-only" \
+    's/for (i = 1; i <= kRigRedrawLookback \&\& i <= t->ring_cap; ++i) {/for (i = 1; i <= 1; ++i) {/'
+# The settlement walks past an already-settled sample and re-stamps.
+run_mutation "redraw-walks-past-settled" \
+    's/^            return;             \/\* already settled: nothing older is owed \*\//            continue;/'
+
+echo
+[ "$rc" = 0 ] && echo "check: ok" || echo "check: FAILED"
+exit $rc

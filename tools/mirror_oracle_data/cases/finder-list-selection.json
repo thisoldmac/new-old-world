@@ -1,0 +1,38 @@
+{
+  "id": "finder-list-selection",
+  "profile": "platinum.macos-8.6.default",
+  "title": "Front Finder list view with one selected row",
+  "requiredState": [
+    "Finder is frontmost",
+    "One Finder folder window is front and in list view",
+    "Exactly one visible row is selected",
+    "No menu is open"
+  ],
+  "inputSequence": "finder-clean-desktop",
+  "inputActions": [
+    "move 750 54", "down 0", "up 0",
+    "keydown 55", "keydown 31", "keyup 31", "keyup 55",
+    "move 130 10", "down 0", "move 145 59", "up 0",
+    "move 90 116", "down 0", "up 0"
+  ],
+  "regions": [
+    {"name": "front-window", "source": "frontWindow", "inset": [0, 0, 0, 0]}
+  ],
+  "masks": [],
+  "render": {
+    "finderView": "name",
+    "finderSelectedName": "Applications",
+    "finderAvailableBytes": 1073637376,
+    "finderMetadata": {
+      "Apple Extras": {"modified": 3869263860},
+      "Applications": {"modified": 3869316420},
+      "Assistants": {"modified": 3869263860},
+      "Installer Logs": {"modified": 3869263740},
+      "Internet": {"modified": 3869263860},
+      "Mac OS Read Me Files": {"modified": 3869263860},
+      "System Folder": {"modified": 3869298840},
+      "Utilities": {"modified": 3869263800},
+      "Web Pages": {"modified": 3869264040}
+    }
+  }
+}

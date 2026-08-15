@@ -1,0 +1,41 @@
+#!/bin/sh
+# Refuse a Carbon guest that acquired a load-time InterfaceLib dependency.
+#
+# CursorDevicesGlue.o and Retro68's libInterfaceLib.a can link successfully,
+# but that archive is one monolithic import member. The resulting PEF unloads
+# before main on Mac OS 9.1, before NOW can write a diagnostic. Inspect the
+# final loader contract rather than trusting source or link order.
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "usage: tools/verify-ppc-pef-imports <guest.xcoff> <MakePEF>" >&2
+    exit 2
+fi
+
+xcoff=$1
+makepef=$2
+[ -f "$xcoff" ] || { echo "missing PowerPC XCOFF: $xcoff" >&2; exit 2; }
+[ -x "$makepef" ] || { echo "missing MakePEF: $makepef" >&2; exit 2; }
+
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/now-pef-imports.XXXXXX")
+trap 'rm -rf "$scratch"' EXIT HUP INT TERM
+if ! "$makepef" -v "$xcoff" -o "$scratch/guest.pef" \
+        >"$scratch/imports" 2>&1; then
+    cat "$scratch/imports" >&2
+    echo "PowerPC import guard could not inspect the final PEF" >&2
+    exit 1
+fi
+
+if rg -q 'PEF name "InterfaceLib"|libInterfaceLib\.a' "$scratch/imports"; then
+    rg 'InterfaceLib|CrsrDev|CursorDevice' "$scratch/imports" >&2 || true
+    echo "PowerPC import guard: REFUSED load-time InterfaceLib in the Carbon guest" >&2
+    echo "Resolve CALL_NOT_IN_CARBON entry points at runtime; this shape unloads before main on Mac OS 9.1." >&2
+    exit 1
+fi
+if ! rg -q 'PEF name "CarbonLib"' "$scratch/imports"; then
+    cat "$scratch/imports" >&2
+    echo "PowerPC import guard: final guest does not import CarbonLib" >&2
+    exit 1
+fi
+
+echo "PowerPC import guard: CarbonLib yes, InterfaceLib no"

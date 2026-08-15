@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Security
 
@@ -6,7 +7,7 @@ import Security
 struct MCPTransportPreferences {
     static let defaultHTTPPort: UInt16 = 5254
 
-    private enum Keys {
+    enum Keys {
         static let stdioEnabled = "mcp.stdio.enabled"
         static let httpEnabled = "mcp.http.enabled"
         static let httpPort = "mcp.http.port"
@@ -14,7 +15,7 @@ struct MCPTransportPreferences {
 
     let defaults: UserDefaults
 
-    var stdioEnabled: Bool {
+    var stdioStartsAutomatically: Bool {
         get {
             defaults.object(forKey: Keys.stdioEnabled) == nil
                 ? true : defaults.bool(forKey: Keys.stdioEnabled)
@@ -22,7 +23,7 @@ struct MCPTransportPreferences {
         nonmutating set { defaults.set(newValue, forKey: Keys.stdioEnabled) }
     }
 
-    var httpEnabled: Bool {
+    var httpStartsAutomatically: Bool {
         get { defaults.bool(forKey: Keys.httpEnabled) }
         nonmutating set { defaults.set(newValue, forKey: Keys.httpEnabled) }
     }
@@ -34,6 +35,45 @@ struct MCPTransportPreferences {
                 ?? Self.defaultHTTPPort
         }
         nonmutating set { defaults.set(Int(newValue), forKey: Keys.httpPort) }
+    }
+}
+
+/// The editable transport preferences shown by the MCP module.
+///
+/// Running state remains in `AgentActivityModel`; these values answer only
+/// what should happen at the next app launch and which port a future HTTP
+/// listener should bind. Keeping the two models separate prevents pressing
+/// Stop from silently changing launch policy.
+@MainActor
+final class MCPTransportSettingsModel: ObservableObject {
+    @Published var stdioStartsAutomatically: Bool {
+        didSet {
+            preferences.stdioStartsAutomatically = stdioStartsAutomatically
+        }
+    }
+    @Published var httpStartsAutomatically: Bool {
+        didSet {
+            preferences.httpStartsAutomatically = httpStartsAutomatically
+        }
+    }
+    @Published var httpPort: UInt16 {
+        didSet {
+            guard httpPort != 0 else {
+                httpPort = oldValue
+                return
+            }
+            preferences.httpPort = httpPort
+        }
+    }
+
+    private let preferences: MCPTransportPreferences
+
+    init(defaults: UserDefaults) {
+        let preferences = MCPTransportPreferences(defaults: defaults)
+        self.preferences = preferences
+        stdioStartsAutomatically = preferences.stdioStartsAutomatically
+        httpStartsAutomatically = preferences.httpStartsAutomatically
+        httpPort = preferences.httpPort
     }
 }
 

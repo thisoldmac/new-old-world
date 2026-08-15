@@ -146,7 +146,7 @@ This is the part worth reading before anyone "simplifies" the plane.
 | Route | What it does | Does the sprite move? |
 |---|---|---|
 | low memory | `MTemp`/`RawMouse`/`MouseLocation`, then `CrsrNew` ← `CrsrCouple` | **no** |
-| device | `CursorDeviceMoveTo`, then the cursor task through `JCrsrTask` | **no** |
+| device | `CursorDeviceMoveTo`; interrupt-time callers record redraw debt | **no** |
 | QuickDraw | `HideCursor()` then `ShowCursor()` | **yes** |
 
 The first two are not decoration and are not dead code: they are what
@@ -156,7 +156,11 @@ exactly the requested point — verified from outside the guest, `where`
 was 760,520 — while the drawn arrow sat at 419,333 where the emulated
 device had last left it. Calling the cursor task directly through
 `JCrsrTask` (0x08EE), the vector the pointing device's own interrupt
-handler uses, changed nothing either.
+handler uses, changed nothing either. That call is measurement history,
+not part of the current route: the first Continuity metal run made it
+from a Time Manager callback, partially wedged the PowerBook after a few
+moves, and it was removed on 2026-08-10. Interrupt-time placement now
+stops after the bounded state update and records redraw debt.
 
 So on Mac OS 9 the **blit** lives somewhere in the device interrupt path
 that neither the manager's state nor the compatibility vector reaches.
@@ -177,6 +181,20 @@ disarming a plane does not make the arrow correct again. The yield rule
 is re-checked at settlement rather than trusted from the placement,
 because time has passed and a person may have taken the mouse in exactly
 that window.
+
+Continuity has a narrower tracking-only debt. Its timer writes only
+`MouseLocation` and publishes that byte last. Once Continuity has first armed,
+chain-only `_GetMouse`, `_StillDown`, and `_Button` patches supply task-time
+redraw opportunities inside an application's tracking loop, where jGNE cannot.
+They preserve every data and address register, leave the original stack for the
+incumbent, and never enter the Cursor Device Manager. A PowerBook metal drag
+showed that ADB/PMU can republish its stationary physical point between timer
+writes, making the tracking loop alternate between the press point and the
+current host point. During a held gesture the same chain-only hooks now
+reassert the coherently published Continuity point immediately before the
+incumbent runs; they still do not answer any trap or change its stack. Mouse-up
+and every authority exit clear that active source. The hooks stay installed
+until reboot and become an idle byte-test after release.
 
 **`CrsrObscure` must be cleared, because we ARE the mouse moving.**
 `ObscureCursor` is what every text application calls on every keystroke —

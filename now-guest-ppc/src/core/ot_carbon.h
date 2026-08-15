@@ -26,6 +26,9 @@ typedef struct {
     OSStatus (*setSynchronous)(ProviderRef ref);
     OSStatus (*setNonBlocking)(ProviderRef ref);
     OSStatus (*bind)(EndpointRef ref, TBind *req, TBind *ret);
+    OSStatus (*listen)(EndpointRef ref, TCall *call);
+    OSStatus (*accept)(EndpointRef listener, EndpointRef worker, TCall *call);
+    OTResult (*getEndpointState)(EndpointRef ref);
     OSStatus (*connect)(EndpointRef ref, TCall *sndCall, TCall *rcvCall);
     OSStatus (*rcvConnect)(EndpointRef ref, TCall *call);
     OTResult (*look)(EndpointRef ref);
@@ -34,11 +37,15 @@ typedef struct {
     OTResult (*rcv)(EndpointRef ref, void *buf, OTByteCount nbytes,
                     OTFlags *flags);
     OSStatus (*sndOrderlyDisconnect)(EndpointRef ref);
+    OSStatus (*sndDisconnect)(EndpointRef ref, TCall *call);
     OSStatus (*rcvOrderlyDisconnect)(EndpointRef ref);
     OSStatus (*rcvDisconnect)(EndpointRef ref, TDiscon *discon);
     OSStatus (*unbind)(EndpointRef ref);
     OSStatus (*optionManagement)(EndpointRef ref, TOptMgmt *req,
                                  TOptMgmt *ret);
+    OSStatus (*sndUData)(EndpointRef ref, TUnitData *udata);
+    OSStatus (*rcvUData)(EndpointRef ref, TUnitData *udata, OTFlags *flags);
+    OSStatus (*rcvUDErr)(EndpointRef ref, TUDErr *uderr);
     /* How many bytes are readable right now. Diagnostic only: it is the
        one way to tell a guest that cannot keep up from a guest that is
        being starved, and those two look identical from the far end. */

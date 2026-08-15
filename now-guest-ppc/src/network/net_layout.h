@@ -7,25 +7,31 @@
    Toolbox calls, so this compiles under the host's cc for
    now-guest-ppc/tests/net_layout_test.c - the pattern diag_layout.c set.
 
-   FOUR SECTIONS, ORDERED BY WHAT IS CERTAIN. The order is the design:
+   FOUR SECTIONS IN THE MODEL, THREE ON THIS PAGE. now_net_section_rows,
+   now_net_row, now_net_section_title and now_net_button_title still
+   answer for all four - the `net` wire command (commands.c) reports the
+   complete picture to a caller that wants it - but
+   now_net_layout_compute no longer stacks a card for kNetSectionLink:
+   this Mac's own link (peer, uptime, round trip) is shown live on the
+   Connection page now, and a second copy here went stale between this
+   page's idle passes without anyone reading it. What this page still
+   shows, ordered by what is certain:
 
-     1. This connection   always a real measurement - NOW holds the
-                          endpoint, so peer and uptime need no probe and
-                          no Open Transport. The page's resting state is
-                          therefore a fact rather than an empty table.
-     2. TCP/IP            address, netmask, gateway, DNS, hardware
+     1. TCP/IP            address, netmask, gateway, DNS, hardware
                           address, MTU. One documented call.
-     3. Ports            the MACHINE'S network ports, with slots. One
+     2. Ports            the MACHINE'S network ports, with slots. One
                           documented walk.
-     4. Connections      what we cannot list, and why. Present as a
+     3. Connections      what we cannot list, and why - shrunk to one
+                          placard line, not an essay: present as a
                           section rather than omitted, because a person
                           looking for a connection list needs to find the
-                          answer where they looked for the thing.
+                          answer where they looked for the thing, but the
+                          answer itself is short.
 
-   Section 4 is the one this page exists to get right. Leaving it out
-   would be honest about our capability and useless to the person; an
-   empty table would be a lie. It renders one sentence that blames Open
-   Transport and exonerates the Mac. */
+   The Connections card is the one this page exists to get right.
+   Leaving it out would be honest about our capability and useless to the
+   person; an empty table would be a lie. It says one sentence that
+   blames Open Transport and exonerates the Mac. */
 
 #if TARGET_API_MAC_CARBON
 #include <MacTypes.h>

@@ -187,3 +187,12 @@ void now_update_offer_line(NowUpdateComponent component,
              offer->version, offer->build,
              offer->signed_artifact ? " - signed" : " - unsigned");
 }
+
+int now_update_extension_pending_activation(const char *pending_build,
+                                            const char *active_build)
+{
+    if (pending_build == NULL || pending_build[0] == '\0') return 0;
+    if (strlen(pending_build) != 64 || active_build == NULL
+        || strlen(active_build) != 40) return 1;
+    return strncmp(pending_build, active_build, 40) != 0;
+}

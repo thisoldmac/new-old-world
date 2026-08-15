@@ -13,6 +13,11 @@ modules:
     page: user-guide/reference/modules/screen.md
     ppc_pages: [kWorkshopScreenshots]
     guest_68k: supported-subset
+    title_overrides:
+      kWorkshopScreenshots: >-
+        PPC keeps its own window/rail name "Screenshots" (also this
+        module's own doc: "PowerPC Screenshots page"); "Screen" is the
+        cross-app grouping label, not the on-machine page name.
   - id: files
     title: Files
     tier: core
@@ -45,6 +50,16 @@ modules:
     page: user-guide/reference/modules/mirror.md
     ppc_pages: [kWorkshopMirror]
     guest_68k: unavailable
+  - id: continuity
+    title: Continuity
+    tier: experimental
+    domains: []
+    feature_id: null
+    page: user-guide/reference/modules/continuity.md
+    # Host-side feature: the guest's half is the resident pointer plane and
+    # the application's intake, which have no Workshop page of their own.
+    ppc_pages: []
+    guest_68k: unavailable
   - id: console
     title: Console
     tier: core
@@ -62,19 +77,23 @@ modules:
     ppc_pages: [kWorkshopChat]
     guest_68k: unavailable
   - id: web
-    title: Web
+    title: Web Proxy
     tier: experimental
     domains: []
     feature_id: null
     page: user-guide/reference/modules/web.md
     ppc_pages: [kWorkshopWeb]
     guest_68k: unavailable
-  - id: development
-    title: Development
+    title_overrides:
+      kWorkshopWeb: >-
+        PPC's own rail name is "Web" (the module doc itself repeatedly says
+        "Workshop Web page"); "Web Proxy" is the cross-app product name.
+  - id: projects
+    title: Projects
     tier: experimental
     domains: []
     feature_id: null
-    page: user-guide/reference/modules/development.md
+    page: user-guide/reference/modules/projects.md
     ppc_pages: [kWorkshopDevelopment]
     guest_68k: unavailable
   - id: census
@@ -126,10 +145,19 @@ modules:
     ppc_pages: [kWorkshopLogs]
     guest_68k: console-only
   - id: settings
-    title: Connections and preferences
+    title: Connections
     tier: core
     domains: []
     feature_id: null
     page: user-guide/reference/modules/connections-and-preferences.md
     ppc_pages: [kWorkshopPreferences, kWorkshopConnection]
     guest_68k: main-window
+    title_overrides:
+      kWorkshopPreferences: >-
+        Preferences is a second, distinct PPC page inside this module (rail
+        rearrangement, density); it is not the connection surface, so it
+        keeps its own name rather than the module's grouping title.
+      kWorkshopConnection: >-
+        PPC's own page is named "Connection" (singular, one persistent link
+        at a time — also this module's own doc: "separate Connection and
+        Preferences pages"); "Connections" is the cross-app grouping label.

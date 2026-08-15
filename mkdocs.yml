@@ -128,17 +128,18 @@ nav:
               - iCloud: user-guide/reference/modules/icloud.md
               - Processes: user-guide/reference/modules/processes.md
               - Mirror: user-guide/reference/modules/mirror.md
+              - Continuity: user-guide/reference/modules/continuity.md
               - Console: user-guide/reference/modules/console.md
               - Chat: user-guide/reference/modules/chat.md
-              - Web: user-guide/reference/modules/web.md
-              - Development: user-guide/reference/modules/development.md
+              - Web Proxy: user-guide/reference/modules/web.md
+              - Projects: user-guide/reference/modules/projects.md
               - Hardware: user-guide/reference/modules/hardware.md
               - Diagnostics: user-guide/reference/modules/diagnostics.md
               - Networking: user-guide/reference/modules/networking.md
               - Software: user-guide/reference/modules/software.md
               - MCP: user-guide/reference/modules/mcp.md
               - Logs: user-guide/reference/modules/logs.md
-              - Connections and preferences: user-guide/reference/modules/connections-and-preferences.md
+              - Connections: user-guide/reference/modules/connections-and-preferences.md
   - Developer guide:
       - Overview: developer-guide/index.md
       - Orientation: developer-guide/orientation.md
@@ -159,12 +160,14 @@ nav:
           - Change the contract: developer-guide/workflows/change-the-contract.md
           - Add a module: developer-guide/workflows/add-a-module.md
           - Emulator and metal: developer-guide/workflows/emulator-and-metal.md
+          - SheepShaver 8.6 UI oracle: developer-guide/workflows/sheepshaver-86.md
           - Documentation and gates: developer-guide/workflows/documentation-and-gates.md
           - Release documentation: developer-guide/workflows/release-documentation.md
       - Reference:
           - Verification levels: developer-guide/reference/verification-levels.md
           - Source authority: developer-guide/reference/source-authority.md
           - Repository map: developer-guide/reference/repository-map.md
+          - Distribution and bundle standard: developer-guide/reference/distribution-standard.md
           - Documentation standard: developer-guide/reference/documentation-standard.md
           - Generated AsyncAPI reference: generated/asyncapi.md
   - Engineering records:

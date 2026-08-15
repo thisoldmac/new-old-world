@@ -22,6 +22,36 @@ struct ChatDisplayRow: Identifiable, Equatable {
     var text: String
 }
 
+/* The one place a drawn row and a saved row meet. Kept together so
+   the two directions cannot disagree: a tool row that saved as a note
+   would come back as a note, silently. */
+extension StoredChatRow {
+    init(displaying row: ChatDisplayRow) {
+        switch row.kind {
+        case .person:
+            self.init(kind: .person, text: row.text)
+        case .model:
+            self.init(kind: .model, text: row.text)
+        case .note:
+            self.init(kind: .note, text: row.text)
+        case .tool(let name, let ok):
+            self.init(kind: .tool, text: row.text,
+                      toolName: name, toolOK: ok)
+        }
+    }
+
+    var displayRow: ChatDisplayRow {
+        switch kind {
+        case .person: return ChatDisplayRow(kind: .person, text: text)
+        case .model: return ChatDisplayRow(kind: .model, text: text)
+        case .note: return ChatDisplayRow(kind: .note, text: text)
+        case .tool:
+            return ChatDisplayRow(
+                kind: .tool(name: toolName ?? text, ok: toolOK), text: text)
+        }
+    }
+}
+
 private func makeChatProviderRegistry(
     store: ChatCredentialStore, transport: ChatHTTPTransport,
     runtimeProviders: [ChatProvider]
@@ -125,6 +155,18 @@ final class ChatModuleModel: ObservableObject {
     private static let modelKey = "chat.selectedModel"
     private static let paneConversation = "host-pane"
 
+    /* Saved chats. The store is optional because a machine whose
+       Application Support cannot be written is a machine where chat
+       should still WORK — it degrades to the old in-memory behaviour
+       with the reason on screen, rather than refusing to talk. */
+    private let chatStore: ChatStore?
+    @Published private(set) var chats: [ChatSummary] = []
+    @Published private(set) var chatProjects: [ChatProjectRecord] = []
+    @Published private(set) var selectedChatID: ChatID?
+    /// Why saving is not happening, when it is not.
+    @Published private(set) var storageNotice: String?
+    private var didBootstrapChats = false
+
     init(
         agentIntegration: AgentIntegrationHostAdapter,
         guestFiles: GuestFilesCommandService,
@@ -139,11 +181,18 @@ final class ChatModuleModel: ObservableObject {
         store: ChatCredentialStore = KeychainChatCredentialStore(),
         transport: ChatHTTPTransport = URLSessionChatTransport(),
         defaults: UserDefaults = UserDefaults(
-            suiteName: ProductIdentity.preferencesSuite) ?? .standard
+            suiteName: ProductIdentity.preferencesSuite) ?? .standard,
+        /* Injected — the module hands over `try? ChatStore()`, the way
+           the Projects module hands over its ProjectStore. Nil means
+           saving is unavailable, and every test that builds this model
+           incidentally gets that rather than writing into the real
+           Application Support. */
+        chatStore: ChatStore? = nil
     ) {
         self.store = store
         self.transport = transport
         self.defaults = defaults
+        self.chatStore = chatStore
         selectedWireModelID = defaults.string(forKey: Self.modelKey) ?? ""
 
         let codexClient = CodexAppServerClient()
@@ -433,6 +482,9 @@ final class ChatModuleModel: ObservableObject {
         }
         transcript.append(ChatDisplayRow(kind: .person, text: trimmed))
         conversation.append(.user(trimmed))
+        /* Saved before the answer, not after: a prompt lost to a crash
+           mid-answer is the one a person minds most. */
+        persistCurrentChat()
         isStreaming = true
         let turns = conversation
         let model = selectedWireModelID
@@ -490,10 +542,197 @@ final class ChatModuleModel: ObservableObject {
         }
     }
 
-    func newChat() {
+    func newChat(in projectID: ChatProjectID? = nil) {
         guard !isStreaming else { return }
+        persistCurrentChat()
         conversation = []
         transcript = []
+        guard let chatStore else { return }
+        do {
+            let created = try chatStore.createChat(in: projectID)
+            selectedChatID = created.id
+            reloadChatCatalog()
+        } catch {
+            note(error)
+        }
+    }
+
+    // MARK: - Saved chats
+
+    /* The page's side of persistence. Two rules run through all of it:
+       a transcript is read only when its chat is SELECTED, and the
+       harness is untouched — the wire's conversation key stays what it
+       was, because which chat a person is reading is a host-side idea
+       the guest has never been told about. */
+
+    /// Called when the page appears. Idempotent: the catalog is read
+    /// every time (cheap, metadata only), the adoption happens once.
+    func bootstrapChats() {
+        guard let chatStore else { return }
+        defer { reloadChatCatalog() }
+        guard !didBootstrapChats else { return }
+        didBootstrapChats = true
+        do {
+            /* Whatever is already on screen becomes chat #1 rather than
+               being lost the first time this runs against an existing
+               session. */
+            let live = storedTranscript()
+            let adopted = try chatStore.bootstrap(adopting: live)
+            selectedChatID = adopted.id
+            /* Nothing on screen: draw the chat we landed on. Something
+               on screen: it IS that chat now, and re-reading would
+               only replace it with what was just written. */
+            if live.isEmpty {
+                apply(try chatStore.loadTranscript(adopted.id))
+            }
+        } catch {
+            note(error)
+        }
+    }
+
+    /// Switch chats: the outgoing one is written, the incoming one is
+    /// read — the only place a transcript file is opened.
+    func selectChat(_ id: ChatID) {
+        guard let chatStore, id != selectedChatID, !isStreaming else { return }
+        persistCurrentChat()
+        do {
+            let loaded = try chatStore.loadTranscript(id)
+            selectedChatID = id
+            apply(loaded)
+            storageNotice = nil
+        } catch {
+            note(error)
+        }
+        reloadChatCatalog()
+    }
+
+    func renameChat(_ id: ChatID, to title: String) {
+        guard let chatStore else { return }
+        do {
+            try chatStore.rename(id, to: title)
+            reloadChatCatalog()
+        } catch {
+            note(error)
+        }
+    }
+
+    func deleteChat(_ id: ChatID) {
+        guard let chatStore, !(isStreaming && id == selectedChatID)
+        else { return }
+        do {
+            try chatStore.delete(id)
+            reloadChatCatalog()
+            guard id == selectedChatID else { return }
+            selectedChatID = nil
+            conversation = []
+            transcript = []
+            if let next = chats.first {
+                selectChat(next.id)
+            } else {
+                newChat()
+            }
+        } catch {
+            note(error)
+        }
+    }
+
+    func fileChat(_ id: ChatID, under projectID: ChatProjectID?) {
+        guard let chatStore else { return }
+        do {
+            try chatStore.move(id, to: projectID)
+            reloadChatCatalog()
+        } catch {
+            note(error)
+        }
+    }
+
+    @discardableResult
+    func newChatProject(name: String) -> ChatProjectRecord? {
+        guard let chatStore else { return nil }
+        do {
+            let created = try chatStore.createProject(name: name)
+            reloadChatCatalog()
+            return created
+        } catch {
+            note(error)
+            return nil
+        }
+    }
+
+    func renameChatProject(_ id: ChatProjectID, to name: String) {
+        guard let chatStore else { return }
+        do {
+            try chatStore.renameProject(id, to: name)
+            reloadChatCatalog()
+        } catch {
+            note(error)
+        }
+    }
+
+    /// Removes the folder; its chats stay, unfiled.
+    func deleteChatProject(_ id: ChatProjectID) {
+        guard let chatStore else { return }
+        do {
+            try chatStore.deleteProject(id)
+            reloadChatCatalog()
+        } catch {
+            note(error)
+        }
+    }
+
+    /// Associates a chat project with a Projects-module project — the
+    /// build target and code half of the same piece of work.
+    func associateChatProject(_ id: ChatProjectID, with linked: ProjectID?) {
+        guard let chatStore else { return }
+        do {
+            try chatStore.associate(id, with: linked)
+            reloadChatCatalog()
+        } catch {
+            note(error)
+        }
+    }
+
+    /// Writes the open chat, and names an untitled one after its first
+    /// prompt. Called when a turn ends and when the selection moves;
+    /// cheap enough to call more often than that.
+    func persistCurrentChat() {
+        guard let chatStore, let id = selectedChatID else { return }
+        let stored = storedTranscript()
+        guard !stored.isEmpty else { return }
+        do {
+            try chatStore.saveTranscript(stored, for: id)
+            if let summary = try? chatStore.summary(id),
+                summary.title == ChatStore.untitled {
+                try chatStore.rename(id, to: ChatStore.title(for: stored))
+            }
+            reloadChatCatalog()
+            storageNotice = nil
+        } catch {
+            note(error)
+        }
+    }
+
+    private func reloadChatCatalog() {
+        guard let chatStore else { return }
+        chats = (try? chatStore.list()) ?? chats
+        chatProjects = (try? chatStore.listProjects()) ?? chatProjects
+    }
+
+    private func note(_ error: Error) {
+        storageNotice = (error as? LocalizedError)?.errorDescription
+            ?? "\(error)"
+    }
+
+    /// The live pane in the store's vocabulary.
+    private func storedTranscript() -> StoredChatTranscript {
+        StoredChatTranscript(
+            rows: transcript.map(StoredChatRow.init(displaying:)),
+            turns: conversation)
+    }
+
+    private func apply(_ stored: StoredChatTranscript) {
+        transcript = stored.rows.map(\.displayRow)
+        conversation = stored.turns
     }
 
     private func handle(_ event: ChatHarnessEvent) {
@@ -523,6 +762,7 @@ final class ChatModuleModel: ObservableObject {
                 transcript.append(ChatDisplayRow(
                     kind: .note, text: "\(code)\(message)"))
             }
+            persistCurrentChat()
         }
     }
 }

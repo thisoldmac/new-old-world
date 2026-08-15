@@ -364,6 +364,26 @@ public struct Scene: Codable, Equatable, Sendable {
     }
 
     public struct MenuItem: Codable, Equatable, Sendable {
+        /// Host-only identity for the icon Mac OS draws in an Apple-menu row.
+        /// The guest menu walk does not report file catalog identity, so this
+        /// is joined by a versioned host profile or a connected acquisition
+        /// adapter. It is deliberately excluded from `CodingKeys`: menu art
+        /// is rendered locally and never becomes scene-wire payload.
+        public struct IconIdentity: Equatable, Sendable {
+            public var creator: String?
+            public var type: String?
+            public var generic: String?
+            public var systemIconID: Int?
+
+            public init(creator: String? = nil, type: String? = nil,
+                        generic: String? = nil, systemIconID: Int? = nil) {
+                self.creator = creator
+                self.type = type
+                self.generic = generic
+                self.systemIconID = systemIconID
+            }
+        }
+
         public var title: String
         /// 1-based Menu Manager item index — the row the guest will draw
         /// this item at when the menu opens (menu-drag targeting).
@@ -371,19 +391,30 @@ public struct Scene: Codable, Equatable, Sendable {
         public var separator: Bool
         public var enabled: Bool
         public var mark: Bool
+        /// A hierarchical menu holder. On classic Menu Manager records the
+        /// raw mark byte then contains a submenu ID, not checkmark ink.
+        public var submenu: Bool? = nil
         /// ⌘-shortcut character, or "" — actuation sends the KEYCODE, not
         /// this char (Finder matches on keycode; CONTROL-SURFACE.md).
         public var cmd: String
+        public var icon: IconIdentity? = nil
 
         public init(title: String, index: Int, separator: Bool = false,
                     enabled: Bool = true, mark: Bool = false,
-                    cmd: String = "") {
+                    cmd: String = "", submenu: Bool? = nil,
+                    icon: IconIdentity? = nil) {
             self.title = title
             self.index = index
             self.separator = separator
             self.enabled = enabled
             self.mark = mark
             self.cmd = cmd
+            self.submenu = submenu
+            self.icon = icon
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case title, index, separator, enabled, mark, submenu, cmd
         }
     }
 
@@ -499,8 +530,8 @@ public struct Scene: Codable, Equatable, Sendable {
         /// Dialog TextEdit content (`kind==2` windows only today).
         public var text: TextContent?
         /// Items for a Finder window, in WINDOW-LOCAL content coords — the
-        /// Finder's own live `bounds of`, which stays faithful in icon, name,
-        /// and small-icon views (`FinderItems`). nil when not fetched, or when
+        /// Finder's own live `bounds of`, which stays faithful in icon,
+        /// Buttons, name, and small-icon views (`FinderItems`). nil when not fetched, or when
         /// the window is not a resolvable Finder folder window.
         ///
         /// **Additive within IR v1** (`IRSchema.v1Additions`, lane H2
@@ -633,25 +664,66 @@ public struct Scene: Codable, Equatable, Sendable {
     /// P3 to intercept Finder's drawing. Paths are HFS paths on the guest and
     /// are deliberately not constrained to NOW's shared-tree file service.
     public struct FinderPresentation: Equatable, Sendable {
+        /// Catalog facts joined by the host's semantic file-list path. They
+        /// never enter the scene IR: the guest already sent them through the
+        /// file contract, and the Finder presentation is the host-owned shelf
+        /// where that independent answer meets the live item geometry.
+        public struct ItemMetadata: Codable, Equatable, Sendable {
+            public var dataBytes: Int?
+            public var rsrcBytes: Int?
+            /// Classic Mac epoch: seconds since 1904-01-01.
+            public var modified: Int?
+
+            public init(dataBytes: Int? = nil, rsrcBytes: Int? = nil,
+                        modified: Int? = nil) {
+                self.dataBytes = dataBytes
+                self.rsrcBytes = rsrcBytes
+                self.modified = modified
+            }
+        }
+
         public enum View: String, Equatable, Sendable {
             case icon
+            case button
             case name
             case smallIcon = "small icon"
             case unknown
+
+            /// Finder's Apple event vocabulary varies across the supported
+            /// system range. Mac OS 8.6 calls the presentation `button`,
+            /// while later Finder builds may pluralize display strings. Keep
+            /// those wire spellings at the boundary instead of weakening the
+            /// semantic enum or silently treating Buttons as small icons.
+            public static func finderWord(_ raw: String) -> Self {
+                switch raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased() {
+                case "icon", "icons": return .icon
+                case "button", "buttons": return .button
+                case "name", "list": return .name
+                case "small icon", "small icons": return .smallIcon
+                default: return .unknown
+                }
+            }
         }
 
         public var path: String
         public var view: View
         public var selectedNames: Set<String>
+        public var itemMetadata: [String: ItemMetadata]
+        public var availableBytes: Int?
         public var pages: Int
         public var complete: Bool
 
         public init(path: String, view: View,
                     selectedNames: Set<String> = [], pages: Int = 1,
-                    complete: Bool = true) {
+                    complete: Bool = true,
+                    itemMetadata: [String: ItemMetadata] = [:],
+                    availableBytes: Int? = nil) {
             self.path = path
             self.view = view
             self.selectedNames = selectedNames
+            self.itemMetadata = itemMetadata
+            self.availableBytes = availableBytes
             self.pages = pages
             self.complete = complete
         }
@@ -762,8 +834,10 @@ public struct Scene: Codable, Equatable, Sendable {
     /// One desktop icon. Position is the saved Finder `fdLocation` in GLOBAL
     /// screen coords; `placed` is false for {0,0} (Finder auto-arranges those
     /// at draw time — the real position isn't in the catalog, so we don't
-    /// invent one). `type`/`creator` key a future per-app icon; today the
-    /// renderer draws a generic glyph by kind/alias.
+    /// invent one). `type`/`creator` key the extracted application icon, while
+    /// `aliasTarget` identifies what an alias represents. A path-addressed
+    /// custom Finder icon may override both when the external pack carries the
+    /// item's own resource-fork art; only then does rendering fall back by kind.
     public struct DesktopItem: Codable, Equatable, Sendable {
         public var name: String
         /// `folder` | `disk` | `application` | `file`, reduced from the

@@ -380,13 +380,18 @@ def render(p: dict) -> str:
             L.append(f"  local build  sourceManifest "
                      f"{str(s.get('localSourceManifest'))[:12]}"
                      f"  buildFingerprint {str(s['localBuildFingerprint'])[:12]}")
+        elif s.get("artifactOverride"):
+            L.append("  local build  explicit artifact override; identity deferred"
+                     " to guest report")
         if s.get("residentReported"):
             r = s["residentReported"]
             L.append(f"  GUEST SAID   lifecycle={r.get('lifecycle')}"
                      f" capabilities={r.get('capabilities')}")
             L.append(f"               sourceManifest {str(r.get('sourceManifest'))[:12]}"
                      f"  buildFingerprint {str(r.get('buildFingerprint'))[:12]}")
-        L.append("  So the resident under test is THIS TREE'S BUILD, staged into a")
+        staged_owner = ("THE EXPLICIT ARTIFACTS ABOVE" if s.get("artifactOverride")
+                        else "THIS TREE'S BUILD")
+        L.append(f"  So the resident under test is {staged_owner}, staged into a")
         L.append("  clone — not whatever was baked into the base image.")
     L.append(bar)
     return "\n".join(L)
@@ -440,12 +445,18 @@ def markdown(p: dict) -> str:
                  "not used and is not the oracle for this run."))
     s = p.get("staged") or {}
     if s:
-        rows.append(("Staged resident",
-                     f"this checkout's build, staged into the clone and "
-                     f"cold-booted: sourceManifest "
-                     f"`{str(s.get('localSourceManifest','—'))[:12]}`, "
-                     f"buildFingerprint "
-                     f"`{str(s.get('localBuildFingerprint','—'))[:12]}`"))
+        if s.get("artifactOverride"):
+            staged_description = (
+                "explicit artifact override, staged into the clone and "
+                "cold-booted; local identity intentionally not inferred")
+        else:
+            staged_description = (
+                f"this checkout's build, staged into the clone and "
+                f"cold-booted: sourceManifest "
+                f"`{str(s.get('localSourceManifest','—'))[:12]}`, "
+                f"buildFingerprint "
+                f"`{str(s.get('localBuildFingerprint','—'))[:12]}`")
+        rows.append(("Staged resident", staged_description))
         r = s.get("residentReported")
         if r:
             rows.append(("Resident (guest's own `mirror`)",

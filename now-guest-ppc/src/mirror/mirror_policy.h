@@ -3,32 +3,27 @@
 
 #include <MacTypes.h>
 
-/* Application-owned policy for the four different ways Mirror may observe
-   or disturb this Mac. These are deliberately not plane bits: Finder
-   complements and foreground discovery are acquisition strategies, while
-   structure and content are resident-backed observation domains. Keeping
-   them named here prevents a caller from treating "Mirror enabled" as one
-   permission that silently enables all four. */
-typedef enum MirrorPolicyDomain {
-    kMirrorPolicyStructure = 0,
-    kMirrorPolicyFinderComplements,
-    kMirrorPolicyContent,
-    kMirrorPolicyForegroundCycle,
-    kMirrorPolicyEnd
-} MirrorPolicyDomain;
+/* This Mac's own answer to one question: may it be mirrored? Every
+   guest-side Mirror boundary — structure claims, Finder complements,
+   drawing traces, foreground discovery — asks this and nothing else.
 
-enum { kMirrorPolicyCount = kMirrorPolicyEnd };
+   It used to be four questions, one per observation strategy, and they
+   retired on 2026-08-15 because the host's controls are five PLANES and
+   the two vocabularies never mapped one-to-one: a person reading either
+   page could not predict the other. Granularity moved to the host, whole.
+   The veto did not move: false here refuses everything, whatever the host
+   permits. */
 
 typedef struct MirrorPolicy {
-    Boolean structure;
-    Boolean finder_complements;
-    Boolean content;
-    Boolean foreground_cycle;
+    Boolean enabled;
 } MirrorPolicy;
 
 void now_mirror_policy_get(MirrorPolicy *out);
-Boolean now_mirror_policy_enabled(MirrorPolicyDomain domain);
-OSErr now_mirror_policy_set(MirrorPolicyDomain domain, Boolean enabled);
-const char *now_mirror_policy_name(MirrorPolicyDomain domain);
+Boolean now_mirror_policy_enabled(void);
+OSErr now_mirror_policy_set(Boolean enabled);
+/* The consent checkbox's label, here rather than in the module for the
+   same reason every other string on that page is: the host cc compiles
+   this file, so a test can read what a person would read. */
+const char *now_mirror_policy_name(void);
 
 #endif /* NOW_MIRROR_POLICY_H */

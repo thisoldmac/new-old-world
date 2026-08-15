@@ -29,10 +29,18 @@ static const char *const d_gestalt[] = {
     NULL
 };
 
+static const char *const d_romdump[] = {
+    "  Writes this Mac's complete ROM to New Old World ROM.bin",
+    "  in the configured Files share. Other Mac retrieves it",
+    "  through the ordinary file stream. On a PowerBook 1400 this",
+    "  includes both the 3 MB Toolbox and 1 MB boot sections.",
+    NULL
+};
+
 static const char *const d_development[] = {
     "  Reports only opaque registration and measured capability facts.",
     "  Toolchain and Projects paths remain on this Mac and are never",
-    "  returned to the other machine.",
+    "  returned to Other Mac.",
     NULL
 };
 
@@ -48,7 +56,9 @@ static const char *const d_development_stage[] = {
     "bounded transfer lane outside the generic Files root.", NULL
 };
 static const char *const d_development_project[] = {
-    "Measures and pages one active project's source manifest.",
+    "catalog lists the active projects, eight to a page, as identity|name;",
+    "a project ID measures and pages that project's source manifest.",
+    "Staged candidates are not listed here - see development-stage.",
     "The chosen Projects root and HFS path remain private.", NULL
 };
 
@@ -87,7 +97,11 @@ static const char *const d_tail[] = {
     "  The log is a file per launch in a \"now-logs\"",
     "  folder beside this application, so what happened",
     "  survives a crash that takes everything else. The",
-    "  same command works from the other Mac's console.",
+    "  same command works from Other Mac's console.",
+    "  An area narrows to one subsystem's tag (\"files\",",
+    "  \"wire\"); \"before N\" continues an answer at the",
+    "  cursor its last line offered, back through all",
+    "  2000 held lines.",
     NULL
 };
 
@@ -462,6 +476,21 @@ static const char *const d_axtree[] = {
     "  otherwise would be a second, quieter minter.",
     NULL
 };
+static const char *const d_mirrorlog[] = {
+    "  The mirror log area's DEBUG TIER, on a session switch that is off",
+    "  each launch. Off, the ring keeps the product's story: arm/disarm,",
+    "  epoch begin, selection and grant lines, and every warning and",
+    "  error. On, the per-epoch counter dumps and per-event traces",
+    "  return - the plane's own diagnostics, ~25 lines per disarm.",
+    "",
+    "  Not saved on purpose: a diagnostic that survives a relaunch is a",
+    "  configuration nobody chose, and this one can bury every later",
+    "  log. The toggle logs its own transitions, so the log names who",
+    "  turned it on. Bare or unrecognised reports without changing",
+    "  anything.",
+    NULL
+};
+
 static const char *const d_mirror[] = {
     "  What this Mac can prove about the one NOW Extension: lifecycle,",
     "  exact resident build, and P1-P4 support, request, active, format,",
@@ -562,6 +591,17 @@ static const char *const d_put[] = {
     NULL
 };
 
+static const char *const d_cancel[] = {
+    "  Stops whatever file is moving, in whichever",
+    "  direction — a file arriving from Other Mac or",
+    "  one this Mac asked for. It needs no name: the lane",
+    "  is one transfer wide, so there is only ever one",
+    "  thing to stop. A file this Mac is SENDING cannot be",
+    "  stopped from here yet, and says so rather than",
+    "  reporting a quiet machine.",
+    NULL
+};
+
 static const char *const d_mv[] = {
     "  Both paths are relative to the share root. The",
     "  second is the whole destination including the new",
@@ -593,10 +633,10 @@ static const char *const d_mkdir[] = {
 };
 
 static const char *const d_chat[] = {
-    "  Talks to a model through the other Mac's harness.",
+    "  Talks to a model through Other Mac's harness.",
     "  The conversation lives over there, one turn at a",
     "  time. Two steps to pick a model, by name not id:",
-    "    --models     list the other Mac's providers",
+    "    --models     list Other Mac's providers",
     "    --models P   list provider P's models, numbered",
     "    --model N    choose number N from that listing",
     "    --new        start a fresh conversation",
@@ -629,15 +669,18 @@ const NowCommandDoc kNowCommandDocs[] = {
       "development-open <projectID>", d_development_open },
     { "gestalt", 1, "report this Mac: system, model, RAM, CarbonLib",
       "gestalt [group] [--full]", d_gestalt },
+    { "romdump", 1, "save this Mac's complete ROM in the Files share",
+      "romdump", d_romdump },
     { "screenshot", 1, "capture this Mac's screen to its desktop",
       "screenshot [--depth {1,2,4,8,16,32}] [--bands N] [--no-save]",
       d_screenshot },
     { "ls", 1, "list a folder in the shared files",
       "ls [path]", d_ls },
-    { "put", 0, "send a file to the other Mac",
+    { "put", 0, "send a file to Other Mac",
       "put <full path>", d_put },
-    { "tail", 1, "the last lines of this launch's log",
-      "tail [lines]   (default 20, most 40)", d_tail },
+    { "tail", 1, "lines of this launch's log, pageable",
+      "tail [lines] [area] [before N]   (default 20, most 40 a page)",
+      d_tail },
     { "net", 1, "this Mac's link, address and network hardware",
       "net", d_net },
     { "putstat", 1, "where the last file received spent its time",
@@ -646,6 +689,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "wirestat [reset | sleep N | wake on|off]", d_wirestat },
     { "desktop", 1, "what this Mac's desktop is actually drawn from",
       "desktop", d_desktop },
+    { "cancel", 0, "stop the file transfer in flight",
+      "cancel   (no arguments)", d_cancel },
     { "mv", 0, "move or rename something in the shared files",
       "mv <path> <new path>", d_mv },
     { "trash", 0, "move something to the Trash",
@@ -662,7 +707,7 @@ const NowCommandDoc kNowCommandDocs[] = {
       "census [probe]   (no probe = overview)", d_census },
     { "catsearch", 1, "time a whole-disk application search",
       "catsearch", d_catsearch },
-    { "chat", 0, "talk to a model through the other Mac",
+    { "chat", 0, "talk to a model through Other Mac",
       "chat <text> | chat --models [provider] | --model <n> | --new | --stop",
       d_chat },
     { "sw", 1, "what is installed on this Mac",
@@ -729,6 +774,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "axsnap", d_axsnap },
     { "mirror", 1, "NOW Extension lifecycle and P1-P4 plane facts",
       "mirror", d_mirror },
+    { "mirrorlog", 1, "mirror debug diagnostics in the log, on or off",
+      "mirrorlog [on|off]", d_mirrorlog },
     { "cycle", 1, "bring each application forward once so the Mirror can "
       "see it", "cycle", d_cycle },
     { "help", 1, "list commands (\"help <cmd>\" for one)",

@@ -1,4 +1,6 @@
 import Foundation
+import Contacts
+import Photos
 import XCTest
 @testable import Host
 
@@ -7,6 +9,28 @@ import XCTest
 /// must never cost a person the share they had chosen.
 @MainActor
 final class CloudModuleModelTests: XCTestCase {
+    private final class AuthorizationSpy: CloudAuthorizationHandling {
+        var photos: PHAuthorizationStatus = .notDetermined
+        var contacts: CNAuthorizationStatus = .notDetermined
+        var photoRequests = 0
+        var contactRequests = 0
+
+        func photosStatus() -> PHAuthorizationStatus { photos }
+        func contactsStatus() -> CNAuthorizationStatus { contacts }
+        func requestPhotos(
+            _ completion: @escaping @MainActor @Sendable () -> Void
+        ) {
+            photoRequests += 1
+            completion()
+        }
+        func requestContacts(
+            _ completion: @escaping @MainActor @Sendable () -> Void
+        ) {
+            contactRequests += 1
+            completion()
+        }
+    }
+
     private var listener: GuestListener!
     private var defaults: UserDefaults!
     private var drive: URL!
@@ -35,9 +59,11 @@ final class CloudModuleModelTests: XCTestCase {
         return url
     }
 
-    private func model() -> CloudModuleModel {
+    private func model(
+        authorization: any CloudAuthorizationHandling = AuthorizationSpy()
+    ) -> CloudModuleModel {
         CloudModuleModel(listener: listener, defaults: defaults,
-                         driveURL: drive)
+                         driveURL: drive, authorization: authorization)
     }
 
     func testTheToggleRemembersAndRestoresTheShare() {
@@ -61,42 +87,19 @@ final class CloudModuleModelTests: XCTestCase {
                            + "as the folder to go back to")
     }
 
-    func testTheDownloadsSettingDefaultsToLong640AndPersists() {
-        let model = model()
-        XCTAssertEqual(model.downloadSize("photos"), .long640,
-                       "the default fits the screens the fetch is for")
-        model.setDownloadSize("photos", .original)
-        XCTAssertEqual(model.downloadSize("photos"), .original)
-        XCTAssertEqual(
-            defaults.string(forKey: PhotosCloudProvider.downloadSizeKey),
-            "original",
-            "written where the provider's get pipeline reads it")
-        XCTAssertTrue(model.hasDownloadSize("photos"))
-        XCTAssertFalse(model.hasDownloadSize("contacts"),
-                       "only the service whose originals dwarf the guest")
-    }
+    func testGrantAccessHandsTheRequestToTheNativeAuthorizationOwner() {
+        let authorization = AuthorizationSpy()
+        defaults.set(true, forKey: PhotosCloudProvider.enabledKey)
+        defaults.set(true, forKey: ContactsCloudProvider.enabledKey)
+        let model = model(authorization: authorization)
 
-    /// Every stop persists through the model the same way — the picker
-    /// (bound to DownloadSize.allCases) follows automatically, so this
-    /// proves the storage half only.
-    func testEveryDownloadStopPersistsThroughTheModel() {
-        let model = model()
-        model.setDownloadSize("photos", .long1024)
-        XCTAssertEqual(model.downloadSize("photos"), .long1024)
-        model.setDownloadSize("photos", .long1600)
-        XCTAssertEqual(model.downloadSize("photos"), .long1600)
-        XCTAssertEqual(
-            defaults.string(forKey: PhotosCloudProvider.downloadSizeKey),
-            "long1600")
-    }
+        XCTAssertTrue(model.canRequestAccess("photos"))
+        XCTAssertTrue(model.canRequestAccess("contacts"))
+        model.requestAccess("photos")
+        model.requestAccess("contacts")
 
-    /// A setting written by the version before this one names a token
-    /// that no longer exists. It must read as the default, not crash and
-    /// not silently mean something else — the same graceful reading the
-    /// wire gives a retired token, one storage layer down.
-    func testARetiredFitTokenInDefaultsReadsAsTheDefault() {
-        defaults.set("fit2048", forKey: PhotosCloudProvider.downloadSizeKey)
-        XCTAssertEqual(model().downloadSize("photos"), .long640)
+        XCTAssertEqual(authorization.photoRequests, 1)
+        XCTAssertEqual(authorization.contactRequests, 1)
     }
 
     func testEveryDownloadSizeHasADistinctLabel() {

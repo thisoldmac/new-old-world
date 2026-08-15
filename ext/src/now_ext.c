@@ -29,6 +29,7 @@
  */
 
 #include <Gestalt.h>
+#include <Events.h>
 #include <LowMem.h>
 #include <MacMemory.h>
 #include <OSUtils.h>
@@ -38,6 +39,7 @@
 
 #include "peek_table.h"
 #include "now_ext_build_identity.h"
+#include "now_ext_continuity_keyboard.h"
 #include "now_ext_core_logic.h"
 #include "now_ext_install.h"
 
@@ -71,6 +73,13 @@ extern void now_ext_drag_abandon(NowPeekTable *table);
 extern int now_ext_cursor_boot(NowPeekTable *table);
 extern void now_ext_cursor_rollback(NowPeekTable *table);
 extern void now_ext_cursor_gne(NowPeekTable *table);
+/* P9 consumes the application's latest-state mailbox only when the PPC
+   application's cooperative wire pump enters its resident service. */
+extern int now_ext_continuity_boot(NowPeekTable *table);
+extern void now_ext_continuity_rollback(NowPeekTable *table);
+extern void now_ext_continuity_shape_event(EventRecord *event);
+extern void now_ext_continuity_observe_event(EventRecord *event,
+                                             NowPeekU32 ticks);
 
 /* The content plane (now_content.c), P3. Two entry points rather than
    P4's one, and the split is the plane's own: boot allocates and
@@ -265,7 +274,7 @@ static void capture_anchor(NowPeekU32 ticks)
    plane's contract (docs/resident-components.md). Both are a handful of
    low-memory reads and stores - allocate nothing, call nothing that
    moves memory. */
-void now_ext_gne_apply(void)
+void now_ext_gne_apply(EventRecord *event)
 {
     NowPeekTable *table = gNowExtTable;
     NowPeekU32 ticks;
@@ -364,6 +373,11 @@ void now_ext_gne_apply(void)
        picture that disagrees with the machine is not made correct by
        disarming a plane. Nothing owed costs a load and a return. */
     now_ext_cursor_gne(table);
+    /* Shape before observe: the observer's recorded `when` should be the
+       one the application actually receives. */
+    now_ext_continuity_shape_event(event);
+    now_ext_continuity_observe_event(event, ticks);
+    now_ext_continuity_keyboard_gne(table);
     now_content_gne(table);
     /* P5. Its own arm verdict, like P3's, because it also names an A5
        world. Disarmed it is a load, a null check and a return. */
@@ -471,6 +485,8 @@ INSTALL_STAGE(content, now_content_boot, now_content_rollback)
 INSTALL_STAGE(event, now_event_boot, now_event_rollback)
 INSTALL_STAGE(drag, now_ext_drag_boot, now_ext_drag_rollback)
 INSTALL_STAGE(cursor, now_ext_cursor_boot, now_ext_cursor_rollback)
+INSTALL_STAGE(continuity, now_ext_continuity_boot,
+              now_ext_continuity_rollback)
 INSTALL_STAGE(liveness, now_liveness_install, now_liveness_rollback)
 
 static int install_publish(void *opaque, NowPeekTable *table)
@@ -532,6 +548,8 @@ void _start(void)
     ops.rollback_drag = rollback_drag;
     ops.prepare_cursor = install_cursor;
     ops.rollback_cursor = rollback_cursor;
+    ops.prepare_continuity = install_continuity;
+    ops.rollback_continuity = rollback_continuity;
     ops.prepare_liveness = install_liveness;
     ops.rollback_liveness = rollback_liveness;
     ops.publish = install_publish;

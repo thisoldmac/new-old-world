@@ -87,6 +87,15 @@ int now_ext_liveness_should_run(const NowPeekTable *table,
     return 1;
 }
 
+int now_ext_continuity_safe_on_hardware(void)
+{
+    /* No P9 Time Manager or global jGNE service remains. The cooperative PPC
+       pump enters a bounded resident state machine, then performs placement
+       through its own synthetic Cursor Device. Metal acceptance is recorded
+       separately from this build-time route guard. */
+    return 1;
+}
+
 NowExtAnchorDecision now_ext_anchor_decide(
     NowPeekU32 now_ticks, NowPeekU32 stamp_ticks,
     NowPeekU32 current_a5, NowPeekU32 current_window_list,

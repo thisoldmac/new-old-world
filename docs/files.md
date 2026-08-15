@@ -77,12 +77,33 @@ non-control frames).
 | `file.accept {id, have?, freeBytes?, reservedBytes?, staging?}` / `file.refuse {id, code, reason}` | answer | An accept may report resume offset plus observed free space, successfully reserved stream bytes, and `same-folder-temp` staging. Codes: `busy`, `exists`, `bad-path`, `not-found`, `io-error`, `too-big`. Existing Files UI may offer a human-confirmed overwrite retry; V0.5 generic upload never does. |
 | `file.begin {id, transfer, container, bytes, ...metadata}` | sender | Announces the bulk stream (same shape family as capture.begin). |
 | `file.end {id, transfer, ok, sendMs?}` | sender | Transfer complete. |
-| `file.done {id, ok, code?, reason?, received?, crc32?, finalization?, cleanup?}` | receiver of a put | The guest confirms the receiver outcome. Success can name receiver-confirmed bytes, CRC, same-folder rename, and temp cleanup; failure can name confirmed bytes and retained/discarded staging. A put is not done until the File Manager says so. |
+| `file.done {id, ok, code?, reason?, received?, crc32?, finalization?, cleanup?, relaunchRequired?}` | receiver of a put | The guest confirms the receiver outcome. Success can name receiver-confirmed bytes, CRC, same-folder rename, temp cleanup, and whether replacing a running application requires a relaunch; failure can name confirmed bytes and retained/discarded staging. A put is not done until the File Manager says so. |
 | `file.progress {id, received}` | receiver of a put | What the guest has actually taken off the wire, sent as each 32 KB write batch flushes. Advisory: dropped rather than queued when the control queue is busy, so it is a floor that may skip. |
 | `file.cancel {transfer}` | either | Mirror of capture.cancel, same drain rule. |
 
 `file.get` needs no accept — the requester is the receiver. The bulk
 plane's contract prose ("carries capture pixel data only") is amended.
+
+### Mirror copy-on-drop
+
+Mirror reuses this same symmetric family rather than inventing a second bulk
+transport. A human drag adds one closed routing identity:
+
+- `file.get.mirrorSource` names a regular file on the guest desktop or in an
+  observed Finder window, with the exact HFS folder path for the latter;
+- `file.offer.mirrorDrop` names the guest desktop, an exact Finder folder, a
+  live application process, or an application creator.
+
+The PPC receiver resolves that identity before accepting. Host conversion is
+the ordinary text/MacBinary conversion, transfer progress is the ordinary
+file event stream, and an application receives `kAEOpenDocuments` only after
+the copied file settles. No field asks the source to move, and no Mirror drop
+overwrites an existing item. This first lane transfers regular files only.
+`LiveMirrorView` owns its native drag directly. Continuity exposes the same
+closed identities through a narrow AppKit destination at the configured
+display edge: an inbound host pasteboard continues to the live guest release
+coordinate, while an outbound guest source becomes a host file promise only
+after it crosses back to macOS.
 
 ## Agent-approved artifact lane
 
@@ -181,28 +202,68 @@ approved-artifact integration test proves the wire offer omits it.
   via NavChooseFolder, persisted (prefs v6).
 - **Send File to Host…** (File menu): NavGetFile → `file.offer` → the
   host's share folder. Console: `ls [path]`, `send <path>`.
+- **Drag in, on the guest** (2026-08-14, `workshop_drop.c`): files dragged
+  from the Finder onto the Workshop window, or dropped on NOW's icon
+  (`kAEOpenDocuments`, which this application had sent in four places and
+  never answered), queue and leave through the same `now_wire_send_file`
+  as the two faces above — a third face, not a second transfer path. The
+  window highlights its whole content region for a drag carrying HFS
+  flavours; neither handler sends, because a Drag Manager receive handler
+  runs inside the drag's tracking loop and an Apple Event handler inside
+  `AEProcessAppleEvent`. The queue drains one file at a time from the
+  event loop, since the wire carries one offer. A drop with no session
+  holds the files and says so on the status placard rather than
+  vanishing; a dropped FOLDER is refused with its reason — flat sends
+  only, no recursive send exists on this wire. **Drag-SOURCE (dragging a
+  row out of the guest's browser to the Finder) is not built**; the
+  promised-HFS half below is still the plan for it. Everything here
+  BUILDS and links; none of it has run on a Macintosh.
 - Incoming puts: written to the offered path under the root, then
   stamped; `file.done` only after both forks land.
+- An authorized overwrite of a running `APPL` follows the Finder's
+  replacement behavior: the old catalog item moves to that volume's Trash,
+  the complete staging file takes its name, and `file.done` reports
+  `relaunchRequired: true`. The old process keeps running in memory; the host
+  tells the person to quit and relaunch it before expecting the update.
 - Refusals a human caused (bad name, exists) surface via the shot-note
   hook pattern, not silence.
 
 ## Host surface — the Files module
 
-The browser is the module's centerpiece and gets the polish budget:
+The browser is the module's centerpiece and gets the polish budget. Its
+standard layout starts as a 50/50 native split: the named guest (or **No Mac
+Connected**) on the left and a peer **This Mac** pane on the right. A header
+button collapses and restores the right pane. Browser, Settings, and Sharing
+are centered in a bottom capsule rather than presented as inspector tabs.
+Both machines are targets of the same browser root and chrome; only their
+file-system adapters differ. Column view is the deliberate exception and
+gives the full module to Places, contents, and preview.
 
-- SwiftUI `Table`, sortable columns (Name, Kind, Size, Modified), icons
-  mapped from type/creator/extension, breadcrumb path bar, back/up,
-  double-click to descend, listing cache + explicit Refresh, loading /
-  empty / error states designed rather than defaulted.
+- Guest views: icon grid, AppKit list, hierarchy-oriented tree, and a
+  Finder-style three-column browser. The list keeps sortable Name, Kind,
+  Size, and Modified columns. All share the same selection, navigation,
+  transfer, and mutation model rather than implementing four file managers.
+- The breadcrumb is navigation chrome: a larger type size, continuous
+  corners, and the app's accessibility-aware Liquid Glass treatment on
+  supporting macOS versions; file content remains an ordinary opaque surface.
+- Places persistently highlights the active directory. It collapses to an icon
+  rail with per-folder tooltips rather than disappearing. Every Place is also
+  a drop target: host files copy into it and guest rows move to it.
 - Context menu: Download, Download as MacBinary, Copy Path.
-- **Drag out** (browser → Finder): NSFilePromiseProvider — the transfer
-  runs when Finder redeems the promise; progress surfaces in the module.
+- **Drag out** (browser → Finder or another app): the transfer runs only when
+  the destination redeems it. The promise advertises an inferred UTI from the
+  guest's classic type code instead of generic data; forked files are fetched
+  as MacBinary and lazily reconstructed as a flat macOS file with resource
+  fork and Finder metadata.
 - **Drag in** (Finder → browser): drop onto a folder row or the current
   folder = `file.offer` to that path; conversion badge shown during
   drag-over; `exists` refusal → overwrite confirmation.
-- Settings (in the module, collapsible like Screenshots): the host
-  **share folder** — destination for guest-initiated sends and the
-  default Download target (default ~/Downloads).
+- The Settings mode chooses the initial guest directory (share root, the last
+  successfully listed directory per machine, or a custom relative path), the
+  guest view, text conversion, and download folder.
+- The Browser mode browses the host share and supplies native URL drags into
+  the guest. The Sharing mode owns the host share boundary and one-time agent
+  approval rather than crowding those controls into the transfer footer.
 - Transfers panel row: filename, direction, progress, cancel — shared
   visual language with the Screenshots progress bar.
 

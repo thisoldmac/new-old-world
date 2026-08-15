@@ -185,6 +185,33 @@ run_c now-guest-shared now_drag_logic_test.c \
 run_c now-guest-shared now_cursor_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_cursor_logic.c
 run_c now-guest-shared log_retention_test.c "" src/log_retention.c
+# P8/P9 execution-context safety. Five PowerBook runs established that both
+# the Time Manager placement route and its later PPC HideCursor/ShowCursor
+# redraw variant can wedge the cooperative system. Continuity V2 has neither:
+# the ordinary/nested PPC wire pump enters one resident 68K service through
+# Mixed Mode, and that service reports only through its owned Cursor Device.
+run_py now-guest-shared cursor_interrupt_safety_source_test.py
+run_py now-guest-shared continuity_event_safety_source_test.py
+run_c now-guest-shared now_continuity_wire_test.c "-DNOW_CONTINUITY_HOST" \
+      src/now_continuity_wire.c
+run_c now-guest-shared now_input_owner_test.c "" src/now_input_owner.c
+run_c now-guest-shared now_continuity_logic_test.c "" src/now_continuity_logic.c
+# The observer-match decision alone: which pending event_timing entry an
+# observed synthetic mouse event belongs to. Extracted so the host cc can
+# watch it against the metal evidence that caught "first unmatched edge"
+# misattributing under rapid clicking (2026-08-13 223137.log).
+run_c now-guest-shared now_continuity_event_match_test.c "" \
+      src/now_continuity_event_match.c
+run_py now-guest-shared continuity_lease_admission_source_test.py
+# The Finder-selection stub table: what counts as a change, and which
+# grabs may be served. The second half is a consent boundary rather than
+# an optimisation - a grab reads outside the Files share - so its
+# refusals are watched here where no Macintosh is needed to try them.
+run_c now-guest-shared now_continuity_selection_test.c "" \
+      src/now_continuity_selection.c
+run_c now-guest-shared now_continuity_keyboard_logic_test.c \
+      "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
+run_py now-guest-shared continuity_keyboard_safety_source_test.py
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
 run_py now-guest-shared act_inflight_wiring_source_test.py
 # The gestaltSystemVersion decode `hello.os` carries since 2026-08-07.
@@ -224,6 +251,16 @@ run_py now-guest-shared act_correlation_source_test.py
 run_py now-guest-shared act_install_reentrant_source_test.py
 run_py now-guest-shared arg_shadow_source_test.py
 run_py now-guest-shared control_kind_source_test.py
+# The other half of the same argument. control_kind hands the scene every
+# CONTROL a page owns; this one says a page that draws its own text with
+# QuickDraw can also say what it drew. Sixteen of seventeen pages could
+# not, so a host reading them saw chrome and an empty body - and an empty
+# body is exactly what a page with nothing on it looks like.
+run_py now-guest-shared module_describe_scene_source_test.py
+# Replacing an in-use APPL is File Manager behavior that a host cc cannot
+# execute. This cross-guest source guard pins the ordering and the shared
+# relaunch receipt instead of pretending the Toolbox half ran here.
+run_py now-guest-shared running_app_replace_source_test.py
 # That gate says every control's making and unmaking goes through one
 # file; this one says the file does the right thing with them. It is here
 # rather than with the other PowerPC tests because the two are one
@@ -247,7 +284,9 @@ run_py_path tools/mirror-gate-tests/test_spin_up_ppc_shutdown.py
 run_py_path tools/mirror-gate-tests/test_lane_ports.py
 run_py_path tools/mirror-gate-tests/test_shutdown_always_available.py
 run_py_path tools/mirror-gate-tests/test_public_ci_portability.py
+run_py_path tools/mirror-gate-tests/test_continuity_probe.py
 run_py_path tools/mirror-gate-tests/test_build_guests_env.py
+run_py_path tools/mirror-gate-tests/test_extension_product_name.py
 run_py_path tools/mirror-gate-tests/test_qemu_memory_oracle.py
 # The tool that reports where the arc stands, driven against a synthetic
 # repository rather than read. It was wrong about arc state — a source
@@ -272,16 +311,28 @@ run_py_path tools/mirror-gate-tests/test_merge_census_gate.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
+run_py now-guest-ppc census_probes_size_scaling_source_test.py
 run_c now-guest-ppc census_report_test.c     ""  src/census/census_report.c src/core/json.c
+run_c now-guest-ppc hardware_sizes_test.c    ""  src/census/hardware_sizes.c
 run_c now-guest-ppc conn_fields_test.c       ""  src/connection/conn_fields.c
 run_c now-guest-ppc diag_layout_test.c       ""  src/diagnostics/diag_layout.c
 run_c now-guest-ppc mcp_layout_test.c        ""  src/mcp/mcp_layout.c
 run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
+# `tail`'s shared selection: the grammar both faces parse, the exact area
+# match, and the sequence cursor that pages a LIVE ring without skipping
+# or repeating a line. The harness stands in for nowlog.c's ring.
+run_c now-guest-ppc logquery_native_test.c   ""  src/core/logquery.c
 run_c now-guest-ppc product_feature_policy_test.c "" \
       src/core/product_features.generated.c src/core/product_feature_policy.c
 run_c now-guest-ppc sha256_test.c            ""  src/update/sha256.c
 run_c now-guest-ppc update_model_test.c      ""  src/update/update_model.c
+run_c now-guest-ppc update_activation_test.c \
+      "-I $repo_root/now-guest-ppc/tests/toolbox_shim" \
+      src/update/update_activation.c src/update/update_model.c
 run_py now-guest-ppc update_flow_source_test.py
+run_c now-guest-ppc carbon_warning_model_test.c "" \
+      src/core/carbon_warning_model.c
+run_py now-guest-ppc carbon_warning_source_test.py
 # The wire-latency histogram. It is an INSTRUMENT, and an instrument that
 # miscounts reports a plausible wrong number rather than failing - so its
 # bucket edges, its unstarted minimum and its median rule are asserted
@@ -294,10 +345,19 @@ run_c now-guest-ppc loopstat_test.c          ""  src/core/loopstat.c
 # notification - so the rule is a function with a test rather than a
 # ternary in an event loop.
 run_c now-guest-ppc wire_sleep_test.c        ""  src/core/wire_sleep.c
+# G-8's naming seam: "This Mac" always, the peer's own reported name or
+# "Other Mac" - never the retired "the other Mac" - when none is known.
+# Pure so the fallback rule is a fact-in-fact-out test, not a live wire.
+run_c now-guest-ppc peer_name_test.c         ""  src/core/peer_name.c
 # `wirestat`'s grammar, shared by its two faces. It SETS the conditions
 # every number in this arc was taken under, so a misparse does not fail -
 # it measures a condition nobody chose.
 run_c now-guest-ppc wirestat_cmd_test.c      ""  src/core/wirestat_cmd.c
+# The mirror debug gate: default OFF and a closed on/off grammar. Both
+# failure directions are quiet - a misparse floods every later log with
+# a condition nobody chose, a wrong default makes the gate a no-op.
+run_c now-guest-ppc mirror_debug_test.c      ""  src/mirror/mirror_debug.c
+run_py now-guest-ppc mirror_debug_gate_source_test.py
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c
@@ -305,6 +365,18 @@ run_c now-guest-ppc peek_lease_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/peek/peek_lease.c
 run_py now-guest-ppc peek_owner_source_test.py
 run_py now-guest-ppc peek_self_init_source_test.py
+# The nested-loop half of the pump rule, which the wire's reentrancy guard
+# quietly exempted the cursor plane from.
+run_py now-guest-ppc continuity_nested_pump_source_test.py
+# The Finder-selection poll's three gates and its caller. All four are
+# Toolbox or ordering properties a host cc cannot reach: no epoch means
+# no poll, a held button means no poll, and being called from
+# conn_service alone is what guarantees no Apple Event is ever sent from
+# inside a nested Toolbox loop.
+run_py now-guest-ppc continuity_selection_gates_source_test.py
+run_py now-guest-ppc stream_native_depth_source_test.py
+run_py now-guest-ppc web_proxy_lifecycle_source_test.py
+run_py now-guest-ppc rom_dump_atomic_source_test.py
 # The acquisition sweep's rationing. Its Toolbox half (GetNextProcess,
 # WakeUpProcess, the yield) is not covered here and does not pretend to be.
 run_c now-guest-ppc anchor_acquire_test.c \
@@ -600,6 +672,13 @@ run_c now-guest-ppc net_layout_test.c        ""  src/network/net_layout.c \
 # not a process SERVING, and the port it was told to serve is a separate
 # reading.
 run_c now-guest-ppc mirror_layout_test.c     ""  src/mirror/mirror_layout.c
+# One rule, three readers that cannot see each other: the preferences
+# migration on the guest, the compatibility fields on the wire, and the
+# host's decode of a guest that predates the master consent. It is here
+# because the failure it prevents is a consent that widens, and that is
+# not a failure any of the three would report - each would simply be
+# generous.
+run_c now-guest-ppc mirror_consent_test.c    ""  src/mirror/mirror_consent.c
 # What a person is told, and what a CALLER is told, are two renderings of
 # one probe and they fail separately: a page can say the right sentence
 # while the wire ships `"state": 2` and makes every reader carry a copy
@@ -607,12 +686,13 @@ run_c now-guest-ppc mirror_layout_test.c     ""  src/mirror/mirror_layout.c
 # quietly invent - a version for an extension that published nothing, and
 # a port number for a listener that does not exist.
 run_c now-guest-ppc mirror_json_test.c       ""  src/mirror/mirror_json.c \
-      src/mirror/mirror_anchor.c src/mirror/mirror_layout.c src/core/json.c
+      src/mirror/mirror_anchor.c src/mirror/mirror_layout.c src/core/json.c \
+      src/mirror/mirror_consent.c
 # The instrument the 2026-08-07 anchor investigation had to build before it
 # could tell three defects apart. Toolbox-free on purpose, so the decision
 # it encodes is tested here rather than only on a Macintosh.
 run_c now-guest-ppc mirror_anchor_test.c     ""  src/mirror/mirror_anchor.c \
-      src/mirror/mirror_json.c src/core/json.c
+      src/mirror/mirror_json.c src/core/json.c src/mirror/mirror_consent.c
 # The other end of that same fact, and the end that lives off the guest.
 # A staged Mirror agent learns its port from a file beside it; a guest
 # that inherited the base image's copy ran an agent nothing could reach
@@ -672,6 +752,14 @@ run_c now-guest-ppc cloud_card_cache_test.c "" \
 # "Shared folder" only left for hosts predating the field, and one colon
 # at the root/path join whichever spelling of root arrived.
 run_c now-guest-ppc files_path_label_test.c  ""  src/files/files_path_label.c
+# The rebuilt Files page, in the three parts a host cc can decide:
+# where the two named halves sit (and that the listing is what grows
+# with the window), which of four kinds of news the one status line
+# shows without any of them destroying another, and what the page calls
+# the machine at the other end when that machine has not said.
+run_c now-guest-ppc files_layout_test.c      ""  src/files/files_layout.c
+run_c now-guest-ppc files_status_test.c      ""  src/files/files_status.c
+run_c now-guest-ppc files_peer_label_test.c  ""  src/files/files_peer_label.c src/core/peer_name.c
 run_c now-guest-ppc proc_quit_args_test.c    ""  src/processes/proc_quit_args.c
 run_c now-guest-ppc proc_hide_args_test.c    ""  src/processes/proc_hide_args.c
 run_c now-guest-ppc processes_layout_test.c  ""  src/processes/processes_layout.c
@@ -679,10 +767,23 @@ run_c now-guest-ppc software_layout_test.c   ""  src/software/software_layout.c
 run_py now-guest-ppc software_size_source_test.py
 run_c now-guest-ppc sw_vers_parse_test.c     ""  src/software/sw_vers_parse.c
 run_c now-guest-ppc workshop_layout_test.c   ""  src/workshop/workshop_layout.c
+run_c now-guest-ppc workshop_order_test.c    ""  src/workshop/workshop_order.c
+# Edit>Copy in full: a page's copy_text is its own describe_scene pointed
+# at this sink, so what a person gets on the clipboard is decided here
+# once for every page - which runs are words, how two runs on one line
+# join, and what the cap does to a long scrollback.
+run_c now-guest-ppc workshop_scene_text_test.c "" \
+      src/workshop/workshop_scene_text.c
 run_c now-guest-ppc workshop_construct_test.c "" \
       src/workshop/workshop_construct.c
 run_py now-guest-ppc workshop_registry_source_test.py
 run_py now-guest-ppc sidebar_scene_source_test.py
+run_py now-guest-ppc rail_gesture_source_test.py
+# Files arriving from outside the application. Every route into it is
+# Toolbox - a Drag Manager callback, an Apple Event handler, a Finder
+# reading a resource fork - so nothing here can be compiled and run, and
+# each defect it pins is silent on the machine rather than loud.
+run_py now-guest-ppc drop_seam_source_test.py
 run_c now-guest-ppc development_contract_test.c "" \
       src/development/development_contract.c
 run_c now-guest-ppc development_build_test.c "" \
@@ -692,6 +793,12 @@ run_c now-guest-ppc development_project_test.c "" \
       src/development/development_contract.c \
       src/development/development_build.c \
       src/development/development_project.c
+run_c now-guest-ppc development_projects_rows_test.c "" \
+      src/development/development_projects_rows.c \
+      src/core/json.c
+run_c now-guest-ppc development_history_test.c "" \
+      src/development/development_contract.c \
+      src/development/development_history.c
 run_c now-guest-ppc development_sha256_test.c "" \
       src/development/development_sha256.c
 run_c now-guest-ppc development_open_test.c "" \
@@ -699,7 +806,9 @@ run_c now-guest-ppc development_open_test.c "" \
 run_py now-guest-ppc development_open_wiring_source_test.py
 run_c now-guest-ppc development_layout_test.c "" \
       src/development/development_layout.c
+run_c now-guest-ppc web_accept_test.c "" src/web/web_accept.c
 run_c now-guest-ppc web_model_test.c "" src/web/web_model.c
+run_c now-guest-ppc web_proxy_request_test.c "" src/web/web_proxy_request.c
 run_c now-guest-ppc cmd_help_test.c         ""  src/commands/cmd_help.c
 run_c now-guest-ppc cmd_line_test.c         ""  src/commands/cmd_line.c src/core/json.c
 run_c now-guest-ppc console_reply_test.c  ""  src/console/console_reply.c \
@@ -717,6 +826,9 @@ run_c now-guest-ppc gestalt_json_test.c     ""  src/commands/gestalt_json.c
 run_c now-guest-ppc input_args_test.c       ""  src/input/input_args.c
 run_py now-guest-ppc ae_document_desc_source_test.py
 run_py now-guest-ppc apple_event_lifetime_source_test.py
+run_c now-guest-ppc continuity_report_logic_test.c "" \
+      src/input/continuity_report_logic.c
+run_py now-guest-ppc continuity_intake_lifecycle_source_test.py
 # `key`'s ordering, which the C test above cannot see: PostEvent is Toolbox
 # and does not exist on a host cc, so nothing there can observe whether the
 # handler stopped at a refusal or posted first and explained afterwards. A
@@ -731,6 +843,11 @@ run_py now-guest-ppc ot_connect_source_test.py
 # the source says: the cancel frame's shape, both halves in order, and one
 # drop list rather than two that drift.
 run_py now-guest-ppc get_cancel_source_test.py
+# The same, one lane over: stopping a RECEIVE the host offered. Written with
+# the console verb in the same file because the two faces of this capability
+# are what would drift - the frame shape is pinned once and both callers of
+# it are pinned beside it.
+run_py now-guest-ppc put_cancel_source_test.py
 
 # The probe harnesses (scripts/probes/, ported from timbottu/mirror/tests).
 # Those harnesses drive a LIVE Macintosh and none of them can run here - but

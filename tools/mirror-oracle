@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Capture and compare target pixels against the NOW semantic renderer."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "tools"))
+
+from mirror_oracle.backends import QMPBackend, SheepShaverBackend  # noqa: E402
+from mirror_oracle.assets import extract_chrome  # noqa: E402
+from mirror_oracle.model import list_cases, list_profiles, load_case, load_profile  # noqa: E402
+from mirror_oracle.runner import compare, render_scene, stable_capture  # noqa: E402
+from mirror_oracle.state import state_proof_template  # noqa: E402
+
+
+def backend_for(args):
+    if args.backend == "sheepshaver":
+        return SheepShaverBackend(REPO, Path(args.vm) if args.vm else None)
+    if not args.qmp_socket:
+        raise ValueError("--qmp-socket is required for the QEMU backend")
+    return QMPBackend(REPO, Path(args.qmp_socket))
+
+
+def add_backend(parser):
+    parser.add_argument("--backend", choices=("sheepshaver", "qemu"), default="sheepshaver")
+    parser.add_argument("--vm", help="override the configured SheepShaver .sheepvm")
+    parser.add_argument("--qmp-socket", help="QEMU QMP socket")
+
+
+def add_capture(parser):
+    parser.add_argument("case")
+    parser.add_argument("--out", required=True)
+    parser.add_argument("--consecutive", type=int, default=2)
+    parser.add_argument("--max-attempts", type=int, default=8)
+    parser.add_argument("--settle", type=float, default=0.25)
+    parser.add_argument("--apply-case-input", action="store_true")
+    parser.add_argument("--state-proof")
+    add_backend(parser)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="tools/mirror-oracle")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("list")
+    chrome_parser = sub.add_parser("extract-chrome")
+    chrome_parser.add_argument("profile")
+    chrome_parser.add_argument("--guest", required=True)
+    chrome_parser.add_argument("--capture-receipt", required=True)
+    chrome_parser.add_argument("--base-assets", required=True)
+    chrome_parser.add_argument("--out", required=True)
+    prepare = sub.add_parser("prepare")
+    prepare.add_argument("version")
+    prepare.add_argument("destination")
+    capture_parser = sub.add_parser("capture")
+    add_capture(capture_parser)
+    state_parser = sub.add_parser("state-template")
+    state_parser.add_argument("case")
+    state_parser.add_argument("--capture-receipt", required=True)
+    state_parser.add_argument("--out", required=True)
+    render_parser = sub.add_parser("render")
+    render_parser.add_argument("case")
+    render_parser.add_argument("--scene", required=True)
+    render_parser.add_argument("--out", required=True)
+    compare_parser = sub.add_parser("compare")
+    compare_parser.add_argument("case")
+    compare_parser.add_argument("--guest", required=True)
+    compare_parser.add_argument("--render", required=True)
+    compare_parser.add_argument("--scene")
+    compare_parser.add_argument("--out", required=True)
+    run_parser = sub.add_parser("run")
+    add_capture(run_parser)
+    run_parser.add_argument("--scene", required=True)
+    run_parser.add_argument("--report-only", action="store_true")
+    args = parser.parse_args()
+
+    try:
+        if args.command == "list":
+            for profile in list_profiles():
+                print(f"profile {profile.id}: Mac OS {profile.system_version}, "
+                      f"{profile.width}x{profile.height}x{profile.depth}")
+            for case in list_cases():
+                print(f"case {case.id}: {case.title}")
+            return 0
+        if args.command == "prepare":
+            subprocess.run([
+                str(REPO / "scripts" / "emulator"), "sheepshaver-86", "clone",
+                args.version, str(Path(args.destination).resolve()),
+            ], check=True)
+            return 0
+        if args.command == "extract-chrome":
+            receipt = extract_chrome(
+                load_profile(args.profile), Path(args.guest),
+                Path(args.capture_receipt), Path(args.base_assets),
+                Path(args.out),
+            )
+            print(json.dumps(receipt, sort_keys=True))
+            return 0
+
+        if args.command == "state-template":
+            case = load_case(args.case)
+            profile = load_profile(case.profile)
+            destination = Path(args.out)
+            if destination.exists():
+                raise ValueError(f"state-proof destination already exists: {destination}")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            template = state_proof_template(
+                Path(args.capture_receipt), case, profile,
+            )
+            destination.write_text(json.dumps(template, indent=2) + "\n")
+            print(str(destination))
+            return 0
+
+        case = load_case(args.case)
+        profile = load_profile(case.profile)
+        if args.command == "capture":
+            receipt = stable_capture(
+                backend_for(args), case, profile, Path(args.out),
+                consecutive=args.consecutive, max_attempts=args.max_attempts,
+                settle_seconds=args.settle, apply_input=args.apply_case_input,
+                state_proof=Path(args.state_proof) if args.state_proof else None,
+            )
+            print(json.dumps(receipt["acceptedCapture"], sort_keys=True))
+            return 0
+        if args.command == "render":
+            receipt = render_scene(REPO, case, Path(args.scene), Path(args.out))
+            print(json.dumps(receipt["render"], sort_keys=True))
+            return 0
+        if args.command == "compare":
+            receipt = compare(case, profile, Path(args.guest), Path(args.render),
+                              Path(args.out), Path(args.scene) if args.scene else None)
+            print(json.dumps({"verdict": receipt["verdict"], "regions": receipt["regions"]},
+                             sort_keys=True))
+            return 0 if receipt["verdict"] == "match" else 1
+
+        root = Path(args.out)
+        root.mkdir(parents=True, exist_ok=False)
+        capture_dir = root / "capture"
+        capture_receipt = stable_capture(
+            backend_for(args), case, profile, capture_dir,
+            consecutive=args.consecutive, max_attempts=args.max_attempts,
+            settle_seconds=args.settle, apply_input=args.apply_case_input,
+            state_proof=Path(args.state_proof) if args.state_proof else None,
+        )
+        render_path = root / "render.png"
+        render_scene(REPO, case, Path(args.scene), render_path)
+        comparison = compare(case, profile,
+                             Path(capture_receipt["acceptedCapture"]["path"]),
+                             render_path, root / "comparison", Path(args.scene))
+        print(json.dumps({"verdict": comparison["verdict"],
+                          "report": str(root / "comparison" / "comparison.json")},
+                         sort_keys=True))
+        return 0 if args.report_only or comparison["verdict"] == "match" else 1
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
+        print(f"mirror-oracle: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

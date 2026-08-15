@@ -29,6 +29,7 @@ static const char *owner_name(int owner)
     case kNowPeekOwnerEvents:    return "events";
     case kNowPeekOwnerCycle:     return "cycle";
     case kNowPeekOwnerObserve:   return "observe";
+    case kNowPeekOwnerContinuity:return "continuity";
     default:                     return "?";
     }
 }

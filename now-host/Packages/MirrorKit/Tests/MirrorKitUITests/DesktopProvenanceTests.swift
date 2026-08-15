@@ -117,6 +117,34 @@ final class DesktopProvenanceTests: XCTestCase {
         XCTAssertEqual(r.provenance, .none)
     }
 
+    /// The OS 8.6 pack proves its default tile against native framebuffer
+    /// pixels and records the file explicitly. A live guest naming that same
+    /// pattern must therefore promote the render from pack fallback to
+    /// machine provenance. This also protects the name→sanitized-filename
+    /// manifest join (`Mac OS Default` is stored as `desktop.png`).
+    func testAProvenDefaultPatternNamedByTheGuestIsMachineProvenance() throws {
+        try skipUnlessAssetPack()
+        let root = try XCTUnwrap(AssetPack.root,
+                                 "no asset pack; profile acceptance not armed")
+        let data = try Data(contentsOf: root.appendingPathComponent(
+            "manifest.json"))
+        let manifest = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let desktop = try XCTUnwrap(manifest["desktop"] as? [String: Any])
+        try XCTSkipUnless(desktop["kind"] as? String == "pattern",
+                          "selected pack does not declare a pattern desktop")
+        let name = try XCTUnwrap(desktop["name"] as? String)
+
+        let r = DesktopPattern.resolve(
+            scene: scene(.init(source: "pattern", hasPattern: true,
+                               hasPicture: false, patternName: name)),
+            screen: screen)
+        XCTAssertEqual(r.provenance, .machine)
+        guard case .pattern = r.answer else {
+            return XCTFail("proved and named pattern did not resolve: \(r.answer)")
+        }
+    }
+
     // MARK: - The wire half
 
     /// The guest omits `meta.desktop` when it never asked, and that has to

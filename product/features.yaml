@@ -76,6 +76,11 @@ module_feature_coverage:
     without_extension: Basic shell only.
     extension_required: false
     status: Experimental; interactive requests take priority over queued background refreshes, but the hardware latency target is not yet verified.
+  - module_id: continuity
+    title: Pass the pointer and keyboard across a shared screen edge
+    without_extension: Refused honestly; the pointer session needs the resident plane.
+    extension_required: true
+    status: Experimental; click, double-click, drag, and keyboard verified on hardware 2026-08-14, with cursor-motion texture still under investigation.
   - module_id: console
     title: Run classic-side console commands
     without_extension: Available.
@@ -91,7 +96,7 @@ module_feature_coverage:
     without_extension: Available from the host Direct listener.
     extension_required: false
     status: Experimental; deterministic rendering is tested, while classic-browser metal verification and guest-local relay remain open.
-  - module_id: development
+  - module_id: projects
     title: Build and run classic software with a guest-owned toolchain
     without_extension: Available on the PowerPC guest.
     extension_required: false
@@ -187,6 +192,12 @@ extension_feature_coverage:
     extension_required: true
     status: Experimental and emulator-verified; physical mouse movement takes priority.
     capability_ids: [cursor]
+  - id: continuity-input
+    title: Mirror the host pointer and primary button into the guest
+    without_extension: Not available.
+    extension_required: true
+    status: Quarantined after two PowerBook 1400c wedges; current resident builds withhold the capability pending task-time-only hardening and new metal evidence.
+    capability_ids: [continuity]
 
 extension_capabilities:
   - id: discovery
@@ -243,3 +254,9 @@ extension_capabilities:
     symbols: [kNowPeekTableCapCursor]
     exposes: A drawn cursor that follows remote actions while yielding after physical mouse movement.
     posture: Emulator-verified; absence affects cursor presentation, not the underlying action.
+  - id: continuity
+    plane: P9
+    title: Mirror Continuity input
+    symbols: [kNowPeekTableCapContinuity]
+    exposes: TCP-authorized, fixed-size UDP latest-state input for pointer movement, primary clicks, and drags.
+    posture: Quarantined; the resident deliberately withholds this capability until the timer path contains no manager calls and the replacement earns fresh hardware evidence.

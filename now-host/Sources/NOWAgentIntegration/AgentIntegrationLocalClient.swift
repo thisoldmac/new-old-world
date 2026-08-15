@@ -23,6 +23,7 @@ public struct AgentIntegrationLocalClient: Sendable {
     private let transferReceiveTimeout: TimeInterval
     private let capabilitiesReceiveTimeout: TimeInterval
     private let captureReceiveTimeout: TimeInterval
+    private let guestLogReceiveTimeout: TimeInterval
 
     public init(endpoint: AgentIntegrationEndpoint? = nil,
                 expectedUID: uid_t = geteuid()) throws {
@@ -52,7 +53,13 @@ public struct AgentIntegrationLocalClient: Sendable {
          // transfer does; a deep full screen off a 68030 spends seconds
          // more on the wire after that. This is that sum plus slack, not a
          // read-only window.
-         captureReceiveTimeout: TimeInterval = 45) throws {
+         captureReceiveTimeout: TimeInterval = 45,
+         // Read-only, but a RETRIEVAL: the app side pages the guest's
+         // `tail` verb for as long as the ask is deep, and it bounds its
+         // own walk at 90 s before answering with what it has. This is
+         // that bound plus slack, so the socket never gives up on an
+         // answer the app was still honestly assembling.
+         guestLogReceiveTimeout: TimeInterval = 100) throws {
         self.endpoint = try endpoint ?? .currentUser(uid: expectedUID)
         self.expectedUID = expectedUID
         self.readOnlyReceiveTimeout = readOnlyReceiveTimeout
@@ -60,6 +67,7 @@ public struct AgentIntegrationLocalClient: Sendable {
         self.transferReceiveTimeout = transferReceiveTimeout
         self.capabilitiesReceiveTimeout = capabilitiesReceiveTimeout
         self.captureReceiveTimeout = captureReceiveTimeout
+        self.guestLogReceiveTimeout = guestLogReceiveTimeout
     }
 
     public func sessionCapabilities(probeCostly: Bool) async throws
@@ -298,6 +306,11 @@ public struct AgentIntegrationLocalClient: Sendable {
                bare operation IS a complete request: absent means the
                verb's own default of 20 lines. */
             return try await send(.guestLogTail())
+        case .hostLogTail:
+            /* Beside the guest tail above: every field optional, so a bare
+               operation IS a complete request — the row's default count,
+               every area. */
+            return try await send(.hostLogTail())
         case .revealItem:
             preconditionFailure("A reveal requires a target")
         case .diagnostics:
@@ -465,12 +478,26 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
-    public func tailGuestLog(lines: Int?) async throws
-        -> AgentIntegrationGuestRowReportResult {
-        let response = try await send(.guestLogTail(lines: lines))
+    public func tailGuestLog(lines: Int?, area: String?) async throws
+        -> AgentIntegrationGuestLogRetrievalResult {
+        let response = try await send(.guestLogTail(lines: lines,
+                                                    area: area))
         guard let result = response.guestLogTailResult else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Local response had no guest log result")
+        }
+        return result
+    }
+
+    /// This Mac's own log. Same lane, and deliberately so: the ring lives
+    /// in the app process, so a caller on this socket is the only one who can
+    /// read the log a person actually sees.
+    public func hostLogTail(lines: Int?, area: String?) async throws
+        -> AgentIntegrationHostLogTailResult {
+        let response = try await send(.hostLogTail(lines: lines, area: area))
+        guard let result = response.hostLogTailResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no host log result")
         }
         return result
     }
@@ -723,13 +750,25 @@ public struct AgentIntegrationLocalClient: Sendable {
                    guest working exactly as intended, and the two-second
                    idle bound would report it as a broken socket. */
                 timeout = launchReceiveTimeout
+            case .guestLogTail:
+                /* Read-only but a retrieval — the app side pages the
+                   guest's `tail` for as long as the ask is deep, inside
+                   its own 90 s walk bound. */
+                timeout = guestLogReceiveTimeout
             case .bringToFront, .guestFileMutation,
-                 .transferCancel, .guestLogTail, .machineFacts,
+                 .transferCancel, .machineFacts,
                  .revealItem:
                 /* Bounded reads and small mutations. Each reaches the guest
                    and back inside its own watchdog: a `file.result` is one
                    reply, and a front is a couple of seconds of the guest
                    yielding. */
+                timeout = readOnlyReceiveTimeout
+            case .hostLogTail:
+                /* The read-only window, and for `mirrorOpen`'s reason rather
+                   than the branch above's: this one reaches NO guest. It
+                   reads memory in the app process on this Mac and answers
+                   immediately, so a longer bound could only hide a host that
+                   had stopped answering its own socket. */
                 timeout = readOnlyReceiveTimeout
             case .mirrorOpen:
                 /* The read-only window, but for the opposite reason to

@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PACKAGER="$REPO/scripts/package-sheepshaver-86"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/now-sheepshaver-package.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+SOURCE="$TMP/Source.app"
+DESTINATION="$TMP/Oracle.app"
+FAKEBIN="$TMP/bin"
+DEPS="$TMP/homebrew"
+LOG="$TMP/calls.log"
+mkdir -p "$SOURCE/Contents/MacOS" "$SOURCE/Contents/Resources" \
+    "$FAKEBIN" "$DEPS" "$TMP/macemu/SheepShaver"
+printf 'executable' > "$SOURCE/Contents/MacOS/SheepShaver"
+printf 'plist' > "$SOURCE/Contents/Info.plist"
+printf 'sdl' > "$DEPS/libSDL2.dylib"
+printf 'sdl3' > "$DEPS/libSDL3.dylib"
+printf 'vde' > "$DEPS/libvdeplug.dylib"
+printf 'GPL fixture' > "$TMP/macemu/SheepShaver/COPYING"
+chmod +x "$SOURCE/Contents/MacOS/SheepShaver"
+git init -q -b main "$TMP/macemu"
+git -C "$TMP/macemu" config user.email "package-test@example.invalid"
+git -C "$TMP/macemu" config user.name "Package Test"
+git -C "$TMP/macemu" add SheepShaver/COPYING
+git -C "$TMP/macemu" commit -qm "fixture"
+
+printf '#!/bin/sh\ncp -R "$1" "$2"\n' > "$FAKEBIN/ditto"
+printf '#!/bin/sh\ntarget="${@: -1}"\nprintf "install_name_tool" >> "$NOW_TEST_LOG"\nfor arg in "$@"; do printf " <%%s>" "$arg" >> "$NOW_TEST_LOG"; done\nprintf "\\n" >> "$NOW_TEST_LOG"\ntouch "$target.rewritten"\n' > "$FAKEBIN/install_name_tool"
+printf '#!/bin/bash\ntarget="$2"\necho "$target:"\nif [ -f "$target.rewritten" ]; then\n  case "$(basename "$target")" in\n    SheepShaver) echo " @executable_path/../Frameworks/libSDL2.dylib (compatibility version 1.0.0)"; echo " @executable_path/../Frameworks/libvdeplug.dylib (compatibility version 1.0.0)";;\n    *) echo " @rpath/$(basename "$target") (compatibility version 1.0.0)";;\n  esac\nelif [ "$(basename "$target")" = SheepShaver ]; then\n  echo " $NOW_TEST_DEPS/libSDL2.dylib (compatibility version 1.0.0)"\n  echo " $NOW_TEST_DEPS/libvdeplug.dylib (compatibility version 1.0.0)"\nelse\n  echo " $target (compatibility version 1.0.0)"\nfi\necho " /usr/lib/libSystem.B.dylib (compatibility version 1.0.0)"\n' > "$FAKEBIN/otool"
+printf '#!/bin/sh\nprintf "plutil" >> "$NOW_TEST_LOG"\nfor arg in "$@"; do printf " <%%s>" "$arg" >> "$NOW_TEST_LOG"; done\nprintf "\\n" >> "$NOW_TEST_LOG"\n' > "$FAKEBIN/plutil"
+printf '#!/bin/sh\nprintf "codesign" >> "$NOW_TEST_LOG"\nfor arg in "$@"; do printf " <%%s>" "$arg" >> "$NOW_TEST_LOG"; done\nprintf "\\n" >> "$NOW_TEST_LOG"\n' > "$FAKEBIN/codesign"
+printf '#!/bin/sh\ncase "$(basename "$1")" in libSDL2*) echo "@loader_path/libSDL3.dylib";; esac\n' > "$FAKEBIN/strings"
+chmod +x "$FAKEBIN"/*
+
+NOW_DITTO="$FAKEBIN/ditto" \
+NOW_OTOOL="$FAKEBIN/otool" \
+NOW_INSTALL_NAME_TOOL="$FAKEBIN/install_name_tool" \
+NOW_PLUTIL="$FAKEBIN/plutil" \
+NOW_CODESIGN="$FAKEBIN/codesign" \
+NOW_STRINGS="$FAKEBIN/strings" \
+NOW_SDL3_DYLIB="$DEPS/libSDL3.dylib" \
+NOW_SHEEPSHAVER_SOURCE="$TMP/macemu" \
+NOW_TEST_DEPS="$DEPS" NOW_TEST_LOG="$LOG" \
+    "$PACKAGER" "$SOURCE" "$DESTINATION" >/dev/null
+
+[ -f "$DESTINATION/Contents/Frameworks/libSDL2.dylib" ]
+[ -f "$DESTINATION/Contents/Frameworks/libSDL3.dylib" ]
+[ -f "$DESTINATION/Contents/Frameworks/libvdeplug.dylib" ]
+[ -f "$DESTINATION/Contents/Resources/Licenses/macemu-GPL-2.0.txt" ]
+grep -F "NOW_SHEEPSHAVER_HOST_APP_V1" \
+    "$DESTINATION/Contents/Resources/NOW-Oracle-Build.txt" >/dev/null
+grep -E '^source_revision=[0-9a-f]{40}$' \
+    "$DESTINATION/Contents/Resources/NOW-Oracle-Build.txt" >/dev/null
+grep -E '^bundled_dylib_presign_sha256=libSDL2.dylib [0-9a-f]{64}$' \
+    "$DESTINATION/Contents/Resources/NOW-Oracle-Build.txt" >/dev/null
+grep -E '^bundled_dylib_presign_sha256=libSDL3.dylib [0-9a-f]{64}$' \
+    "$DESTINATION/Contents/Resources/NOW-Oracle-Build.txt" >/dev/null
+[ "$(grep -c '^install_name_tool <-change>' "$LOG")" -eq 2 ]
+grep -F 'install_name_tool <-id> <@rpath/libSDL3.dylib>' "$LOG" >/dev/null
+grep -F "plutil <-replace> <CFBundleIdentifier> <-string> <dev.newoldworld.sheepshaver86oracle>" \
+    "$LOG" >/dev/null
+grep -F "codesign <--verify> <--deep> <--strict>" "$LOG" >/dev/null
+
+collision="$($PACKAGER "$SOURCE" "$DESTINATION" 2>&1 || true)"
+printf '%s\n' "$collision" | grep -F "destination already exists" >/dev/null
+
+MISSING_DESTINATION="$TMP/Missing-SDL3.app"
+missing_sdl3="$(
+    NOW_DITTO="$FAKEBIN/ditto" \
+    NOW_OTOOL="$FAKEBIN/otool" \
+    NOW_INSTALL_NAME_TOOL="$FAKEBIN/install_name_tool" \
+    NOW_PLUTIL="$FAKEBIN/plutil" \
+    NOW_CODESIGN="$FAKEBIN/codesign" \
+    NOW_STRINGS="$FAKEBIN/strings" \
+    NOW_SDL3_DYLIB="$DEPS/absent-libSDL3.dylib" \
+    NOW_TEST_DEPS="$DEPS" NOW_TEST_LOG="$LOG" \
+        "$PACKAGER" "$SOURCE" "$MISSING_DESTINATION" 2>&1 || true
+)"
+printf '%s\n' "$missing_sdl3" \
+    | grep -F "sdl2-compat requires runtime SDL3" >/dev/null
+[ ! -e "$MISSING_DESTINATION" ]
+
+echo "SheepShaver package: 8 closure and identity behaviors passed"

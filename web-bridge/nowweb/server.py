@@ -43,8 +43,8 @@ def load_config(path: Path | None) -> Config:
             raise ValueError("unknown config field: %s" % key)
     for key, item in value.items():
         setattr(config, key, item)
-    if not isinstance(config.port, int) or not 1 <= config.port <= 65535:
-        raise ValueError("port must be between 1 and 65535")
+    if not isinstance(config.port, int) or not 0 <= config.port <= 65535:
+        raise ValueError("port must be between 0 and 65535")
     if config.engine not in {"static", "playwright"}:
         raise ValueError("engine must be static or playwright")
     choose(config.default_profile)

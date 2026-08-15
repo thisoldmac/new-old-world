@@ -6,7 +6,8 @@ dependencies:
   tools:
     - type: "mcp"
       value: "now"
-      description: "NOW's local companion for a connected classic Macintosh"
-      transport: "stdio"
+      description: "NOW's app-owned local HTTP MCP for a connected classic Macintosh"
+      transport: "streamable_http"
+      url: "http://127.0.0.1:5254/mcp"
 policy:
   allow_implicit_invocation: true

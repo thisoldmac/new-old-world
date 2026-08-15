@@ -5,6 +5,10 @@
    and task time; see mirror_log.h for why that boundary is the design. */
 #include "mirror_log.h"
 #include "resident_version.h"
+/* For now_wire_pump only. now_peek_settle is a nested loop, and pump.h's
+   rule for those is not optional: the one below waits out half a second at
+   the head of every scene the host asks for. */
+#include "wire.h"
 
 #include <Files.h>
 #include <Folders.h>
@@ -337,6 +341,16 @@ int now_peek_settle(unsigned long caps, unsigned long max_ticks)
            is enough: the resident's echo rides the GNE patch, so OUR own
            call through it is usually the pass that arms. */
         (void)WaitNextEvent(0, &ev, 1L, NULL);
+        /* AND PUMP, because this is a nested loop and pump.h's rule has
+           no exception for the ones that only wait. serve_scene enters
+           here for up to half a second before every walk, on a path the
+           host polls roughly once a second while Continuity is armed -
+           so without this the pointer is dead for that half second and
+           the cause is invisible from either end. Nested inside a
+           request the wire's guard bounces and only the cursor plane
+           pumps, which is the whole point; reached outside one, this is
+           the ordinary service the rule already asks for. */
+        now_wire_pump();
     }
 }
 

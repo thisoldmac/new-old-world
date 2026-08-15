@@ -1,0 +1,60 @@
+#!/bin/sh
+# Assemble a SIGNED development-channel release DMG from this desk.
+#
+#     scripts/release-dmg                # output derived from HEAD
+#     scripts/release-dmg /abs/out-dir   # explicit new output directory
+#
+# A thin, honest wrapper over scripts/assemble-release. The assembler is
+# deliberately explicit - every input named on its command line - and the
+# first signed DMG from this desk was produced by hand-hunting those
+# inputs across an app bundle, a keychain, and a prior run's manifest.
+# This wrapper is that hunt, formalized: the three desk facts live in
+# .env.lab (gitignored, one desk's description), and a missing key stops
+# the run NAMING the key, because the failure this pattern exists to
+# prevent is a build that quietly went out signed by whatever a stale
+# default named. See docs/lab-setup.md.
+#
+#   NOW_RELEASE_SIGN_IDENTITY        codesign identity string
+#   NOW_RELEASE_CARBONLIB_DESCRIPTOR absolute path to the CarbonLib
+#                                    descriptor JSON (license material
+#                                    beside it)
+#   NOW_RELEASE_PROVISION_PROFILE    macOS team provisioning profile to
+#                                    embed; without it an identity-signed
+#                                    app is killed at spawn by AMFI and
+#                                    the Finder says only "can't be
+#                                    opened" (2026-08-14)
+#
+# The release channel is deliberately NOT wrapped: a real release is a
+# decision with more inputs than a desk file, and the assembler's own
+# refusals are the interface for it.
+
+set -eu
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+
+if [ -f "$root/.env.lab" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$root/.env.lab"
+    set +a
+fi
+
+missing=""
+[ -n "${NOW_RELEASE_SIGN_IDENTITY:-}" ] || missing="$missing NOW_RELEASE_SIGN_IDENTITY"
+[ -n "${NOW_RELEASE_CARBONLIB_DESCRIPTOR:-}" ] || missing="$missing NOW_RELEASE_CARBONLIB_DESCRIPTOR"
+[ -n "${NOW_RELEASE_PROVISION_PROFILE:-}" ] || missing="$missing NOW_RELEASE_PROVISION_PROFILE"
+if [ -n "$missing" ]; then
+    echo "release-dmg: missing key(s) in .env.lab:$missing" >&2
+    echo "  copy .env.lab.example and see docs/lab-setup.md" >&2
+    exit 1
+fi
+
+rev=$(git -C "$root" rev-parse --short HEAD)
+out=${1:-"$HOME/Lab/Builds/New-Old-World-0.2.0-$rev"}
+
+exec "$root/scripts/assemble-release" \
+    --output "$out" \
+    --carbonlib-descriptor "$NOW_RELEASE_CARBONLIB_DESCRIPTOR" \
+    --provision-profile "$NOW_RELEASE_PROVISION_PROFILE" \
+    --sign-identity "$NOW_RELEASE_SIGN_IDENTITY" \
+    --channel development

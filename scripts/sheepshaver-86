@@ -1,0 +1,580 @@
+#!/usr/bin/env bash
+#
+# sheepshaver-86 — operate the developer-owned Mac OS 8.6 Carbon UI oracle.
+#
+# This is a lab harness, not a product dependency. It never downloads or
+# redistributes SheepShaver, a ROM, Mac OS, or CarbonLib. Those inputs describe
+# one developer's desk and are named in .env.lab.
+#
+#     scripts/sheepshaver-86 doctor
+#     scripts/sheepshaver-86 launch
+#     scripts/sheepshaver-86 stage path/to/Application.bin
+#     scripts/sheepshaver-86 install-apps path/to/NOW.bin path/to/CodeKitten.bin
+#     scripts/sheepshaver-86 capture path/to/frame.bmp
+#     scripts/sheepshaver-86 input "move 200 120" "down 0" "up 0"
+#     scripts/sheepshaver-86 snapshot clean-name
+#     scripts/sheepshaver-86 rig
+#     scripts/sheepshaver-86 seal version-name
+#     scripts/sheepshaver-86 clone version-name path/to/run.sheepvm
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+ENV_LAB="$REPO/.env.lab"
+if [ ! -f "$ENV_LAB" ]; then
+    COMMON_DIR="$(git -C "$REPO" rev-parse --git-common-dir 2>/dev/null || true)"
+    if [ -n "$COMMON_DIR" ]; then
+        case "$COMMON_DIR" in
+            /*) ;;
+            *) COMMON_DIR="$REPO/$COMMON_DIR" ;;
+        esac
+        MAIN_ENV="$(cd "$COMMON_DIR/.." 2>/dev/null && pwd)/.env.lab"
+        [ -f "$MAIN_ENV" ] && ENV_LAB="$MAIN_ENV"
+    fi
+fi
+load_env_lab () {
+    local app_set="${NOW_SHEEPSHAVER_APP+x}" app_value="${NOW_SHEEPSHAVER_APP:-}"
+    local vm_set="${NOW_SHEEPSHAVER_VM+x}" vm_value="${NOW_SHEEPSHAVER_VM:-}"
+    local hfs_set="${NOW_HFSUTILS+x}" hfs_value="${NOW_HFSUTILS:-}"
+    local transfer_set="${NOW_SHEEPSHAVER_TRANSFER+x}" transfer_value="${NOW_SHEEPSHAVER_TRANSFER:-}"
+    local disk_set="${NOW_SHEEPSHAVER_DISK+x}" disk_value="${NOW_SHEEPSHAVER_DISK:-}"
+    local apps_set="${NOW_SHEEPSHAVER_APPS_DIR+x}" apps_value="${NOW_SHEEPSHAVER_APPS_DIR:-}"
+    local open_set="${NOW_SHEEPSHAVER_OPEN+x}" open_value="${NOW_SHEEPSHAVER_OPEN:-}"
+    local lsof_set="${NOW_SHEEPSHAVER_LSOF+x}" lsof_value="${NOW_SHEEPSHAVER_LSOF:-}"
+    local source_set="${NOW_SHEEPSHAVER_SOURCE+x}" source_value="${NOW_SHEEPSHAVER_SOURCE:-}"
+    local kitten_set="${NOW_CODEKITTEN_SOURCE+x}" kitten_value="${NOW_CODEKITTEN_SOURCE:-}"
+    local settle_set="${NOW_SHEEPSHAVER_INPUT_SETTLE+x}" settle_value="${NOW_SHEEPSHAVER_INPUT_SETTLE:-}"
+
+    set -a; . "$ENV_LAB"; set +a
+    [ -z "$app_set" ] || export NOW_SHEEPSHAVER_APP="$app_value"
+    [ -z "$vm_set" ] || export NOW_SHEEPSHAVER_VM="$vm_value"
+    [ -z "$hfs_set" ] || export NOW_HFSUTILS="$hfs_value"
+    [ -z "$transfer_set" ] || export NOW_SHEEPSHAVER_TRANSFER="$transfer_value"
+    [ -z "$disk_set" ] || export NOW_SHEEPSHAVER_DISK="$disk_value"
+    [ -z "$apps_set" ] || export NOW_SHEEPSHAVER_APPS_DIR="$apps_value"
+    [ -z "$open_set" ] || export NOW_SHEEPSHAVER_OPEN="$open_value"
+    [ -z "$lsof_set" ] || export NOW_SHEEPSHAVER_LSOF="$lsof_value"
+    [ -z "$source_set" ] || export NOW_SHEEPSHAVER_SOURCE="$source_value"
+    [ -z "$kitten_set" ] || export NOW_CODEKITTEN_SOURCE="$kitten_value"
+    [ -z "$settle_set" ] || export NOW_SHEEPSHAVER_INPUT_SETTLE="$settle_value"
+}
+if [ -f "$ENV_LAB" ]; then
+    load_env_lab
+fi
+
+die () {
+    echo "sheepshaver-86: $*" >&2
+    exit 1
+}
+
+need () {
+    if [ -z "${2:-}" ]; then
+        die "no $1 ($3). Set it in .env.lab or the environment; see docs/lab-setup.md."
+    fi
+    printf '%s\n' "$2"
+}
+
+APP="$(need NOW_SHEEPSHAVER_APP "${NOW_SHEEPSHAVER_APP:-}" "path to SheepShaver.app")"
+VM="$(need NOW_SHEEPSHAVER_VM "${NOW_SHEEPSHAVER_VM:-}" "path to the Mac OS 8.6 .sheepvm profile")"
+HFS="$(need NOW_HFSUTILS "${NOW_HFSUTILS:-}" "directory containing hfsutils")"
+TRANSFER="${NOW_SHEEPSHAVER_TRANSFER:-$VM/CarbonLib 1.6 Transfer.hfv}"
+BOOT_DISK="${NOW_SHEEPSHAVER_DISK:-$VM/Mac OS 8.6.hfv}"
+APPS_DIR="${NOW_SHEEPSHAVER_APPS_DIR:-Applications}"
+OPEN_TOOL="${NOW_SHEEPSHAVER_OPEN:-open}"
+LSOF_TOOL="${NOW_SHEEPSHAVER_LSOF:-lsof}"
+HDIUTIL_TOOL="${NOW_SHEEPSHAVER_HDIUTIL:-/usr/bin/hdiutil}"
+MACBINARY_TOOL="${NOW_MACBINARY_IDENTITY_TOOL:-$REPO/tools/macbinary-identity.py}"
+INPUT_SETTLE="${NOW_SHEEPSHAVER_INPUT_SETTLE:-1}"
+
+require_file () {
+    [ -f "$1" ] || die "missing $2: $1"
+}
+
+require_tool () {
+    [ -x "$1" ] || die "missing executable $2: $1"
+}
+
+require_git_checkout () {
+    git -C "$1" rev-parse --git-dir >/dev/null 2>&1 \
+        || die "$2 is not a git checkout: $1"
+}
+
+disk_is_open () {
+    "$LSOF_TOOL" -t -- "$1" >/dev/null 2>&1
+}
+
+require_stopped () {
+    local disk="$1"
+    if disk_is_open "$disk"; then
+        die "refusing to write an image SheepShaver has open: $disk. Shut the guest down cleanly first."
+    fi
+}
+
+doctor () {
+    case "$VM" in
+        *.sheepvm) ;;
+        *) die "NOW_SHEEPSHAVER_VM must name a .sheepvm profile: $VM" ;;
+    esac
+    require_tool "$APP/Contents/MacOS/SheepShaver" "SheepShaver"
+    require_file "$VM/prefs" "profile preferences"
+    require_file "$VM/Mac OS ROM" "New World ROM file"
+    require_file "$BOOT_DISK" "Mac OS 8.6 boot disk"
+    require_file "$TRANSFER" "HFS transfer disk"
+    require_tool "$HFS/hmount" "hmount"
+    require_tool "$HFS/hcopy" "hcopy"
+    require_tool "$HFS/hls" "hls"
+    require_tool "$HFS/humount" "humount"
+    require_tool "$HDIUTIL_TOOL" "hdiutil"
+
+    echo "SheepShaver app: $APP"
+    echo "Mac OS 8.6 profile: $VM"
+    echo "Boot disk: $BOOT_DISK"
+    echo "HFS transfer disk: $TRANSFER"
+    if disk_is_open "$TRANSFER"; then
+        echo "Guest state: running (transfer disk is open)"
+    else
+        echo "Guest state: stopped (transfer disk is free)"
+    fi
+}
+
+launch () {
+    doctor
+    if disk_is_open "$BOOT_DISK" || disk_is_open "$TRANSFER"; then
+        die "this profile already appears to be running"
+    fi
+    "$OPEN_TOOL" -n "$APP" --args "$VM"
+}
+
+stage () {
+    [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 stage APPLICATION.bin"
+    local artifact="$1"
+    require_file "$artifact" "MacBinary artifact"
+    require_tool "$MACBINARY_TOOL" "MacBinary identity verifier"
+    "$MACBINARY_TOOL" "$artifact" >/dev/null
+    require_file "$TRANSFER" "HFS transfer disk"
+    require_stopped "$TRANSFER"
+
+    local mounted=0
+    cleanup_mount () {
+        if [ "$mounted" -eq 1 ]; then
+            "$HFS/humount" >/dev/null || true
+        fi
+    }
+    trap cleanup_mount EXIT
+
+    "$HFS/hmount" "$TRANSFER" >/dev/null
+    mounted=1
+    # -m decodes MacBinary so both forks and Finder type/creator survive.
+    # ExtFS is convenient for plain files but is not a valid execution or
+    # installer surface for classic applications (observed error -8812).
+    "$HFS/hcopy" -m "$artifact" :
+    "$HFS/hls" -la :
+    "$HFS/humount" >/dev/null
+    mounted=0
+    trap - EXIT
+    echo "sheepshaver-86: staged $(basename "$artifact") on $TRANSFER"
+}
+
+install_apps () {
+    [ "$#" -eq 2 ] \
+        || die "usage: scripts/sheepshaver-86 install-apps NOW.bin CODEKITTEN.bin"
+    local now_artifact="$1"
+    local codekitten_artifact="$2"
+    require_file "$now_artifact" "New Old World MacBinary"
+    require_file "$codekitten_artifact" "CodeKitten MacBinary"
+    require_tool "$MACBINARY_TOOL" "MacBinary identity verifier"
+    "$MACBINARY_TOOL" "$now_artifact" --expect-name "New Old World" \
+        --expect-type APPL --expect-creator NOWo >/dev/null
+    "$MACBINARY_TOOL" "$codekitten_artifact" --expect-name "codekitten" \
+        --expect-type APPL --expect-creator O9ID >/dev/null
+    if [ -n "${NOW_CODEKITTEN_SOURCE:-}" ]; then
+        require_git_checkout "$NOW_CODEKITTEN_SOURCE" NOW_CODEKITTEN_SOURCE
+    fi
+    require_file "$BOOT_DISK" "Mac OS 8.6 boot disk"
+    require_stopped "$BOOT_DISK"
+
+    local mounted=0
+    local mount_point
+    mount_point="$(mktemp -d "${TMPDIR:-/tmp}/now-sheepshaver-hfsplus.XXXXXX")"
+    cleanup_apps_mount () {
+        if [ "$mounted" -eq 1 ]; then
+            "$HDIUTIL_TOOL" detach "$mount_point" >/dev/null || true
+        fi
+        rmdir "$mount_point" >/dev/null 2>&1 || true
+    }
+    trap cleanup_apps_mount EXIT
+
+    "$HDIUTIL_TOOL" attach -nobrowse \
+        -imagekey diskimage-class=CRawDiskImage \
+        -mountpoint "$mount_point" "$BOOT_DISK" >/dev/null
+    mounted=1
+    [ -d "$mount_point/$APPS_DIR" ] \
+        || die "application directory is absent from the boot disk: $APPS_DIR"
+    "$MACBINARY_TOOL" "$now_artifact" --expect-name "New Old World" \
+        --expect-type APPL --expect-creator NOWo \
+        --install-to "$mount_point/$APPS_DIR"
+    "$MACBINARY_TOOL" "$codekitten_artifact" --expect-name "codekitten" \
+        --expect-type APPL --expect-creator O9ID \
+        --install-to "$mount_point/$APPS_DIR"
+    ls -l "$mount_point/$APPS_DIR/New Old World" \
+        "$mount_point/$APPS_DIR/codekitten"
+    "$HDIUTIL_TOOL" detach "$mount_point" >/dev/null
+    mounted=0
+    rmdir "$mount_point" >/dev/null 2>&1 || true
+    trap - EXIT
+
+    local apps_manifest="$VM/Installed Apps.rig"
+    local pending_manifest
+    pending_manifest="$(mktemp "$VM/.installed-apps.XXXXXX")"
+    trap 'rm -f "$pending_manifest"' EXIT
+    {
+        echo "NOW_SHEEPSHAVER_APPS_V1"
+        echo "installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "applications_dir=$APPS_DIR"
+        echo "now_revision=$(git -C "$REPO" rev-parse HEAD)"
+        echo "now_artifact=$now_artifact"
+        echo "now_artifact_sha256=$(shasum -a 256 "$now_artifact" | awk '{print $1}')"
+        echo "codekitten_artifact=$codekitten_artifact"
+        echo "codekitten_artifact_sha256=$(shasum -a 256 "$codekitten_artifact" | awk '{print $1}')"
+        if [ -n "${NOW_CODEKITTEN_SOURCE:-}" ]; then
+            echo "codekitten_source=$NOW_CODEKITTEN_SOURCE"
+            echo "codekitten_revision=$(git -C "$NOW_CODEKITTEN_SOURCE" rev-parse HEAD)"
+        fi
+    } > "$pending_manifest"
+    mv "$pending_manifest" "$apps_manifest"
+    trap - EXIT
+    echo "sheepshaver-86: installed NOW and CodeKitten in $APPS_DIR"
+    echo "  manifest: $apps_manifest"
+}
+
+capture () {
+    [ "$#" -eq 1 ] \
+        || die "usage: scripts/sheepshaver-86 capture DESTINATION.bmp"
+    local destination="$1"
+    case "$destination" in
+        *.bmp) ;;
+        *) die "capture destination must end in .bmp" ;;
+    esac
+    [ -d "$(dirname "$destination")" ] \
+        || die "capture destination directory is absent: $(dirname "$destination")"
+    [ ! -e "$destination" ] \
+        || die "capture destination already exists: $destination"
+    if ! disk_is_open "$BOOT_DISK"; then
+        die "the SheepShaver profile is not running"
+    fi
+
+    local request="$VM/.now-capture-request"
+    local response="$VM/.now-capture.bmp"
+    local receipt="$VM/.now-capture-response"
+    [ ! -e "$request" ] || die "a framebuffer capture is already pending"
+    rm -f "$response" "$receipt"
+    touch "$request"
+    local attempt
+    for attempt in $(seq 1 100); do
+        if [ -f "$response" ] && [ -f "$receipt" ]; then
+            [ "$(cat "$receipt")" = "NOW_ORACLE_CAPTURE_NATIVE_RGB_V2" ] \
+                || die "framebuffer capture response has an unknown pixel contract: $(cat "$receipt")"
+            mv "$response" "$destination"
+            rm -f "$request" "$receipt"
+            echo "sheepshaver-86: captured guest framebuffer: $destination"
+            return
+        fi
+        if [ -f "$response" ] && [ ! -e "$request" ]; then
+            rm -f "$response"
+            die "the running SheepShaver build returned an unversioned framebuffer; use a build with NOW_ORACLE_CAPTURE_NATIVE_RGB_V2"
+        fi
+        sleep 0.05
+    done
+    rm -f "$request" "$response" "$receipt"
+    die "framebuffer capture timed out; the configured SheepShaver app lacks the oracle capture seam or is not presenting frames"
+}
+
+oracle_input () {
+    [ "$#" -gt 0 ] \
+        || die 'usage: scripts/sheepshaver-86 input "ACTION" ["ACTION" ...]'
+    if ! disk_is_open "$BOOT_DISK"; then
+        die "the SheepShaver profile is not running"
+    fi
+    [[ "$INPUT_SETTLE" =~ ^([0-9]+)(\.[0-9]+)?$ ]] \
+        || die "NOW_SHEEPSHAVER_INPUT_SETTLE must be a non-negative number of seconds"
+
+    local action
+    for action in "$@"; do
+        if [[ "$action" =~ ^move\ [0-9]+\ [0-9]+$ ]] \
+            || [[ "$action" =~ ^(down|up)\ [0-2]$ ]] \
+            || [[ "$action" =~ ^(keydown|keyup)\ ([0-9]|[1-9][0-9]|1[01][0-9]|12[0-7])$ ]]; then
+            continue
+        fi
+        die "invalid oracle input action: $action"
+    done
+
+    local request="$VM/.now-input-request"
+    local request_temporary="$VM/.now-input-request.tmp"
+    local response="$VM/.now-input-response"
+    [ ! -e "$request" ] && [ ! -e "$request_temporary" ] \
+        || die "an oracle input request is already pending"
+    rm -f "$response"
+    printf '%s\n' "$@" > "$request_temporary"
+    mv "$request_temporary" "$request"
+
+    local attempt result
+    for attempt in $(seq 1 100); do
+        if [ -f "$response" ]; then
+            result="$(cat "$response")"
+            rm -f "$response"
+            case "$result" in
+                ok\ *)
+                    # The renderer receipt proves ADB dispatch, not that the
+                    # cooperative guest event loop has consumed the transition.
+                    sleep "$INPUT_SETTLE"
+                    echo "sheepshaver-86: oracle input completed: $result"
+                    return
+                    ;;
+                *) die "oracle input failed: $result" ;;
+            esac
+        fi
+        sleep 0.05
+    done
+    rm -f "$request" "$request_temporary"
+    die "oracle input timed out; the configured SheepShaver app lacks the oracle input seam or is not presenting frames"
+}
+
+clone_file () {
+    local source="$1" target="$2"
+    cp -c "$source" "$target" 2>/dev/null || cp "$source" "$target"
+}
+
+snapshot () {
+    [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 snapshot NAME"
+    local name="$1"
+    case "$name" in
+        ""|*/*|.|..) die "snapshot name must be one path component" ;;
+    esac
+    require_file "$BOOT_DISK" "Mac OS 8.6 boot disk"
+    require_stopped "$BOOT_DISK"
+    mkdir -p "$VM/Snapshots"
+    local destination="$VM/Snapshots/$name.hfv"
+    [ ! -e "$destination" ] || die "snapshot already exists: $destination"
+    # APFS clonefile makes a cheap copy-on-write baseline; cp remains correct
+    # but slower if the profile lives on a filesystem without clone support.
+    clone_file "$BOOT_DISK" "$destination"
+    echo "sheepshaver-86: snapshot created: $destination"
+}
+
+rig () {
+    doctor >/dev/null
+    require_stopped "$BOOT_DISK"
+    require_stopped "$TRANSFER"
+
+    echo "NOW_SHEEPSHAVER_RIG_V1"
+    echo "observed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "now_revision=$(git -C "$REPO" rev-parse HEAD)"
+    if [ -n "${NOW_SHEEPSHAVER_SOURCE:-}" ]; then
+        require_git_checkout "$NOW_SHEEPSHAVER_SOURCE" NOW_SHEEPSHAVER_SOURCE
+        echo "sheepshaver_source=$NOW_SHEEPSHAVER_SOURCE"
+        echo "sheepshaver_revision=$(git -C "$NOW_SHEEPSHAVER_SOURCE" rev-parse HEAD)"
+    fi
+    echo "sheepshaver_app=$APP"
+    echo "sheepshaver_executable_sha256=$(shasum -a 256 "$APP/Contents/MacOS/SheepShaver" | awk '{print $1}')"
+    if [ -f "$APP/Contents/Resources/NOW-Oracle-Build.txt" ]; then
+        echo "sheepshaver_build_manifest_sha256=$(shasum -a 256 "$APP/Contents/Resources/NOW-Oracle-Build.txt" | awk '{print $1}')"
+    fi
+    for dylib in "$APP/Contents/Frameworks"/*.dylib; do
+        [ -f "$dylib" ] || continue
+        echo "sheepshaver_dylib_sha256=$(basename "$dylib") $(shasum -a 256 "$dylib" | awk '{print $1}')"
+    done
+    echo "profile=$VM"
+    echo "prefs_sha256=$(shasum -a 256 "$VM/prefs" | awk '{print $1}')"
+    echo "rom_sha256=$(shasum -a 256 "$VM/Mac OS ROM" | awk '{print $1}')"
+    echo "boot_disk_sha256=$(shasum -a 256 "$BOOT_DISK" | awk '{print $1}')"
+    echo "transfer_disk_sha256=$(shasum -a 256 "$TRANSFER" | awk '{print $1}')"
+    if [ -f "$VM/Installed Apps.rig" ]; then
+        echo "installed_apps_manifest=$VM/Installed Apps.rig"
+        echo "installed_apps_manifest_sha256=$(shasum -a 256 "$VM/Installed Apps.rig" | awk '{print $1}')"
+        sed 's/^/installed_apps_/' "$VM/Installed Apps.rig"
+    fi
+}
+
+seal () {
+    [ "$#" -eq 1 ] || die "usage: scripts/sheepshaver-86 seal VERSION"
+    local version="$1"
+    case "$version" in
+        ""|*[!A-Za-z0-9._+-]*)
+            die "version may contain only letters, digits, dot, underscore, plus, and hyphen" ;;
+    esac
+    require_stopped "$BOOT_DISK"
+    require_stopped "$TRANSFER"
+    mkdir -p "$VM/Snapshots"
+    local image="$VM/Snapshots/$version.hfv"
+    local receipt="$VM/Snapshots/$version.rig"
+    local transfer_image="$VM/Snapshots/$version.transfer.hfv"
+    local prefs_image="$VM/Snapshots/$version.prefs"
+    local rom_image="$VM/Snapshots/$version.rom"
+    local apps_image="$VM/Snapshots/$version.apps.rig"
+    [ ! -e "$image" ] || die "versioned image already exists: $image"
+    [ ! -e "$receipt" ] || die "versioned receipt already exists: $receipt"
+    [ ! -e "$transfer_image" ] \
+        || die "versioned transfer disk already exists: $transfer_image"
+    [ ! -e "$prefs_image" ] \
+        || die "versioned preferences already exist: $prefs_image"
+    [ ! -e "$rom_image" ] || die "versioned ROM already exists: $rom_image"
+    [ ! -e "$apps_image" ] \
+        || die "versioned installed-apps manifest already exists: $apps_image"
+
+    local pending
+    pending="$(mktemp "$VM/Snapshots/.rig.XXXXXX")"
+    cleanup_seal () {
+        rm -f "$pending" "$image" "$transfer_image" "$prefs_image" \
+            "$rom_image" "$apps_image"
+    }
+    trap cleanup_seal EXIT
+    rig > "$pending"
+    clone_file "$BOOT_DISK" "$image"
+    clone_file "$TRANSFER" "$transfer_image"
+    clone_file "$VM/prefs" "$prefs_image"
+    clone_file "$VM/Mac OS ROM" "$rom_image"
+    if [ -f "$VM/Installed Apps.rig" ]; then
+        clone_file "$VM/Installed Apps.rig" "$apps_image"
+    fi
+    {
+        echo "profile_version=$version"
+        echo "versioned_image=$image"
+        echo "versioned_image_sha256=$(shasum -a 256 "$image" | awk '{print $1}')"
+        echo "versioned_transfer_disk=$transfer_image"
+        echo "versioned_transfer_disk_sha256=$(shasum -a 256 "$transfer_image" | awk '{print $1}')"
+        echo "versioned_prefs=$prefs_image"
+        echo "versioned_prefs_sha256=$(shasum -a 256 "$prefs_image" | awk '{print $1}')"
+        echo "versioned_rom=$rom_image"
+        echo "versioned_rom_sha256=$(shasum -a 256 "$rom_image" | awk '{print $1}')"
+        if [ -f "$apps_image" ]; then
+            echo "versioned_installed_apps_manifest=$apps_image"
+            echo "versioned_installed_apps_manifest_sha256=$(shasum -a 256 "$apps_image" | awk '{print $1}')"
+        fi
+    } >> "$pending"
+    mv "$pending" "$receipt"
+    trap - EXIT
+    echo "sheepshaver-86: sealed $version"
+    echo "  image: $image"
+    echo "  transfer: $transfer_image"
+    echo "  receipt: $receipt"
+}
+
+clone_profile () {
+    [ "$#" -eq 2 ] \
+        || die "usage: scripts/sheepshaver-86 clone VERSION DESTINATION.sheepvm"
+    local version="$1"
+    local destination="$2"
+    case "$version" in
+        ""|*[!A-Za-z0-9._+-]*)
+            die "version may contain only letters, digits, dot, underscore, plus, and hyphen" ;;
+    esac
+    case "$destination" in
+        /*.sheepvm) ;;
+        *) die "clone destination must be an absolute .sheepvm path: $destination" ;;
+    esac
+    [ ! -e "$destination" ] || die "clone destination already exists: $destination"
+    [ -d "$(dirname "$destination")" ] \
+        || die "clone destination parent is absent: $(dirname "$destination")"
+    require_stopped "$BOOT_DISK"
+    require_stopped "$TRANSFER"
+
+    local source_image="$VM/Snapshots/$version.hfv"
+    local source_receipt="$VM/Snapshots/$version.rig"
+    require_file "$source_image" "sealed boot image"
+    require_file "$source_receipt" "sealed rig receipt"
+    grep -Fx "profile_version=$version" "$source_receipt" >/dev/null \
+        || die "sealed rig does not identify profile version $version: $source_receipt"
+    local expected_sha actual_sha
+    expected_sha="$(sed -n 's/^versioned_image_sha256=//p' "$source_receipt")"
+    [ -n "$expected_sha" ] \
+        || die "sealed rig has no versioned image identity: $source_receipt"
+    actual_sha="$(shasum -a 256 "$source_image" | awk '{print $1}')"
+    [ "$actual_sha" = "$expected_sha" ] \
+        || die "sealed boot image does not match its rig receipt: $source_image"
+    verify_sealed_input () {
+        local key="$1" path="$2" label="$3" expected actual
+        expected="$(sed -n "s/^${key}=//p" "$source_receipt")"
+        [ -n "$expected" ] \
+            || die "sealed rig has no $label identity: $source_receipt"
+        require_file "$path" "$label"
+        actual="$(shasum -a 256 "$path" | awk '{print $1}')"
+        [ "$actual" = "$expected" ] \
+            || die "$label does not match the sealed rig receipt: $path"
+    }
+    sealed_input () {
+        local versioned_key="$1" versioned_path="$2" legacy_key="$3"
+        local legacy_path="$4" label="$5" expected actual
+        expected="$(sed -n "s/^${versioned_key}_sha256=//p" "$source_receipt")"
+        if [ -n "$expected" ]; then
+            grep -Fx "${versioned_key}=$versioned_path" "$source_receipt" >/dev/null \
+                || die "sealed rig names an unexpected $label path: $source_receipt"
+            require_file "$versioned_path" "sealed $label"
+            actual="$(shasum -a 256 "$versioned_path" | awk '{print $1}')"
+            [ "$actual" = "$expected" ] \
+                || die "sealed $label does not match its rig receipt: $versioned_path"
+            printf '%s\n' "$versioned_path"
+            return
+        fi
+        verify_sealed_input "$legacy_key" "$legacy_path" "$label"
+        printf '%s\n' "$legacy_path"
+    }
+
+    local prefs_source rom_source transfer_source apps_source=""
+    prefs_source="$(sealed_input versioned_prefs \
+        "$VM/Snapshots/$version.prefs" prefs_sha256 "$VM/prefs" \
+        "profile preferences")"
+    rom_source="$(sealed_input versioned_rom \
+        "$VM/Snapshots/$version.rom" rom_sha256 "$VM/Mac OS ROM" \
+        "ROM file")"
+    transfer_source="$(sealed_input versioned_transfer_disk \
+        "$VM/Snapshots/$version.transfer.hfv" transfer_disk_sha256 \
+        "$TRANSFER" "transfer disk")"
+    if grep -q '^versioned_installed_apps_manifest_sha256=' "$source_receipt"; then
+        apps_source="$(sealed_input versioned_installed_apps_manifest \
+            "$VM/Snapshots/$version.apps.rig" installed_apps_manifest_sha256 \
+            "$VM/Installed Apps.rig" "installed-apps manifest")"
+    elif grep -q '^installed_apps_manifest_sha256=' "$source_receipt"; then
+        apps_source="$(sealed_input versioned_installed_apps_manifest \
+            "$VM/Snapshots/$version.apps.rig" installed_apps_manifest_sha256 \
+            "$VM/Installed Apps.rig" "installed-apps manifest")"
+    fi
+
+    local temporary
+    temporary="$(mktemp -d "$(dirname "$destination")/.now-sheepvm-clone.XXXXXX")"
+    cleanup_clone () {
+        rm -rf "$temporary"
+    }
+    trap cleanup_clone EXIT
+
+    clone_file "$prefs_source" "$temporary/prefs"
+    clone_file "$rom_source" "$temporary/Mac OS ROM"
+    clone_file "$source_image" "$temporary/Mac OS 8.6.hfv"
+    clone_file "$transfer_source" "$temporary/CarbonLib 1.6 Transfer.hfv"
+    clone_file "$source_receipt" "$temporary/Oracle Parent.rig"
+    if [ -n "$apps_source" ]; then
+        clone_file "$apps_source" "$temporary/Installed Apps.rig"
+    fi
+    mkdir -p "$temporary/Shared" "$temporary/Snapshots"
+    if [ -d "$VM/Shared" ]; then
+        cp -R "$VM/Shared/." "$temporary/Shared/"
+    fi
+    mv "$temporary" "$destination"
+    trap - EXIT
+    echo "sheepshaver-86: cloned sealed profile $version"
+    echo "  parent: $source_image"
+    echo "  profile: $destination"
+}
+
+case "${1:-}" in
+    doctor) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 doctor"; doctor ;;
+    launch) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 launch"; launch ;;
+    stage) shift; stage "$@" ;;
+    install-apps) shift; install_apps "$@" ;;
+    capture) shift; capture "$@" ;;
+    input) shift; oracle_input "$@" ;;
+    snapshot) shift; snapshot "$@" ;;
+    rig) shift; [ "$#" -eq 0 ] || die "usage: scripts/sheepshaver-86 rig"; rig ;;
+    seal) shift; seal "$@" ;;
+    clone) shift; clone_profile "$@" ;;
+    *) die "usage: scripts/sheepshaver-86 {doctor|launch|stage APPLICATION.bin|install-apps NOW.bin CODEKITTEN.bin|capture DESTINATION.bmp|input ACTION...|snapshot NAME|rig|seal VERSION|clone VERSION DESTINATION.sheepvm}" ;;
+esac

@@ -40,6 +40,7 @@ enum HostFinderDomain {
         var complete = false
         var loading = false
         var error: String?
+        var availableBytes: Int?
 
         var title: String {
             if path.isEmpty {
@@ -87,6 +88,11 @@ enum HostFinderDomain {
         let fieldRight = max(1, width - 16)
         let visibleHeight = max(1, fieldBottom - fieldTop)
         let entries = sortedEntries(of: window)
+        let metadata = Dictionary(uniqueKeysWithValues: entries.map { entry in
+            (entry.name, Scene.FinderPresentation.ItemMetadata(
+                dataBytes: entry.dataBytes, rsrcBytes: entry.rsrcBytes,
+                modified: entry.modified))
+        })
         let contentHeightNeeded = layoutHeight(entries.count, view: window.view,
                                                width: fieldRight,
                                                fieldTop: fieldTop)
@@ -122,7 +128,9 @@ enum HostFinderDomain {
             finder: .init(path: window.path, view: window.view,
                           selectedNames: window.selectedNames,
                           pages: max(1, window.pages),
-                          complete: window.complete),
+                          complete: window.complete,
+                          itemMetadata: metadata,
+                          availableBytes: window.availableBytes),
             display: nil)
     }
 
@@ -174,35 +182,91 @@ enum HostFinderDomain {
 
     static func finderMenubar(from base: Scene.Menubar?, window: Window? = nil)
         -> Scene.Menubar {
-        let apple = base?.menus.first(where: \.apple)
-            ?? .init(title: "", apple: true, left: 0, id: 1, items: [])
+        let apple = AppleMenuProfile.macOS86(
+            base?.menus.first(where: \.apple)
+                ?? .init(title: "", apple: true, left: 0, id: 1, items: []))
+        let fileItems = [
+            Scene.MenuItem(title: "New Folder", index: 1, cmd: "N"),
+            .init(title: "Open", index: 2, enabled: false, cmd: "O"),
+            .init(title: "Print", index: 3, enabled: false, cmd: "P"),
+            .init(title: "Move To Trash", index: 4, enabled: false),
+            .init(title: "Close Window", index: 5,
+                  enabled: window != nil, cmd: "W"),
+            .init(title: "-", index: 6, separator: true, enabled: false),
+            .init(title: "Get Info", index: 7, enabled: false, submenu: true),
+            .init(title: "Label", index: 8, enabled: false, submenu: true),
+            .init(title: "Duplicate", index: 9, enabled: false, cmd: "D"),
+            .init(title: "Make Alias", index: 10, enabled: false, cmd: "M"),
+            .init(title: "Add To Favorites", index: 11, enabled: false),
+            .init(title: "Put Away", index: 12, enabled: false, cmd: "Y"),
+            .init(title: "-", index: 13, separator: true, enabled: false),
+            .init(title: "Find…", index: 14, cmd: "F"),
+            .init(title: "Show Original", index: 15,
+                  enabled: false, cmd: "R"),
+            .init(title: "-", index: 16, separator: true, enabled: false),
+            .init(title: "Page Setup…", index: 17),
+            .init(title: "Print Desktop…", index: 18),
+        ]
+        let editItems = [
+            Scene.MenuItem(title: "Undo", index: 1, enabled: false, cmd: "Z"),
+            .init(title: "-", index: 2, separator: true, enabled: false),
+            .init(title: "Cut", index: 3, enabled: false, cmd: "X"),
+            .init(title: "Copy", index: 4, enabled: false, cmd: "C"),
+            .init(title: "Paste", index: 5, enabled: false, cmd: "V"),
+            .init(title: "Clear", index: 6, enabled: false),
+            .init(title: "Select All", index: 7, cmd: "A"),
+            .init(title: "Show Clipboard", index: 8),
+            .init(title: "-", index: 9, separator: true, enabled: false),
+            .init(title: "Preferences…", index: 10),
+        ]
         let viewItems = [
             Scene.MenuItem(title: "as Icons", index: 1,
                            mark: window?.view == .icon),
             .init(title: "as Buttons", index: 2,
-                  mark: window?.view == .smallIcon),
+                  mark: window?.view == .button),
             .init(title: "as List", index: 3,
                   mark: window?.view == .name),
             .init(title: "", index: 4, separator: true, enabled: false),
-            .init(title: "By Name", index: 5, mark: window?.sort == .name),
-            .init(title: "By Date Modified", index: 6,
-                  mark: window?.sort == .modified),
-            .init(title: "By Size", index: 7, mark: window?.sort == .size),
-            .init(title: "By Kind", index: 8, mark: window?.sort == .kind),
+            .init(title: "as Window", index: 5, enabled: false),
+            .init(title: "as Pop-up Window", index: 6, enabled: false),
+            .init(title: "", index: 7, separator: true, enabled: false),
+            .init(title: "Clean Up", index: 8),
+            .init(title: "Arrange", index: 9, submenu: true),
+            .init(title: "Reset Column Positions", index: 10, enabled: false),
+            .init(title: "", index: 11, separator: true, enabled: false),
+            .init(title: "View Options…", index: 12),
+        ]
+        let specialItems = [
+            Scene.MenuItem(title: "Empty Trash…", index: 1, enabled: false),
+            .init(title: "-", index: 2, separator: true, enabled: false),
+            .init(title: "Eject", index: 3, enabled: false, cmd: "E"),
+            .init(title: "Erase Disk…", index: 4, enabled: false),
+            .init(title: "-", index: 5, separator: true, enabled: false),
+            .init(title: "Sleep", index: 6),
+            .init(title: "Restart", index: 7),
+            .init(title: "Shut Down", index: 8),
+        ]
+        let helpItems = [
+            Scene.MenuItem(title: "Help Center", index: 1),
+            .init(title: "-", index: 2, separator: true, enabled: false),
+            .init(title: "Show Balloons", index: 3),
+            .init(title: "-", index: 4, separator: true, enabled: false),
+            .init(title: "Mac OS Help", index: 5, cmd: "?"),
         ]
         let app = base?.menus.first(where: { $0.id == -16489 })
             ?? .init(title: "", apple: false, left: 0, id: -16489, items: [])
         return .init(app: "Finder", menus: [
             apple,
-            .init(title: "File", apple: false, left: 31, id: -30001,
-                  items: [.init(title: "Close", index: 1, enabled: false,
-                                cmd: "W")]),
-            .init(title: "Edit", apple: false, left: 66, id: -30002,
-                  items: []),
-            .init(title: "View", apple: false, left: 101, id: -30003,
+            .init(title: "File", apple: false, left: 43, id: -30001,
+                  items: fileItems),
+            .init(title: "Edit", apple: false, left: 78, id: -30002,
+                  items: editItems),
+            .init(title: "View", apple: false, left: 116, id: -30003,
                   items: viewItems),
-            .init(title: "Special", apple: false, left: 143, id: -30004,
-                  items: []),
+            .init(title: "Special", apple: false, left: 159, id: -30004,
+                  items: specialItems),
+            .init(title: "Help", apple: false, left: 218, id: -16490,
+                  items: helpItems),
             app,
         ])
     }
@@ -250,6 +314,9 @@ enum HostFinderDomain {
         case .smallIcon:
             let columns = max(1, width / 170)
             return fieldTop + ((count + columns - 1) / columns) * 22 + 8
+        case .button:
+            let columns = max(1, width / 96)
+            return fieldTop + ((count + columns - 1) / columns) * 76 + 10
         case .icon, .unknown:
             let columns = max(1, width / 96)
             return fieldTop + ((count + columns - 1) / columns) * 72 + 10
@@ -264,7 +331,7 @@ enum HostFinderDomain {
         let columns: Int
         switch view {
         case .smallIcon: columns = max(1, width / 170)
-        case .icon, .unknown: columns = max(1, width / 96)
+        case .button, .icon, .unknown: columns = max(1, width / 96)
         case .name: columns = 1
         }
         return entries.enumerated().map { index, entry in
@@ -276,6 +343,10 @@ enum HostFinderDomain {
                 x = 6 + (index % columns) * 170
                 y = top + 3 + (index / columns) * 22 - scroll
                 side = 16
+            case .button:
+                x = 20 + (index % columns) * 96
+                y = top + 8 + (index / columns) * 76 - scroll
+                side = 48
             case .icon, .unknown:
                 let defaultPoint = Point(x: 28 + (index % columns) * 96,
                                          y: top + 10
@@ -312,7 +383,7 @@ enum HostFinderDomain {
                 role: "control", title: sort.label,
                 rect: Rect(l: left, t: top, r: min(width, left + columnWidth),
                            b: top + 20), enabled: true, visible: true,
-                semantic: .init(knowledge: .known, kind: "pushButton",
+                semantic: .init(knowledge: .known, kind: "columnHeader",
                                 action: "press", provenance: "host-finder",
                                 completeness: .complete))
         }

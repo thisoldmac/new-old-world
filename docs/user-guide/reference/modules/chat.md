@@ -7,9 +7,9 @@ audience: user
 lifecycle: experimental
 authority: [contract/asyncapi.yaml, docs/agent-integration.md]
 module_ids: [chat]
-source_dependencies: [contract/asyncapi.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/chat, docs/agent-integration.md]
+source_dependencies: [contract/asyncapi.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/Chat/ChatStore.swift, now-guest-ppc/src/chat, docs/agent-integration.md]
 media_ids: [chat-host, chat-ppc, chat-detail]
-last_verified: 2026-08-09
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -33,6 +33,14 @@ Chat is a host-served, PowerPC-asked family. NOW-68K does not expose it.
 The host owns provider configuration, model catalog, authentication, request
 execution, and typed errors. Provider credentials never cross the classic wire.
 
+Chats are saved on the modern Mac and listed in a sidebar beside the
+conversation. A chat can be renamed, deleted, or filed under a project — a
+folder on disk that may also be associated with a Projects-module project for
+its code. Only the chat you select is read from disk; the sidebar itself holds
+names and dates alone. Saved chats stay on the modern Mac: they are never
+served to the classic guest, and a transcript can contain what the classic
+Mac's screen looked like, so the files are local and unshared.
+
 ## On the classic Mac
 
 The Workshop page selects a host-provided model reference, sends a prompt, and
@@ -50,7 +58,8 @@ renders deltas, status, result, cancellation, and reset.
 ## Safety, consent, and privacy
 
 Prompts and supplied machine context may leave the modern Mac when a cloud
-provider is selected. MCP access remains a separate machine consent ceiling;
+provider is selected. Saved transcripts are stored unencrypted under the app's
+Application Support folder and may include captured guest-screen images. MCP access remains a separate machine consent ceiling;
 Chat cannot silently expand it.
 
 ## Failure states

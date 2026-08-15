@@ -52,6 +52,11 @@ public enum Platinum {
     /// defect this field exists to end.
     public static let alertFace = Color(hex: 0xDDDDDD)
 
+    /// Classic Menu Manager dropdown face under the default Platinum theme.
+    /// The Mac OS 8.6 File and Apple menus both use the same #DDDDDD face;
+    /// pure white is reserved for the left/top bevel and selected text.
+    public static let menuFace = Color(hex: 0xDDDDDD)
+
     /// Fallback for `meta.theme.documentBackground`
     /// (kThemeBrushDocumentWindowBackground). A document window's content
     /// really is white under Platinum; another theme may disagree, and now
@@ -71,6 +76,13 @@ public enum Platinum {
     /// The dark accent step. Menu-title fill and the derived-grid selection
     /// ring — a marker this side draws, not a fill the guest makes.
     public static let selection = Color(rgb: PlatinumAccent.active.steps[4])
+
+    /// Finder icon selection is a channel-wise 50% darkening of the icon
+    /// pixels. The Mac OS 8.6 oracle changes 0x66 to 0x33 and 0xCC to 0x66;
+    /// the old generic `g4` multiplier produced 0x36 and 0x6D instead. Keep
+    /// this separate from menu/list selection: those are accent fills, while
+    /// this is the Finder's icon inversion treatment.
+    public static let finderIconSelectionMultiplier = Color(hex: 0x808080)
 
     /// The colour a selected list row or run of text is filled with, when
     /// the guest did not say. Fallback for `meta.theme.highlight`.

@@ -40,6 +40,43 @@ def parse_fond(body: bytes) -> tuple[str, list[FondAssoc]]:
     return "", rows
 
 
+def parse_fond_fractional_widths(body: bytes, style: int = 0) -> dict[int, int]:
+    """Return ``{MacRoman byte: 4.12-em width}`` for a FOND style.
+
+    An outline font's ``hdmx`` table and its FOND family-width table answer
+    different Font Manager modes. Charcoal 12's ``V`` is 7.3066 px here but 8
+    px in ``hdmx``. A trial global switch to the FOND widths fixed that one
+    pair in the Mac OS 8.6 Finder oracle and worsened titles that were already
+    exact, so extraction preserves both inputs and leaves the choice to a
+    measured consumer instead of turning one local correlation into policy.
+
+    The table is optional (offset zero).  Its entries are unsigned 4.12
+    fractions of an em, indexed from ``firstChar`` and followed by the two
+    FOND sentinel entries documented by Apple's ``Fonts.r``.
+    """
+    if len(body) < 52:
+        return {}
+    first, last = struct.unpack_from(">HH", body, 4)
+    offset = struct.unpack_from(">L", body, 16)[0]
+    if offset == 0 or offset + 2 > len(body):
+        return {}
+    table_count = struct.unpack_from(">h", body, offset)[0] + 1
+    cursor = offset + 2
+    entry_count = last - first + 3
+    entry_bytes = entry_count * 2
+    for _ in range(table_count):
+        if cursor + 2 + entry_bytes > len(body):
+            raise ValueError("truncated FOND fractional-width table")
+        table_style = struct.unpack_from(">H", body, cursor)[0]
+        cursor += 2
+        values = struct.unpack_from(f">{entry_count}H", body, cursor)
+        cursor += entry_bytes
+        if table_style == style:
+            return {code: values[code - first]
+                    for code in range(first, last + 1)}
+    return {}
+
+
 # -- NFNT ------------------------------------------------------------------
 @dataclass
 class Strike:

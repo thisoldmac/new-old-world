@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// One row in the browser: a guest listing entry plus what a pull of it
@@ -72,6 +73,46 @@ struct FileRow: Identifiable, Equatable, Sendable {
     }
 }
 
+enum FilesStartupDirectory: String, CaseIterable, Identifiable {
+    case shareRoot
+    case lastUsed
+    case custom
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .shareRoot: return "Shared Folder"
+        case .lastUsed: return "Last Opened Folder"
+        case .custom: return "Custom Folder"
+        }
+    }
+}
+
+enum FilesBrowserView: String, CaseIterable, Identifiable {
+    case icons
+    case list
+    case tree
+    case columns
+
+    var id: String { rawValue }
+    var title: LocalizedStringKey {
+        switch self {
+        case .icons: "Icons"
+        case .list: "List"
+        case .tree: "Tree"
+        case .columns: "Columns"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .icons: return "square.grid.2x2"
+        case .list: return "list.bullet"
+        case .tree: return "list.bullet.indent"
+        case .columns: return "rectangle.split.3x1"
+        }
+    }
+}
+
 @MainActor
 final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// Where one machine's browser was left, parked while another is
@@ -95,9 +136,11 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         var shareRoot: String?
         var pageCursor: Int?
         var history: [FileChange] = []
+        var navigation = FilesBrowserNavigationHistory<String>()
+        var columnListings: [String: [FileRow]] = [:]
     }
 
-    private let cache = GuestStateCache<Snapshot>()
+    private let cache = GuestMachineStateCache<Snapshot>()
 
     @Published var connection: GuestConnectionState = .disconnected {
         didSet { connectionChanged(from: oldValue) }
@@ -105,6 +148,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// Path components from the share root; empty = the root itself.
     @Published private(set) var breadcrumb: [String] = []
     @Published private(set) var rows: [FileRow] = []
+    @Published private(set) var columnListings: [String: [FileRow]] = [:]
+    @Published private(set) var columnListingsRevision = 0
     @Published private(set) var isLoading = false
     @Published private(set) var lastError: String?
     /// Something that happened and was not a failure — a file that
@@ -118,6 +163,37 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// reads source-owned state instead of accepting arbitrary text from
     /// the pasteboard.
     var draggedFolderPath: String?
+    var draggedRows: [FileRow] = []
+
+    @Published var startupDirectory: FilesStartupDirectory {
+        didSet { defaults.set(startupDirectory.rawValue,
+                              forKey: Keys.startupDirectory) }
+    }
+
+    @Published var customStartupPath: String {
+        didSet { defaults.set(customStartupPath,
+                              forKey: Keys.customStartupPath) }
+    }
+
+    @Published var browserView: FilesBrowserView {
+        didSet { defaults.set(browserView.rawValue,
+                              forKey: Keys.browserView) }
+    }
+
+    @Published var hostBrowserView: FilesBrowserView {
+        didSet { defaults.set(hostBrowserView.rawValue,
+                              forKey: Keys.hostBrowserView) }
+    }
+
+    @Published var hostSidebarCompact: Bool {
+        didSet { defaults.set(hostSidebarCompact,
+                              forKey: Keys.hostSidebarCompact) }
+    }
+
+    @Published var hostPaneCollapsed: Bool {
+        didSet { defaults.set(hostPaneCollapsed,
+                              forKey: Keys.hostPaneCollapsed) }
+    }
 
     /// Where downloads land. Separate from the screenshots landing pad:
     /// files are files.
@@ -296,6 +372,15 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     private enum Keys {
         static let downloads = "files.downloadDirectory"
         static let convertText = "files.convertText"
+        static let startupDirectory = "files.startupDirectory"
+        static let customStartupPath = "files.customStartupPath"
+        static let browserView = "files.browserView"
+        static let hostBrowserView = "files.hostBrowserView"
+        static let hostSidebarCompact = "files.hostSidebarCompact"
+        static let hostPaneCollapsed = "files.hostPaneCollapsed"
+        static func lastPath(_ machine: GuestID) -> String {
+            "files.lastPath.\(machine.slug)"
+        }
     }
 
     internal let listener: GuestListener
@@ -310,11 +395,17 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// reload a listing of a different machine's folder.
     private var busWatch: HostEventSubscription?
     private var pageCursor: Int?
+    private var navigation = FilesBrowserNavigationHistory<String>()
     /// Identifies the full-folder read that owns `rows`. Two refreshes may
     /// be in flight at once (a mutation publishes an event before its own
     /// completion runs), and a path comparison cannot distinguish them
     /// when both asked for the same folder.
     private var listingGeneration = 0
+    private var treeLoadingPaths: Set<String> = []
+    /// Set only while the first listing chosen by startup preferences is in
+    /// flight. An ordinary navigation failure must remain where the person
+    /// navigated; only an unavailable automatic starting point falls back.
+    private var pendingStartupPath: String?
 
     private lazy var promiseExporter = GuestFilePromiseExporter(
         listPage: { [weak self] path, cursor, completion in
@@ -335,6 +426,9 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
             }
             self.fetchOneForPromise(row, to: destination,
                                     completion: completion)
+        },
+        onFailure: { [weak self] error in
+            self?.lastError = error.localizedDescription
         })
 
     init(
@@ -346,6 +440,19 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         self.defaults = defaults
         self.artifactApprover = artifactApprover
         self.locationsStore = FileLocationsStore(defaults: defaults)
+        self.startupDirectory = FilesStartupDirectory(rawValue:
+            defaults.string(forKey: Keys.startupDirectory) ?? "")
+            ?? .shareRoot
+        self.customStartupPath = defaults.string(
+            forKey: Keys.customStartupPath) ?? ""
+        self.browserView = FilesBrowserView(rawValue:
+            defaults.string(forKey: Keys.browserView) ?? "") ?? .tree
+        self.hostBrowserView = FilesBrowserView(rawValue:
+            defaults.string(forKey: Keys.hostBrowserView) ?? "") ?? .tree
+        self.hostSidebarCompact = defaults.object(
+            forKey: Keys.hostSidebarCompact) as? Bool ?? true
+        self.hostPaneCollapsed = defaults.object(
+            forKey: Keys.hostPaneCollapsed) as? Bool ?? false
         self.convertText =
             defaults.object(forKey: Keys.convertText) as? Bool ?? true
         self.shareDirectory = listener.share.root
@@ -404,19 +511,40 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         if case .switched(let restored) =
             cache.focus(connection.key, parking: snapshot()) {
             listingGeneration += 1
-            let fresh = restored ?? Snapshot()
+            var fresh = restored ?? Snapshot()
+            if restored == nil, let machine = connection.key?.machine {
+                let startupPath: String
+                switch startupDirectory {
+                case .shareRoot:
+                    startupPath = ""
+                case .lastUsed:
+                    startupPath = defaults.string(
+                        forKey: Keys.lastPath(machine)) ?? ""
+                case .custom:
+                    startupPath = customStartupPath
+                }
+                fresh.breadcrumb = Self.components(of: startupPath)
+                pendingStartupPath = fresh.breadcrumb.isEmpty
+                    ? nil : fresh.breadcrumb.joined(separator: ":")
+            } else {
+                pendingStartupPath = nil
+            }
             breadcrumb = fresh.breadcrumb
             rows = fresh.rows
             selection = fresh.selection
             shareRoot = fresh.shareRoot
             pageCursor = fresh.pageCursor
             history = fresh.history
+            navigation = fresh.navigation
+            columnListings = fresh.columnListings
+            columnListingsRevision += 1
             isLoading = false
             lastError = nil
             lastNotice = nil
             transfer = nil
             renaming = nil
             draggedFolderPath = nil
+            draggedRows = []
             newFolderPrompt = nil
             promiseExporter.cancelAll(
                 reason: "The connected guest changed while files were being copied.")
@@ -457,7 +585,8 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     private func snapshot() -> Snapshot {
         Snapshot(breadcrumb: breadcrumb, rows: rows, selection: selection,
                  shareRoot: shareRoot, pageCursor: pageCursor,
-                 history: history)
+                 history: history, navigation: navigation,
+                 columnListings: columnListings)
     }
 
     // MARK: - Browsing
@@ -474,6 +603,16 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         cancelLocationDiscovery()
         load(path: path, resetRows: true) { [weak self] result in
             guard let self else { return }
+            if case .failure(let failure) = result,
+               let startupPath = self.pendingStartupPath,
+               startupPath == self.path {
+                self.pendingStartupPath = nil
+                self.breadcrumb = []
+                self.loadStartupFallback(
+                    from: startupPath, reason: failure.message)
+                return
+            }
+            self.pendingStartupPath = nil
             /* A listing normally names the share root, so let that one reply
                serve both the table and Places. Older guests may omit it; in
                that case discovery performs its own root probe. */
@@ -487,23 +626,57 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         }
     }
 
+    private func loadStartupFallback(from startupPath: String, reason: String) {
+        load(path: "", resetRows: true) { [weak self] result in
+            guard let self else { return }
+            if case .success(let listing) = result,
+               let root = listing.root, !root.isEmpty {
+                self.shareRoot = root
+                self.discoverLocations(knownRoot: true)
+            } else {
+                self.discoverLocations()
+            }
+            if case .success = result {
+                self.lastError = nil
+                self.lastNotice = "The startup folder “\(startupPath)” is "
+                    + "not available. Showing the share root instead: \(reason)"
+            }
+        }
+    }
+
     func open(_ row: FileRow) {
         guard row.isFolder else { return }
-        breadcrumb.append(row.name)
-        load(path: path, resetRows: true)
+        navigate(to: row.path)
     }
 
     func goUp() {
         guard !breadcrumb.isEmpty else { return }
-        breadcrumb.removeLast()
-        load(path: path, resetRows: true)
+        navigate(to: breadcrumb.dropLast().joined(separator: ":"))
     }
 
     /// Jump to a breadcrumb component; -1 is the share root.
     func jump(toDepth depth: Int) {
         guard depth < breadcrumb.count else { return }
-        breadcrumb = depth < 0 ? [] : Array(breadcrumb.prefix(depth + 1))
-        load(path: path, resetRows: true)
+        let destination = depth < 0 ? ""
+            : breadcrumb.prefix(depth + 1).joined(separator: ":")
+        navigate(to: destination)
+    }
+
+    var canGoBack: Bool { navigation.canGoBack }
+    var canGoForward: Bool { navigation.canGoForward }
+
+    func goBack() {
+        guard canBrowse, let destination = navigation.goBack(from: path) else {
+            return
+        }
+        navigate(to: destination, recordingHistory: false)
+    }
+
+    func goForward() {
+        guard canBrowse, let destination = navigation.goForward(from: path) else {
+            return
+        }
+        navigate(to: destination, recordingHistory: false)
     }
 
     func loadMoreIfNeeded() {
@@ -549,11 +722,21 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 // A late page from a folder we already left is dropped.
                 guard listing.path == self.path else { return }
                 let prefix = listing.path.isEmpty ? "" : listing.path + ":"
-                self.rows += listing.entries.map {
+                let visibleEntries = listing.entries.filter {
+                    !Self.isVirtualDirectoryEntry($0)
+                }
+                self.rows += visibleEntries.map {
                     FileRow(entry: $0, path: prefix + $0.name)
                 }
+                self.columnListings[listing.path] = self.rows
+                self.trimColumnListings()
+                self.columnListingsRevision += 1
                 if let root = listing.root, !root.isEmpty {
                     self.shareRoot = root
+                }
+                if cursor == nil, let machine = self.currentMachine {
+                    self.defaults.set(listing.path,
+                                      forKey: Keys.lastPath(machine))
                 }
                 firstPage?(.success(listing))
 
@@ -603,6 +786,53 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
                 self.lastError = failure.message
                 self.pageCursor = nil
                 firstPage?(.failure(failure))
+            }
+        }
+    }
+
+    private func trimColumnListings() {
+        let limit = 64
+        while columnListings.count > limit,
+              let key = columnListings.keys.first(where: { $0 != path }) {
+            columnListings.removeValue(forKey: key)
+        }
+    }
+
+    func loadTreeChildren(of row: FileRow) {
+        guard canBrowse, row.isFolder,
+              columnListings[row.path] == nil,
+              treeLoadingPaths.insert(row.path).inserted else { return }
+        loadTreePage(path: row.path, cursor: nil, accumulated: [])
+    }
+
+    private func loadTreePage(path: String, cursor: Int?,
+                              accumulated: [FileRow]) {
+        let machine = currentMachine
+        listener.listFiles(path: path, cursor: cursor) { [weak self] result in
+            guard let self, machine == self.currentMachine else { return }
+            switch result {
+            case .success(let listing):
+                let prefix = listing.path.isEmpty ? "" : listing.path + ":"
+                let page = listing.entries
+                    .filter { !Self.isVirtualDirectoryEntry($0) }
+                    .map { FileRow(entry: $0, path: prefix + $0.name) }
+                let rows = accumulated + page
+                let advances = cursor.map { next in
+                    listing.cursor.map { $0 > next } ?? false
+                } ?? (listing.cursor != nil)
+                if listing.more, let next = listing.cursor, advances,
+                   rows.count < Self.rowCeiling {
+                    self.loadTreePage(path: path, cursor: next,
+                                      accumulated: rows)
+                    return
+                }
+                self.treeLoadingPaths.remove(path)
+                self.columnListings[path] = Array(rows.prefix(Self.rowCeiling))
+                self.trimColumnListings()
+                self.columnListingsRevision += 1
+            case .failure(let failure):
+                self.treeLoadingPaths.remove(path)
+                self.lastError = failure.message
             }
         }
     }
@@ -890,9 +1120,47 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// where you landed exactly as it does after a double-click.
     func go(to location: FileLocation) {
         guard canBrowse else { return }
-        breadcrumb = location.path.isEmpty
-            ? [] : location.path.components(separatedBy: ":")
-        load(path: path, resetRows: true)
+        navigate(to: location.path)
+    }
+
+    func go(toPath path: String) {
+        guard canBrowse else { return }
+        navigate(to: path)
+    }
+
+    private func navigate(to destination: String,
+                          recordingHistory: Bool = true) {
+        let components = Self.components(of: destination)
+        let destination = components.joined(separator: ":")
+        guard destination != path else { return }
+        if recordingHistory {
+            navigation.recordNavigation(from: path, to: destination)
+        }
+        breadcrumb = components
+        load(path: destination, resetRows: true)
+    }
+
+    private static func components(of path: String) -> [String] {
+        path.split(separator: ":", omittingEmptySubsequences: true)
+            .map(String.init)
+    }
+
+    private static func normalizedComponents(of path: String) -> [String] {
+        components(of: path).map {
+            $0.decomposedStringWithCanonicalMapping.lowercased()
+        }
+    }
+
+    static func pathsEqual(_ lhs: String, _ rhs: String) -> Bool {
+        normalizedComponents(of: lhs) == normalizedComponents(of: rhs)
+    }
+
+    static func isVirtualDirectoryEntry(_ entry: FileEntry) -> Bool {
+        entry.isFolder && (entry.name == ":" || entry.name == "::")
+    }
+
+    func isCurrentLocation(_ location: FileLocation) -> Bool {
+        Self.pathsEqual(path, location.path)
     }
 
     /// What a person may drag into the sidebar: a folder this browser can
@@ -900,8 +1168,12 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     /// point — a path alone is not evidence of anything.
     func pinnableName(for path: String) -> String? {
         guard !path.isEmpty else { return nil }   // the root is always there
-        if path == self.path { return ClassicLocations.leafName(of: path) }
-        guard let row = rows.first(where: { $0.path == path }), row.isFolder
+        if Self.pathsEqual(path, self.path) {
+            return ClassicLocations.leafName(of: self.path)
+        }
+        guard let row = rows.first(where: {
+            Self.pathsEqual($0.path, path)
+        }), row.isFolder
         else { return nil }
         return row.name
     }
@@ -909,7 +1181,9 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
     @discardableResult
     func pinLocation(path: String) -> Bool {
         guard let name = pinnableName(for: path) else { return false }
-        guard !locations.contains(where: { $0.path == path }) else {
+        guard !locations.contains(where: {
+            Self.pathsEqual($0.path, path)
+        }) else {
             return true                    // already there; a no-op, not a fault
         }
         storedLocations.pinned.append(FileLocation(
@@ -1258,16 +1532,23 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
             index: queueTotal > 1 ? queueDone : nil,
             total: queueTotal > 1 ? queueTotal : nil)
         let folder = folder ?? path
-        listener.putFile(name: plan.name, into: folder,
-                         container: plan.container, bytes: plan.bytes,
-                         fileType: plan.fileType, creator: plan.creator,
-                         modified: modified,
-                         overwrite: overwrite) { [weak self] result in
+        listener.putFileWithReceipt(
+            name: plan.name, into: folder,
+            container: plan.container, bytes: plan.bytes,
+            fileType: plan.fileType, creator: plan.creator,
+            modified: modified,
+            overwrite: overwrite) { [weak self] result in
             guard let self else { return }
             self.transfer = nil
             switch result {
-            case .success:
+            case .success(let receipt):
                 self.refresh()
+                if receipt.relaunchRequired {
+                    self.lastNotice = "The running copy of \(plan.name) was "
+                        + "moved to the Trash and the new copy is in place. "
+                        + "Quit and relaunch it on "
+                        + "\(self.connection.peerLabel) to use the new version."
+                }
                 self.startNextIfIdle()
             case .failure(let failure)
                 where failure.code == "exists" && !overwrite:
@@ -1336,8 +1617,10 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
         transfer = TransferState(name: row.name, direction: .incoming,
                                  received: 0, expected: row.sizeBytes,
                                  index: nil, total: nil)
+        let promise = GuestFilePromiseDescriptor.describe(row)
         listener.getFile(
-            path: row.path, container: nil,
+            path: row.path,
+            container: promise.requiresMacBinary ? "macbinary" : nil,
             stagingDirectory: destination.deletingLastPathComponent()) {
             [weak self] result in
             guard let self else { return }
@@ -1345,7 +1628,18 @@ final class FilesModuleModel: ObservableObject, GuestScopedModel {
             switch result {
             case .success(let file):
                 do {
-                    try self.materialize(file, to: destination)
+                    if promise.requiresMacBinary {
+                        try MacBinaryFile.materializePromise(
+                            envelope: file.staged.url,
+                            destination: destination,
+                            modified: file.modified.flatMap(ClassicDate.date))
+                        // `materializePromise` consumes the envelope. Keep the
+                        // staged owner's cleanup retry armed in case that
+                        // removal was transiently refused.
+                        file.staged.discard()
+                    } else {
+                        try self.materialize(file, to: destination)
+                    }
                     completion(.success(()))
                 } catch {
                     completion(.failure(error))

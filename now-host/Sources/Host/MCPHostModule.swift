@@ -16,6 +16,12 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
     let activity: AgentActivityModel
     let companions: AgentCompanionModel
     let listener: GuestListener
+    let transportSettings: MCPTransportSettingsModel
+    /// `{ context.showSettings(.mcp) }`, captured once at construction the
+    /// same way `MirrorHostModule` captures `context.selectModule` — the
+    /// page's "Settings…" button for the start-automatically toggles that
+    /// moved out of it.
+    let openSettings: () -> Void
     private(set) var startStdio: (() -> Void)?
     private(set) var stopStdio: (() -> Void)?
     private(set) var startHTTP: (() -> Void)?
@@ -29,6 +35,9 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
         self.activity = activity
         self.companions = companions
         listener = context.listener
+        transportSettings = MCPTransportSettingsModel(
+            defaults: context.defaults)
+        openSettings = { context.showSettings(.mcp) }
     }
 
     func configureTransports(
@@ -72,6 +81,8 @@ enum MCPHostModule {
                 model: runtime.activity,
                 companions: runtime.companions,
                 listener: runtime.listener,
+                settings: runtime.transportSettings,
+                openSettings: runtime.openSettings,
                 startStdio: runtime.startStdio,
                 stopStdio: runtime.stopStdio,
                 startHTTP: runtime.startHTTP,

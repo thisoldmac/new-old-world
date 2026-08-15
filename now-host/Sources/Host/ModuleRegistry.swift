@@ -63,6 +63,7 @@ struct ModuleRegistry {
         "agent": "mcp",
         "screenshots": "screen",
         "connections": "settings",
+        "development": "projects",
     ]
 
     /// The module a saved selection means today, following one rename.
@@ -84,7 +85,7 @@ struct ModuleRegistry {
 
     /* The summaries below say WHICH machine each page is about, in the
        vocabulary MachineNaming carries: the machine being driven is the
-       old world mac, the machine the app runs on is this Mac. They are
+       guest, the machine the app runs on is this Mac. They are
        written through those constants rather than spelled out, because a
        sidebar that says "the connected Mac" while every page under it says
        something else is how the copy drifted in the first place. */
@@ -117,6 +118,13 @@ struct ModuleRegistry {
            poll, and that poll deliberately keeps running while another
            module is showing. */
         MirrorHostModule.definition,
+        /* Directly after Mirror because they are the two halves of one
+           posture toward the machine — Mirror brings its screen HERE,
+           Continuity sends your pointer THERE — and a person deciding
+           between them should see them side by side. They share the
+           app-owned pointer controller; the split is by feature, and the
+           controller arbitrates so only one drives at a time. */
+        ContinuityHostModule.definition,
         ConsoleHostModule.definition,
         /* Beside Console because it is the same posture — a page that DOES
            things to the machine, through a model instead of a verb table.

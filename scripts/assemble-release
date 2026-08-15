@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+"""Assemble one recorded alpha distribution from this checkout."""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import hashlib
+import os
+import plistlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from tools.release.artifacts import (  # noqa: E402
+    ComponentArtifact,
+    LicensedInput,
+    copy_exact,
+)
+from tools.release.image import build_generic_image  # noqa: E402
+from tools.release.manifest import write_checksums, write_manifest  # noqa: E402
+from tools.release.profile import DistributionProfile, ReleaseRefusal  # noqa: E402
+
+TEAM_ID = "B93A9CG7F9"
+BUNDLE_ID = "dev.newoldworld.now"
+
+
+def run(arguments: list[str], *, capture: bool = False) -> str:
+    completed = subprocess.run(arguments, cwd=ROOT, text=True,
+                               capture_output=capture)
+    if completed.returncode:
+        detail = completed.stderr.strip() if capture else ""
+        raise ReleaseRefusal(detail or f"command failed: {' '.join(arguments)}")
+    return completed.stdout.strip() if capture else ""
+
+
+def git(*arguments: str) -> str:
+    return run(["git", "-C", str(ROOT), *arguments], capture=True)
+
+
+def require_clean_checkout() -> str:
+    dirty = git("status", "--porcelain", "--untracked-files=no")
+    if dirty:
+        raise ReleaseRefusal(
+            "release assembly requires a clean tracked checkout; commit the exact source first")
+    return git("rev-parse", "HEAD")
+
+
+def discard_stale_component_sidecars(build_root: Path) -> None:
+    """Force CMake to record this checkout even when component bytes reuse."""
+    for relative in (
+        "ppc/New Old World.bin.now-update.json",
+        "ext/NOW Extension.bin.now-update.json",
+    ):
+        try:
+            (build_root / relative).unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise ReleaseRefusal(
+                f"could not discard stale component metadata: {exc}") from exc
+
+
+def build_components(channel: str) -> tuple[Path, Path]:
+    os.environ["NOW_UPDATE_CHANNEL"] = channel
+    digest = hashlib.sha1(str(ROOT).encode()).hexdigest()[:12]
+    build_root = Path(os.environ.get("TMPDIR", "/tmp")) / "now-guest-builds" / digest
+    discard_stale_component_sidecars(build_root)
+    run([str(ROOT / "scripts/build-guests"), "ppc"])
+    run([str(ROOT / "scripts/build-guests"), "68k"])
+    return (
+        build_root / "ppc/New Old World.bin",
+        build_root / "ext/NOW Extension.bin",
+    )
+
+
+def stage_host(workspace: Path) -> Path:
+    host_root = workspace / "host"
+    run([str(ROOT / "scripts/build-host-app"), "--unsigned-release", str(host_root)])
+    bundle = host_root / "New Old World.app"
+    if not bundle.is_dir():
+        raise ReleaseRefusal("unsigned host build did not produce New Old World.app")
+    return bundle
+
+
+def stage_embedded(bundle: Path, application: ComponentArtifact,
+                   extension: ComponentArtifact, licensed: LicensedInput) -> None:
+    onboarding = bundle / "Contents/Resources/Onboarding"
+    if onboarding.exists():
+        raise ReleaseRefusal("host build unexpectedly already contains Onboarding resources")
+    onboarding.mkdir(parents=True)
+    copy_exact(application.path, onboarding / "New Old World.bin")
+    copy_exact(application.sidecar_path,
+               onboarding / "New Old World.bin.now-update.json")
+    copy_exact(extension.path, onboarding / "NOW Extension.bin")
+    copy_exact(extension.sidecar_path,
+               onboarding / "NOW Extension.bin.now-update.json")
+    dependencies = onboarding / "Dependencies"
+    dependencies.mkdir()
+    copy_exact(licensed.artifact, dependencies / licensed.artifact.name)
+    provenance = dependencies / "carbonlib-provenance.json"
+    copy_exact(licensed.descriptor_path, provenance)
+    licenses = dependencies / "License Material"
+    licenses.mkdir()
+    for path in licensed.license_files:
+        copy_exact(path, licenses / path.name)
+    allowed = {
+        "New Old World.bin", "New Old World.bin.now-update.json",
+        "NOW Extension.bin", "NOW Extension.bin.now-update.json", "Dependencies",
+    }
+    unexpected = {path.name for path in onboarding.iterdir()} - allowed
+    if unexpected:
+        raise ReleaseRefusal(f"unexpected embedded assets: {sorted(unexpected)}")
+
+
+def validate_provision_profile(profile: Path) -> None:
+    """The restricted entitlements below are dead weight without a profile
+    that authorizes them: AMFI kills the process at spawn and the Finder
+    says only "can't be opened", which is how the first identity-signed
+    DMG shipped unlaunchable while every gate read green (2026-08-14).
+    Validate the three facts that made that failure possible - the profile
+    exists, it is a macOS profile, and it covers this team - so a wrong
+    desk file is refused by name here rather than by AMFI at the user."""
+    decoded = subprocess.run(
+        ["/usr/bin/security", "cms", "-D", "-i", str(profile)],
+        capture_output=True)
+    if decoded.returncode != 0:
+        raise ReleaseRefusal(f"{profile}: not a readable provisioning profile")
+    document = plistlib.loads(decoded.stdout)
+    platforms = document.get("Platform", [])
+    if "OSX" not in platforms:
+        raise ReleaseRefusal(
+            f"{profile}: platform {platforms} is not a macOS profile")
+    app_id = document.get("Entitlements", {}).get(
+        "com.apple.application-identifier", "")
+    if not app_id.startswith(f"{TEAM_ID}."):
+        raise ReleaseRefusal(
+            f"{profile}: profile covers {app_id!r}, not team {TEAM_ID}")
+    expires = document.get("ExpirationDate")
+    if expires is not None and expires < datetime.datetime.now():
+        raise ReleaseRefusal(f"{profile}: profile expired {expires}")
+
+
+def sign_host(bundle: Path, identity: str | None, adhoc: bool,
+              workspace: Path, provision_profile: Path | None) -> None:
+    if not adhoc and not identity:
+        raise ReleaseRefusal("name --sign-identity or use --adhoc for a local fixture")
+    if adhoc and provision_profile is not None:
+        raise ReleaseRefusal(
+            "--provision-profile is meaningless with --adhoc: an ad-hoc "
+            "signature carries no restricted entitlements to authorize")
+    if not adhoc and provision_profile is None:
+        raise ReleaseRefusal(
+            "an identity signature needs --provision-profile: the restricted "
+            "entitlements are unlaunchable without an embedded macOS profile")
+    if provision_profile is not None:
+        validate_provision_profile(provision_profile)
+        copy_exact(provision_profile,
+                   bundle / "Contents/embedded.provisionprofile")
+    signing_identity = "-" if adhoc else identity
+    arguments = [
+        "/usr/bin/codesign", "--force", "--deep", "--options", "runtime",
+        "--sign", str(signing_identity),
+    ]
+    if not adhoc:
+        entitlements = {
+            "com.apple.application-identifier": f"{TEAM_ID}.{BUNDLE_ID}",
+            "com.apple.developer.team-identifier": TEAM_ID,
+            "com.apple.security.personal-information.addressbook": True,
+            "com.apple.security.personal-information.photos-library": True,
+            "keychain-access-groups": [f"{TEAM_ID}.{BUNDLE_ID}"],
+        }
+        entitlements_path = workspace / "host-entitlements.plist"
+        entitlements_path.write_bytes(plistlib.dumps(entitlements))
+        arguments.extend(["--entitlements", str(entitlements_path)])
+    arguments.append(str(bundle))
+    run(arguments)
+    run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(bundle)])
+    if not adhoc:
+        run([str(ROOT / "scripts/verify-host-signature"), str(bundle)])
+
+
+def create_dmg(bundle: Path, output: Path) -> None:
+    with tempfile.TemporaryDirectory(prefix="now-dmg-contents-") as raw_source:
+        source = Path(raw_source)
+        shutil.copytree(bundle, source / bundle.name, symlinks=True)
+        # A symlink to /Applications beside the app is the drag-to-install
+        # affordance; without it the DMG opens onto an app with nowhere to
+        # drag it.
+        (source / "Applications").symlink_to("/Applications")
+        # `hdiutil create -srcfolder` is deprecated upstream. The equivalent
+        # is `diskutil image create from`: -format UDZO carries over by name,
+        # -volname becomes --volumeName, and the source folder and destination
+        # are positional. Both spellings emit a UDZO/GUID/APFS image and
+        # preserve symlinks, including the absolute /Applications alias above.
+        run([
+            "/usr/sbin/diskutil", "image", "create", "from",
+            "--format", "UDZO", "--volumeName", "New Old World",
+            str(source), str(output),
+        ])
+
+
+def assemble(args: argparse.Namespace) -> None:
+    profile = DistributionProfile.load(ROOT)
+    revision = require_clean_checkout()
+    if "SOURCE_DATE_EPOCH" not in os.environ:
+        os.environ["SOURCE_DATE_EPOCH"] = git("show", "-s", "--format=%ct", "HEAD")
+    output = args.output.resolve()
+    if output == ROOT or ROOT in output.parents:
+        raise ReleaseRefusal("output directory must live outside the repository")
+    if output.exists():
+        raise ReleaseRefusal(f"output already exists: {output}")
+    licensed = LicensedInput.load(args.carbonlib_descriptor)
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+            prefix=".now-release-", dir=output.parent) as raw_workspace:
+        workspace = Path(raw_workspace)
+        if args.application or args.extension:
+            if not args.application or not args.extension:
+                raise ReleaseRefusal("prepared mode requires both component artifacts")
+            app_path, ext_path = args.application, args.extension
+        else:
+            app_path, ext_path = build_components(args.channel)
+        application = ComponentArtifact.load(
+            app_path, "application", profile.product_version, revision)
+        extension = ComponentArtifact.load(
+            ext_path, "extension", resident_version(), revision)
+        if application.metadata.get("compatibility") \
+                != extension.metadata.get("compatibility"):
+            raise ReleaseRefusal(
+                "application and Extension compatibility metadata disagree")
+        if application.metadata["channel"] != args.channel \
+                or extension.metadata["channel"] != args.channel:
+            raise ReleaseRefusal("component sidecars do not match the requested channel")
+
+        bundle = args.host_app.resolve() if args.host_app else stage_host(workspace)
+        if not bundle.is_dir() or bundle.name != "New Old World.app":
+            raise ReleaseRefusal("prepared host must be New Old World.app")
+        if args.host_app:
+            prepared_host = workspace / bundle.name
+            shutil.copytree(bundle, prepared_host, symlinks=True)
+            bundle = prepared_host
+        stage_embedded(bundle, application, extension, licensed)
+        sign_host(bundle, args.sign_identity, args.adhoc, workspace,
+                  args.provision_profile)
+
+        publication = workspace / "publication"
+        publication.mkdir()
+        app_out = publication / profile.filename("loose_ppc_application")
+        app_sidecar_out = publication / profile.filename("loose_ppc_sidecar")
+        ext_out = publication / profile.filename("loose_now_extension")
+        ext_sidecar_out = publication / profile.filename("loose_extension_sidecar")
+        copy_exact(application.path, app_out)
+        copy_exact(application.sidecar_path, app_sidecar_out)
+        copy_exact(extension.path, ext_out)
+        copy_exact(extension.sidecar_path, ext_sidecar_out)
+        image_out = publication / profile.filename("generic_classic_image")
+        build_generic_image(
+            image_out, application.path, extension.path, licensed.artifact,
+            licensed.license_files)
+        dmg_out = publication / profile.filename("macos_dmg")
+        create_dmg(bundle, dmg_out)
+
+        payloads = [
+            app_out, app_sidecar_out, ext_out, ext_sidecar_out, image_out, dmg_out,
+        ]
+        manifest = publication / profile.filename("release_manifest")
+        write_manifest(
+            manifest, version=profile.product_version, channel=args.channel,
+            source_revision=revision,
+            components=[application.manifest_row(), extension.manifest_row()],
+            licensed_inputs=[licensed.manifest_row()], outputs=payloads)
+        checksums = publication / profile.filename("release_checksums")
+        write_checksums(checksums, payloads + [manifest])
+        try:
+            os.replace(publication, output)
+        except OSError as exc:
+            raise ReleaseRefusal(
+                f"could not publish release atomically: {exc}") from exc
+    print(output)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--carbonlib-descriptor", required=True, type=Path)
+    parser.add_argument("--channel", choices=("development", "release"),
+                        default="development")
+    parser.add_argument("--sign-identity")
+    parser.add_argument("--provision-profile", type=Path,
+                        help="macOS provisioning profile embedded before an "
+                             "identity signature; required with "
+                             "--sign-identity, refused with --adhoc")
+    parser.add_argument("--adhoc", action="store_true")
+    parser.add_argument("--application", type=Path,
+                        help="prepared exact PPC MacBinary (tests/development)")
+    parser.add_argument("--extension", type=Path,
+                        help="prepared exact Extension MacBinary")
+    parser.add_argument("--host-app", type=Path,
+                        help="prepared unsigned host app")
+    args = parser.parse_args()
+    if args.adhoc and args.sign_identity:
+        parser.error("--adhoc and --sign-identity are mutually exclusive")
+    if args.channel == "release" and args.adhoc:
+        parser.error("release channel cannot use ad-hoc signing")
+    if args.channel == "release" and (
+            args.application or args.extension or args.host_app):
+        parser.error("release channel cannot use prepared inputs")
+    return args
+
+
+def resident_version() -> str:
+    source = (ROOT / "contract/resident_version.h").read_text()
+    values = []
+    for part in ("MAJOR", "MINOR"):
+        match = re.search(
+            rf"^#define NOW_RESIDENT_VERSION_{part} (\d+)$", source,
+            re.MULTILINE)
+        if not match:
+            raise ReleaseRefusal("resident version header is incomplete")
+        values.append(match.group(1))
+    return ".".join(values)
+
+
+if __name__ == "__main__":
+    try:
+        assemble(parse_args())
+    except ReleaseRefusal as exc:
+        print(f"assemble-release: refused: {exc}", file=sys.stderr)
+        raise SystemExit(70)

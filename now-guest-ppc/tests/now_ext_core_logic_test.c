@@ -63,6 +63,9 @@ int main(void)
     check(!now_ext_writer_lease_valid(&table, 100),
           "differently named writer is refused");
 
+    check(now_ext_continuity_safe_on_hardware(),
+          "PPC-pump-only Continuity candidate is enabled for qualification");
+
     d = now_ext_anchor_decide(100, 0, 1, 1, 0, 0);
     check(d == kNowExtAnchorChanged, "first A5 publishes immediately");
     d = now_ext_anchor_decide(101, 100, 1, 2, 1, 1);

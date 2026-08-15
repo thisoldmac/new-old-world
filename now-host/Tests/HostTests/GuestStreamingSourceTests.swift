@@ -54,8 +54,13 @@ final class GuestStreamingSourceTests: XCTestCase {
         let wire = try source("now-guest-ppc/src/core/wire.c")
         let calls = wire.components(separatedBy: "arm_file_transfer(").count - 1
 
-        // declaration + guest-initiated send + host-requested pull
-        XCTAssertEqual(calls, 3)
+        // declaration + guest-initiated send + host-requested pull +
+        // continuity.grab. The grab was ADDED to this count rather than
+        // given its own exemption, which is the point of counting: it
+        // serves a file outside the Files share, and the one thing that
+        // would make that dangerous is a second bulk path nobody was
+        // watching. Four call sites, one lane.
+        XCTAssertEqual(calls, 4)
         XCTAssertTrue(wire.contains(
             "now_files_stage_read(\n                &g_xfer.file"))
         XCTAssertTrue(wire.contains(
@@ -94,7 +99,9 @@ final class GuestStreamingSourceTests: XCTestCase {
         let calls = wire.components(
             separatedBy: "file_start_failed(").count - 1
 
-        // declaration + guest-initiated send + host-requested pull
-        XCTAssertEqual(calls, 3)
+        // declaration + guest-initiated send + host-requested pull +
+        // continuity.grab, matching the arm count above. A path that can
+        // announce file.begin must be able to end it.
+        XCTAssertEqual(calls, 4)
     }
 }

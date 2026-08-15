@@ -46,8 +46,10 @@ deferral may permit a branch checkpoint but never the landing.
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: dfccff8040038b8b55197b1adaa024a26dbed689
-derive resident-contract sha256=c9c8ffa94f6c2db0af0a8b407badbd9af9e80265cae227b57b68270df462ed0a lines=11
+sources-sha1: e623e9499a6d3d9f9d8dece0ac081453fe6f7c26
+sources-sha1: e623e9499a6d3d9f9d8dece0ac081453fe6f7c26
+sources-sha1: e623e9499a6d3d9f9d8dece0ac081453fe6f7c26
+derive resident-contract sha256=94aa1ceb2d2998a0973bc7f381405e008f6bcfcd416bac1a70e2b26d14ef97f8 lines=12
     scripts/docs-source-group resident
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, resident-contract 11->11
@@ -114,4 +116,106 @@ rederived: 2026-08-11T22:47:33-0400 9776cf7a unchanged
 rederived: 2026-08-11T23:12:01-0400 ddf740ce sources
 rederived: 2026-08-11T23:31:21-0400 ad4d680 sources
 rederived: 2026-08-11T23:37:11-0400 ad4d680 unchanged
+rederived: 2026-08-12T13:02:40-0400 7cea759e sources, resident-contract 11->12
+rederived: 2026-08-12T13:11:34-0400 7cea759e unchanged
+rederived: 2026-08-12T13:12:13-0400 7cea759e unchanged
+rederived: 2026-08-12T15:54:08-0400 939e43b7 sources
+rederived: 2026-08-12T17:19:19-0400 338eca21 sources
+rederived: 2026-08-12T18:34:28-0400 3688b9f6 sources
+rederived: 2026-08-12T18:58:27-0400 3771e144 sources
+rederived: 2026-08-12T19:15:23-0400 3771e144 unchanged
+rederived: 2026-08-12T19:31:57-0400 3771e144 unchanged
+rederived: 2026-08-12T20:08:32-0400 5a601a18 unchanged
+rederived: 2026-08-12T20:15:21-0400 9e828cdc sources
+rederived: 2026-08-12T20:34:41-0400 4d9ba67d unchanged
+rederived: 2026-08-12T20:37:07-0400 633da491 unchanged
+rederived: 2026-08-12T20:45:45-0400 a0878023 unchanged
+rederived: 2026-08-12T22:18:36-0400 18d0d3c4 unchanged
+rederived: 2026-08-12T23:59:06-0400 e5b16a71 unchanged
+rederived: 2026-08-13T00:21:45-0400 e5b16a71 unchanged
+rederived: 2026-08-13T00:58:12-0400 9f5139cf sources
+rederived: 2026-08-13T01:23:45-0400 9f5139cf unchanged
+rederived: 2026-08-13T01:47:12-0400 59852197 unchanged
+rederived: 2026-08-13T02:45:48-0400 e504061c unchanged
+rederived: 2026-08-13T04:30:00-0400 47f632b3 unchanged
+rederived: 2026-08-13T13:50:54-0400 a9e64fa4 sources
+rederived: 2026-08-13T14:32:32-0400 4da9c4a3 unchanged
+rederived: 2026-08-13T15:15:22-0400 2ccde05b sources
+rederived: 2026-08-13T17:36:04-0400 043777df sources
+rederived: 2026-08-13T17:37:42-0400 043777df unchanged
+rederived: 2026-08-13T18:23:46-0400 e6d7996d sources
+rederived: 2026-08-13T19:30:43-0400 1d154b67 sources
+rederived: 2026-08-13T21:59:04-0400 8433efda sources
+rederived: 2026-08-13T23:16:01-0400 fc235d4e sources
+rederived: 2026-08-14T00:51:50-0400 94f1c614 sources
+rederived: 2026-08-14T00:55:47-0400 3bd83df2 unchanged
+rederived: 2026-08-14T02:20:50-0400 81247e50 sources
+rederived: 2026-08-14T03:25:52-0400 ee8ef8a4 sources
+rederived: 2026-08-14T03:54:48-0400 d016e771 sources
+rederived: 2026-08-14T03:57:09-0400 e122c6c3 unchanged
+rederived: 2026-08-14T04:03:19-0400 908215de unchanged
+rederived: 2026-08-14T04:36:35-0400 e66db808 sources
+rederived: 2026-08-14T12:32:38-0400 7742eab5 sources
+rederived: 2026-08-14T12:35:44-0400 49e6dd98 unchanged
+rederived: 2026-08-14T12:44:43-0400 4d52ba1a unchanged
+rederived: 2026-08-14T12:47:23-0400 804be291 unchanged
+rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
+rederived: 2026-08-14T13:16:42-0400 90cfd8fa unchanged
+rederived: 2026-08-14T14:27:57-0400 6d037a57 unchanged
+rederived: 2026-08-14T15:56:43-0400 835e6acf unchanged
+rederived: 2026-08-14T16:58:27-0400 cf962dbb unchanged
+rederived: 2026-08-14T17:12:27-0400 32ac9165 unchanged
+rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
+rederived: 2026-08-14T18:14:38-0400 db6a7c6a unchanged
+rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
+rederived: 2026-08-14T18:19:50-0400 60bb3427 unchanged
+rederived: 2026-08-14T15:56:43-0400 835e6acf unchanged
+rederived: 2026-08-14T18:20:41-0400 23dc0759 unchanged
+rederived: 2026-08-14T18:22:06-0400 23dc0759 unchanged
+rederived: 2026-08-14T18:23:11-0400 e2c66126 unchanged
+rederived: 2026-08-14T18:30:52-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:25-0400 b248c9a1 unchanged
+rederived: 2026-08-14T20:24:56-0400 6d3d74d7 unchanged
+rederived: 2026-08-14T20:18:49-0400 cccec57a unchanged
+rederived: 2026-08-14T21:50:42-0400 edcc526f unchanged
+rederived: 2026-08-14T22:27:41-0400 5a6c46dc unchanged
+rederived: 2026-08-14T22:10:44-0400 568967b9 unchanged
+rederived: 2026-08-14T23:30:11-0400 0017d984 unchanged
+rederived: 2026-08-14T22:14:12-0400 0e743bc5 sources
+rederived: 2026-08-14T23:32:08-0400 a9afc153 unchanged
+rederived: 2026-08-14T22:19:01-0400 fe3d18a0 sources
+rederived: 2026-08-14T23:33:00-0400 09abc942 sources, sources
+rederived: 2026-08-14T22:27:25-0400 67772e4a unchanged
+rederived: 2026-08-14T23:33:51-0400 521b590f unchanged
+rederived: 2026-08-14T22:17:24-0400 4495cfb2 unchanged
+rederived: 2026-08-14T23:34:43-0400 61505862 unchanged
+rederived: 2026-08-14T23:35:18-0400 61505862 unchanged
+rederived: 2026-08-14T22:32:59-0400 13bfe534 unchanged
+rederived: 2026-08-14T23:36:20-0400 b1fc9796 unchanged
+rederived: 2026-08-15T00:20:06-0400 e937faee unchanged
+rederived: 2026-08-15T01:40:28-0400 139dff1a unchanged
+rederived: 2026-08-15T01:32:38-0400 108db464 unchanged
+rederived: 2026-08-15T02:20:02-0400 de5812ab unchanged
+rederived: 2026-08-15T01:36:37-0400 34192244 unchanged
+rederived: 2026-08-15T02:20:59-0400 c87b3288 unchanged
+rederived: 2026-08-15T02:26:41-0400 2749aab1 unchanged
+rederived: 2026-08-14T19:50:31-0400 d20eee81 unchanged
+rederived: 2026-08-14T19:50:53-0400 d20eee81 unchanged
+rederived: 2026-08-14T20:02:53-0400 068ca7fd sources
+rederived: 2026-08-14T21:00:58-0400 ab304cb2 unchanged
+rederived: 2026-08-14T21:15:08-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:31-0400 9d85a31d unchanged
+rederived: 2026-08-15T00:30:15-0400 f4dab407 unchanged
+rederived: 2026-08-15T01:11:35-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:57:58-0400 5d767dce sources, sources, sources
+rederived: 2026-08-15T03:19:42-0400 098e7ecf sources, sources, sources
+rederived: 2026-08-15T05:39:21-0400 829013ee unchanged
+rederived: 2026-08-15T05:30:46-0400 a327ba45 unchanged
+rederived: 2026-08-15T06:15:14-0400 3c7d14e4 unchanged
+rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:18:49-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T04:01:10-0400 b18a891c unchanged
+rederived: 2026-08-15T06:18:27-0400 9232bd77 unchanged
 -->

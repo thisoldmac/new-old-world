@@ -34,7 +34,7 @@ disk.
 |---|---|---|
 | Folder | `now-logs` beside the application | `~/Library/Logs/now-logs` |
 | Name | `2026-07-20 225612.log` | `2026-07-20 225612.log` |
-| In memory | 2000 lines (the Logs page dumps them) | 100 lines (the Connection window) |
+| In memory | 2000 lines (the Logs page dumps them) | 2000 lines (the Logs module follows them) |
 | Line endings | CR (this machine's) | LF |
 
 Per launch rather than one growing file: the question is almost always
@@ -89,9 +89,11 @@ way (AGENTS.md, *Enumerated lists rot at merges*).
 | `mach` | the machine family: activate, the act self-test |
 | `net` | the Network page's refresh |
 | `chat` | the chat transcript's own sequencing faults |
+| `web` | the guest-local browser relay and its NOW-wire request lifecycle |
 | `update` | update offers rejected by validation, requests refused, and installation results |
 | `dev` | project candidate publication and Development build/run settlement |
 | `mirror` | the Mirror: the writer verdict, plane arm/disarm requests and outcomes, the Workshop page, and the resident's own counters read back |
+| `adb` | guest application only: historical Continuity ADB observations and intake diagnostics; the retired passive observer no longer adds new callback traces |
 | `sw` | the software family: the `catsearch` probe, and `launch` outcomes (the `sw` listing itself is a read and stays quiet) |
 | `agent` | host only: the optional agent-integration surface — one line per capability a non-user face invoked, and the local endpoint's own failures |
 
@@ -176,6 +178,34 @@ load-bearing rather than tidy — see below. The writer verdict is compared
 against the last one before anything is written, an arm request that asks
 for what is already asked for is not an event, and identical consecutive
 settle failures collapse into a count.
+
+**The area's diagnostics are a DEBUG TIER, off by default.** Being
+edge-triggered was not enough: a 2026-08-15 session cycling 18
+Continuity epochs in three minutes left the 2000-line ring ~97% mirror
+counters — each disarm legitimately wrote its ~25-line epoch dump — and
+the lines a person diagnosing a *feature* needs (arm/disarm, selection,
+grants, errors) were buried past what a 40-line `tail` can serve. The
+tier boundary is drawn by one question: does this line serve someone
+diagnosing a FEATURE, or someone diagnosing the MIRROR PLANE? Lifecycle
+facts and every warn/error stay unconditional; per-epoch counter dumps
+and per-event traces sit behind `now_mirror_debug_on()`
+(`now-guest-ppc/src/mirror/mirror_debug.h`), flipped by the `mirrorlog`
+command from either face. The switch is session-scoped and never saved
+— a diagnostic that survives a relaunch is a configuration nobody chose
+— and the toggle logs its own transitions so the ring names who opened
+the firehose. `now-guest-ppc/tests/mirror_debug_gate_source_test.py`
+holds the boundary in both directions.
+
+Advanced Continuity controls are surfaced from the Logs module rather than
+from Mirror's primary controls. Fast Pump changes cooperative scheduling for a
+bounded comparison. The default-off deep-click probe is deliberately dense,
+but still bounded and memory-first: it records the jGNE event stream and click-
+relevant low-memory state for a short comparison run. The rolling button timing
+ring and front-process-at-down evidence remain available. The former V10 per-
+epoch Cursor Device interval dump is retired from the ordinary teardown path
+because its volume dominated the event-shaped log it was meant to help. None
+of these exceptions permits logging from resident or interrupt context; the
+resident records bounded state for the application to drain at task time.
 
 The verdict line exists for one failure in particular. `AGENTS.md`
 records that a binary not named exactly `New Old World` (creator `NOWo`)
@@ -262,7 +292,16 @@ timestamps as within-machine ordering only.
 
 ## `tail`
 
-`tail [lines]` — default 20, most 40 (a control frame caps at 4 KB).
+`tail [lines] [area] [before N]` — default 20, most 40 per answer (a
+control frame caps at 4 KB). `area` narrows to one subsystem's tag as the
+log wrote it, filtered on the guest before the wire; `before N` continues
+an answer at the sequence cursor its `log` group offered as `next`, back
+through the whole 2000-line ring. Sequences count from 1 at launch and
+never renumber, which is what makes a cursor over a live ring honest.
+The selection is one implementation for both faces
+(`now-guest-ppc/src/core/logquery.c`); `now_guest_log_tail` follows the
+cursors itself, so an agent asks for 200 lines and the paging is the
+host's problem, not the caller's.
 
 It is one command in the **shared table** that serves both consoles, so
 the same words work on the guest's own console and from the host's. That
@@ -306,7 +345,8 @@ break rule 1 and churn even a bounded set of files.
 | Host: file per launch, in the line format above | Built, **unverified on a real run** |
 | Host: `tail` of the guest's log | Built; needs `fork/logging` landed and a rebuild |
 | Guest log readable by a non-user host face | Built + tested 2026-07-30 as the `now_guest_log_tail` projection: a line count and never a path, the guest's `shown` row carried through as the bound, and one `app` line per read so the person at the machine can see their log was read. **Unverified on metal.** Scope and encoding: [mcp-coverage.md](mcp-coverage.md) |
-| `tail` output as one row per line | Built — byte-bounded, oldest dropped first, and it says so |
+| `tail` output as one row per line | Built — byte-bounded, oldest deferred to the next page first, and it says so |
+| Guest log retrieved in BULK over the wire | Built + tested 2026-08-15: `tail` pages the ring by sequence cursor with a guest-side `area` filter, and `now_guest_log_tail` walks the cursors to serve up to the whole 2000-line ring in one call, answers in the host log's shape. Emulator-verified this thread; **unverified on metal** |
 | Correlation ids in both logs | Built for the file family; **capture and stream still have none** |
 | Per-chunk rule enforced by a test | Built (`LoggingSpecTests`), mutation-checked |
 | Guest launch-log retention | Built + native-tested + mutation-proven: default 10, configurable 1–100, current/unrelated files protected. Both guest adapters cross-build; constrained-HFS and metal deletion are unverified |

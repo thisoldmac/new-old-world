@@ -296,6 +296,29 @@ final class GuestWireConformanceTests: XCTestCase {
         "X.end": ["file.end", "capture.end", "scene.end"],
     ]
 
+    /// `%s` fields whose contract values are closed enums. The generic
+    /// template scanner uses `X` for string substitutions; naming a real
+    /// member here keeps the decoder strict while still exercising the C
+    /// template. A new dynamic enum field must become an explicit entry.
+    private static let enumFieldPlaceholders: [String: [String: String]] = [
+        "continuity.keyReport": [
+            "state": "queued",
+            "reason": "malformed",
+        ],
+    ]
+
+    private func replacingKnownEnumPlaceholders(in json: String) -> String {
+        guard let typeStart = json.range(of: "\"type\":\"")?.upperBound,
+              let typeEnd = json[typeStart...].firstIndex(of: "\"")
+        else { return json }
+        let type = String(json[typeStart..<typeEnd])
+        guard let fields = Self.enumFieldPlaceholders[type] else { return json }
+        return fields.reduce(json) { result, field in
+            result.replacingOccurrences(of: "\"\(field.key)\":\"X\"",
+                                        with: "\"\(field.key)\":\"\(field.value)\"")
+        }
+    }
+
     /// Every whole message the guest can send decodes on this side.
     ///
     /// **This used to forgive any undecodable type that was not `file.*`.**
@@ -313,7 +336,8 @@ final class GuestWireConformanceTests: XCTestCase {
         var checked = 0
         for (file, text) in try guestSources() {
             for template in messageTemplates(in: text).whole {
-                let json = instantiate(template)
+                let json = replacingKnownEnumPlaceholders(
+                    in: instantiate(template))
                 checked += 1
                 do {
                     _ = try ControlMessageCodec.decode(Data(json.utf8))
@@ -552,6 +576,32 @@ final class GuestWireConformanceTests: XCTestCase {
             "rx->reserved_bytes = need;"))
     }
 
+    /// Mirror's semantic target is receiver-resolved, and an application is
+    /// notified only after the checked same-folder rename has succeeded.
+    /// This is a source-shaped guard because the classic File Manager and
+    /// Apple Event Manager cannot run in the native host suite; the guest
+    /// cross-build remains the compile half of the same boundary.
+    func testMirrorFileDropResolvesAndDeliversAfterSettlement() throws {
+        let drop = try GateSource.guestC(
+            "now-guest-ppc/src/files/files_drop.c")
+        let wire = try GateSource.guestC(
+            "now-guest-ppc/src/core/wire.c")
+
+        XCTAssertTrue(drop.contains("FindFolder(kOnSystemDisk, kDesktopFolderType"))
+        XCTAssertTrue(drop.contains("FSMakeFSSpec(0, 0, ppath, &spec)"))
+        XCTAssertTrue(drop.contains("now_files_downloads(&vref, &dir)"))
+        XCTAssertTrue(drop.contains("kAEOpenDocuments"))
+        XCTAssertTrue(wire.contains("now_json_next_object(value, object"),
+                      "nested Mirror keys must not collide with file.offer keys")
+
+        let settled = try XCTUnwrap(
+            wire.range(of: "rc = now_files_receive_finish(&g_put.rx);"))
+        let delivered = try XCTUnwrap(
+            wire.range(of: "now_files_mirror_deliver(&g_put.drop_target"))
+        XCTAssertLessThan(settled.lowerBound, delivered.lowerBound,
+                          "an application was notified before its file settled")
+    }
+
     /// Messages built up across several calls cannot be checked this
     /// way. Naming them keeps the gap visible instead of letting a green
     /// suite imply coverage it does not have.
@@ -582,6 +632,8 @@ final class GuestWireConformanceTests: XCTestCase {
         "hello": "test68KHelloAsTheGuestWritesIt",
         "ping": "test68KPingAsTheGuestWritesIt",
         "error": "test68KErrorReplyAsTheGuestWritesIt",
+        "continuity.report":
+            "test68KContinuityRefusalAsTheGuestWritesIt",
         "bye": "test68KByeAsTheGuestWritesIt",
         // The guest's half of the revision gate (wire68.c,
         // send_refuse_and_close). `refuse` used to be the host's message
@@ -684,6 +736,58 @@ final class GuestWireConformanceTests: XCTestCase {
                 \(have.subtracting(known).sorted().joined(separator: ", ")) \
                 — not named by the contract schema
                 """)
+        }
+    }
+
+    /// Every `continuity.key` action the contract declares must be a value
+    /// the PowerPC guest's dispatch actually compares against.
+    ///
+    /// This is the finding this suite is named for, in its receiver-side
+    /// form: `two-halves-never-met-in-a-test` is usually told as a FIELD one
+    /// side sends and the other has never heard of, and a closed enum is the
+    /// same defect with a smaller blast radius and a quieter failure. An
+    /// action the guest cannot name does not crash it — `action` stays 0 and
+    /// the key is refused `malformed`, which reads on the host exactly like a
+    /// guest that is merely busy. The list is short enough to hand-maintain
+    /// and that is precisely why it needs reading rather than remembering.
+    func testTheGuestNamesEveryContinuityKeyActionTheContractDeclares()
+        throws {
+        let contract = try String(
+            contentsOf: Self.repoRoot
+                .appendingPathComponent("contract/asyncapi.yaml"),
+            encoding: .utf8)
+        guard let range = contract.range(
+            of: #"action:\s*\n?\s*enum: \[([^\]]*)\]"#,
+            options: .regularExpression)
+        else {
+            return XCTFail("contract/asyncapi.yaml no longer declares a "
+                + "continuity.key action enum in a shape this gate can read")
+        }
+        let actions = contract[range]
+            .components(separatedBy: "[").last!
+            .replacingOccurrences(of: "]", with: "")
+            .components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        XCTAssertTrue(actions.contains("down") && actions.contains("modifiers"),
+                      "read the wrong enum: \(actions)")
+
+        let dispatch = try guestSourcesWithoutComments()
+            .first { $0.name.hasSuffix("core/wire.c") }?.text
+        let text = try XCTUnwrap(dispatch, "now-guest-ppc/src/core/wire.c")
+        /* The comparison, not the word. `modifiers` is ALSO the name of a
+           field this same function reads, so a bare search for the quoted
+           string is satisfied by `now_json_find_u32(request, "modifiers", …)`
+           and stays green with the dispatch arm deleted — watched happening,
+           which is why the assertion is shaped this way. */
+        for action in actions {
+            XCTAssertTrue(
+                text.contains("strcmp(action_name, \"\(action)\")"),
+                "contract/asyncapi.yaml declares continuity.key action "
+                    + "`\(action)` and now-guest-ppc/src/core/wire.c never "
+                    + "compares `action_name` against it, so the guest "
+                    + "refuses it as malformed and the host cannot tell that "
+                    + "apart from a guest under load")
         }
     }
 

@@ -10,7 +10,7 @@
    release. tools/ext-bake-gate prevents rollback and still requires the exact
    combined resident source to be baked before refs/heads/main moves. */
 #define NOW_RESIDENT_VERSION_MAJOR 1
-#define NOW_RESIDENT_VERSION_MINOR 2
+#define NOW_RESIDENT_VERSION_MINOR 3
 
 #define NOW_RESIDENT_STRINGIFY_INNER(value) #value
 #define NOW_RESIDENT_STRINGIFY(value) NOW_RESIDENT_STRINGIFY_INNER(value)

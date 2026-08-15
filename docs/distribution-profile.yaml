@@ -1,0 +1,121 @@
+schema_version: 1
+profile_id: alpha-distribution
+
+feature_authority:
+  path: product/features.yaml
+  profile: active
+
+components:
+  ppc_application:
+    kind: product-feature
+    feature_id: classic.powerpc
+    source: repository-build
+    output_ids:
+      - embedded_app_resources
+      - generic_classic_image
+      - loose_ppc_application
+  now_extension:
+    kind: product-feature
+    feature_id: resident.extension
+    source: repository-build
+    output_ids:
+      - embedded_app_resources
+      - generic_classic_image
+      - loose_now_extension
+  now_68k:
+    kind: product-feature
+    feature_id: classic.pre-carbon
+    source: repository-build
+    output_ids: []
+    omission_reason: Follow the active feature catalog; the alpha excludes this retained sibling.
+
+licensed_inputs:
+  carbonlib_1_6_installer:
+    classification: approved-external-installer
+    owner: Apple Computer, Inc.
+    repository_policy: external-only
+    preserve_original_bytes: true
+    checksum: required
+    provenance: required
+    license_material: required
+    license_acceptance: user
+    output_ids:
+      - embedded_app_resources
+      - generic_classic_image
+
+excluded_inputs:
+  codekitten:
+    reason: Not part of the alpha distribution profile.
+
+outputs:
+  macos_dmg:
+    kind: dmg
+    filename: New-Old-World-${product_version}.dmg
+    public: true
+    contains:
+      - output: embedded_app_resources
+  embedded_app_resources:
+    kind: embedded-app-resources
+    path: New Old World.app/Contents/Resources/Onboarding
+    public: false
+    contains:
+      - component: ppc_application
+      - component: now_extension
+      - licensed_input: carbonlib_1_6_installer
+      - output: loose_ppc_sidecar
+      - output: loose_extension_sidecar
+  generic_classic_image:
+    kind: classic-image-macbinary
+    filename: new-old-world-classic-${product_version}.img.bin
+    classic_name: New Old World Setup.img
+    public: true
+    personalized: false
+    contains:
+      - component: ppc_application
+      - component: now_extension
+      - licensed_input: carbonlib_1_6_installer
+  loose_ppc_application:
+    kind: loose-component
+    filename: New Old World.bin
+    public: true
+    component: ppc_application
+    sidecar: loose_ppc_sidecar
+  loose_ppc_sidecar:
+    kind: update-sidecar
+    filename: New Old World.bin.now-update.json
+    public: true
+    sidecar_for: loose_ppc_application
+  loose_now_extension:
+    kind: loose-component
+    filename: NOW Extension.bin
+    public: true
+    component: now_extension
+    sidecar: loose_extension_sidecar
+  loose_extension_sidecar:
+    kind: update-sidecar
+    filename: NOW Extension.bin.now-update.json
+    public: true
+    sidecar_for: loose_now_extension
+  release_manifest:
+    kind: release-manifest
+    filename: release-manifest.json
+    public: true
+  release_checksums:
+    kind: checksums
+    filename: SHA256SUMS
+    public: true
+
+update_policy:
+  guest_components:
+    - ppc_application
+    - now_extension
+  actions: independent
+  canonical_order:
+    - ppc_application
+    - now_extension
+  order_enforced: false
+  supported_orders:
+    - [ppc_application, now_extension]
+    - [now_extension, ppc_application]
+  older_bundle: warn-no-downgrade
+  host_self_update: deferred

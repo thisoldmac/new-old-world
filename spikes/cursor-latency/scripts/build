@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# build - cross-compile the rig's four guest binaries, and run the
+# host-side gate first because it costs two seconds.
+#
+# Toolchains come from the repository's .env.lab (see docs/lab-setup.md).
+# Without them this SKIPS rather than fails: a contributor who cannot run
+# a cross-compiler is not failing a gate.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$HERE"
+while [ "$REPO" != / ] && [ ! -f "$REPO/.env.lab" ]; do REPO="$(dirname "$REPO")"; done
+[ -f "$REPO/.env.lab" ] && { set -a; . "$REPO/.env.lab"; set +a; }
+
+OUT="${TMPDIR:-/tmp}/cursor-rig-builds"
+rc=0
+
+bash "$HERE/scripts/check" >/dev/null || { echo "== logic gate: FAILED"; exit 1; }
+echo "== logic gate: ok (run scripts/check for the mutations)"
+
+one () {   # label, dir, toolchain
+    local label="$1" dir="$2" tc="$3"
+    if [ -z "${tc:-}" ] || [ ! -f "$tc" ]; then
+        echo "== $label: SKIPPED (no toolchain; see docs/lab-setup.md)"
+        return 0
+    fi
+    local b="$OUT/$dir"
+    mkdir -p "$b"
+    if ! cmake -S "$HERE/$dir" -B "$b" -G Ninja -DCMAKE_TOOLCHAIN_FILE="$tc" \
+            >"$b/build.log" 2>&1 || ! cmake --build "$b" >>"$b/build.log" 2>&1; then
+        echo "== $label: FAILED"; tail -25 "$b/build.log"; rc=1; return 0
+    fi
+    echo "== $label: ok"
+}
+
+one "init (68K INIT, the writer)"   init      "${NOW68K_TOOLCHAIN:-}"
+one "restarter (68K application)"   restarter "${NOW68K_TOOLCHAIN:-}"
+one "app (PowerPC Carbon intake)"   app       "${NOW_PPC_TOOLCHAIN:-}"
+one "starver (PowerPC Carbon load)" starver   "${NOW_PPC_TOOLCHAIN:-}"
+exit $rc

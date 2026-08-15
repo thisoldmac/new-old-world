@@ -1,0 +1,40 @@
+#!/bin/sh
+# One durable identity per kind of build. Local Network privacy belongs to the
+# signed application identity, so an experimental suffix must never create a
+# fresh identity merely because another candidate was compiled.
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "usage: $0 canonical|continuity bundle-id|display-name|bundle-name" >&2
+    exit 64
+fi
+
+case "$1" in
+    canonical)
+        bundle_id=dev.newoldworld.now
+        display_name='New Old World'
+        bundle_name='New Old World.app'
+        ;;
+    continuity)
+        bundle_id=dev.newoldworld.now.continuity
+        display_name='NOW Continuity'
+        # Local Network settings labels registrations by the final bundle
+        # path on this macOS build. A candidate named New Old World.app is
+        # indistinguishable from canonical and from every transient build.
+        bundle_name='NOW Continuity.app'
+        ;;
+    *)
+        echo "unknown host build identity profile: $1" >&2
+        exit 64
+        ;;
+esac
+
+case "$2" in
+    bundle-id) printf '%s\n' "$bundle_id" ;;
+    display-name) printf '%s\n' "$display_name" ;;
+    bundle-name) printf '%s\n' "$bundle_name" ;;
+    *)
+        echo "unknown host build identity field: $2" >&2
+        exit 64
+        ;;
+esac

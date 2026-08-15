@@ -5,10 +5,10 @@ description: How the host publishes exact classic artifacts and the PowerPC gues
 doc_type: explanation
 audience: developer
 lifecycle: current
-authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/resident-components.md]
-source_dependencies: [RELEASING.md, .github/repository-policy.json, contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/sync-main, tools/github-policy-check, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c]
+authority: [contract/asyncapi.yaml, contract/product_version.h, contract/resident_version.h, docs/resident-components.md, docs/developer-guide/reference/distribution-standard.md]
+source_dependencies: [RELEASING.md, .github/repository-policy.json, contract/asyncapi.yaml, contract/continuity_udp.h, contract/peek_table.h, contract/product_version.h, contract/resident_version.h, docs/developer-guide/reference/distribution-standard.md, docs/distribution-profile.yaml, scripts/assemble-release, scripts/build-continuity-stack, tools/continuity-stack-gate, tools/write-update-manifest.py, tools/product-version-gate, tools/ext-bake-gate, tools/land-main, tools/sync-main, tools/github-policy-check, now-guest-ppc/cmake/buildstamp.cmake, ext/cmake/build_identity.cmake, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-host/Sources/Host/OnboardingAssets.swift, now-guest-ppc/src/update, now-guest-ppc/src/core/wire.c, now-guest-ppc/src/core/prefs.c]
 media_ids: []
-last_verified: 2026-08-11
+last_verified: 2026-08-13
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -30,10 +30,10 @@ sequenceDiagram
   G->>H: update.request(component, exact build, digest)
   H->>G: file.offer + MacBinary bulk stream
   G->>G: Verify SHA-256 and Finder identity
-  G->>D: Exchange application or Extension
+  G->>D: Move old item to Trash; put replacement at canonical path
   G->>H: update.result
   alt application
-    G->>G: Clean teardown, then relaunch replacement
+    G->>G: Stay connected and report quit/relaunch required
   else Extension
     G->>G: Report restart required
   end
@@ -42,19 +42,40 @@ sequenceDiagram
 Text equivalent: the host validates its catalog before sending an offer; the
 guest compares exact identity and requests one build; the host transfers that
 MacBinary through the existing file lane; the guest verifies the stream and
-Finder identity before exchanging files. It then reports the outcome and
-either tears down and relaunches the application or tells the person that the
-Extension will become active only after restart.
+Finder identity before replacing files. It then reports the outcome and tells
+the person either to quit and relaunch the application or to restart before
+the Extension becomes active.
 
 ## Publication unit
 
 `tools/write-update-manifest.py` writes an adjacent
 `.now-update.json` sidecar for each canonical MacBinary. It contains the
 component, release version, exact build identity, byte count, SHA-256, channel,
-and signature state. A loose artifact without a valid sidecar may still serve
+signature state, and one compatibility tuple: Continuity wire version,
+resident-table format, and resident release version. A loose artifact without a valid sidecar may still serve
 onboarding, but `UpdateProvider` will not advertise it. The provider reads the
 normal onboarding catalog, then recomputes byte count and SHA-256 before every
-catalog snapshot becomes an offer.
+catalog snapshot becomes an offer. It also refuses a valid artifact whose
+compatibility tuple differs from the host it is running in.
+
+`scripts/build-continuity-stack HOST_ROOT OUTPUT` is the supported development
+assembler. It builds both classic artifacts and the signed Continuity host,
+requires a new or empty output directory, and writes `NOW-stack.json` only
+after `tools/continuity-stack-gate` has checked all three faces. The manifest
+records the host bundle/signing identity, exact application and Extension
+identities, artifact digests, source revision, dirty state, and compatibility
+tuple. Do not construct a test stack by copying three files from remembered
+build directories. A valid application plus a valid older Extension is an
+invalid stack.
+
+The source half of that gate also discovers Python Continuity speakers by
+behavior. Any tool under `tools/` or `scripts/probes/` that emits
+`continuity.arm` or carries the datagram signature must import
+`tools/continuity_contract.py`; it may not declare the control version, packet
+magic, packet layout, ACK states, or exit reasons locally. This is discovery,
+not a filename inventory, so adding a new speaker cannot silently evade it.
+The Swift host cannot import a C header directly, so its checked copies of the
+same values are compared with `contract/continuity_udp.h` by the same gate.
 
 `contract/product_version.h` owns the host/PPC application-family release
 version. The classic `vers` resource, Swift identity, Xcode marketing version,
@@ -102,6 +123,13 @@ parallel non-rollback and exact shared-bake gate.
 
 ## Transfer and install
 
+Application and Extension replacement are independent actions. Application
+first is the canonical release flow, but the guest must also support Extension
+first, application second, and one final reboot for iterative development. An
+older host artifact warns and remains unavailable; it is not an implicit
+downgrade path. The distribution-level authority for these choices is the
+[bundle standard](../reference/distribution-standard.md).
+
 The guest requests the exact offered build and artifact SHA-256. The host
 requires both to still name its published artifact before serving it through
 the existing `file.offer` and bulk lane. Update
@@ -112,27 +140,37 @@ The SHA-256 covers the raw MacBinary stream. After the existing receiver has
 decoded and committed the classic file, the installer also checks Finder
 identity: `APPL/NOWo` for the application and `INIT/NOWx` for the Extension.
 
-- The application uses `FSpExchangeFiles` against the running canonical file.
-  The replacement takes the canonical place while the previous bytes remain at
-  the staging name. The main loop exits normally, closes logging, and only then
-  asks Process Manager to launch the canonical application.
-- The Extension is exchanged with the installed resident or renamed into its
-  canonical place. The retained old file is changed away from Finder type
-  `INIT`, so two residents cannot load at the next boot. Activation is never
-  claimed until the person restarts the classic Mac.
+- The application receives a collision-free recovery name, moves into that
+  volume's Trash, and leaves the canonical pathname free for the verified
+  replacement. The old process stays connected from the trashed file long
+  enough to report `relaunch-required`; the person quits it and launches the
+  canonical application again.
+- The Extension follows the same Trash-first replacement. Activation is never
+  claimed until the person restarts the classic Mac. If any filesystem step
+  fails, the installer restores the prior canonical name when possible and
+  reports where the recoverable old item remains when it cannot.
 
 The guest compares the active table's resident major/minor with the version it
 compiled against and warns when they differ. Capability bits, not version, still
-govern which resident planes the application may use.
+govern which resident planes the application may use. Continuity additionally
+requires the exact current table format. If the new application finds an older
+or inactive resident, it refuses with `resident-unavailable`; the host names the
+NOW Extension and restart recovery instead of collapsing this into
+`unsupported`. Resident 1.3 is the first release under this rule: it identifies
+the V8 Continuity-table integration boundary, while the build fingerprint still
+distinguishes exact development builds within that release.
 
 ## Trust boundary
 
 SHA-256 is integrity, not signing. Every generated manifest currently says
-`signed: false`; the guest labels the offer unsigned and requires local modal
-confirmation in Connections. The shared console/wire command can inspect these
-offers but cannot start an unsigned install, so a remote command cannot spend
-the person's consent. A future release-signing design needs a pinned trust root,
-key rotation and recovery policy before that flag can become true.
+`signed: false`; the guest labels the offer unsigned and requires an explicit
+human confirmation. That confirmation may be the guest Connections button or
+one of the host Connections page's separate application/Extension replacement
+buttons. The latter sends `hostApproved:true`; absent or false remains refused.
+This is an application-level authorization on the trusted-LAN wire, not proof
+of who sent a frame: a hostile raw peer can forge it because the protocol is
+plaintext and unauthenticated. A future release-signing design needs a pinned
+trust root, key rotation and recovery policy before `signed` can become true.
 
 The underlying classic wire remains plaintext and unauthenticated. Artifact
 signing will authenticate release bytes, not make the transport safe for an
@@ -141,8 +179,10 @@ untrusted network.
 ## Verification boundary
 
 Native tests cover SHA-256, exact-build comparison, trust labels, provider
-validation, contract round trips, and critical source ordering. Guest
+validation, compatibility-tuple parity, contract round trips, and critical
+source ordering. The stack gate's mutation suite specifically proves that a V8
+application plus a V7 Extension is refused before packaging. Guest
 cross-builds prove the Carbon and Toolbox APIs compile. Emulator acceptance
-must still prove exchange, clean relaunch, Extension replacement, restart
-activation, and rollback. Only physical hardware can make the result
-metal-verified.
+must still prove Trash-first replacement, a manual application relaunch,
+Extension replacement, restart activation, and rollback. Only physical
+hardware can make the result metal-verified.

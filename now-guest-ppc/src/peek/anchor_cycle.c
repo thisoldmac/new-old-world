@@ -170,9 +170,9 @@ int now_peek_anchor_cycle(NowAnchorCycleReport *out)
     }
     memset(out, 0, sizeof *out);
 
-    if (!now_mirror_policy_enabled(kMirrorPolicyForegroundCycle)) {
-        note(out, "foreground discovery is disabled in Mirror settings; "
-                  "nothing was disturbed");
+    if (!now_mirror_policy_enabled()) {
+        note(out, "this Mac does not allow mirroring; nothing was "
+                  "disturbed");
         return 0;
     }
 

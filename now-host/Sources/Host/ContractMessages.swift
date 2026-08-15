@@ -87,10 +87,22 @@ enum ControlMessage: Equatable, Sendable {
     case chatResult(ChatResult)
     case chatCancel(ChatCancel)
     case chatReset(ChatReset)
+    case webRequest(WebRequest)
+    case webResponseBegin(WebResponseBegin)
+    case webResponseChunk(WebResponseChunk)
+    case webResponseEnd(WebResponseEnd)
+    case webCancel(WebCancel)
     case previewBegin(PreviewBegin)
     case previewEnd(PreviewEnd)
     case hostShow(HostShow)
     case hostShown(HostShown)
+    case continuityArm(ContinuityArm)
+    case continuityReport(ContinuityReport)
+    case continuityDisarm(ContinuityDisarm)
+    case continuityKey(ContinuityKey)
+    case continuityKeyReport(ContinuityKeyReport)
+    case continuitySelection(ContinuitySelection)
+    case continuityGrab(ContinuityGrab)
     case mirrorInvalidate(MirrorInvalidate)
     case updateOffer(UpdateOffer)
     case updateRequest(UpdateRequest)
@@ -160,6 +172,194 @@ struct HostShown: Codable, Equatable, Sendable {
     var reason: String?
 }
 
+// MARK: - Continuity session ownership
+
+enum ContinuityContract {
+    static let version = Int(ContinuityStateDatagram.version)
+    static let residentTableVersion = 13
+    static let residentVersion = "1.3"
+}
+
+/// Reliable authority for the lossy UDP lane. A datagram with these values
+/// is still only state; it cannot create this arm for itself.
+struct ContinuityArm: Codable, Equatable, Sendable {
+    var version: Int
+    var id: Int
+    var nonceHi: UInt32
+    var nonceLo: UInt32
+    var epoch: UInt32
+    var requestedHz: Int
+    var leaseTicks: Int
+    var fastPump: Bool?
+    var settleSyntheticDevice: Bool? = nil
+    var wideDoubleTime: Bool? = nil
+    var compressClickWhen: Bool? = nil
+    var interruptPress: Bool? = nil
+    var deepClickLog: Bool? = nil
+    var settleIdleCursor: Bool? = nil
+}
+
+struct ContinuityArmOptions: Equatable, Sendable {
+    var fastPump = false
+    var settleSyntheticDevice = false
+    var wideDoubleTime = false
+    var compressClickWhen = false
+    var interruptPress = false
+    var deepClickLog = false
+    var settleIdleCursor = false
+
+    subscript(_ id: ContinuityOptionID) -> Bool {
+        get {
+            switch id {
+            case .fastPump: fastPump
+            case .settleSyntheticDevice: settleSyntheticDevice
+            case .wideDoubleTime: wideDoubleTime
+            case .compressClickWhen: compressClickWhen
+            case .interruptPress: interruptPress
+            case .deepClickLog: deepClickLog
+            case .settleIdleCursor: settleIdleCursor
+            }
+        }
+        set {
+            switch id {
+            case .fastPump: fastPump = newValue
+            case .settleSyntheticDevice: settleSyntheticDevice = newValue
+            case .wideDoubleTime: wideDoubleTime = newValue
+            case .compressClickWhen: compressClickWhen = newValue
+            case .interruptPress: interruptPress = newValue
+            case .deepClickLog: deepClickLog = newValue
+            case .settleIdleCursor: settleIdleCursor = newValue
+            }
+        }
+    }
+}
+
+struct ContinuityDisarm: Codable, Equatable, Sendable {
+    var version: Int
+    var id: Int
+    var epoch: UInt32
+    var reason: String
+}
+
+struct ContinuityKey: Codable, Equatable, Sendable {
+    enum Action: String, Codable, Equatable, Sendable {
+        case down
+        case up
+        case repeatKey = "repeat"
+        /// A bare modifier change — macOS `flagsChanged`. Not a key: `code`
+        /// and `character` are zero and the receiver posts no key event.
+        case modifiers
+    }
+
+    var version: Int
+    var id: Int
+    var epoch: UInt32
+    var generation: UInt32
+    var action: Action
+    var code: UInt16
+    var character: UInt8
+    var modifiers: UInt16
+}
+
+struct ContinuityKeyReport: Codable, Equatable, Sendable {
+    enum State: String, Codable, Equatable, Sendable {
+        case queued
+        case refused
+    }
+
+    enum Reason: String, Codable, Equatable, Sendable {
+        case wrongVersion = "wrong-version"
+        case badEpoch = "bad-epoch"
+        case targetUnavailable = "target-unavailable"
+        case queueFull = "queue-full"
+        case malformed
+    }
+
+    var version: Int?
+    var id: Int
+    var epoch: UInt32
+    var generation: UInt32
+    var state: State
+    var reason: Reason?
+}
+
+/// What the person at the classic Mac has selected in the Finder, pushed
+/// unsolicited while a Continuity epoch is live.
+///
+/// It arrives BEFORE any press, and that is the whole design: during a
+/// drag the guest is unqueryable — the Finder sits in its own nested Drag
+/// Manager loop — so anything needed at cross-the-edge time has to be on
+/// this side of the wire already.
+struct ContinuitySelection: Codable, Equatable, Sendable {
+    /// The item, by the identity the File Manager itself uses. There is
+    /// deliberately no path: two mounted volumes may share a name, and the
+    /// item must stay reachable after a person renames a folder above it.
+    struct Item: Codable, Equatable, Sendable {
+        var name: String
+        var volumeRef: Int
+        var dirID: Int
+        var fileType: String?
+        var creator: String?
+        var dataSize: Int?
+        var resourceSize: Int?
+        /// Classic seconds since 1904.
+        var modifiedAt: UInt32?
+        var isFolder: Bool
+        /// Declared by the contract, not sent by any guest yet.
+        var icon: String?
+    }
+
+    /* Optional at the decoder for the same reason every other Continuity
+       message treats it so: a missing version must become a readable
+       wrong-version answer, not an undecodable frame. */
+    var version: Int?
+    var epoch: UInt32
+    var generation: UInt32
+    /// Absent means nothing is selected — an instruction to drop whatever
+    /// was cached, not a poll that found nothing to say.
+    var item: Item?
+}
+
+/// Serve the item one `ContinuitySelection` generation named.
+///
+/// It carries no path on purpose. The host can only ask for what the guest
+/// already told it about, so the reachable set is exactly what a person
+/// selected by hand during a live epoch — which is what makes a read
+/// outside the Files share honest here and nowhere else.
+struct ContinuityGrab: Codable, Equatable, Sendable {
+    var version: Int
+    var id: Int
+    var epoch: UInt32
+    var generation: UInt32
+    var container: String?
+}
+
+/// An arm/disarm answer when `id` is present; an unsolicited local-takeover
+/// report when it is absent.
+struct ContinuityReport: Codable, Equatable, Sendable {
+    /* Optional only at the decoder boundary: an older guest's missing value
+       must become an explicit wrong-version status, not an unreadable frame
+       followed by the same five-second timeout as packet loss. Every message
+       this build emits includes ContinuityContract.version. */
+    var version: Int?
+    var id: Int?
+    var epoch: UInt32
+    var state: String
+    var acceptedHz: Int?
+    var udpPort: Int?
+    var reason: String?
+    var acceptedPackets: Int?
+    var stalePackets: Int?
+    var malformedPackets: Int?
+    var appliedPositionSequence: UInt32?
+    var appliedButtonGeneration: UInt32?
+    /* The guest's main display bounds in guest pixels, on the pointer
+       plane's own wire so the display layout never depends on Mirror
+       having decoded a scene first. Optional: an older guest omits them. */
+    var screenWidth: Int?
+    var screenHeight: Int?
+}
+
 /// An additive hint from the peer that serves scene state. It names what
 /// must be reread; it never carries replacement state and the transport
 /// session that delivered it remains the authoritative session identity.
@@ -223,10 +423,8 @@ struct CloudServiceEntry: Codable, Equatable, Sendable, Identifiable {
     /// serving, so the guest's dropdown can say WHY a thing is missing.
     var state: String
     var detail: String?
-    /// For a service that sizes its deliveries: this host's own
-    /// configured CloudGet.size token, so a guest that offers the
-    /// choice preselects the setting instead of carrying a "host
-    /// default" item it cannot name on screen. nil everywhere else.
+    /// Legacy compatibility hint from hosts that owned a download-size
+    /// preference. Current hosts omit it: the guest owns that choice.
     var defaultSize: String?
 
     var id: String { service }
@@ -297,10 +495,10 @@ struct CloudGet: Codable, Equatable, Sendable {
     /// The per-ask delivery size (original / long640 / long1024 /
     /// long1600), each naming the LONGEST edge the host scales the
     /// original's longer dimension onto, aspect preserved, never up.
-    /// Absent means the host's configured Downloads default — which a
-    /// guest with a size picker no longer uses, since cloud.report's
-    /// defaultSize tells it what that setting is. The retired fitN
-    /// boxes are refused by name, never aliased (contract).
+    /// The guest's picker sends this explicitly. Absent asks for the host's
+    /// conservative compatibility default for an older guest. Retired fitN
+    /// boxes
+    /// are refused by name, never aliased (contract).
     var size: String?
 
     init(id: Int, service: String, item: String, size: String? = nil) {
@@ -477,6 +675,13 @@ struct Hello: Codable, Equatable, Sendable {
     /// because a version equal across two builds is the failure this exists
     /// for.
     var build: String? = nil
+    /// Active resident identity observed by a normal PPC guest. Both stay
+    /// nil when the guest predates this report or no active table can be read.
+    var extensionVersion: String? = nil
+    var extensionBuild: String? = nil
+    /// True only when the peer understands both Mirror file descriptors.
+    /// Absence is an older peer, not permission to degrade into the share.
+    var mirrorTransfer: Bool? = nil
     /// The sending machine's own answer to whether a companion agent may
     /// drive it. Nil means it never said — a sender that predates the
     /// field — and that is NOT consent, never `.fullAccess` filled in
@@ -895,9 +1100,22 @@ struct FileListing: Codable, Equatable, Sendable {
     var entries: [FileEntry]
     var more: Bool
     var cursor: Int?
+    /// Free bytes on the responder's volume containing this folder.
+    var freeBytes: Int? = nil
     /// What the other machine is sharing, in its own spelling. Display
     /// only; every path on the wire is relative to it.
     var root: String?
+
+    init(id: Int, path: String, entries: [FileEntry], more: Bool,
+         cursor: Int?, freeBytes: Int? = nil, root: String? = nil) {
+        self.id = id
+        self.path = path
+        self.entries = entries
+        self.more = more
+        self.cursor = cursor
+        self.freeBytes = freeBytes
+        self.root = root
+    }
 }
 
 struct FileGet: Codable, Equatable, Sendable {
@@ -905,6 +1123,13 @@ struct FileGet: Codable, Equatable, Sendable {
     var path: String
     var container: String?
     var developmentProject: String? = nil
+    var mirrorSource: MirrorFileSource? = nil
+}
+
+struct MirrorFileSource: Codable, Equatable, Sendable {
+    var kind: String
+    var name: String
+    var path: String? = nil
 }
 
 /// Ask the other machine for its running processes. Read-only and
@@ -1095,6 +1320,17 @@ struct FileOffer: Codable, Equatable, Sendable {
     /// Private Development coordinator destination. No agent-facing file
     /// request can set this field.
     var developmentCandidate: String? = nil
+    /// Human-authored release over Mirror. Closed and receiver-resolved: it
+    /// cannot express an arbitrary destination as a side effect of a put.
+    var mirrorDrop: MirrorFileDrop? = nil
+}
+
+struct MirrorFileDrop: Codable, Equatable, Sendable {
+    var kind: String
+    var path: String? = nil
+    var psn: String? = nil
+    var creator: String? = nil
+    var name: String? = nil
 }
 
 struct FileAccept: Codable, Equatable, Sendable {
@@ -1117,6 +1353,10 @@ struct FileDone: Codable, Equatable, Sendable {
     var crc32: UInt32? = nil
     var finalization: String? = nil
     var cleanup: String? = nil
+    /// Replacing a running classic application moves the old binary to the
+    /// Trash, then gives the complete staging file its name. The process in
+    /// memory is still the old build until it is relaunched.
+    var relaunchRequired: Bool? = nil
 }
 
 /// What the guest has actually taken off the wire during a put. Advisory:
@@ -1408,6 +1648,41 @@ struct SceneEnd: Codable, Equatable, Sendable {
     var sendMs: Int?
 }
 
+// MARK: - Guest-local Web proxy
+
+/// One classic-browser request accepted by the guest's loopback listener.
+/// `target` is either an absolute HTTP(S) proxy target or a NOW Web route.
+struct WebRequest: Codable, Equatable, Sendable {
+    var id: Int
+    var method: String
+    var target: String
+}
+
+struct WebResponseBegin: Codable, Equatable, Sendable {
+    var id: Int
+    var status: Int
+    var contentType: String
+    var bytes: Int
+}
+
+/// Base64 response bytes. Sequence starts at zero and is contiguous.
+struct WebResponseChunk: Codable, Equatable, Sendable {
+    var id: Int
+    var seq: Int
+    var data: String
+}
+
+struct WebResponseEnd: Codable, Equatable, Sendable {
+    var id: Int
+    var ok: Bool
+    var code: String?
+    var reason: String?
+}
+
+struct WebCancel: Codable, Equatable, Sendable {
+    var id: Int
+}
+
 enum ControlMessageError: Error, Equatable {
     case notAnObject
     case missingType
@@ -1567,6 +1842,19 @@ enum ControlMessageCodec {
                 try decoder.decode(ChatCancel.self, from: data))
         case "chat.reset":
             return .chatReset(try decoder.decode(ChatReset.self, from: data))
+        case "web.request":
+            return .webRequest(try decoder.decode(WebRequest.self, from: data))
+        case "web.response.begin":
+            return .webResponseBegin(
+                try decoder.decode(WebResponseBegin.self, from: data))
+        case "web.response.chunk":
+            return .webResponseChunk(
+                try decoder.decode(WebResponseChunk.self, from: data))
+        case "web.response.end":
+            return .webResponseEnd(
+                try decoder.decode(WebResponseEnd.self, from: data))
+        case "web.cancel":
+            return .webCancel(try decoder.decode(WebCancel.self, from: data))
         case "preview.begin":
             return .previewBegin(
                 try decoder.decode(PreviewBegin.self, from: data))
@@ -1577,6 +1865,27 @@ enum ControlMessageCodec {
             return .hostShow(try decoder.decode(HostShow.self, from: data))
         case "host.shown":
             return .hostShown(try decoder.decode(HostShown.self, from: data))
+        case "continuity.arm":
+            return .continuityArm(
+                try decoder.decode(ContinuityArm.self, from: data))
+        case "continuity.report":
+            return .continuityReport(
+                try decoder.decode(ContinuityReport.self, from: data))
+        case "continuity.disarm":
+            return .continuityDisarm(
+                try decoder.decode(ContinuityDisarm.self, from: data))
+        case "continuity.key":
+            return .continuityKey(
+                try decoder.decode(ContinuityKey.self, from: data))
+        case "continuity.keyReport":
+            return .continuityKeyReport(
+                try decoder.decode(ContinuityKeyReport.self, from: data))
+        case "continuity.selection":
+            return .continuitySelection(
+                try decoder.decode(ContinuitySelection.self, from: data))
+        case "continuity.grab":
+            return .continuityGrab(
+                try decoder.decode(ContinuityGrab.self, from: data))
         case "mirror.invalidate":
             return .mirrorInvalidate(
                 try decoder.decode(MirrorInvalidate.self, from: data))
@@ -1722,10 +2031,30 @@ enum ControlMessageCodec {
         case .chatResult(let m): return try tagged("chat.result", m)
         case .chatCancel(let m): return try tagged("chat.cancel", m)
         case .chatReset(let m): return try tagged("chat.reset", m)
+        case .webRequest(let m): return try tagged("web.request", m)
+        case .webResponseBegin(let m):
+            return try tagged("web.response.begin", m)
+        case .webResponseChunk(let m):
+            return try tagged("web.response.chunk", m)
+        case .webResponseEnd(let m):
+            return try tagged("web.response.end", m)
+        case .webCancel(let m): return try tagged("web.cancel", m)
         case .previewBegin(let m): return try tagged("preview.begin", m)
         case .previewEnd(let m): return try tagged("preview.end", m)
         case .hostShow(let m): return try tagged("host.show", m)
         case .hostShown(let m): return try tagged("host.shown", m)
+        case .continuityArm(let m): return try tagged("continuity.arm", m)
+        case .continuityReport(let m):
+            return try tagged("continuity.report", m)
+        case .continuityDisarm(let m):
+            return try tagged("continuity.disarm", m)
+        case .continuityKey(let m): return try tagged("continuity.key", m)
+        case .continuityKeyReport(let m):
+            return try tagged("continuity.keyReport", m)
+        case .continuitySelection(let m):
+            return try tagged("continuity.selection", m)
+        case .continuityGrab(let m):
+            return try tagged("continuity.grab", m)
         case .mirrorInvalidate(let m):
             return try tagged("mirror.invalidate", m)
         case .streamRequest(let m): return try tagged("stream.request", m)

@@ -31,6 +31,11 @@ typedef enum {
        would be worse — an act releases on shutdown and would take the
        observation's plane with it. */
     kNowPeekOwnerObserve,
+    /* Continuity keyboard delivery addresses a foreground A5 captured by the
+       anchor plane. It owns this claim for exactly one input epoch; sharing
+       Scene's owner would let a stopped renderer take keyboard targeting
+       down while the screen-edge input lane is still live. */
+    kNowPeekOwnerContinuity,
     kNowPeekOwnerCount
 } NowPeekOwner;
 

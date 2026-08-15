@@ -58,6 +58,10 @@ final class GuestListener: ObservableObject {
         /// standing in, because two builds sharing a version is the whole
         /// reason this is here (docs/open-issues.md, 2026-07-30).
         var guestBuild: String? = nil
+        /// Active NOW Extension identity as observed by the guest app.
+        /// Nil remains unknown: it can mean no resident or an older guest.
+        var extensionVersion: String? = nil
+        var extensionBuild: String? = nil
         /// What this machine answered at `hello` about agents driving it.
         /// Nil is "did not say" — a guest older than the field — and is
         /// not consent; the machine that means no says `.disabled`.
@@ -150,6 +154,17 @@ final class GuestListener: ObservableObject {
     private var pendingCommands: [Int: (CommandResult) -> Void] = [:]
     private var nextCensusId = 1
     private var pendingCensus: [Int: (CensusReport) -> Void] = [:]
+    private var nextContinuityId = 1
+
+    /// Reports belong to the session that emitted them. The controller
+    /// compares this key to the arm it owns before accepting either a
+    /// correlated answer or an unsolicited guest-side takeover.
+    var onContinuityReport: ((GuestKey, ContinuityReport) -> Void)?
+    var onContinuityKeyReport: ((GuestKey, ContinuityKeyReport) -> Void)?
+    /// The guest's unsolicited Finder-selection stub. It arrives from the
+    /// active session only, like the two reports above: a background Mac's
+    /// selection is not what the pointer is standing on.
+    var onContinuitySelection: ((GuestKey, ContinuitySelection) -> Void)?
 
     /// One exec in flight, from exec.request to its terminal exec.result.
     ///
@@ -430,6 +445,8 @@ final class GuestListener: ObservableObject {
                 address: live.guestAddress,
                 version: record.guestVersion,
                 build: record.guestBuild,
+                extensionVersion: record.extensionVersion,
+                extensionBuild: record.extensionBuild,
                 agentAccess: record.guestAgentAccess,
                 operatingSystem: record.guestOS,
                 connectedAt: record.connectedAt,
@@ -676,6 +693,62 @@ final class GuestListener: ObservableObject {
     /// passed for an ephemeral port — used by tests).
     var boundPort: UInt16? { listener?.port?.rawValue }
 
+    struct ContinuityTarget: Equatable {
+        var key: GuestKey
+        var host: String
+    }
+
+    var activeContinuityTarget: ContinuityTarget? {
+        guard let key = activeKey, let live = sessions[key] else { return nil }
+        return ContinuityTarget(key: key, host: live.guestAddress.text)
+    }
+
+    @discardableResult
+    func armContinuity(nonceHi: UInt32, nonceLo: UInt32, epoch: UInt32,
+                       requestedHz: Int, leaseTicks: Int,
+                       options: ContinuityArmOptions = .init()) -> Int? {
+        guard let session else { return nil }
+        let id = nextContinuityId
+        nextContinuityId &+= 1
+        session.send(.continuityArm(.init(
+            version: ContinuityContract.version,
+            id: id, nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
+            requestedHz: requestedHz, leaseTicks: leaseTicks,
+            fastPump: options.fastPump,
+            settleSyntheticDevice: options.settleSyntheticDevice,
+            wideDoubleTime: options.wideDoubleTime,
+            compressClickWhen: options.compressClickWhen,
+            interruptPress: options.interruptPress,
+            deepClickLog: options.deepClickLog,
+            settleIdleCursor: options.settleIdleCursor)))
+        return id
+    }
+
+    @discardableResult
+    func disarmContinuity(epoch: UInt32, reason: String) -> Int? {
+        guard let session else { return nil }
+        let id = nextContinuityId
+        nextContinuityId &+= 1
+        session.send(.continuityDisarm(.init(
+            version: ContinuityContract.version,
+            id: id, epoch: epoch, reason: reason)))
+        return id
+    }
+
+    @discardableResult
+    func sendContinuityKey(epoch: UInt32, generation: UInt32,
+                           action: ContinuityKey.Action, code: UInt16,
+                           character: UInt8, modifiers: UInt16) -> Int? {
+        guard let session else { return nil }
+        let id = nextContinuityId
+        nextContinuityId &+= 1
+        session.send(.continuityKey(.init(
+            version: ContinuityContract.version, id: id, epoch: epoch,
+            generation: generation, action: action, code: code,
+            character: character, modifiers: modifiers)))
+        return id
+    }
+
     /// Runs one declared command on the connected guest. Completion fires on
     /// the main actor with the guest's result, or a synthesized failure when
     /// no guest is connected / the session dies first.
@@ -697,6 +770,45 @@ final class GuestListener: ObservableObject {
                     completion: @escaping (CommandResult) -> Void) {
         runCommand(name, typed: args?.mapValues(CommandArg.text),
                    line: line, completion: completion)
+    }
+
+    func updateAvailability(_ component: UpdateProvider.Component,
+                            installedVersion: String?,
+                            installedBuild: String?)
+        -> UpdateProvider.Availability {
+        updateProvider.availability(
+            for: component, installedVersion: installedVersion,
+            installedBuild: installedBuild)
+    }
+
+    /// The host-side human update action. It addresses the active session
+    /// explicitly and never turns an unknown/current/older artifact into an
+    /// install. The guest binds the command back to the exact offer before
+    /// it accepts any bytes.
+    func installUpdate(_ component: UpdateProvider.Component,
+                       for key: GuestKey,
+                       installedVersion: String?, installedBuild: String?,
+                       completion: @escaping (CommandResult) -> Void) {
+        guard activeKey == key, sessions[key] != nil else {
+            completion(.init(
+                id: 0, ok: false,
+                error: .init(code: "not-addressed",
+                             message: "Drive this Mac before replacing its software.")))
+            return
+        }
+        guard case .replacement = updateProvider.availability(
+            for: component, installedVersion: installedVersion,
+            installedBuild: installedBuild) else {
+            completion(.init(
+                id: 0, ok: false,
+                error: .init(code: "not-available",
+                             message: "No different validated build is available.")))
+            return
+        }
+        runCommand("update", typed: [
+            "component": .text(component.rawValue),
+            "hostApproved": .flag(true),
+        ], completion: completion)
     }
 
     /// **The bound, and why it is this one.**
@@ -729,6 +841,25 @@ final class GuestListener: ObservableObject {
     /// A timeout is COUNTED as well as reported, because a cycle that
     /// gave up has to be able to say so — see `commandTimeouts`.
     static let commandWatchdogSeconds: TimeInterval = 20
+
+    /// The bound `ConnectionsModel` arms while waiting for `update.result`
+    /// after `installUpdate` starts one. Kept beside
+    /// `commandWatchdogSeconds` because it answers the same question for
+    /// the same family, but it is NOT that watchdog scaled up: the initial
+    /// `runCommand("update", …)` call above resolves almost instantly
+    /// (the guest replies "Downloading" the moment it accepts, long
+    /// before any bytes move), so `commandWatchdogSeconds` only ever
+    /// covers that instant acknowledgment. The real completion —
+    /// download, then a synchronous Trash-move-and-install on a
+    /// cooperatively scheduled guest where a blocked Toolbox call blocks
+    /// the entire event loop, including ping replies — rides
+    /// `.updateFinished` alone, with nothing bounding the wait before
+    /// this existed. Flat rather than scaled off artifact size: this is a
+    /// rare, human-attended action rather than a polling hot path, and 3
+    /// minutes is a generous ceiling absent measured install times on
+    /// real hardware — this path is exactly the fBsyErr-adjacent code
+    /// this project has been bitten by trusting without a metal run.
+    static let updateResultWatchdogSeconds: TimeInterval = 180
 
     /// How many `command.request`s have died of silence on this listener.
     /// Monotonic for the listener's life; a caller that wants "did THIS
@@ -1017,6 +1148,31 @@ final class GuestListener: ObservableObject {
     /// wired (tests, mostly). Nil means chat.* asks go unanswered,
     /// which is the honest pre-family silence the contract describes.
     weak var chatService: ChatWireService?
+    /// The host-side renderer for the guest application's loopback proxy.
+    /// Nil is honest unavailability and is answered by the guest's timeout.
+    weak var webService: WebWireService?
+
+    enum WebAsk {
+        case request(WebRequest)
+        case cancel(WebCancel)
+
+        var id: Int {
+            switch self {
+            case .request(let request): return request.id
+            case .cancel(let cancel): return cancel.id
+            }
+        }
+    }
+
+    func serveWeb(_ ask: WebAsk, on asker: Session) {
+        guard let webService else {
+            asker.send(.webResponseEnd(WebResponseEnd(
+                id: ask.id, ok: false, code: "unavailable",
+                reason: "Open Web Proxy on this Mac first")))
+            return
+        }
+        webService.serve(ask, on: asker)
+    }
 
     /// Brings one of THIS Mac's own windows forward, set by the app that
     /// owns them. Nil for a headless listener (tests, the companion
@@ -1048,6 +1204,7 @@ final class GuestListener: ObservableObject {
             session.send(.fileListing(FileListing(
                 id: request.id, path: request.path, entries: page.entries,
                 more: page.more, cursor: page.next,
+                freeBytes: try? self.share.availableBytes(path: request.path),
                 /* Only the root listing names the place; a subfolder
                    listing already knows where it is. */
                 root: request.path.isEmpty ? share.rootDisplayName : nil)))
@@ -1245,6 +1402,7 @@ final class GuestListener: ObservableObject {
         var finalization: String
         var cleanup: String
         var integrity: String
+        var relaunchRequired = false
     }
 
     /// One pulled file, still in guest form. The bytes remain in a
@@ -1531,6 +1689,22 @@ final class GuestListener: ObservableObject {
     }
 
     /// Pulls a file. `container` nil = the guest's fork rule decides.
+    ///
+    /// One waiter, like `getMirrorFile` and `grabContinuityFile`: there is
+    /// one bulk receiver below this (`Session.activeFileGetID`, one
+    /// `fileBegin`, one sink), so a second overlapping ask cannot be served
+    /// even if this layer accepted it. Without the guard it did accept it —
+    /// `pendingFile` is a single slot with no request-id key, so the second
+    /// ask overwrote the first waiter, `deliverFile` handed the SECOND
+    /// caller the FIRST caller's bytes, and the loser's completion was
+    /// never called at all. For a drag-out that means
+    /// `GuestFilePromiseExporter.active` never clears and every later
+    /// drag-out in the session is refused by its own idle guard, while
+    /// Finder keeps the unresolved promise's placeholder on screen. Four
+    /// callers reach here (Files download, Files drag-out promises, the
+    /// Census ROM dump and Mirror asset ingestion) and only the first two
+    /// share `FilesModuleModel.transfer` as a mutex, so the overlap was
+    /// reachable from ordinary use.
     func getFile(path: String, container: String? = nil,
                  stagingDirectory: URL? = nil,
                  completion: @escaping (Result<FileDelivery,
@@ -1538,6 +1712,12 @@ final class GuestListener: ObservableObject {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
                                       message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        guard pendingFile == nil else {
+            completion(.failure(.init(
+                code: "busy",
+                message: "Another file transfer is already in progress")))
             return
         }
         let id = nextCommandId
@@ -1554,13 +1734,97 @@ final class GuestListener: ObservableObject {
                 ?? FileManager.default.temporaryDirectory)
     }
 
+    /// Pulls an item selected from the live Mirror scene. The guest resolves
+    /// this human-originated identity independently of the Files share; no
+    /// general absolute-path read is exposed to automation or projections.
+    func getMirrorFile(source: MirrorFileSource, container: String? = nil,
+                       stagingDirectory: URL? = nil,
+                       completion: @escaping (Result<FileDelivery,
+                                                   FileFailure>) -> Void) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(code: "disconnected",
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        guard session.mirrorTransfer == true else {
+            completion(.failure(.init(
+                code: "unsupported",
+                message: "The connected guest does not support Mirror file transfer; replace and restart the guest application.")))
+            return
+        }
+        guard pendingFile == nil else {
+            completion(.failure(.init(
+                code: "busy",
+                message: "Another file transfer is already in progress")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingFile = completion
+        fileWatchdogId = id
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.deliverFile(.failure(.init(code: "timeout",
+                                             message: reason)))
+        }
+        session.sendMirrorFileGet(
+            id: id, source: source, container: container,
+            stagingDirectory: stagingDirectory
+                ?? FileManager.default.temporaryDirectory)
+    }
+
+    /// Redeems one drag gesture over `continuity.grab`.
+    ///
+    /// Everything about the ANSWER is the Mirror get above — one pending
+    /// waiter, one watchdog, the same `deliverFile` — because the grab is
+    /// served down the ordinary file lane. What differs is the ASK: no path
+    /// and no source, only the generation the guest itself published, which
+    /// is what keeps a read outside the share bounded by what a person
+    /// selected by hand.
+    func grabContinuityFile(
+        epoch: UInt32, generation: UInt32, container: String? = nil,
+        stagingDirectory: URL,
+        completion: @escaping (Result<FileDelivery, FileFailure>) -> Void
+    ) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(
+                code: "disconnected",
+                message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        guard pendingFile == nil else {
+            completion(.failure(.init(
+                code: "busy",
+                message: "Another file transfer is already in progress")))
+            return
+        }
+        let id = nextCommandId
+        nextCommandId += 1
+        pendingFile = completion
+        fileWatchdogId = id
+        armWatchdog(id: id, seconds: 20) { [weak self] reason in
+            self?.deliverFile(.failure(.init(code: "timeout",
+                                             message: reason)))
+        }
+        session.sendContinuityGrab(
+            id: id, epoch: epoch, generation: generation,
+            container: container, stagingDirectory: stagingDirectory)
+    }
+
+    /// Same one-waiter rule as `getFile` above, for the same reason: this is
+    /// the same lane and the same single `pendingFile` slot.
     func getDevelopmentProjectFile(projectID: String, path: String,
                                    stagingDirectory: URL,
                                    completion: @escaping (
                                     Result<FileDelivery, FileFailure>) -> Void) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
-                                      message: "No classic Mac is connected")))
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        guard pendingFile == nil else {
+            completion(.failure(.init(
+                code: "busy",
+                message: "Another file transfer is already in progress")))
             return
         }
         let id = nextCommandId
@@ -1591,6 +1855,45 @@ final class GuestListener: ObservableObject {
             overwrite: overwrite
         ) { result in
             completion(result.map { _ in () })
+        }
+    }
+
+    /// Copies a host file to the exact release target represented by Mirror.
+    /// It shares the checked bulk lane but is deliberately separate from the
+    /// Files share path and never requests move or overwrite semantics.
+    func putMirrorFile(
+        name: String,
+        target: MirrorFileDrop,
+        container: String,
+        bytes: Data,
+        fileType: String? = nil,
+        creator: String? = nil,
+        modified: Int? = nil,
+        completion: @escaping (Result<Void, FileFailure>) -> Void
+    ) {
+        guard let session, case .connected = state else {
+            completion(.failure(.init(
+                code: "disconnected",
+                message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        guard session.mirrorTransfer == true else {
+            completion(.failure(.init(
+                code: "unsupported",
+                message: "The connected guest does not support Mirror file transfer; replace and restart the guest application.")))
+            return
+        }
+        let checksum = TransferIdentity.crc32(bytes)
+        startPut(
+            name: name, into: "", container: container,
+            byteCount: bytes.count, crc32: checksum,
+            fileType: fileType, creator: creator, modified: modified,
+            createParents: false, overwrite: false,
+            developmentCandidate: nil, mirrorDrop: target
+        ) { result in
+            completion(result.map { _ in () })
+        } offer: { [weak session] offer in
+            session?.sendFileOffer(offer, bytes: bytes, crc32: checksum)
         }
     }
 
@@ -1705,6 +2008,7 @@ final class GuestListener: ObservableObject {
         createParents: Bool,
         overwrite: Bool,
         developmentCandidate: String?,
+        mirrorDrop: MirrorFileDrop? = nil,
         completion: @escaping (Result<PutReceipt, FileFailure>) -> Void,
         offer: (FileOffer) -> Void
     ) {
@@ -1752,7 +2056,8 @@ final class GuestListener: ObservableObject {
             overwrite: overwrite,
             resumeToken: TransferIdentity.token(
                 bytes: byteCount, crc32: crc32),
-            developmentCandidate: developmentCandidate))
+            developmentCandidate: developmentCandidate,
+            mirrorDrop: mirrorDrop))
     }
 
     private var pendingPut: ((Result<PutReceipt, FileFailure>) -> Void)?
@@ -1853,6 +2158,27 @@ final class GuestListener: ObservableObject {
         if pendingPut != nil { return .outgoing }
         if pendingFile != nil { return .incoming }
         return nil
+    }
+
+    /// Best-effort stop of an update artifact still crossing the wire.
+    /// `installUpdate` never sets `pendingPut`/`putId` — the artifact goes
+    /// out via `sendUpdateArtifact` in reaction to the GUEST's own
+    /// `update.request`, not through `putFile`'s host-initiated push
+    /// bookkeeping — so this calls `cancelOutbound()` directly rather than
+    /// routing through `cancelFile()`'s pendingPut branch, which would
+    /// never fire for an update. It settles nothing locally: unlike
+    /// `cancelFile`, the caller (`ConnectionsModel.cancelUpdate`) owns
+    /// `pendingUpdates`/`updateNotices` and settles those itself the same
+    /// way a watchdog timeout does, through `finishUpdate`.
+    ///
+    /// A no-op once the guest already has every byte and is running
+    /// `now_update_install` synchronously — nothing on the wire can
+    /// interrupt a Toolbox call already in flight on a cooperatively
+    /// scheduled guest. That window is exactly what
+    /// `updateResultWatchdogSeconds` exists to bound instead.
+    func cancelUpdateTransfer(for key: GuestKey) {
+        guard activeKey == key else { return }
+        session?.cancelOutbound()
     }
 
     /// Abandons the file transfer; settles locally for the same reason
@@ -2035,15 +2361,17 @@ final class GuestListener: ObservableObject {
             completion(.failure(failure))
             return
         }
-        if pendingPut != nil {
+        if pendingPut != nil, putId == refuse.id {
             settlePut(.failure(putFailure(
                 code: failure.code,
                 message: failure.message,
                 guestCleanup: "unknown-before-accept")))
             return
         }
+        guard fileWatchdogId == refuse.id else { return }
         let completion = pendingFile
         pendingFile = nil
+        fileWatchdogId = nil
         captureProgress = nil
         completion?(.failure(failure))
     }
@@ -2992,6 +3320,16 @@ final class GuestListener: ObservableObject {
                 guard fromActive() else { return }
                 self?.resolveCensus(report)
             },
+            onContinuityReport: { [weak self] report in
+                guard let self, fromActive(),
+                      let key = origin.session?.guestKey else { return }
+                self.onContinuityReport?(key, report)
+            },
+            onContinuityKeyReport: { [weak self] report in
+                guard let self, fromActive(),
+                      let key = origin.session?.guestKey else { return }
+                self.onContinuityKeyReport?(key, report)
+            },
             onCapture: { [weak self] result in
                 guard fromActive() else { return }
                 self?.deliverCapture(result)
@@ -3093,7 +3431,8 @@ final class GuestListener: ObservableObject {
                         cleanup: done.cleanup ?? "unknown",
                         integrity: done.crc32 != nil
                             ? "guest-crc32-confirmed"
-                            : "file-done-after-crc32")))
+                            : "file-done-after-crc32",
+                        relaunchRequired: done.relaunchRequired == true)))
                 } else {
                     self.settlePut(.failure(self.putFailure(
                         code: done.code ?? "io-error",
@@ -3156,6 +3495,10 @@ final class GuestListener: ObservableObject {
                 guard let self, let asker = origin.session else { return }
                 self.serveChat(ask, on: asker)
             },
+            onServeWeb: { [weak self] ask in
+                guard let self, let asker = origin.session else { return }
+                self.serveWeb(ask, on: asker)
+            },
             onServeHostShow: { [weak self] request in
                 guard let self, let asker = origin.session else { return }
                 self.serveHostShow(request, on: asker)
@@ -3183,6 +3526,9 @@ final class GuestListener: ObservableObject {
                           area: "update",
                           level: result.ok ? .info : .warn,
                           session: guest.guestKey)
+                if let key = guest.guestKey {
+                    self.events.publish(.updateFinished(key, result))
+                }
             },
             onProcessListing: { [weak self] listing in
                 guard fromActive() else { return }
@@ -3244,6 +3590,7 @@ final class GuestListener: ObservableObject {
                 // A conversation is per connection; a turn still
                 // streaming to a dead socket is cancelled, not leaked.
                 self.chatService?.sessionClosed(key: key)
+                self.webService?.sessionClosed(key: key)
                 self.sessions[key] = nil
                 self.machineBySession[key] = nil
                 self.healthByGuest[key] = nil
@@ -3274,6 +3621,15 @@ final class GuestListener: ObservableObject {
                 }?.key
                 self.publishActive()
             })
+        /* Set after construction because the Session declares it as a var:
+           the stub's consumer is the drag lane, and a required parameter
+           would put an empty closure at every construction site and read as
+           a wired-up capability. */
+        newSession.onContinuitySelection = { [weak self, weak newSession] sel in
+            guard let self, let key = newSession?.guestKey,
+                  key == self.activeKey else { return }
+            self.onContinuitySelection?(key, sel)
+        }
         origin.session = newSession
         pending.append(newSession)
         newSession.begin()

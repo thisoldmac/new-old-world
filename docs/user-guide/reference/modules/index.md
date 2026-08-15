@@ -1,19 +1,89 @@
 ---
 page_id: module-index-reference
 title: Module reference
-description: Map every macOS host module to the alpha PowerPC Workshop and retained pre-Carbon source posture.
+description: Find every stable module and understand how the macOS host arranges modules into shelves and a drawer.
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [docs/module-manifest.yaml, docs/contract-coverage.md]
-source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
+authority: [docs/module-manifest.yaml, docs/contract-coverage.md, now-host/Sources/Host/NavigationLayout.swift]
+source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/HostSettingsView.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
 media_ids: []
-last_verified: 2026-08-09
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
 
 # Module reference
+
+## Navigation on the macOS host
+
+Each row in this reference remains a first-class module with a stable identity.
+The host groups related modules into **shelves** for navigation; a shelf does
+not merge or replace the module implementations inside it. The initial layout
+is:
+
+| Area | Shelf or module | Pages |
+|---|---|---|
+| Upper sidebar | This Mac | Overview, Hardware, Software, Processes, Diagnostics |
+| Upper sidebar | Screen | Screen, Mirror |
+| Upper sidebar | Files | Files, iCloud |
+| Upper sidebar | Chat | Chat |
+| Upper sidebar | Projects | Projects |
+| Lower pinned stack | Debug | Console, Logs |
+| Lower pinned stack | Connections | Connections, Networking, MCP, Web Proxy |
+
+Each shelf is one sidebar item. Selecting it opens a shelf page with its pages
+as centered pill tabs at the top of the main area; the selected module renders
+under that strip. The window toolbar chooses the active guest and can collapse
+the sidebar to its module icons without changing the saved arrangement. The
+sidebar canvas has two stacks: ordinary destinations
+grow down from the top, while Debug and then Connections are initially pinned
+upward from its bottom, with Connections bottommost. The labeled Drawer is the only destination in
+the separate footer beneath that canvas. In Full row mode, a shelf lists its
+member modules; a standalone module keeps its own description.
+
+**Overview** is the landing page for the This Mac shelf. It summarizes the
+selected classic Mac; it is not another module. When no guest is attached,
+that shelf reads **No Mac Connected** without changing the selected page or
+the saved layout. **Connections** is also the landing page and visible name of
+the Connections shelf.
+
+Drag normally to reorder modules, move them between the upper and lower
+stacks, or put them in the drawer at the bottom. Empty sidebar space is also a
+drop target: the nearest half chooses the upper or lower stack. Sidebar rows
+and a shelf's pill tabs move out of the way as the dragged item crosses their
+insertion points; releasing saves that arrangement, while cancelling the drag
+restores the saved layout. Dropping one module on another creates a shelf only
+when released and immediately opens its editable name,
+starting at **New Shelf** (or the next numbered name). Press **Escape** while
+that field is active to cancel the shelf and restore both modules to their
+previous positions. A user-created shelf
+returns to a standalone module
+when only one item remains. This Mac is permanent and cannot enter the drawer.
+Connections is permanent but can be put away; its live connection dot then
+appears on the drawer beside the drawer's module count. The current Screen shelf
+contains Screen and Mirror; Continuity is a standalone module beside Mirror
+rather than a tab inside that shelf.
+Opening a shelf again in the same app session returns to the tab most recently
+used in that shelf.
+
+Losing the guest does not remove or navigate away from modules. Host-owned
+tools remain usable, cached machine information is marked offline where it can
+be shown honestly, and live-only pages offer **Start Listening** or a route to
+Connections. Reconnecting restores live behavior in place.
+
+Application appearance, and a set of preferences pulled out of individual
+modules, are separate from Connections. Choose **New Old World >
+Settings…** or press **Command-,** for a pill-tabbed window: appearance
+(System, Light, or Dark theme and the Off, Clear, or Regular Liquid Glass
+setting — macOS 13–25 and macOS accessibility settings that reduce
+transparency or increase contrast use the native material fallback instead of
+glass), the sidebar's row density and layout, MCP's and Web's
+start-automatically switches, Web's compatibility and safety settings, Logs'
+disk-write switch, and defaults for a Continuity pairing that has never
+connected before. See [Connections](connections-and-preferences.md) for the
+full tab list. Several modules also carry their own **Settings…** button that
+opens this window on their tab.
 
 | Module | PowerPC Workshop | Pre-Carbon source (excluded from alpha) |
 |---|---|---|
@@ -24,14 +94,14 @@ last_verified: 2026-08-09
 | [Mirror](mirror.md) | Mirror | unavailable |
 | [Console](console.md) | Console | supported |
 | [Chat](chat.md) | Chat | unavailable |
-| [Web](web.md) | unavailable; use the host Direct listener | unavailable |
+| [Web Proxy](web.md) | guest-loopback relay | unavailable |
 | [Hardware](hardware.md) | Hardware | supported subset |
 | [Diagnostics](diagnostics.md) | Diagnostics | console-only diagnostics |
 | [Networking](networking.md) | Networking | main-window summary |
 | [Software](software.md) | Software | supported subset |
 | [MCP](mcp.md) | MCP | unavailable |
 | [Logs](logs.md) | Logs | console-only evidence |
-| [Connections and preferences](connections-and-preferences.md) | Preferences + Connection | main window |
+| [Connections](connections-and-preferences.md) | Preferences + Connection | main window |
 
 This table is a reader-facing projection of the machine-readable module
 manifest. Capability coverage and proof remain separate questions; each page
@@ -40,8 +110,11 @@ work; it does not mean NOW-68K ships in the alpha.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: 819f11ce02646dab36ee282c7532ea4f856142d7
-derive module-map sha256=e5edea5367719897f1b871c5c05fbe460aed80238440e32af30aca05ad5a9145 lines=16
+sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
+sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
+derive module-map sha256=03dd8a0eabf715800bf6f0c52d475342279647d27fef813faa4a4bb5f4b49062 lines=17
+sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
+derive module-map sha256=03dd8a0eabf715800bf6f0c52d475342279647d27fef813faa4a4bb5f4b49062 lines=17
     scripts/docs-inventory
 rederived: pending
 rederived: 2026-08-09T16:10:26-0400 e74b3ab1 sources, module-map 14->14
@@ -115,4 +188,105 @@ rederived: 2026-08-11T23:10:57-0400 ddf740ce sources
 rederived: 2026-08-11T23:12:01-0400 ddf740ce unchanged
 rederived: 2026-08-11T23:31:22-0400 ad4d680 sources
 rederived: 2026-08-11T23:37:12-0400 ad4d680 unchanged
+rederived: 2026-08-12T13:02:41-0400 7cea759e sources
+rederived: 2026-08-12T13:11:34-0400 7cea759e unchanged
+rederived: 2026-08-12T13:12:13-0400 7cea759e unchanged
+rederived: 2026-08-12T15:54:08-0400 939e43b7 unchanged
+rederived: 2026-08-12T17:19:20-0400 338eca21 unchanged
+rederived: 2026-08-12T18:34:29-0400 3688b9f6 unchanged
+rederived: 2026-08-12T18:58:27-0400 3771e144 unchanged
+rederived: 2026-08-12T19:15:24-0400 3771e144 unchanged
+rederived: 2026-08-12T19:31:58-0400 3771e144 unchanged
+rederived: 2026-08-12T20:08:32-0400 5a601a18 unchanged
+rederived: 2026-08-12T20:15:22-0400 9e828cdc unchanged
+rederived: 2026-08-12T20:34:42-0400 4d9ba67d unchanged
+rederived: 2026-08-12T20:37:08-0400 633da491 unchanged
+rederived: 2026-08-12T20:45:46-0400 a0878023 unchanged
+rederived: 2026-08-12T22:18:37-0400 18d0d3c4 unchanged
+rederived: 2026-08-12T23:59:07-0400 e5b16a71 unchanged
+rederived: 2026-08-13T00:21:46-0400 e5b16a71 unchanged
+rederived: 2026-08-13T00:58:13-0400 9f5139cf unchanged
+rederived: 2026-08-13T01:23:45-0400 9f5139cf unchanged
+rederived: 2026-08-13T01:47:13-0400 59852197 unchanged
+rederived: 2026-08-13T02:45:49-0400 e504061c unchanged
+rederived: 2026-08-13T04:30:01-0400 47f632b3 unchanged
+rederived: 2026-08-13T13:50:55-0400 a9e64fa4 unchanged
+rederived: 2026-08-13T14:32:32-0400 4da9c4a3 unchanged
+rederived: 2026-08-13T15:15:23-0400 2ccde05b unchanged
+rederived: 2026-08-13T17:36:05-0400 043777df unchanged
+rederived: 2026-08-13T17:37:43-0400 043777df unchanged
+rederived: 2026-08-13T18:23:47-0400 e6d7996d unchanged
+rederived: 2026-08-13T19:30:44-0400 1d154b67 unchanged
+rederived: 2026-08-13T21:59:04-0400 8433efda unchanged
+rederived: 2026-08-13T23:16:02-0400 fc235d4e unchanged
+rederived: 2026-08-14T00:51:51-0400 94f1c614 unchanged
+rederived: 2026-08-14T00:55:48-0400 3bd83df2 unchanged
+rederived: 2026-08-14T02:20:51-0400 81247e50 unchanged
+rederived: 2026-08-14T03:25:52-0400 ee8ef8a4 unchanged
+rederived: 2026-08-14T03:54:49-0400 d016e771 unchanged
+rederived: 2026-08-14T03:57:09-0400 e122c6c3 unchanged
+rederived: 2026-08-14T04:03:19-0400 908215de unchanged
+rederived: 2026-08-14T04:36:35-0400 e66db808 unchanged
+rederived: 2026-08-14T12:32:39-0400 7742eab5 sources
+rederived: 2026-08-14T12:35:45-0400 49e6dd98 unchanged
+rederived: 2026-08-14T12:44:43-0400 4d52ba1a unchanged
+rederived: 2026-08-14T12:47:23-0400 804be291 unchanged
+rederived: 2026-08-14T12:49:06-0400 655b2bf1 unchanged
+rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
+rederived: 2026-08-14T14:27:58-0400 6d037a57 sources, module-map 16->17
+rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
+rederived: 2026-08-14T16:58:28-0400 cf962dbb unchanged
+rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
+rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
+rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
+rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
+rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
+rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
+rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
+rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
+rederived: 2026-08-14T18:23:12-0400 e2c66126 unchanged
+rederived: 2026-08-14T18:30:53-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:26-0400 b248c9a1 unchanged
+rederived: 2026-08-14T20:24:57-0400 6d3d74d7 unchanged
+rederived: 2026-08-14T20:18:50-0400 cccec57a sources
+rederived: 2026-08-14T21:50:42-0400 edcc526f unchanged
+rederived: 2026-08-14T22:27:42-0400 5a6c46dc unchanged
+rederived: 2026-08-14T22:10:44-0400 568967b9 unchanged
+rederived: 2026-08-14T23:30:11-0400 0017d984 unchanged
+rederived: 2026-08-14T22:14:12-0400 0e743bc5 sources
+rederived: 2026-08-14T23:32:09-0400 a9afc153 unchanged
+rederived: 2026-08-14T22:19:02-0400 fe3d18a0 sources
+rederived: 2026-08-14T23:33:01-0400 09abc942 sources, sources
+rederived: 2026-08-14T22:27:26-0400 67772e4a unchanged
+rederived: 2026-08-14T23:33:52-0400 521b590f unchanged
+rederived: 2026-08-14T22:17:24-0400 4495cfb2 sources, module-map 17->17
+rederived: 2026-08-14T23:35:19-0400 61505862 sources, sources, module-map 17->17, sources, module-map 17->17
+rederived: 2026-08-14T22:33:00-0400 13bfe534 unchanged
+rederived: 2026-08-14T23:36:21-0400 b1fc9796 unchanged
+rederived: 2026-08-15T00:20:07-0400 e937faee sources, sources, sources
+rederived: 2026-08-15T01:40:29-0400 139dff1a unchanged
+rederived: 2026-08-15T01:32:40-0400 108db464 unchanged
+rederived: 2026-08-15T02:20:04-0400 de5812ab unchanged
+rederived: 2026-08-15T01:36:40-0400 34192244 unchanged
+rederived: 2026-08-15T02:21:01-0400 c87b3288 unchanged
+rederived: 2026-08-15T02:26:43-0400 2749aab1 unchanged
+rederived: 2026-08-14T19:50:32-0400 d20eee81 unchanged
+rederived: 2026-08-14T19:50:54-0400 d20eee81 unchanged
+rederived: 2026-08-14T20:02:53-0400 068ca7fd unchanged
+rederived: 2026-08-14T21:00:58-0400 ab304cb2 unchanged
+rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
+rederived: 2026-08-15T00:30:15-0400 f4dab407 unchanged
+rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:57:59-0400 5d767dce unchanged
+rederived: 2026-08-15T03:19:44-0400 098e7ecf unchanged
+rederived: 2026-08-15T05:39:23-0400 829013ee unchanged
+rederived: 2026-08-15T05:30:48-0400 a327ba45 unchanged
+rederived: 2026-08-15T06:15:16-0400 3c7d14e4 unchanged
+rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T04:01:11-0400 b18a891c unchanged
+rederived: 2026-08-15T06:18:29-0400 9232bd77 unchanged
 -->

@@ -1,0 +1,60 @@
+#!/bin/sh
+# Build and assemble one Continuity host/application/extension unit.
+#
+# The output is deliberately a new, empty directory.  Reusing a handoff
+# directory is how a valid new guest was paired with yesterday's resident.
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "usage: $0 /absolute/stable-host-root /absolute/new-output-directory" >&2
+    exit 64
+fi
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+host_root=$1
+output=$2
+case "$host_root:$output" in
+    /*:/*) ;;
+    *) echo "both paths must be absolute" >&2; exit 64 ;;
+esac
+if [ -e "$output" ]; then
+    if [ ! -d "$output" ] || [ -n "$(ls -A "$output")" ]; then
+        echo "output must be a new or empty directory: $output" >&2
+        exit 64
+    fi
+else
+    [ -d "$(dirname "$output")" ] || {
+        echo "output parent must already exist: $(dirname "$output")" >&2
+        exit 64
+    }
+    mkdir "$output"
+fi
+
+"$script_dir/build-guests"
+"$script_dir/build-host-app" --profile continuity "$host_root"
+
+build_root=${TMPDIR:-/tmp}/now-guest-builds/$(printf '%s' "$repo_root" \
+    | shasum | cut -c1-12)
+application="$build_root/ppc/New Old World.bin"
+extension="$build_root/ext/NOW Extension.bin"
+host_app="$host_root/NOW Continuity.app"
+for required in "$application" "$application.now-update.json" \
+        "$extension" "$extension.now-update.json" "$host_app"; do
+    [ -e "$required" ] || {
+        echo "missing assembled stack member: $required" >&2
+        exit 1
+    }
+done
+
+cp "$application" "$application.now-update.json" \
+    "$extension" "$extension.now-update.json" "$output/"
+ditto -c -k --sequesterRsrc --keepParent "$host_app" \
+    "$output/NOW Continuity.app.zip"
+"$repo_root/tools/continuity-stack-gate" verify \
+    --application "$output/New Old World.bin" \
+    --extension "$output/NOW Extension.bin" \
+    --host-app "$host_app" \
+    --output "$output/NOW-stack.json"
+
+echo "$output"

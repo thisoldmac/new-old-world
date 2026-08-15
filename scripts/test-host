@@ -47,6 +47,18 @@ else
 fi
 
 cleanup() {
+    # xcodebuild registers every app product with LaunchServices, including
+    # disposable products under this scratch directory. Those registrations
+    # all share the shipping bundle id and make macOS Local Network privacy
+    # show several indistinguishable NOW copies. Undo only this gate's two
+    # registrations before its scratch tree goes away.
+    lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+    for configuration in Debug Release; do
+        app="$scratch_root/xcode-$configuration/Build/Products/$configuration/New Old World.app"
+        if [ -d "$app" ] && [ -x "$lsregister" ]; then
+            "$lsregister" -u "$app" >/dev/null 2>&1 || true
+        fi
+    done
     [ "$keep_scratch" = yes ] || rm -rf "$scratch_root"
 }
 trap cleanup EXIT INT TERM
@@ -91,6 +103,9 @@ fi
 echo "==> fixture format and manifest"
 "$repo_root/tools/fixture-store" compact --check >/dev/null
 "$repo_root/tools/fixture-store" manifest --check
+
+echo "==> stable signed host identities"
+"$script_dir/test-host-build-identity"
 
 echo "==> swift test"
 run_swift_step "$scratch_root/swift-test.log" \

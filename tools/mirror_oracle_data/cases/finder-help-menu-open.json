@@ -1,0 +1,20 @@
+{
+  "id": "finder-help-menu-open",
+  "profile": "platinum.macos-8.6.default",
+  "title": "Finder Help menu open",
+  "requiredState": [
+    "Finder is frontmost",
+    "No Finder item is selected",
+    "The Help menu is open"
+  ],
+  "inputSequence": "finder-clean-desktop",
+  "inputActions": ["move 230 10", "down 0"],
+  "regions": [
+    {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
+    {"name": "help-menu", "source": "screen", "rect": [212, 19, 352, 81]}
+  ],
+  "masks": [
+    {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}
+  ],
+  "render": {"openMenu": 5}
+}

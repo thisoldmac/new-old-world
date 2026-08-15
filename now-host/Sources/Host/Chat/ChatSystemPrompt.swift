@@ -24,7 +24,7 @@ import NOWAgentIntegration
    machine is connected" an hour after one dialled in. Without this the
    model cheerfully promises to go and look at a machine that is not on,
    and offers to "connect to" one, which this side cannot do at all: the
-   old world mac dials this Mac and this Mac only listens. */
+   guest dials this Mac and this Mac only listens. */
 
 enum ChatSystemPrompt {
     enum Origin {
@@ -140,8 +140,7 @@ enum ChatSystemPrompt {
             : "\"\(driven)\""
         lines.append("""
             Call the classic machine \(nameRule) - never \
-            "\(MachineNaming.thisMac)", "this machine", "the host" or \
-            "the guest".
+            "\(MachineNaming.thisMac)", "this machine", or "the host".
             """)
 
         /* The asymmetry, said whatever the state: it is the difference

@@ -72,6 +72,50 @@ final class AgentIntegrationTransferCancelTests: XCTestCase {
                           + "transfer is refused by a lane nobody holds")
         try await waitUntil("the put settled") { settled }
         XCTAssertNil(listener.fileTransferInFlight)
+
+        let cancelledID = try XCTUnwrap(offerId)
+        var replacementSucceeded = false
+        listener.putFile(name: "Next", into: "", container: "data",
+                         bytes: Data([1, 2, 3, 4])) {
+            if case .success = $0 { replacementSucceeded = true }
+        }
+        var replacementID: Int?
+        try await waitUntil("replacement file.offer") {
+            for message in guest.received {
+                if case .fileOffer(let offer) = message,
+                   offer.id != cancelledID {
+                    replacementID = offer.id
+                    return true
+                }
+            }
+            return false
+        }
+        let nextID = try XCTUnwrap(replacementID)
+        try guest.send(.fileAccept(FileAccept(id: nextID)))
+        try await waitUntil("cancelled upload ended before replacement") {
+            let oldEnd = guest.received.firstIndex {
+                if case .fileEnd(let end) = $0 {
+                    return end.id == cancelledID && !end.ok
+                }
+                return false
+            }
+            let newBegin = guest.received.firstIndex {
+                if case .fileBegin(let begin) = $0 {
+                    return begin.id == nextID
+                }
+                return false
+            }
+            guard let oldEnd, let newBegin else { return false }
+            return oldEnd < newBegin
+        }
+        try await waitUntil("replacement bytes") {
+            guest.bulkReceived.suffix(4) == Data([1, 2, 3, 4])
+        }
+        try guest.send(.fileDone(FileDone(id: nextID, ok: true,
+                                          code: nil, reason: nil)))
+        try await waitUntil("replacement upload settled") {
+            replacementSucceeded
+        }
     }
 
     /// A transfer the host is RECEIVING is ended too, and the cancel reaches
@@ -131,6 +175,147 @@ final class AgentIntegrationTransferCancelTests: XCTestCase {
         }
         try await waitUntil("the download settled") {
             failure?.code == "cancelled"
+        }
+    }
+
+    func testCancelBeforeBeginDoesNotLetTheOldPullTakeTheNextLane()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        var first: GuestListener.FileFailure?
+        var second: Result<GuestListener.FileDelivery,
+                           GuestListener.FileFailure>?
+        listener.getFile(path: "First", container: "data",
+                         stagingDirectory: directory) {
+            if case .failure(let failure) = $0 { first = failure }
+        }
+        var firstID: Int?
+        try await waitUntil("first file.get") {
+            let ids: [Int] = guest.received.compactMap {
+                guard case .fileGet(let get) = $0 else { return nil }
+                return get.id
+            }
+            firstID = ids.first
+            return firstID != nil
+        }
+
+        listener.cancelFile()
+        listener.getFile(path: "Second", container: "data",
+                         stagingDirectory: directory) { second = $0 }
+        var secondID: Int?
+        try await waitUntil("second file.get") {
+            let ids: [Int] = guest.received.compactMap {
+                guard case .fileGet(let get) = $0 else { return nil }
+                return get.id
+            }
+            if ids.count >= 2 { secondID = ids[1]; return true }
+            return false
+        }
+
+        try guest.send(.fileBegin(FileBegin(
+            id: try XCTUnwrap(firstID), transfer: 41, name: "First",
+            container: "data", bytes: 1, dataBytes: 1, rsrcBytes: 0,
+            fileType: "BINA", creator: "????", modified: nil)))
+        try await waitUntil("late first transfer cancelled") {
+            guest.received.contains {
+                if case .fileCancel(let cancel) = $0 {
+                    return cancel.transfer == 41
+                }
+                return false
+            }
+        }
+
+        try guest.send(.fileBegin(FileBegin(
+            id: try XCTUnwrap(secondID), transfer: 42, name: "Second",
+            container: "data", bytes: 0, dataBytes: 0, rsrcBytes: 0,
+            fileType: "BINA", creator: "????", modified: nil)))
+        try guest.send(.fileEnd(FileEnd(id: try XCTUnwrap(firstID),
+                                        transfer: 41, ok: false,
+                                        sendMs: nil)))
+        try guest.send(.fileEnd(FileEnd(id: try XCTUnwrap(secondID),
+                                        transfer: 42, ok: true,
+                                        sendMs: nil)))
+        try await waitUntil("second pull settles") { second != nil }
+        XCTAssertEqual(first?.code, "cancelled")
+        guard case .success = try XCTUnwrap(second) else {
+            return XCTFail("the replacement pull did not complete")
+        }
+    }
+
+    func testLateRefusalFromCancelledPullDoesNotSettleReplacement()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        var second: Result<GuestListener.FileDelivery,
+                           GuestListener.FileFailure>?
+        listener.getFile(path: "First", container: "data",
+                         stagingDirectory: directory) { _ in }
+        var firstID: Int?
+        try await waitUntil("first file.get") {
+            let ids: [Int] = guest.received.compactMap {
+                guard case .fileGet(let get) = $0 else { return nil }
+                return get.id
+            }
+            firstID = ids.first
+            return firstID != nil
+        }
+        listener.cancelFile()
+        listener.getFile(path: "Second", container: "data",
+                         stagingDirectory: directory) { second = $0 }
+        try guest.send(.fileRefuse(FileRefuse(
+            id: try XCTUnwrap(firstID), code: "not-found", reason: "late")))
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNil(second, "the refusal belongs to the abandoned request")
+        XCTAssertEqual(listener.fileTransferInFlight, .incoming)
+    }
+
+    func testLateRefusalFromCancelledOfferDoesNotSettleReplacement()
+        async throws {
+        let (listener, guest) = try await connectedListener()
+        defer { guest.connection.cancel(); listener.stop() }
+        listener.putFile(name: "First", into: "", container: "data",
+                         bytes: Data([1])) { _ in }
+        var firstID: Int?
+        try await waitUntil("first file.offer") {
+            let ids: [Int] = guest.received.compactMap {
+                guard case .fileOffer(let offer) = $0 else { return nil }
+                return offer.id
+            }
+            firstID = ids.first
+            return firstID != nil
+        }
+        listener.cancelFile()
+        var replacement: Result<GuestListener.PutReceipt,
+                                GuestListener.FileFailure>?
+        listener.putFileWithReceipt(
+            name: "Second", into: "", container: "data", bytes: Data([2])) {
+                replacement = $0
+            }
+        var secondID: Int?
+        try await waitUntil("second file.offer") {
+            let ids: [Int] = guest.received.compactMap {
+                guard case .fileOffer(let offer) = $0 else { return nil }
+                return offer.id
+            }
+            if ids.count >= 2 { secondID = ids[1]; return true }
+            return false
+        }
+        try guest.send(.fileRefuse(FileRefuse(
+            id: try XCTUnwrap(firstID), code: "busy", reason: "late")))
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNil(replacement)
+        XCTAssertEqual(listener.fileTransferInFlight, .outgoing)
+
+        let id = try XCTUnwrap(secondID)
+        try guest.send(.fileAccept(FileAccept(id: id)))
+        try await waitUntil("replacement byte") {
+            guest.bulkReceived.last == 2
+        }
+        try guest.send(.fileDone(FileDone(id: id, ok: true,
+                                          code: nil, reason: nil)))
+        try await waitUntil("replacement settled") { replacement != nil }
+        guard case .success = try XCTUnwrap(replacement) else {
+            return XCTFail("replacement upload did not complete")
         }
     }
 

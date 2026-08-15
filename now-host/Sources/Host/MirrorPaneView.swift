@@ -34,6 +34,7 @@ struct MirrorPaneView: View {
 
     @ObservedObject var source: NOWMirrorSource
     @ObservedObject var presentation: MirrorPresentation
+    @ObservedObject var fileTransfer: MirrorFileTransferModel
     let container: Container
 
     var body: some View {
@@ -56,14 +57,22 @@ struct MirrorPaneView: View {
 
     @ViewBuilder
     private var surface: some View {
-        if let factor = presentation.zoom.factor {
+        if !source.running && source.scene == nil {
+            VStack(spacing: 8) {
+                Text("Mirror is stopped")
+                    .font(.headline)
+                Text("Choose Start to begin mirroring the connected Mac.")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let factor = presentation.zoom.factor {
             /* A fixed frame inside a scroller. FitTransform computes
                scale == guest/view, so a frame of exactly guest × factor
                makes the renderer's own CTM scale equal `factor` — and
                because every stop is a power of two, each guest pixel
                lands on a whole number of host pixels. */
             ScrollView([.horizontal, .vertical]) {
-                LiveMirrorView(controller: source, keyboard: keyboard)
+                liveMirror
                     .frame(width: guestSize.width * factor,
                            height: guestSize.height * factor)
             }
@@ -77,9 +86,16 @@ struct MirrorPaneView: View {
                window's default 820-point detail column, so a first run
                that opened at 100% would greet a person with a scrollbar
                where a Macintosh should be. */
-            LiveMirrorView(controller: source, keyboard: keyboard)
+            liveMirror
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var liveMirror: some View {
+        LiveMirrorView(controller: source,
+            keyboard: keyboard,
+            hostFilePromise: { fileTransfer.promise(for: $0) },
+            hostFilesDropped: { fileTransfer.copyHostFiles($0, to: $1) })
     }
 
     /* **What the letterbox is made of.** `FitTransform` preserves the

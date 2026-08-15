@@ -1,0 +1,3 @@
+# Offline private asset-pack extraction. Keep this separate from product
+# dependencies: nothing here is linked into or shipped with NOW.
+Pillow>=10,<13

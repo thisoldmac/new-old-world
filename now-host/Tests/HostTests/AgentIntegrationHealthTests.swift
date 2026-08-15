@@ -69,8 +69,55 @@ final class AgentIntegrationHealthTests: XCTestCase {
         XCTAssertNil(snapshot.listeningPort)
         XCTAssertNil(snapshot.sessionID)
         XCTAssertNil(snapshot.guest)
+        XCTAssertEqual(snapshot.issues, [])
         XCTAssertNil(snapshot.failure)
         XCTAssertEqual(listener.state, .idle)
+    }
+
+    func testHostProcessCollisionIsFirstClassHealth() {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"))
+        let expected = AgentIntegrationHostIssue(
+            code: "now-host-session-collision",
+            severity: .error,
+            message: "Address already in use",
+            processIDs: [101, 202])
+        let adapter = AgentIntegrationHostAdapter(
+            listener: listener, hostIssues: { [expected] })
+
+        guard case .available(let snapshot) = adapter.sessionHealth() else {
+            return XCTFail("a running host must be available")
+        }
+
+        XCTAssertEqual(snapshot.issues, [expected])
+    }
+
+    func testHostProcessCollisionNamesAllHostProcesses() {
+        XCTAssertEqual(
+            HostProcessIssueProbe.issues(
+                processIdentifiers: [202, 101, 202]),
+            [.init(
+                code: "now-host-session-collision",
+                severity: .error,
+                message: "Multiple New Old World host applications are "
+                    + "running. MCP may be connected to a different host "
+                    + "than the visible window, while that window reports "
+                    + "Address already in use.",
+                processIDs: [101, 202])])
+        XCTAssertEqual(
+            HostProcessIssueProbe.issues(processIdentifiers: [101]), [])
+    }
+
+    func testOlderHealthWithoutIssuesDecodesAsNoIssues() throws {
+        let data = Data(#"{"state":"listening","observedAt":0,"listeningPort":5250,"sessionID":null,"guest":null,"roster":[],"failure":null}"#.utf8)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+
+        let decoded = try decoder.decode(
+            AgentIntegrationSessionHealth.self, from: data)
+
+        XCTAssertEqual(decoded.state, .listening)
+        XCTAssertEqual(decoded.issues, [])
     }
 
     func testConnectedSnapshotReportsOnlyExistingHostOwnedHealth()

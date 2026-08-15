@@ -1,16 +1,22 @@
 import SwiftUI
 
 /// This Mac's own event log, surfaced the way the guest's Logs page is: a
-/// monospaced scrollback that follows the tail, an Invert switch for a dark
-/// canvas, and a switch for whether the lines also reach the disk.
+/// monospaced scrollback that follows the tail and an Invert switch for a
+/// dark canvas. Whether the lines also reach disk is a Settings tab now.
 struct LogsModuleView: View {
     @ObservedObject var model: LogsModel
     @ObservedObject var log: HostLog
+    @ObservedObject var continuity: MirrorContinuityController
+    /// Nil in a preview or a test with no Settings window to open.
+    var openSettings: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
                 .padding(28)
+            ContinuityDiagnosticsView(controller: continuity)
+                .padding(.horizontal, 28)
+                .padding(.bottom, 18)
             Divider()
             scrollback
         }
@@ -40,16 +46,20 @@ struct LogsModuleView: View {
             + "not written to disk"
     }
 
+    /// "Log to disk" moved to Settings (a disk-writing preference); Invert
+    /// stays — it is display state a person wants to see change while
+    /// they're looking at the scrollback it repaints.
     private var switches: some View {
         HStack(spacing: 16) {
             Toggle("Invert", isOn: Binding(
                 get: { model.invert },
                 set: { model.setInvert($0) }))
-            Toggle("Log to disk", isOn: Binding(
-                get: { model.persistsToDisk },
-                set: { model.setPersistsToDisk($0) }))
+                .toggleStyle(.checkbox)
+            if let openSettings {
+                Button("Settings…", action: openSettings)
+                    .controlSize(.small)
+            }
         }
-        .toggleStyle(.checkbox)
     }
 
     private var scrollback: some View {
@@ -85,5 +95,34 @@ struct LogsModuleView: View {
 
     private var inkColor: Color {
         model.invert ? .white : .primary
+    }
+}
+
+/// Advanced logging controls belong beside the output they produce. This
+/// view intentionally receives the app-owned controller rather than reaching
+/// through the Mirror module and constructing its scene runtime as a side
+/// effect of opening Logs.
+private struct ContinuityDiagnosticsView: View {
+    @ObservedObject var controller: MirrorContinuityController
+
+    var body: some View {
+        DisclosureGroup("Advanced continuity diagnostics") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(ContinuityOptionCatalog.options(in: .diagnostic)) {
+                    option in
+                    Toggle(option.label, isOn: Binding(
+                        get: { controller[keyPath: option.keyPath] },
+                        set: { controller[keyPath: option.keyPath] = $0 }))
+                        .help(option.detail)
+                }
+                Text("These settings re-arm an active continuity session. "
+                     + "Deep click logging can be high volume and remains "
+                     + "off by default.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 8)
+        }
     }
 }

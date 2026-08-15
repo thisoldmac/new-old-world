@@ -1,0 +1,43 @@
+{
+  "id": "platinum.macos-8.6.default",
+  "systemVersion": "8.6",
+  "carbonLibVersion": "1.6",
+  "visualFamily": "platinum",
+  "theme": "default",
+  "screen": {"width": 800, "height": 600, "depth": 32},
+  "assetPolicy": "external-apple-assets-required-for-pixel-claims",
+  "calibration": "sheepshaver-native-framebuffer",
+  "desktopPattern": {
+    "name": "Mac OS Default",
+    "asset": "patterns/desktop.png",
+    "tileOrigin": [0, 0],
+    "proofRegions": [[424, 320, 690, 580]],
+    "source": "unobscured native framebuffer region; every RGB pixel must match the extracted ppat tile"
+  },
+  "chromeAssets": {
+    "appleMenu": {
+      "rect": [17, 2, 30, 17],
+      "background": "#DDDDDD",
+      "source": "stable native framebuffer; exact face pixels become transparent"
+    },
+    "applicationMenuIcons": {
+      "MACS": {
+        "rect": [721, 2, 737, 18],
+        "background": "#DDDDDD",
+        "source": "Finder application-menu slot in the same stable native framebuffer"
+      }
+    },
+    "aliasBadge": {
+      "proofs": [
+        {"path": "Desktop Folder:Browse the Internet", "rect": [736, 220, 768, 252]},
+        {"path": "Desktop Folder:Mail", "rect": [736, 348, 768, 380]},
+        {"path": "Desktop Folder:Register with Apple", "rect": [736, 412, 768, 444]}
+      ],
+      "source": "opaque residual shared by three independently extracted custom icons over the proved desktop tile; every output pixel must agree across all three target regions and differ in at least two proofs"
+    }
+  },
+  "notes": [
+    "This is the first explicit visual profile, not a claim that Mac OS 8.6 and 9.1 are identical.",
+    "Future profiles inherit only after an evidence-backed delta is recorded."
+  ]
+}

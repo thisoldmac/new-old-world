@@ -203,6 +203,152 @@ final class LiveMirrorCursorTests: XCTestCase {
                       + "while it actually calls it")
     }
 
+    /// SwiftUI can end and recreate a hover region when a new guest scene
+    /// redraws under a stationary pointer. That visual lifecycle must not
+    /// release a raw-input lease; the AppKit capture view is the single event
+    /// authority because it follows the actual window pointer instead.
+    func testVisualHoverCannotDriveOrReleaseContinuity() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources")
+        let live = try String(
+            contentsOf: sources.appendingPathComponent(
+                "MirrorKitUI/LiveMirror.swift"), encoding: .utf8)
+        let hoverStart = try XCTUnwrap(
+            live.range(of: ".onContinuousHover")).lowerBound
+        let hoverEnd = try XCTUnwrap(
+            live.range(of: "guard let idx = openMenu",
+                       range: hoverStart..<live.endIndex)).lowerBound
+        let visualHover = String(live[hoverStart..<hoverEnd])
+        XCTAssertFalse(visualHover.contains("continuityInputDriver"),
+                       "a SwiftUI hover redraw can emit ended without the "
+                        + "pointer leaving and must not release Continuity")
+
+        let captureStart = try XCTUnwrap(
+            live.range(of: "PointerCaptureView(")).lowerBound
+        let captureEnd = try XCTUnwrap(
+            live.range(of: ".frame(maxWidth: .infinity",
+                       range: captureStart..<live.endIndex)).lowerBound
+        let capture = String(live[captureStart..<captureEnd])
+        XCTAssertTrue(capture.contains(".pointerMoved("))
+        XCTAssertTrue(capture.contains(".pointerLeft()"),
+                      "the AppKit pointer capture must retain both ownership "
+                        + "edges when visual hover is observation-only")
+    }
+
+    /// A raw menubar gesture drives the guest's real MenuSelect loop, while
+    /// Mirror draws its dropdown from the already observed menu rows. Every
+    /// raw pointer edge that can change that loop must reconcile the projection;
+    /// otherwise the guest closes while Mirror stays open (or vice versa).
+    func testRawMenuProjectionFollowsEveryContinuityPointerEdge() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources")
+        let live = try String(
+            contentsOf: sources.appendingPathComponent(
+                "MirrorKitUI/LiveMirror.swift"), encoding: .utf8)
+        let captureStart = try XCTUnwrap(
+            live.range(of: "PointerCaptureView(")).lowerBound
+        let captureEnd = try XCTUnwrap(
+            live.range(of: ".frame(maxWidth: .infinity",
+                       range: captureStart..<live.endIndex)).lowerBound
+        let capture = String(live[captureStart..<captureEnd])
+
+        XCTAssertTrue(capture.contains("continuityOwnsOpenMenu = true"),
+                      "a consumed raw menu-title press must own a projection")
+        XCTAssertEqual(capture.components(
+            separatedBy: "syncContinuityMenu(").count - 1, 3,
+            "move, drag and up must each reconcile the raw menu projection")
+        XCTAssertEqual(capture.components(
+            separatedBy: "closeContinuityMenu()").count - 1, 2,
+            "pointer exit and capture cancellation must dismiss the projection")
+        XCTAssertTrue(live.contains(
+            ".onChange(of: controller.continuityInputDriver?"))
+        XCTAssertTrue(live.contains(
+            "if !tracking { closeContinuityMenu() }"),
+            "a remote exit must close the projected menu without another pointer event")
+    }
+
+    func testHostFileDragBelongsOnlyToSemanticMirror() {
+        XCTAssertTrue(HostFileDragPolicy.claimsPress(
+            filePromiseAvailable: true, mirrorCursorActive: false))
+        XCTAssertFalse(HostFileDragPolicy.claimsPress(
+            filePromiseAvailable: true, mirrorCursorActive: true),
+            "Mirror Cursor leaves the gesture on the guest input lane")
+        XCTAssertFalse(HostFileDragPolicy.claimsPress(
+            filePromiseAvailable: false, mirrorCursorActive: false))
+    }
+
+    func testHostFileDragBeginsAtMovementThreshold() {
+        XCTAssertFalse(HostFileDragPolicy.hasBegun(
+            from: (10, 10), to: (12, 13)))
+        XCTAssertTrue(HostFileDragPolicy.hasBegun(
+            from: (10, 10), to: (12, 14)))
+    }
+
+    /// The promise writer is captured from the resolved guest source on
+    /// mouse-down. Once movement becomes a drag, AppKit receives that writer
+    /// directly; the old resident-backed guest item drag is not a prerequisite.
+    func testGuestFileReferenceBecomesAHostDragWithoutGuestItemDrag() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources")
+        let live = try String(
+            contentsOf: sources.appendingPathComponent(
+                "MirrorKitUI/LiveMirror.swift"), encoding: .utf8)
+        let downStart = try XCTUnwrap(
+            live.range(of: "onLeftDown:")).lowerBound
+        let downEnd = try XCTUnwrap(
+            live.range(of: "onLeftDragged:",
+                       range: downStart..<live.endIndex)).lowerBound
+        let down = String(live[downStart..<downEnd])
+        XCTAssertTrue(down.contains("mirrorCursorActive:"))
+        XCTAssertTrue(down.contains("let writer = hostFilePromise?(source)"),
+                      "the native promise must retain the resolved guest file")
+        XCTAssertTrue(down.contains("guestFileDragReference = .init("))
+        XCTAssertTrue(down.contains("if consumed { return true }"),
+                      "Mirror Cursor presses must retain direct pointer input")
+
+        let dragStart = try XCTUnwrap(
+            live.range(of: "onLeftDragged:")).lowerBound
+        let dragEnd = try XCTUnwrap(
+            live.range(of: "onLeftUp:",
+                       range: dragStart..<live.endIndex)).lowerBound
+        let drag = String(live[dragStart..<dragEnd])
+        XCTAssertTrue(drag.contains("HostFileDragPolicy.hasBegun("))
+        XCTAssertTrue(drag.contains("selectGuestFile(reference, in: scene)"))
+        XCTAssertTrue(drag.contains("return hostDragItem("),
+                      "the threshold event must hand an AppKit item back")
+        XCTAssertFalse(drag.contains("beginItemDrag("))
+        XCTAssertFalse(drag.contains("itemDragDriver"),
+                       "copy-out must not enter the guest/resident drag lane")
+    }
+
+    /// The capture view asks for the host drag item on every captured drag
+    /// event, not only after the pointer has crossed the Mirror boundary.
+    func testAppKitDragCanBeginInsideTheMirror() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Sources")
+        let pointer = try String(
+            contentsOf: sources.appendingPathComponent(
+                "MirrorKitUI/PointerCapture.swift"), encoding: .utf8)
+        let start = try XCTUnwrap(
+            pointer.range(of: "case .leftMouseDragged:")).lowerBound
+        let end = try XCTUnwrap(
+            pointer.range(of: "case .leftMouseUp:",
+                          range: start..<pointer.endIndex)).lowerBound
+        let drag = String(pointer[start..<end])
+        let request = try XCTUnwrap(
+            drag.range(of: "self.leftDragged?(point, mods)"))
+        let edgeCleanup = try XCTUnwrap(drag.range(of: "if !isInside"))
+        let native = try XCTUnwrap(drag.range(of: "self.beginHostDrag("))
+
+        XCTAssertLessThan(request.lowerBound, edgeCleanup.lowerBound,
+                          "the Mirror edge may clean up but cannot gate start")
+        XCTAssertLessThan(request.lowerBound, native.lowerBound)
+    }
+
     /// The pointer and the act must name the same object, which they do
     /// by both being handed the resolver's answer for the same point.
     /// Asserted over a real scene rather than over the source, because

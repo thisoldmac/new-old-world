@@ -1,0 +1,27 @@
+{
+  "id": "finder-icon-selection",
+  "profile": "platinum.macos-8.6.default",
+  "title": "Front Finder icon view with one selected item",
+  "requiredState": [
+    "Finder is frontmost",
+    "One Finder folder window is front and in icon view",
+    "Exactly System Folder is selected",
+    "No menu is open"
+  ],
+  "inputSequence": "finder-clean-desktop",
+  "inputActions": [
+    "move 750 54", "down 0", "up 0",
+    "keydown 55", "keydown 31", "keyup 31", "keyup 55",
+    "move 130 10", "down 0", "move 145 27", "up 0",
+    "move 64 94", "down 0", "up 0"
+  ],
+  "regions": [
+    {"name": "front-window", "source": "frontWindow", "inset": [0, 0, 0, 0]}
+  ],
+  "masks": [],
+  "render": {
+    "finderView": "icon",
+    "finderSelectedName": "System Folder",
+    "finderAvailableBytes": 1073637376
+  }
+}

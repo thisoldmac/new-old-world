@@ -42,6 +42,17 @@ MODULE_SECTIONS = {
 }
 ALLOWED_RELEASE_STATES = {"included", "optional", "excluded"}
 ALLOWED_MODULE_TIERS = {"core", "experimental", "debug"}
+REQUIRED_DISTRIBUTION_OUTPUTS = {
+    "macos_dmg": "dmg",
+    "embedded_app_resources": "embedded-app-resources",
+    "generic_classic_image": "classic-image-macbinary",
+    "loose_ppc_application": "loose-component",
+    "loose_ppc_sidecar": "update-sidecar",
+    "loose_now_extension": "loose-component",
+    "loose_extension_sidecar": "update-sidecar",
+    "release_manifest": "release-manifest",
+    "release_checksums": "checksums",
+}
 
 
 class DocsLoader(yaml.SafeLoader):
@@ -326,6 +337,7 @@ def extract_host_catalog(root: Path) -> dict[str, dict[str, object]]:
             if not id_match:
                 continue
             module_id = id_match.group(1)
+            title_match = re.search(r'\btitle:\s*"([^"]+)"', body)
             tier_match = re.search(r"\btier:\s*\.([A-Za-z0-9_]+)", body)
             domains_match = re.search(r"\bdomains:\s*\[([^\]]*)\]", body, re.DOTALL)
             feature_match = re.search(r"\bfeatureID:\s*\.([A-Za-z0-9_]+)", body)
@@ -335,6 +347,7 @@ def extract_host_catalog(root: Path) -> dict[str, dict[str, object]]:
                                              f"<unresolved:{feature_match.group(1)}>")
                           if feature_match else None)
             catalog[module_id] = {
+                "title": title_match.group(1) if title_match else f"<unresolved-title:{module_id}>",
                 "tier": tier_match.group(1) if tier_match else "core",
                 "domains": domains,
                 "feature_id": feature_id,
@@ -343,7 +356,11 @@ def extract_host_catalog(root: Path) -> dict[str, dict[str, object]]:
 
 
 def extract_ppc_pages(root: Path) -> list[str]:
-    text = (root / "now-guest-ppc/src/workshop/workshop_module.h").read_text()
+    # The page ids live in their own Toolbox-free header, so the rail's
+    # order table and its native test can read them; workshop_module.h
+    # includes it and adds the Carbon-dependent half.
+    text = (root
+            / "now-guest-ppc/src/workshop/workshop_module_ids.h").read_text()
     block = text[text.index("typedef enum {"):text.index("} WorkshopModuleID")]
     return re.findall(r"\b(kWorkshop[A-Za-z0-9]+)\b", block)
 
@@ -452,6 +469,7 @@ def extract_ppc_catalog(root: Path) -> tuple[dict[str, dict[str, object]], list[
                 continue
             page_id = fields[0]
             stable_match = re.fullmatch(r'"([^"]+)"', fields[1])
+            title_match = re.fullmatch(r'"([^"]+)"', fields[2])
             tier = tier_ids.get(fields[7], f"<unresolved:{fields[7]}>")
             domain_count = fields[9]
             if fields[8] in {"NULL", "0"}:
@@ -478,6 +496,7 @@ def extract_ppc_catalog(root: Path) -> tuple[dict[str, dict[str, object]], list[
                 continue
             catalog[page_id] = {
                 "id": stable_match.group(1) if stable_match else f"<unresolved:{fields[1]}>",
+                "title": title_match.group(1) if title_match else f"<unresolved-title:{page_id}>",
                 "tier": tier,
                 "domains": domains,
                 "feature_id": feature_id,
@@ -527,6 +546,279 @@ def mermaid_error(source: str) -> str | None:
         if source.count(opening) != source.count(closing):
             return f"unbalanced {opening}{closing} delimiters"
     return None
+
+
+def check_distribution_profile(root: Path, feature_catalog: dict,
+                               errors: list[str]) -> tuple[int, int]:
+    path = root / "docs/distribution-profile.yaml"
+    try:
+        profile = load_yaml(path)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        errors.append(f"docs/distribution-profile.yaml: cannot load profile: {exc}")
+        return 0, 0
+
+    if profile.get("schema_version") != 1:
+        errors.append("docs/distribution-profile.yaml: schema_version must be 1")
+    authority = profile.get("feature_authority")
+    if authority != {"path": "product/features.yaml", "profile": "active"}:
+        errors.append(
+            "docs/distribution-profile.yaml: feature authority must be "
+            "product/features.yaml with profile: active"
+        )
+
+    outputs = profile.get("outputs", {})
+    if not isinstance(outputs, dict):
+        errors.append("docs/distribution-profile.yaml: outputs must be a mapping")
+        outputs = {}
+    if set(outputs) != set(REQUIRED_DISTRIBUTION_OUTPUTS):
+        errors.append(
+            "docs/distribution-profile.yaml: output IDs must be exactly the alpha distribution "
+            f"contract (profile={sorted(outputs)}, required={sorted(REQUIRED_DISTRIBUTION_OUTPUTS)})"
+        )
+    for output_id, expected_kind in REQUIRED_DISTRIBUTION_OUTPUTS.items():
+        row = outputs.get(output_id)
+        if not isinstance(row, dict):
+            errors.append(f"distribution output {output_id}: definition must be a mapping")
+        elif row.get("kind") != expected_kind:
+            errors.append(
+                f"distribution output {output_id}: kind must be {expected_kind!r}"
+            )
+
+    feature_defs = feature_catalog.get("features", {})
+    active_profile_id = feature_catalog.get("active_profile")
+    active_profile = feature_catalog.get("profiles", {}).get(active_profile_id, {})
+    feature_states = {
+        feature_id: row.get("state")
+        for feature_id, row in active_profile.get("features", {}).items()
+        if isinstance(row, dict)
+    }
+    components = profile.get("components", {})
+    if not isinstance(components, dict):
+        errors.append("docs/distribution-profile.yaml: components must be a mapping")
+        components = {}
+    feature_components: dict[str, str] = {}
+    component_outputs: dict[str, set[str]] = {}
+    for component_id, row in components.items():
+        if not isinstance(row, dict):
+            errors.append(f"distribution component {component_id}: definition must be a mapping")
+            continue
+        feature_id = row.get("feature_id")
+        if row.get("kind") != "product-feature" or not isinstance(feature_id, str):
+            errors.append(
+                f"distribution component {component_id}: must map one product-feature feature_id"
+            )
+            continue
+        if feature_id in feature_components:
+            errors.append(
+                f"distribution feature {feature_id}: mapped by both "
+                f"{feature_components[feature_id]} and {component_id}"
+            )
+        feature_components[feature_id] = component_id
+        output_ids = row.get("output_ids")
+        if not isinstance(output_ids, list) or any(not isinstance(item, str) for item in output_ids):
+            errors.append(f"distribution component {component_id}: output_ids must be a list of IDs")
+            output_ids = []
+        component_outputs[component_id] = set(output_ids)
+        unknown_outputs = sorted(set(output_ids) - set(outputs))
+        if unknown_outputs:
+            errors.append(
+                f"distribution component {component_id}: unknown output IDs: "
+                f"{', '.join(unknown_outputs)}"
+            )
+        state = feature_states.get(feature_id)
+        if state == "excluded" and output_ids:
+            errors.append(
+                f"distribution component {component_id} maps excluded feature {feature_id} "
+                "but has outputs"
+            )
+        elif state in {"included", "optional"} and not output_ids:
+            errors.append(
+                f"distribution component {component_id} maps {state} feature {feature_id} "
+                "but has no outputs"
+            )
+        if state == "excluded" and not str(row.get("omission_reason") or "").strip():
+            errors.append(
+                f"distribution component {component_id}: excluded feature needs omission_reason"
+            )
+    if set(feature_components) != set(feature_defs):
+        errors.append(
+            "docs/distribution-profile.yaml: component feature IDs must match the feature catalog "
+            f"(components={sorted(feature_components)}, catalog={sorted(feature_defs)})"
+        )
+
+    licensed_inputs = profile.get("licensed_inputs", {})
+    if not isinstance(licensed_inputs, dict):
+        errors.append("docs/distribution-profile.yaml: licensed_inputs must be a mapping")
+        licensed_inputs = {}
+    if set(licensed_inputs) != {"carbonlib_1_6_installer"}:
+        errors.append(
+            "docs/distribution-profile.yaml: CarbonLib is the only approved licensed alpha input"
+        )
+    carbon = licensed_inputs.get("carbonlib_1_6_installer", {})
+    carbon_contract = {
+        "classification": "approved-external-installer",
+        "repository_policy": "external-only",
+        "preserve_original_bytes": True,
+        "checksum": "required",
+        "provenance": "required",
+        "license_material": "required",
+        "license_acceptance": "user",
+    }
+    if (not isinstance(carbon, dict)
+            or any(carbon.get(key) != value for key, value in carbon_contract.items())):
+        errors.append(
+            "docs/distribution-profile.yaml: CarbonLib must remain an unchanged, "
+            "external-only, user-licensed installer"
+        )
+        carbon = carbon if isinstance(carbon, dict) else {}
+    carbon_outputs = carbon.get("output_ids", [])
+    if (not isinstance(carbon_outputs, list)
+            or set(carbon_outputs) != {"embedded_app_resources", "generic_classic_image"}):
+        errors.append(
+            "docs/distribution-profile.yaml: CarbonLib must appear only in embedded resources "
+            "and the generic classic image"
+        )
+
+    excluded_inputs = profile.get("excluded_inputs", {})
+    if (not isinstance(excluded_inputs, dict)
+            or set(excluded_inputs) != {"codekitten"}
+            or not str(excluded_inputs.get("codekitten", {}).get("reason") or "").strip()):
+        errors.append(
+            "docs/distribution-profile.yaml: CodeKitten must remain an explicit excluded input"
+        )
+
+    output_component_refs: dict[str, set[str]] = {key: set() for key in components}
+    output_licensed_refs: dict[str, set[str]] = {key: set() for key in licensed_inputs}
+    for output_id, row in outputs.items():
+        if not isinstance(row, dict):
+            continue
+        refs: list[dict] = []
+        direct_component = row.get("component")
+        if direct_component is not None:
+            refs.append({"component": direct_component})
+        contents = row.get("contains", [])
+        if not isinstance(contents, list):
+            errors.append(f"distribution output {output_id}: contains must be a list")
+            contents = []
+        for ref in contents:
+            if not isinstance(ref, dict) or len(ref) != 1:
+                errors.append(
+                    f"distribution output {output_id}: each contains row must be one typed reference"
+                )
+                continue
+            key, value = next(iter(ref.items()))
+            if key == "output":
+                if value not in outputs:
+                    errors.append(f"distribution output {output_id}: unknown output reference {value}")
+            elif key == "component":
+                refs.append({"component": value})
+            elif key == "licensed_input":
+                if value not in licensed_inputs:
+                    errors.append(
+                        f"distribution output {output_id}: unknown licensed input {value}"
+                    )
+                else:
+                    output_licensed_refs[value].add(output_id)
+            else:
+                errors.append(
+                    f"distribution output {output_id}: unknown contains reference type {key}"
+                )
+        for ref in refs:
+            component_id = ref["component"]
+            if component_id not in components:
+                errors.append(
+                    f"distribution output {output_id}: unknown component {component_id}"
+                )
+            else:
+                output_component_refs[component_id].add(output_id)
+
+    for component_id, declared in component_outputs.items():
+        actual = output_component_refs.get(component_id, set())
+        if declared != actual:
+            errors.append(
+                f"distribution component {component_id}: output_ids disagree with output contents "
+                f"(declared={sorted(declared)}, actual={sorted(actual)})"
+            )
+    if set(carbon_outputs) != output_licensed_refs.get("carbonlib_1_6_installer", set()):
+        errors.append(
+            "distribution input carbonlib_1_6_installer: output_ids disagree with output contents"
+        )
+
+    dmg = outputs.get("macos_dmg", {})
+    if (not isinstance(dmg, dict)
+            or not str(dmg.get("filename") or "").endswith(".dmg")
+            or dmg.get("public") is not True
+            or dmg.get("contains") != [{"output": "embedded_app_resources"}]):
+        errors.append("distribution output macos_dmg must publish the embedded app resources")
+    embedded = outputs.get("embedded_app_resources", {})
+    if (not isinstance(embedded, dict)
+            or embedded.get("path") != "New Old World.app/Contents/Resources/Onboarding"
+            or embedded.get("public") is not False):
+        errors.append(
+            "distribution output embedded_app_resources must be sealed inside the host app"
+        )
+    classic = outputs.get("generic_classic_image", {})
+    if (not isinstance(classic, dict)
+            or not str(classic.get("filename") or "").endswith(".img.bin")
+            or not str(classic.get("classic_name") or "").endswith(".img")
+            or classic.get("public") is not True
+            or classic.get("personalized") is not False):
+        errors.append(
+            "docs/distribution-profile.yaml: generic_classic_image must be a "
+            "non-personalized .img.bin"
+        )
+
+    sidecar_pairs = {
+        "loose_ppc_application": "loose_ppc_sidecar",
+        "loose_now_extension": "loose_extension_sidecar",
+    }
+    for component_output, sidecar_output in sidecar_pairs.items():
+        component_row = outputs.get(component_output, {})
+        sidecar_row = outputs.get(sidecar_output, {})
+        if (not isinstance(component_row, dict) or not isinstance(sidecar_row, dict)
+                or component_row.get("sidecar") != sidecar_output
+                or sidecar_row.get("sidecar_for") != component_output
+                or not str(sidecar_row.get("filename") or "").endswith(".now-update.json")):
+            errors.append(
+                f"distribution outputs {component_output} and {sidecar_output} must be one "
+                "component/sidecar publication unit"
+            )
+    if outputs.get("release_manifest", {}).get("filename") != "release-manifest.json":
+        errors.append("distribution output release_manifest must be release-manifest.json")
+    if outputs.get("release_checksums", {}).get("filename") != "SHA256SUMS":
+        errors.append("distribution output release_checksums must be SHA256SUMS")
+
+    update = profile.get("update_policy", {})
+    if not isinstance(update, dict):
+        errors.append("docs/distribution-profile.yaml: update_policy must be a mapping")
+        update = {}
+    guest_components = ["ppc_application", "now_extension"]
+    if update.get("guest_components") != guest_components:
+        errors.append(
+            "docs/distribution-profile.yaml: update policy must cover the PPC app and Extension"
+        )
+    if update.get("actions") != "independent":
+        errors.append("docs/distribution-profile.yaml: guest update actions must remain independent")
+    if update.get("canonical_order") != guest_components or update.get("order_enforced") is not False:
+        errors.append(
+            "docs/distribution-profile.yaml: canonical update order must be app-first but unenforced"
+        )
+    supported_orders = update.get("supported_orders")
+    expected_orders = [guest_components, list(reversed(guest_components))]
+    if supported_orders != expected_orders:
+        errors.append(
+            "docs/distribution-profile.yaml: supported_orders must include canonical and "
+            "Extension-first flows"
+        )
+    if update.get("older_bundle") != "warn-no-downgrade":
+        errors.append(
+            "docs/distribution-profile.yaml: older bundles must warn without offering an "
+            "implicit downgrade"
+        )
+    if update.get("host_self_update") != "deferred":
+        errors.append("docs/distribution-profile.yaml: host self-update must remain deferred")
+
+    return len(outputs), len(licensed_inputs)
 
 
 def check(root: Path, site_dir: Path | None) -> int:
@@ -837,15 +1129,19 @@ def check(root: Path, site_dir: Path | None) -> int:
         if unknown_features:
             errors.append(f"{path.relative_to(root)}: unknown feature_ids: {', '.join(unknown_features)}")
 
+    distribution_output_count, licensed_input_count = check_distribution_profile(
+        root, feature_catalog, errors
+    )
+
     capabilities = feature_catalog.get("extension_capabilities", [])
     capability_ids = [row.get("id") for row in capabilities if isinstance(row, dict)]
     capability_planes = [row.get("plane") for row in capabilities if isinstance(row, dict)]
     if len(capability_ids) != len(set(capability_ids)):
         errors.append("product/features.yaml: duplicate extension capability id")
-    expected_planes = {f"P{number}" for number in range(9)}
+    expected_planes = {f"P{number}" for number in range(10)}
     if set(capability_planes) != expected_planes or len(capability_planes) != len(expected_planes):
         errors.append(
-            "product/features.yaml: extension capability planes must be exactly P0-P8 "
+            "product/features.yaml: extension capability planes must be exactly P0-P9 "
             f"(got={capability_planes})"
         )
     declared_symbols = [
@@ -871,6 +1167,11 @@ def check(root: Path, site_dir: Path | None) -> int:
         "id", "title", "tier", "domains", "feature_id", "page",
         "ppc_pages", "guest_68k",
     }
+    # title_overrides is the one optional field: a page whose guest title is
+    # deliberately not the manifest's rail-grouping title (a specific window
+    # name, a second page inside a multi-page module) records why here
+    # instead of silently drifting past the title comparison below.
+    optional_module_fields = {"title_overrides"}
     for index, row in enumerate(module_rows):
         if not isinstance(row, dict):
             errors.append(f"docs/module-manifest.yaml: module row {index} must be a mapping")
@@ -880,11 +1181,29 @@ def check(root: Path, site_dir: Path | None) -> int:
             errors.append(
                 f"module {row.get('id', index)}: missing fields: {', '.join(missing_fields)}"
             )
-        extra_fields = sorted(set(row) - required_module_fields)
+        extra_fields = sorted(set(row) - required_module_fields - optional_module_fields)
         if extra_fields:
             errors.append(
                 f"module {row.get('id', index)}: unknown fields: {', '.join(extra_fields)}"
             )
+        title_overrides = row.get("title_overrides")
+        if title_overrides is not None:
+            if not isinstance(title_overrides, dict):
+                errors.append(
+                    f"module {row.get('id', index)}: title_overrides must be a mapping"
+                )
+            else:
+                for ppc_page, reason in title_overrides.items():
+                    if ppc_page not in row.get("ppc_pages", []):
+                        errors.append(
+                            f"module {row.get('id', index)}: title_overrides names "
+                            f"{ppc_page!r}, which is not one of this module's ppc_pages"
+                        )
+                    if not str(reason or "").strip():
+                        errors.append(
+                            f"module {row.get('id', index)}: title_overrides for "
+                            f"{ppc_page!r} needs a non-empty reason"
+                        )
         if row.get("tier") not in ALLOWED_MODULE_TIERS:
             errors.append(
                 f"module {row.get('id', index)}: invalid tier {row.get('tier')!r}"
@@ -1025,6 +1344,11 @@ def check(root: Path, site_dir: Path | None) -> int:
                     f"module {row['id']}: manifest {field} {row.get(field)!r} "
                     f"does not match host {field} {live[field]!r}"
                 )
+        if row.get("title") != live["title"]:
+            errors.append(
+                f"module {row['id']}: manifest title {row.get('title')!r} "
+                f"does not match host title {live['title']!r}"
+            )
     ppc_declared = [page for row in module_rows for page in row.get("ppc_pages", [])]
     ppc_live = extract_ppc_pages(root)
     if set(ppc_declared) != set(ppc_live) or len(ppc_declared) != len(ppc_live):
@@ -1054,6 +1378,20 @@ def check(root: Path, site_dir: Path | None) -> int:
                         f"module {row.get('id')}: manifest {field} {row.get(field)!r} "
                         f"does not match PPC page {ppc_page} {field} {live[field]!r}"
                     )
+            override_reason = (row.get("title_overrides") or {}).get(ppc_page)
+            if override_reason:
+                if row.get("title") == live["title"]:
+                    errors.append(
+                        f"module {row.get('id')}: title_overrides for {ppc_page} is "
+                        f"unnecessary; manifest and PPC titles already match "
+                        f"({live['title']!r})"
+                    )
+            elif row.get("title") != live["title"]:
+                errors.append(
+                    f"module {row.get('id')}: manifest title {row.get('title')!r} "
+                    f"does not match PPC page {ppc_page} title {live['title']!r} "
+                    "(declare title_overrides with a reason if this is deliberate)"
+                )
     for row in module_rows:
         page = docs / row["page"]
         if not page.exists():
@@ -1270,6 +1608,10 @@ def check(root: Path, site_dir: Path | None) -> int:
     notices.append(f"media: {real_count} captured, {placeholder_count} placeholders")
     notices.append(f"module coverage: {len(module_rows)} host modules, {len(ppc_declared)} PPC pages")
     notices.append(f"release profile: {active_profile_id}, {len(feature_defs)} product features")
+    notices.append(
+        f"distribution profile: {distribution_output_count} outputs, "
+        f"{licensed_input_count} licensed input"
+    )
     notices.append(f"extension capabilities: {len(capabilities)} planes, {len(declared_symbols)} capability bits")
     notices.append(
         f"application feature coverage: {len(product_coverage)} product rows, "

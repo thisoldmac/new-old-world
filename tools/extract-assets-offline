@@ -22,6 +22,17 @@ so the two routes cannot disagree about what an icl8 means.
     tools/extract-assets-offline --reuse-work          # skip convert+carve
     tools/extract-assets-offline --theme-report        # census the theme file
     tools/extract-assets-offline --accent-ramps        # print the 21 clut ramps
+    tools/extract-assets-offline --required-files      # what a machine must give
+    tools/extract-assets-offline --from-tree DIR       # a staged volume tree
+
+The name says `offline` and the disk image is still the default route, but
+this script is now the ONE extractor behind both acquisitions. Steps 1-3
+above are the offline TRANSPORT; `--from-tree` skips them and reads a
+volume tree somebody else staged — which is how the connected guest
+route works, pulling the files `--required-files` names over `file.get`
+and materializing their resource forks. Everything after the mount reads
+only that directory, so the two routes cannot disagree about what an
+icl8 means.
 
 RULES, not preferences. These are Apple's bitmaps. The pack stays in a
 private external store, never publishes, never ships as an artifact. The source
@@ -51,6 +62,7 @@ sys.path.insert(0, PARSERS)
 # has not installed the optional extraction dependencies.
 Image = None
 cursors = None
+fileicons = None
 fonts = None
 icons = None
 patterns = None
@@ -94,12 +106,14 @@ NAMED_ICONS = {
     "document": -4000,
     "system-folder": -3982,
     "disk": -3998,
+    "trash": -3993,
 }
 
 # Roots swept for application/control-panel bundles. Mounting the whole
 # volume makes every app reachable at once — the live route had to pull
 # each one over the wire.
 APP_SWEEP_ROOTS = [
+    "Applications",
     "Applications (Mac OS 9)",
     "System Folder/Control Panels",
     "System Folder/Extensions",
@@ -109,30 +123,73 @@ APP_SWEEP_ROOTS = [
     "System Folder/Finder",
     "System Folder/Panels",
 ]
+FILE_ICON_ROOTS = ["Desktop Folder"]
 # Noise: our own builds, the trash, and the two multi-hundred-MB files
 # that are not resource forks at all.
 SWEEP_SKIP_NAMES = {"Trash", "VM Storage", "Desktop DB", "Desktop DF",
                     "Cleanup At Startup", "TheFindByContentFolder"}
 MAX_FORK_BYTES = 12 << 20
 
+# --- what a machine must hand over ---------------------------------------
+#
+# The acquisition manifest: every file this extractor opens by NAME, and
+# whether a pack can be built without it. `--required-files` prints it as
+# JSON so a transport that has to FETCH these one at a time (the connected
+# guest, over file.get) asks this script what it needs instead of keeping
+# its own copy of the list. That second copy is the whole point of the
+# key existing: a face added to FACES, or a new hard gate, would otherwise
+# be a silent short pull that only shows up as a refusal much later.
+#
+# `required` mirrors the SystemExit gates exactly — the System file (its
+# generic icons and the `Mac OS Default` ppat), the theme file (accent
+# ramps and the default `scen`), and the three suitcases REQUIRED_SHEETS
+# is drawn from. The other two degrade honestly on their own and say so
+# in the manifest, so a machine missing them still yields a pack.
+#
+# The sweep roots are deliberately NOT here. They are directories, not
+# files, and pulling 1,078 forks over MacTCP is a different decision from
+# bootstrapping a pack; a transport that cannot sweep records zero
+# appicons rather than pretending the list was short.
+def acquisition_files() -> list[dict]:
+    files = [
+        {"path": SYSTEM_FILE, "role": "system", "required": True,
+         "why": "generic icons, cursors, patterns and pictures"},
+        {"path": THEME_FILE, "role": "theme", "required": True,
+         "why": "the 21 accent ramps and the default scene"},
+    ]
+    files += [{"path": f"{FONTS_DIR}/{face}", "role": "font",
+               "required": True, "why": f"{face} strikes"}
+              for face in FACES]
+    files += [
+        {"path": APPEARANCE_CP, "role": "appearance", "required": False,
+         "why": "the named Appearance desktop patterns"},
+        # `why` is read back into a sentence on the host ("the pack will be
+        # built without ..."), so every one of these is a noun phrase.
+        {"path": DESKTOP_PREFS, "role": "desktop", "required": False,
+         "why": "the desktop picture this machine is set to"},
+    ]
+    return files
+
 
 # --- image plumbing ------------------------------------------------------
 
 def load_extractors() -> None:
-    global Image, cursors, fonts, icons, patterns, resfork
+    global Image, cursors, fileicons, fonts, icons, patterns, resfork
     try:
         from PIL import Image as pillow_image
         import cursors as cursor_parser
+        import fileicons as file_icon_parser
         import fonts as font_parser
         import icons as icon_parser
         import patterns as pattern_parser
         import resfork as resource_fork_parser
     except ModuleNotFoundError as exc:
         raise SystemExit(
-            f"missing extraction dependency: {exc.name}; install Pillow "
-            "and the documented tool requirements") from exc
+            f"missing extraction dependency: {exc.name}; create a Python "
+            "environment and install tools/asset-pack/requirements.txt") from exc
     Image = pillow_image
     cursors = cursor_parser
+    fileicons = file_icon_parser
     fonts = font_parser
     icons = icon_parser
     patterns = pattern_parser
@@ -147,7 +204,7 @@ def convert_to_raw(image: str, work: str, reuse: bool) -> str:
     if reuse and os.path.exists(raw):
         print(f"  reusing {raw}")
         return raw
-    if image.endswith(".raw") or image.endswith(".img"):
+    if image.endswith((".raw", ".img", ".hfv")):
         return image                       # already raw; read it in place
     t = time.time()
     print(f"  qemu-img convert {os.path.basename(image)} -> probe.raw")
@@ -157,10 +214,22 @@ def convert_to_raw(image: str, work: str, reuse: bool) -> str:
 
 
 def find_hfs_partition(raw: str) -> int:
-    """Byte offset of the Apple_HFS partition, from the Apple Partition Map."""
+    """Byte offset of an APM Apple_HFS partition or a raw HFS/HFS+ volume.
+
+    QEMU bases carry an Apple Partition Map. SheepShaver `.hfv` files are the
+    volume itself, beginning with an HFS wrapper whose MDB is at byte 1024.
+    Accepting both lets one extractor own OS 8.6 and 9.1 assets instead of
+    forcing the visual profile to borrow fonts from the newer image.
+    """
     with open(raw, "rb") as fh:
         if fh.read(2) != b"ER":
-            raise SystemExit(f"{raw}: no Apple Partition Map (block 0 is not 'ER')")
+            fh.seek(1024)
+            signature = fh.read(2)
+            if signature in (b"BD", b"H+"):
+                return 0
+            raise SystemExit(
+                f"{raw}: neither an Apple Partition Map nor a raw HFS/HFS+ volume"
+            )
         for i in range(1, 64):
             fh.seek(i * 512)
             entry = fh.read(512)
@@ -656,8 +725,11 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
         # is; an NFNT does not carry its own size.
         size_by_id: dict[int, tuple[int, int]] = {}
         fond = fork.of_type("FOND")
+        fractional_widths: dict[int, int] = {}
         if fond:
             _, assoc = fonts.parse_fond(fond[0].data)
+            fractional_widths = fonts.parse_fond_fractional_widths(
+                fond[0].data, style=0)
             for a in assoc:
                 size_by_id[a.font_id] = (a.size, a.style)
 
@@ -674,6 +746,15 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
             for ppem in sizes:
                 label = f"{face.lower()}-{ppem}"
                 sheet, metrics, notes = fonts.render_truetype_strike(ttf, ppem)
+                if fractional_widths:
+                    for code, width_4_12 in fractional_widths.items():
+                        character = bytes([code]).decode("mac_roman")
+                        if character in metrics["glyphs"]:
+                            # Keep this integer in the artifact: consumers can
+                            # apply the guest's text-mode rounding without JSON
+                            # floating-point drift.
+                            metrics["glyphs"][character][
+                                "fondAdvance4096"] = width_4_12 * ppem
                 metrics["face"] = face
                 metrics["pointSize"] = ppem
                 metrics["style"] = 0
@@ -683,6 +764,9 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
                 summary["sheets"][label] = {
                     "glyphs": len(metrics["glyphs"]), "size": ppem,
                     "style": 0, "source": "sfnt+hdmx",
+                    "fondWidthSource": (
+                        "FOND-family-width-4.12" if fractional_widths
+                        else "absent"),
                     "ascent": metrics["ascent"],
                     "descent": metrics["descent"],
                     "grewToFitInk": notes["grewToFitInk"]}
@@ -696,7 +780,10 @@ def extract_fonts(mnt: str, out: str, prov: list) -> dict:
                 f"run time and so does this — {len(sizes)} strikes at the "
                 f"ppem sizes 'hdmx' carries device metrics for "
                 f"({sizes[0]}-{sizes[-1]}); no other size is answerable and "
-                "none is guessed")
+                "none is guessed. The pack also preserves the FOND "
+                "fractional family-width table where present for text modes "
+                "that use it; the renderer keeps hdmx as its measured menu "
+                "advance until a guest capture proves a broader switch")
             continue
         for res in strikes:
             size, style = size_by_id.get(res.id, (0, 0))
@@ -856,6 +943,103 @@ def extract_appicons(mnt: str, out: str, prov: list, verbose: bool) -> dict:
     creators = {v["creator"] for v in manifest.values()}
     return {"count": len(manifest), "creators": len(creators),
             "forks_scanned": scanned, "forks_unparsable": skipped}
+
+
+def extract_fileicons(mnt: str, out: str, prov: list,
+                      verbose: bool) -> dict:
+    """Finder custom icons keyed by their exact volume-relative item path.
+
+    These are not application bundle icons.  The OS 8.6 desktop aliases for
+    Browse, Mail and Register carry their visible art in *their own* resource
+    forks, while their type/creator pair merely says ``adrp/aplt``.  Treating
+    those aliases as generic applications threw away the strongest art the
+    stopped volume could supply and left no reusable seam for a connected
+    guest to supply the same fork later.
+
+    Only files whose FinderInfo explicitly says ``fdHasCustomIcon`` enter this
+    adapter, and only when the shared parser finds one unambiguous large icon
+    suite.  Anything else stays absent rather than selecting a plausible
+    resource from a multi-icon application bundle.
+    """
+    d = os.path.join(out, "fileicons")
+    os.makedirs(d, exist_ok=True)
+    wipe_generated(d, keep=set())
+    manifest: dict[str, dict] = {}
+    scanned = skipped = assets = 0
+    for root in FILE_ICON_ROOTS:
+        start = os.path.join(mnt, root)
+        if not os.path.isdir(start):
+            continue
+        for name in sorted(os.listdir(start)):
+            path = os.path.join(start, name)
+            if not os.path.isfile(path) or name.startswith("."):
+                continue
+            try:
+                # CPython on macOS does not expose os.getxattr. `xattr -px`
+                # is a read-only adapter over the same named metadata fork;
+                # stripping whitespace turns its wrapped hex output back into
+                # the 32-byte FileInfo record.
+                encoded = run([
+                    "xattr", "-px", "com.apple.FinderInfo", path,
+                ]).stdout
+                info_raw = bytes.fromhex("".join(encoded.split()))
+            except (subprocess.CalledProcessError, ValueError):
+                continue
+            raw = rsrc(path)
+            if not raw:
+                skipped += 1
+                continue
+            scanned += 1
+            try:
+                decoded = fileicons.decode_custom_icon(info_raw, raw)
+            except Exception:
+                decoded = None
+            if decoded is None:
+                skipped += 1
+                continue
+            info = decoded["finder"]
+            suite = decoded["suite"]
+
+            hfs_path = f"{root}:{name}"
+            source = f"{root}/{name}"
+            digest = hashlib.sha256(hfs_path.encode("utf-8")).hexdigest()[:12]
+            stem = f"{safe(name) or 'item'}--{digest}"
+            row = {
+                "source": source,
+                "forkSha256": hashlib.sha256(raw).hexdigest(),
+                "type": ostype_key(info["type"]),
+                "creator": ostype_key(info["creator"]),
+                "finderFlags": info["flags"],
+                "resId": suite["id"],
+            }
+            for key, suffix in (("large", ""), ("small", "-16")):
+                descriptor = suite[key]
+                if descriptor is None:
+                    continue
+                fname = f"{stem}{suffix}.png"
+                descriptor["image"].save(os.path.join(d, fname))
+                row[key] = f"fileicons/{fname}"
+                prov.append({
+                    "asset": row[key], "source": source,
+                    "type": descriptor["color_type"],
+                    "id": descriptor["id"],
+                    "mask": descriptor["mask_type"],
+                    "sourceForkSha256": row["forkSha256"],
+                })
+                assets += 1
+            manifest[hfs_path] = row
+            if verbose:
+                print(f"    {source}: custom icon {suite['id']} -> {stem}")
+
+    with open(os.path.join(d, "manifest.json"), "w") as fh:
+        json.dump({
+            "pack": "fileicons",
+            "note": ("Finder custom icons by exact HFS path; private pack "
+                     "only; resource forks are acquisition-route agnostic"),
+            "items": manifest,
+        }, fh, indent=1, sort_keys=True)
+    return {"count": len(manifest), "assets": assets,
+            "forks_scanned": scanned, "forks_unusable": skipped}
 
 
 def theme_report(mnt: str) -> dict:
@@ -1176,8 +1360,11 @@ def write_accent_ramps_swift(ramps: dict, path: str, image: str) -> None:
         f"    public static let active = {swift_ident(accent)}",
         "",
         "    /// The highlight colour the default scene writes literally, as its",
-        "    /// own RGBColor rather than as a ramp index. Text and list-row",
-        "    /// selection are filled with THIS.",
+        "    /// own RGBColor rather than as a ramp index.",
+        "    ///",
+        "    /// IT IS NOT WHAT THE RUNNING MACHINE FILLS A SELECTION WITH.",
+        "    /// `Platinum.highlightFallbackRGB` is the measured runtime fallback,",
+        "    /// and `meta.theme.highlight` beats both when a scene carries it.",
         f"    public static let activeHighlight: UInt32 = 0x{sd['highlight_rgb8'][0]:02X}"
         f"{sd['highlight_rgb8'][1]:02X}{sd['highlight_rgb8'][2]:02X}",
         "}",
@@ -1207,6 +1394,19 @@ def main() -> None:
                          "pack-YYYY-MM-DD-HHMMSS)")
     ap.add_argument("--print-destination", action="store_true",
                     help="print the resolved Resources destination and stop")
+    ap.add_argument("--required-files", action="store_true",
+                    help="print, as JSON, every file this extractor opens "
+                         "by name and whether a pack can be built without "
+                         "it — for a transport that must fetch them")
+    ap.add_argument("--from-tree", metavar="DIR",
+                    help="skip convert/carve/mount and read an already-"
+                         "materialized volume tree (resource forks at "
+                         "<path>/..namedfork/rsrc). The acquisition route "
+                         "for a connected guest, whose transport stages "
+                         "the files this script names")
+    ap.add_argument("--source-label",
+                    help="what --from-tree was acquired from, recorded in "
+                         "the manifest's acquisition receipt")
     ap.add_argument("--work", default=DEFAULT_WORK,
                     help="scratch for the converted copy and the mount")
     ap.add_argument("--reuse-work", action="store_true",
@@ -1225,6 +1425,12 @@ def main() -> None:
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
+    # Before anything that needs Pillow or a disk image: a transport asking
+    # what to fetch has neither, and must still get an answer.
+    if args.required_files:
+        print(json.dumps(acquisition_files(), indent=1))
+        return
+
     if args.out is None:
         pack_id = args.pack_id or datetime.datetime.now().strftime(
             "pack-%Y-%m-%d-%H%M%S")
@@ -1241,21 +1447,49 @@ def main() -> None:
 
     load_extractors()
 
-    if not os.path.exists(args.image):
-        raise SystemExit(f"no such image: {args.image}")
-    os.makedirs(args.work, exist_ok=True)
-    mnt = os.path.join(args.work, "mnt")
+    # Two acquisition routes, ONE extraction. Everything below this point
+    # reads `mnt` and nothing else, which is what lets a connected guest
+    # reuse this script rather than grow a second parser that would
+    # eventually disagree with it about what an icl8 means.
+    if args.from_tree:
+        mnt = os.path.expanduser(args.from_tree)
+        if not os.path.isdir(mnt):
+            raise SystemExit(f"no such tree: {mnt}")
+        if not os.path.exists(os.path.join(mnt, SYSTEM_FILE)):
+            raise SystemExit(
+                f"{mnt} has no {SYSTEM_FILE!r} — that tree is not a "
+                "staged volume (see --required-files)")
+        mounted = False
+        source_label = args.source_label or os.path.basename(
+            mnt.rstrip("/"))
+        route = ("connected guest (wire pull, no image) — "
+                 "tools/extract-assets-offline --from-tree")
+        acquisition = {"adapter": "connected-guest", "readOnly": True,
+                       "source": source_label}
+        print(f"tree {mnt} (staged, read-only)")
+    else:
+        if args.source_label:
+            raise SystemExit("--source-label describes --from-tree")
+        if not os.path.exists(args.image):
+            raise SystemExit(f"no such image: {args.image}")
+        os.makedirs(args.work, exist_ok=True)
+        mnt = os.path.join(args.work, "mnt")
 
-    print(f"image {args.image} (read-only)")
-    raw = convert_to_raw(args.image, args.work, args.reuse_work)
-    part = find_hfs_partition(raw)
-    print(f"  Apple_HFS partition at {part:#x}")
-    off, length = embedded_hfsplus(raw, part)
-    if off != part:
-        print(f"  HFS wrapper -> embedded HFS+ at {off:#x}")
-    img = carve(raw, off, length, args.work, args.reuse_work)
-    mount(img, mnt)
-    print(f"  mounted read-only at {mnt}")
+        print(f"image {args.image} (read-only)")
+        raw = convert_to_raw(args.image, args.work, args.reuse_work)
+        part = find_hfs_partition(raw)
+        print(f"  Apple_HFS partition at {part:#x}")
+        off, length = embedded_hfsplus(raw, part)
+        if off != part:
+            print(f"  HFS wrapper -> embedded HFS+ at {off:#x}")
+        img = carve(raw, off, length, args.work, args.reuse_work)
+        mount(img, mnt)
+        mounted = True
+        source_label = os.path.basename(args.image)
+        route = "offline (disk image, no VM) — tools/extract-assets-offline"
+        acquisition = {"adapter": "stopped-volume", "readOnly": True,
+                       "source": source_label}
+        print(f"  mounted read-only at {mnt}")
 
     try:
         theme = theme_report(mnt)
@@ -1275,8 +1509,16 @@ def main() -> None:
         if args.accent_ramps:
             print(json.dumps(ramps, indent=1, sort_keys=True))
             return
-        write_accent_ramps_swift(ramps, args.swift_out,
-                                 os.path.basename(args.image))
+        # The ramps are COMMITTED source generated from the canonical
+        # image. A pack ingested off whatever machine happens to be
+        # plugged in must not rewrite the repository as a side effect of
+        # building a pack, so this route says it is not doing so rather
+        # than doing it quietly. `--swift-out` still forces it.
+        if args.from_tree and args.swift_out == DEFAULT_SWIFT_OUT:
+            print("  accent ramps: read, but not written to committed "
+                  "Swift from a staged tree (pass --swift-out to force)")
+        else:
+            write_accent_ramps_swift(ramps, args.swift_out, source_label)
 
         sysfork = resfork.load(os.path.join(mnt, SYSTEM_FILE,
                                             "..namedfork", "rsrc"))
@@ -1293,12 +1535,13 @@ def main() -> None:
         pictures_sum = extract_pictures(sysfork, args.out, prov)
         fonts_sum = extract_fonts(mnt, args.out, prov)
         apps_sum = extract_appicons(mnt, args.out, prov, args.verbose)
+        files_sum = extract_fileicons(mnt, args.out, prov, args.verbose)
 
         manifest = {
             "pack": os.path.basename(os.path.dirname(args.out)),
-            "version": "0.2.0",
-            "route": "offline (disk image, no VM) — tools/extract-assets-offline",
-            "source_image": os.path.basename(args.image),
+            "version": "0.3.0",
+            "route": route,
+            "acquisition": acquisition,
             "extracted": datetime.date.today().isoformat(),
             "clut": "generated system 8-bit CLUT (tools/asset-pack/clut.py)",
             "icons": icons_sum,
@@ -1311,6 +1554,7 @@ def main() -> None:
             "pictures": pictures_sum,
             "fonts": fonts_sum,
             "appicons": apps_sum,
+            "fileicons": files_sum,
             "theme_file": {
                 "path": THEME_FILE,
                 "chrome_bitmaps": False,
@@ -1323,6 +1567,12 @@ def main() -> None:
             "copyright": ("Apple bitmap data — private repo only. Never "
                           "publish, never ship as an artifact."),
         }
+        # Retained for the offline route so its packs stay regenerable
+        # byte-identically. A wire pull has no image to name, and the
+        # typed `acquisition` receipt is what both routes fill.
+        if not args.from_tree:
+            manifest["source_image"] = source_label
+
         with open(os.path.join(args.out, "manifest.json"), "w") as fh:
             json.dump(manifest, fh, indent=1, sort_keys=True)
 
@@ -1351,9 +1601,14 @@ def main() -> None:
                  if fonts_sum["notes"] else ""))
         print(f"  appicons: {apps_sum['count']} for {apps_sum['creators']} creators "
               f"({apps_sum['forks_scanned']} forks scanned)")
+        print(f"  fileicons:{files_sum['count']} Finder items / "
+              f"{files_sum['assets']} size-specific assets "
+              f"({files_sum['forks_scanned']} custom forks scanned)")
         print(f"  provenance rows: {len(prov)}")
     finally:
-        if not args.keep_work:
+        # A staged tree belongs to whoever staged it: this script never
+        # mounted it and must not delete it.
+        if mounted and not args.keep_work:
             unmount(mnt)
             if not args.reuse_work:
                 shutil.rmtree(args.work, ignore_errors=True)

@@ -8,7 +8,7 @@ const WorkshopModuleDefinition *connection_module_definition(void)
         kWorkshopConnection,
         "settings",
         "Connection",
-        "This Mac dials the other Mac and keeps one persistent connection.",
+        "This Mac dials Other Mac and keeps one persistent connection.",
         "Connection is still a dialog (Windows menu).",
         NULL,
         132,

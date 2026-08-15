@@ -249,10 +249,49 @@ public actor NOWMCPServer {
     /// which one it means gets whichever is being driven — fine on a one-Mac
     /// desk and a silent wrong answer anywhere else. So it exists on every
     /// tool rather than on the ones somebody remembered.
+    ///
+    /// The **root `type` of each schema** is injected for the same reason,
+    /// and it is the third thing here that is a property of the MCP envelope
+    /// rather than of any capability. The spec restricts both `inputSchema`
+    /// and `outputSchema` to `type: "object"` at the root — arguments arrive
+    /// as an object and `structuredContent` is returned as one — so the root
+    /// type is the one fact every row would otherwise have to remember to
+    /// repeat identically, 46 times, forever.
+    ///
+    /// 29 rows did not repeat it, and the cost was total: a row that renders
+    /// a discriminated outcome writes a bare root-level `oneOf`, which
+    /// declares no type, and a conforming client validates `tools/list` as a
+    /// whole and rejects the WHOLE list. Not 29 rows of 46 — zero of 46.
+    /// Every gate in this tree was green throughout and the host's own MCP
+    /// page read "Running", because nothing here had ever validated the
+    /// payload it published (`NOWMCPServerTests.testEveryRenderedTool-
+    /// SchemaSatisfiesTheMCPRootTypeRequirement`).
+    ///
+    /// The chat face had already learned this and nobody carried it across:
+    /// `ChatToolRendering.apiSafeSchema` supplies the same missing root type
+    /// — one line, same defaulting — because the Anthropic API rejected these
+    /// schemas on metal in August. Two faces render the same descriptors to
+    /// two validators, one was taught and the other was not, and the row
+    /// authors could not have known because the lesson lived in the other
+    /// face's file. Whatever a third face needs, it needs it HERE-shaped:
+    /// at its own rendering seam, not in 46 rows.
+    ///
+    /// Injected rather than required of each row on purpose: a row states
+    /// what VARIES about its shape, and the envelope states the invariant.
+    /// It is not a repair of a wrong answer, and it must not become one —
+    /// a row that declares a root type that is *not* `object` is stating
+    /// something false about its own result rather than omitting something
+    /// uniform, so it is left exactly as written here and failed by the gate.
     private var tools: [[String: Any]] {
         registry.projections.map { projection in
             var tool = projection.mcpDescriptor
             tool["name"] = projection.capability.rawValue
+            for key in ["inputSchema", "outputSchema"] {
+                guard var schema = tool[key] as? [String: Any],
+                      schema["type"] == nil else { continue }
+                schema["type"] = "object"
+                tool[key] = schema
+            }
             guard var schema = tool["inputSchema"] as? [String: Any] else {
                 return tool
             }
@@ -292,7 +331,7 @@ public actor NOWMCPServer {
             guard projection.acceptsGuestAddressing else {
                 return errorResponse(
                     id: id, code: -32602,
-                    message: "\(name) operates on host-owned project storage and does not accept guest addressing")
+                    message: "\(name) \(projection.authorityDomain.addressingRefusalSubject) and does not accept guest addressing")
             }
             guard let text = raw as? String, !text.isEmpty,
                   text.count <= 128 else {

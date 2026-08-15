@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+# Mutation-shaped tests for the SheepShaver lab harness. No emulator boots.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+HARNESS="$REPO/scripts/sheepshaver-86"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/now-sheepshaver-tests.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+
+APP="$TMP/SheepShaver.app"
+VM="$TMP/Mac OS 8.6.sheepvm"
+HFS="$TMP/hfsutils"
+LOG="$TMP/calls.log"
+mkdir -p "$APP/Contents/MacOS" "$VM/Snapshots" "$HFS"
+touch "$APP/Contents/MacOS/SheepShaver" "$VM/prefs" "$VM/Mac OS ROM" \
+      "$VM/Mac OS 8.6.hfv" "$VM/CarbonLib 1.6 Transfer.hfv"
+chmod +x "$APP/Contents/MacOS/SheepShaver"
+
+for tool in hmount hcopy hls humount; do
+    printf '#!/bin/sh\nprintf "%%s" "$(basename "$0")" >> "$NOW_TEST_LOG"\nfor arg in "$@"; do printf " <%%s>" "$arg" >> "$NOW_TEST_LOG"; done\nprintf "\\n" >> "$NOW_TEST_LOG"\n' > "$HFS/$tool"
+    chmod +x "$HFS/$tool"
+done
+printf '#!/bin/sh\nexit "${NOW_TEST_LSOF_RESULT:-1}"\n' > "$TMP/lsof"
+printf '#!/bin/sh\nprintf "open" >> "$NOW_TEST_LOG"\nfor arg in "$@"; do printf " <%%s>" "$arg" >> "$NOW_TEST_LOG"; done\nprintf "\\n" >> "$NOW_TEST_LOG"\n' > "$TMP/open"
+chmod +x "$TMP/lsof" "$TMP/open"
+cat > "$TMP/hdiutil" <<'SH'
+#!/bin/sh
+printf 'hdiutil' >> "$NOW_TEST_LOG"
+for arg in "$@"; do printf ' <%s>' "$arg" >> "$NOW_TEST_LOG"; done
+printf '\n' >> "$NOW_TEST_LOG"
+if [ "$1" = attach ]; then
+    shift
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = -mountpoint ]; then
+            shift
+            mkdir -p "$1/Applications"
+            break
+        fi
+        shift
+    done
+fi
+SH
+chmod +x "$TMP/hdiutil"
+
+run_harness () {
+    NOW_SHEEPSHAVER_APP="$APP" \
+    NOW_SHEEPSHAVER_VM="$VM" \
+    NOW_HFSUTILS="$HFS" \
+    NOW_SHEEPSHAVER_LSOF="$TMP/lsof" \
+    NOW_SHEEPSHAVER_OPEN="$TMP/open" \
+    NOW_SHEEPSHAVER_HDIUTIL="$TMP/hdiutil" \
+    NOW_SHEEPSHAVER_INPUT_SETTLE="${NOW_SHEEPSHAVER_INPUT_SETTLE:-0}" \
+    NOW_SHEEPSHAVER_SOURCE="" \
+    NOW_CODEKITTEN_SOURCE="${NOW_CODEKITTEN_SOURCE:-}" \
+    NOW_TEST_LOG="$LOG" \
+    "$HARNESS" "$@"
+}
+
+doctor_output="$(run_harness doctor)"
+printf '%s\n' "$doctor_output" | grep -F "Guest state: stopped" >/dev/null
+
+missing_output="$(NOW_SHEEPSHAVER_APP="$TMP/missing.app" \
+    NOW_SHEEPSHAVER_VM="$VM" NOW_HFSUTILS="$HFS" \
+    NOW_SHEEPSHAVER_LSOF="$TMP/lsof" "$HARNESS" doctor 2>&1 || true)"
+printf '%s\n' "$missing_output" | grep -F "missing executable SheepShaver" >/dev/null
+
+artifact="$TMP/New Old World.bin"
+kitten_artifact="$TMP/CodeKitten.bin"
+make_macbinary () {
+    python3 - "$1" "$2" "$3" <<'PY'
+import binascii
+import sys
+from pathlib import Path
+
+path, name, creator = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+data = b"PowerPC PEF fixture"
+resource = b"resource fixture"
+header = bytearray(128)
+encoded = name.encode("mac_roman")
+header[1] = len(encoded)
+header[2:2 + len(encoded)] = encoded
+header[65:69] = b"APPL"
+header[69:73] = creator.encode("mac_roman")
+header[83:87] = len(data).to_bytes(4, "big")
+header[87:91] = len(resource).to_bytes(4, "big")
+header[122:124] = bytes((130, 129))
+header[124:126] = binascii.crc_hqx(header[:124], 0).to_bytes(2, "big")
+pad = lambda value: value.ljust((len(value) + 127) & ~127, b"\0")
+path.write_bytes(bytes(header) + pad(data) + pad(resource))
+PY
+}
+make_macbinary "$artifact" "New Old World" "NOWo"
+make_macbinary "$kitten_artifact" "codekitten" "O9ID"
+: > "$LOG"
+run_harness stage "$artifact" >/dev/null
+expected="hmount <$VM/CarbonLib 1.6 Transfer.hfv>
+hcopy <-m> <$artifact> <:>
+hls <-la> <:>
+humount"
+[ "$(cat "$LOG")" = "$expected" ] || {
+    echo "FAILED: stage did not preserve the HFS mount/copy/list/unmount sequence" >&2
+    cat "$LOG" >&2
+    exit 1
+}
+
+running_output="$(NOW_TEST_LSOF_RESULT=0 run_harness stage "$artifact" 2>&1 || true)"
+printf '%s\n' "$running_output" | grep -F "refusing to write an image SheepShaver has open" >/dev/null
+if printf '%s\n' "$running_output" | grep -F "staged" >/dev/null; then
+    echo "FAILED: running-guest mutation reached the write path" >&2
+    exit 1
+fi
+
+: > "$LOG"
+run_harness launch >/dev/null
+grep -F "open <-n> <$APP> <--args> <$VM>" "$LOG" >/dev/null
+
+capture="$TMP/frame.bmp"
+(
+    while [ ! -f "$VM/.now-capture-request" ]; do sleep 0.01; done
+    printf 'BMfixture' > "$VM/.now-capture.bmp"
+    printf 'NOW_ORACLE_CAPTURE_NATIVE_RGB_V2\n' > "$VM/.now-capture-response"
+    rm -f "$VM/.now-capture-request"
+) &
+capture_writer=$!
+NOW_TEST_LSOF_RESULT=0 run_harness capture "$capture" >/dev/null
+wait "$capture_writer"
+[ "$(cat "$capture")" = BMfixture ] \
+    || { echo "FAILED: capture did not publish the emulator response" >&2; exit 1; }
+
+legacy_capture="$TMP/legacy-frame.bmp"
+# Watched failing 2026-08-11 by deleting the launcher's unversioned-response
+# refusal: this fixture reached the timeout path and the named assertion failed.
+(
+    while [ ! -f "$VM/.now-capture-request" ]; do sleep 0.01; done
+    printf 'BMred-blue-swapped' > "$VM/.now-capture.bmp"
+    rm -f "$VM/.now-capture-request"
+) &
+legacy_writer=$!
+legacy_output="$(NOW_TEST_LSOF_RESULT=0 run_harness capture \
+    "$legacy_capture" 2>&1 || true)"
+wait "$legacy_writer"
+printf '%s\n' "$legacy_output" \
+    | grep -F "returned an unversioned framebuffer" >/dev/null
+[ ! -e "$legacy_capture" ] \
+    || { echo "FAILED: unversioned capture reached its destination" >&2; exit 1; }
+
+(
+    while [ ! -f "$VM/.now-input-request" ]; do sleep 0.01; done
+    grep -Fx "move 320 200" "$VM/.now-input-request" >/dev/null
+    grep -Fx "down 0" "$VM/.now-input-request" >/dev/null
+    grep -Fx "up 0" "$VM/.now-input-request" >/dev/null
+    mv "$VM/.now-input-request" "$VM/.now-input-processing"
+    printf 'ok actions=3\n' > "$VM/.now-input-response"
+    rm -f "$VM/.now-input-processing"
+) &
+input_responder=$!
+NOW_TEST_LSOF_RESULT=0 run_harness input \
+    "move 320 200" "down 0" "up 0" >/dev/null
+wait "$input_responder"
+
+invalid_input="$(NOW_TEST_LSOF_RESULT=0 run_harness input "move nowhere" 2>&1 || true)"
+printf '%s\n' "$invalid_input" | grep -F "invalid oracle input action" >/dev/null
+
+invalid_settle="$(NOW_TEST_LSOF_RESULT=0 NOW_SHEEPSHAVER_INPUT_SETTLE=soon \
+    run_harness input "move 0 0" 2>&1 || true)"
+printf '%s\n' "$invalid_settle" \
+    | grep -F "NOW_SHEEPSHAVER_INPUT_SETTLE must be a non-negative number" >/dev/null
+
+printf 'boot disk bytes' > "$VM/Mac OS 8.6.hfv"
+run_harness snapshot "post-carbonlib" >/dev/null
+cmp "$VM/Mac OS 8.6.hfv" "$VM/Snapshots/post-carbonlib.hfv"
+
+rig_output="$(run_harness rig)"
+printf '%s\n' "$rig_output" | grep -F "NOW_SHEEPSHAVER_RIG_V1" >/dev/null
+printf '%s\n' "$rig_output" | grep -E '^rom_sha256=[0-9a-f]{64}$' >/dev/null
+printf '%s\n' "$rig_output" | grep -E '^boot_disk_sha256=[0-9a-f]{64}$' >/dev/null
+
+: > "$LOG"
+run_harness install-apps "$artifact" "$kitten_artifact" >/dev/null
+install_log="$(cat "$LOG")"
+printf '%s\n' "$install_log" \
+    | grep -F "hdiutil <attach> <-nobrowse>" >/dev/null
+printf '%s\n' "$install_log" | grep -F "hdiutil <detach>" >/dev/null
+[ -f "$VM/Installed Apps.rig" ]
+grep -F "NOW_SHEEPSHAVER_APPS_V1" "$VM/Installed Apps.rig" >/dev/null
+grep -E '^codekitten_artifact_sha256=[0-9a-f]{64}$' \
+    "$VM/Installed Apps.rig" >/dev/null
+
+run_harness seal "os86-carbon16-now020" >/dev/null
+[ -f "$VM/Snapshots/os86-carbon16-now020.hfv" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.transfer.hfv" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.prefs" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.rom" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.apps.rig" ]
+[ -f "$VM/Snapshots/os86-carbon16-now020.rig" ]
+grep -F "profile_version=os86-carbon16-now020" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
+grep -F "installed_apps_NOW_SHEEPSHAVER_APPS_V1" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
+grep -F "versioned_transfer_disk_sha256=" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
+duplicate_output="$(run_harness seal "os86-carbon16-now020" 2>&1 || true)"
+printf '%s\n' "$duplicate_output" \
+    | grep -F "versioned image already exists" >/dev/null
+
+# Ordinary staging and preference changes must not invalidate an already
+# sealed oracle. These are the exact mutations the original implementation
+# accidentally made every historical version depend on.
+printf 'later transfer bytes' > "$VM/CarbonLib 1.6 Transfer.hfv"
+printf 'later prefs bytes' > "$VM/prefs"
+printf 'later ROM bytes' > "$VM/Mac OS ROM"
+printf 'later apps receipt' > "$VM/Installed Apps.rig"
+
+clone="$TMP/oracle-run.sheepvm"
+run_harness clone "os86-carbon16-now020" "$clone" >/dev/null
+[ -f "$clone/prefs" ]
+[ -f "$clone/Mac OS ROM" ]
+cmp "$VM/Snapshots/os86-carbon16-now020.hfv" "$clone/Mac OS 8.6.hfv"
+cmp "$VM/Snapshots/os86-carbon16-now020.transfer.hfv" \
+    "$clone/CarbonLib 1.6 Transfer.hfv"
+cmp "$VM/Snapshots/os86-carbon16-now020.prefs" "$clone/prefs"
+cmp "$VM/Snapshots/os86-carbon16-now020.rom" "$clone/Mac OS ROM"
+cmp "$VM/Snapshots/os86-carbon16-now020.apps.rig" \
+    "$clone/Installed Apps.rig"
+cmp "$VM/Snapshots/os86-carbon16-now020.rig" "$clone/Oracle Parent.rig"
+[ -d "$clone/Shared" ]
+[ -d "$clone/Snapshots" ]
+duplicate_clone="$(run_harness clone "os86-carbon16-now020" "$clone" 2>&1 || true)"
+printf '%s\n' "$duplicate_clone" | grep -F "clone destination already exists" >/dev/null
+
+printf 'tampered' >> "$VM/Snapshots/os86-carbon16-now020.hfv"
+bad_clone="$(run_harness clone "os86-carbon16-now020" \
+    "$TMP/tampered.sheepvm" 2>&1 || true)"
+printf '%s\n' "$bad_clone" \
+    | grep -F "sealed boot image does not match its rig receipt" >/dev/null
+
+printf 'boot disk bytes' > "$VM/Snapshots/os86-carbon16-now020.hfv"
+printf 'tampered prefs' >> "$VM/Snapshots/os86-carbon16-now020.prefs"
+bad_prefs="$(run_harness clone "os86-carbon16-now020" \
+    "$TMP/tampered-prefs.sheepvm" 2>&1 || true)"
+printf '%s\n' "$bad_prefs" \
+    | grep -F "sealed profile preferences does not match its rig receipt" >/dev/null
+
+invalid_output="$(run_harness seal "../escape" 2>&1 || true)"
+printf '%s\n' "$invalid_output" \
+    | grep -F "version may contain only" >/dev/null
+
+desk_repo="$TMP/desk-repo"
+desk_lane="$TMP/desk-lane"
+mkdir -p "$desk_repo/scripts"
+cp "$HARNESS" "$desk_repo/scripts/sheepshaver-86"
+git init -q -b main "$desk_repo"
+git -C "$desk_repo" config user.email "sheepshaver-test@example.invalid"
+git -C "$desk_repo" config user.name "SheepShaver Test"
+git -C "$desk_repo" add scripts/sheepshaver-86
+git -C "$desk_repo" commit -qm "fixture"
+printf 'NOW_SHEEPSHAVER_APP="%s"\nNOW_SHEEPSHAVER_VM="%s"\nNOW_HFSUTILS="%s"\nNOW_SHEEPSHAVER_LSOF="%s"\n' \
+    "$APP" "$VM" "$HFS" "$TMP/lsof" > "$desk_repo/.env.lab"
+git -C "$desk_repo" worktree add -q -b lane "$desk_lane" main
+lane_doctor="$(NOW_TEST_LOG="$LOG" "$desk_lane/scripts/sheepshaver-86" doctor)"
+printf '%s\n' "$lane_doctor" | grep -F "Mac OS 8.6 profile: $VM" >/dev/null
+
+NOW_CODEKITTEN_SOURCE="$desk_lane" \
+    run_harness install-apps "$artifact" "$kitten_artifact" >/dev/null
+grep -F "codekitten_revision=$(git -C "$desk_lane" rev-parse HEAD)" \
+    "$VM/Installed Apps.rig" >/dev/null
+
+echo "sheepshaver-86: 24 harness behaviors passed"

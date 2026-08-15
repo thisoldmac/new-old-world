@@ -19,6 +19,13 @@ final class HostAppStateWiringTests: XCTestCase {
            the port from itself (docs/open-issues.md, 2026-08-05). */
         defaults.set(Int(testListenPort()), forKey: "listenPort")
         defaults.set(true, forKey: "listenAtLaunch")
+        /* A fresh registry assigns guest-1. These settings must load when
+           that guest arrives even though Mirror has never been constructed:
+           Continuity is app-owned now, and Logs may expose it first. */
+        defaults.set(true,
+                     forKey: "mirror.continuity.deepClickLog.guest-1")
+        defaults.set(false,
+                     forKey: "mirror.continuity.interruptPress.guest-1")
 
         let state = HostAppState(registry: .standard, defaults: defaults)
         /* Not just at the end: a failure below must not leave the port held
@@ -60,6 +67,8 @@ final class HostAppStateWiringTests: XCTestCase {
         XCTAssertEqual(state.listener.state,
                        .connected(guestName: "PowerBook 1400"),
                        "listener state must reflect the connection")
+        XCTAssertTrue(state.continuity.deepClickLog)
+        XCTAssertFalse(state.continuity.interruptPress)
         // The badge mirrors the LISTENER'S key, not one derived from the
         // name: two Macs may report the same name, so a derived key would
         // put one machine's state under the other's badge.

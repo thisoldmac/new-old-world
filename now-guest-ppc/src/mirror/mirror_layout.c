@@ -38,11 +38,11 @@ void now_mirror_layout_compute(const Rect *body, MirrorLayout *out)
     y = (short)(y + 8);
     out->policy_heading = row(*body, y);
     y = (short)(y + kMirrorHeadingHeight);
-    for (i = 0; i < kMirrorPolicyCount; ++i) {
-        out->policy_rows[i] = row(*body, y);
-        out->policy_rows[i].bottom = (short)(y + kMirrorPolicyRowHeight);
-        y = (short)(y + kMirrorPolicyRowHeight);
-    }
+    out->consent_row = row(*body, y);
+    out->consent_row.bottom = (short)(y + kMirrorPolicyRowHeight);
+    y = (short)(y + kMirrorPolicyRowHeight);
+    out->consent_note = row(*body, y);
+    y = (short)(y + kMirrorRowHeight);
     out->policy_status = row(*body, y);
     y = (short)(y + kMirrorRowHeight + 6);
     out->show_button = row(*body, y);
@@ -183,6 +183,25 @@ void now_mirror_plane_value(const MirrorFacts *facts, MirrorPlane plane,
     }
 }
 
+void now_mirror_consent_note(Boolean enabled, const char *peer, char *out,
+                             long cap)
+{
+    const char *name = (peer != NULL && peer[0] != '\0') ? peer : "Other Mac";
+
+    /* Both sentences name the OTHER half out loud. Off, a person needs to
+       know that turning it on is not the whole story; on, they need to
+       know that "on" is a permission and not a capture — the host still
+       chooses which planes, and a switch that read as "everything is
+       being watched" would be a lie in the safer-sounding direction. */
+    if (enabled) {
+        snprintf(out, (size_t)cap,
+                 "%.40s decides which planes are captured.", name);
+    } else {
+        snprintf(out, (size_t)cap,
+                 "%.40s cannot mirror this Mac while this is off.", name);
+    }
+}
+
 const char *now_mirror_note(int line)
 {
     static const char *notes[kMirrorNoteLines] = {
@@ -228,9 +247,19 @@ void now_mirror_rest_text(const MirrorFacts *facts, char *out, long cap)
         return;
     }
     bits = facts->rest_state;
-    if ((bits & kNowPeekRestActPatched) != 0) {
+    if ((bits & kNowPeekRestCursorTrackingPatched) != 0) {
         n += snprintf(out + n, (size_t)(cap - n),
-                      "Trap patches in (restart to clear)");
+                      "%sCursor tracking patched (restart to clear)",
+                      n > 0 ? ", " : "");
+    }
+    if ((bits & kNowPeekRestActPatched) != 0 && n < cap) {
+        if (n > 0) {
+            n += snprintf(out + n, (size_t)(cap - n),
+                          ", act traps patched (restart to clear)");
+        } else {
+            n += snprintf(out + n, (size_t)(cap - n),
+                          "Trap patches in (restart to clear)");
+        }
     }
     if ((bits & kNowPeekRestQDExtPatched) != 0 && n < cap) {
         n += snprintf(out + n, (size_t)(cap - n), "%sNewGWorld patched",

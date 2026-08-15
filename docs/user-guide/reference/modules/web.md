@@ -1,57 +1,57 @@
 ---
 page_id: web-module-reference
-title: Web module
-description: Run the host-side compatibility gateway used by Classilla, MacWeb, and conservative 68K browser profiles.
+title: Web Proxy module
+description: Use the guest-loopback proxy and host renderer with Classilla.
 doc_type: reference
 audience: user
 lifecycle: experimental
 authority: [web-bridge/README.md, docs/status.md, SECURITY.md]
 module_ids: [web]
-source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, SECURITY.md]
+source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/Web/WebWireService.swift, now-host/Sources/Host/WebHostModule.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, now-guest-ppc/src/web/web_proxy_ot.c, now-guest-ppc/src/web/web_accept.c, now-guest-ppc/src/web/web_proxy_request.c, SECURITY.md]
 media_ids: [web-host, web-ppc]
-last_verified: 2026-08-10
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
 
-# Web module
+# Web Proxy module
 
 ## What it does
 
-Web runs a host-side compatibility gateway for a browser already installed on
-a classic Macintosh. The host fetches HTTP and HTTPS pages, optionally runs
+Web Proxy runs a guest-local HTTP proxy for a browser already installed on a
+PowerPC Macintosh. Requests cross the existing NOW connection to the host,
+which fetches HTTP and HTTPS pages, optionally runs
 their contemporary JavaScript through Playwright, and returns bounded ASCII
 HTML selected for Classilla, MacWeb, or a conservative 68K profile.
 
-![The macOS Web module](../../../assets/screenshots/modules/web/host.svg){ .now-placeholder }
+![The macOS Web Proxy module](../../../assets/screenshots/modules/web/host.svg){ .now-placeholder }
 
 ## Availability
 
-The implemented baseline is the macOS **Direct** listener. The classic browser
-connects to the modern Mac's selected LAN address and port.
-The listener defaults to host loopback for safety, but host loopback is not
-reachable from the classic Mac.
+The PowerPC guest listens on its own loopback at `127.0.0.1:5180` by default.
+The browser does not connect to the modern Mac's LAN address and no second
+browser-facing port is opened there.
 
-The PowerPC Workshop ships a Web page that saves the proxy port, browser
-profile, and default lens. It deliberately reuses the host address from the
-Connection page: under this repository's QEMU user network that address is
-`10.0.2.2`; on real hardware it must be the modern Mac's LAN address. The page
-shows a start URL whose query carries the selected profile and lens.
+The PowerPC Workshop Web page saves only the guest-loopback port and reports
+relay status. The address it shows is the one Open Transport granted the
+listener, not the one that was requested, and its status area names a refused
+browser connection and what the modern Mac last said about a page — so
+"nothing has connected yet" and "every connection was refused" cannot read
+alike. The host module owns the internal renderer's lifecycle and
+relay status; the browser profile, rendering lens, fetch engine, handlers,
+and outbound policy live in the Web tab of the Settings window
+(**New Old World > Settings…**, or the module's own **Settings…** button),
+alongside whether the renderer starts automatically.
 
-NOW-68K does not yet ship a Web page. Direct browsing does not require one: set
-MacWeb's HTTP proxy to the same host listener. A guest-local relay remains
-probe-required; Open Transport and MacTCP support for connections to the
-guest's own address, including `127.0.0.1`, must be established separately on
-the exact browser and system row.
+NOW-68K does not yet ship a Web page or MacTCP relay.
 
 ## On the modern Mac
 
-1. Choose the folder containing `nowweb/__main__.py`.
-2. Choose **Use This Mac's LAN Address**, or enter one explicit bind address.
-3. Enter the classic Mac's address under **Allowed classic Mac address**.
-4. Choose a browser profile, rendering lens, and fetch engine.
-5. Start the service and use the displayed address and port in the browser's
-   HTTP proxy settings.
+1. In Settings' Web tab, choose a browser profile, rendering lens, and fetch
+   engine.
+2. Optionally choose an installed AI planner or model, also in Settings.
+3. Start the renderer from the Web page. Its private ephemeral loopback
+   address is managed by New Old World and is not browser configuration.
 
 Compatible Page is the deterministic default. Reader is a reduced view of the
 same semantic block tree. AI Layout is optional and falls back to Compatible
@@ -59,34 +59,41 @@ Page when its planner is unavailable, invalid, slow, or over budget.
 
 ## On the classic Mac
 
-Use the displayed host address, not `127.0.0.1`, as the HTTP proxy. HTTPS
-destinations are fetched by the host and rewritten through plain HTTP gateway
-links; NOW Web does not expose a general CONNECT tunnel.
+Set Classilla's HTTP proxy to `127.0.0.1` and the port shown on the Workshop Web
+page (`5180` by default). HTTPS destinations are fetched by the host and
+rewritten through plain HTTP gateway links; NOW Web does not expose a general
+CONNECT tunnel.
 
 ![The PowerPC Web page](../../../assets/screenshots/modules/web/ppc.svg){ .now-placeholder }
 
 ## Common tasks
 
-- Start the Direct listener and copy its displayed address into the browser's
-  HTTP proxy settings.
-- On the PowerPC guest, make the Web page's port match the host module and use
-  its displayed start URL when you want the selected profile and lens.
+- Start the host renderer and leave the guest application running.
+- Point Classilla at the guest's displayed loopback address and port.
 - Choose MacWeb when the browser needs conservative HTML 2, flattened tables,
   ASCII entities, smaller pages, and 4 KB delivery chunks.
 - Choose Reader for an article-oriented page without changing the browser
   profile.
 - Return to Compatible Page whenever a handler, Reader, or AI Layout removes
   context needed to navigate the site.
-- Stop the listener when the classic Mac is no longer browsing through it.
+- Stop the host renderer when the classic Mac is no longer browsing through it.
 
 ## Safety, consent, and privacy
 
-The classic-browser listener cannot rely on modern bearer authentication.
-Restrict it to the classic Mac's address and a trusted network. An empty peer
-restriction accepts every peer that can reach the selected interface.
+The browser-facing listener is bound to the classic Mac's own loopback
+address, so nothing outside that machine can reach it. That bind is the
+boundary. The listener does not additionally filter the peer address of an
+accepted connection: Open Transport reports a genuine loopback connection's
+peer as the machine's primary interface address, so a peer test on
+`127.0.0.1` refuses every real browser instead of protecting anything. The
+host renderer is also loopback-only and ephemeral. The remaining network
+boundary is NOW's
+existing plaintext guest-to-host connection, so use it only on a trusted
+network.
 
 Private, link-local, loopback, and special-use destinations are blocked by
-default. The unsafe development switch broadens the host's outbound reach and
+default. The unsafe development switch — Settings' Web tab, "Allow private
+and local web destinations (unsafe)" — broadens the host's outbound reach and
 must not be enabled casually.
 
 Ordinary helper logs omit request paths, URL queries, cookies, authorization,
@@ -95,7 +102,7 @@ and page bodies. The bridge does not import browser cookies or credentials.
 ## Failure states
 
 Missing helper, stopped, starting, ready, incompatible helper protocol,
-renderer failure, blocked destination, refused peer, unsupported browser
+renderer failure, blocked destination, refused connection, unsupported browser
 profile, expired page token, and unavailable AI planner remain distinct.
 
 ## Current limitations
@@ -104,8 +111,11 @@ profile, expired page token, and unavailable AI planner remain distinct.
   explicit optional dependencies and are never downloaded on a page request.
 - Forms, logins, uploads, session replay, synthetic JavaScript event links,
   video, and a complete image-transcoding pipeline are not yet served.
-- Direct browsing and the PowerPC page have built, but have not yet been
-  metal-verified from Classilla or MacWeb in this branch.
+- Until 2026-08-15 the PowerPC listener refused every browser connection, so
+  no page had ever been served on any guest. It has now served one end to end
+  on the emulator — an in-guest HTTP client fetched a page through
+  `127.0.0.1:5180` and the host's bytes arrived intact — but not yet from
+  Classilla, and not yet on real hardware.
 - The optional local layout model is not distributed until its model card,
   base-model and training-data provenance, license, version, and checksum are
   settled. An already-installed local model folder can be selected in the host

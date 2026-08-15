@@ -115,6 +115,7 @@
  * budget looked at rather than assumed.
  */
 #include "wire68.h"
+#include "continuity_udp.h"
 #include "commands68.h"
 
 #include "contract.h"
@@ -956,6 +957,35 @@ static void send_error_reply(long id, int have_id)
     }
     if (!enqueue_control_send(payload, pos)) {
         now68k_log("wire: error reply dropped, outbound queue full");
+    }
+}
+
+/* Continuity is deliberately absent on NOW-68K, but the control contract
+ * still requires this family to answer in its own envelope. A generic error
+ * would leave the host's arm waiter unresolved for five seconds and make an
+ * unsupported machine look like a lossy one. */
+static void handle_continuity_unsupported(const char *json, long len)
+{
+    char payload[160];
+    long id = 0;
+    long epoch = 0;
+    long pos = 0;
+    int ok = 1;
+
+    (void)now68k_json_find_int(json, (size_t)len, "id", &id);
+    (void)now68k_json_find_int(json, (size_t)len, "epoch", &epoch);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+        "{\"type\":\"continuity.report\",\"version\":4,\"id\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload,
+                                       &pos, id);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+                                      ",\"epoch\":");
+    ok = ok && now68k_fmt_append_long(payload, (long)sizeof payload,
+                                       &pos, epoch);
+    ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
+        ",\"state\":\"refused\",\"reason\":\"unsupported\"}");
+    if (!ok || pos <= 0 || !enqueue_control_send(payload, pos)) {
+        now68k_log("wire: continuity refusal dropped");
     }
 }
 
@@ -2235,7 +2265,14 @@ static void put_done(int okay, N68PutCode code)
         ok = ok && now68k_fmt_append_str(
                        payload, (long)sizeof payload, &pos,
                        ",\"finalization\":\"same-folder-rename\","
-                       "\"cleanup\":\"temp-renamed\"}");
+                       "\"cleanup\":\"temp-renamed\"");
+        if (now68k_putfile_relaunch_required(&g_putfile)) {
+            ok = ok && now68k_fmt_append_str(
+                           payload, (long)sizeof payload, &pos,
+                           ",\"relaunchRequired\":true");
+        }
+        ok = ok && now68k_fmt_append_str(
+                       payload, (long)sizeof payload, &pos, "}");
     } else {
         ok = ok && now68k_fmt_append_str(payload, (long)sizeof payload, &pos,
                                           ",\"ok\":false,\"code\":\"");
@@ -2793,6 +2830,11 @@ static void handle_control_message(const char *json, long len)
     }
     if (strcmp(type, "census.request") == 0) {
         handle_census_request(json, len);
+        return;
+    }
+    if (strcmp(type, "continuity.arm") == 0
+            || strcmp(type, "continuity.disarm") == 0) {
+        handle_continuity_unsupported(json, len);
         return;
     }
     if (strcmp(type, "capture.request") == 0) {
@@ -3421,11 +3463,10 @@ static void handle_capture_request(const char *json, long len)
     if (!now68k_json_find_int(json, (size_t)len, "id", &id)) {
         return;                 /* nothing to answer to */
     }
-    /* depth is required by the schema; this guest serves 8-bit only and
-     * says so with a refusal rather than converting - shot68.h carries
-     * why a non-native depth is a separate, unmeasured decision. */
+    /* depth 0 means native. This guest's capture plane is its native 8-bit
+     * framebuffer, so 0 and 8 are the two honest spellings it serves. */
     if (now68k_json_find_int(json, (size_t)len, "depth", &depth)
-        && depth != 8) {
+        && depth != 0 && depth != 8) {
         now68k_log_num("wire: capture refused, depth", depth);
         n = n68_shotwire_end_json(id, 0, 0, payload, (long)sizeof payload);
         if (n > 0) {

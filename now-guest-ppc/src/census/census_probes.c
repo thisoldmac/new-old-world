@@ -18,6 +18,7 @@
  * arranges. */
 
 #include "census.h"
+#include "hardware_sizes.h"
 #include "census_decode.h"
 #include "census_selectors.h"
 #include "census_trap.h"       /* Mixed Mode dispatch to $AAF1/$AAF0 */
@@ -176,8 +177,14 @@ static void gather_identity(long cursor, CensusPage *page)
     {
         char raw[24];
         char meaning[kCensusRowMeaningCap];
+        const char *name = census_cpu_name(ct);
         snprintf(raw, sizeof raw, "$%08lX", (unsigned long)ct);
-        snprintf(meaning, sizeof meaning, "CPU type %ld", ct);
+        if (name != NULL) {
+            snprintf(meaning, sizeof meaning, "%s", name);
+        } else {
+            snprintf(meaning, sizeof meaning, "CPU type $%08lX",
+                     (unsigned long)ct);
+        }
         set_row(&page->rows[page->count++], "Processor", raw, meaning);
     }
 
@@ -185,6 +192,25 @@ static void gather_identity(long cursor, CensusPage *page)
     identity_row(page, "Physical RAM", gestaltPhysicalRAMSize, kCensusSelSize);
     identity_row(page, "Logical RAM", gestaltLogicalRAMSize, kCensusSelSize);
     identity_row(page, "ROM size", gestaltROMSize, kCensusSelSize);
+    {
+        long machine = gestalt_or(gestaltMachineType, 0);
+        long gestalt_rom = gestalt_or(gestaltROMSize, 0);
+        NowROMLayout rom = now_rom_layout((uint32_t)machine,
+                                          (uint32_t)gestalt_rom);
+        if (rom.boot_bytes != 0 && page->count < kCensusPageMax) {
+            char raw[24];
+            char meaning[kCensusRowMeaningCap];
+            snprintf(raw, sizeof raw, "$%08lX",
+                     (unsigned long)rom.total_bytes);
+            snprintf(meaning, sizeof meaning,
+                     "%lu MB total: %lu MB Toolbox + %lu MB boot",
+                     (unsigned long)rom.total_bytes / (1024UL * 1024UL),
+                     (unsigned long)rom.toolbox_bytes / (1024UL * 1024UL),
+                     (unsigned long)rom.boot_bytes / (1024UL * 1024UL));
+            set_row(&page->rows[page->count++], "Full ROM size", raw,
+                    meaning);
+        }
+    }
     identity_row(page, "ROM version", gestaltROMVersion, kCensusSelNum);
     identity_row(page, "Mac OS", gestaltSystemVersion, kCensusSelVersion);
     identity_row(page, "CarbonLib", 'cbon', kCensusSelVersion);
@@ -211,6 +237,57 @@ static void fact(CensusPage *page, const char *label, const char *value)
     set_row(&page->rows[page->count++], label, "", value);
 }
 
+/* The legacy HVolumeParam counters are 16-bit allocation-block counts and
+   flatten a large HFS+ disk to about 2 GiB.  PBXGetVolInfo is available from
+   CarbonLib 1.0 and returns the same indexed volume plus authoritative 64-bit
+   byte counts.  Retain the legacy call only as an honest compatibility
+   fallback for a filesystem that refuses the extended request. */
+static OSErr volume_mebibytes(short index, Str63 name,
+                              unsigned long *total_mib,
+                              unsigned long *free_mib)
+{
+    XVolumeParam xpb;
+    OSErr err;
+
+    memset(&xpb, 0, sizeof xpb);
+    name[0] = 0;
+    xpb.ioNamePtr = name;
+    xpb.ioVolIndex = index;
+    xpb.ioXVersion = 0;
+    err = PBXGetVolInfoSync(&xpb);
+    if (err == noErr) {
+        UnsignedWide total;
+        UnsignedWide freeb;
+        memcpy(&total, &xpb.ioVTotalBytes, sizeof total);
+        memcpy(&freeb, &xpb.ioVFreeBytes, sizeof freeb);
+        *total_mib = (unsigned long)now_capacity_mib_from_wide(
+            (uint32_t)total.hi, (uint32_t)total.lo);
+        *free_mib = (unsigned long)now_capacity_mib_from_wide(
+            (uint32_t)freeb.hi, (uint32_t)freeb.lo);
+        return noErr;
+    }
+    {
+        HParamBlockRec pb;
+        unsigned long total;
+        unsigned long freeb;
+        memset(&pb, 0, sizeof pb);
+        name[0] = 0;
+        pb.volumeParam.ioNamePtr = name;
+        pb.volumeParam.ioVolIndex = index;
+        err = PBHGetVInfoSync(&pb);
+        if (err != noErr) {
+            return err;
+        }
+        total = (unsigned long)pb.volumeParam.ioVNmAlBlks
+              * (unsigned long)pb.volumeParam.ioVAlBlkSiz;
+        freeb = (unsigned long)pb.volumeParam.ioVFrBlk
+              * (unsigned long)pb.volumeParam.ioVAlBlkSiz;
+        *total_mib = total / (1024UL * 1024UL);
+        *free_mib = freeb / (1024UL * 1024UL);
+        return noErr;
+    }
+}
+
 static void gather_overview(long cursor, CensusPage *page)
 {
     char model[56], clean[56], buf[80];
@@ -223,14 +300,40 @@ static void gather_overview(long cursor, CensusPage *page)
     sanitize(model, clean, sizeof clean);
     fact(page, "   Model", clean);
     v = gestalt_or(gestaltProcClkSpeed, 0);
-    if (v > 0) {
-        snprintf(buf, sizeof buf, "%ld MHz", (v + 500000L) / 1000000L);
-    } else {
-        strcpy(buf, "unknown speed");
+    {
+        long ct = gestalt_or(gestaltNativeCPUtype,
+                             gestalt_or(gestaltProcessorType, 0));
+        const char *name = census_cpu_name(ct);
+        char speed[24];
+
+        if (v > 0) {
+            snprintf(speed, sizeof speed, "%ld MHz", (v + 500000L) / 1000000L);
+        } else {
+            strcpy(speed, "unknown speed");
+        }
+        if (name != NULL) {
+            snprintf(buf, sizeof buf, "%s @ %s", name, speed);
+        } else {
+            snprintf(buf, sizeof buf, "CPU type $%08lX, %s",
+                     (unsigned long)ct, speed);
+        }
     }
     fact(page, "   Processor", buf);
     v = gestalt_or(gestaltROMSize, 0);
-    snprintf(buf, sizeof buf, "%ld MB ROM", v / (1024L * 1024L));
+    {
+        long machine = gestalt_or(gestaltMachineType, 0);
+        NowROMLayout rom = now_rom_layout((uint32_t)machine, (uint32_t)v);
+        if (rom.boot_bytes != 0) {
+            snprintf(buf, sizeof buf, "%lu MB total (%lu MB Toolbox + "
+                     "%lu MB boot)",
+                     (unsigned long)rom.total_bytes / (1024UL * 1024UL),
+                     (unsigned long)rom.toolbox_bytes / (1024UL * 1024UL),
+                     (unsigned long)rom.boot_bytes / (1024UL * 1024UL));
+        } else {
+            snprintf(buf, sizeof buf, "%lu MB ROM",
+                     (unsigned long)rom.total_bytes / (1024UL * 1024UL));
+        }
+    }
     fact(page, "   ROM", buf);
 
     caption(page, "Memory");
@@ -287,33 +390,26 @@ static void gather_overview(long cursor, CensusPage *page)
     {
         long index = 1;
         while (page->count < kCensusPageMax) {
-            HParamBlockRec pb;
             Str63 name;
 
-            memset(&pb, 0, sizeof pb);
-            name[0] = 0;
-            pb.volumeParam.ioNamePtr = name;
-            pb.volumeParam.ioVolIndex = (short)index;
-            if (PBHGetVInfoSync(&pb) != noErr) {
+            unsigned long total_mib;
+            unsigned long free_mib;
+            if (volume_mebibytes((short)index, name, &total_mib,
+                                 &free_mib) != noErr) {
                 break;
             }
             {
                 char vname[32], vlabel[kCensusRowNameCap];
-                unsigned long total =
-                    (unsigned long)pb.volumeParam.ioVNmAlBlks
-                    * (unsigned long)pb.volumeParam.ioVAlBlkSiz;
-                unsigned long freeb =
-                    (unsigned long)pb.volumeParam.ioVFrBlk
-                    * (unsigned long)pb.volumeParam.ioVAlBlkSiz;
+                char total_s[24], free_s[24];
                 long n = name[0] < 31 ? name[0] : 31;
 
                 memcpy(vname, name + 1, (size_t)n);
                 vname[n] = '\0';
                 sanitize(vname, clean, sizeof clean);
                 snprintf(vlabel, sizeof vlabel, "   %.28s", clean);
-                snprintf(buf, sizeof buf, "%lu MB, %lu MB free",
-                         total / (1024UL * 1024UL),
-                         freeb / (1024UL * 1024UL));
+                census_size_mib(total_mib, total_s, sizeof total_s);
+                census_size_mib(free_mib, free_s, sizeof free_s);
+                snprintf(buf, sizeof buf, "%s, %s free", total_s, free_s);
                 fact(page, vlabel, buf);
             }
             index++;
@@ -392,15 +488,12 @@ static void gather_volumes(long cursor, CensusPage *page)
     long index = (cursor <= 0) ? 1 : cursor;
 
     while (page->count < kCensusPageMax) {
-        HParamBlockRec pb;
         Str63 name;
 
-        memset(&pb, 0, sizeof pb);
-        name[0] = 0;
-        pb.volumeParam.ioNamePtr = name;
-        pb.volumeParam.ioVRefNum = 0;
-        pb.volumeParam.ioVolIndex = (short)index;
-        if (PBHGetVInfoSync(&pb) != noErr) {
+        unsigned long total_mib;
+        unsigned long free_mib;
+        if (volume_mebibytes((short)index, name, &total_mib,
+                             &free_mib) != noErr) {
             break;
         }
         {
@@ -408,10 +501,7 @@ static void gather_volumes(long cursor, CensusPage *page)
             char label[kCensusRowNameCap];
             char raw[kCensusRowRawCap];
             char meaning[kCensusRowMeaningCap];
-            unsigned long total = (unsigned long)pb.volumeParam.ioVNmAlBlks
-                                  * (unsigned long)pb.volumeParam.ioVAlBlkSiz;
-            unsigned long freeb = (unsigned long)pb.volumeParam.ioVFrBlk
-                                  * (unsigned long)pb.volumeParam.ioVAlBlkSiz;
+            char total_s[24], free_s[24];
             long n = name[0] < 31 ? name[0] : 31;
 
             memcpy(cname, name + 1, (size_t)n);
@@ -419,8 +509,10 @@ static void gather_volumes(long cursor, CensusPage *page)
             sanitize(cname, clean, sizeof clean);
             snprintf(label, sizeof label, "Volume %ld", index);
             snprintf(raw, sizeof raw, "%s", clean);
-            snprintf(meaning, sizeof meaning, "%lu MB, %lu MB free",
-                     total / (1024UL * 1024UL), freeb / (1024UL * 1024UL));
+            census_size_mib(total_mib, total_s, sizeof total_s);
+            census_size_mib(free_mib, free_s, sizeof free_s);
+            snprintf(meaning, sizeof meaning, "%s, %s free",
+                     total_s, free_s);
             set_row(&page->rows[page->count++], label, raw, meaning);
         }
         index++;
@@ -431,13 +523,11 @@ static void gather_volumes(long cursor, CensusPage *page)
         return;
     }
     {
-        HParamBlockRec pb;
         Str63 name;
-        memset(&pb, 0, sizeof pb);
-        name[0] = 0;
-        pb.volumeParam.ioNamePtr = name;
-        pb.volumeParam.ioVolIndex = (short)index;
-        if (PBHGetVInfoSync(&pb) == noErr) {
+        unsigned long total_mib;
+        unsigned long free_mib;
+        if (volume_mebibytes((short)index, name, &total_mib,
+                             &free_mib) == noErr) {
             page->more = 1;
             page->next_cursor = index;
         }
@@ -998,6 +1088,7 @@ static void gather_ata(long cursor, CensusPage *page)
                     "present; drive returned no IDENTIFY data");
         } else {
             char model[42], serial[22], fw[10];
+            char size_s[24];
             unsigned long sectors =
                 (unsigned long)buf[120]
                 | ((unsigned long)buf[121] << 8)
@@ -1008,8 +1099,14 @@ static void gather_ata(long cursor, CensusPage *page)
             census_ata_string(buf, 10, 10, serial, sizeof serial);
             census_ata_string(buf, 23, 4, fw, sizeof fw);
             snprintf(raw, sizeof raw, "serial %.20s", serial);
-            snprintf(meaning, sizeof meaning, "%.28s, %lu MB, fw %.8s",
-                     model[0] ? model : "ATA drive", sectors / 2048UL, fw);
+            census_size_mib(sectors / 2048UL, size_s, sizeof size_s);
+            /* Explicit ".15s" bounds gcc's format-truncation estimate: the
+               unbounded %s otherwise assumes size_s's full 24-byte
+               capacity, and 28 (model) + 24 + 8 (fw) + literals overflows
+               the 64-byte meaning buffer by gcc's static reckoning even
+               though census_size_mib never emits more than ~9 chars. */
+            snprintf(meaning, sizeof meaning, "%.28s, %.15s, fw %.8s",
+                     model[0] ? model : "ATA drive", size_s, fw);
             set_row(&page->rows[page->count++], label, raw, meaning);
         }
     }

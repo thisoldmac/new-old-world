@@ -33,8 +33,9 @@ struct OnboardingAssetSnapshot: Equatable {
 }
 
 /// Operator-provided packages stay outside Git. A release can carry them in
-/// `Contents/Resources/Onboarding`; a local install can add or replace them
-/// in Application Support without changing the signed application.
+/// `Contents/Resources/Onboarding`; Application Support augments that catalog
+/// without silently replacing the signed release's guest components. The
+/// environment override remains the explicit development escape hatch.
 struct OnboardingAssetCatalog {
     static let environmentKey = "NOW_ONBOARDING_ASSETS"
 
@@ -45,7 +46,8 @@ struct OnboardingAssetCatalog {
     static func live(bundle: Bundle = .main,
                      fileManager: FileManager = .default,
                      environment: [String: String] =
-                        ProcessInfo.processInfo.environment)
+                        ProcessInfo.processInfo.environment,
+                     applicationSupportDirectory: URL? = nil)
         -> OnboardingAssetCatalog {
         if let path = environment[environmentKey], !path.isEmpty {
             let root = URL(fileURLWithPath: path, isDirectory: true)
@@ -54,8 +56,9 @@ struct OnboardingAssetCatalog {
                                            fileManager: fileManager)
         }
 
-        let support = fileManager.urls(for: .applicationSupportDirectory,
-                                       in: .userDomainMask).first
+        let support = applicationSupportDirectory
+            ?? fileManager.urls(for: .applicationSupportDirectory,
+                                in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
                 .appendingPathComponent("Library/Application Support",
                                         isDirectory: true)
@@ -63,11 +66,12 @@ struct OnboardingAssetCatalog {
             .appendingPathComponent(ProductIdentity.displayName,
                                     isDirectory: true)
             .appendingPathComponent("Onboarding", isDirectory: true)
-        var roots = [writable]
+        var roots: [URL] = []
         if let resources = bundle.resourceURL {
             roots.append(resources.appendingPathComponent(
                 "Onboarding", isDirectory: true))
         }
+        roots.append(writable)
         return OnboardingAssetCatalog(roots: roots,
                                        writableRoot: writable,
                                        fileManager: fileManager)
@@ -82,7 +86,7 @@ struct OnboardingAssetCatalog {
                 named: ["CodeKitten.bin", "codekitten.bin"],
                 kind: .codeKitten),
             extensionComponent: firstAsset(
-                named: ["NOW Extension.bin", "NowExt.bin"],
+                named: ["NOW Extension.bin"],
                 kind: .extensionComponent),
             dependencies: dependencyAssets())
     }

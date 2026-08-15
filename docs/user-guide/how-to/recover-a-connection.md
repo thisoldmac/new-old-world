@@ -41,5 +41,5 @@ machine identity.
 
 ## Related reference
 
-[Connections and preferences](../reference/modules/connections-and-preferences.md)
+[Connections](../reference/modules/connections-and-preferences.md)
 and [Verification and safety](../explanation/verification-and-safety.md).

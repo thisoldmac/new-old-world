@@ -20,7 +20,9 @@
 
 now_ext_gne_filter:
     movem.l %d0-%d7/%a0-%a6,-(%sp)
+    move.l %a1,-(%sp)
     jsr now_ext_gne_apply
+    addq.l #4,%sp
     movem.l (%sp)+,%d0-%d7/%a0-%a6
 
     movea.l gNowExtOldGNEFilter,%a0

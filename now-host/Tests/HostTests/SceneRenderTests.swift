@@ -87,7 +87,7 @@ final class SceneRenderTests: XCTestCase {
     /// Pin the draw path, not only its arithmetic. Opening the measured
     /// Application menu must paint the selection starting at guest x=716.
     /// With the regressed character-count width it began at x=730 and this
-    /// exact pixel stayed menubar gray.
+    /// exact pixel stayed in the application divider.
     func testAlmostPerfectBaselineRendersApplicationMenuAtGuestLeft() throws {
         let scene = try scene()
         let menus = try XCTUnwrap(scene.menubar?.menus)
@@ -99,8 +99,10 @@ final class SceneRenderTests: XCTestCase {
         let before = try XCTUnwrap(rep.colorAt(x: 715, y: 1))
         let selected = try XCTUnwrap(rep.colorAt(x: 716, y: 1))
 
-        XCTAssertGreaterThan(before.redComponent, 0.8,
-                             "pixel before guest left should stay bar gray")
+        XCTAssertEqual(before.redComponent, 0.6, accuracy: 0.01,
+                       "pixel before guest left is the measured divider shadow")
+        XCTAssertEqual(before.greenComponent, 0.6, accuracy: 0.01)
+        XCTAssertEqual(before.blueComponent, 0.6, accuracy: 0.01)
         XCTAssertLessThan(selected.redComponent, 0.3)
         XCTAssertLessThan(selected.greenComponent, 0.3)
         XCTAssertGreaterThan(selected.blueComponent, 0.5,

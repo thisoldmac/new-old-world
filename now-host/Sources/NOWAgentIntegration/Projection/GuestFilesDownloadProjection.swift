@@ -93,7 +93,7 @@ public enum GuestFilesDownloadProjection: HostProjection {
     public static let acceptedArguments: Set<String> = ["path"]
 
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
-        .appUI: .reached(file: "FilesModuleView.swift",
+        .appUI: .reached(file: "GuestFileBrowserAdapter.swift",
                          symbol: "model.download(row)"),
         .mcp: .reachedByRegistry,
         .appIntents: .appIntentsFaceNotBuiltYet,

@@ -45,7 +45,12 @@ struct ChatProviderEntry: Equatable, Sendable {
     let detail: String
 }
 
-enum ChatRole: String, Sendable {
+/* Codable from here down, deliberately: a saved chat on disk holds
+   this exact vocabulary (see ChatStore), so the persisted shape and
+   the harness's shape cannot drift apart — a second set of storage
+   structs would be a second place to be wrong. */
+
+enum ChatRole: String, Codable, Sendable {
     case user
     case assistant
     case tool
@@ -55,19 +60,19 @@ enum ChatRole: String, Sendable {
 /// a string until the harness parses it — a model (local ones
 /// especially) can emit JSON that does not parse, and that is a tool
 /// error to feed back, not a crash.
-struct ChatToolCall: Equatable, Sendable {
+struct ChatToolCall: Equatable, Codable, Sendable {
     let id: String
     let name: String
     let argumentsJSON: String
 }
 
-enum ChatContent: Equatable, Sendable {
+enum ChatContent: Equatable, Codable, Sendable {
     case text(String)
     case toolCall(ChatToolCall)
     case toolResult(id: String, text: String, imagePNG: Data?, isError: Bool)
 }
 
-struct ChatTurn: Equatable, Sendable {
+struct ChatTurn: Equatable, Codable, Sendable {
     let role: ChatRole
     let content: [ChatContent]
 

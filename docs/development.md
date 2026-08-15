@@ -14,7 +14,7 @@ CodeKitten a build dependency. The two project homes remain distinct:
 - A **host-home** project is authoritative beneath the host app's Application
   Support `New Old World/Projects` directory.
 - A **guest-home** project is authoritative beneath the Projects folder a
-  person selected in the PPC guest's Development page. NOW imports a verified
+  person selected in the PPC guest's Projects page. NOW imports a verified
   snapshot into its private history mirror and gives an agent a persistent host
   workspace. Editing and committing that workspace does not edit the active
   guest project.
@@ -66,7 +66,7 @@ generic Files, Chat and MCP schemas.
 ## Toolchains and jobs
 
 Toolchains belong to the PPC guest. A person chooses one root in the guest
-Development page; NOW resolves it by volume and directory identity and
+Projects page; NOW resolves it by volume and directory identity and
 qualifies an MPW installation by measuring ToolServer and its version. The
 selected project must pin the exact measured ID and version. Neither an agent
 nor a project file can register an arbitrary guest path.
@@ -89,9 +89,20 @@ NOW-68K does not register these commands. Capability discovery therefore says
 Development is unavailable rather than inferring support from the guest name
 or CPU.
 
+Since 2026-08-14 the guest page is a client of those same commands rather than
+a settings screen: it lists the projects under the chosen root, remembers which
+one this Mac is working on (NowPrefs V28, an identity rather than a folder
+reference), and starts a build or a run by handing the same command functions
+the host drives a request it builds locally. One walk of the Projects root now
+serves the catalog, the find-by-id both the build and candidate paths use, and
+the page; there were three. The page also keeps a session-scoped ring of the
+last eight settled jobs, which is deliberately not on the wire — the host
+watches each job settle as it drives it, and the durable record of a build
+remains the ToolServer transcript in the project's own `Build` folder.
+
 ## Human and agent surfaces
 
-The host Development module and agent adapter call the same project,
+The host Projects module and agent adapter call the same project,
 workspace, candidate, build, promotion and run services. The compact agent
 surface is split into:
 
@@ -226,6 +237,12 @@ Current limits and friction remain explicit:
   candidate discard. Cancelling a build is terminal for that candidate and
   requires discard/restage; neither behavior should be inferred from a generic
   retry.
+- The 2026-08-14 guest page (projects list, persisted selection, Build/Run,
+  job ring) **has not run on any machine**. It cross-compiles, its layout and
+  its catalog serializer are native-tested and mutation-watched, and that is
+  the whole of the evidence: nothing has drawn it on the emulator or the
+  PowerBook, and neither the console `development-project catalog` grammar nor
+  the V28 preferences round-trip has been exercised outside the host compiler.
 - The final VM session ended with its HFS volume marked dirty even though its
   source image is clean, the shutdown applet completed, disk writes quiesced,
   QEMU exited, and `qemu-img check` passed. That is a rig cleanup failure, not

@@ -1,4 +1,5 @@
 import Foundation
+@testable import Host
 import XCTest
 
 /// **The gate for a surface that answers a batch and ignores a client.**
@@ -33,6 +34,41 @@ final class StdioTransportLivenessTests: XCTestCase {
     /// a bound on process start, not on work. The broken form does not miss
     /// it by a margin — it never answers at all.
     private static let deadline: TimeInterval = 15
+
+    func testExecutableGenerationDetectsAtomicBundleReplacement() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executable = directory.appendingPathComponent("NOW")
+        try Data("old".utf8).write(to: executable)
+        let generation = try XCTUnwrap(
+            MCPExecutableGeneration(executableURL: executable))
+        XCTAssertTrue(generation.isCurrent)
+
+        let replacement = directory.appendingPathComponent("replacement")
+        try Data("new".utf8).write(to: replacement)
+        _ = try FileManager.default.replaceItemAt(
+            executable, withItemAt: replacement)
+
+        XCTAssertFalse(
+            generation.isCurrent,
+            "a companion must notice when its stable app path names a new vnode")
+    }
+
+    func testStaleCompanionNamesRetryWithoutReachingHost() throws {
+        let request = Data(#"{"jsonrpc":"2.0","id":17,"method":"tools/call"}"#.utf8)
+        let data = try XCTUnwrap(MCPStaleCompanionResponse.make(for: request))
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(object["id"] as? Int, 17)
+        let error = try XCTUnwrap(object["error"] as? [String: Any])
+        let detail = try XCTUnwrap(error["data"] as? [String: Any])
+        XCTAssertEqual(detail["code"] as? String,
+                       "now-mcp-companion-stale")
+        XCTAssertEqual(detail["reach"] as? String, "notSent")
+    }
 
     func testAnswersOneSmallMessageWithStandardInputStillOpen() throws {
         let executable = try Self.hostExecutable()

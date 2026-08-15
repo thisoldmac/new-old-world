@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Make a locally built SheepShaver app independent of Homebrew runtime paths.
+# This packages emulator code only. ROM, OS and CarbonLib stay in the separate
+# developer-owned .sheepvm profile and are never copied into the app.
+set -euo pipefail
+
+die () { echo "package-sheepshaver-86: $*" >&2; exit 1; }
+
+[ "$#" -eq 2 ] \
+    || die "usage: scripts/package-sheepshaver-86 SOURCE.app DESTINATION.app"
+SOURCE="$1"
+FINAL_DESTINATION="$2"
+SOURCE_EXE="$SOURCE/Contents/MacOS/SheepShaver"
+[ -x "$SOURCE_EXE" ] || die "source executable is missing: $SOURCE_EXE"
+[ ! -e "$FINAL_DESTINATION" ] \
+    || die "destination already exists: $FINAL_DESTINATION"
+DESTINATION_PARENT="$(dirname "$FINAL_DESTINATION")"
+[ -d "$DESTINATION_PARENT" ] \
+    || die "destination parent is missing: $DESTINATION_PARENT"
+STAGING="$(mktemp -d "$DESTINATION_PARENT/.sheepshaver-package.XXXXXX")"
+trap 'rm -rf "$STAGING"' EXIT
+DESTINATION="$STAGING/$(basename "$FINAL_DESTINATION")"
+
+DITTO="${NOW_DITTO:-ditto}"
+OTOOL="${NOW_OTOOL:-otool}"
+INSTALL_NAME_TOOL="${NOW_INSTALL_NAME_TOOL:-install_name_tool}"
+PLUTIL="${NOW_PLUTIL:-plutil}"
+CODESIGN="${NOW_CODESIGN:-codesign}"
+STRINGS="${NOW_STRINGS:-strings}"
+
+"$DITTO" "$SOURCE" "$DESTINATION"
+DEST_EXE="$DESTINATION/Contents/MacOS/SheepShaver"
+FRAMEWORKS="$DESTINATION/Contents/Frameworks"
+RESOURCES="$DESTINATION/Contents/Resources"
+mkdir -p "$FRAMEWORKS" "$RESOURCES/Licenses"
+chmod u+w "$DEST_EXE"
+
+bundle_dependencies () {
+    local target="$1"
+    local dependency base bundled
+    while IFS= read -r dependency; do
+        case "$dependency" in
+            ""|/System/*|/usr/lib/*|@*) continue ;;
+        esac
+        [ -f "$dependency" ] \
+            || die "non-system dependency is missing: $dependency"
+        base="$(basename "$dependency")"
+        bundled="$FRAMEWORKS/$base"
+        if [ "$(basename "$target")" = "$base" ]; then
+            "$INSTALL_NAME_TOOL" -id "@rpath/$base" "$target"
+            continue
+        fi
+        if [ ! -f "$bundled" ]; then
+            cp -p "$dependency" "$bundled"
+            chmod u+w "$bundled"
+            bundle_dependencies "$bundled"
+        fi
+        "$INSTALL_NAME_TOOL" -change "$dependency" \
+            "@executable_path/../Frameworks/$base" "$target"
+    done < <("$OTOOL" -L "$target" | awk 'NR > 1 {print $1}')
+}
+
+bundle_dependencies "$DEST_EXE"
+
+# Homebrew's SDL2 may be sdl2-compat: a small compatibility dylib that opens
+# SDL3 with dlopen() rather than recording it in the Mach-O load commands.
+# `otool -L` therefore cannot discover the runtime edge. Keep the probe narrow
+# and bundle the exact loader-relative name sdl2-compat requests.
+for sdl2 in "$FRAMEWORKS"/libSDL2*.dylib; do
+    [ -f "$sdl2" ] || continue
+    if "$STRINGS" "$sdl2" | grep -Fq '@loader_path/libSDL3.dylib'; then
+        SDL3_SOURCE="${NOW_SDL3_DYLIB:-/opt/homebrew/opt/sdl3/lib/libSDL3.dylib}"
+        [ -f "$SDL3_SOURCE" ] \
+            || die "sdl2-compat requires runtime SDL3, but it is missing: $SDL3_SOURCE"
+        SDL3_BUNDLED="$FRAMEWORKS/libSDL3.dylib"
+        if [ ! -f "$SDL3_BUNDLED" ]; then
+            cp -pL "$SDL3_SOURCE" "$SDL3_BUNDLED"
+            chmod u+w "$SDL3_BUNDLED"
+            "$INSTALL_NAME_TOOL" -id '@rpath/libSDL3.dylib' "$SDL3_BUNDLED"
+            bundle_dependencies "$SDL3_BUNDLED"
+        fi
+        break
+    fi
+done
+"$PLUTIL" -replace CFBundleIdentifier \
+    -string dev.newoldworld.sheepshaver86oracle \
+    "$DESTINATION/Contents/Info.plist"
+
+if [ -n "${NOW_SHEEPSHAVER_SOURCE:-}" ]; then
+    LICENSE="${NOW_SHEEPSHAVER_LICENSE:-$NOW_SHEEPSHAVER_SOURCE/SheepShaver/COPYING}"
+    [ -f "$LICENSE" ] || die "macemu license is missing: $LICENSE"
+    cp "$LICENSE" \
+        "$RESOURCES/Licenses/macemu-GPL-2.0.txt"
+fi
+
+MANIFEST="$RESOURCES/NOW-Oracle-Build.txt"
+{
+    echo "NOW_SHEEPSHAVER_HOST_APP_V1"
+    echo "packaged_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "source_app=$SOURCE"
+    echo "source_executable_sha256=$(shasum -a 256 "$SOURCE_EXE" | awk '{print $1}')"
+    if [ -n "${NOW_SHEEPSHAVER_SOURCE:-}" ]; then
+        echo "source_checkout=$NOW_SHEEPSHAVER_SOURCE"
+        echo "source_revision=$(git -C "$NOW_SHEEPSHAVER_SOURCE" rev-parse HEAD)"
+    fi
+    for dylib in "$FRAMEWORKS"/*.dylib; do
+        [ -f "$dylib" ] || continue
+        # The final ad-hoc signature changes these bytes below. This is
+        # deliberately labelled pre-sign; `sheepshaver-86 rig` records the
+        # exact final dylib bytes beside each versioned guest image.
+        echo "bundled_dylib_presign_sha256=$(basename "$dylib") $(shasum -a 256 "$dylib" | awk '{print $1}')"
+    done
+} > "$MANIFEST"
+
+"$CODESIGN" --force --deep --sign - "$DESTINATION"
+"$CODESIGN" --verify --deep --strict "$DESTINATION"
+
+external="$({ "$OTOOL" -L "$DEST_EXE"; for dylib in "$FRAMEWORKS"/*.dylib; do [ ! -f "$dylib" ] || "$OTOOL" -L "$dylib"; done; } \
+    | awk 'NR > 1 {print $1}' \
+    | grep -E '^(/opt/homebrew|/usr/local)/' || true)"
+[ -z "$external" ] || die "packaged app still has external dependencies: $external"
+
+mv "$DESTINATION" "$FINAL_DESTINATION"
+rmdir "$STAGING"
+trap - EXIT
+echo "package-sheepshaver-86: packaged and verified $FINAL_DESTINATION"
+echo "  manifest: $FINAL_DESTINATION/Contents/Resources/NOW-Oracle-Build.txt"

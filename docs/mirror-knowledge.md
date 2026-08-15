@@ -81,7 +81,7 @@ Two rules, and they matter more here than on any other doc in this tree.
 | What is the menu-list structure? | Carried in the ported walker; the offsets are 6 / 6 / 14 | [perceive plane](mirror-perceive-plane.md) |
 | Where does a self-scene put Help after the application menus? | At `MenuList.last_right`. Zero is the Apple slot's left edge and makes Help overwrite it. Measured in NOW's live Workshop on mac99, 2026-08-03 | `now-guest-ppc/src/scene/scene_self.c` |
 | Why can't a process-list verb see foreign windows and menus? | The Window and Menu Managers keep their roots in **per-process A5 globals**. That is why the hook is an INIT | [perceive plane](mirror-perceive-plane.md) |
-| Where does an icon in a Finder window really sit? | Ask the Finder for its live **bounds**, never the saved catalog field. `position` works for icon view but names a saved icon grid in list view; `bounds` is the drawn 32×32 or 16×16 box in all three measured views | [perceive plane](mirror-perceive-plane.md) |
+| Where does an icon in a Finder window really sit? | Ask the Finder for its live **bounds**, never the saved catalog field. `position` works for icon view but names a saved icon grid in list view; `bounds` is the drawn 16×16, 32×32, or 48×48 box across the measured List, Icons, and Buttons views | [perceive plane](mirror-perceive-plane.md) |
 | Can the QuickDraw stream tell us where Finder window icons are? | **Not from the WINDOW port** — the Finder composites offscreen and emits one opaque blit (confirmed three ways 2026-07-17, reproduced independently 2026-08-06). **YES from the OFFSCREEN port**: a resident found and hooked the Finder's GWorld from outside and read its icon LABELS as text ops at true pens ('Documents' [280,67], 'TimBotTu' [282,131]). Three Toolbox facts make it work and each defeats it alone — join on SHAPE (LockPixels relocates the PixMap record, so pointers, handles and baseAddr are all snapshots); MemTop is NOT the address-space ceiling, so a read guard bounded by it rejects every candidate; and the hook must be HELD across the repaint, since re-arming unhooks the world. Icons still arrive as identity-less bits — labels are semantic, images are not yet | [toolbox-and-gworld.md](toolbox-and-gworld.md) |
 | Which AppleScript Finder terminology works on 9.1? | Generic `window` and `item of window`; the `Finder window` class and `target of window` both error | [perceive plane](mirror-perceive-plane.md) |
 | Are menu rows a uniform height? | **No** — separators 6 px, items 16 px on mac99. Assuming 16 accumulated a 30 px error | [act plane](mirror-act-plane.md) |
@@ -144,7 +144,7 @@ work.
 |---|---|
 | **Real hardware, for all three planes** | Essentially nothing upstream built for perceive-and-act ran on metal. No per-operation metal-safety review exists for the act plane |
 | **Cross-process blast radius** | The guard was never reached |
-| **Finder list and small-icon views** | **Answered in NOW 2026-08-08:** `view of window` reports `name` and `small icon`; item `bounds` carries the drawn row/icon box and the host renders names semantically. Column metadata beyond name remains unmeasured |
+| **Finder folder views and 8.6 chrome** | **Broadened in NOW 2026-08-12:** `view of window` reports `icon`, `button`, `name` and `small icon`; Buttons owns a 48 by 48 raised well rather than collapsing into small icons, and one primary click activates rather than retaining selection. Icons and List keep Finder's select-then-double-click model. Measured 8.6 icon selection multiplies each icon channel by 128/255 and uses a tight black name patch with white Geneva text; List selects only the name cell. Item `bounds` carries the live box, while the renderer derives the count-and-available strip, ruled List field, disclosure triangles and labels locally. Optional `file.listing.freeBytes` reports responder-observed volume capacity without sending pixels or coupling Finder to the census plane. A clean Calculator-front reference adds the shared inactive state: `BB/77/99` headers, flat `EE` scrollbars inside `55` frames, no arrows/thumb/grow box, and undimmed content. The 8.6 oracle has replayable Icons, selected Icons, Buttons and List cases plus inactive Finder and Apple, File, Edit, View, Special and Help menus. |
 | Should Finder interiors come from P3 drawing replay? | **No on this product boundary.** P3 tracing crashed/restarted Finder on the PB1400c and Finder is now permanently refused at both host and guest arm boundaries. NOW renders desktop and open-folder interiors from semantic path, view, order, live bounds and selection; applications may still use P3. This is Tested, not yet re-run on metal after consolidation | [open issues](open-issues.md) |
 | Is P3 safe for every non-Finder application? | **Not as one undifferentiated mechanism.** On the PB1400c, Sherlock 2 disappeared with a Type 1 bus error in the same cycle that the full offscreen tier became active, twice. NOW does not blacklist Sherlock or any other application: `record` hooks only the exact requested window, while the QDExtensions patch, heap census, and offscreen GWorld hooks require explicit diagnostic `probe`. Which member of that tier causes the metal crash remains unisolated | [open issues](open-issues.md) |
 | Does bounded semantic Finder mean share-root-only browsing? | There are now **two boundaries**. Guest-follow mode may mirror a Finder window anywhere Finder opened it and reads only that displayed directory. Optional **Emulate Finder Windows** browses through the Files contract, so its root is the configured guest share (the whole disk when **Share entire boot volume** is enabled). Development lifecycle coupling may open the matching guest Finder folder, but it does not widen file authority. Neither mode recursively enumerates the volume | [open issues](open-issues.md) |
@@ -176,3 +176,45 @@ Left behind entirely, and why: upstream's milestone tables, effort
 estimates, sequencing, module listings, run commands and repository
 paths. They describe a project that is parked. **The findings are the
 inheritance; the plan is not.**
+
+## Injected input diverges below the API, not at it (2026-08-13)
+
+Every Continuity input bug still open as of 2026-08-13 shares one shape:
+code that is correct against the documented Toolbox API still disagrees
+with a physically-driven event one layer down. Measured on the PowerBook
+1400c: an ownership sampler classified its own settle as physical input
+because the settled point missed the owned-point history; the
+interrupt-time `MBState` release outraces the Cursor Device Manager's
+button bookkeeping, so the manager posts no mouseUp even though low
+memory already reads up; an unbalanced manager button ledger outlives its
+epoch and republishes a phantom hold until real device input overwrites
+it; a synthetic double-click nine ticks apart at one pixel still fails
+Finder recognition after timing, spacing, completeness and window width
+are all excluded, because Finder pairs against a private copy of the
+double-click time; and host-side, a pinned-but-real cursor's own warp
+returns as a genuine AppKit motion sample while a non-consuming observer
+lets every guest click also fire as a real host click. The general rule
+lives in the parent corpus as
+`data/findings/injected-input-diverges-below-the-api.md`: injection
+correctness at the API layer says nothing about driver state, manager
+records, and private per-app caches beneath it, and the fewer layers sit
+between the injection point and the hardware, the fewer seams exist —
+for ADB Macs the floor is the ADB service-callback layer, given a
+synthetic autopoll clock via explicit `ADBOp` Talk-R0.
+
+**2026-08-14 coda — the seam was finally FOUND by capturing it, and it
+was two seams.** After both timestamp theories died by measurement (a
+pair 8 ticks by `when` AND 54 by dequeue failed under a 60-tick
+window), a jGNE-boundary probe recorded every field of native versus
+synthetic mouse events in one log. Native downs satisfy
+`when == MBTicks` exactly (26/26; forging `when` without moving the
+driver's cross-check had made every compressed click detectable), and
+native fast clicks pile the second click INTO the raw event queue
+(depth 1-4) while the first is processed, where synthetic ones arrived
+one at a time (depth 0) — an empty queue at peek-ahead time is itself a
+signature. Closing both — MBTicks moved with the forged `when`, and the
+second press delivered at interrupt time so it is queued during click-1
+processing — made Finder double-click work on metal. Method lesson for
+the corpus: when the last theory dies, stop theorizing and record every
+candidate field of the real thing next to the fake; the diff IS the
+answer, and it took one attended run.

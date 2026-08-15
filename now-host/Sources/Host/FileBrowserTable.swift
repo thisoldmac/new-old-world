@@ -1,14 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
-
-enum GuestFilePromiseType {
-    static func type(for item: FileRow) -> UTType {
-        if item.isFolder { return .folder }
-        return UTType(filenameExtension:
-            (item.name as NSString).pathExtension) ?? .data
-    }
-}
 
 /// A testable description of the browser shortcuts. AppKit includes state
 /// flags such as Caps Lock in every key event, so only the modifiers that
@@ -28,7 +19,6 @@ enum FileBrowserKeyAction: Equatable {
 
         if chord == .command {
             if character == "d" { return .download }
-            // 51 is the Mac's Backspace/Delete key; 117 is Forward Delete.
             if keyCode == 51 || keyCode == 117 { return .trash }
         }
         if chord == [.command, .shift], character == "n" {
@@ -42,42 +32,273 @@ enum FileBrowserKeyAction: Equatable {
     }
 }
 
-/// The browser's table, in AppKit.
-///
-/// SwiftUI's Table cannot be a drag SOURCE for files: dragging a row
-/// moves the selection instead, and file promises — the only honest way
-/// to drag a file that does not exist locally yet — have no equivalent.
-/// A Finder-shaped browser needs both, so this is an NSTableView with
-/// its own drag source, drop destination, and multiple selection, which
-/// is also how it behaves the way a Mac user expects.
+/// Common row metadata retained by the native table. The target adapters own
+/// the concrete row's actions and transport semantics.
+enum FilesBrowserRow: Identifiable, Equatable, Sendable {
+    case guest(FileRow)
+    case host(HostFileRow)
+
+    var id: String {
+        switch self {
+        case .guest(let row): row.id
+        case .host(let row): row.id
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .guest(let row): row.name
+        case .host(let row): row.name
+        }
+    }
+
+    var isFolder: Bool {
+        switch self {
+        case .guest(let row): row.isFolder
+        case .host(let row): row.isFolder
+        }
+    }
+
+    var kind: String {
+        switch self {
+        case .guest(let row): row.kind
+        case .host(let row): row.kind
+        }
+    }
+
+    var sizeBytes: Int {
+        switch self {
+        case .guest(let row): row.sizeBytes
+        case .host(let row): row.sizeBytes
+        }
+    }
+
+    var modified: Date? {
+        switch self {
+        case .guest(let row): row.modified
+        case .host(let row): row.modified
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .guest(let row): row.symbolName
+        case .host(let row): row.isFolder ? "folder" : "doc"
+        }
+    }
+
+    var conversionNote: String? {
+        guard case .guest(let row) = self else { return nil }
+        return row.conversionNote
+    }
+
+    var path: String {
+        switch self {
+        case .guest(let row): row.path
+        case .host(let row): row.url.path
+        }
+    }
+
+    var guestRow: FileRow? {
+        guard case .guest(let row) = self else { return nil }
+        return row
+    }
+
+    var hostRow: HostFileRow? {
+        guard case .host(let row) = self else { return nil }
+        return row
+    }
+}
+
+enum FilesBrowserAction: String {
+    case open
+    case download
+    case downloadMacBinary
+    case rename
+    case trash
+    case newFolder
+    case pin
+    case copyPath
+    case showInFinder
+}
+
+/// Finder's default list columns, shared by the host and guest adapters.
+/// The identifier is deliberately stable because AppKit persists column order,
+/// width, and visibility against it.
+enum FilesListColumn: String, CaseIterable {
+    case name
+    case modified
+    case size
+    case kind
+
+    var title: String {
+        switch self {
+        case .name: "Name"
+        case .modified: "Date Modified"
+        case .size: "Size"
+        case .kind: "Kind"
+        }
+    }
+
+    var defaultWidth: CGFloat {
+        switch self {
+        case .name: 255
+        case .modified: 155
+        case .size: 80
+        case .kind: 125
+        }
+    }
+
+    var minimumWidth: CGFloat {
+        switch self {
+        case .name: 130
+        case .modified: 110
+        case .size: 64
+        case .kind: 84
+        }
+    }
+
+    var canHide: Bool { self != .name }
+}
+
+struct FilesBrowserMenuItem {
+    let title: String
+    let action: FilesBrowserAction?
+    let key: String
+    let modifiers: NSEvent.ModifierFlags
+
+    init(_ title: String, _ action: FilesBrowserAction,
+         key: String = "", modifiers: NSEvent.ModifierFlags = []) {
+        self.title = title
+        self.action = action
+        self.key = key
+        self.modifiers = modifiers
+    }
+
+    private init() {
+        title = ""
+        action = nil
+        key = ""
+        modifiers = []
+    }
+
+    static let separator = Self()
+}
+
+@MainActor
+protocol FilesBrowserTableAdapter: AnyObject {
+    var rows: [FilesBrowserRow] { get }
+    var listAutosaveName: String { get }
+    var localDragOperation: NSDragOperation { get }
+    var registeredDraggedTypes: [NSPasteboard.PasteboardType] { get }
+    var selectedRowIDs: Set<FilesBrowserRow.ID> { get }
+
+    func icon(for row: FilesBrowserRow) -> NSImage
+    func isRenaming(_ row: FilesBrowserRow) -> Bool
+    func setSort(key: String, ascending: Bool)
+    func setSelection(_ rows: [FilesBrowserRow])
+    func menuItems(for row: FilesBrowserRow,
+                   selection: [FilesBrowserRow]) -> [FilesBrowserMenuItem]
+    func perform(_ action: FilesBrowserAction, clicked: FilesBrowserRow?,
+                 selection: [FilesBrowserRow])
+    func commitRename(_ row: FilesBrowserRow, to name: String)
+
+    func pasteboardWriter(for row: FilesBrowserRow,
+                          promiseDelegate: NSFilePromiseProviderDelegate?)
+        -> NSPasteboardWriting?
+    func promisedFileName(_ provider: NSFilePromiseProvider) -> String
+    func writePromise(_ row: FilesBrowserRow, to url: URL,
+                      completion: @escaping (Error?) -> Void)
+
+    func validateDrop(_ info: NSDraggingInfo, tableView: NSTableView,
+                      proposedRow: FilesBrowserRow?,
+                      operation: NSTableView.DropOperation,
+                      dragging: [FilesBrowserRow]) -> NSDragOperation
+    func draggingWillBegin(_ rows: [FilesBrowserRow])
+    func draggingDidEnd()
+    func acceptDrop(_ info: NSDraggingInfo, tableView: NSTableView,
+                    proposedRow: FilesBrowserRow?,
+                    operation: NSTableView.DropOperation,
+                    dragging: [FilesBrowserRow]) -> Bool
+}
+
+/// The filesystem boundary consumed by the single native browser primitive.
+/// AppKit owns presentation and interaction; adapters translate those actions
+/// to a local URL tree or the guest's asynchronous HFS namespace.
+@MainActor
+protocol FilesBrowserAdapter: FilesBrowserTableAdapter {
+    var rootDirectoryKey: String { get }
+    var currentDirectoryKey: String { get }
+    var contentRevision: Int { get }
+    var columnsAutosaveName: String { get }
+
+    func contains(_ candidate: String, within root: String) -> Bool
+    func children(of directoryKey: String) -> [FilesBrowserRow]
+    func requestChildren(of row: FilesBrowserRow)
+}
+
+extension FilesBrowserAdapter {
+    var listAutosaveName: String { "\(columnsAutosaveName).List.v2" }
+
+    func open(_ row: FilesBrowserRow) {
+        perform(.open, clicked: row, selection: [row])
+    }
+}
+
+extension FilesBrowserTableAdapter {
+    var listAutosaveName: String { "FilesBrowserList" }
+    var registeredDraggedTypes: [NSPasteboard.PasteboardType] { [.fileURL] }
+    var selectedRowIDs: Set<FilesBrowserRow.ID> { [] }
+    func isRenaming(_ row: FilesBrowserRow) -> Bool { false }
+    func setSelection(_ rows: [FilesBrowserRow]) {}
+    func commitRename(_ row: FilesBrowserRow, to name: String) {}
+    func promisedFileName(_ provider: NSFilePromiseProvider) -> String {
+        "Untitled"
+    }
+    func writePromise(_ row: FilesBrowserRow, to url: URL,
+                      completion: @escaping (Error?) -> Void) {
+        completion(CocoaError(.fileWriteUnknown))
+    }
+    func validateDrop(_ info: NSDraggingInfo, tableView: NSTableView,
+                      proposedRow: FilesBrowserRow?,
+                      operation: NSTableView.DropOperation,
+                      dragging: [FilesBrowserRow]) -> NSDragOperation { [] }
+    func draggingWillBegin(_ rows: [FilesBrowserRow]) {}
+    func draggingDidEnd() {}
+    func acceptDrop(_ info: NSDraggingInfo, tableView: NSTableView,
+                    proposedRow: FilesBrowserRow?,
+                    operation: NSTableView.DropOperation,
+                    dragging: [FilesBrowserRow]) -> Bool { false }
+}
+
+/// The single first-party AppKit browser root used for guest and host files.
+/// Target adapters own guest mutations/promises and host URL operations; this
+/// type owns only NSTableView presentation and event routing.
 struct FileBrowserTable: NSViewRepresentable {
-    @ObservedObject var model: FilesModuleModel
-    var rows: [FileRow]
-    var onOpen: (FileRow) -> Void
-    @Binding var sort: [KeyPathComparator<FileRow>]
+    private let adapter: any FilesBrowserTableAdapter
+    private var rows: [FilesBrowserRow] { adapter.rows }
+
+    init(adapter: any FilesBrowserTableAdapter) {
+        self.adapter = adapter
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     func makeNSView(context: Context) -> NSScrollView {
         let table = BrowserTableView()
         table.coordinator = context.coordinator
-        table.style = .inset
-        table.usesAlternatingRowBackgroundColors = true
+        table.style = .fullWidth
+        table.usesAlternatingRowBackgroundColors = false
         table.allowsMultipleSelection = true
-        table.rowHeight = 20
+        table.rowSizeStyle = .default
+        table.rowHeight = 26
+        table.intercellSpacing = NSSize(width: 0, height: 1)
+        table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         table.target = context.coordinator
         table.doubleAction = #selector(Coordinator.doubleClicked(_:))
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
-        /* A drag out of here carries a file PROMISE, not a URL, so the
-           table has to accept promise types or a drag that started in
-           this very view is never offered to validateDrop — which is
-           why dragging a row onto a folder did nothing. */
-        table.registerForDraggedTypes(
-            [.fileURL]
-            + NSFilePromiseReceiver.readableDraggedTypes.map {
-                NSPasteboard.PasteboardType($0)
-            })
+        table.registerForDraggedTypes(adapter.registeredDraggedTypes)
         let menu = NSMenu()
         menu.delegate = context.coordinator
         table.menu = menu
@@ -85,58 +306,52 @@ struct FileBrowserTable: NSViewRepresentable {
             NSSortDescriptor(key: "name", ascending: true),
         ]
         table.setDraggingSourceOperationMask(.copy, forLocal: false)
-        // Inside the browser a drag rearranges the share rather than
-        // copying out of it, so the two directions differ.
-        table.setDraggingSourceOperationMask(.move, forLocal: true)
+        table.setDraggingSourceOperationMask(adapter.localDragOperation,
+                                             forLocal: true)
 
-        for (id, title, width) in [
-            ("name", "Name", CGFloat(260)), ("kind", "Kind", 120),
-            ("size", "Size", 90), ("modified", "Modified", 150),
-        ] {
+        for specification in FilesListColumn.allCases {
             let column = NSTableColumn(
-                identifier: NSUserInterfaceItemIdentifier(id))
-            column.title = title
-            column.width = width
+                identifier: NSUserInterfaceItemIdentifier(
+                    specification.rawValue))
+            column.title = specification.title
+            column.width = specification.defaultWidth
+            column.minWidth = specification.minimumWidth
             column.sortDescriptorPrototype =
-                NSSortDescriptor(key: id, ascending: true)
+                NSSortDescriptor(key: specification.rawValue, ascending: true)
             table.addTableColumn(column)
         }
-        /* The download glyph's own column, last and narrow. A column
-           rather than an accessory floating over the name cell: the row
-           is a drag source, and a view laid over one is a view the drag
-           starts underneath. Unsorted and untitled — it is a control, and
-           a header that sorted by it would sort by nothing. */
-        let action = NSTableColumn(
-            identifier: NSUserInterfaceItemIdentifier(Coordinator.actionColumn))
-        action.title = ""
-        action.width = 24
-        action.minWidth = 24
-        action.maxWidth = 24
-        table.addTableColumn(action)
+        table.autosaveName = NSTableView.AutosaveName(
+            adapter.listAutosaveName)
+        table.autosaveTableColumns = true
+        let columnsMenu = NSMenu(title: String(localized: "Columns"))
+        columnsMenu.autoenablesItems = false
+        columnsMenu.delegate = context.coordinator
+        table.headerView?.menu = columnsMenu
+        context.coordinator.headerMenu = columnsMenu
 
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
+        scroll.hasHorizontalScroller = true
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .controlBackgroundColor
+        table.backgroundColor = .controlBackgroundColor
         context.coordinator.table = table
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.parent = self
-        // Reload ONLY when the contents actually changed. SwiftUI
-        // re-runs this for any state change — a ticking clock was enough
-        // — and reloadData drops the selection every time, which is why
-        // a selection would survive a moment and then vanish.
-        guard context.coordinator.rows != rows else { return }
+        let newRows = adapter.rows
+        guard context.coordinator.rows != newRows else { return }
         let table = scroll.documentView as? NSTableView
-        let selectedIDs = Set(context.coordinator.selectedRows.map(\.id))
-        context.coordinator.rows = rows
+        let tableSelection = Set(context.coordinator.selectedRows.map(\.id))
+        let selectedIDs = tableSelection.isEmpty
+            ? adapter.selectedRowIDs : tableSelection
+        context.coordinator.rows = newRows
         table?.reloadData()
-        // Keep the same FILES selected across a refresh, not the same
-        // row numbers: a listing can reorder under you.
-        let restored = IndexSet(rows.indices.filter {
-            selectedIDs.contains(rows[$0].id)
+        let restored = IndexSet(newRows.indices.filter {
+            selectedIDs.contains(newRows[$0].id)
         })
         if !restored.isEmpty {
             table?.selectRowIndexes(restored, byExtendingSelection: false)
@@ -147,34 +362,21 @@ struct FileBrowserTable: NSViewRepresentable {
     final class Coordinator: NSObject, NSTableViewDataSource,
                              NSTableViewDelegate, NSMenuDelegate,
                              NSFilePromiseProviderDelegate {
-        /// AppKit's promise completion is imported without Sendable even
-        /// though this delegate requests the main operation queue. The box
-        /// transfers ownership once and exposes invocation only on MainActor.
-        private final class PromiseCompletion: @unchecked Sendable {
-            private let body: (Error?) -> Void
-
-            init(_ body: @escaping (Error?) -> Void) { self.body = body }
-
-            @MainActor
-            func finish(_ error: Error?) { body(error) }
-        }
-
         var parent: FileBrowserTable
-        var rows: [FileRow] = []
+        var rows: [FilesBrowserRow] = []
         weak var table: NSTableView?
+        weak var headerMenu: NSMenu?
+        private let queue = OperationQueue()
+        private var dragging: [FilesBrowserRow] = []
+        private var springLoadingRow: Int?
 
         init(_ parent: FileBrowserTable) {
             self.parent = parent
         }
 
-        // MARK: - Contents
-
         func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
-        /// AppKit passes row -1 for "on the table, not on a row", and a
-        /// bare `row < rows.count` is true for -1. Every index from
-        /// AppKit goes through here.
-        private func item(at index: Int) -> FileRow? {
+        private func item(at index: Int) -> FilesBrowserRow? {
             index >= 0 && index < rows.count ? rows[index] : nil
         }
 
@@ -189,77 +391,8 @@ struct FileBrowserTable: NSViewRepresentable {
             text.font = .systemFont(ofSize: 12)
 
             switch column.identifier.rawValue {
-            case Coordinator.actionColumn:
-                /* One click, one file, on this Mac. A folder has nothing
-                   to download, and an empty cell says that better than a
-                   disabled button nobody can explain. */
-                guard !item.isFolder else { return nil }
-                let button = NSButton()
-                button.bezelStyle = .inline
-                button.isBordered = false
-                button.image = NSImage(
-                    systemSymbolName: "arrow.down.circle",
-                    accessibilityDescription: "Download")
-                button.contentTintColor = .secondaryLabelColor
-                button.imagePosition = .imageOnly
-                button.target = self
-                button.action = #selector(downloadClickedRow(_:))
-                /* Identified by the file, not by the row number: a
-                   listing reorders under a sort click, and a button that
-                   remembered an index would then download its neighbour. */
-                button.identifier = NSUserInterfaceItemIdentifier(item.id)
-                button.toolTip = "Download \(item.name) to "
-                    + parent.model.downloadDirectory.lastPathComponent
-                button.setAccessibilityLabel("Download \(item.name)")
-                return button
             case "name":
-                let stack = NSStackView()
-                stack.orientation = .horizontal
-                stack.spacing = 5
-                let icon = NSImageView(image: NSImage(
-                    systemSymbolName: item.symbolName,
-                    accessibilityDescription: nil) ?? NSImage())
-                icon.contentTintColor = item.isFolder
-                    ? .controlAccentColor : .secondaryLabelColor
-                text.stringValue = item.name
-                if parent.model.renaming == item.id {
-                    // A rename is an edit of the name in place, which is
-                    // how it works everywhere else on this machine.
-                    text.isEditable = true
-                    text.isSelectable = true
-                    text.isBordered = true
-                    text.drawsBackground = true
-                    text.target = self
-                    text.action = #selector(commitRename(_:))
-                    text.identifier = NSUserInterfaceItemIdentifier(item.id)
-                    /* becomeFirstResponder on a field that is not in a
-                       window yet quietly fails, which left the row
-                       editable but unfocused. Ask the window once the
-                       view is actually in one, then select the base
-                       name the way the Finder does — the extension is
-                       rarely what you are changing. */
-                    DispatchQueue.main.async { [weak text] in
-                        guard let text, let window = text.window else {
-                            return
-                        }
-                        window.makeFirstResponder(text)
-                        guard let editor = text.currentEditor() else { return }
-                        let name = text.stringValue
-                        let stem = (name as NSString).deletingPathExtension
-                        editor.selectedRange = stem.isEmpty || stem == name
-                            ? NSRange(location: 0, length: (name as NSString).length)
-                            : NSRange(location: 0, length: (stem as NSString).length)
-                    }
-                }
-                stack.addArrangedSubview(icon)
-                stack.addArrangedSubview(text)
-                if let note = item.conversionNote {
-                    let badge = NSTextField(labelWithString: note)
-                    badge.font = .systemFont(ofSize: 9)
-                    badge.textColor = .secondaryLabelColor
-                    stack.addArrangedSubview(badge)
-                }
-                return stack
+                return nameCell(for: item, text: text)
             case "kind":
                 text.stringValue = item.kind
                 text.textColor = .secondaryLabelColor
@@ -279,290 +412,197 @@ struct FileBrowserTable: NSViewRepresentable {
             return text
         }
 
-        /// Header clicks. The comparators live in SwiftUI state so the
-        /// sort survives a reload; without this the columns looked
-        /// sortable and did nothing.
+        private func nameCell(for item: FilesBrowserRow,
+                              text: NSTextField) -> NSView {
+            let stack = NSStackView()
+            stack.orientation = .horizontal
+            stack.spacing = 5
+            let icon = NSImageView(image: parent.adapter.icon(for: item))
+            icon.imageScaling = .scaleProportionallyDown
+            icon.setFrameSize(NSSize(width: 16, height: 16))
+            if item.hostRow == nil {
+                icon.contentTintColor = item.isFolder
+                    ? .controlAccentColor : .secondaryLabelColor
+            }
+            text.stringValue = item.name
+            if parent.adapter.isRenaming(item) {
+                configureRename(text, for: item)
+            }
+            stack.addArrangedSubview(icon)
+            stack.addArrangedSubview(text)
+            stack.toolTip = item.path
+            if let note = item.conversionNote {
+                let badge = NSTextField(labelWithString: note)
+                badge.font = .systemFont(ofSize: 9)
+                badge.textColor = .secondaryLabelColor
+                stack.addArrangedSubview(badge)
+            }
+            return stack
+        }
+
+        private func configureRename(_ text: NSTextField,
+                                     for item: FilesBrowserRow) {
+            text.isEditable = true
+            text.isSelectable = true
+            text.isBordered = true
+            text.drawsBackground = true
+            text.target = self
+            text.action = #selector(commitRename(_:))
+            text.identifier = NSUserInterfaceItemIdentifier(item.id)
+            DispatchQueue.main.async { [weak text] in
+                guard let text, let window = text.window else { return }
+                window.makeFirstResponder(text)
+                guard let editor = text.currentEditor() else { return }
+                let name = text.stringValue
+                let stem = (name as NSString).deletingPathExtension
+                editor.selectedRange = stem.isEmpty || stem == name
+                    ? NSRange(location: 0, length: (name as NSString).length)
+                    : NSRange(location: 0, length: (stem as NSString).length)
+            }
+        }
+
         func tableView(_ tableView: NSTableView,
                        sortDescriptorsDidChange old: [NSSortDescriptor]) {
             guard let descriptor = tableView.sortDescriptors.first,
                   let key = descriptor.key else { return }
-            let ascending = descriptor.ascending
-            let order: SortOrder = ascending ? .forward : .reverse
-            switch key {
-            case "kind":
-                parent.sort = [KeyPathComparator(\FileRow.kind,
-                                                 order: order)]
-            case "size":
-                parent.sort = [KeyPathComparator(\FileRow.sizeBytes,
-                                                 order: order)]
-            case "modified":
-                parent.sort = [KeyPathComparator(\FileRow.sortableDate,
-                                                 order: order)]
-            default:
-                parent.sort = [KeyPathComparator(\FileRow.name,
-                                                 order: order)]
-            }
+            parent.adapter.setSort(key: key, ascending: descriptor.ascending)
         }
 
-        var selectedRows: [FileRow] {
+        var selectedRows: [FilesBrowserRow] {
             guard let table else { return [] }
             return table.selectedRowIndexes.compactMap { item(at: $0) }
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
-            // The module's actions follow the selection; without this
-            // they had nothing to act on and stayed hidden.
-            parent.model.selection = selectedRows.first?.id
+            parent.adapter.setSelection(selectedRows)
         }
 
-        /// Right-click acts on the row under the cursor, like the Finder,
-        /// rather than on whatever happened to be selected before.
         @objc func menuNeedsUpdate(_ menu: NSMenu) {
             menu.removeAllItems()
-            guard let table, let row = item(at: table.clickedRow) else {
+            if menu === headerMenu {
+                populateColumnsMenu(menu)
                 return
             }
-            if row.isFolder {
-                menu.addItem(withTitle: "Open", action: #selector(openRow),
-                             keyEquivalent: "").target = self
-            } else {
-                /* Named after where it lands, because the two commands
-                   below it land somewhere else: this one goes to the
-                   folder this Mac shares, the downloads go to the
-                   downloads folder. Same wording as the double-click,
-                   which is this item. */
-                menu.addItem(withTitle: "Open on This Mac",
-                             action: #selector(openRow),
-                             keyEquivalent: "").target = self
-                // ⌘D is advertised here and implemented in the table's
-                // keyDown, so the shortcut a person reads in the menu is
-                // the shortcut that works with the menu closed.
-                let download = menu.addItem(withTitle: "Download",
-                                            action: #selector(downloadRow),
-                                            keyEquivalent: "d")
-                download.target = self
-                download.keyEquivalentModifierMask = .command
-                menu.addItem(withTitle: "Download as MacBinary",
-                             action: #selector(downloadRowAsMacBinary),
-                             keyEquivalent: "").target = self
-            }
-            menu.addItem(.separator())
-            menu.addItem(withTitle: "Rename", action: #selector(renameRow),
-                         keyEquivalent: "").target = self
-            let selected = selectedRows
-            let trashTitle = selected.count > 1
-                && selected.contains(where: { $0.id == row.id })
-                ? "Move \(selected.count) Items to Trash"
-                : "Move to Trash"
-            menu.addItem(withTitle: trashTitle, action: #selector(trashRows),
-                         keyEquivalent: "").target = self
-            menu.addItem(.separator())
-            let newFolder = menu.addItem(withTitle: "New Folder",
-                                         action: #selector(newFolder),
-                                         keyEquivalent: "n")
-            newFolder.target = self
-            newFolder.keyEquivalentModifierMask = [.command, .shift]
-            if row.isFolder {
-                // The keyboard's half of drag-to-add. A sidebar that can
-                // only be filled by dragging is a sidebar some people
-                // cannot fill.
-                menu.addItem(withTitle: "Add to Sidebar",
-                             action: #selector(pinRow),
-                             keyEquivalent: "").target = self
-            }
-            menu.addItem(withTitle: "Copy Path", action: #selector(copyPath),
-                         keyEquivalent: "").target = self
-        }
-
-        /// The download glyph in the row, and the ⌘D that reaches the same
-        /// place without a mouse.
-        @objc fileprivate func downloadClickedRow(_ sender: NSButton) {
-            guard let id = sender.identifier?.rawValue,
-                  let row = rows.first(where: { $0.id == id }) else { return }
-            parent.model.download(row)
-        }
-
-        /// Downloads the selection. Folders in it are skipped rather than
-        /// refusing the whole thing — a mixed selection is ordinary.
-        func downloadSelection() {
-            for row in selectedRows where !row.isFolder {
-                parent.model.download(row)
-                // One transfer lane: the second would only be refused, and
-                // the refusal is the model's to report.
-                break
+            guard let table, let row = item(at: table.clickedRow) else { return }
+            for specification in parent.adapter.menuItems(
+                for: row, selection: selectedRows) {
+                guard let action = specification.action else {
+                    menu.addItem(.separator())
+                    continue
+                }
+                let item = menu.addItem(
+                    withTitle: specification.title,
+                    action: #selector(performMenuAction(_:)),
+                    keyEquivalent: specification.key)
+                item.target = self
+                item.keyEquivalentModifierMask = specification.modifiers
+                item.representedObject = action.rawValue
             }
         }
 
-        func openSelection() {
-            if let row = selectedRows.first { parent.onOpen(row) }
-        }
-
-        func trashSelection() {
-            let selected = selectedRows
-            guard !selected.isEmpty else { return }
-            parent.model.requestTrash(selected)
-        }
-
-        @objc private func pinRow() {
-            if let row = clickedRow, row.isFolder {
-                parent.model.pinLocation(path: row.path)
+        private func populateColumnsMenu(_ menu: NSMenu) {
+            guard let table else { return }
+            for specification in FilesListColumn.allCases {
+                guard let column = table.tableColumn(withIdentifier:
+                    NSUserInterfaceItemIdentifier(specification.rawValue))
+                else { continue }
+                let item = menu.addItem(
+                    withTitle: specification.title,
+                    action: #selector(toggleColumn(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = specification.rawValue
+                item.state = column.isHidden ? .off : .on
+                item.isEnabled = specification.canHide
             }
         }
 
-        @objc private func renameRow() {
-            if let row = clickedRow { parent.model.renaming = row.id }
+        @objc private func toggleColumn(_ sender: NSMenuItem) {
+            guard let table,
+                  let rawValue = sender.representedObject as? String,
+                  let specification = FilesListColumn(rawValue: rawValue),
+                  specification.canHide,
+                  let column = table.tableColumn(withIdentifier:
+                    NSUserInterfaceItemIdentifier(rawValue))
+            else { return }
+            column.isHidden.toggle()
         }
 
-        /// Right-click acts on the clicked row, unless it is part of the
-        /// current selection — then it acts on all of it, like the Finder.
-        @objc private func trashRows() {
-            guard let row = clickedRow else { return }
-            let selected = selectedRows
-            parent.model.requestTrash(
-                selected.contains(where: { $0.id == row.id })
-                    ? selected : [row])
-        }
-
-        @objc fileprivate func newFolder() {
-            parent.model.beginNewFolder()
+        @objc private func performMenuAction(_ sender: NSMenuItem) {
+            guard let raw = sender.representedObject as? String,
+                  let action = FilesBrowserAction(rawValue: raw) else { return }
+            parent.adapter.perform(action, clicked: clickedRow,
+                                   selection: selectedRows)
         }
 
         @objc private func commitRename(_ sender: NSTextField) {
-            let id = sender.identifier?.rawValue
-            parent.model.renaming = nil
-            guard let id, let row = rows.first(where: { $0.id == id }) else {
-                return
-            }
-            parent.model.requestRename(row, to: sender.stringValue)
+            guard let id = sender.identifier?.rawValue,
+                  let row = rows.first(where: { $0.id == id }) else { return }
+            parent.adapter.commitRename(row, to: sender.stringValue)
         }
 
-        private var clickedRow: FileRow? {
+        private var clickedRow: FilesBrowserRow? {
             guard let table else { return nil }
             return item(at: table.clickedRow)
         }
 
-        @objc private func openRow() {
-            if let row = clickedRow { parent.onOpen(row) }
-        }
-
-        @objc private func downloadRow() {
-            if let row = clickedRow { parent.model.download(row) }
-        }
-
-        @objc private func downloadRowAsMacBinary() {
-            if let row = clickedRow {
-                parent.model.download(row, container: "macbinary")
-            }
-        }
-
-        @objc private func copyPath() {
-            guard let row = clickedRow else { return }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(row.path, forType: .string)
+        func performKeyAction(_ action: FilesBrowserAction) {
+            parent.adapter.perform(action, clicked: nil,
+                                   selection: selectedRows)
         }
 
         @objc func doubleClicked(_ sender: Any) {
-            guard let table, let item = item(at: table.clickedRow) else {
-                return
-            }
-            parent.onOpen(item)
+            guard let table, let item = item(at: table.clickedRow) else { return }
+            parent.adapter.perform(.open, clicked: item,
+                                   selection: selectedRows)
         }
-
-        // MARK: - Dragging out (file promises)
-
-        /// The narrow column the download glyph lives in.
-        static let actionColumn = "download"
 
         func tableView(_ tableView: NSTableView,
                        pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
             guard let item = item(at: row) else { return nil }
-            let type = GuestFilePromiseType.type(for: item)
-            let provider = NSFilePromiseProvider(fileType: type.identifier,
-                                                 delegate: self)
-            // The provider owns this drag's row for exactly as long as
-            // AppKit owns the promise. A coordinator dictionary leaked one
-            // entry for every drag that ended without a Finder drop.
-            provider.userInfo = item
-            return provider
+            return parent.adapter.pasteboardWriter(
+                for: item, promiseDelegate: self)
         }
 
         func filePromiseProvider(_ provider: NSFilePromiseProvider,
                                  fileNameForType fileType: String) -> String {
-            (provider.userInfo as? FileRow)?.name ?? "Untitled"
+            parent.adapter.promisedFileName(provider)
         }
 
         func operationQueue(for provider: NSFilePromiseProvider)
-            -> OperationQueue { .main }
+            -> OperationQueue { queue }
 
-        /// Called when the drop lands: this is when the file actually
-        /// crosses the wire, which is the whole point of a promise —
-        /// nothing is transferred for a drag that goes nowhere.
         func filePromiseProvider(_ provider: NSFilePromiseProvider,
                                  writePromiseTo url: URL,
                                  completionHandler: @escaping (Error?) -> Void) {
-            /* operationQueue(for:) pins this delegate callback to the main
-               queue, matching the coordinator's actor ownership. AppKit's
-               protocol does not encode that guarantee, so only immutable row
-               data and the one-shot completion box cross the compiler seam. */
-            let completion = PromiseCompletion(completionHandler)
-            guard let row = provider.userInfo as? FileRow else {
+            let completion = FilesPromiseCompletion(completionHandler)
+            guard let row = FilesBrowserRow.promisePayload(from: provider) else {
                 Task { @MainActor in
-                    completion.finish(FilesModuleModel.FilesError
-                        .wire("that file is no longer listed"))
+                    completion.finish(CocoaError(.fileNoSuchFile))
                 }
                 return
             }
             Task { @MainActor in
-                parent.model.fetchForPromise(row, to: url) { result in
-                    switch result {
-                    case .success:
-                        completion.finish(nil)
-                    case .failure(let error):
-                        completion.finish(error)
-                    }
-                }
+                self.parent.adapter.writePromise(
+                    row, to: url, completion: completion.finish)
             }
         }
-
-        // MARK: - Dropping in
 
         func tableView(_ tableView: NSTableView,
                        validateDrop info: NSDraggingInfo,
                        proposedRow row: Int,
                        proposedDropOperation operation: NSTableView.DropOperation)
             -> NSDragOperation {
-            if info.draggingSource != nil {
-                // A drag that started here is a move within the share,
-                // and it only means something over a folder — dropping
-                // between rows would be a reorder, which HFS has no
-                // notion of.
-                guard operation == .on, let target = item(at: row),
-                      target.isFolder,
-                      !dragging.contains(where: { $0.id == target.id })
-                else { return [] }
-                return .move
-            }
-            // Dropping ON a folder means into it; anywhere else means
-            // the folder being browsed.
-            if operation == .on, item(at: row)?.isFolder == true {
-                return .copy
-            }
-            tableView.setDropRow(-1, dropOperation: .on)
-            return .copy
+            parent.adapter.validateDrop(
+                info, tableView: tableView, proposedRow: item(at: row),
+                operation: operation, dragging: dragging)
         }
-
-        /// The rows a local drag is carrying. The pasteboard holds file
-        /// promises for the outside world, which say nothing about where
-        /// these rows came from, so the source side remembers.
-        private var dragging: [FileRow] = []
 
         func tableView(_ tableView: NSTableView,
                        draggingSession session: NSDraggingSession,
                        willBeginAt point: NSPoint,
                        forRowIndexes rowIndexes: IndexSet) {
             dragging = rowIndexes.compactMap { item(at: $0) }
-            parent.model.draggedFolderPath = dragging.count == 1
-                && dragging[0].isFolder ? dragging[0].path : nil
+            parent.adapter.draggingWillBegin(dragging)
         }
 
         func tableView(_ tableView: NSTableView,
@@ -570,42 +610,96 @@ struct FileBrowserTable: NSViewRepresentable {
                        endedAt point: NSPoint,
                        operation: NSDragOperation) {
             dragging = []
-            parent.model.draggedFolderPath = nil
+            parent.adapter.draggingDidEnd()
         }
 
         func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo,
                        row: Int,
                        dropOperation: NSTableView.DropOperation) -> Bool {
-            if info.draggingSource != nil {
-                guard dropOperation == .on, let target = item(at: row),
-                      target.isFolder, !dragging.isEmpty else { return false }
-                parent.model.requestMove(dragging, toFolder: target.path)
-                return true
+            parent.adapter.acceptDrop(
+                info, tableView: tableView, proposedRow: item(at: row),
+                operation: dropOperation, dragging: dragging)
+        }
+
+        func springLoadingOptions(
+            in tableView: NSTableView, for info: NSDraggingInfo
+        ) -> NSSpringLoadingOptions {
+            let point = tableView.convert(info.draggingLocation, from: nil)
+            let row = tableView.row(at: point)
+            guard item(at: row)?.isFolder == true else {
+                springLoadingRow = nil
+                return .disabled
             }
-            let urls = (info.draggingPasteboard.readObjects(
-                forClasses: [NSURL.self],
-                options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-            guard !urls.isEmpty else { return false }
-            let target = dropOperation == .on ? item(at: row) : nil
-            parent.model.enqueue(urls,
-                                 into: target?.isFolder == true
-                                     ? target?.path : nil)
-            return true
+            if springLoadingRow != row {
+                springLoadingRow = row
+                info.resetSpringLoading()
+            }
+            return .enabled
+        }
+
+        func updateSpringLoadingHighlight(
+            in tableView: NSTableView, for info: NSDraggingInfo
+        ) {
+            let row = info.springLoadingHighlight == .none
+                ? -1 : springLoadingRow ?? -1
+            tableView.setDropRow(row, dropOperation: .on)
+        }
+
+        func activateSpringLoadedRow() {
+            guard let row = springLoadingRow,
+                  let item = item(at: row), item.isFolder else { return }
+            springLoadingRow = nil
+            parent.adapter.perform(.open, clicked: item, selection: [item])
+        }
+
+        func clearSpringLoading(in tableView: NSTableView) {
+            springLoadingRow = nil
+            tableView.setDropRow(-1, dropOperation: .on)
         }
     }
 
-    /// The table, with the keyboard's half of what the row's controls do.
-    ///
-    /// The download glyph is a button in a cell, so Full Keyboard Access
-    /// already reaches it — but only by tabbing through every row before
-    /// it, which is not reaching. ⌘D acts on the selection the way the
-    /// context menu's Download does, Return opens it, Command-Delete moves
-    /// it to Trash, and Shift-Command-N makes a folder. Each is the *same*
-    /// model call as its visible control; the point is a second door, not a
-    /// second behaviour.
     @MainActor
-    final class BrowserTableView: NSTableView {
+    final class BrowserTableView: NSTableView, NSSpringLoadingDestination {
         weak var coordinator: Coordinator?
+
+        override func draggingUpdated(_ sender: NSDraggingInfo)
+            -> NSDragOperation {
+            FilesNativeDragAutoscroll.update(self)
+            return super.draggingUpdated(sender)
+        }
+
+        override func wantsPeriodicDraggingUpdates() -> Bool { true }
+
+        func springLoadingEntered(_ draggingInfo: NSDraggingInfo)
+            -> NSSpringLoadingOptions {
+            coordinator?.springLoadingOptions(in: self, for: draggingInfo)
+                ?? .disabled
+        }
+
+        func springLoadingUpdated(_ draggingInfo: NSDraggingInfo)
+            -> NSSpringLoadingOptions {
+            coordinator?.springLoadingOptions(in: self, for: draggingInfo)
+                ?? .disabled
+        }
+
+        func springLoadingActivated(_ activated: Bool,
+                                    draggingInfo: NSDraggingInfo) {
+            if activated { coordinator?.activateSpringLoadedRow() }
+        }
+
+        func springLoadingHighlightChanged(_ draggingInfo: NSDraggingInfo) {
+            coordinator?.updateSpringLoadingHighlight(
+                in: self, for: draggingInfo)
+        }
+
+        func springLoadingExited(_ draggingInfo: NSDraggingInfo) {
+            coordinator?.clearSpringLoading(in: self)
+        }
+
+        override func draggingEnded(_ sender: NSDraggingInfo) {
+            coordinator?.clearSpringLoading(in: self)
+            super.draggingEnded(sender)
+        }
 
         override func keyDown(with event: NSEvent) {
             let action = FileBrowserKeyAction.resolve(
@@ -613,13 +707,13 @@ struct FileBrowserTable: NSViewRepresentable {
                 characters: event.charactersIgnoringModifiers)
             switch action {
             case .download:
-                coordinator?.downloadSelection()
+                coordinator?.performKeyAction(.download)
             case .newFolder:
-                coordinator?.newFolder()
+                coordinator?.performKeyAction(.newFolder)
             case .open:
-                coordinator?.openSelection()
+                coordinator?.performKeyAction(.open)
             case .trash:
-                coordinator?.trashSelection()
+                coordinator?.performKeyAction(.trash)
             case nil:
                 super.keyDown(with: event)
             }

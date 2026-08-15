@@ -12,9 +12,12 @@
 #include "capture.h"
 #include "cloud_preview.h"
 #include "fileshare.h"
+#include "files_drop.h"
 #include "commands.h"
 #include "census.h"
 #include "console_model.h"   /* the exec plane runs the Console's dispatch */
+#include "continuity_intake.h"
+#include "continuity_selection.h"
 #include "json.h"
 #include "loopstat.h"
 #include "mirror_policy.h"
@@ -34,10 +37,15 @@
 #include "software.h"
 #include "transitions_cmd.h"
 #include "development_candidate.h"
+#include "peer_name.h"
 #include "wire_sleep.h"
 #include "sha256.h"
 #include "update_install.h"
+#include "update_activation.h"
 #include "update_model.h"
+#include "update_status.h"
+#include "web_model.h"
+#include "web_proxy_ot.h"
 
 enum {
     /* Room for the one field whose VALUE is not known until the sizing
@@ -228,16 +236,28 @@ static long g_idle_sleep_ticks = 6;
 
 static struct {
     Boolean pending;
+    /* The replacement is canonical on disk, but this process is still the
+       old file executing from the Trash. Keep the link alive so both Macs
+       can say what remains: quit this instance, then launch NOW again. */
+    Boolean relaunch_required;
     /* The new INIT is on disk, while the old table necessarily remains
        active until a cold boot. Keep this distinct from `pending`: the
        transfer is over, and offering the button again would install the
        same bytes twice while telling the person nothing about the one
-       remaining action. Reset only by conn_init, which runs after restart. */
+       remaining action. The disk receipt survives app relaunch and is
+       cleared only when a later boot exposes the installed fingerprint. */
     Boolean restart_required;
     long id;
     NowUpdateComponent component;
     char build[65];
 } g_update;
+
+static void update_transfer_reset(void)
+{
+    Boolean restart_required = g_update.restart_required;
+    memset(&g_update, 0, sizeof g_update);
+    g_update.restart_required = restart_required;
+}
 
 static unsigned long wide_delta_us(const UnsignedWide *then,
                                    const UnsignedWide *now)
@@ -460,7 +480,7 @@ static unsigned long g_scene_plane_caps;
 
 static void renew_scene_planes(void)
 {
-    if (!now_mirror_policy_enabled(kMirrorPolicyStructure)) {
+    if (!now_mirror_policy_enabled()) {
         now_peek_release(kNowPeekOwnerScene,
                          (unsigned long)(kNowPeekCapAnchors
                                          | kNowPeekCapTree
@@ -503,6 +523,12 @@ static void link_drop_transfers(void)
     now_peek_withdraw_endpoint();
     g_update.pending = false;
     now_update_model_reset();
+    now_continuity_disconnect();
+    /* The stub table dies with the link, not just with the epoch. A
+       grant is consent given to ONE host over ONE connection; leaving a
+       generation grantable across a reconnect would let the next session
+       collect a drag the previous one set up. */
+    now_continuity_selection_forget();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -512,6 +538,11 @@ static void enter_backoff(void)
             g.host, g.port, g.last_fail);
     link_drop_transfers();
     close_endpoint();
+    /* The name a peer answered belongs to THAT connection; a stale one
+       carried into backoff would have conn_peer_label report a machine
+       that is not there, right when G-8's "Other Mac" fallback is
+       supposed to take over. */
+    g.peer_name[0] = '\0';
     if (!g.want_connection) {
         g.phase = kConnIdle;
         return;
@@ -741,14 +772,33 @@ static void service_connecting(void)
     }
 }
 
+static void hello_extension_fields(char *out, long cap)
+{
+    char version[24];
+    char build[65];
+
+    now_update_current_identity(kNowUpdateExtension,
+                                version, sizeof version,
+                                build, sizeof build);
+    if (version[0] != '\0' && strlen(build) == 40) {
+        snprintf(out, (size_t)cap,
+                 ",\"extensionVersion\":\"%s\","
+                 "\"extensionBuild\":\"%s\"",
+                 version, build);
+    } else if (cap > 0) {
+        out[0] = '\0';
+    }
+}
+
 static void send_hello(void)
 {
-    char json[640];
+    char json[896];
     char name[64];
     char esc[256];
     char model[64];
     char model_esc[160];
     char sysver[kNowIdentityVersionCap];
+    char extension_fields[160];
 
     /* This machine's name, not the product's: the other side puts it on
        screen ("Connected: Quadra 950"), and the product name is the one
@@ -770,6 +820,7 @@ static void send_hello(void)
     now_machine_model(model, sizeof model);
     now_json_escape(model, model_esc, sizeof model_esc);
     now_system_version(sysver, sizeof sysver);
+    hello_extension_fields(extension_fields, sizeof extension_fields);
     /* build carries what version cannot: two builds of one release version
        deliberately share a string, so a stale build on a machine otherwise
        looks current and a host has no way to tell them apart. It cost a misdiagnosis on
@@ -784,11 +835,12 @@ static void send_hello(void)
        either — now_agent_access() returns one of three contract tokens. */
     snprintf(json, sizeof json,
              "{\"type\":\"hello\",\"contract\":%d,\"side\":\"guest\","
-             "\"version\":\"%s\",\"build\":\"%s\",\"agent\":\"%s\","
-             "\"name\":\"%s\",\"os\":\"%s\","
+             "\"version\":\"%s\",\"build\":\"%s\","
+             "\"mirrorTransfer\":true,\"agent\":\"%s\","
+             "\"name\":\"%s\",\"os\":\"%s\"%s,"
              "\"machine\":{\"id\":%ld,\"model\":\"%s\"},\"chunk\":%d}",
              kNowContractRevision, PRODUCT_VERSION, now_build_stamp(),
-             now_agent_access(), esc, sysver,
+             now_agent_access(), esc, sysver, extension_fields,
              now_machine_type(), model_esc, kNowDefaultChunk);
     if (!send_control(json)) {
         fail("Sending hello failed");
@@ -1070,7 +1122,7 @@ static int on_hello(const char *reply)
     }
     g.phase = kConnConnected;
     now_update_model_reset();
-    memset(&g_update, 0, sizeof g_update);
+    update_transfer_reset();
     g.connected_tick = TickCount();
     /* **Published here and not one step earlier.** The resident cannot
        report a failed dial to anybody - it has no UI, no log and no
@@ -1615,7 +1667,8 @@ static long begin_frame_fields(const ShotMeta *meta, char *out, long cap)
     if (meta->kind == kFrameKey) {
         return snprintf(out, (size_t)cap, ",\"frame\":\"key\"");
     }
-    pos = snprintf(out, (size_t)cap, ",\"frame\":\"delta\",\"rects\":[");
+    pos = snprintf(out, (size_t)cap,
+                   ",\"frame\":\"delta\",\"rects\":[");
     for (i = 0; i < meta->n_rects; ++i) {
         short scale = meta->row_scale > 1 ? meta->row_scale : 1;
         long canvas_row = (long)meta->rects[i].row * scale
@@ -1770,8 +1823,10 @@ static void serve_capture(const char *request)
         return;                       /* one transfer at a time */
     }
     now_prefs_load(&prefs);
-    depth = capture_depth_is_supported((short)depth_arg)
-        ? (short)depth_arg : prefs.shot_depth;
+    depth = depth_arg == 0 ? capture_native_depth() : (short)depth_arg;
+    if (!capture_depth_is_supported(depth)) {
+        depth = prefs.shot_depth;
+    }
     tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack);
     xfer = next_xfer();
 
@@ -2041,7 +2096,7 @@ static void serve_scene(const char *request)
        Held across requests, every application that pumps between two
        scenes gets one, which is what makes a mirror show the machine
        rather than this application. */
-    if (now_mirror_policy_enabled(kMirrorPolicyStructure)) {
+    if (now_mirror_policy_enabled()) {
         unsigned long requested = (unsigned long)kNowPeekCapAnchors;
         unsigned long optional = (unsigned long)(kNowPeekCapTree
                                                   | kNowPeekTableCapAct);
@@ -2055,7 +2110,7 @@ static void serve_scene(const char *request)
            renew_scene_planes(). */
         g_scene_plane_caps = requested;
     } else {
-        /* Structure-off is not a thin structural request. It is no
+        /* Consent withheld is not a thin structural request. It is no
            foreign-memory observation at all: withdraw every scene-owned
            claim and let scene_collect report only what Process Manager and
            this application's own context can prove. */
@@ -2342,8 +2397,11 @@ static void serve_process_shot(const char *request)
     now_prefs_load(&prefs);
     g_shot.target = psn;
     g_shot.id = id;
-    g_shot.depth = capture_depth_is_supported((short)depth_arg)
-        ? (short)depth_arg : prefs.shot_depth;
+    g_shot.depth = depth_arg == 0 ? capture_native_depth()
+        : (short)depth_arg;
+    if (!capture_depth_is_supported(g_shot.depth)) {
+        g_shot.depth = prefs.shot_depth;
+    }
     tuning_from_json(request, &prefs, &g_shot.chunk, &g_shot.pace_ms,
                      &g_shot.pack);
     now_proc_bring_to_front(&psn);
@@ -2864,7 +2922,10 @@ static Boolean browse_refused(const char *reply)
     }
     g_browse.pending = false;
     if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
-        strcpy(reason, "the other Mac refused");
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(reason, sizeof reason, "%.30s refused", peer);
     }
     if (g_listing_hook != NULL) {
         g_listing_hook(g_browse.path, NULL, 0, false, 1, NULL, reason);
@@ -3265,7 +3326,11 @@ static Boolean cloud_refused(const char *reply)
             strcpy(reason, "Preview after the download");
         } else if (!now_json_find_text(reply, "reason", reason,
                                        sizeof reason)) {
-            strcpy(reason, "the other Mac refused the preview");
+            char peer[40];
+
+            conn_peer_label(peer, sizeof peer);
+            snprintf(reason, sizeof reason, "%.30s refused the preview",
+                     peer);
         }
         preview_fail(reason);
         return true;
@@ -3273,7 +3338,10 @@ static Boolean cloud_refused(const char *reply)
         return false;
     }
     if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
-        strcpy(reason, "the other Mac refused");
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(reason, sizeof reason, "%.30s refused", peer);
     }
     cloud_note(kCloudAnswerError, reason);
     return true;
@@ -3293,6 +3361,42 @@ static void service_cloud(void)
         && TickCount() > g_prev.deadline) {
         preview_fail("No answer to the preview");
     }
+}
+
+int now_wire_web_request(const char *method, const char *target, long *id,
+                         char *err, long cap)
+{
+    char escaped[3072];
+    char json[3520];
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Connect New Old World to this Mac first");
+        return -1;
+    }
+    if (strcmp(method, "GET") != 0 && strcmp(method, "HEAD") != 0) {
+        snprintf(err, (size_t)cap, "Only GET and HEAD are supported");
+        return -1;
+    }
+    now_json_escape(target, escaped, sizeof escaped);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"web.request\",\"id\":%ld,\"method\":\"%s\","
+             "\"target\":\"%s\"}", g.offer_seq, method, escaped);
+    if (!send_control(json)) {
+        snprintf(err, (size_t)cap, "The NOW connection is busy");
+        return -1;
+    }
+    *id = g.offer_seq;
+    return 0;
+}
+
+void now_wire_web_cancel(long id)
+{
+    char json[64];
+    if (g.phase != kConnConnected || id <= 0) return;
+    snprintf(json, sizeof json,
+             "{\"type\":\"web.cancel\",\"id\":%ld}", id);
+    (void)send_control(json);
 }
 
 /* --- talking to the other machine's model --------------------------------
@@ -3669,7 +3773,13 @@ static void host_shown_answer(const char *reply)
 static void service_host_show(void)
 {
     if (g_hostshow.pending && TickCount() > g_hostshow.deadline) {
-        host_show_settle(false, "No answer - that Mac may be too old.");
+        char peer[40];
+        char reason[64];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(reason, sizeof reason, "No answer - %.30s may be too old.",
+                 peer);
+        host_show_settle(false, reason);
     }
 }
 
@@ -3948,10 +4058,14 @@ static void get_end(const char *reply)
         return;
     }
     if (!now_json_find_bool(reply, "ok", 0)) {
+        char peer[40];
+
         now_log(kLogWarn, "get", "#%ld ended early at %ld of %ld bytes",
                 g_get.id, g_get.rx.received, g_get.expected);
         get_cleanup(false);
-        get_note("The other Mac stopped sending");
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "%s stopped sending", peer);
+        get_note(line);
         return;
     }
     if (now_files_receive_finish(&g_get.rx) != kFilesOK) {
@@ -3975,8 +4089,13 @@ static void service_get(void)
 {
     if ((g_get.pending || g_get.receiving)
         && TickCount() > g_get.deadline) {
+        char peer[40];
+        char line[64];
+
         get_cleanup(false);
-        get_note("The other Mac stopped answering");
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "%s stopped answering", peer);
+        get_note(line);
     }
 }
 
@@ -4337,7 +4456,66 @@ static struct {
     NowUpdateComponent update_component;
     NowSHA256 update_sha;
     char update_sha256[65];
+    Boolean mirror_drop;
+    NowMirrorFileTarget drop_target;
 } g_put;
+
+/* A nested target is copied out before flat lookup. Without that boundary,
+   mirrorDrop.name and file.offer.name are the same key to this guest's
+   allocation-free scanner, and whichever appeared first would silently win. */
+static int mirror_file_target(const char *request, const char *key,
+                              Boolean source, NowMirrorFileTarget *out)
+{
+    const char *value = now_json_value(request, key);
+    char object[512];
+    char kind[40];
+    char psn[48];
+    char creator[8];
+    unsigned long hi, lo;
+    char trailing;
+
+    memset(out, 0, sizeof *out);
+    if (value == NULL) return 0;
+    if (now_json_next_object(value, object, sizeof object) == NULL
+        || !now_json_find_string(object, "kind", kind, sizeof kind)) {
+        return -1;
+    }
+    now_json_find_text(object, "name", out->name, sizeof out->name);
+    now_json_find_text(object, "path", out->path, sizeof out->path);
+    if (source) {
+        if (out->name[0] == '\0') return -1;
+        if (strcmp(kind, "desktop") == 0) {
+            out->kind = kNowMirrorFileDesktop;
+        } else if (strcmp(kind, "finder-window") == 0
+                   && out->path[0] != '\0') {
+            out->kind = kNowMirrorFileFinderWindow;
+        } else {
+            return -1;
+        }
+        return 1;
+    }
+    if (strcmp(kind, "desktop") == 0) {
+        out->kind = kNowMirrorFileDesktop;
+    } else if (strcmp(kind, "finder-folder") == 0
+               && out->path[0] != '\0') {
+        out->kind = kNowMirrorFileFinderFolder;
+    } else if (strcmp(kind, "application-process") == 0
+               && now_json_find_string(object, "psn", psn, sizeof psn)
+               && sscanf(psn, "%lu:%lu%c", &hi, &lo, &trailing) == 2) {
+        out->kind = kNowMirrorFileApplicationProcess;
+        out->psn.highLongOfPSN = (long)hi;
+        out->psn.lowLongOfPSN = (unsigned long)lo;
+    } else if (strcmp(kind, "application-creator") == 0
+               && now_json_find_string(object, "creator", creator,
+                                       sizeof creator)
+               && strlen(creator) == 4) {
+        out->kind = kNowMirrorFileApplicationCreator;
+        memcpy(&out->creator, creator, 4);
+    } else {
+        return -1;
+    }
+    return 1;
+}
 
 static Boolean wire_busy(void)
 {
@@ -4353,13 +4531,16 @@ int now_wire_update_request(NowUpdateComponent component,
 {
     NowUpdateOffer offer;
     char json[256];
+    char peer[40];
 
     if (g.phase != kConnConnected) {
-        snprintf(err, (size_t)cap, "Connect to the other Mac first");
+        conn_peer_label(peer, sizeof peer);
+        snprintf(err, (size_t)cap, "Connect to %s first", peer);
         return -1;
     }
     if (!now_update_offer_get(component, &offer)) {
-        snprintf(err, (size_t)cap, "The other Mac has no %s update",
+        conn_peer_label(peer, sizeof peer);
+        snprintf(err, (size_t)cap, "%s has no %s update", peer,
                  now_update_component_name(component));
         return -1;
     }
@@ -4400,6 +4581,11 @@ Boolean now_wire_update_pending(NowUpdateComponent *component)
 Boolean now_wire_update_restart_required(void)
 {
     return g_update.restart_required;
+}
+
+Boolean now_wire_update_relaunch_required(void)
+{
+    return g_update.relaunch_required;
 }
 
 /* The inbound receive, read-only, for whoever wants to draw it moving
@@ -4548,8 +4734,10 @@ static void put_done(Boolean ok, const char *code, const char *reason,
                  "{\"type\":\"file.done\",\"id\":%ld,\"ok\":true,"
                  "\"received\":%ld,\"crc32\":%lu,"
                  "\"finalization\":\"same-folder-rename\","
-                 "\"cleanup\":\"temp-renamed\"}",
-                 g_put.id, g_put.rx.received, g_put.rx.crc);
+                 "\"cleanup\":\"temp-renamed\"%s}",
+                 g_put.id, g_put.rx.received, g_put.rx.crc,
+                 g_put.rx.relaunch_required
+                    ? ",\"relaunchRequired\":true" : "");
     } else {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.done\",\"id\":%ld,\"ok\":false,"
@@ -4562,6 +4750,15 @@ static void put_done(Boolean ok, const char *code, const char *reason,
     g_put.active = false;
 }
 
+/* 034 H4: every OTHER way finish_put ends an update transfer clears
+   g_update.pending (checksum mismatch, SHA-256 mismatch, receive-finish
+   failure, install failure); this shared abort path -- the one both
+   now_wire_put_cancel (guest console, G11b) and a host Cancel button
+   (file.end ok:false) route through -- was the one exception. Left
+   uncleared, the guest refuses every later update attempt with
+   "already pending" (run_update's own guard, wire.c:4518) until the
+   app relaunches, which is exactly the state a person cancelling an
+   update should never be left in. */
 static void put_abort(const char *code, const char *reason)
 {
     Boolean retained;
@@ -4570,9 +4767,43 @@ static void put_abort(const char *code, const char *reason)
         return;
     }
     retained = g_put.rx.keep_partial && g_put.rx.received > 0;
+    if (g_put.update) {
+        g_update.pending = false;
+    }
     now_files_receive_abort(&g_put.rx);
     put_done(false, code, reason,
              retained ? "partial-retained" : "temp-discarded");
+}
+
+/* Stop the receive in flight, from this side. now_wire_get_cancel's two
+   halves in the same order, one lane over: tell the other Mac to stop
+   sending, then end it here. Wire-only would leave this side writing
+   into a temp nobody finishes; local-only would leave the host pushing
+   into a lane that is one transfer wide, which is the state that makes
+   a machine transfer nothing ever again.
+
+   send_control is best effort for get_cancel's reason — a stop pressed
+   on a dead wire still has to free this side — and put_abort is the
+   same teardown an inbound file.cancel already runs (serve of
+   file.cancel), so the host also hears file.done ok:false "cancelled"
+   and does not have to infer the end from silence. */
+int now_wire_put_cancel(char *err, long cap)
+{
+    char json[64];
+
+    if (!g_put.active) {
+        snprintf(err, (size_t)cap, "Nothing is being received");
+        return -1;
+    }
+    /* `transfer`, not `id`: contract/asyncapi.yaml FileCancel requires
+       {type, transfer} with additionalProperties false. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.cancel\",\"transfer\":%ld}", g_put.id);
+    (void)send_control(json);
+    now_log(kLogInfo, "put", "#%ld stopped at %ld bytes by the person",
+            g_put.id, g_put.rx.received);
+    put_abort("cancelled", "stopped at this Mac");
+    return 0;
 }
 
 /* Called for every inbound bulk frame. */
@@ -4653,6 +4884,8 @@ static void serve_file_offer(const char *request)
     NowUpdateComponent update_component = kNowUpdateApplication;
     char purpose[32];
     long have;
+    NowMirrorFileTarget mirror_drop;
+    int mirror_drop_state;
     int rc;
 
     note[0] = '\0';
@@ -4711,6 +4944,13 @@ static void serve_file_offer(const char *request)
     now_json_find_string(request, "developmentCandidate",
                          development_candidate,
                          sizeof development_candidate);
+    mirror_drop_state = mirror_file_target(
+        request, "mirrorDrop", false, &mirror_drop);
+    if (mirror_drop_state < 0) {
+        file_refuse(id, "bad-target",
+                    "the Mirror drop target was incomplete or malformed");
+        return;
+    }
 
     memset(&g_put, 0, sizeof g_put);
     g_put.id = id;
@@ -4727,6 +4967,10 @@ static void serve_file_offer(const char *request)
     g_put.modified = modified;
     g_put.create_parents = create_parents;
     g_put.overwrite = overwrite;
+    if (mirror_drop_state > 0) {
+        g_put.mirror_drop = true;
+        g_put.drop_target = mirror_drop;
+    }
 
     if (update_born) {
         NowUpdateOffer offered;
@@ -4782,6 +5026,16 @@ static void serve_file_offer(const char *request)
             g_put.dest_vref, g_put.dest_dir, path, name, container, bytes,
             file_type, creator, (unsigned long)modified, overwrite,
             &g_put.rx);
+    } else if (mirror_drop_state > 0) {
+        /* A local human released over Mirror. The closed target is resolved
+           by the receiver before acceptance; it never becomes a general
+           absolute path on the Files surface. */
+        g_put.at_dest = true;
+        g_put.token[0] = '\0';
+        have = 0;
+        rc = now_files_mirror_receive_begin(
+            &g_put.drop_target, name, container, bytes, file_type, creator,
+            (unsigned long)modified, overwrite, &g_put.rx);
     } else if (cloud_born && g_cget_dest.set) {
         /* The person chose where THIS delivery lands. Guest-side only,
            no contract change, and deliberately so: the contract's
@@ -5040,18 +5294,56 @@ static void finish_put(const char *reply)
         note_shot("Incoming file failed");
         return;
     }
+    if (g_put.mirror_drop
+        && now_files_mirror_deliver(&g_put.drop_target,
+                                    &g_put.rx.final) != noErr) {
+        put_done(false, "target-refused",
+                 "the file arrived but the target application did not accept it",
+                 "download-retained");
+        note_shot("Incoming file retained; application drop failed");
+        return;
+    }
     if (g_put.update) {
         char install_reason[160];
         char update_reply[512];
         const char *component = now_update_component_name(
             g_put.update_component);
         const char *action = g_put.update_component == kNowUpdateApplication
-            ? "relaunch" : "restart-required";
+            ? "relaunch-required" : "restart-required";
+        Boolean extension_update =
+            g_put.update_component == kNowUpdateExtension;
 
         install_reason[0] = '\0';
+        if (extension_update) {
+            OSErr receipt_err = now_update_activation_record(g_update.build);
+
+            if (receipt_err != noErr) {
+                snprintf(install_reason, sizeof install_reason,
+                         "could not save restart receipt (%d)",
+                         (int)receipt_err);
+                put_done(false, "receipt-failed", install_reason,
+                         "download-retained");
+                snprintf(update_reply, sizeof update_reply,
+                         "{\"type\":\"update.result\",\"id\":%ld,"
+                         "\"component\":\"%s\",\"ok\":false,"
+                         "\"code\":\"receipt-failed\","
+                         "\"reason\":\"could not save restart receipt\"}",
+                         g_put.id, component);
+                send_control(update_reply);
+                g_update.pending = false;
+                return;
+            }
+        }
         if (!now_update_install(g_put.update_component, &g_put.rx.final,
                                 install_reason, sizeof install_reason)) {
             char esc[240];
+
+            if (extension_update
+                && now_update_activation_clear() != noErr) {
+                now_log(kLogWarn, "update",
+                        "failed Extension exchange left its activation "
+                        "receipt on disk");
+            }
             now_json_escape(install_reason, esc, sizeof esc);
             put_done(false, "install-failed", install_reason,
                      "download-retained");
@@ -5070,12 +5362,14 @@ static void finish_put(const char *reply)
                  "\"component\":\"%s\",\"ok\":true,"
                  "\"action\":\"%s\"}", g_put.id, component, action);
         send_control(update_reply);
-        if (g_put.update_component == kNowUpdateExtension) {
+        if (extension_update) {
             g_update.restart_required = true;
+        } else {
+            g_update.relaunch_required = true;
         }
         g_update.pending = false;
         note_shot(g_put.update_component == kNowUpdateApplication
-                  ? "Update installed - relaunching"
+                  ? "Update installed - quit and relaunch NOW"
                   : "Extension installed - restart this Mac");
         return;
     }
@@ -5438,6 +5732,7 @@ static void serve_file_list(const char *request)
     short next = 1;
     int n, i;
     long pos;
+    long free_bytes;
 
     path[0] = '\0';
     now_json_find_text(request, "path", path, sizeof path);
@@ -5450,6 +5745,7 @@ static void serve_file_list(const char *request)
         return;
     }
     now_json_escape(path, esc, sizeof esc);
+    free_bytes = now_files_volume_free(path);
     pos = snprintf(json, sizeof json,
                    "{\"type\":\"file.listing\",\"id\":%ld,"
                    "\"path\":\"%s\",\"entries\":[", id, esc);
@@ -5482,6 +5778,10 @@ static void serve_file_list(const char *request)
     pos += snprintf(json + pos, sizeof json - (size_t)pos,
                     "],\"more\":%s,\"cursor\":%d",
                     more ? "true" : "false", (int)next);
+    if (free_bytes >= 0) {
+        pos += snprintf(json + pos, sizeof json - (size_t)pos,
+                        ",\"freeBytes\":%ld", free_bytes);
+    }
     /* Only the root listing carries it: it names the place, and a
        subfolder listing already knows where it is. */
     if (path[0] == '\0') {
@@ -5847,6 +6147,8 @@ static void serve_file_get(const char *request)
     short pace_ms;
     Boolean pack_unused;
     unsigned short xfer;
+    NowMirrorFileTarget mirror_source;
+    int mirror_source_state;
     int rc;
 
     if (wire_busy()) {
@@ -5858,6 +6160,13 @@ static void serve_file_get(const char *request)
     now_json_find_text(request, "path", path, sizeof path);
     now_json_find_string(request, "developmentProject", development_project,
                          sizeof development_project);
+    mirror_source_state = mirror_file_target(
+        request, "mirrorSource", true, &mirror_source);
+    if (mirror_source_state < 0) {
+        file_refuse(id, "bad-source",
+                    "the Mirror drag source was incomplete or malformed");
+        return;
+    }
 
     /* Resuming a PULL is not offered yet: the guest does not compute a
        token for its own files, so it can never prove the file it would
@@ -5880,7 +6189,9 @@ static void serve_file_get(const char *request)
             want = kContainerData;
         }
     }
-    if (development_project[0] != '\0') {
+    if (mirror_source_state > 0) {
+        rc = now_files_mirror_stage(&mirror_source, want, &stage);
+    } else if (development_project[0] != '\0') {
         FSSpec folder;
         long project_dir;
         char hfs_path[224];
@@ -5930,6 +6241,122 @@ static void serve_file_get(const char *request)
                  stage.total_bytes, stage.data_bytes, stage.rsrc_bytes,
                  esc_type, esc_creator, stage.modified);
     }
+    if (!send_control(json)) {
+        now_files_stage_dispose(&stage);
+        return;
+    }
+    if (!arm_file_transfer(id, xfer, &stage, chunk, pace_ms)) {
+        now_files_stage_dispose(&stage);
+        file_start_failed(id, xfer);
+        return;
+    }
+}
+
+/* Serve the item one continuity.selection generation named.
+
+   THIS IS THE ONE PLACE THE GUEST READS OUTSIDE THE FILES SHARE ON THE
+   HOST'S WORD, so it is worth being plain about what makes that safe.
+   The host cannot name a file here: it names a GENERATION this guest
+   published, and the guest serves whatever its own cache holds under
+   that number. The reachable set is therefore exactly what a person
+   selected in the Finder with their own hand, during a live epoch, and
+   it shrinks to nothing the moment the epoch ends. The gesture is the
+   consent — the same bargain a host-to-guest drop already strikes.
+
+   Everything after the check is the ORDINARY file lane: the same stage,
+   the same file.begin, the same transfer. There is no second bulk path,
+   which is why a grabbed file cancels and reports progress the way a
+   Files pull does. */
+static void serve_continuity_grab(const char *request)
+{
+    NowPrefs prefs;
+    FileStage stage;
+    FSSpec spec;
+    char container_arg[16];
+    char json[512];
+    long id = now_json_find_int(request, "id", 0);
+    unsigned long epoch =
+        (unsigned long)now_json_find_int(request, "epoch", 0);
+    unsigned long generation =
+        (unsigned long)now_json_find_int(request, "generation", 0);
+    unsigned long live = now_continuity_live_epoch();
+    FileContainer want = kContainerAuto;
+    long chunk;
+    short pace_ms;
+    Boolean pack_unused;
+    unsigned short xfer;
+    int verdict;
+    int rc;
+
+    if (wire_busy()) {
+        file_refuse(id, "busy", "a transfer is already in flight");
+        return;
+    }
+    verdict = now_continuity_selection_grab(live, epoch, generation, &spec);
+    if (verdict != kNowGrabOK) {
+        const char *code = now_continuity_grab_code(verdict);
+
+        /* NAMED, both on the wire and in the log. A refusal here is the
+           consent boundary doing its job, and the one thing worse than
+           refusing is refusing in a way nobody can tell apart from a
+           transfer that failed. */
+        now_log(kLogWarn, "mirror",
+                "grab refused #%ld epoch=%lu/%lu gen=%lu: %s",
+                id, epoch, live, generation, code);
+        /* grant-expired is the one refusal that is about TIME rather than
+           about what the request names: the epoch ended under a gesture
+           still in flight, which is ordinary, and the window for finishing
+           it closed. Saying "no longer names what it was given" there
+           would send a person looking at their selection. */
+        file_refuse(id, code,
+                    verdict == kNowGrabGrantExpired
+                        ? "the drag was held too long after Continuity ended"
+                        : "the drag no longer names what it was given");
+        return;
+    }
+    if (now_json_find_string(request, "container", container_arg,
+                             sizeof container_arg)) {
+        if (strcmp(container_arg, "macbinary") == 0) {
+            want = kContainerMacBinary;
+        } else if (strcmp(container_arg, "data") == 0) {
+            want = kContainerData;
+        }
+    }
+    rc = now_files_stage_spec(&spec, want, &stage);
+    if (rc != kFilesOK) {
+        now_log(kLogWarn, "mirror",
+                "grab #%ld could not stage gen=%lu rc=%d",
+                id, generation, rc);
+        file_refuse_rc(id, rc);
+        return;
+    }
+    now_prefs_load(&prefs);
+    tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack_unused);
+    xfer = next_xfer();
+    {
+        char type[8], creator[8];
+        char esc_name[200], esc_type[40], esc_creator[40];
+
+        memcpy(type, &stage.file_type, 4);
+        type[4] = '\0';
+        memcpy(creator, &stage.creator, 4);
+        creator[4] = '\0';
+        now_json_escape(stage.name, esc_name, sizeof esc_name);
+        now_json_escape(type, esc_type, sizeof esc_type);
+        now_json_escape(creator, esc_creator, sizeof esc_creator);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.begin\",\"id\":%ld,\"transfer\":%u,"
+                 "\"name\":\"%s\",\"container\":\"%s\","
+                 "\"bytes\":%ld,\"dataBytes\":%ld,\"rsrcBytes\":%ld,"
+                 "\"fileType\":\"%s\",\"creator\":\"%s\","
+                 "\"modified\":%lu}",
+                 id, xfer, esc_name,
+                 stage.container == kContainerMacBinary ? "macbinary" : "data",
+                 stage.total_bytes, stage.data_bytes, stage.rsrc_bytes,
+                 esc_type, esc_creator, stage.modified);
+    }
+    now_log(kLogInfo, "mirror", "grab granted #%ld epoch=%lu gen=%lu %.31s",
+            id, epoch, generation, stage.name);
     if (!send_control(json)) {
         now_files_stage_dispose(&stage);
         return;
@@ -6037,8 +6464,11 @@ static void stream_start(const char *reply)
 
     memset(&g_stream, 0, sizeof g_stream);
     g_stream.id = id;
-    g_stream.depth = capture_depth_is_supported((short)depth_arg)
-        ? (short)depth_arg : prefs.shot_depth;
+    g_stream.depth = depth_arg == 0 ? capture_native_depth()
+        : (short)depth_arg;
+    if (!capture_depth_is_supported(g_stream.depth)) {
+        g_stream.depth = prefs.shot_depth;
+    }
     tuning_from_json(reply, &prefs, &g_stream.chunk, &g_stream.pace_ms,
                      &g_stream.pack);
     g_stream.predictive =
@@ -6090,7 +6520,6 @@ static void stream_stop(const char *reply)
 
 int now_wire_stream_request(char *err, long cap)
 {
-    NowPrefs prefs;
     char json[96];
 
     if (g.phase != kConnConnected) {
@@ -6105,10 +6534,11 @@ int now_wire_stream_request(char *err, long cap)
         snprintf(err, (size_t)cap, "A transfer is already in flight");
         return -1;
     }
-    now_prefs_load(&prefs);
+    /* Zero is the contract's Native sentinel. The host sends it back in
+       stream.start, where stream_start resolves the live display depth. */
     snprintf(json, sizeof json,
              "{\"type\":\"stream.request\",\"depth\":%d}",
-             (int)prefs.shot_depth);
+             0);
     if (!send_control(json)) {
         snprintf(err, (size_t)cap, "Connection lost");
         return -1;
@@ -6629,6 +7059,356 @@ static void service_stream(void)
     }
 }
 
+/* The pointer plane's own screen answer. Before these two numbers rode
+   this reply, the display layout's only source for the guest's size was
+   Mirror's decoded scene - which quietly required Mirror to have run
+   before Continuity could map the shared edge correctly. Same main
+   device the pointer plane drives. */
+static void continuity_screen_bounds(int *width, int *height)
+{
+    GDHandle device = GetMainDevice();
+    Rect bounds;
+
+    *width = 0;
+    *height = 0;
+    if (device == NULL)
+        return;
+    bounds = (**device).gdRect;
+    *width = bounds.right - bounds.left;
+    *height = bounds.bottom - bounds.top;
+}
+
+static int send_continuity_report(const NowContinuityReport *report)
+{
+    char json[512];
+    const char *state = now_continuity_state_name(report->state);
+    const char *reason = now_continuity_reason_name(report->exit_reason);
+    int screen_width;
+    int screen_height;
+
+    continuity_screen_bounds(&screen_width, &screen_height);
+    if (report->id != 0 && reason != NULL) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.report\",\"version\":%u,"
+                 "\"id\":%ld,"
+                 "\"epoch\":%lu,\"state\":\"%s\",\"acceptedHz\":%lu,"
+                 "\"udpPort\":%u,\"reason\":\"%s\","
+                 "\"acceptedPackets\":%lu,\"stalePackets\":%lu,"
+                 "\"malformedPackets\":%lu,"
+                 "\"appliedPositionSequence\":%lu,"
+                 "\"appliedButtonGeneration\":%lu,"
+                 "\"screenWidth\":%d,\"screenHeight\":%d}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 report->id, (unsigned long)report->epoch, state,
+                 (unsigned long)report->accepted_hz,
+                 (unsigned)now_continuity_udp_port(),
+                 reason, (unsigned long)report->accepted_packets,
+                 (unsigned long)report->stale_packets,
+                 (unsigned long)report->malformed_packets,
+                 (unsigned long)report->applied_position_seq,
+                 (unsigned long)report->applied_button_generation,
+                 screen_width, screen_height);
+    } else if (report->id != 0) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.report\",\"version\":%u,"
+                 "\"id\":%ld,"
+                 "\"epoch\":%lu,\"state\":\"%s\",\"acceptedHz\":%lu,"
+                 "\"udpPort\":%u,\"acceptedPackets\":%lu,"
+                 "\"stalePackets\":%lu,\"malformedPackets\":%lu,"
+                 "\"appliedPositionSequence\":%lu,"
+                 "\"appliedButtonGeneration\":%lu,"
+                 "\"screenWidth\":%d,\"screenHeight\":%d}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 report->id, (unsigned long)report->epoch, state,
+                 (unsigned long)report->accepted_hz,
+                 (unsigned)now_continuity_udp_port(),
+                 (unsigned long)report->accepted_packets,
+                 (unsigned long)report->stale_packets,
+                 (unsigned long)report->malformed_packets,
+                 (unsigned long)report->applied_position_seq,
+                 (unsigned long)report->applied_button_generation,
+                 screen_width, screen_height);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.report\",\"version\":%u,"
+                 "\"epoch\":%lu,"
+                 "\"state\":\"%s\",\"acceptedHz\":%lu,\"udpPort\":%u,"
+                 "\"reason\":\"%s\",\"acceptedPackets\":%lu,"
+                 "\"stalePackets\":%lu,\"malformedPackets\":%lu,"
+                 "\"appliedPositionSequence\":%lu,"
+                 "\"appliedButtonGeneration\":%lu,"
+                 "\"screenWidth\":%d,\"screenHeight\":%d}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 (unsigned long)report->epoch, state,
+                 (unsigned long)report->accepted_hz,
+                 (unsigned)now_continuity_udp_port(),
+                 reason != NULL ? reason : "disarmed",
+                 (unsigned long)report->accepted_packets,
+                 (unsigned long)report->stale_packets,
+                 (unsigned long)report->malformed_packets,
+                 (unsigned long)report->applied_position_seq,
+                 (unsigned long)report->applied_button_generation,
+                 screen_width, screen_height);
+    }
+    return send_control(json);
+}
+
+static int continuity_refuse(long id, unsigned long epoch,
+                             const char *reason)
+{
+    char json[224];
+    snprintf(json, sizeof json,
+             "{\"type\":\"continuity.report\",\"version\":%u,"
+             "\"id\":%ld,"
+             "\"epoch\":%lu,\"state\":\"refused\","
+             "\"reason\":\"%s\"}",
+             (unsigned)NOW_CONTINUITY_VERSION, id, epoch, reason);
+    return send_control(json);
+}
+
+static void serve_continuity_arm(const char *request)
+{
+    long id = now_json_find_int(request, "id", 0);
+    unsigned long nonce_hi = now_json_find_u32(request, "nonceHi", 0);
+    unsigned long nonce_lo = now_json_find_u32(request, "nonceLo", 0);
+    unsigned long epoch = now_json_find_u32(request, "epoch", 0);
+    unsigned long hz = now_json_find_u32(request, "requestedHz", 0);
+    unsigned long lease = now_json_find_u32(request, "leaseTicks", 0);
+    int fast_pump = now_json_find_bool(request, "fastPump", 0);
+    unsigned long tracking_options = 0;
+    unsigned long version = now_json_find_u32(request, "version", 0);
+    int result;
+
+    if (version != NOW_CONTINUITY_VERSION) {
+        (void)continuity_refuse(id, epoch, "wrong-version");
+        return;
+    }
+    if (id == 0 || epoch == 0 || (nonce_hi == 0 && nonce_lo == 0)
+        || (hz != 15 && hz != 30 && hz != 60)) {
+        (void)continuity_refuse(id, epoch, "unavailable");
+        return;
+    }
+    if (now_json_find_bool(request, "settleSyntheticDevice", 0))
+        tracking_options |=
+            kNowPeekContinuityTrackingSettleSyntheticDevice;
+    if (now_json_find_bool(request, "wideDoubleTime", 0))
+        tracking_options |= kNowPeekContinuityTrackingWideDoubleTime;
+    if (now_json_find_bool(request, "settleIdleCursor", 0))
+        tracking_options |= kNowPeekContinuityTrackingSettleIdleCursor;
+    if (now_json_find_bool(request, "compressClickWhen", 0))
+        tracking_options |= kNowPeekContinuityTrackingCompressClickWhen;
+    if (now_json_find_bool(request, "interruptPress", 0))
+        tracking_options |= kNowPeekContinuityTrackingInterruptPress;
+    if (now_json_find_bool(request, "deepClickLog", 0))
+        tracking_options |= kNowPeekContinuityTrackingDeepClickLog;
+    result = now_continuity_arm(id, g.port, nonce_hi, nonce_lo, epoch,
+                                hz, lease, fast_pump, tracking_options);
+    if (result == kNowContinuityArmUnsupported)
+        (void)continuity_refuse(id, epoch, "resident-unavailable");
+    else if (result == kNowContinuityArmTransportUnavailable)
+        (void)continuity_refuse(id, epoch, "unavailable");
+}
+
+static void serve_continuity_disarm(const char *request)
+{
+    long id = now_json_find_int(request, "id", 0);
+    unsigned long epoch = now_json_find_u32(request, "epoch", 0);
+    unsigned long version = now_json_find_u32(request, "version", 0);
+    if (version != NOW_CONTINUITY_VERSION)
+        (void)continuity_refuse(id, epoch, "wrong-version");
+    else if (id == 0 || !now_continuity_disarm(id, epoch))
+        (void)continuity_refuse(id, epoch, "bad-epoch");
+}
+
+static int continuity_key_report(long id, unsigned long epoch,
+                                 unsigned long generation,
+                                 const char *state, const char *reason)
+{
+    char json[256];
+    if (reason != NULL) {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.keyReport\",\"version\":%u,"
+                 "\"id\":%ld,\"epoch\":%lu,\"generation\":%lu,"
+                 "\"state\":\"%s\",\"reason\":\"%s\"}",
+                 (unsigned)NOW_CONTINUITY_VERSION, id, epoch, generation,
+                 state, reason);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.keyReport\",\"version\":%u,"
+                 "\"id\":%ld,\"epoch\":%lu,\"generation\":%lu,"
+                 "\"state\":\"%s\"}",
+                 (unsigned)NOW_CONTINUITY_VERSION, id, epoch, generation,
+                 state);
+    }
+    return send_control(json);
+}
+
+static void serve_continuity_key(const char *request)
+{
+    long id = now_json_find_int(request, "id", 0);
+    unsigned long version = now_json_find_u32(request, "version", 0);
+    unsigned long epoch = now_json_find_u32(request, "epoch", 0);
+    unsigned long generation = now_json_find_u32(request, "generation", 0);
+    unsigned long code = now_json_find_u32(request, "code", 256);
+    unsigned long character = now_json_find_u32(request, "character", 256);
+    unsigned long modifiers = now_json_find_u32(request, "modifiers", 65536);
+    unsigned long action = 0;
+    char action_name[12];
+    int is_modifier_state = 0;
+    int result;
+
+    if (version != NOW_CONTINUITY_VERSION) {
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "wrong-version");
+        return;
+    }
+    if (now_json_find_string(request, "action", action_name,
+                             sizeof action_name)) {
+        if (strcmp(action_name, "down") == 0)
+            action = kNowPeekContinuityKeyDown;
+        else if (strcmp(action_name, "up") == 0)
+            action = kNowPeekContinuityKeyUp;
+        else if (strcmp(action_name, "repeat") == 0)
+            action = kNowPeekContinuityKeyRepeat;
+        else if (strcmp(action_name, "modifiers") == 0)
+            is_modifier_state = 1;
+    }
+    /* A bare modifier change is not a key and takes no queue slot. It is
+       served before the key validation below because that validation is
+       about a keystroke: `code` and `character` are zero here by contract
+       and mean nothing, so checking them would only be a way to refuse a
+       well-formed message. */
+    if (is_modifier_state) {
+        if (id == 0 || generation == 0 || modifiers > 65535) {
+            (void)continuity_key_report(id, epoch, generation, "refused",
+                                        "malformed");
+            return;
+        }
+        result = now_continuity_modifiers(epoch, generation, modifiers);
+        if (result == kNowContinuityKeyQueued)
+            (void)continuity_key_report(id, epoch, generation, "queued",
+                                        NULL);
+        else if (result == kNowContinuityKeyBadEpoch)
+            (void)continuity_key_report(id, epoch, generation, "refused",
+                                        "bad-epoch");
+        else
+            (void)continuity_key_report(id, epoch, generation, "refused",
+                                        "malformed");
+        return;
+    }
+    if (id == 0 || generation == 0 || action == 0
+            || code > 127 || character > 255 || modifiers > 65535) {
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "malformed");
+        return;
+    }
+    result = now_continuity_key(epoch, generation, action, code,
+                                character, modifiers);
+    if (result == kNowContinuityKeyQueued)
+        (void)continuity_key_report(id, epoch, generation, "queued", NULL);
+    else if (result == kNowContinuityKeyBadEpoch)
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "bad-epoch");
+    else if (result == kNowContinuityKeyTargetUnavailable)
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "target-unavailable");
+    else if (result == kNowContinuityKeyQueueFull)
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "queue-full");
+    else
+        (void)continuity_key_report(id, epoch, generation, "refused",
+                                    "malformed");
+}
+
+/* Poll the Finder's selection and push a stub when it moved.
+
+   CALLED FROM conn_service() AND NOWHERE ELSE, which is the whole safety
+   argument: now_wire_pump() bounces every nested entry (see its guard),
+   so this cannot be reached from inside a Toolbox loop. An Apple Event
+   sent from a nested loop would be one wait inside another, and the
+   Finder's answer would arrive underneath a machine already waiting for
+   something else.
+
+   The gates that decide whether to ask at all — epoch, held button,
+   cadence — belong to the poll rather than to this caller, so they hold
+   for anyone who ever calls it from a second place. */
+static void service_continuity_selection(void)
+{
+    const NowContinuityStubTable *table;
+    char json[512];
+    char esc_name[128];
+
+    if (!now_continuity_selection_poll(now_continuity_live_epoch())) {
+        return;
+    }
+    table = now_continuity_selection_table();
+    if (!table->have_item) {
+        /* An empty selection is a stub with a generation and no item, and
+           it is sent for a reason: the host has a cached stub to drop,
+           and telling it by silence is indistinguishable from a poll that
+           stopped running. */
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.selection\",\"version\":%u,"
+                 "\"epoch\":%lu,\"generation\":%lu}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 table->epoch, table->generation);
+        send_control(json);
+        return;
+    }
+    now_json_escape(table->item.name, esc_name, sizeof esc_name);
+    if (table->item.is_folder) {
+        /* A folder gets its own frame rather than four NUL bytes in a
+           fileType: it HAS no type or creator, and the contract says so
+           by making both optional. Two templates cost a branch; one
+           template with empty strings would put a lie on the wire that
+           a host would have to know to ignore. */
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.selection\",\"version\":%u,"
+                 "\"epoch\":%lu,\"generation\":%lu,\"item\":{"
+                 "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
+                 "\"dataSize\":0,\"resourceSize\":0,"
+                 "\"modifiedAt\":%lu,\"isFolder\":true}}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 table->epoch, table->generation,
+                 esc_name, (int)table->item.volume_ref, table->item.dir_id,
+                 table->item.modified);
+    } else {
+        char type[8], creator[8];
+        char esc_type[40], esc_creator[40];
+        unsigned long type_code = table->item.file_type;
+        unsigned long creator_code = table->item.creator;
+
+        memcpy(type, &type_code, 4);
+        type[4] = '\0';
+        memcpy(creator, &creator_code, 4);
+        creator[4] = '\0';
+        now_json_escape(type, esc_type, sizeof esc_type);
+        now_json_escape(creator, esc_creator, sizeof esc_creator);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"continuity.selection\",\"version\":%u,"
+                 "\"epoch\":%lu,\"generation\":%lu,\"item\":{"
+                 "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
+                 "\"fileType\":\"%s\",\"creator\":\"%s\","
+                 "\"dataSize\":%ld,\"resourceSize\":%ld,"
+                 "\"modifiedAt\":%lu,\"isFolder\":false}}",
+                 (unsigned)NOW_CONTINUITY_VERSION,
+                 table->epoch, table->generation,
+                 esc_name, (int)table->item.volume_ref, table->item.dir_id,
+                 esc_type, esc_creator,
+                 table->item.data_size, table->item.rsrc_size,
+                 table->item.modified);
+    }
+    send_control(json);
+}
+
+static void service_continuity(void)
+{
+    NowContinuityReport report;
+    if (now_continuity_take_report(&report)
+        && !send_continuity_report(&report))
+        fail("Connection lost");
+}
+
 /* Returns 0 if the connection should be torn down (bye/protocol error). */
 static int handle_frame(const char *reply)
 {
@@ -6671,6 +7451,22 @@ static int handle_frame(const char *reply)
        Below the `pong` return on purpose - our own heartbeat's echo is
        not a consumer asking for something. See renew_scene_planes(). */
     renew_scene_planes();
+    if (now_json_type_is(reply, "continuity.arm")) {
+        serve_continuity_arm(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.disarm")) {
+        serve_continuity_disarm(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.key")) {
+        serve_continuity_key(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.grab")) {
+        serve_continuity_grab(reply);
+        return 1;
+    }
     if (now_json_type_is(reply, "capture.request")) {
         serve_capture(reply);
         return 1;
@@ -6815,6 +7611,42 @@ static int handle_frame(const char *reply)
         chat_result_answer(reply);
         return 1;
     }
+    if (now_json_type_is(reply, "web.response.begin")) {
+        char content_type[96];
+        long id = now_json_find_int(reply, "id", -1);
+        long status = now_json_find_int(reply, "status", 502);
+        long bytes = now_json_find_int(reply, "bytes", -1);
+        if (!now_json_find_string(reply, "contentType", content_type,
+                                  sizeof content_type)) {
+            strcpy(content_type, "text/html");
+        }
+        now_web_proxy_response_begin(id, status, content_type, bytes);
+        return 1;
+    }
+    if (now_json_type_is(reply, "web.response.chunk")) {
+        char data[3073];
+        if (now_json_find_string(reply, "data", data, sizeof data)) {
+            now_web_proxy_response_chunk(
+                now_json_find_int(reply, "id", -1),
+                now_json_find_int(reply, "seq", -1), data);
+        }
+        return 1;
+    }
+    if (now_json_type_is(reply, "web.response.end")) {
+        char reason[193];
+        char code[24];
+        Boolean ok = (Boolean)now_json_find_bool(reply, "ok", 0);
+        reason[0] = code[0] = '\0';
+        (void)now_json_find_text(reply, "reason", reason, sizeof reason);
+        (void)now_json_find_string(reply, "code", code, sizeof code);
+        /* The contract has declared `code` on this message since the Web
+           family landed; nothing on this side read it, so the guest page
+           could say nothing at all about the host's Web service. */
+        now_web_proxy_note_host(ok, code, reason);
+        now_web_proxy_response_end(
+            now_json_find_int(reply, "id", -1), ok, reason);
+        return 1;
+    }
     if (now_json_type_is(reply, "preview.begin")) {
         preview_begin(reply);
         return 1;
@@ -6837,7 +7669,10 @@ static int handle_frame(const char *reply)
 
             get_cleanup(false);
             if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
-                strcpy(reason, "the other Mac refused");
+                char peer[40];
+
+                conn_peer_label(peer, sizeof peer);
+                snprintf(reason, sizeof reason, "%.30s refused", peer);
             }
             get_note(reason);
         } else if (!browse_refused(reply)) {
@@ -7024,10 +7859,38 @@ static void service_connected_io(void)
     }
 }
 
+/* The ping itself - what both the scheduled cadence below and a person's
+   own "Test" button on the Connection page send, so a forced ping is not
+   a second implementation of what a scheduled one already does. */
+static void send_heartbeat_ping(unsigned long now)
+{
+    char ping[48];
+
+    ++g.ping_id;
+    snprintf(ping, sizeof ping, "{\"type\":\"ping\",\"id\":%ld}", g.ping_id);
+    g.ping_sent_tick = now;
+    if (!send_control(ping)) {
+        fail("Connection lost");
+        return;
+    }
+    ++g.pings_sent;
+    g.next_ping_tick = now + kPingIntervalTicks;
+}
+
+void conn_ping_now(void)
+{
+    /* Nothing to ping without a live session - a press before the
+       handshake finishes would otherwise queue a control frame the
+       protocol does not expect yet. */
+    if (g.phase != kConnConnected) {
+        return;
+    }
+    send_heartbeat_ping(TickCount());
+}
+
 static void service_heartbeat(void)
 {
     unsigned long now = TickCount();
-    char ping[48];
 
     /* **Time we were not scheduled is not time the host was silent, and
        this is the one place that used to assume it was.**
@@ -7086,16 +7949,7 @@ static void service_heartbeat(void)
         return;
     }
     if (now >= g.next_ping_tick) {
-        ++g.ping_id;
-        snprintf(ping, sizeof ping, "{\"type\":\"ping\",\"id\":%ld}",
-                 g.ping_id);
-        g.ping_sent_tick = now;
-        if (!send_control(ping)) {
-            fail("Connection lost");
-            return;
-        }
-        ++g.pings_sent;
-        g.next_ping_tick = now + kPingIntervalTicks;
+        send_heartbeat_ping(now);
     }
 }
 
@@ -7116,6 +7970,14 @@ void conn_init(void)
        time and GetCurrentProcess is not a call to be making there. */
     g_self_psn_known = (GetCurrentProcess(&g_self_psn) == noErr);
     now_prefs_load(&prefs);
+    {
+        char web_reason[96];
+        if (now_web_proxy_start(prefs.web_proxy_port, web_reason,
+                                sizeof web_reason) != 0) {
+            now_log(kLogWarn, "web", "%s", web_reason);
+        }
+    }
+    g_update.restart_required = now_update_activation_reconcile(&prefs);
     strncpy(g.host, prefs.host, sizeof g.host - 1);
     g.port = prefs.port;
     strcpy(g.status, "Not connected");
@@ -7129,6 +7991,7 @@ void conn_init(void)
 
 void conn_shutdown(void)
 {
+    now_web_proxy_stop();
     if (g.ep != kOTInvalidEndpointRef) {
         if (g.phase == kConnConnected) {
             unsigned long flush_deadline = TickCount() + 60;
@@ -7157,6 +8020,16 @@ void now_wire_pump(void)
     static Boolean pumping = false;
 
     if (pumping) {
+        /* A BOUNCE IS NOT A REASON TO STOP THE CURSOR.
+           The guard protects the wire's state machine, which is genuinely
+           not re-entrant while a request is being served. The Continuity
+           plane shares none of that: it reads one shared cell, calls the
+           Cursor Device Manager and writes the result back, and it carries
+           its own re-entry guard. Bouncing it here made every nested loop
+           reached from a request handler a full stop of the pointer, which
+           is what a person feels as smooth-smooth-stop while the Mirror is
+           driving. See now_continuity_pump(). */
+        now_continuity_pump();
         return;
     }
     pumping = true;
@@ -7201,6 +8074,9 @@ static void service_mirror_invalidation(void)
 void conn_service(void)
 {
     ++g_service_passes;
+    /* The browser connects to guest loopback, independently of whether the
+       host link is presently up. Its request waits only after acceptance. */
+    now_web_proxy_service();
     /* Ordinary application context, including nested Toolbox pumps. This is
        the sole drain of the resident P5 cursor; it never runs in the OT
        notifier or resident filter. */
@@ -7245,6 +8121,9 @@ void conn_service(void)
         }
         service_connected_io();
         if (g.phase == kConnConnected) {
+            service_continuity();
+        }
+        if (g.phase == kConnConnected) {
             service_offer();
     service_send();
     service_browse();
@@ -7261,6 +8140,9 @@ void conn_service(void)
         }
         if (g.phase == kConnConnected) {
             service_transfer();
+        }
+        if (g.phase == kConnConnected) {
+            service_continuity_selection();
         }
         if (g.phase == kConnConnected) {
             service_mirror_invalidation();
@@ -7322,6 +8204,7 @@ void conn_disconnect(void)
     now_update_model_reset();
     g.phase = kConnIdle;
     strcpy(g.status, "Not connected");
+    g.peer_name[0] = '\0';             /* G-8: a person asked; no peer now */
 }
 
 void conn_connect_now(void)
@@ -7382,11 +8265,7 @@ void conn_reset_wake_stats(void)
 
 void conn_peer_label(char *out, long cap)
 {
-    if (g.peer_name[0] != '\0') {
-        snprintf(out, (size_t)cap, "%s", g.peer_name);
-    } else {
-        snprintf(out, (size_t)cap, "the other Mac");
-    }
+    now_peer_name(g.peer_name, out, cap);
 }
 
 ConnPhase conn_phase(void)
@@ -7397,7 +8276,8 @@ ConnPhase conn_phase(void)
 Boolean conn_wants_fast_pump(void)
 {
     return g_xfer.active || g_stream.active || g_offer.active
-        || g_put.active || g_ctlq.count > 0;
+        || g_put.active || g_ctlq.count > 0
+        || now_continuity_wants_fast_pump();
 }
 
 long conn_sleep_ticks(void)

@@ -35,7 +35,8 @@ enum {
        the Menu Manager overloads the byte for hierarchical menus, script
        codes and reduced icons. Reporting one as a keyboard shortcut
        would put a control character in front of a person. */
-    kNowSceneFirstCmdChar = 0x20
+    kNowSceneFirstCmdChar = 0x20,
+    kNowSceneHierarchicalCommand = 27
 };
 
 /* The blank-system-menu bridge is called serially from one scene walk and
@@ -559,8 +560,7 @@ static void walk_items(NowScene *s, int menu_row, const NowAxMemory *memory,
                                      (short)item.index,
                                      item_is_separator(&item),
                                      item.enabled, item.mark != 0,
-                                     item.command >= kNowSceneFirstCmdChar
-                                     ? (char)item.command : '\0')) {
+                                     (char)item.command)) {
             now_scene_retract_menu_items(s, menu_row);
             return;
         }
@@ -664,7 +664,8 @@ int now_scene_fill_blank_system_apple(NowScene *s,
             }
             dst->separator = item_is_separator(src);
             dst->enabled = src->enabled ? 1 : 0;
-            dst->mark = src->mark != 0;
+            dst->submenu = src->command == kNowSceneHierarchicalCommand;
+            dst->mark = src->mark != 0 && !dst->submenu;
             dst->cmd = src->command >= kNowSceneFirstCmdChar
                 ? (char)src->command : '\0';
             /* Keep dst->index: it belongs to the current front menu and is

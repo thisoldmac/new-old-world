@@ -135,15 +135,20 @@ final class DesktopPlaneCrossingTests: XCTestCase {
                        "ttxt__TEXT is in the pack, and this drew the generic "
                            + "document page instead")
 
-        // The aliases on that desktop resolve through their target's creator
-        // (QuickTime Player is `TVOD`, Sherlock 2 is `fndf`).
+        // This 2026-08-06 fixture predates the later, separate alias-target
+        // pass. It therefore proves only the alias files' own `adrp` identity,
+        // not that QuickTime or Sherlock is what either one resolves to. The
+        // renderer must stay generic rather than coercing every alias to APPL;
+        // target-resolved selection is covered by NOWMirrorIconParsingTests
+        // plus IconAtlasTests against the current semantic shape.
         for name in ["QuickTime Player", "Sherlock 2"] {
             let item = try XCTUnwrap(items.first { $0.name == name })
             let art = IconAtlas.icon(for: item)
-            XCTAssertNotNil(art)
-            XCTAssertFalse(art === generic || art === genericApp,
-                           "\(name): \(item.creator ?? "nil")__"
-                               + "\(item.type ?? "nil") drew generic art")
+            XCTAssertNil(item.aliasTarget)
+            XCTAssertTrue(art === generic || art === genericApp,
+                          "an unresolved alias used its own "
+                              + "\(item.creator ?? "nil")__"
+                              + "\(item.type ?? "nil") identity as target art")
         }
 
         // Every file the type pass named got its type — all fourteen. The

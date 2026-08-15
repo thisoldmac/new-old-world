@@ -52,5 +52,49 @@ final class MCPTransportOwnershipTests: XCTestCase {
                           "MCP page lost independent transport control: "
                               + required)
         }
+
+        for required in [
+            "TextField(\"Port\", value: $settings.httpPort",
+            ".disabled(isRunning)",
+        ] {
+            XCTAssertTrue(view.contains(required),
+                          "MCP page lost transport configuration: "
+                              + required)
+        }
+    }
+
+    /// Start-automatically for both transports lives in Settings now (G-5 /
+    /// H17), not on the transport card — it is launch-time policy, checked
+    /// once a launch, unlike the port field and lifecycle buttons above.
+    func testStartAutomaticallyMovedToSettingsNotTheMCPPage() throws {
+        let view = try GateSource.hostSwift(
+            "now-host/Sources/Host/MCPModuleView.swift")
+        let settings = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostSettingsView.swift")
+
+        XCTAssertFalse(view.contains("Toggle(\"Start"),
+                       "the MCP page must not carry its own copy of "
+                           + "start-automatically once Settings owns it")
+        for required in [
+            "$model.stdioStartsAutomatically",
+            "$model.httpStartsAutomatically",
+        ] {
+            XCTAssertTrue(settings.contains(required),
+                          "Settings lost MCP's start-automatically control: "
+                              + required)
+        }
+    }
+
+    func testRuntimeControlsDoNotRewriteAutomaticStartPolicy() throws {
+        let app = try GateSource.hostSwift("now-host/Sources/Host/App.swift")
+
+        XCTAssertFalse(app.contains(".stdioStartsAutomatically ="),
+                       "Starting or stopping stdio must not rewrite launch policy.")
+        XCTAssertFalse(app.contains(".httpStartsAutomatically ="),
+                       "Starting or stopping HTTP must not rewrite launch policy.")
+        XCTAssertTrue(app.contains(
+            "if preferences.stdioStartsAutomatically { startMCPStdio() }"))
+        XCTAssertTrue(app.contains(
+            "if preferences.httpStartsAutomatically { startMCPHTTP() }"))
     }
 }

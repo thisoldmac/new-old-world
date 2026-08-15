@@ -26,22 +26,44 @@ final class FilePromiseExportTests: XCTestCase {
     }
 
     func testFolderRowsPromiseFoldersRatherThanText() {
-        XCTAssertEqual(GuestFilePromiseType.type(
-            for: row("Project", folder: true)), .folder)
+        XCTAssertEqual(GuestFilePromiseDescriptor.describe(
+            row("Project", folder: true)),
+            GuestFilePromiseDescriptor(type: .folder,
+                                       requiresMacBinary: false))
+    }
+
+    func testExtensionlessApplicationsPromiseTheirRealTypeAndForks() {
+        let application = FileRow(entry: FileEntry(
+            name: "New Old World", kind: "file", fileType: "APPL",
+            creator: "NOWo", dataBytes: 4096, rsrcBytes: 2048,
+            modified: nil, identity: "app"), path: "New Old World")
+
+        let promise = GuestFilePromiseDescriptor.describe(application)
+
+        XCTAssertEqual(promise.type, .application)
+        XCTAssertTrue(promise.requiresMacBinary,
+                      "the lazy fetch must preserve Finder metadata and forks")
+    }
+
+    func testExtensionStillWinsWhenItIdentifiesAModernDocument() {
+        let promise = GuestFilePromiseDescriptor.describe(row("Notes.txt"))
+        XCTAssertEqual(promise.type, .plainText)
+        XCTAssertTrue(promise.requiresMacBinary,
+                      "type and creator metadata still need MacBinary")
     }
 
     func testMultiplePromisesUseTheSingleTransferLaneInOrder() throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         var started: [String] = []
-        var pending: [(Result<Void, Error>) -> Void] = []
+        var pending: [(URL, (Result<Void, Error>) -> Void)] = []
         let exporter = GuestFilePromiseExporter(
             listPage: { _, _, done in
                 done(.failure(TestFailure.unexpectedList))
             },
-            fetchFile: { row, _, done in
+            fetchFile: { row, url, done in
                 started.append(row.name)
-                pending.append(done)
+                pending.append((url, done))
             })
         var completed: [String] = []
 
@@ -56,10 +78,14 @@ final class FilePromiseExportTests: XCTestCase {
 
         XCTAssertEqual(started, ["One"],
                        "the second promise must wait for the first")
-        pending.removeFirst()(.success(()))
+        var next = pending.removeFirst()
+        try Data("One".utf8).write(to: next.0)
+        next.1(.success(()))
         XCTAssertEqual(started, ["One", "Two"])
         XCTAssertEqual(completed, ["One"])
-        pending.removeFirst()(.success(()))
+        next = pending.removeFirst()
+        try Data("Two".utf8).write(to: next.0)
+        next.1(.success(()))
         XCTAssertEqual(completed, ["One", "Two"])
     }
 
@@ -218,16 +244,112 @@ final class FilePromiseExportTests: XCTestCase {
                        "the bound must apply before child transfers begin")
     }
 
+    func testMaterializationFailureIsReportedOutsideAppKitCompletion() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = root.appendingPathComponent("Native App")
+        var visibleError: String?
+        var completionError: Error?
+        let exporter = GuestFilePromiseExporter(
+            listPage: { _, _, done in
+                done(.failure(TestFailure.unexpectedList))
+            },
+            fetchFile: { _, url, done in
+                try? Data("MacBinary envelope".utf8).write(to: url)
+                done(.failure(TestFailure.materializationFailed))
+            },
+            onFailure: { visibleError = $0.localizedDescription })
+
+        exporter.enqueue(row("Native App"), to: destination) { result in
+            if case .failure(let error) = result { completionError = error }
+        }
+
+        XCTAssertEqual(completionError?.localizedDescription,
+                       "could not reconstruct the promised file")
+        XCTAssertEqual(visibleError,
+                       "Could not export Native App: "
+                        + "could not reconstruct the promised file")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path),
+                       "a MacBinary envelope must never survive as the promise")
+    }
+
+    func testFilePromiseNeverOverwritesOrDeletesALateDestination() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = root.appendingPathComponent("Document")
+        var staged: URL?
+        var finishFetch: ((Result<Void, Error>) -> Void)?
+        let exporter = GuestFilePromiseExporter(
+            listPage: { _, _, done in
+                done(.failure(TestFailure.unexpectedList))
+            },
+            fetchFile: { _, url, done in
+                staged = url
+                finishFetch = done
+            })
+        var result: Result<Void, Error>?
+
+        exporter.enqueue(row("Document"), to: destination) { result = $0 }
+        try Data("guest".utf8).write(to: try XCTUnwrap(staged))
+        try Data("mine".utf8).write(to: destination)
+        try XCTUnwrap(finishFetch)(.success(()))
+
+        guard case .failure = try XCTUnwrap(result) else {
+            return XCTFail("a late destination was overwritten")
+        }
+        XCTAssertEqual(try Data(contentsOf: destination), Data("mine".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: try XCTUnwrap(staged).path),
+            "only the exporter-owned staging file should be cleaned up")
+    }
+
+    func testCancelledPromiseCleansLateStagingWithoutPublishing() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let destination = root.appendingPathComponent("Document")
+        var staged: URL?
+        var finishFetch: ((Result<Void, Error>) -> Void)?
+        var completions = 0
+        var result: Result<Void, Error>?
+        let exporter = GuestFilePromiseExporter(
+            listPage: { _, _, done in
+                done(.failure(TestFailure.unexpectedList))
+            },
+            fetchFile: { _, url, done in
+                staged = url
+                finishFetch = done
+            })
+
+        exporter.enqueue(row("Document"), to: destination) {
+            completions += 1
+            result = $0
+        }
+        exporter.cancelAll(reason: "The guest changed.")
+        try Data("late".utf8).write(to: try XCTUnwrap(staged))
+        try XCTUnwrap(finishFetch)(.success(()))
+
+        guard case .failure = try XCTUnwrap(result) else {
+            return XCTFail("cancellation reported success")
+        }
+        XCTAssertEqual(completions, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: try XCTUnwrap(staged).path))
+    }
+
     private enum TestFailure: LocalizedError {
         case unexpectedList
         case unknownPath(String)
         case transferFailed
+        case materializationFailed
 
         var errorDescription: String? {
             switch self {
             case .unexpectedList: return "unexpected listing"
             case .unknownPath(let path): return "unknown path \(path)"
             case .transferFailed: return "transfer failed"
+            case .materializationFailed:
+                return "could not reconstruct the promised file"
             }
         }
     }

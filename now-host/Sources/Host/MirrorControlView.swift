@@ -21,6 +21,7 @@ import MirrorKitUI
 /// a visible handle does not also need a button somewhere else.
 struct MirrorToolbarView: View {
     @ObservedObject var model: MirrorControlModel
+    @ObservedObject var source: NOWMirrorSource
     @ObservedObject var run: MirrorRunControl
     @ObservedObject var presentation: MirrorPresentation
     /// Detaching is not `presentation.isDetached.toggle()`: the window
@@ -47,7 +48,7 @@ struct MirrorToolbarView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .fixedSize()
-                .help("How much of the classic Mac's screen one point here "
+                .help("How much of \(MachineNaming.possessive(nil)) screen one point here "
                       + "is worth. Every numbered stop is a power of two, so "
                       + "the pixels stay exact.")
             }
@@ -56,9 +57,9 @@ struct MirrorToolbarView: View {
             }
             .disabled(!run.running && !model.connection.canCapture)
             .help(run.running
-                  ? "Stop asking the classic Mac for its screen. Every "
+                  ? "Stop asking \(MachineNaming.simpleReference) for its screen. Every "
                     + "Mirror request refuses until it is started again."
-                  : "Start asking the classic Mac for its screen.")
+                  : "Start asking \(MachineNaming.simpleReference) for its screen.")
             Button(presentation.isDetached ? "Attach" : "Detach") {
                 setDetached(!presentation.isDetached)
             }
@@ -134,6 +135,16 @@ struct MirrorToolbarView: View {
 /// `docs/mirror-measurement-method.md`). Two different questions about
 /// one record.
 ///
+/// **Two keys, and they stopped being the same key.** Both sides still
+/// have to permit an operation before it is scheduled, but since
+/// 2026-08-15 they answer different questions: the classic Mac answers
+/// whether it may be mirrored at all — one switch, on its own Mirror page
+/// — and everything on this screen answers which planes. Before that the
+/// guest carried four gates of its own whose names (structure, Finder
+/// details, drawing trace, foreground discovery) never lined up with the
+/// five planes here, so a person reading either page could not predict
+/// the other. The guest's granularity retired; its refusal did not.
+///
 /// **The plane switches stayed too, and that is the deliberate half.** A
 /// plane's state is a diagnostic and the host's policy over it is a
 /// setting, so they could have been split — a sheet for the switches, a
@@ -148,6 +159,10 @@ struct MirrorControlView: View {
     @ObservedObject var presentation: MirrorPresentation
     @ObservedObject var source: NOWMirrorSource
     @ObservedObject var cycles: MirrorCycleTimeline
+    /// Absent in previews and layout tests, which have no wire to pull
+    /// over. The card still draws; only the ingest control is missing.
+    var ingestion: MirrorAssetIngestion?
+    var machineName: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -156,6 +171,8 @@ struct MirrorControlView: View {
             MirrorScrollBox {
                 VStack(alignment: .leading, spacing: 14) {
                     MirrorLifecycleCard(model: model)
+                    ContinuityControlCard(source: source,
+                                          mirrorRunning: source.running)
                     MirrorPlanesCard(model: model)
                     hostFinderCard
                     MirrorSceneFactsCard(source: source)
@@ -274,6 +291,112 @@ struct MirrorControlView: View {
                     Text("A changed pack is loaded on next launch.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
+                if let ingestion {
+                    Divider()
+                    MirrorAssetIngestCard(
+                        ingestion: ingestion,
+                        machineName: machineName,
+                        canReachGuest: model.connection.canCapture)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// The one action on the Asset Packs card: build a pack from the machine
+/// that is connected right now.
+///
+/// It is a separate view because the ingestion is an `ObservableObject`
+/// the enclosing card holds optionally, and an optional cannot be
+/// observed. That is the whole reason; there is no second policy here.
+private struct MirrorAssetIngestCard: View {
+    @ObservedObject var ingestion: MirrorAssetIngestion
+    var machineName: String
+    var canReachGuest: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Button(ingestion.isRunning
+                       ? "Stop" : "Ingest from \(label)") {
+                    if ingestion.isRunning { ingestion.cancel() }
+                    else { ingestion.ingest(machineName: label) }
+                }
+                .disabled(!canReachGuest && !ingestion.isRunning)
+                /* States the PRECONDITION, because that is what the
+                   1400c run turned up: the art has to be inside the
+                   folder the classic Mac shares, and on a real desk it
+                   usually is not. Saying so here is cheaper than the
+                   refusal that used to arrive mid-transfer. */
+                .help("Copy this Mac's own System file, theme and fonts "
+                      + "over the wire and build an asset pack from them. "
+                      + "Around half a minute. The classic Mac must be "
+                      + "sharing its whole disk rather than one folder, "
+                      + "or its System Folder is out of reach — NOW "
+                      + "checks and says so before copying anything. "
+                      + "Tried once on a PowerBook 1400c and refused for "
+                      + "exactly that reason; no pack has been built from "
+                      + "a real Macintosh yet.")
+                if ingestion.isRunning {
+                    ProgressView().controlSize(.small)
+                }
+                Spacer()
+            }
+            if !ingestion.statusLine.isEmpty {
+                Text(ingestion.statusLine)
+                    .font(.caption2)
+                    .foregroundStyle(isRefused ? .red : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(ingestion.notes, id: \.self) { note in
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if case .finished = ingestion.phase {
+                Text("Select it above to use it; it loads on next launch.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var label: String {
+        machineName.isEmpty ? "this Mac" : machineName
+    }
+
+    private var isRefused: Bool {
+        if case .refused = ingestion.phase { return true }
+        return false
+    }
+}
+
+/// The Mirror's remaining claim on the pointer: the in-picture cursor.
+/// Everything screen-edge — the layout, the rate, keyboard forwarding,
+/// the option catalog — lives in the Continuity module now.
+private struct ContinuityControlCard: View {
+    @ObservedObject var source: NOWMirrorSource
+    var mirrorRunning: Bool
+
+    init(source: NOWMirrorSource, mirrorRunning: Bool) {
+        self.source = source
+        self.mirrorRunning = mirrorRunning
+    }
+
+    var body: some View {
+        GroupBox("Mirror Cursor") {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Mirror Cursor",
+                       isOn: $source.mirrorCursorEnabled)
+                    .disabled(!mirrorRunning)
+                Text("Moves the guest cursor while the pointer is over "
+                     + "the rendered Mirror. Screen-edge Continuity is "
+                     + "its own module; while it owns the shared edge, "
+                     + "this cursor stands down.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

@@ -19,6 +19,18 @@ struct CensusProbeState: Identifiable, Equatable {
     var hasRun: Bool { outcome != nil }
 }
 
+enum ROMDumpState: Equatable {
+    case idle
+    case writing
+    case transferring
+    case saved(URL)
+    case failed(String)
+
+    var isRunning: Bool {
+        self == .writing || self == .transferring
+    }
+}
+
 /// Drives the Hardware dossier: asks the guest to run each probe and follows
 /// the `more`/`cursor` pagination to accumulate a probe's rows, one page per
 /// request. It never serves a census - the guest is the machine with
@@ -83,17 +95,131 @@ final class CensusModuleModel: ObservableObject, GuestScopedModel {
     @Published var selection: String?
     /// True while `runAll` is walking the probe list.
     @Published private(set) var isSweeping = false
+    @Published private(set) var romDumpState: ROMDumpState = .idle
+    /// Bytes in over bytes promised, while the ROM transfer is in flight.
+    /// `.writing` (the guest's own File Manager read) has no wire signal
+    /// and stays represented by an indeterminate spinner in the view.
+    @Published private(set) var romDumpProgress: GuestListener.CaptureProgress?
+    /// The folder the save panel opens to next time — the panel always
+    /// asks for a name and place, this only saves the person from having
+    /// to navigate back to the same folder on the following dump.
+    @Published var romDumpDirectory: URL {
+        didSet { defaults.set(romDumpDirectory.path, forKey: Keys.romDumpDirectory) }
+    }
 
     private let listener: GuestListener
+    private let defaults: UserDefaults
+    private var busWatch: HostEventSubscription?
     /// Per-probe run generation; a page from a superseded run is discarded,
     /// so a rerun (or a sweep restarting a probe) never interleaves rows.
     private var generation: [String: Int] = [:]
     private var sweepQueue: [String] = []
 
-    init(listener: GuestListener) {
+    private enum Keys {
+        static let romDumpDirectory = "census.romDumpDirectory"
+    }
+
+    init(listener: GuestListener, defaults: UserDefaults = ProductIdentity.defaults,
+         romDumpDirectory: URL? = nil) {
         self.listener = listener
+        self.defaults = defaults
+        let stored = defaults.string(forKey: Keys.romDumpDirectory)
+        self.romDumpDirectory = romDumpDirectory
+            ?? stored.map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.urls(for: .downloadsDirectory,
+                                        in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         probes = CensusProbes.all.map { CensusProbeState(probe: $0) }
         selection = CensusProbes.all.first?.id
+        busWatch = listener.events.subscribe { [weak self] event in
+            guard let self, self.romDumpState == .transferring else { return }
+            switch event {
+            case .transferProgressed(_, let received, let expected):
+                self.romDumpProgress = .init(received: received, expected: expected)
+            case .transferEnded:
+                self.romDumpProgress = nil
+            default:
+                break
+            }
+        }
+    }
+
+    /// Suggests where the next dump lands: the last-used folder (or
+    /// Downloads, the first time) and the auto-incrementing name the guest
+    /// itself writes under, so the panel opens with a sane default rather
+    /// than empty.
+    var suggestedROMDumpURL: URL {
+        uniqueURL(startingFrom:
+            romDumpDirectory.appendingPathComponent("New Old World ROM.bin"))
+    }
+
+    /// Creates the image on the guest first, then uses the ordinary reverse
+    /// file stream to land it at `destination`. The ROM command owns only
+    /// the classic File Manager read; transfer, progress and integrity keep
+    /// the same contract as every other guest download. `destination` is
+    /// whatever the person chose in the save panel; a name already taken by
+    /// the time the bytes actually land (a second dump started in the
+    /// meantime, say) still gets the auto-incrementing treatment rather
+    /// than silently overwriting.
+    func dumpROM(to destination: URL) {
+        guard isConnected, !romDumpState.isRunning else { return }
+        romDumpDirectory = destination.deletingLastPathComponent()
+        romDumpState = .writing
+        listener.runScheduledCommand(
+            "romdump", typed: nil, purpose: .command("romdump"),
+            workClass: .humanInteractive, watchdogSeconds: 60
+        ) {
+            [weak self] result in
+            guard let self else { return }
+            guard result.ok else {
+                self.romDumpState = .failed(
+                    result.error?.message ?? "The Mac could not create its ROM dump.")
+                return
+            }
+            self.romDumpState = .transferring
+            self.listener.getFile(
+                path: "New Old World ROM.bin", container: "data",
+                stagingDirectory: self.romDumpDirectory) { [weak self] delivery in
+                    guard let self else { return }
+                    switch delivery {
+                    case .failure(let failure):
+                        self.romDumpState = .failed(failure.message)
+                    case .success(let file):
+                        do {
+                            let finalURL = self.uniqueURL(startingFrom: destination)
+                            try FileConverter.materialize(
+                                name: file.name, container: file.container,
+                                fileType: file.fileType, staged: file.staged,
+                                to: finalURL)
+                            self.romDumpState = .saved(finalURL)
+                        } catch {
+                            self.romDumpState = .failed(
+                                "Could not save the ROM dump: "
+                                + error.localizedDescription)
+                        }
+                    }
+                }
+        }
+    }
+
+    /// `candidate`, or the first `name (2).ext`, `name (3).ext`, … not
+    /// already on disk — the same collision-avoidance the auto-named path
+    /// always had, now seeded from wherever the person chose to save.
+    private func uniqueURL(startingFrom candidate: URL) -> URL {
+        guard FileManager.default.fileExists(atPath: candidate.path) else {
+            return candidate
+        }
+        let ext = candidate.pathExtension
+        let base = candidate.deletingPathExtension().lastPathComponent
+        let folder = candidate.deletingLastPathComponent()
+        var suffix = 2
+        var next: URL
+        repeat {
+            next = folder.appendingPathComponent("\(base) (\(suffix))")
+                .appendingPathExtension(ext)
+            suffix += 1
+        } while FileManager.default.fileExists(atPath: next.path)
+        return next
     }
 
     var isConnected: Bool {

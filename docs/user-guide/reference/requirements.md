@@ -5,8 +5,8 @@ description: Operating-system, architecture, network, and artifact requirements 
 doc_type: reference
 audience: user
 lifecycle: current
-authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md]
-source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, product/features.yaml, docs/onboarding.md]
+authority: [README.md, docs/naming.md, SECURITY.md, docs/onboarding.md, docs/developer-guide/reference/distribution-standard.md]
+source_dependencies: [now-host/Package.swift, now-host/NewOldWorld.xcodeproj/project.pbxproj, now-guest-ppc/CMakeLists.txt, now-guest-68k/CMakeLists.txt, SECURITY.md, product/features.yaml, docs/distribution-profile.yaml, docs/onboarding.md, docs/developer-guide/reference/distribution-standard.md]
 media_ids: []
 last_verified: 2026-08-09
 ---
@@ -38,7 +38,22 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 9bc7a9036d0c9dad5d44607c91eeeec71d53fcf3
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
+sources-sha1: 3dc878eec85f59308e09ee444c9b3f1909eba079
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -107,4 +122,105 @@ rederived: 2026-08-11T23:03:13-0400 496fd2cd sources
 rederived: 2026-08-11T23:12:02-0400 ddf740ce sources
 rederived: 2026-08-11T23:31:22-0400 ad4d680 sources
 rederived: 2026-08-11T23:37:12-0400 ad4d680 unchanged
+rederived: 2026-08-12T13:02:41-0400 7cea759e sources
+rederived: 2026-08-12T13:11:35-0400 7cea759e unchanged
+rederived: 2026-08-12T13:12:13-0400 7cea759e unchanged
+rederived: 2026-08-12T15:54:09-0400 939e43b7 unchanged
+rederived: 2026-08-12T17:19:20-0400 338eca21 unchanged
+rederived: 2026-08-12T18:34:29-0400 3688b9f6 unchanged
+rederived: 2026-08-12T18:58:28-0400 3771e144 unchanged
+rederived: 2026-08-12T19:15:24-0400 3771e144 unchanged
+rederived: 2026-08-12T19:31:58-0400 3771e144 unchanged
+rederived: 2026-08-12T20:08:33-0400 5a601a18 unchanged
+rederived: 2026-08-12T20:15:22-0400 9e828cdc sources
+rederived: 2026-08-12T20:34:42-0400 4d9ba67d unchanged
+rederived: 2026-08-12T20:37:08-0400 633da491 unchanged
+rederived: 2026-08-12T20:45:46-0400 a0878023 unchanged
+rederived: 2026-08-12T22:18:37-0400 18d0d3c4 sources
+rederived: 2026-08-12T23:59:07-0400 e5b16a71 unchanged
+rederived: 2026-08-13T00:21:46-0400 e5b16a71 unchanged
+rederived: 2026-08-13T00:58:13-0400 9f5139cf sources
+rederived: 2026-08-13T01:23:46-0400 9f5139cf unchanged
+rederived: 2026-08-13T01:47:14-0400 59852197 unchanged
+rederived: 2026-08-13T02:45:49-0400 e504061c unchanged
+rederived: 2026-08-13T04:30:01-0400 47f632b3 unchanged
+rederived: 2026-08-13T13:50:55-0400 a9e64fa4 unchanged
+rederived: 2026-08-13T14:32:32-0400 4da9c4a3 unchanged
+rederived: 2026-08-13T15:15:23-0400 2ccde05b unchanged
+rederived: 2026-08-13T17:36:05-0400 043777df unchanged
+rederived: 2026-08-13T17:37:43-0400 043777df unchanged
+rederived: 2026-08-13T18:23:47-0400 e6d7996d unchanged
+rederived: 2026-08-13T19:30:44-0400 1d154b67 unchanged
+rederived: 2026-08-13T21:59:05-0400 8433efda unchanged
+rederived: 2026-08-13T23:16:02-0400 fc235d4e unchanged
+rederived: 2026-08-14T00:51:51-0400 94f1c614 unchanged
+rederived: 2026-08-14T00:55:48-0400 3bd83df2 unchanged
+rederived: 2026-08-14T02:20:51-0400 81247e50 unchanged
+rederived: 2026-08-14T03:25:53-0400 ee8ef8a4 unchanged
+rederived: 2026-08-14T03:54:49-0400 d016e771 unchanged
+rederived: 2026-08-14T03:57:10-0400 e122c6c3 unchanged
+rederived: 2026-08-14T04:03:19-0400 908215de unchanged
+rederived: 2026-08-14T04:36:36-0400 e66db808 unchanged
+rederived: 2026-08-14T12:32:39-0400 7742eab5 sources
+rederived: 2026-08-14T12:35:45-0400 49e6dd98 unchanged
+rederived: 2026-08-14T12:44:43-0400 4d52ba1a sources
+rederived: 2026-08-14T12:47:23-0400 804be291 unchanged
+rederived: 2026-08-14T12:49:06-0400 655b2bf1 unchanged
+rederived: 2026-08-14T13:16:43-0400 90cfd8fa unchanged
+rederived: 2026-08-14T14:27:58-0400 6d037a57 unchanged
+rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
+rederived: 2026-08-14T16:58:28-0400 cf962dbb sources
+rederived: 2026-08-14T17:12:29-0400 32ac9165 unchanged
+rederived: 2026-08-14T17:36:05-0400 02e9de5e unchanged
+rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
+rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
+rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
+rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
+rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
+rederived: 2026-08-14T18:22:08-0400 23dc0759 unchanged
+rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources
+rederived: 2026-08-14T18:30:53-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:13-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:26-0400 b248c9a1 unchanged
+rederived: 2026-08-14T20:24:57-0400 6d3d74d7 sources
+rederived: 2026-08-14T20:18:50-0400 cccec57a unchanged
+rederived: 2026-08-14T21:50:43-0400 edcc526f unchanged
+rederived: 2026-08-14T22:27:42-0400 5a6c46dc sources
+rederived: 2026-08-14T22:10:45-0400 568967b9 sources
+rederived: 2026-08-14T23:30:12-0400 0017d984 sources, sources
+rederived: 2026-08-14T22:14:13-0400 0e743bc5 sources
+rederived: 2026-08-14T23:32:10-0400 a9afc153 sources, sources, sources
+rederived: 2026-08-14T22:19:02-0400 fe3d18a0 sources
+rederived: 2026-08-14T23:33:02-0400 09abc942 sources, sources, sources, sources
+rederived: 2026-08-14T22:27:26-0400 67772e4a unchanged
+rederived: 2026-08-14T23:33:53-0400 521b590f unchanged
+rederived: 2026-08-14T22:17:25-0400 4495cfb2 unchanged
+rederived: 2026-08-14T23:35:20-0400 61505862 unchanged
+rederived: 2026-08-14T22:33:00-0400 13bfe534 sources
+rederived: 2026-08-14T23:36:22-0400 b1fc9796 sources, sources, sources, sources, sources
+rederived: 2026-08-15T00:20:08-0400 e937faee sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:40:31-0400 139dff1a sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:32:41-0400 108db464 sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:20:06-0400 de5812ab sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:36:42-0400 34192244 sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:21:04-0400 c87b3288 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:26:46-0400 2749aab1 unchanged
+rederived: 2026-08-14T19:50:32-0400 d20eee81 unchanged
+rederived: 2026-08-14T19:50:54-0400 d20eee81 unchanged
+rederived: 2026-08-14T20:02:54-0400 068ca7fd unchanged
+rederived: 2026-08-14T21:00:58-0400 ab304cb2 unchanged
+rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
+rederived: 2026-08-15T00:30:16-0400 f4dab407 unchanged
+rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:58:02-0400 5d767dce unchanged
+rederived: 2026-08-15T03:19:47-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:39:27-0400 829013ee sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:30:51-0400 a327ba45 unchanged
+rederived: 2026-08-15T06:15:20-0400 3c7d14e4 unchanged
+rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources
+rederived: 2026-08-15T03:17:34-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T04:01:11-0400 b18a891c sources
+rederived: 2026-08-15T06:18:34-0400 9232bd77 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

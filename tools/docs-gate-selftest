@@ -274,7 +274,8 @@ def main() -> int:
             "does not match host tier 'debug'",
         )
         expect_mutation(
-            test_root, "PPC page without mapping", test_root / "now-guest-ppc/src/workshop/workshop_module.h",
+            test_root, "PPC page without mapping",
+            test_root / "now-guest-ppc/src/workshop/workshop_module_ids.h",
             "    kWorkshopPreferences = 15,",
             "    kWorkshopUnmapped = 18,\n    kWorkshopPreferences = 15,",
             "do not match live enum",
@@ -291,6 +292,42 @@ def main() -> int:
             "        kWorkshopModuleTierCore,",
             "        kWorkshopModuleTierDebug,",
             "does not match PPC page kWorkshopNetworking tier 'debug'",
+        )
+        expect_mutation(
+            test_root, "host module title drift",
+            test_root / "now-host/Sources/Host/NetworkingHostModule.swift",
+            'title: "Networking",', 'title: "Networking Renamed",',
+            "does not match host title 'Networking Renamed'",
+        )
+        expect_mutation(
+            test_root, "PPC module title drift",
+            test_root / "now-guest-ppc/src/network/network_module_definition.c",
+            '        "Networking",', '        "Networking Renamed",',
+            "does not match PPC page kWorkshopNetworking title 'Networking Renamed'",
+        )
+        expect_mutation(
+            test_root, "title_overrides names a foreign ppc_page",
+            test_root / "docs/module-manifest.yaml",
+            "      kWorkshopScreenshots: >-\n", "      kWorkshopScreenshotsTypo: >-\n",
+            "which is not one of this module's ppc_pages",
+        )
+        expect_mutation(
+            test_root, "title_overrides needs a non-empty reason",
+            test_root / "docs/module-manifest.yaml",
+            '''    title_overrides:
+      kWorkshopScreenshots: >-
+        PPC keeps its own window/rail name "Screenshots" (also this
+        module's own doc: "PowerPC Screenshots page"); "Screen" is the
+        cross-app grouping label, not the on-machine page name.''',
+            '''    title_overrides:
+      kWorkshopScreenshots: ""''',
+            "title_overrides for 'kWorkshopScreenshots' needs a non-empty reason",
+        )
+        expect_mutation(
+            test_root, "stale title_overrides once titles agree",
+            test_root / "now-guest-ppc/src/screenshots/screenshots_module_definition.c",
+            '        "Screenshots",', '        "Screen",',
+            "title_overrides for kWorkshopScreenshots is unnecessary",
         )
         expect_mutation(
             test_root, "release profile coverage", test_root / "product/features.yaml",
@@ -322,6 +359,54 @@ def main() -> int:
             test_root, "feature page binding", test_root / "docs/user-guide/how-to/install-extension.md",
             "feature_ids: [resident.extension]", "feature_ids: [classic.powerpc]",
             "primary page user-guide/how-to/install-extension.md does not declare feature_ids",
+        )
+        expect_mutation(
+            test_root, "distribution feature authority", test_root / "docs/distribution-profile.yaml",
+            "path: product/features.yaml", "path: docs/not-the-feature-catalog.yaml",
+            "feature authority must be product/features.yaml with profile: active",
+        )
+        expect_mutation(
+            test_root, "excluded feature distribution", test_root / "docs/distribution-profile.yaml",
+            "    output_ids: []\n    omission_reason:",
+            "    output_ids: [loose_ppc_application]\n    omission_reason:",
+            "component now_68k maps excluded feature classic.pre-carbon but has outputs",
+        )
+        expect_mutation(
+            test_root, "feature catalog distribution authority",
+            test_root / "product/features.yaml",
+            "      classic.pre-carbon:\n        state: excluded",
+            "      classic.pre-carbon:\n        state: included",
+            "component now_68k maps included feature classic.pre-carbon but has no outputs",
+        )
+        expect_mutation(
+            test_root, "CarbonLib byte preservation", test_root / "docs/distribution-profile.yaml",
+            "preserve_original_bytes: true", "preserve_original_bytes: false",
+            "CarbonLib must remain an unchanged, external-only, user-licensed installer",
+        )
+        expect_mutation(
+            test_root, "generic image personalization", test_root / "docs/distribution-profile.yaml",
+            "    personalized: false", "    personalized: true",
+            "generic_classic_image must be a non-personalized .img.bin",
+        )
+        expect_mutation(
+            test_root, "independent update actions", test_root / "docs/distribution-profile.yaml",
+            "  actions: independent", "  actions: combined",
+            "guest update actions must remain independent",
+        )
+        expect_mutation(
+            test_root, "extension-first iterative order", test_root / "docs/distribution-profile.yaml",
+            "    - [now_extension, ppc_application]\n", "",
+            "supported_orders must include canonical and Extension-first flows",
+        )
+        expect_mutation(
+            test_root, "older bundle downgrade", test_root / "docs/distribution-profile.yaml",
+            "older_bundle: warn-no-downgrade", "older_bundle: install",
+            "older bundles must warn without offering an implicit downgrade",
+        )
+        expect_mutation(
+            test_root, "host self-update deferral", test_root / "docs/distribution-profile.yaml",
+            "host_self_update: deferred", "host_self_update: enabled",
+            "host self-update must remain deferred",
         )
         expect_mutation(
             test_root, "AsyncAPI reference", test_root / "contract/asyncapi.yaml",

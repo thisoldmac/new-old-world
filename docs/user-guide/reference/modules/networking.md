@@ -9,7 +9,7 @@ authority: [docs/status.md, SECURITY.md]
 module_ids: [networking]
 source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/network, now-guest-68k/src/ui/health.c, SECURITY.md]
 media_ids: [networking-host, networking-ppc]
-last_verified: 2026-08-09
+last_verified: 2026-08-14
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -31,7 +31,13 @@ address summary in its main window.
 ## On the modern Mac
 
 The module shows facts reported by the selected guest. The host's own listener
-address remains in Connections.
+address remains in Connections, and it sits with Hardware, Software and
+Processes: it answers a question about the driven machine, not about this
+Mac's link.
+
+The link's timing rows — round trip, receive window, window peak, quiet time —
+are read on [Diagnostics](diagnostics.md) instead. They measure the wire
+between the two machines rather than this machine's networking.
 
 ## On the classic Mac
 

@@ -2,9 +2,10 @@
 
 # Reading the guest's assets straight off the disk image
 
-**Date:** 2026-08-06 · **Status:** measured here, on this Mac, against
-`~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2`. No VM was booted and no
-guest was running.
+**Date:** 2026-08-06, extended 2026-08-11 · **Status:** measured here, on this
+Mac, against `~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2` and a stopped
+SheepShaver Mac OS 8.6 `.hfv`. No VM was booted during extraction and no guest
+disk was written.
 
 [mirror-assets.md](mirror-assets.md) carries the inherited knowledge of
 WHAT the assets are and where they live in the System Folder; it names
@@ -100,7 +101,12 @@ four steps above, end to end. By default it writes a new timestamped
 resource parsers extracted from the former live-pull route now live at
 `tools/asset-pack/`; the archived orchestrator remains provenance only. Keeping
 one parser implementation means the two transports cannot disagree about what
-an `icl8` means.
+an `icl8` means. Finder-item extraction crosses an even narrower common seam:
+both adapters supply FinderInfo and resource-fork bytes to
+`fileicons.decode_custom_icon`. The stopped-volume adapter gets those bytes
+from `com.apple.FinderInfo` and `..namedfork/rsrc`; the future connected adapter
+will get them through the existing fork-bearing file transport. It does not get
+its own icon rules or manifest.
 
 ```
 tools/extract-assets-offline                 # default image, default pack
@@ -109,6 +115,20 @@ tools/extract-assets-offline --out DIR       # deliberate exact destination
 tools/extract-assets-offline --reuse-work    # skip convert+carve on a rerun
 tools/extract-assets-offline --theme-report  # census the theme file, stop
 ```
+
+The only Python package dependency is Pillow. Keep it in a developer
+environment, not the product:
+
+```sh
+python3 -m venv /absolute/path/to/asset-pack-venv
+/absolute/path/to/asset-pack-venv/bin/pip install \
+  -r tools/asset-pack/requirements.txt
+```
+
+`qemu-img` is needed for qcow2 conversion; `hdiutil` is needed for the
+read-only HFS+ mount. A SheepShaver `.hfv` is already raw, and the extractor
+recognizes its HFS wrapper directly rather than expecting an Apple Partition
+Map.
 
 It is idempotent: each output directory is cleared before it is
 rewritten, and it refuses to finish if a generic icon the renderer names
@@ -128,6 +148,7 @@ Measured on `now-mirror-stage.qcow2`, 2026-08-06:
 | Patterns (`ppat` / `PAT `) | 3 + 5 |
 | Pictures (`PICT`) | 42, carried unconverted |
 | Per-app icons by `(creator, type)` | **914**, 185 creators, from 186 bundles |
+| Finder custom icons by exact HFS path | Profile/volume dependent; each row carries FinderInfo, resource ID and source-fork SHA-256 |
 | Font strikes (`NFNT` sheets + metrics) | 9 — Chicago 12, Geneva 9/9-italic/10/12/14/18/20/24 |
 | TrueType faces (`sfnt`, carried verbatim) | 3 — Chicago, Charcoal, Geneva |
 | Strikes rasterised from a `sfnt` (no `NFNT` to lift) | 16 — Charcoal 9–24, one per `hdmx` row |
@@ -138,6 +159,27 @@ a filesystem walk, so the sweep reaches Extensions, Apple Menu Items and
 Control Strip Modules as cheaply as the Applications folder, and both
 icon sizes come out of each bundle. The pack went from 186 app icons to
 914.
+
+Measured on the stopped Mac OS 8.6 SheepShaver boot volume on 2026-08-11, the
+same command found 116 System icons, 40 cursors, 3 `ppat` plus 5 `PAT ` and 44
+Appearance patterns, 39 PICTs, 9 NFNT sheets, 16 Charcoal sheets rasterized
+from `sfnt` plus `hdmx`, 3 TrueType faces, and 512 application icons for 117
+creators across 384 resource forks. It also found three custom-icon desktop
+files (six size-specific assets) and wrote 828 provenance rows to a new private
+pack. The missing `Desktop Pictures Prefs` is recorded as unknown;
+the extractor does not substitute a plausible desktop.
+
+The 8.6 visual-oracle profile can promote one desktop independently of that
+missing preference file. It declares the extracted `patterns/desktop.png`
+tile, its origin, and bounded framebuffer proof regions. `mirror-oracle
+extract-chrome` first requires a matching mirror-oracle capture receipt, then
+compares every proof pixel to the repeated tile and publishes
+`manifest.desktop` only on exact agreement; a loose or changed BMP and one
+changed proof pixel both refuse the derived pack. The receipt identity and its
+evidence status travel into the pack's provenance. The first color-correct
+capture proves 69,160 pixels exactly.
+This establishes the default background bytes and tiling rule without claiming
+that the full Finder scene or the unobserved preference state was accepted.
 
 **`PICT` is carried, not converted.** QuickDraw picture decoding was
 removed from macOS and nothing here draws these 42 images, so writing a
@@ -367,8 +409,8 @@ The three `sfnt`s are carried out verbatim as `fonts/ttf/<face>.ttf` (an
 
 ## The honest split for a host-side asset pack
 
-- **Extractable, real bitmaps**: icons (`icl8`/`ics8` + `ICN#`/`ics#`
-  masks), cursors (`CURS`), patterns (`ppat`, `PAT `), pictures
+- **Extractable, real bitmaps**: system/application/file-owned icons
+  (`icl8`/`ics8` + `ICN#`/`ics#` masks), cursors (`CURS`), patterns (`ppat`, `PAT `), pictures
   (`PICT`), and the font strikes (`NFNT`/`sfnt`, in the Fonts folder's
   suitcases rather than the System file).
 - **Extractable as numbers**: the theme file's 21 accent `clut`s.
@@ -384,6 +426,8 @@ and the Finder list rows in three; the icon-view cells are 32×32 and
 correctly did not move. Downsampled 32s had been rendering visibly soft
 against a machine that draws them crisp.
 
-Still generic, and deliberately: **which** icon belongs to which Finder
-item. Icons arrive as bits with no identity, and nothing in this pack
-changes that.
+Finder custom icons no longer lose their identity. The 8.6 Desktop Folder's
+Browse, Mail, and Register aliases carry `fdHasCustomIcon` plus their own icon
+suite; pack 0.3.0 indexes those suites by exact HFS path. Other items join to
+application art by creator/type (using an alias's resolved target), then fall
+back by represented kind. Unattributed blits remain deliberately unusable.

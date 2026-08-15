@@ -7,7 +7,7 @@
 	     ad-hoc builds rather than letting every CDHash become a new reader. -->
 	<key>keychain-access-groups</key>
 	<array>
-		<string>$(AppIdentifierPrefix)dev.newoldworld.now</string>
+		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	</array>
 	<!-- The app signs with the hardened runtime, under which Photos and
 	     Contacts access is DENIED WITHOUT PROMPTING unless the matching

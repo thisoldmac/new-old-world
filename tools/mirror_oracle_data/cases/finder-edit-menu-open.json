@@ -1,0 +1,20 @@
+{
+  "id": "finder-edit-menu-open",
+  "profile": "platinum.macos-8.6.default",
+  "title": "Finder Edit menu open",
+  "requiredState": [
+    "Finder is frontmost",
+    "No Finder item is selected",
+    "The Edit menu is open"
+  ],
+  "inputSequence": "finder-clean-desktop",
+  "inputActions": ["move 95 10", "down 0"],
+  "regions": [
+    {"name": "menu-bar", "source": "screen", "rect": [0, 0, 800, 20]},
+    {"name": "edit-menu", "source": "screen", "rect": [70, 18, 245, 180]}
+  ],
+  "masks": [
+    {"name": "clock", "rect": [585, 0, 710, 20], "reason": "time is volatile"}
+  ],
+  "render": {"openMenu": 2}
+}

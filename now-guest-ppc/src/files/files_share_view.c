@@ -4,43 +4,65 @@
 #include <string.h>
 
 #include "fileshare.h"
+#include "files_run.h"
 #include "prefs.h"
 #include "pump.h"
 #include "wire.h"
 #include "control_kind.h"
 
-/* Layout inside the area the module hands over:
-     root name + "can browse" line   (drawn)
-     [x] Share entire boot volume    [Choose Folder...]
-     [====== progress ======]        (only while bytes move)
-     [Send File...] [Get files into: X] [Open]                       */
+/* What this half looks like, and why each row is the shape it is:
 
-enum {
-    kRowHeight = 20,
-    kButtonHeight = 20
-};
+     My Shared Folder            <peer> can browse everything in here.
+     Sharing:  Macintosh HD:Lab:
+     (o) One folder   ( ) The whole startup disk    [Choose Folder...]
+     [Send File...]   [===== the send's own bar =====]
+     Files you get land in: Downloads      [Change...]  [Open Folder]
+
+   THREE THINGS CHANGED SHAPE, each because the old one lied a little:
+
+   - the choice is two RADIO buttons. It was a checkbox that disabled a
+     button: the same mutual exclusion, expressed only as an enable state
+     a person had to notice twice to learn from.
+   - "Sharing:" names the one line that is true under either answer -
+     what a request from the other Mac actually resolves against
+     (fileshare.c::now_files_root_name is emphatic about that being the
+     only honest thing to show). The prose line that used to restate it
+     underneath is gone; the caption beside the heading says the part the
+     path does not, which is what the other Mac may DO with it.
+   - where files land is a static label with its own [Change...]. It was
+     a push button whose TITLE was the setting - "Get files into:
+     Downloads" - which reads as a readout right up until it is clicked,
+     and left "Open" beside it naming nothing.
+
+   The progress bar moved onto the Send row. It measures a send; it used
+   to float above the buttons with nothing saying which direction it was
+   about, on a page whose other half is a download. */
 
 typedef struct {
-    Rect root_line;
-    Rect explain_line;
-    Rect boot_check;
+    Rect sharing_label;
+    Rect sharing_value;
+    Rect folder_radio;
+    Rect disk_radio;
     Rect choose_btn;
-    Rect progress;
     Rect send_btn;
-    Rect into_btn;
-    Rect reveal_btn;
+    Rect progress;
+    Rect into_label;
+    Rect into_value;
+    Rect change_btn;
+    Rect open_btn;
 } ShareRects;
 
 static WindowRef g_owner;
-static Rect g_area;
+static Rect g_area;                   /* the whole half, for invalidation */
 static ShareRects g_r;
 static Boolean g_visible;
 
-static ControlRef g_boot;
+static ControlRef g_folder;
+static ControlRef g_disk;
 static ControlRef g_choose;
 static ControlRef g_send;
-static ControlRef g_into;
-static ControlRef g_reveal;
+static ControlRef g_change;
+static ControlRef g_open;
 static ControlRef g_bar;
 
 static char g_note[128];
@@ -48,53 +70,64 @@ static char g_note[128];
 static short g_send_hilite = -1;
 static Boolean g_bar_shown;
 static short g_bar_value = -1;
+/* The two values this half draws, held rather than asked for.
 
-static void compute_rects(const Rect *area, ShareRects *r)
+   BOTH ANSWERS COST A FILE. now_files_root_name and
+   now_files_downloads_name each load preferences from disk, and this
+   page is walked by more than the update event: describe_scene runs
+   whenever the host looks at the window, and Edit>Copy runs the same
+   walk again. A page that reads two files every time somebody looks at
+   it is the idle-path defect wearing a different hat - the panel this
+   view descends from once starved a live transfer doing exactly that.
+
+   So they are re-read at the moments they can change: the page appearing,
+   and the two clicks that change them. */
+static char g_shown_root[160];
+static char g_shown_into[64];
+
+static void refresh_values(void)
 {
-    short x0 = area->left;
-    short right = area->right;
-    short y = area->top;
-    short buttons_y = (short)(area->bottom - kButtonHeight - 2);
-
-    SetRect(&r->root_line, x0, y, right, (short)(y + 14));
-    SetRect(&r->explain_line, x0, (short)(y + 16), right, (short)(y + 30));
-    SetRect(&r->boot_check, x0, (short)(y + 36), (short)(x0 + 200),
-            (short)(y + 52));
-    SetRect(&r->choose_btn, (short)(right - 118), (short)(y + 34), right,
-            (short)(y + 34 + kButtonHeight));
-    SetRect(&r->progress, x0, (short)(y + 62), right, (short)(y + 74));
-    SetRect(&r->send_btn, x0, buttons_y, (short)(x0 + 100),
-            (short)(buttons_y + kButtonHeight));
-    SetRect(&r->into_btn, (short)(x0 + 110), buttons_y,
-            (short)(x0 + 310), (short)(buttons_y + kButtonHeight));
-    SetRect(&r->reveal_btn, (short)(x0 + 320), buttons_y,
-            (short)(x0 + 380), (short)(buttons_y + kButtonHeight));
+    now_files_root_name(g_shown_root, sizeof g_shown_root);
+    now_files_downloads_name(g_shown_into, sizeof g_shown_into);
 }
 
-static void refresh_into_title(void)
+static void take_rects(const FilesLayoutRects *r)
 {
-    char where[64];
-    char label[96];
-    Str255 text;
+    g_r.sharing_label = r->sharing_label;
+    g_r.sharing_value = r->sharing_value;
+    g_r.folder_radio = r->folder_radio;
+    g_r.disk_radio = r->disk_radio;
+    g_r.choose_btn = r->choose_btn;
+    g_r.send_btn = r->send_btn;
+    g_r.progress = r->progress;
+    g_r.into_label = r->into_label;
+    g_r.into_value = r->into_value;
+    g_r.change_btn = r->change_btn;
+    g_r.open_btn = r->open_btn;
 
-    if (g_into == NULL) {
-        return;
-    }
-    now_files_downloads_name(where, sizeof where);
-    snprintf(label, sizeof label, "Get files into: %.31s", where);
-    CopyCStringToPascal(label, text);
-    SetControlTitle(g_into, text);
+    /* The half, as one rectangle: from the heading's line down. */
+    g_area = r->mine_heading;
+    g_area.right = r->open_btn.right;
+    g_area.bottom = r->open_btn.bottom;
+    g_area.left = r->mine_heading.left;
 }
 
-/* Boot-volume sharing changes only when the checkbox is clicked, so
+/* Boot-volume sharing changes only when a radio is clicked, so
    preferences are read THEN - never on the idle path (the panel this
    view descends from once starved a transfer doing that). */
 static void sync_share_controls(void)
 {
     NowPrefs prefs;
 
+    if (g_folder == NULL) {
+        return;
+    }
     now_prefs_load(&prefs);
-    SetControlValue(g_boot, prefs.share_boot ? 1 : 0);
+    SetControlValue(g_folder, prefs.share_boot ? 0 : 1);
+    SetControlValue(g_disk, prefs.share_boot ? 1 : 0);
+    /* Choosing a folder is meaningless while the whole disk is shared,
+       and the radio above now says why - the enable state is the echo of
+       the choice rather than the only place it is stated. */
     HiliteControl(g_choose, prefs.share_boot ? 255 : 0);
 }
 
@@ -114,41 +147,47 @@ static void sync_send_control(void)
     }
 }
 
-Boolean files_share_create(WindowRef owner, const Rect *area)
+Boolean files_share_create(WindowRef owner, const FilesLayoutRects *r)
 {
     Str255 text;
 
     g_owner = owner;
-    g_area = *area;
-    compute_rects(area, &g_r);
+    take_rects(r);
     g_note[0] = '\0';
     g_send_hilite = -1;
     g_bar_shown = false;
     g_bar_value = -1;
+    refresh_values();
 
-    CopyCStringToPascal("Share entire boot volume", text);
-    g_boot = now_control_new(owner, &g_r.boot_check, text, false, 0, 0, 1,
-                        checkBoxProc, 0);
+    /* Least first: the narrower answer is the one a person should have
+       to move away from, not toward. */
+    CopyCStringToPascal("One folder", text);
+    g_folder = now_control_new(owner, &g_r.folder_radio, text, false, 1, 0, 1,
+                               radioButProc, 0);
+    CopyCStringToPascal("The whole startup disk", text);
+    g_disk = now_control_new(owner, &g_r.disk_radio, text, false, 0, 0, 1,
+                             radioButProc, 0);
     CopyCStringToPascal("Choose Folder...", text);
     g_choose = now_control_new(owner, &g_r.choose_btn, text, false, 0, 0, 1,
-                          pushButProc, 0);
+                               pushButProc, 0);
     CopyCStringToPascal("Send File...", text);
     g_send = now_control_new(owner, &g_r.send_btn, text, false, 0, 0, 1,
-                        pushButProc, 0);
-    text[0] = 0;
-    g_into = now_control_new(owner, &g_r.into_btn, text, false, 0, 0, 1,
-                        pushButProc, 0);
-    CopyCStringToPascal("Open", text);
-    g_reveal = now_control_new(owner, &g_r.reveal_btn, text, false, 0, 0, 1,
-                          pushButProc, 0);
+                             pushButProc, 0);
+    CopyCStringToPascal("Change...", text);
+    g_change = now_control_new(owner, &g_r.change_btn, text, false, 0, 0, 1,
+                               pushButProc, 0);
+    CopyCStringToPascal("Open Folder", text);
+    g_open = now_control_new(owner, &g_r.open_btn, text, false, 0, 0, 1,
+                             pushButProc, 0);
     /* Native determinate bar; scaled to 0..1000 below. */
+    text[0] = 0;
     g_bar = now_control_new(owner, &g_r.progress, text, false, 0, 0, 1000,
-                       kControlProgressBarProc, 0);
-    if (g_boot == NULL || g_choose == NULL || g_send == NULL
-        || g_into == NULL || g_reveal == NULL || g_bar == NULL) {
+                            kControlProgressBarProc, 0);
+    if (g_folder == NULL || g_disk == NULL || g_choose == NULL
+        || g_send == NULL || g_change == NULL || g_open == NULL
+        || g_bar == NULL) {
         return false;
     }
-    refresh_into_title();
     sync_share_controls();
     return true;
 }
@@ -156,11 +195,12 @@ Boolean files_share_create(WindowRef owner, const Rect *area)
 void files_share_dispose(void)
 {
     g_owner = NULL;
-    g_boot = NULL;
+    g_folder = NULL;
+    g_disk = NULL;
     g_choose = NULL;
     g_send = NULL;
-    g_into = NULL;
-    g_reveal = NULL;
+    g_change = NULL;
+    g_open = NULL;
     g_bar = NULL;
 }
 
@@ -176,18 +216,18 @@ static void show_control(ControlRef control, Boolean visible)
     }
 }
 
-void files_share_layout(const Rect *area)
+void files_share_layout(const FilesLayoutRects *r)
 {
-    g_area = *area;
-    compute_rects(area, &g_r);
-    if (g_boot == NULL) {
+    take_rects(r);
+    if (g_folder == NULL) {
         return;
     }
-    MoveControl(g_boot, g_r.boot_check.left, g_r.boot_check.top);
+    MoveControl(g_folder, g_r.folder_radio.left, g_r.folder_radio.top);
+    MoveControl(g_disk, g_r.disk_radio.left, g_r.disk_radio.top);
     MoveControl(g_choose, g_r.choose_btn.left, g_r.choose_btn.top);
     MoveControl(g_send, g_r.send_btn.left, g_r.send_btn.top);
-    MoveControl(g_into, g_r.into_btn.left, g_r.into_btn.top);
-    MoveControl(g_reveal, g_r.reveal_btn.left, g_r.reveal_btn.top);
+    MoveControl(g_change, g_r.change_btn.left, g_r.change_btn.top);
+    MoveControl(g_open, g_r.open_btn.left, g_r.open_btn.top);
     MoveControl(g_bar, g_r.progress.left, g_r.progress.top);
     SizeControl(g_bar, (SInt16)(g_r.progress.right - g_r.progress.left),
                 (SInt16)(g_r.progress.bottom - g_r.progress.top));
@@ -196,51 +236,38 @@ void files_share_layout(const Rect *area)
 void files_share_show(Boolean visible)
 {
     g_visible = visible;
-    show_control(g_boot, visible);
+    show_control(g_folder, visible);
+    show_control(g_disk, visible);
     show_control(g_choose, visible);
     show_control(g_send, visible);
-    show_control(g_into, visible);
-    show_control(g_reveal, visible);
+    show_control(g_change, visible);
+    show_control(g_open, visible);
     show_control(g_bar, visible && g_bar_shown);
     if (visible) {
         g_send_hilite = -1;
+        refresh_values();
         sync_share_controls();
         sync_send_control();
-        refresh_into_title();
     }
+}
+
+void files_share_content(const WorkshopSceneWriter *writer)
+{
+    files_run(writer, &g_r.sharing_label, false, false, truncEnd, "Sharing:");
+    files_run(writer, &g_r.sharing_value, false, true, truncMiddle,
+              g_shown_root);
+    files_run(writer, &g_r.into_label, false, false, truncEnd,
+              "Files you get land in:");
+    files_run(writer, &g_r.into_value, false, true, truncMiddle,
+              g_shown_into);
 }
 
 void files_share_draw(void)
 {
-    Str255 text;
-    char root[160];
-    char line[120];
-    char peer[24];
-
     if (g_owner == NULL || !g_visible) {
         return;
     }
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    now_files_root_name(root, sizeof root);
-    MoveTo(g_r.root_line.left, (short)(g_r.root_line.top + 11));
-    if (strlen(root) > 100) {
-        root[100] = '\0';
-    }
-    CopyCStringToPascal(root, text);
-    TruncString((short)(g_r.root_line.right - g_r.root_line.left), text,
-                truncMiddle);
-    DrawString(text);
-
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    conn_peer_label(peer, sizeof peer);
-    snprintf(line, sizeof line,
-             "%.20s can browse this folder and everything inside it.",
-             peer);
-    MoveTo(g_r.explain_line.left, (short)(g_r.explain_line.top + 11));
-    CopyCStringToPascal(line, text);
-    TruncString((short)(g_r.explain_line.right - g_r.explain_line.left),
-                text, truncEnd);
-    DrawString(text);
+    files_share_content(NULL);
 }
 
 Boolean files_share_click(const EventRecord *event, Point local)
@@ -254,14 +281,34 @@ Boolean files_share_click(const EventRecord *event, Point local)
     if (FindControl(local, g_owner, &control) == 0 || control == NULL) {
         return false;
     }
-    if (control != g_boot && control != g_choose && control != g_send
-        && control != g_into && control != g_reveal) {
+    if (control != g_folder && control != g_disk && control != g_choose
+        && control != g_send && control != g_change && control != g_open) {
         return false;
     }
     if (TrackControl(control, local, now_pump_action()) == 0) {
         return true;
     }
-    if (control == g_choose) {
+    if (control == g_folder || control == g_disk) {
+        NowPrefs prefs;
+        Boolean want_disk = (Boolean)(control == g_disk);
+
+        now_prefs_load(&prefs);
+        if ((Boolean)(prefs.share_boot != 0) != want_disk) {
+            prefs.share_boot = want_disk;
+            if (now_prefs_save(&prefs) != noErr) {
+                snprintf(g_note, sizeof g_note,
+                         "Could not save that setting");
+            } else {
+                g_note[0] = '\0';
+            }
+        }
+        /* Both radios follow preferences rather than the click: a save
+           that failed must leave the page showing what is actually
+           shared, not what was asked for. */
+        sync_share_controls();
+        refresh_values();
+        InvalWindowRect(g_owner, &g_area);
+    } else if (control == g_choose) {
         char why[128];
         int rc = now_files_choose_root(why, sizeof why);
 
@@ -270,18 +317,7 @@ Boolean files_share_click(const EventRecord *event, Point local)
         } else if (rc < 0) {
             snprintf(g_note, sizeof g_note, "Not shared: %.100s", why);
         }
-        InvalWindowRect(g_owner, &g_area);
-    } else if (control == g_boot) {
-        NowPrefs prefs;
-
-        now_prefs_load(&prefs);
-        prefs.share_boot = !prefs.share_boot;
-        if (now_prefs_save(&prefs) != noErr) {
-            snprintf(g_note, sizeof g_note, "Could not save that setting");
-        } else {
-            g_note[0] = '\0';
-        }
-        sync_share_controls();
+        refresh_values();
         InvalWindowRect(g_owner, &g_area);
     } else if (control == g_send) {
         FSSpec spec;
@@ -296,18 +332,21 @@ Boolean files_share_click(const EventRecord *event, Point local)
             g_note[0] = '\0';
         }
         InvalWindowRect(g_owner, &g_area);
-    } else if (control == g_into) {
+    } else if (control == g_change) {
         char why[128];
         int rc = now_files_choose_downloads(why, sizeof why);
 
         if (rc > 0) {
-            refresh_into_title();
-            snprintf(g_note, sizeof g_note, "Files you get land there");
+            /* The row itself now says where files land, so the outcome
+               is on screen; the placard says nothing rather than
+               narrating what a person can already read. */
+            g_note[0] = '\0';
         } else if (rc < 0) {
             snprintf(g_note, sizeof g_note, "%.110s", why);
         }
+        refresh_values();
         InvalWindowRect(g_owner, &g_area);
-    } else if (control == g_reveal) {
+    } else if (control == g_open) {
         if (now_files_reveal_downloads() != kFilesOK) {
             snprintf(g_note, sizeof g_note, "Could not open that folder");
             InvalWindowRect(g_owner, &g_area);
@@ -318,16 +357,17 @@ Boolean files_share_click(const EventRecord *event, Point local)
 
 void files_share_activate(Boolean active)
 {
-    ControlRef controls[6];
+    ControlRef controls[7];
     int i;
 
-    controls[0] = g_boot;
-    controls[1] = g_choose;
-    controls[2] = g_send;
-    controls[3] = g_into;
-    controls[4] = g_reveal;
-    controls[5] = g_bar;
-    for (i = 0; i < 6; ++i) {
+    controls[0] = g_folder;
+    controls[1] = g_disk;
+    controls[2] = g_choose;
+    controls[3] = g_send;
+    controls[4] = g_change;
+    controls[5] = g_open;
+    controls[6] = g_bar;
+    for (i = 0; i < 7; ++i) {
         if (controls[i] == NULL) {
             continue;
         }
@@ -346,8 +386,8 @@ void files_share_activate(Boolean active)
     }
 }
 
-/* Every event-loop pass: two in-memory reads, and control updates only
-   when a shown value would actually change. */
+/* Every event-loop pass: in-memory reads, and control updates only when
+   a shown value would actually change. */
 void files_share_idle(void)
 {
     long sent = 0, total = 0;
@@ -363,7 +403,7 @@ void files_share_idle(void)
     /* Only once bytes are moving: an empty bar sitting at zero while
        the host has not answered reads as "stuck" when the truth is
        "waiting" - the status line already says which. */
-    moving = (phase == kSendSending && total > 0);
+    moving = (Boolean)(phase == kSendSending && total > 0);
     value = moving ? (short)(1000L * sent / total) : 0;
     if (moving != g_bar_shown) {
         g_bar_shown = moving;

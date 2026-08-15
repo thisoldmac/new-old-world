@@ -57,6 +57,7 @@ int now_wire_update_request(NowUpdateComponent component,
                             Boolean allow_unsigned,
                             char *err, long cap);
 Boolean now_wire_update_pending(NowUpdateComponent *component);
+Boolean now_wire_update_relaunch_required(void);
 Boolean now_wire_update_restart_required(void);
 
 /* True while a transfer, stream, offer, or queued control frame needs the
@@ -90,10 +91,15 @@ void conn_snapshot(ConnSnapshot *out);
 
 /* What to call the machine on the other end, for anything a human
    reads. It is the name that machine sent in its hello; before a
-   connection there is no name to use, so it degrades to a plain
-   description rather than protocol vocabulary. Never "the host" —
-   guest and host are words for the code, not for the person using it.
-   Truncates to cap, so button titles can ask for a short one. */
+   connection there is no name to use (g.peer_name is cleared on every
+   disconnect - see enter_backoff/conn_disconnect - not just overwritten
+   by the next hello), so it degrades to "Other Mac" rather than
+   protocol vocabulary. Never "the host" or "the other Mac" — guest and
+   host are words for the code, and "Other Mac" is this application's
+   naming seam's fallback (peer_name.h), not a sentence fragment.
+   Truncates to cap, so button titles can ask for a short one. Thin
+   wrapper over peer_name.h's now_peer_name(); every OTHER file should
+   call this rather than reading g.peer_name directly. */
 void conn_peer_label(char *out, long cap);
 
 /* The TCP receive window Open Transport granted, or 0 if it kept its
@@ -147,6 +153,14 @@ void conn_wake_stats(ConnWakeStats *out);
 /* Round-trip time of the last ping/pong in ms, or -1 if none yet. */
 long conn_last_rtt_ms(void);
 
+/* Send a ping immediately rather than waiting out kPingIntervalTicks -
+   the Connection page's Test button, and the same send the scheduled
+   heartbeat uses. A no-op without a connected session. The RTT it
+   produces lands wherever conn_last_rtt_ms/conn_status already read it;
+   this call only moves WHEN the next ping goes, not where its answer is
+   reported. */
+void conn_ping_now(void);
+
 /* --- guest-initiated screenshot push ----------------------------------- */
 
 /* Tells the host this machine's agent-access answer changed (agent.access),
@@ -170,6 +184,12 @@ void now_wire_announce_agent_access(void);
    here rather than inferring it from watching the link come up, which is
    what it used to do. */
 Boolean now_wire_agent_access_told(AgentAccessTier *out);
+
+/* Browser request accepted by Web's guest-loopback listener. The host owns
+   rendering; this only puts the bounded request on NOW's existing wire. */
+int now_wire_web_request(const char *method, const char *target, long *id,
+                         char *err, long cap);
+void now_wire_web_cancel(long id);
 
 /* Captures at the panel's depth and offers it to the host (capture.offer).
    Returns 0 once the offer is on the wire; -1 with a reason in err if the
@@ -333,6 +353,18 @@ Boolean now_wire_receive_active(long *received, long *expected,
    receive ends — poll the number, read the line when it moved. This is
    the seam that lets a page replace "Receiving..." with how it went. */
 long now_wire_receive_outcome(char *out, long cap);
+
+/* Stop the receive in flight, from this side — now_wire_get_cancel one
+   lane over: that one stops a pull we asked for, this one stops a push
+   the host offered. file.cancel to the other Mac, then the same
+   put_abort teardown an inbound file.cancel already runs, so the host
+   hears the receive end in its own vocabulary (file.done ok:false
+   "cancelled") rather than by the bytes stopping.
+
+   0 when a receive was stopped, -1 with a reason in `err` when nothing
+   was landing. The lane is one transfer wide, so it needs no id: there
+   is only ever one receive this can mean. */
+int now_wire_put_cancel(char *err, long cap);
 
 /* --- one item as pixels (cloud.preview) ---------------------------------
    The photo preview: the host decodes, resizes and dithers; this side

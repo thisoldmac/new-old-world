@@ -22,8 +22,8 @@ public enum GuestFilesListProjection: HostProjection {
     public static let acceptedArguments: Set<String> = ["path", "cursor"]
 
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
-        .appUI: .reached(file: "FilesModuleView.swift",
-                         symbol: "FileBrowserTable("),
+        .appUI: .reached(file: "FilesWorkspaceShell.swift",
+                         symbol: "GuestBrowserContent("),
         .mcp: .reachedByRegistry,
         .appIntents: .appIntentsFaceNotBuiltYet,
     ]

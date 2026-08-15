@@ -130,13 +130,23 @@ Rules the table carries:
 
 The five production planes are Structure (P1), Semantics (P2), Content (P3),
 Interaction (P4), and Transitions (P5). Their host projection remains
-independently selectable, but the guest also owns four safety domains which do
-not pretend to be plane bits: passive structure observation, automatic Finder
-complements, content tracing, and explicit foreground discovery. Both the
-guest gate and the host's per-machine policy must permit work before it starts.
-A disabled domain cannot clear another plane or another owner's claim.
-Capability, declared length, format, freshness, owner lease, and guest policy
-must all agree before a plane is trusted.
+independently selectable, and the guest owns one safety gate beside it: a
+master consent, on the Workshop's Mirror page, which either permits mirroring
+of that machine or refuses all of it. Both the guest's consent and the host's
+per-machine plane policy must permit work before it starts, and a plane
+switched off cannot clear another plane or another owner's claim. Capability,
+declared length, format, freshness, owner lease, and guest consent must all
+agree before a plane is trusted.
+
+Until 2026-08-15 the guest carried four safety domains instead — passive
+structure observation, automatic Finder complements, content tracing, explicit
+foreground discovery — which deliberately did not pretend to be plane bits.
+That was the problem: their vocabulary never mapped onto the five planes, so
+neither side's page predicted the other's. The guest's granularity retired to
+the host; its refusal did not move. One default came with the granularity —
+content tracing is off until somebody asks, because P3 is metal-proven to
+crash the Finder on the PowerBook 1400c, and the guest was the side that used
+to hold that default.
 
 P3 transports bounded structured drawing and explicit visual-exception bounds,
 not framebuffer bytes. Bitmap, PICT, CopyBits-only, or manually drawn regions
@@ -415,6 +425,46 @@ gets at least one deliberate boot before "verified" is claimed.
   *Emulator-verified.* See docs/open-issues.md for what was watched and
   what remains unwatched on metal.
 
+- **P9 — Continuity** (2026-08-09): an optional raw pointer lane layered
+  over Mirror. The PPC application owns Open Transport and the fixed-size
+  UDP decoder; the resident owns the 60 Hz writer, mouse state, and release.
+
+  Authority is granted only by `continuity.arm` on the existing TCP
+  conversation. UDP carries the matching nonce and epoch but cannot mint
+  either. TCP and UDP use the same numeric port in separate protocol
+  namespaces, including separate QEMU forwards. The notifier is bounded to
+  eight preallocated datagrams per event and publishes one latest-state cell;
+  JSON, policy, allocation, and UI remain outside the resident.
+
+  P9 and P7 share one explicit input owner. More importantly, P9 does not
+  suppress the guest pointing device: it samples driver-published `RawMouse`
+  movement and `CursorData.buttonCount`, treating any unexpected change as an
+  immediate local takeover. It does not use manager-owned `CursorData.where`,
+  which changes while the manager settles its own absolute move. A held button
+  is lifted before ownership is released. Lease expiry supplies the same
+  guarantee when no side can speak.
+  This is P8's “a resident that competes with a person must lose” rule made
+  into ownership rather than courtesy.
+
+  *Quarantined on `main` after six PowerBook wedges.* Resident 1.14's extension-owned
+  Cursor Device passed PMU and CUDA emulator campaigns and completed one
+  bounded PowerBook move/takeover, but sustained 30 Hz movement then wedged the
+  machine system-wide. Its route still combined interrupt-time
+  `CursorDeviceMoveTo` with an application-pump `HideCursor`/`ShowCursor`
+  redraw. Resident 1.16 removed those contexts, but its generic PPC-to-68K
+  entry still reached raw resident CDM dispatch and caused the sixth wedge.
+  Branch resident 1.17 / Continuity V3 instead leaves arbitration and a fixed
+  trace ring in the Extension while the cooperative PPC app owns and moves the
+  device through the corrected AADB/`CallUniversalProc` fallback disassembled
+  from Apple's required `CursorDevicesGlue`. The final Carbon PEF is guarded
+  against the load-time InterfaceLib import that made it unload before
+  `main`. The resident publishes a request and commits only the matching PPC
+  result; it owns no P9 device and performs no P9 manager call. This
+  replacement is not yet fully emulator- or metal-qualified; the shared oracle
+  is unchanged.
+  [continuity-mode.md](continuity-mode.md) is the operating contract and
+  evidence boundary.
+
 ## What each plane costs at rest
 
 The charter says a resident component is **always optional — the product
@@ -566,8 +616,8 @@ the one that touches a shared system resource rather than only CPU.
 
 The question was whether each plane can be switched off dynamically, or
 whether it needs a restart to apply. **No plane needs the restart to
-stand down.** One needs it to fully *undo* itself, and that one is
-genuinely forced rather than merely difficult.
+stand down.** The trap-patched planes need it to fully *undo* themselves,
+which is genuinely forced rather than merely difficult.
 
 | plane | verdict | why |
 |---|---|---|
@@ -578,6 +628,7 @@ genuinely forced rather than merely difficult.
 | P3 memory | **restart-free, deferred** | ~64 KiB held from boot; lazy allocation is possible and specified below, not foreclosed |
 | P4 act | **dynamic bypass; removal is restart-only** | the one genuinely forced case — see below |
 | P6 liveness | **dynamic, and now implemented** | a Time Manager task has a sanctioned stop that a trap patch does not |
+| P9 Continuity tracking | **dynamic debt; removal is restart-only** | hooks are installed only after the first accepted arm; idle is one byte test and tail chain |
 
 ### Why P4 is the one that cannot fully undo, and why that is acceptable
 
@@ -616,6 +667,12 @@ The two planes differ in what they can undo because of *which OS
 structure each lives in*, not because of how hard anyone tried. That is
 the general rule to carry into the next plane: ask what is chained behind
 you before assuming a hook can be withdrawn.
+
+P9 follows the same chain rule as P4 but has a smaller resting surface. Its
+three tracking hooks are absent until a Continuity arm is accepted. Thereafter
+they remain until reboot; disarm clears the only work they can perform, a
+one-byte redraw debt, leaving an idle load/test/tail-jump path. `rest_state`
+reports the permanent installation separately from Continuity authority.
 
 ### How P6 stands down, and why not with `RmvTime`
 

@@ -320,13 +320,17 @@ public struct SceneRenderer {
 
     /// Geneva (app/content) text, left-aligned at a baseline.
     private func appText(_ s: String, _ ctx: GraphicsContext, x: CGFloat,
-                         baselineY: CGFloat, color: Color, small: Bool = false) {
-        let font = small ? FontBook.small : FontBook.app
+                         baselineY: CGFloat, color: Color, small: Bool = false,
+                         italic: Bool = false) {
+        let font = italic ? FontBook.app
+            : (small ? FontBook.small : FontBook.app)
         if let f = font {
-            f.draw(s, in: ctx, x: x, baselineY: baselineY, color: color)
+            f.draw(s, in: ctx, x: x, baselineY: baselineY, color: color,
+                   syntheticItalic: italic)
         } else {
-            ctx.draw(ctx.resolve(Text(s).font(Platinum.appFont(small ? 10 : 12))
-                        .foregroundColor(color)),
+            let text = Text(s).font(Platinum.appFont(small ? 10 : 12))
+                .foregroundColor(color)
+            ctx.draw(ctx.resolve(italic ? text.italic() : text),
                      at: CGPoint(x: x, y: baselineY - 2), anchor: .bottomLeading)
         }
     }
@@ -392,6 +396,29 @@ public struct SceneRenderer {
     /// 32×32 icon sits at the top, the label centered beneath.
     static let iconSize: CGFloat = 32
 
+    /// Finder's OS 8.6 desktop uses Geneva 10 for both ordinary and alias
+    /// labels. Alias styling is QuickDraw's synthesized italic transform over
+    /// this strike, applied by `BitmapFont.draw`; it is not the separate
+    /// Geneva 9 italic NFNT that happens to be present in the suitcase.
+    static func desktopLabelFont(_ item: MirrorKit.Scene.DesktopItem)
+        -> BitmapFont? {
+        _ = item
+        return FontBook.app
+    }
+
+    /// Finder centers the advance width with integer QuickDraw coordinates.
+    /// Italic ink overhangs one pixel left of the plain pen origin.
+    static func desktopLabelTextX(_ box: CGRect, width: CGFloat,
+                                  alias: Bool) -> CGFloat {
+        floor(box.midX - width / 2) - (alias ? 1 : 0)
+    }
+
+    /// Volume labels sit one pixel below their reported 32×32 box; every
+    /// other observed desktop kind starts at the box's lower edge.
+    static func desktopLabelY(_ box: CGRect, kind: String) -> CGFloat {
+        box.maxY + (kind == "disk" ? 1 : 0)
+    }
+
     private func drawDesktopIcons(_ ctx: GraphicsContext) {
         guard let items = scene.desktopItems else { return }
         for item in items where item.placed {
@@ -400,7 +427,8 @@ public struct SceneRenderer {
             // windows carry Finder's own selection in `FinderPresentation`;
             // desktop selection does not yet have a correlated snapshot.
             drawIcon(ctx, item, at: origin,
-                     selected: selectedDesktopItems.contains(item.name))
+                     selected: selectedDesktopItems.contains(item.name),
+                     container: "Desktop Folder")
         }
     }
 
@@ -410,7 +438,8 @@ public struct SceneRenderer {
                           _ item: MirrorKit.Scene.DesktopItem,
                           at origin: CGPoint,
                           selected: Bool = false,
-                          replayed: DisplayReplay.Coverage? = nil) {
+                          replayed: DisplayReplay.Coverage? = nil,
+                          container: String? = nil) {
         /* THE BOX THE FINDER DREW, not a constant 32. `bounds of` answers
            16×16 for a LIST-view row and the Finder stacks those rows at a
            19-point pitch, so a 32-point icon drawn at a row's top-left runs
@@ -423,22 +452,24 @@ public struct SceneRenderer {
            it, and the two must stay one number or a click lands where
            nothing was drawn. */
         let box = CGRect(origin: origin, size: Self.iconBoxSize(item))
-        drawGenericIcon(ctx, box, item: item)
+        let drewSelectedBitmap = drawGenericIcon(
+            ctx, box, item: item, container: container, selected: selected)
 
         // Selection is an INVERSION, not a backing box. The Finder darkens the
         // icon itself and flips the label to white-on-black; a rectangle behind
         // the icon is a different visual language and reads as a highlight
         // rather than a selection. Darken through the icon's own pixels so the
         // artwork still shows, which is what OS 8.5+ does.
-        if selected {
+        if selected && !drewSelectedBitmap {
             var inv = ctx
             inv.blendMode = .multiply
-            inv.fill(Path(box), with: .color(Platinum.g4))
+            inv.fill(Path(box), with: .color(
+                Platinum.finderIconSelectionMultiplier))
         }
 
-        // Name label: Geneva 9 (the real Finder label font, per the finding),
-        // centered under the icon. Unselected it sits on a white patch; selected
-        // the patch goes black and the text white, as the Finder draws it.
+        // Name label: Geneva 10, with QuickDraw's synthetic italic for aliases,
+        // centered under the icon. Unselected it sits on Finder's translucent
+        // white plate; selected the patch goes black and the text white.
         /* A LIST ROW HAS NO LABEL OF OURS. Its name is a COLUMN the machine
            wrote, level with the row icon rather than under it; a centred
            patch there is a second name in the wrong place, over the first.
@@ -446,9 +477,10 @@ public struct SceneRenderer {
            a label height belongs in the hit box at all. */
         guard Self.itemDrawsItsOwnLabel(item) else { return }
         let label = item.name
-        let w = CGFloat(FontBook.small?.width(label) ?? label.count * 6)
-        let ascent = CGFloat(FontBook.small?.ascent ?? 9)
-        let labelY = box.maxY + 1
+        let labelFont = Self.desktopLabelFont(item)
+        let w = CGFloat(labelFont?.width(label) ?? label.count * 6)
+        let ascent = CGFloat(labelFont?.ascent ?? 9)
+        let labelY = Self.desktopLabelY(box, kind: item.kind)
         let patch = CGRect(x: box.midX - w / 2 - 2, y: labelY,
                            width: w + 4, height: ascent + 3)
         /* RUNG 1 BEATS RUNG 3 FOR THE WORDS, and it is asked here rather
@@ -470,23 +502,43 @@ public struct SceneRenderer {
            replay was silent. Drawn unconditionally it was Michelle's
            "Finder item icons seem to be drawing their label twice". */
         if !selected && replayed?.textCovers(patch) == true { return }
-        ctx.fill(Path(patch), with: .color(selected ? Platinum.g6 : .white))
-        appText(label, ctx, x: box.midX - w / 2, baselineY: labelY + ascent,
-                color: selected ? .white : Platinum.g6, small: true)
+        ctx.fill(Path(patch), with: .color(
+            selected ? Platinum.g6 : .white.opacity(177.0 / 255.0)))
+        if let labelFont {
+            labelFont.draw(
+                label, in: ctx,
+                x: Self.desktopLabelTextX(box, width: w, alias: item.alias),
+                baselineY: labelY + ascent,
+                color: selected ? .white : Platinum.g6,
+                syntheticItalic: item.alias)
+        } else {
+            appText(label, ctx,
+                    x: Self.desktopLabelTextX(
+                        box, width: w, alias: item.alias),
+                    baselineY: labelY + ascent,
+                    color: selected ? .white : Platinum.g6)
+        }
     }
 
-    /// The item's icon: the real OS 9 generic bitmap (IconAtlas) when we have
-    /// one, else a procedural Platinum glyph — plus the alias badge.
+    /// The item's best resource-backed bitmap (IconAtlas) when we have one,
+    /// else a procedural Platinum glyph — plus the alias badge.
+    @discardableResult
     private func drawGenericIcon(_ ctx: GraphicsContext, _ box: CGRect,
-                                 item: MirrorKit.Scene.DesktopItem) {
+                                 item: MirrorKit.Scene.DesktopItem,
+                                 container: String? = nil,
+                                 selected: Bool = false) -> Bool {
         if let bitmap = IconAtlas.icon(for: item,
-                                       size: IconAtlas.Size.fitting(box)) {
-            ctx.draw(Image(decorative: bitmap, scale: 1)
+                                       size: IconAtlas.Size.fitting(box),
+                                       container: container) {
+            let appearance = selected
+                ? (IconAtlas.selectedAppearance(bitmap) ?? bitmap) : bitmap
+            ctx.draw(Image(decorative: appearance, scale: 1)
                         .interpolation(.none), in: box)
             drawAliasBadge(ctx, box, item: item)
-            return
+            return selected
         }
         drawProceduralIcon(ctx, box, item: item)
+        return false
     }
 
     /// The procedural fallback (used only when the bitmap is missing).
@@ -494,9 +546,13 @@ public struct SceneRenderer {
                                     item: MirrorKit.Scene.DesktopItem) {
         let folderTint = Color(hex: 0x9DB0C6)
         if item.kind == "disk" {
-            // A beige hard-drive: a rounded box with a face plate + slot.
-            let body = CGRect(x: box.minX + 2, y: box.minY + 7,
-                              width: box.width - 4, height: box.height - 12)
+            // The 8.6 Finder's volume glyph occupies the bottom 10 pixels of
+            // its 32-pixel icon box. The large transparent crown is real: it
+            // puts the name immediately below the small horizontal drive.
+            // Measured from the state-proven finder-desktop oracle case;
+            // stretching this into most of the box was the largest error in
+            // all three default volume cells.
+            let body = Self.diskBodyRect(box)
             ctx.fill(Path(roundedRect: body, cornerRadius: 2),
                      with: .color(Color(hex: 0xE8E4D8)))
             ctx.stroke(Path(roundedRect: body, cornerRadius: 2),
@@ -570,11 +626,18 @@ public struct SceneRenderer {
         drawAliasBadge(ctx, box, item: item)
     }
 
-    /// The alias badge: a small italic arrow, bottom-left (overlaid on either
-    /// the real bitmap or the procedural glyph).
+    /// Finder's alias transform over either resource-backed or procedural art.
+    /// Large icons use the profile-scoped cross-proved framebuffer residual;
+    /// the old procedural mark remains an explicit fallback for incomplete
+    /// packs and for small/list-view art that has not been separately proved.
     private func drawAliasBadge(_ ctx: GraphicsContext, _ box: CGRect,
                                 item: MirrorKit.Scene.DesktopItem) {
         guard item.alias else { return }
+        if let badge = IconAtlas.aliasBadge(size: .fitting(box)) {
+            ctx.draw(Image(decorative: badge, scale: 1)
+                        .interpolation(.none), in: box)
+            return
+        }
         var a = Path()
         a.move(to: CGPoint(x: box.minX + 2, y: box.maxY - 3))
         a.addLine(to: CGPoint(x: box.minX + 9, y: box.maxY - 3))
@@ -588,11 +651,7 @@ public struct SceneRenderer {
     // MARK: - Menu bar
 
     private func drawMenubar(_ ctx: GraphicsContext, _ bounds: CGRect) {
-        let bar = CGRect(x: 0, y: 0, width: bounds.width,
-                         height: Platinum.menubarHeight)
-        ctx.fill(Path(bar), with: .color(Platinum.g1))
-        ctx.fill(Path(CGRect(x: 0, y: bar.maxY, width: bar.width, height: 1)),
-                 with: .color(Platinum.g6))
+        PlatinumMenuBar.drawChrome(in: ctx, width: bounds.width)
 
         // Titles sit at the wire's MenuList lefts — guest-true layout.
         let menus = scene.menubar?.menus ?? []
@@ -637,6 +696,7 @@ public struct SceneRenderer {
         let front = HitTester.switchableApps(scene).first(where: { $0.front })
         let appWidth = CGFloat(HitTester.appMenuWidth(scene))
         let appLeft = bounds.width - appWidth
+        PlatinumMenuBar.drawApplicationDivider(in: ctx, appLeft: appLeft)
         let guestAppMenuOpen = openMenu.flatMap { index in
             menus.indices.contains(index) ? menus[index].id : nil
         } == ObjectResolver.applicationMenuID
@@ -659,7 +719,8 @@ public struct SceneRenderer {
             let small = IconAtlas.Size.small
             let signature = scene.processes?
                 .first(where: { $0.psn == front.psn })?.signature
-            if let img = IconAtlas.processIcon(signature: signature, size: small)
+            if let img = PlatinumMenuBar.applicationMenuIcon(signature: signature)
+                ?? IconAtlas.processIcon(signature: signature, size: small)
                 ?? IconAtlas.namedIcon("application", size: small) {
                 ctx.draw(Image(decorative: img, scale: 1)
                             .interpolation(.none), in: iconBox)
@@ -667,7 +728,9 @@ public struct SceneRenderer {
                 ctx.fill(Path(roundedRect: iconBox, cornerRadius: 2),
                          with: .color(Platinum.g3))
             }
-            appText(front.name, ctx, x: appLeft + 26, baselineY: 14,
+            // The application title is menu text: Charcoal/system, not the
+            // Geneva content face used by Finder rows and desktop labels.
+            sysText(front.name, ctx, x: appLeft + 26, baselineY: 14,
                     color: switcherOpen ? Platinum.g0 : Platinum.g6)
         }
         _ = drawRightAligned(ctx, Self.clockString(scene.capturedAt),
@@ -679,12 +742,27 @@ public struct SceneRenderer {
                                apple: Bool, left: CGFloat,
                                highlighted: Bool) {
         let color = highlighted ? Platinum.g0 : Platinum.g6
-        let mid = Platinum.menubarHeight / 2
-        // The Apple glyph isn't in the bitmap strike — draw it via Text.
+        // Charcoal's menu ink occupies guest rows 5...15. A geometric centre
+        // at 10 put every ordinary title one row low; the measured cap-band
+        // centre is 9.
+        let mid: CGFloat = 9
         if apple {
-            ctx.draw(ctx.resolve(Text(title).font(Platinum.systemFont(14))
-                        .foregroundColor(color)),
-                     at: CGPoint(x: left + 6, y: mid), anchor: .center)
+            if !highlighted, let image = PlatinumMenuBar.appleMenu {
+                ctx.draw(Image(decorative: image, scale: 1)
+                            .interpolation(.none),
+                         in: CGRect(x: left + 7, y: 2,
+                                    width: CGFloat(image.width),
+                                    height: CGFloat(image.height)))
+            } else if let chicago = FontBook.font("chicago-12") {
+                // Chicago carries U+F8FF as the exact classic Apple glyph.
+                // Centre its 11-pixel advance in the 13-pixel oracle slot.
+                chicago.draw("\u{F8FF}", in: ctx, x: left + 8,
+                             baselineY: 14, color: color)
+            } else {
+                ctx.draw(ctx.resolve(Text(title).font(Platinum.systemFont(14))
+                            .foregroundColor(color)),
+                         at: CGPoint(x: left + 14, y: mid), anchor: .center)
+            }
         } else {
             sysCentered(title, ctx, centerX: left + sysWidth(title) / 2,
                         centerY: mid, color: color)
@@ -710,14 +788,41 @@ public struct SceneRenderer {
     /// the clamp reproduces.
     public static func dropdownFrame(_ menu: MirrorKit.Scene.Menu,
                                      screenWidth: Int = 0) -> CGRect {
-        let maxLen = menu.items.map(\.title.count).max() ?? 8
-        let width = CGFloat(min(max(120, maxLen * 8 + 56), 320))
+        let titleWidth = menu.items.map {
+            FontBook.system?.width(Self.menuItemTitle($0))
+                ?? Self.menuItemTitle($0).count * 7
+        }.max() ?? 56
+        /* Finder's Apple menu reserves a 20-pixel icon gutter. Ordinary
+           menus reserve mark, shortcut, and hierarchy columns. The text is
+           measured in the same extracted system strike used to draw it. */
+        /* The 8.6 Apple menu is not an ordinary Menu Manager panel with
+           shortcut/mark columns. Its measured frame is 198 pixels wide for
+           this exact 22-row corpus: widest Charcoal title plus 60 pixels of
+           icon, hierarchy, and frame furniture. The old 87 made it 226. */
+        let furniture = menu.apple ? 60 : 52
+        let contentWidth = min(max(120, titleWidth + furniture), 320)
+        /* Menu Manager widths are part of the Finder's MENU resources, not
+           recoverable from titles alone. These are the four cleanly measured
+           Mac OS 8.6 Finder resources. Other applications and the obstructed
+           Edit reference retain the content-derived fallback. */
+        let finderWidths: [Int: (String, Int)] = [
+            257: ("File", 154),
+            259: ("View", 179),
+            260: ("Special", 120),
+            -16490: ("Help", 140),
+        ]
+        let measured = menu.apple && menu.id == 256 ? 198 : finderWidths[menu.id].flatMap {
+            $0.0 == menu.title ? $0.1 : nil
+        }
+        let width = CGFloat(measured ?? contentWidth)
         /* UNREACHABLE WITH A nil LEFT, and stated rather than defaulted:
            an unplaced menu is not drawn in the strip above and the hit
            tester returns no index for one, so nothing can open its
            dropdown. The zero is a total function's tail, not a position
            anything is placed by. */
-        var x = CGFloat(menu.left ?? 0) - 6
+        var x = menu.apple
+            ? CGFloat(menu.left ?? 0) - 1
+            : CGFloat(menu.left ?? 0) - 6
         if menu.id == ObjectResolver.applicationMenuID, screenWidth > 0 {
             /* The Menu Manager reports no useful left edge for the
                right-aligned application menu. Its title geometry comes
@@ -728,9 +833,21 @@ public struct SceneRenderer {
             x = Swift.max(0, CGFloat(screenWidth) - width)
         }
         return CGRect(x: x,
-                      y: Platinum.menubarHeight + 1,
+                      y: Platinum.menubarHeight - 1,
                       width: width,
-                      height: CGFloat(menu.items.count * 16) + 4)
+                      height: CGFloat(menu.items.reduce(2) {
+                          $0 + Self.menuRowHeight($1, apple: menu.apple)
+                      }))
+    }
+
+    static func menuItemTitle(_ item: MirrorKit.Scene.MenuItem) -> String {
+        String(item.title.drop(while: { $0 == "\0" }))
+    }
+
+    static func menuRowHeight(_ item: MirrorKit.Scene.MenuItem,
+                              apple: Bool = false) -> Int {
+        if apple { return item.separator ? 4 : 18 }
+        return item.separator ? 6 : 16
     }
 
     /// The item under a guest point inside the dropdown, or nil.
@@ -741,9 +858,13 @@ public struct SceneRenderer {
         let frame = dropdownFrame(menu, screenWidth: screenWidth)
         guard CGFloat(x) >= frame.minX, CGFloat(x) < frame.maxX,
               CGFloat(y) >= frame.minY + 2 else { return nil }
-        let row = (y - Int(frame.minY) - 2) / 16
-        guard row >= 0, row < menu.items.count else { return nil }
-        return menu.items[row]
+        var top = Int(frame.minY) + 2
+        for item in menu.items {
+            let bottom = top + Self.menuRowHeight(item, apple: menu.apple)
+            if y >= top, y < bottom { return item }
+            top = bottom
+        }
+        return nil
     }
 
     private func drawDropdown(_ ctx: GraphicsContext,
@@ -755,21 +876,24 @@ public struct SceneRenderer {
         let frame = Self.dropdownFrame(menu, screenWidth: scene.screen.w)
         ctx.fill(Path(frame.offsetBy(dx: 2, dy: 2)),
                  with: .color(.black.opacity(0.35)))
-        ctx.fill(Path(frame), with: .color(Platinum.g0))
+        ctx.fill(Path(frame), with: .color(Platinum.menuFace))
         ctx.stroke(Path(frame), with: .color(Platinum.g6), lineWidth: 1)
 
         var y = frame.minY + 2
         for item in menu.items {
-            defer { y += 16 }
+            let rowHeight = CGFloat(Self.menuRowHeight(item,
+                                                       apple: menu.apple))
+            defer { y += rowHeight }
             let hovered = (hoveredItem == item.index) && !item.separator
                           && item.enabled
             if hovered {
                 ctx.fill(Path(CGRect(x: frame.minX + 1, y: y,
-                                     width: frame.width - 2, height: 16)),
+                                     width: frame.width - 2,
+                                     height: rowHeight)),
                          with: .color(Platinum.g6))
             }
             if item.separator {
-                ctx.fill(Path(CGRect(x: frame.minX + 2, y: y + 7,
+                ctx.fill(Path(CGRect(x: frame.minX + 1, y: y + 1,
                                      width: frame.width - 4, height: 1)),
                          with: .color(Platinum.g3))
                 continue
@@ -777,16 +901,42 @@ public struct SceneRenderer {
             let color = hovered ? Platinum.g0
                                 : (item.enabled ? Platinum.g6 : Platinum.g3)
             var clipped = ctx
+            let trailingGutter: CGFloat = menu.apple
+                ? (item.submenu == true ? 14 : 3)
+                : 34
             clipped.clip(to: Path(CGRect(x: frame.minX, y: y,
-                                         width: frame.width - 34, height: 16)))
+                                         width: frame.width - trailingGutter,
+                                         height: 16)))
             if item.mark {
                 clipped.draw(clipped.resolve(Text("✓").font(Platinum.systemFont(12))
                                 .foregroundColor(color)),
                              at: CGPoint(x: frame.minX + 6, y: y + 8),
                              anchor: .center)
             }
-            sysText(item.title, clipped, x: frame.minX + 14, baselineY: y + 12,
+            if menu.apple,
+               let image = IconAtlas.menuIcon(item.icon, size: .small) {
+                ctx.draw(Image(decorative: image, scale: 1)
+                    .interpolation(.none),
+                    in: CGRect(x: frame.minX + 14, y: y + 1,
+                               width: 16, height: 16))
+            }
+            let isAppleFolderEntry = menu.apple
+                && ObjectResolver.isAppleMenuItemsEntry(item, in: menu)
+            sysText(Self.menuItemTitle(item), clipped,
+                    x: frame.minX + (isAppleFolderEntry ? 38 : 20),
+                    baselineY: y + (menu.apple ? 12 : 11),
                     color: color)
+            if item.submenu == true {
+                let arrowTop = y + floor((rowHeight - 6) / 2)
+                var arrow = Path()
+                arrow.move(to: CGPoint(x: frame.maxX - 10, y: arrowTop))
+                arrow.addLine(to: CGPoint(x: frame.maxX - 5,
+                                          y: arrowTop + 3))
+                arrow.addLine(to: CGPoint(x: frame.maxX - 10,
+                                          y: arrowTop + 6))
+                arrow.closeSubpath()
+                ctx.fill(arrow, with: .color(color))
+            }
             // ⌘ isn't in the bitmap strike — draw the shortcut via Text.
             if !item.cmd.isEmpty {
                 ctx.draw(ctx.resolve(Text("⌘\(item.cmd)")
@@ -1009,6 +1159,9 @@ public struct SceneRenderer {
             drawUnavailableVisual(contentCtx, content,
                                   Self.absentContentCaption(win))
         }
+        if finderOwnsInterior {
+            drawFinderFurniture(contentCtx, win, content: content)
+        }
 
         /* THE PIXEL ISLAND USED TO DRAW HERE, and it is gone (2026-08-07).
            When the poller held the guest's real framebuffer bytes for this
@@ -1143,7 +1296,8 @@ public struct SceneRenderer {
                 && !Self.groundWrapsTheChain(control, in: win)
                 && !dialogRefs.contains(control.ref) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
-                        isDefault: false, windowFace: windowFace)
+                        isDefault: false, active: active,
+                        windowFace: windowFace)
         }
         if !finderOwnsInterior, let display = win.display {
             DisplayReplay.draw(display, in: contentCtx, content: content,
@@ -1162,6 +1316,7 @@ public struct SceneRenderer {
                     || Self.isWindowFurniture(control)) {
             drawControl(contentCtx, control, contentOrigin: content.origin,
                         isDefault: control.semantic?.isDefault == true,
+                        active: active,
                         replayed: replayCoverage,
                         windowFace: windowFace)
         }
@@ -1208,6 +1363,11 @@ public struct SceneRenderer {
                                 y: content.minY + CGFloat(item.y)),
                                view: FinderItems.presentationView(win),
                                selected: selected,
+                               metadata: win.finder?.itemMetadata[item.name],
+                               listColumns: Self.finderListColumns(win).map {
+                                   $0.offsetBy(dx: content.minX,
+                                               dy: content.minY)
+                               },
                                renameText: finderRename?.windowID == win.id
                                     && finderRename?.original == item.name
                                     ? finderRename?.text : nil,
@@ -1215,22 +1375,36 @@ public struct SceneRenderer {
             }
         }
         // Grow box sits on top of the content, at the window corner.
-        if !isDialog {
+        if !isDialog && active {
             drawGrowBox(ctx, win)
         }
     }
 
-    /// A Finder item has three measured presentations. The box always comes
-    /// from Finder; view tells us whether the name belongs below it or beside
-    /// it. Before this field existed list and small-icon views both arrived as
-    /// 16x16 boxes, so the renderer could only omit the name and hope P3 drew
-    /// the columns — exactly the dependency this slice removes.
+    /// A Finder item has four measured presentations. The box always comes
+    /// from Finder; view tells us whether the name belongs below it, beside
+    /// it, or beneath Finder's raised Buttons well. Before this field existed
+    /// list and small-icon views both arrived as 16x16 boxes, while Buttons
+    /// was collapsed into small icons, so the renderer could not reproduce
+    /// the Finder's actual presentation modes.
     private func drawFinderItem(
         _ ctx: GraphicsContext, _ item: MirrorKit.Scene.DesktopItem,
         at origin: CGPoint, view: MirrorKit.Scene.FinderPresentation.View,
-        selected: Bool, renameText: String?,
+        selected: Bool,
+        metadata: MirrorKit.Scene.FinderPresentation.ItemMetadata?,
+        listColumns: [CGRect], renameText: String?,
         replayed: DisplayReplay.Coverage?
     ) {
+        if view == .button {
+            drawFinderButton(ctx, item, at: origin, selected: selected)
+            if let renameText {
+                let box = CGRect(origin: origin,
+                                 size: Self.iconBoxSize(item))
+                drawRenameEditor(ctx, text: renameText,
+                                 iconBox: box, beside: false)
+            }
+            return
+        }
+
         if view == .icon || view == .unknown && Self.itemDrawsItsOwnLabel(item) {
             drawIcon(ctx, item, at: origin, selected: selected,
                      replayed: replayed)
@@ -1244,11 +1418,21 @@ public struct SceneRenderer {
         }
 
         let box = CGRect(origin: origin, size: Self.iconBoxSize(item))
+        if view == .name && item.kind == "folder" {
+            var triangle = Path()
+            triangle.move(to: CGPoint(x: box.minX - 13, y: box.minY + 4))
+            triangle.addLine(to: CGPoint(x: box.minX - 7, y: box.minY + 8))
+            triangle.addLine(to: CGPoint(x: box.minX - 13, y: box.minY + 12))
+            triangle.closeSubpath()
+            ctx.fill(triangle, with: .color(Platinum.g0))
+            ctx.stroke(triangle, with: .color(Platinum.g6), lineWidth: 1)
+        }
         drawGenericIcon(ctx, box, item: item)
         if selected {
             var inverted = ctx
             inverted.blendMode = .multiply
-            inverted.fill(Path(box), with: .color(Platinum.g4))
+            inverted.fill(Path(box), with: .color(
+                Platinum.finderIconSelectionMultiplier))
         }
         let ascent = CGFloat(FontBook.small?.ascent ?? 9)
         let width = CGFloat(FontBook.small?.width(item.name)
@@ -1259,8 +1443,221 @@ public struct SceneRenderer {
         appText(item.name, ctx, x: label.minX + 2,
                 baselineY: label.minY + ascent,
                 color: selected ? .white : Platinum.g6, small: true)
+        if view == .name {
+            let baseline = box.minY + ascent
+            if listColumns.indices.contains(1),
+               let modified = Self.finderModifiedString(
+                    metadata?.modified, relativeTo: scene.capturedAt) {
+                appText(modified, ctx, x: listColumns[1].minX + 5,
+                        baselineY: baseline, color: Platinum.g6, small: true)
+            }
+            if listColumns.indices.contains(2),
+               let size = Self.finderSizeString(metadata) {
+                let x = listColumns[2].maxX - 5
+                    - CGFloat(FontBook.small?.width(size) ?? size.count * 6)
+                appText(size, ctx, x: x, baselineY: baseline,
+                        color: Platinum.g6, small: true)
+            }
+            if listColumns.indices.contains(3) {
+                let kind = Self.finderKindString(item)
+                appText(kind, ctx, x: listColumns[3].minX + 5,
+                        baselineY: baseline, color: Platinum.g6, small: true)
+            }
+        }
         if let renameText {
             drawRenameEditor(ctx, text: renameText, iconBox: box, beside: true)
+        }
+    }
+
+    /// The same semantic column header rectangles the host uses for sorting
+    /// also own their cells. There is no second guessed width table in the
+    /// renderer; a two-column 8.6 window simply draws the two facts it has.
+    private static func finderListColumns(
+        _ win: MirrorKit.Scene.Window
+    ) -> [CGRect] {
+        win.controls.compactMap { control -> CGRect? in
+            guard control.visible,
+                  control.semantic?.kind == "columnHeader",
+                  let r = control.rect else { return nil }
+            return CGRect(x: r.l, y: r.t,
+                          width: max(0, r.r - r.l),
+                          height: max(0, r.b - r.t))
+        }.sorted { $0.minX < $1.minX }
+    }
+
+    static func finderSizeString(
+        _ metadata: MirrorKit.Scene.FinderPresentation.ItemMetadata?
+    ) -> String? {
+        guard let metadata,
+              metadata.dataBytes != nil || metadata.rsrcBytes != nil else {
+            return nil
+        }
+        let bytes = max(0, metadata.dataBytes ?? 0)
+            + max(0, metadata.rsrcBytes ?? 0)
+        if bytes < 1_024 { return "\(bytes) bytes" }
+        let kb = (bytes + 1_023) / 1_024
+        return "\(kb) K"
+    }
+
+    static func finderModifiedString(_ macSeconds: Int?,
+                                     relativeTo capturedAt: Double) -> String? {
+        guard let macSeconds, macSeconds > 0 else { return nil }
+        let date = Date(timeIntervalSince1970:
+            Double(macSeconds) - 2_082_844_800)
+        let reference = Date(timeIntervalSince1970: capturedAt)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        if calendar.isDate(date, inSameDayAs: reference) {
+            formatter.dateFormat = "h:mm a"
+            return "Today, " + formatter.string(from: date)
+        }
+        let yesterday = calendar.date(byAdding: .day, value: -1,
+                                      to: reference)
+        if let yesterday, calendar.isDate(date, inSameDayAs: yesterday) {
+            formatter.dateFormat = "h:mm a"
+            return "Yesterday, " + formatter.string(from: date)
+        }
+        formatter.dateFormat = "M/d/yy, h:mm a"
+        return formatter.string(from: date)
+    }
+
+    private static func finderKindString(
+        _ item: MirrorKit.Scene.DesktopItem
+    ) -> String {
+        if item.kind == "folder" { return "folder" }
+        if item.kind == "application" || item.type == "APPL" {
+            return "application program"
+        }
+        switch item.type {
+        case "TEXT": return "SimpleText document"
+        case "PICT": return "Picture"
+        case "JPEG": return "PictureViewer document"
+        case "MooV": return "QuickTime movie"
+        default: return "document"
+        }
+    }
+
+    /// Finder folder chrome is semantic furniture rather than captured
+    /// content: the item count bar exists in every measured 8.6 view, while
+    /// list view owns a ruled light-grey row field beneath its column headers.
+    /// It is drawn locally from the roster and measured control geometry; no
+    /// framebuffer pixels or screenshot crop enter the production path.
+    private func drawFinderFurniture(
+        _ ctx: GraphicsContext, _ win: MirrorKit.Scene.Window,
+        content: CGRect
+    ) {
+        let visibleControls = win.controls.compactMap { control -> Int? in
+            guard control.visible, let rect = control.rect, rect.t > 0
+            else { return nil }
+            return rect.t
+        }
+        guard let infoHeight = visibleControls.min(), infoHeight > 0 else {
+            return
+        }
+        let info = CGRect(x: content.minX, y: content.minY,
+                          width: content.width,
+                          height: CGFloat(infoHeight))
+        ctx.fill(Path(info), with: .color(Platinum.g2))
+        ctx.fill(Path(CGRect(x: info.minX, y: info.maxY - 1,
+                             width: info.width, height: 1)),
+                 with: .color(Platinum.g5))
+        let count = (win.items ?? []).filter { $0.placed && !$0.invisible }.count
+        let noun = count == 1 ? "item" : "items"
+        var label = "\(count) \(noun)"
+        if let available = win.finder?.availableBytes {
+            label += ", \(Self.finderAvailableString(available)) available"
+        }
+        let width = CGFloat(FontBook.small?.width(label) ?? label.count * 6)
+        appText(label, ctx, x: floor(info.midX - width / 2),
+                baselineY: info.minY + CGFloat(FontBook.small?.ascent ?? 9) + 3,
+                color: Platinum.g6, small: true)
+
+        guard FinderItems.presentationView(win) == .name else { return }
+        let area = FinderItems.iconArea(win)
+        let field = CGRect(x: content.minX + CGFloat(area.l),
+                           y: content.minY + CGFloat(area.t),
+                           width: CGFloat(max(0, area.r - area.l)),
+                           height: CGFloat(max(0, area.b - area.t)))
+        ctx.fill(Path(field), with: .color(Platinum.g1))
+        for item in win.items ?? [] where item.placed && !item.invisible {
+            let y = content.minY + CGFloat(item.y + 18)
+            guard y >= field.minY, y < field.maxY else { continue }
+            ctx.fill(Path(CGRect(x: field.minX, y: y,
+                                 width: field.width, height: 1)),
+                     with: .color(Platinum.g2))
+        }
+    }
+
+    static func finderAvailableString(_ bytes: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        if bytes >= 1_073_741_824 {
+            formatter.minimumFractionDigits = 2
+            formatter.maximumFractionDigits = 2
+            let value = Double(bytes) / 1_073_741_824
+            return (formatter.string(from: NSNumber(value: value)) ?? "--")
+                + " GB"
+        }
+        formatter.minimumFractionDigits = 1
+        formatter.maximumFractionDigits = 1
+        let value = Double(bytes) / 1_048_576
+        return (formatter.string(from: NSNumber(value: value)) ?? "--")
+            + " MB"
+    }
+
+    /// Mac OS 8.6 Finder Buttons are a fourth presentation, not the later
+    /// small-icon list. Each item owns a raised 48-pixel well with the 32-pixel
+    /// resource icon centred inside it and a Finder label below. The semantic
+    /// item bounds are used when the guest reports the well itself; older
+    /// producers that report only an icon box are expanded symmetrically.
+    private func drawFinderButton(
+        _ ctx: GraphicsContext, _ item: MirrorKit.Scene.DesktopItem,
+        at origin: CGPoint, selected: Bool
+    ) {
+        let reported = CGRect(origin: origin, size: Self.iconBoxSize(item))
+        let well = reported.width >= 48 && reported.height >= 48
+            ? CGRect(x: reported.minX, y: reported.minY,
+                     width: 48, height: 48)
+            : CGRect(x: reported.midX - 24, y: reported.midY - 24,
+                     width: 48, height: 48)
+        ctx.fill(Path(well), with: .color(Platinum.menuFace))
+        ctx.stroke(Path(well), with: .color(Platinum.g6), lineWidth: 1)
+        bevel(ctx, well.insetBy(dx: 1, dy: 1),
+              light: Platinum.g0, shadow: Platinum.g4)
+
+        let iconBox = CGRect(x: well.midX - 16, y: well.midY - 16,
+                             width: 32, height: 32)
+        drawGenericIcon(ctx, iconBox, item: item)
+        if selected {
+            var inverted = ctx
+            inverted.blendMode = .multiply
+            inverted.fill(Path(iconBox), with: .color(
+                Platinum.finderIconSelectionMultiplier))
+        }
+
+        let font = Self.desktopLabelFont(item)
+        let width = CGFloat(font?.width(item.name) ?? item.name.count * 6)
+        let ascent = CGFloat(font?.ascent ?? 9)
+        let y = well.maxY + 1
+        let patch = CGRect(x: well.midX - width / 2 - 2, y: y,
+                           width: width + 4, height: ascent + 3)
+        ctx.fill(Path(patch), with: .color(selected ? Platinum.g6 : .white))
+        if let font {
+            font.draw(item.name, in: ctx,
+                      x: Self.desktopLabelTextX(
+                        well, width: width, alias: item.alias),
+                      baselineY: y + ascent,
+                      color: selected ? .white : Platinum.g6,
+                      syntheticItalic: item.alias)
+        } else {
+            appText(item.name, ctx,
+                    x: floor(well.midX - width / 2),
+                    baselineY: y + ascent,
+                    color: selected ? .white : Platinum.g6)
         }
     }
 
@@ -1736,6 +2133,7 @@ public struct SceneRenderer {
     /// every window whose face is not white.
     private func drawControl(_ ctx: GraphicsContext, _ ctl: MirrorKit.Scene.Control,
                              contentOrigin: CGPoint, isDefault: Bool,
+                             active: Bool,
                              replayed: DisplayReplay.Coverage? = nil,
                              windowFace: Color = Platinum.g0) {
         guard let local = ctl.rect else { return }   // rect is content-local
@@ -1838,11 +2236,17 @@ public struct SceneRenderer {
                     color: ctl.enabled ? Platinum.g6 : Platinum.g3)
             return
         case "columnHeader":
-            ctx.fill(Path(frame), with: .color(Platinum.g2))
-            ctx.stroke(Path(frame), with: .color(Platinum.g5), lineWidth: 1)
+            let face = active ? Platinum.g2 : Color(hex: 0xBBBBBB)
+            let frameInk = active ? Platinum.g5 : Color(hex: 0x777777)
+            ctx.fill(Path(frame), with: .color(face))
+            ctx.stroke(Path(frame), with: .color(frameInk), lineWidth: 1)
+            bevel(ctx, frame.insetBy(dx: 1, dy: 1),
+                  light: active ? Platinum.g0 : Color(hex: 0xDDDDDD),
+                  shadow: active ? Platinum.g4 : Color(hex: 0x999999))
             appText(ctl.title, ctx, x: frame.minX + 4,
                     baselineY: frame.midY + 4,
-                    color: ctl.enabled ? Platinum.g6 : Platinum.g3)
+                    color: active && ctl.enabled
+                        ? Platinum.g6 : Color(hex: 0x777777))
             return
         case MirrorKit.DrawnCellGrid.cellKind:
             drawDrawnCell(ctx, ctl, frame)
@@ -1882,7 +2286,8 @@ public struct SceneRenderer {
            let max = ctl.max, let min = ctl.min,
            max > min {
             drawScrollbar(ctx, frame, value: ctl.value ?? min,
-                          min: min, max: max, enabled: ctl.enabled)
+                          min: min, max: max,
+                          enabled: ctl.enabled, windowActive: active)
             return
         }
         // Scrollbar-shaped but unranged (min==max, e.g. an empty document):
@@ -1891,7 +2296,7 @@ public struct SceneRenderer {
         let long = Swift.max(frame.width, frame.height)
         if ctl.title.isEmpty, narrow <= 20, long >= 3 * narrow {
             drawScrollbar(ctx, frame, value: 0, min: 0, max: 0,
-                          enabled: ctl.enabled)
+                          enabled: ctl.enabled, windowActive: active)
             return
         }
 
@@ -2250,6 +2655,14 @@ public struct SceneRenderer {
         }
         return CGSize(width: min(CGFloat(w), Self.iconSize),
                       height: min(CGFloat(h), Self.iconSize))
+    }
+
+    /// Measured OS 8.6 default-volume face inside a 32×32 Finder icon box.
+    /// Kept as geometry so the fallback can be mutation-tested without a
+    /// private Apple bitmap pack.
+    static func diskBodyRect(_ box: CGRect) -> CGRect {
+        CGRect(x: box.minX, y: box.maxY - 12,
+               width: box.width, height: 10)
     }
 
     /// Whether the roster draws a centred name UNDER `item` — true in the
@@ -2786,7 +3199,17 @@ public struct SceneRenderer {
 
     private func drawScrollbar(_ ctx: GraphicsContext, _ frame: CGRect,
                                value: Int, min: Int, max: Int,
-                               enabled: Bool) {
+                               enabled: Bool, windowActive: Bool) {
+        if !windowActive {
+            // Mac OS 8.6 withdraws the arrows and thumb when a Finder window
+            // deactivates. What remains is a flat 0xEE trough inside a 0x55
+            // frame; retaining raised buttons makes the background window
+            // look actionable and is not the control state the guest draws.
+            ctx.fill(Path(frame), with: .color(Color(hex: 0xEEEEEE)))
+            ctx.stroke(Path(frame), with: .color(Color(hex: 0x555555)),
+                       lineWidth: 1)
+            return
+        }
         ctx.fill(Path(frame), with: .color(Platinum.g1))
         ctx.stroke(Path(frame),
                    with: .color(enabled ? Platinum.g6 : Platinum.g3),

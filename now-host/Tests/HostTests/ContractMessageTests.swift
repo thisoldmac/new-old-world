@@ -3,6 +3,48 @@ import XCTest
 import NOWAgentIntegration
 
 final class ContractMessageTests: XCTestCase {
+    func testWebRelayFamilyRoundTrips() throws {
+        let messages: [ControlMessage] = [
+            .webRequest(WebRequest(
+                id: 7, method: "GET", target: "https://example.com/")),
+            .webResponseBegin(WebResponseBegin(
+                id: 7, status: 200, contentType: "text/html", bytes: 3)),
+            .webResponseChunk(WebResponseChunk(
+                id: 7, seq: 0, data: Data("abc".utf8).base64EncodedString())),
+            .webResponseEnd(WebResponseEnd(
+                id: 7, ok: true, code: nil, reason: nil)),
+            .webCancel(WebCancel(id: 7)),
+        ]
+        for message in messages {
+            XCTAssertEqual(try ControlMessageCodec.decode(
+                ControlMessageCodec.encode(message)), message)
+        }
+    }
+    func testMirrorFileRoutingRoundTripsOnlyOnTheExistingFileFamily()
+        throws {
+        let get = FileGet(
+            id: 7, path: "", container: nil,
+            mirrorSource: .init(kind: "finder-window", name: "Read Me",
+                                path: "Macintosh HD:Work"))
+        let getMessage = ControlMessage.fileGet(get)
+        XCTAssertEqual(try ControlMessageCodec.decode(
+            ControlMessageCodec.encode(getMessage)), getMessage)
+
+        let offer = FileOffer(
+            id: 8, name: "Notes", path: "", container: "data", bytes: 12,
+            fileType: "TEXT", creator: "ttxt", modified: nil,
+            createParents: false, overwrite: false,
+            mirrorDrop: .init(kind: "application-process", psn: "0:42",
+                              name: "SimpleText"))
+        let offerMessage = ControlMessage.fileOffer(offer)
+        let encoded = try ControlMessageCodec.encode(offerMessage)
+        XCTAssertEqual(try ControlMessageCodec.decode(encoded), offerMessage)
+        let text = String(decoding: encoded, as: UTF8.self)
+        XCTAssertTrue(text.contains("\"mirrorDrop\""))
+        XCTAssertFalse(text.contains("move"),
+                       "the first Mirror transfer contract is copy-only")
+    }
+
     func testUpdateFamilyRoundTripsWithoutCallingIntegrityASignature()
         throws {
         let offer = UpdateOffer(
@@ -27,6 +69,77 @@ final class ContractMessageTests: XCTestCase {
         XCTAssertEqual(try ControlMessageCodec.decode(
             ControlMessageCodec.encode(.updateResult(result))),
             .updateResult(result))
+    }
+
+    func testHelloCarriesTheActiveResidentIdentityWhenKnown() throws {
+        let hello = Hello(
+            contract: Contract.revision, side: "guest", version: "0.2.0",
+            build: String(repeating: "a", count: 64),
+            extensionVersion: "1.2",
+            extensionBuild: String(repeating: "b", count: 40),
+            mirrorTransfer: true,
+            name: "PowerBook", os: "9.1", chunk: 8192)
+        XCTAssertEqual(try ControlMessageCodec.decode(
+            ControlMessageCodec.encode(.hello(hello))), .hello(hello))
+        XCTAssertTrue(hello.mirrorTransfer == true)
+    }
+
+    func testContinuityOwnershipMessagesRoundTrip() throws {
+        let arm = ContinuityArm(version: ContinuityContract.version,
+                                id: 9, nonceHi: 0x0123_4567,
+                                nonceLo: 0x89AB_CDEF, epoch: 4,
+                                requestedHz: 30, leaseTicks: 90,
+                                settleSyntheticDevice: true,
+                                interruptPress: true,
+                                settleIdleCursor: true)
+        let report = ContinuityReport(
+            version: ContinuityContract.version,
+            id: 9, epoch: 4, state: "armed", acceptedHz: 30,
+            udpPort: 1984, reason: nil, acceptedPackets: 0,
+            stalePackets: 0, malformedPackets: 0,
+            appliedPositionSequence: 0, appliedButtonGeneration: 0)
+        let disarm = ContinuityDisarm(version: ContinuityContract.version,
+                                      id: 10, epoch: 4,
+                                      reason: "mirror-closed")
+        let key = ContinuityKey(
+            version: ContinuityContract.version, id: 11, epoch: 4,
+            generation: 7, action: .down, code: 12,
+            character: 113, modifiers: 0x300)
+        let keyReport = ContinuityKeyReport(
+            version: ContinuityContract.version, id: 11, epoch: 4,
+            generation: 7, state: .queued, reason: nil)
+
+        for message in [ControlMessage.continuityArm(arm),
+                        .continuityReport(report),
+                        .continuityDisarm(disarm), .continuityKey(key),
+                        .continuityKeyReport(keyReport)] {
+            XCTAssertEqual(
+                try ControlMessageCodec.decode(
+                    ControlMessageCodec.encode(message)), message)
+        }
+    }
+
+    func testRetiredContinuityOptionsHaveNoProductPlumbing() throws {
+        let retired = ["pinHeldPoint", "virtualGetMouse",
+                       "hideGuestCursorWhileDragging", "virtualADB"]
+        let sources = [
+            "now-host/Sources/Host/ContractMessages.swift",
+            "now-host/Sources/Host/GuestListener.swift",
+            "now-host/Sources/Host/MirrorContinuityController.swift",
+            "now-host/Sources/Host/MirrorControlView.swift",
+        ]
+        for path in sources {
+            let source = try GateSource.hostSwift(path)
+            for option in retired {
+                XCTAssertFalse(source.contains(option),
+                               "\(path) still carries retired \(option)")
+            }
+        }
+        let wire = try GateSource.guestC("now-guest-ppc/src/core/wire.c")
+        for option in retired {
+            XCTAssertFalse(wire.contains("\"\(option)\""),
+                           "guest wire still parses retired \(option)")
+        }
     }
     func testSceneRequestCarriesNamedPlanePolicy() throws {
         let request = SceneRequest(id: 9, chunkKb: 8, paceMs: 0,
@@ -114,6 +227,8 @@ final class ContractMessageTests: XCTestCase {
                 + "optional field and the 68K guest sends none, so absence "
                 + "has to reach the host as absence rather than as a "
                 + "decode failure.")
+        XCTAssertNil(hello.mirrorTransfer,
+                     "an older hello must remain explicitly unsupported")
     }
 
     /// The whole point of the field: two builds of one version are told

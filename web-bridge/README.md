@@ -26,17 +26,18 @@ cp web-bridge/config.example.json /tmp/now-web.json
 PYTHONPATH=web-bridge python3 -m nowweb --config /tmp/now-web.json
 ```
 
-The default binds host loopback only. A classic Mac cannot reach that listener.
-To browse from another machine, edit the copied config to bind one explicit LAN
-address and add that classic Mac's address to `allowed_clients`. An empty
-allowlist admits the whole selected interface and is inappropriate on an
-untrusted network.
+This command exposes a development-only HTTP listener. The product launches the
+same renderer on an ephemeral host-loopback port, accepts browser traffic at
+`127.0.0.1:5180` inside the guest application, and carries requests and bounded
+response chunks over NOW's existing wire. The helper port is intentionally not
+part of the product UI. Product requests carry only method and target; the host
+module owns the browser profile, lens, handlers, and outbound policy applied by
+the renderer.
 
-Configure the classic browser to use the displayed host address and port as an
-HTTP proxy, or open:
+For direct helper development, open:
 
 ```text
-http://HOST:5180/go?u=https%3A%2F%2Fexample.com&profile=classilla
+http://127.0.0.1:5180/go?u=https%3A%2F%2Fexample.com&profile=classilla
 ```
 
 Supported profiles are `classilla`, `macweb`, and `generic68k`. Supported
@@ -57,9 +58,11 @@ bridge will not install or download either during a request.
 
 ## Security boundary
 
-The browser-facing listener has no bearer authentication because the target
-browsers cannot supply it consistently. Its boundary is therefore the selected
-bind address plus `allowed_clients`.
+The product's browser-facing listener binds classic-Mac loopback only. It cannot
+be reached from the guest LAN; requests leave the machine only through the
+existing NOW connection. The standalone development command retains the helper
+listener controls and must remain on loopback unless a developer deliberately
+tests it on a trusted network.
 
 Outbound loopback, private, link-local and special-use addresses are blocked by
 default. `allow_private_destinations` is an unsafe development switch; enabling

@@ -1,7 +1,23 @@
 #ifndef NOW_WORKSHOP_SCENE_H
 #define NOW_WORKSHOP_SCENE_H
 
+/* Toolbox-free by construction: the only types crossing this seam are a
+   rectangle and a boolean, so the same headers compile under the host's
+   cc for the native test - the split workshop_layout.h established the
+   pattern and states why the Rect field order below is exact. */
+#if TARGET_API_MAC_CARBON
 #include <Carbon.h>
+#else
+#include <stddef.h>                   /* NULL, which Carbon.h supplies */
+typedef struct Rect {
+    short top;
+    short left;
+    short bottom;
+    short right;
+} Rect;
+typedef unsigned char Boolean;
+enum { false = 0, true = 1 };
+#endif
 
 /* A small, transport-neutral description of the Workshop drawing that is
    not owned by Control Manager widgets.  The scene producer supplies the

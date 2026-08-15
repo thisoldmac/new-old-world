@@ -2,6 +2,7 @@
 
 #include "act_cmds.h"
 #include "desktop.h"
+#include "logquery.h"
 #include "input_cmds.h"
 #include "mach_verbs.h"
 #include "nowlog.h"
@@ -18,6 +19,8 @@
 #include "machine_names.h"
 #include "capture.h"
 #include "census.h"
+#include "census_decode.h"
+#include "rom_dump.h"
 #include "cmd_help.h"
 #include "cmd_line.h"
 #include "gestalt_json.h"
@@ -27,6 +30,7 @@
 #include "wire.h"
 #include "wirestat_cmd.h"
 #include "anchor_cycle.h"
+#include "mirror_debug.h"
 #include "mirror_json.h"
 #include "mirror_probe.h"
 #include "net_layout.h"
@@ -62,21 +66,9 @@ static void bcd_version(long bcd, char *out, long cap)
     }
 }
 
-static const char *cpu_name(long type)
-{
-    switch (type) {
-    case 257: return "PowerPC 601";
-    case 259: return "PowerPC 603";
-    case 262: return "PowerPC 603e";
-    case 263: return "PowerPC 603ev";
-    case 260: return "PowerPC 604";
-    case 265: return "PowerPC 604e";
-    case 266: return "PowerPC 604ev";
-    case 264: return "PowerPC G3 (750)";
-    case 4:   return "68040";
-    default:  return NULL;
-    }
-}
+/* The Gestalt CPU-type -> name table lives once, in census_decode.c, so
+   the console `gestalt` command names a chip the same way the Overview
+   and Identity census pages do (H13: three surfaces, one table). */
 
 static const char *processor_name(long type)
 {
@@ -257,8 +249,9 @@ int now_gestalt_gather(GestaltRow *rows, int max)
         bcd_version(v, sv, sizeof sv);
         snprintf(sys, sizeof sys, "Mac OS %s", sv);
     }
-    if (Gestalt(gestaltNativeCPUtype, &v) == noErr && cpu_name(v) != NULL) {
-        snprintf(cpu, sizeof cpu, "%s", cpu_name(v));
+    if (Gestalt(gestaltNativeCPUtype, &v) == noErr
+        && census_cpu_name(v) != NULL) {
+        snprintf(cpu, sizeof cpu, "%s", census_cpu_name(v));
     } else if (Gestalt(gestaltProcessorType, &v) == noErr
                && processor_name(v) != NULL) {
         snprintf(cpu, sizeof cpu, "%s", processor_name(v));
@@ -894,6 +887,43 @@ static void run_mirror(long id, char *out, long cap)
     now_mirror_json(&facts, id, out, cap);
 }
 
+/* The mirror area's debug tier, on a session-scoped switch — the WHY,
+   the tier boundary and the no-prefs decision are mirror_debug.h's.
+   This is the one implementation behind both faces: a typed caller
+   sends args.action, a console's raw line reaches the same word through
+   now_cmd_arg_word, and the guest's own console arrives here through
+   console_model.c's fallback. The transition is logged HERE, once, so
+   the ring itself names who opened the firehose and when — the enable
+   line is the antidote to "a flood someone turned on and nobody
+   remembers". */
+static void run_mirrorlog(const char *request_json, long id,
+                          char *out, long cap)
+{
+    char action[16];
+    int req;
+    int was;
+
+    action[0] = '\0';
+    now_cmd_arg_word(request_json, "action", action, sizeof action);
+    req = now_mirror_debug_parse(action);
+    was = now_mirror_debug_on();
+    if (req == kNowMirrorDebugOn && !was) {
+        now_mirror_debug_set(1);
+        now_log(kLogInfo, "mirror", "debug logging on");
+    } else if (req == kNowMirrorDebugOff && was) {
+        now_mirror_debug_set(0);
+        now_log(kLogInfo, "mirror", "debug logging off");
+    }
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"mirrorlog\":["
+             "[\"Mirror debug\",\"%s\"],"
+             "[\"Default\",\"off, each launch\"],"
+             "[\"Always kept\",\"lifecycle, warnings, errors\"]"
+             "]}}",
+             id, now_mirror_debug_on() ? "on" : "off");
+}
+
 static void run_net(long id, char *out, long cap)
 {
     NetFacts facts;
@@ -970,63 +1000,51 @@ static void run_net(long id, char *out, long cap)
     }
 }
 
-/* The last lines of this launch's log, one ROW per line so either
-   console renders them aligned rather than as one long string. A row is
+/* Lines of this launch's log, one ROW per line so either console
+   renders them aligned rather than as one long string. A row is
    [time, the rest] — the shape every other command returns, which is
    why a new command needs no host code.
 
-   Bounded by BYTES, not just line count: a control frame caps at 4 KB
-   and forty long lines do not fit. When they do not, the OLDEST go and
-   the answer says so; a tail that silently shortens is a tail that lies
-   about what happened most recently. */
+   The selection — how many, which area, older than what — is
+   logquery.c, shared with the guest's own console (parity rule 2); this
+   face only renders one page and its edges. Bounded by BYTES on top of
+   the page's 40 lines: a control frame caps at 4 KB and forty long
+   lines do not fit. Lines that do not fit are not dropped any more —
+   they are the NEXT page's, and the "next" row carries the cursor that
+   reaches them, so nothing shortens silently in either direction. */
 static void run_tail(const char *request_json, long id, char *out, long cap)
 {
-    char lines[2600];
-    /* tail never returns more than 40 lines (the cap below); size the
-       index to that, not to the whole ring, which is now thousands. */
-    const char *starts[kLogTailMax];
-    char line[128];
-    long want = now_json_find_int(request_json, "lines", 20);
+    LogQuery q;
+    LogPage page;
+    char line[160];
+    char area_arg[16];
     long pos;
     long budget;
-    int got, first, i;
-    char *p;
+    int first, i;
 
-    /* "tail 40": the count is the first integer on the line. The typed
+    now_logquery_defaults(&q);
+    /* The human line form fills whatever the typed args leave; a typed
        arg wins, so a module asking for 20 still gets 20. */
-    if (now_json_value(request_json, "lines") == NULL
-        && now_cmd_line(request_json, line, sizeof line)) {
-        long typed;
+    if (now_cmd_line(request_json, line, sizeof line)) {
+        now_logquery_parse_line(line, &q);
+    }
+    q.lines = now_json_find_int(request_json, "lines", q.lines);
+    q.before = now_json_find_u32(request_json, "before", q.before);
+    if (now_json_find_string(request_json, "area",
+                             area_arg, sizeof area_arg)) {
+        strncpy(q.area, area_arg, kLogQueryAreaMax);
+        q.area[kLogQueryAreaMax] = '\0';
+    }
 
-        if (now_cmd_line_int(line, &typed)) {
-            want = typed;
-        }
-    }
-    if (want < 1) {
-        want = 1;
-    }
-    if (want > 40) {
-        want = 40;
-    }
-    got = now_log_tail((int)want, lines, sizeof lines);
+    now_logquery_select(&q, &page);
 
-    /* now_log_tail writes oldest first; index them in place. */
-    p = lines;
-    for (i = 0; i < got && p != NULL && *p != '\0'; ++i) {
-        starts[i] = p;
-        p = strchr(p, '\n');
-        if (p != NULL) {
-            *p++ = '\0';
-        }
-    }
-    got = i;
-
-    /* Walk backwards from the newest to find how many fit, so that the
-       lines dropped are the ones furthest from what just happened. */
-    budget = cap - 160;               /* the JSON around the rows */
-    first = got;
-    for (i = got - 1; i >= 0; --i) {
-        long len = (long)strlen(starts[i]) * 6 + 8;   /* worst-case escape */
+    /* Walk backwards from the newest to find how many fit the frame, so
+       the lines deferred to the next page are the ones furthest from
+       what just happened. */
+    budget = cap - 320;               /* the JSON and log group around the rows */
+    first = page.returned;
+    for (i = page.returned - 1; i >= 0; --i) {
+        long len = (long)strlen(now_log_line(page.idx[i])) * 6 + 8;
 
         if (budget - len < 0) {
             break;
@@ -1038,16 +1056,17 @@ static void run_tail(const char *request_json, long id, char *out, long cap)
     pos = snprintf(out, (size_t)cap,
                    "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
                    "\"output\":{\"tail\":[", id);
-    for (i = first; i < got; ++i) {
+    for (i = first; i < page.returned; ++i) {
         char stamp[16];
         char esc_time[40];
         char esc_rest[320];
-        const char *rest = starts[i];
-        const char *space = strchr(starts[i], ' ');
+        const char *stored = now_log_line(page.idx[i]);
+        const char *rest = stored;
+        const char *space = strchr(stored, ' ');
 
-        if (space != NULL && space - starts[i] < (long)sizeof stamp) {
-            memcpy(stamp, starts[i], (size_t)(space - starts[i]));
-            stamp[space - starts[i]] = '\0';
+        if (space != NULL && space - stored < (long)sizeof stamp) {
+            memcpy(stamp, stored, (size_t)(space - stored));
+            stamp[space - stored] = '\0';
             rest = space + 1;
         } else {
             stamp[0] = '\0';
@@ -1058,10 +1077,31 @@ static void run_tail(const char *request_json, long id, char *out, long cap)
                         "%s[\"%s\",\"%s\"]", i > first ? "," : "",
                         esc_time, esc_rest);
     }
-    snprintf(out + pos, (size_t)cap - (size_t)pos,
-             "],\"log\":[[\"file\",\"%s\"],[\"shown\",\"%d of %d%s\"]]}}",
-             now_log_path(), got - first, got,
-             first > 0 ? " (older ones did not fit)" : "");
+
+    /* The answer's own edges, as rows (contract, x-commands tail).
+       "next" appears exactly when older matching lines exist — the ones
+       the byte budget deferred plus the ones beyond the page — and is
+       the oldest RENDERED line's sequence, so `before` it is the whole
+       remainder and nothing is skipped between pages. */
+    pos += snprintf(out + pos, (size_t)cap - (size_t)pos,
+                    "],\"log\":[[\"file\",\"%s\"],"
+                    "[\"shown\",\"%d of %ld\"],"
+                    "[\"matching\",\"%ld\"],"
+                    "[\"held\",\"%d of %d\"]",
+                    now_log_path(), page.returned - first, page.matching,
+                    page.matching, now_log_count(), kLogKept);
+    if (q.area[0] != '\0') {
+        char esc_area[24];
+
+        now_json_escape(q.area, esc_area, sizeof esc_area);
+        pos += snprintf(out + pos, (size_t)cap - (size_t)pos,
+                        ",[\"area\",\"%s\"]", esc_area);
+    }
+    if (first < page.returned && (first > 0 || page.older > 0)) {
+        pos += snprintf(out + pos, (size_t)cap - (size_t)pos,
+                        ",[\"next\",\"%lu\"]", page.seq[first]);
+    }
+    snprintf(out + pos, (size_t)cap - (size_t)pos, "]}}");
 }
 
 /* ps: the running processes as flat [name, detail] rows. The Processes
@@ -1588,6 +1628,8 @@ static void run_update(const char *request_json, long id, char *out, long cap)
 {
     char component_word[24];
     NowUpdateComponent component;
+    Boolean host_approved = request_json != NULL
+        && now_json_find_bool(request_json, "hostApproved", 0);
 
     now_cmd_arg_word(request_json, "component", component_word,
                      sizeof component_word);
@@ -1600,11 +1642,13 @@ static void run_update(const char *request_json, long id, char *out, long cap)
                      "\"message\":\"use application or extension\"}}", id);
             return;
         }
-        /* The command is shared by the local console and remote wire, so it
-           cannot stand in for the modal consent the Connections page owns.
-           Signed release artifacts may become automatable; today's unsigned
-           development artifacts deliberately stop here. */
-        if (now_wire_update_request(component, false, err, sizeof err) != 0) {
+        /* The command is shared by the local console and remote wire. A bare
+           command therefore cannot stand in for consent. hostApproved is the
+           native host Connections button's explicit human action; the host
+           still cannot choose arbitrary bytes because the guest binds this
+           request to the exact offer it already validated. */
+        if (now_wire_update_request(component, host_approved,
+                                    err, sizeof err) != 0) {
             now_json_escape(err, esc, sizeof esc);
             snprintf(out, (size_t)cap,
                      "{\"type\":\"command.result\",\"id\":%ld,"
@@ -1640,6 +1684,34 @@ static void run_update(const char *request_json, long id, char *out, long cap)
     }
 }
 
+static void run_romdump(long id, char *out, long cap)
+{
+    char path[kNowROMDumpPathCap];
+    char escaped[kNowROMDumpPathCap * 2];
+    char error[96];
+    char escaped_error[192];
+    NowROMLayout layout;
+
+    if (!now_rom_dump(path, sizeof path, &layout, error, sizeof error)) {
+        now_json_escape(error, escaped_error, sizeof escaped_error);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                 "\"error\":{\"code\":\"io-error\",\"message\":\"%s\"}}",
+                 id, escaped_error);
+        return;
+    }
+    now_json_escape(path, escaped, sizeof escaped);
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"romdump\":[[\"Guest file\",\"%s\"],"
+             "[\"Full ROM\",\"%lu MB\"],[\"Toolbox section\",\"%lu MB\"],"
+             "[\"Boot section\",\"%lu MB\"]]}}",
+             id, escaped,
+             (unsigned long)layout.total_bytes / (1024UL * 1024UL),
+             (unsigned long)layout.toolbox_bytes / (1024UL * 1024UL),
+             (unsigned long)layout.boot_bytes / (1024UL * 1024UL));
+}
+
 void now_command_run(const char *name, const char *request_json, long id,
                      char *out, long cap)
 {
@@ -1653,6 +1725,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "gestalt") == 0) {
         run_gestalt(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "romdump") == 0) {
+        run_romdump(id, out, cap);
         return;
     }
     if (strcmp(name, "development") == 0) {
@@ -1697,6 +1773,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "mirror") == 0) {
         run_mirror(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "mirrorlog") == 0) {
+        run_mirrorlog(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "cycle") == 0) {

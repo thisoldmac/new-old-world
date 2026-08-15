@@ -8,6 +8,7 @@
 #include <Files.h>
 #include <Folders.h>
 #include <OSUtils.h>
+#include <stdio.h>
 #include <string.h>
 
 /* Neither constant is declared in these Universal Interfaces - the
@@ -19,6 +20,9 @@
  * decimal so it reads as the flag word it is. */
 #define kOnSystemDiskVRef   ((short)0x8000)
 #define kDoCreateFolder     true
+
+static N68PutCode move_running_application_to_trash(N68PutFile *pf,
+                                                     const Str255 wanted);
 
 
 /* Where an incoming file lands: the DESKTOP.
@@ -309,6 +313,7 @@ static N68PutCode pf_create(void *ctx, const N68PutOffer *offer)
     }
     pf->modified = (unsigned long)offer->modified;
     pf->overwrite = offer->overwrite;
+    pf->relaunch_required = 0;
     return kN68PutOK;
 }
 
@@ -473,10 +478,82 @@ static int head_verify_spec(N68PutFile *pf, FSSpec *spec, const char *what)
     return 0;
 }
 
+/* Moves one busy application to this volume's Trash without deleting it.
+ * A running APPL may refuse FSpDelete with fBsyErr while still allowing the
+ * catalog move the Finder uses for replacement. If its name is already in
+ * the Trash, rename it in place first to a name free in the Trash; undo
+ * the rename if the move itself fails. */
+static N68PutCode move_running_application_to_trash(N68PutFile *pf,
+                                                     const Str255 wanted)
+{
+    short trash_vref = 0;
+    long trash_dir = 0;
+    Str255 moving;
+    FSSpec probe;
+    FSSpec collision;
+    CMovePBRec pb;
+    OSErr err;
+    int suffix;
+    int moved_collision = 0;
+
+    err = FindFolder(pf->final.vRefNum, kTrashFolderType, kDoCreateFolder,
+                     &trash_vref, &trash_dir);
+    if (err != noErr || trash_vref != pf->final.vRefNum) {
+        pf->err = err != noErr ? err : paramErr;
+        return kN68PutIOError;
+    }
+    memcpy(moving, wanted, (size_t)wanted[0] + 1);
+    if (FSMakeFSSpec(trash_vref, trash_dir, moving, &collision) == noErr) {
+        char base[32];
+        char candidate[40];
+
+        memcpy(base, wanted + 1, (size_t)wanted[0]);
+        base[wanted[0]] = '\0';
+        for (suffix = 2; suffix < 100; ++suffix) {
+            /* Leave room for " 99" inside HFS's 31-byte name limit. */
+            (void)sprintf(candidate, "%.27s %d", base, suffix);
+            c_to_pascal(candidate, moving);
+            if (FSMakeFSSpec(trash_vref, trash_dir, moving, &probe)
+                != noErr) {
+                break;
+            }
+        }
+        if (suffix >= 100) {
+            pf->err = dupFNErr;
+            return kN68PutIOError;
+        }
+        err = FSpRename(&collision, moving);
+        if (err != noErr) {
+            pf->err = err;
+            return kN68PutIOError;
+        }
+        memcpy(collision.name, moving, (size_t)moving[0] + 1);
+        moved_collision = 1;
+    }
+
+    memset(&pb, 0, sizeof pb);
+    pb.ioNamePtr = pf->final.name;
+    pb.ioVRefNum = pf->final.vRefNum;
+    pb.ioDirID = pf->final.parID;
+    pb.ioNewName = NULL;
+    pb.ioNewDirID = trash_dir;
+    err = PBCatMoveSync(&pb);
+    if (err != noErr) {
+        if (moved_collision) {
+            (void)FSpRename(&collision, wanted);
+        }
+        pf->err = err;
+        return kN68PutIOError;
+    }
+    return kN68PutOK;
+}
+
 static N68PutCode pf_finish(void *ctx)
 {
     N68PutFile *pf = (N68PutFile *)ctx;
     FInfo info;
+    FInfo old_info;
+    Str255 final_name;
     OSErr err;
     int had_rsrc = (pf->rsrc_ref != 0);
 
@@ -549,15 +626,32 @@ static N68PutCode pf_finish(void *ctx)
      * Done here rather than at create so that a transfer which fails
      * halfway leaves the ORIGINAL file intact - the whole point of
      * staging is that the thing already on the disk survives a failure. */
+    memcpy(final_name, pf->final.name, (size_t)pf->final.name[0] + 1);
     if (pf->overwrite) {
-        (void)FSpDelete(&pf->final);
+        int old_is_application = FSpGetFInfo(&pf->final, &old_info) == noErr
+            && old_info.fdType == 'APPL';
+
+        err = FSpDelete(&pf->final);
+        if (err == fBsyErr && old_is_application) {
+            N68PutCode moved = move_running_application_to_trash(
+                pf, final_name);
+            if (moved != kN68PutOK) {
+                return moved;
+            }
+            pf->relaunch_required = 1;
+        } else if (err != noErr && err != fnfErr) {
+            pf->err = err;
+            return kN68PutIOError;
+        }
     }
-    err = FSpRename(&pf->temp, pf->final.name);
+    err = FSpRename(&pf->temp, final_name);
     if (err != noErr) {
         pf->err = err;
         return (err == dupFNErr) ? kN68PutExists : kN68PutIOError;
     }
     pf->have_temp = 0;
+    pf->final = pf->temp;
+    memcpy(pf->final.name, final_name, (size_t)final_name[0] + 1);
 
     /* The modified date last: the rename touches the catalog entry, so
      * stamping before it would be stamping something that is about to be
@@ -649,6 +743,11 @@ void now68k_putfile_init(N68PutFile *pf)
 OSErr now68k_putfile_last_error(const N68PutFile *pf)
 {
     return pf->err;
+}
+
+int now68k_putfile_relaunch_required(const N68PutFile *pf)
+{
+    return pf->relaunch_required;
 }
 
 void now68k_putfile_where(char *out, long cap)

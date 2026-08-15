@@ -583,6 +583,7 @@ typedef struct {
     int separator;                /* the Menu Manager's "-" item */
     int enabled;
     int mark;
+    int submenu;                  /* cmd byte hMenuCmd; mark then holds its id */
     char cmd;                     /* command-key char, or '\0' for none */
 } NowSceneMenuItem;
 

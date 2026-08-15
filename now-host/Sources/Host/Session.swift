@@ -53,6 +53,14 @@ final class Session {
     private let onExecResult: (ExecResult) -> Void
     private let onGuestError: (ErrorMessage) -> Void
     private let onCensusReport: (CensusReport) -> Void
+    private let onContinuityReport: (ContinuityReport) -> Void
+    private let onContinuityKeyReport: (ContinuityKeyReport) -> Void
+    /* A `var` rather than an init parameter, unlike its neighbours. It was
+       nil when the stub had no consumer; the listener now sets it, and the
+       shape stays because nil remains the honest state for a session that
+       is not the active one — the frame still decodes, so an unbound stub
+       can never drop a connection. */
+    var onContinuitySelection: ((ContinuitySelection) -> Void)?
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
@@ -78,6 +86,7 @@ final class Session {
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onServeCloud: (GuestListener.CloudAsk) -> Void
     private let onServeChat: (GuestListener.ChatAsk) -> Void
+    private let onServeWeb: (GuestListener.WebAsk) -> Void
     private let onServeHostShow: (HostShow) -> Void
     private let onServeUpdate: (UpdateRequest) -> Void
     private let onUpdateResult: (UpdateResult) -> Void
@@ -142,13 +151,20 @@ final class Session {
     /// disk sink receiving its bulk frames.
     private var fileBegin: FileBegin?
     private var fileSink: InboundFileSink?
+    /// The request that may legitimately produce the next pulled-file
+    /// begin. A cancel can happen before the guest assigns a transfer ID;
+    /// retain that abandoned request ID so its late begin cannot be mistaken
+    /// for a replacement request on the same one-wide lane.
+    private var activeFileGetID: Int?
+    private var abandonedFileGetIDs: [Int] = []
+    private static let abandonedFileGetLimit = 64
     private var fileStagingDirectory = FileManager.default.temporaryDirectory
     private var fileStart = Date()
     /// A transfer the host has abandoned. The guest drains to its frame
     /// boundary before stopping, so bytes keep arriving for a transfer
     /// nothing is waiting on; swallow them rather than calling it a
     /// protocol error and closing a healthy session.
-    private var discardingTransfer: Int?
+    private var discardingTransfers: Set<Int> = []
     private var health: GuestListener.SessionHealth?
 
     private let decoder = FrameDecoder()
@@ -163,10 +179,13 @@ final class Session {
     private(set) var machineFingerprint: String?
     private var closed = false
     private(set) var guestName = "guest"
+    /// Set from the peer's hello. Nil is deliberately distinct from true:
+    /// older guests ignore Mirror descriptors and must not receive them.
+    private(set) var mirrorTransfer: Bool?
     /// What a guest that sent no name is called. One constant, because
     /// GuestKey folds by it too and a second spelling would let an
     /// unnamed guest be admitted twice under two different keys.
-    nonisolated static let unnamedGuest = "Classic Mac"
+    nonisolated static let unnamedGuest = "Guest"
     /// Set at the gate. Nil until then.
     private(set) var guestKey: GuestKey?
     /// Where this connection came from, known from accept.
@@ -190,6 +209,8 @@ final class Session {
          onExecResult: @escaping (ExecResult) -> Void,
          onGuestError: @escaping (ErrorMessage) -> Void,
          onCensusReport: @escaping (CensusReport) -> Void,
+         onContinuityReport: @escaping (ContinuityReport) -> Void,
+         onContinuityKeyReport: @escaping (ContinuityKeyReport) -> Void,
          onCapture: @escaping (Result<GuestListener.CaptureDelivery,
                                       GuestListener.CaptureFailure>) -> Void,
          onCaptureProgress: @escaping (GuestListener.CaptureProgress?) -> Void,
@@ -215,6 +236,8 @@ final class Session {
          onServeCloud: @escaping (GuestListener.CloudAsk) -> Void
              = { _ in },
          onServeChat: @escaping (GuestListener.ChatAsk) -> Void
+             = { _ in },
+         onServeWeb: @escaping (GuestListener.WebAsk) -> Void
              = { _ in },
          onServeHostShow: @escaping (HostShow) -> Void
              = { _ in },
@@ -245,6 +268,8 @@ final class Session {
         self.onExecResult = onExecResult
         self.onGuestError = onGuestError
         self.onCensusReport = onCensusReport
+        self.onContinuityReport = onContinuityReport
+        self.onContinuityKeyReport = onContinuityKeyReport
         self.onCapture = onCapture
         self.onCaptureProgress = onCaptureProgress
         self.onScene = onScene
@@ -265,6 +290,7 @@ final class Session {
         self.onServeChange = onServeChange
         self.onServeCloud = onServeCloud
         self.onServeChat = onServeChat
+        self.onServeWeb = onServeWeb
         self.onServeHostShow = onServeHostShow
         self.onServeUpdate = onServeUpdate
         self.onUpdateResult = onUpdateResult
@@ -377,8 +403,7 @@ final class Session {
             case .control:
                 handleControl(frame.payload)
             case .bulk:
-                if let discarding = discardingTransfer,
-                   Int(frame.header.transfer) == discarding {
+                if discardingTransfers.contains(Int(frame.header.transfer)) {
                     break
                 }
                 /* A scene rides the same one-wide lane as a capture and a
@@ -513,6 +538,21 @@ final class Session {
             onCensusReport(report)
         case .censusRequest(let request):
             serveCensusRefusal(request)
+        case .continuityReport(let report):
+            onContinuityReport(report)
+        case .continuityKeyReport(let report):
+            onContinuityKeyReport(report)
+        case .continuitySelection(let selection):
+            onContinuitySelection?(selection)
+        case .continuityArm, .continuityDisarm, .continuityKey,
+             .continuityGrab:
+            /* Declared asymmetry: authority is host-to-guest. A guest may
+               report that its resident relinquished ownership, but it may
+               never arm the host's input lane or disarm another session -
+               nor grab from it, which is the same rule one layer on: a
+               grant is something the guest gives, never something it
+               collects. */
+            break
         case .fileListing(let listing):
             onFileListing(listing)
         case .fileResult(let result):
@@ -568,6 +608,13 @@ final class Session {
             onServeChat(.cancel(request))
         case .chatReset(let request):
             onServeChat(.reset(request))
+        case .webRequest(let request):
+            onServeWeb(.request(request))
+        case .webCancel(let request):
+            onServeWeb(.cancel(request))
+        case .webResponseBegin, .webResponseChunk, .webResponseEnd:
+            // Host-owned answers; a guest never serves this Mac's renderer.
+            break
         case .cloudPreview(let request):
             onServeCloud(.preview(request))
         /* The host-surface family: the guest asking THIS Mac to bring
@@ -598,13 +645,29 @@ final class Session {
             noteOutboundAck(progress)
             onFileProgress(progress)
         case .fileRefuse(let refuse):
-            fileBegin = nil
-            fileSink?.abort()
-            fileSink = nil
+            if removeAbandonedFileGet(refuse.id) {
+                break
+            }
+            if activeFileGetID == refuse.id {
+                activeFileGetID = nil
+                fileBegin = nil
+                fileSink?.abort()
+                fileSink = nil
+            }
             onFileRefuse(refuse)
         case .fileBegin(let begin):
             if inbound?.id == begin.id {
                 break                 // a push we already accepted
+            }
+            if removeAbandonedFileGet(begin.id) {
+                discardingTransfers.insert(begin.transfer)
+                send(.fileCancel(FileCancel(transfer: begin.transfer)))
+                break
+            }
+            guard activeFileGetID == begin.id else {
+                discardingTransfers.insert(begin.transfer)
+                send(.fileCancel(FileCancel(transfer: begin.transfer)))
+                break
             }
             do {
                 fileSink = try InboundFileSink(
@@ -751,6 +814,7 @@ final class Session {
 
     func sendFileGet(id: Int, path: String, container: String?,
                      stagingDirectory: URL) {
+        activeFileGetID = id
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
@@ -759,9 +823,40 @@ final class Session {
         send(.fileGet(FileGet(id: id, path: path, container: container)))
     }
 
+    func sendMirrorFileGet(id: Int, source: MirrorFileSource,
+                           container: String?, stagingDirectory: URL) {
+        activeFileGetID = id
+        fileBegin = nil
+        fileSink?.abort()
+        fileSink = nil
+        fileStagingDirectory = stagingDirectory
+        fileStart = Date()
+        send(.fileGet(FileGet(id: id, path: "", container: container,
+                              mirrorSource: source)))
+    }
+
+    /// Redeems one drag gesture's consent for the item a selection
+    /// generation named. The answer is the ordinary file lane, so the staging
+    /// and sink reset here are identical to `sendMirrorFileGet` on purpose:
+    /// there is one bulk receiver on this side and a grab uses it.
+    func sendContinuityGrab(id: Int, epoch: UInt32, generation: UInt32,
+                            container: String?, stagingDirectory: URL) {
+        activeFileGetID = id
+        fileBegin = nil
+        fileSink?.abort()
+        fileSink = nil
+        fileStagingDirectory = stagingDirectory
+        fileStart = Date()
+        send(.continuityGrab(.init(version: ContinuityContract.version,
+                                   id: id, epoch: epoch,
+                                   generation: generation,
+                                   container: container)))
+    }
+
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,
                                        path: String,
                                        stagingDirectory: URL) {
+        activeFileGetID = id
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
@@ -772,12 +867,34 @@ final class Session {
     }
 
     func cancelFile() {
-        guard let begin = fileBegin else { return }
-        discardingTransfer = begin.transfer
+        guard let begin = fileBegin else {
+            if let id = activeFileGetID {
+                abandonedFileGetIDs.append(id)
+                if abandonedFileGetIDs.count > Self.abandonedFileGetLimit {
+                    abandonedFileGetIDs.removeFirst(
+                        abandonedFileGetIDs.count
+                            - Self.abandonedFileGetLimit)
+                }
+                activeFileGetID = nil
+            }
+            fileSink?.abort()
+            fileSink = nil
+            return
+        }
+        discardingTransfers.insert(begin.transfer)
+        activeFileGetID = nil
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
         send(.fileCancel(FileCancel(transfer: begin.transfer)))
+    }
+
+    private func removeAbandonedFileGet(_ id: Int) -> Bool {
+        guard let index = abandonedFileGetIDs.firstIndex(of: id) else {
+            return false
+        }
+        abandonedFileGetIDs.remove(at: index)
+        return true
     }
 
     /// Holds an offered file until the guest accepts it. The bytes wait
@@ -789,6 +906,10 @@ final class Session {
     }
 
     private var pendingOffer: (offer: FileOffer, source: OfferedSource)?
+    /// An accept can arrive while a cancelled staged read is still returning.
+    /// Keep the replacement behind the old transfer's terminal frame instead
+    /// of overwriting the one outbound slot and orphaning that old transfer.
+    private var deferredAccept: FileAccept?
     private var transferSeq: UInt16 = 0
 
     func sendFileOffer(_ offer: FileOffer, bytes: Data, crc32: UInt32?) {
@@ -1133,6 +1254,10 @@ final class Session {
     private func sendAcceptedFile(_ accept: FileAccept) {
         guard let pending = pendingOffer,
               pending.offer.id == accept.id else { return }
+        guard outbound == nil else {
+            deferredAccept = accept
+            return
+        }
         pendingOffer = nil
         let offer = pending.offer
         let source: Outbound.Source
@@ -1183,6 +1308,7 @@ final class Session {
             outbound = nil
             send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
                                   ok: false, sendMs: nil)))
+            startDeferredOutboundIfNeeded()
             return
         }
         guard out.sent < out.source.byteCount else {
@@ -1192,6 +1318,7 @@ final class Session {
             // exactly what nothing else checks.
             send(.fileEnd(FileEnd(id: out.id, transfer: Int(out.transfer),
                                   ok: true, sendMs: nil, crc32: out.crc32)))
+            startDeferredOutboundIfNeeded()
             return
         }
         // Wait for the receiver to catch up rather than piling bytes into
@@ -1259,6 +1386,12 @@ final class Session {
         }
     }
 
+    private func startDeferredOutboundIfNeeded() {
+        guard outbound == nil, let accept = deferredAccept else { return }
+        deferredAccept = nil
+        sendAcceptedFile(accept)
+    }
+
     /// Hands one frame to TCP in metered pieces (see Pacing).
     ///
     /// The gap is the point: it has to be real quiet time on the wire,
@@ -1311,13 +1444,9 @@ final class Session {
                 guard let self, !self.closed else { return }
                 if let error { completion(error); return }
                 if last { completion(nil); return }
-                // Cancellation lands between pieces as well as between
-                // frames: a stopped transfer should not keep metering
-                // out the rest of a 32 KB frame it has abandoned.
-                if self.outbound?.cancelled == true {
-                    completion(nil)
-                    return
-                }
+                // Once the first byte of a protocol frame is on the wire,
+                // finish that frame. A control message inserted here would
+                // be consumed as bulk bytes and desynchronise the peer.
                 try? await Task.sleep(
                     nanoseconds: UInt64(self.pacing.gap * 1_000_000_000))
                 self.sendPiece(frame, from: end, completion: completion)
@@ -1330,16 +1459,20 @@ final class Session {
     func cancelOutbound() {
         if pendingOffer != nil {
             pendingOffer = nil
+            deferredAccept = nil
         }
         outbound?.cancelled = true
+        sendNextOutboundChunk()
     }
 
     func clearOutboundRequest(id: Int) {
         if pendingOffer?.offer.id == id {
             pendingOffer = nil
+            if deferredAccept?.id == id { deferredAccept = nil }
         }
         if outbound?.id == id {
             outbound?.cancelled = true
+            sendNextOutboundChunk()
         }
     }
 
@@ -1410,7 +1543,8 @@ final class Session {
     }
 
     private func failPulledStream(transfer: Int, error: Error) {
-        discardingTransfer = transfer
+        discardingTransfers.insert(transfer)
+        activeFileGetID = nil
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
@@ -1421,7 +1555,7 @@ final class Session {
 
     private func failInboundStream(transfer: Int, error: Error) {
         guard let inbound else { return }
-        discardingTransfer = transfer
+        discardingTransfers.insert(transfer)
         self.inbound = nil
         inbound.sink.abort()
         send(.fileCancel(FileCancel(transfer: transfer)))
@@ -1431,14 +1565,12 @@ final class Session {
     }
 
     private func finishFile(_ end: FileEnd) {
-        if discardingTransfer == end.transfer {
-            discardingTransfer = nil
-            fileBegin = nil
-            fileSink?.abort()
-            fileSink = nil
+        if discardingTransfers.remove(end.transfer) != nil {
             return                    /* the host already gave up on it */
         }
         guard let begin = fileBegin, let sink = fileSink else { return }
+        guard begin.id == end.id else { return }
+        activeFileGetID = nil
         fileBegin = nil
         fileSink = nil
         guard end.ok else {
@@ -1466,8 +1598,7 @@ final class Session {
     }
 
     private func finishCapture(_ end: CaptureEnd) {
-        if discardingTransfer == end.transfer {
-            discardingTransfer = nil
+        if discardingTransfers.remove(end.transfer) != nil {
             captureBegin = nil
             captureBuffer = []
             cancelled = false
@@ -1510,7 +1641,7 @@ final class Session {
         let blob = captureBuffer
         captureBuffer = []
         do {
-            let image: CGImage
+            var image: CGImage
             if streaming {
                 image = try compositeStreamFrame(begin, blob: blob,
                                                  format: format)
@@ -1746,6 +1877,7 @@ final class Session {
             return
         }
         helloed = true
+        mirrorTransfer = hello.mirrorTransfer
         /* **What a resident channel is associated BY.** Not the minted
            GuestID: `mintSessionKey` deliberately hands a second dial from
            a live name+address a DIFFERENT machine id (the emulator
@@ -1773,7 +1905,10 @@ final class Session {
         let now = Date()
         health = GuestListener.SessionHealth(
             guestName: guestName, guestVersion: hello.version,
-            guestBuild: hello.build, guestAgentAccess: hello.agent,
+            guestBuild: hello.build,
+            extensionVersion: hello.extensionVersion,
+            extensionBuild: hello.extensionBuild,
+            guestAgentAccess: hello.agent,
             guestOS: hello.os,
             connectedAt: now, lastTraffic: now,
             pingsAnswered: 0, framesReceived: 1)
@@ -1830,7 +1965,7 @@ final class Session {
     func cancelCapture() {
         guard let begin = captureBegin else { return }
         cancelled = true
-        discardingTransfer = begin.transfer
+        discardingTransfers.insert(begin.transfer)
         send(.captureCancel(CaptureCancel(transfer: begin.transfer)))
     }
 

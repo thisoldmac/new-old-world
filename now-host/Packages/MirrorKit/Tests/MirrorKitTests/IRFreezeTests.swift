@@ -88,7 +88,9 @@ final class IRFreezeTests: XCTestCase {
             display: [op])
         window.finder = .init(
             path: "Macintosh HD:System Folder:", view: .name,
-            selectedNames: ["Finder"], pages: 2, complete: true)
+            selectedNames: ["Finder"], pages: 2, complete: true,
+            itemMetadata: ["Finder": .init(dataBytes: 1, rsrcBytes: 2,
+                                             modified: 3)])
 
         return Scene(
             version: IR.version, seq: 1, source: "axtree", capturedAt: 1,
@@ -103,7 +105,10 @@ final class IRFreezeTests: XCTestCase {
             menubar: .init(app: "A", menus: [
                 .init(title: "File", apple: false, left: 40, id: 128, items: [
                     .init(title: "New", index: 1, separator: false,
-                          enabled: true, mark: false, cmd: "N"),
+                          enabled: true, mark: false, cmd: "N", submenu: true,
+                          icon: .init(creator: "MACS", type: "APPL",
+                                      generic: "application",
+                                      systemIconID: -16396)),
                 ]),
             ]),
             windows: [window],
@@ -216,6 +221,23 @@ final class IRFreezeTests: XCTestCase {
         XCTAssertTrue(declared.contains("Scene.Window.finder"))
         XCTAssertTrue(declared.contains("Scene.FinderPresentation.path"))
         XCTAssertTrue(declared.contains("Scene.FinderPresentation.complete"))
+        XCTAssertTrue(declared.contains(
+            "Scene.FinderPresentation.availableBytes"))
+        XCTAssertTrue(declared.contains(
+            "Scene.FinderPresentation.ItemMetadata.modified"))
+    }
+
+    func testMenuIconIdentityIsNotOnTheWire() throws {
+        let scene = Self.maximalScene()
+        let data = try JSONEncoder().encode(scene)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data)
+            as? [String: Any])
+        let menubar = try XCTUnwrap(object["menubar"] as? [String: Any])
+        let menus = try XCTUnwrap(menubar["menus"] as? [[String: Any]])
+        let items = try XCTUnwrap(menus.first?["items"] as? [[String: Any]])
+        XCTAssertNil(items.first?["icon"])
+        XCTAssertTrue(IRSchema.declaredProperties(of: scene)
+            .contains("Scene.MenuItem.icon"))
     }
 
     /// `windows[].items` came back ADDITIVELY (lane H2, 2026-07-31): on the

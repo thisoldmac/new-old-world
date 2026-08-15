@@ -75,7 +75,25 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: 1bce2d7d29df8441908943f1b651dba955a3a439
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
+sources-sha1: 9e53a8b9b18a8db888c3144fa938bb604d924cf4
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -148,7 +166,109 @@ rederived: 2026-08-11T23:12:01-0400 ddf740ce sources
 rederived: 2026-08-11T23:31:22-0400 ad4d680 sources
 rederived: 2026-08-11T23:37:11-0400 ad4d680 unchanged
 rederived: 2026-08-12T12:53:57-0400 5feb2eb sources
+rederived: 2026-08-12T13:02:41-0400 7cea759e sources
+rederived: 2026-08-12T13:11:34-0400 7cea759e unchanged
+rederived: 2026-08-12T13:12:13-0400 7cea759e unchanged
 rederived: 2026-08-12T14:17:18-0400 5feb2eb sources
 rederived: 2026-08-12T14:19:58-0400 5feb2eb unchanged
 rederived: 2026-08-12T14:31:49-0400 429dc08 sources
+rederived: 2026-08-12T15:54:08-0400 939e43b7 unchanged
+rederived: 2026-08-12T17:19:19-0400 338eca21 unchanged
+rederived: 2026-08-12T18:34:28-0400 3688b9f6 sources
+rederived: 2026-08-12T18:58:27-0400 3771e144 sources
+rederived: 2026-08-12T19:15:24-0400 3771e144 unchanged
+rederived: 2026-08-12T19:31:58-0400 3771e144 unchanged
+rederived: 2026-08-12T20:08:32-0400 5a601a18 unchanged
+rederived: 2026-08-12T20:15:22-0400 9e828cdc sources
+rederived: 2026-08-12T20:34:42-0400 4d9ba67d unchanged
+rederived: 2026-08-12T20:37:07-0400 633da491 sources
+rederived: 2026-08-12T20:45:45-0400 a0878023 unchanged
+rederived: 2026-08-12T22:18:37-0400 18d0d3c4 unchanged
+rederived: 2026-08-12T23:59:07-0400 e5b16a71 unchanged
+rederived: 2026-08-13T00:21:45-0400 e5b16a71 unchanged
+rederived: 2026-08-13T00:58:12-0400 9f5139cf sources
+rederived: 2026-08-13T01:23:45-0400 9f5139cf unchanged
+rederived: 2026-08-13T01:47:13-0400 59852197 unchanged
+rederived: 2026-08-13T02:45:49-0400 e504061c sources
+rederived: 2026-08-13T04:30:00-0400 47f632b3 unchanged
+rederived: 2026-08-13T13:50:55-0400 a9e64fa4 unchanged
+rederived: 2026-08-13T14:32:32-0400 4da9c4a3 sources
+rederived: 2026-08-13T15:15:23-0400 2ccde05b unchanged
+rederived: 2026-08-13T17:36:05-0400 043777df unchanged
+rederived: 2026-08-13T17:37:43-0400 043777df unchanged
+rederived: 2026-08-13T18:23:46-0400 e6d7996d unchanged
+rederived: 2026-08-13T19:30:44-0400 1d154b67 unchanged
+rederived: 2026-08-13T21:59:04-0400 8433efda unchanged
+rederived: 2026-08-13T23:16:01-0400 fc235d4e sources
+rederived: 2026-08-14T00:51:51-0400 94f1c614 unchanged
+rederived: 2026-08-14T00:55:48-0400 3bd83df2 unchanged
+rederived: 2026-08-14T02:20:51-0400 81247e50 unchanged
+rederived: 2026-08-14T03:25:52-0400 ee8ef8a4 unchanged
+rederived: 2026-08-14T03:54:48-0400 d016e771 sources
+rederived: 2026-08-14T03:57:09-0400 e122c6c3 unchanged
+rederived: 2026-08-14T04:03:19-0400 908215de unchanged
+rederived: 2026-08-14T04:36:35-0400 e66db808 unchanged
+rederived: 2026-08-14T12:32:38-0400 7742eab5 sources
+rederived: 2026-08-14T12:35:44-0400 49e6dd98 sources
+rederived: 2026-08-14T12:44:43-0400 4d52ba1a sources
+rederived: 2026-08-14T12:47:23-0400 804be291 sources
+rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
+rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
+rederived: 2026-08-14T14:27:57-0400 6d037a57 unchanged
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
+rederived: 2026-08-14T16:58:27-0400 cf962dbb sources
+rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
+rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
+rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
+rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
+rederived: 2026-08-14T18:19:50-0400 60bb3427 unchanged
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
+rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources
+rederived: 2026-08-14T18:22:07-0400 23dc0759 sources, sources
+rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources
+rederived: 2026-08-14T18:30:52-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
+rederived: 2026-08-14T18:31:25-0400 b248c9a1 unchanged
+rederived: 2026-08-14T20:24:56-0400 6d3d74d7 sources
+rederived: 2026-08-14T20:18:49-0400 cccec57a unchanged
+rederived: 2026-08-14T21:50:42-0400 edcc526f unchanged
+rederived: 2026-08-14T22:27:41-0400 5a6c46dc unchanged
+rederived: 2026-08-14T22:10:44-0400 568967b9 unchanged
+rederived: 2026-08-14T23:30:11-0400 0017d984 unchanged
+rederived: 2026-08-14T22:14:12-0400 0e743bc5 sources
+rederived: 2026-08-14T23:32:09-0400 a9afc153 unchanged
+rederived: 2026-08-14T22:19:02-0400 fe3d18a0 sources
+rederived: 2026-08-14T23:33:01-0400 09abc942 sources, sources
+rederived: 2026-08-14T22:27:26-0400 67772e4a unchanged
+rederived: 2026-08-14T23:33:52-0400 521b590f unchanged
+rederived: 2026-08-14T22:17:24-0400 4495cfb2 unchanged
+rederived: 2026-08-14T23:34:43-0400 61505862 unchanged
+rederived: 2026-08-14T23:35:19-0400 61505862 unchanged
+rederived: 2026-08-14T22:33:00-0400 13bfe534 sources
+rederived: 2026-08-14T23:36:21-0400 b1fc9796 sources, sources, sources
+rederived: 2026-08-15T00:20:06-0400 e937faee sources, sources, sources
+rederived: 2026-08-15T01:40:29-0400 139dff1a sources, sources, sources
+rederived: 2026-08-15T01:32:39-0400 108db464 sources, sources, sources
+rederived: 2026-08-15T02:20:03-0400 de5812ab sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:36:39-0400 34192244 sources, sources, sources
+rederived: 2026-08-15T02:21:00-0400 c87b3288 sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:26:42-0400 2749aab1 sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-14T19:50:32-0400 d20eee81 unchanged
+rederived: 2026-08-14T19:50:53-0400 d20eee81 unchanged
+rederived: 2026-08-14T20:02:53-0400 068ca7fd unchanged
+rederived: 2026-08-14T21:00:58-0400 ab304cb2 unchanged
+rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
+rederived: 2026-08-15T00:30:15-0400 f4dab407 unchanged
+rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:57:59-0400 5d767dce unchanged
+rederived: 2026-08-15T03:19:44-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:39:23-0400 829013ee sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:30:48-0400 a327ba45 sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T06:15:16-0400 3c7d14e4 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources
+rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T04:01:11-0400 b18a891c sources
+rederived: 2026-08-15T06:18:29-0400 9232bd77 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

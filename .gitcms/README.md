@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # .gitcms
 
 This folder is managed by [GitCMS](https://gitcms.dev).

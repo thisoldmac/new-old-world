@@ -36,7 +36,7 @@ import socket
 import sys
 import uuid
 
-PROTOCOL_VERSION = 12
+PROTOCOL_VERSION = 13
 MAX_MESSAGE_BYTES = 64 * 1024
 
 
@@ -237,6 +237,13 @@ def main() -> int:
                         help="observe_elements: process serial, high half")
     parser.add_argument("--serial-lo", type=int,
                         help="observe_elements: process serial, low half")
+    # The two log tails. `--lines` serves both operations because the field
+    # differs (logLineCount vs hostLogLineCount) while the meaning does not;
+    # the operation name says which one is being asked.
+    parser.add_argument("--lines", type=int,
+                        help="guest_log_tail / host_log_tail: how many")
+    parser.add_argument("--area", help="guest_log_tail / host_log_tail: "
+                                       "one area tag, e.g. files or contin")
     parser.add_argument("--json", action="store_true",
                         help="print the reply verbatim")
     parser.add_argument("--timeout", type=float, default=30.0,
@@ -267,6 +274,20 @@ def main() -> int:
             if value is not None:
                 drive[key] = value
         request["mirrorDriveRequest"] = drive
+    if args.lines is not None or args.area is not None:
+        if args.operation == "guest_log_tail":
+            if args.lines is not None:
+                request["logLineCount"] = args.lines
+            if args.area is not None:
+                request["logArea"] = args.area
+        elif args.operation == "host_log_tail":
+            if args.lines is not None:
+                request["hostLogLineCount"] = args.lines
+            if args.area is not None:
+                request["hostLogArea"] = args.area
+        else:
+            parser.error("--lines/--area belong to guest_log_tail or "
+                         "host_log_tail")
     if (args.serial_hi is None) != (args.serial_lo is None):
         parser.error("--serial-hi and --serial-lo go together or neither; "
                      "half a process serial number names nothing")

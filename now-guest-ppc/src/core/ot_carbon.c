@@ -33,16 +33,23 @@ OSStatus now_ot_resolve(void)
         { "OTSetSynchronous", (void **)&gNowOT.setSynchronous },
         { "OTSetNonBlocking", (void **)&gNowOT.setNonBlocking },
         { "OTBind", (void **)&gNowOT.bind },
+        { "OTListen", (void **)&gNowOT.listen },
+        { "OTAccept", (void **)&gNowOT.accept },
+        { "OTGetEndpointState", (void **)&gNowOT.getEndpointState },
         { "OTConnect", (void **)&gNowOT.connect },
         { "OTRcvConnect", (void **)&gNowOT.rcvConnect },
         { "OTLook", (void **)&gNowOT.look },
         { "OTSnd", (void **)&gNowOT.snd },
         { "OTRcv", (void **)&gNowOT.rcv },
         { "OTSndOrderlyDisconnect", (void **)&gNowOT.sndOrderlyDisconnect },
+        { "OTSndDisconnect", (void **)&gNowOT.sndDisconnect },
         { "OTRcvOrderlyDisconnect", (void **)&gNowOT.rcvOrderlyDisconnect },
         { "OTRcvDisconnect", (void **)&gNowOT.rcvDisconnect },
         { "OTUnbind", (void **)&gNowOT.unbind },
         { "OTOptionManagement", (void **)&gNowOT.optionManagement },
+        { "OTSndUData", (void **)&gNowOT.sndUData },
+        { "OTRcvUData", (void **)&gNowOT.rcvUData },
+        { "OTRcvUDErr", (void **)&gNowOT.rcvUDErr },
     };
     /* Resolved separately because a miss here must NOT be fatal. Every
        symbol above is load-bearing, so the loop treats absence as a

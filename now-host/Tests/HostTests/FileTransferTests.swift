@@ -37,17 +37,159 @@ final class FileWireTests: XCTestCase {
         }
     }
 
-    private func connectedGuest() async throws -> FakeGuest {
+    private func connectedGuest(mirrorTransfer: Bool? = true) async throws
+        -> FakeGuest {
         let guest = FakeGuest(port: listener.boundPort ?? 0)
         guest.start()
         try guest.send(.hello(Hello(
             contract: Contract.revision, side: "guest", version: "0.1.0",
+            mirrorTransfer: mirrorTransfer,
             name: "PowerBook 1400", os: "9.1", chunk: 8192)))
         try await waitUntil("connected") {
             if case .connected = self.listener.state { return true }
             return false
         }
         return guest
+    }
+
+    func testOlderGuestIsNotSentMirrorFileDescriptors() async throws {
+        let guest = try await connectedGuest(mirrorTransfer: nil)
+        var getFailure: GuestListener.FileFailure?
+        var putFailure: GuestListener.FileFailure?
+
+        listener.getMirrorFile(
+            source: .init(kind: "desktop", name: "Read Me")) { result in
+                if case .failure(let failure) = result {
+                    getFailure = failure
+                }
+            }
+        listener.putMirrorFile(
+            name: "Read Me", target: .init(kind: "desktop"),
+            container: "data", bytes: Data("hello".utf8)
+        ) { result in
+            if case .failure(let failure) = result {
+                putFailure = failure
+            }
+        }
+
+        XCTAssertEqual(getFailure?.code, "unsupported")
+        XCTAssertEqual(putFailure?.code, "unsupported")
+        XCTAssertFalse(guest.received.contains { message in
+            if case .fileGet(let get) = message {
+                return get.mirrorSource != nil
+            }
+            if case .fileOffer(let offer) = message {
+                return offer.mirrorDrop != nil
+            }
+            return false
+        })
+    }
+
+    /// The success path, which the refusal-shaped tests above are
+    /// structurally unable to see: a granted mirror get (and a granted
+    /// continuity grab, below) must reach delivery, not be cancelled by
+    /// this side's own begin guard. The two senders once skipped
+    /// activeFileGetID, so every granted answer was discarded and
+    /// cancelled — a timeout on a transfer the guest had granted.
+    func testMirrorFileGetReachesDeliveryInsteadOfCancellingItself()
+        async throws {
+        let guest = try await connectedGuest()
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: staging, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var delivered: GuestListener.FileDelivery?
+        var failure: GuestListener.FileFailure?
+
+        listener.getMirrorFile(
+            source: .init(kind: "desktop", name: "Read Me"),
+            stagingDirectory: staging) { result in
+                switch result {
+                case .success(let delivery): delivered = delivery
+                case .failure(let f): failure = f
+                }
+            }
+        var getId: Int?
+        try await waitUntil("file.get") {
+            for message in guest.received {
+                if case .fileGet(let get) = message,
+                   get.mirrorSource != nil {
+                    getId = get.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(getId)
+        let payload = Data("granted bytes".utf8)
+        try guest.send(.fileBegin(FileBegin(
+            id: id, transfer: 9, name: "Read Me", container: "data",
+            bytes: payload.count, dataBytes: payload.count, rsrcBytes: 0,
+            fileType: "TEXT", creator: "ttxt", modified: 3_500_000_000)))
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .bulk, flags: [.end], transfer: 9, payload: payload))
+        try guest.send(.fileEnd(FileEnd(
+            id: id, transfer: 9, ok: true, sendMs: 5,
+            crc32: TransferIdentity.crc32(payload))))
+
+        try await waitUntil("delivery") { delivered != nil || failure != nil }
+        XCTAssertNil(failure, "granted get must not fail: \(String(describing: failure))")
+        XCTAssertEqual(delivered?.name, "Read Me")
+        XCTAssertFalse(guest.received.contains { message in
+            if case .fileCancel = message { return true }
+            return false
+        }, "the host cancelled a transfer it asked for")
+    }
+
+    func testContinuityGrabReachesDeliveryInsteadOfCancellingItself()
+        async throws {
+        let guest = try await connectedGuest()
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: staging, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var delivered: GuestListener.FileDelivery?
+        var failure: GuestListener.FileFailure?
+
+        listener.grabContinuityFile(
+            epoch: 3, generation: 7,
+            stagingDirectory: staging) { result in
+                switch result {
+                case .success(let delivery): delivered = delivery
+                case .failure(let f): failure = f
+                }
+            }
+        var grabId: Int?
+        try await waitUntil("continuity.grab") {
+            for message in guest.received {
+                if case .continuityGrab(let grab) = message {
+                    grabId = grab.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(grabId)
+        let payload = Data("grabbed bytes".utf8)
+        try guest.send(.fileBegin(FileBegin(
+            id: id, transfer: 11, name: "Clipping", container: "data",
+            bytes: payload.count, dataBytes: payload.count, rsrcBytes: 0,
+            fileType: "TEXT", creator: "ttxt", modified: 3_500_000_000)))
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .bulk, flags: [.end], transfer: 11, payload: payload))
+        try guest.send(.fileEnd(FileEnd(
+            id: id, transfer: 11, ok: true, sendMs: 5,
+            crc32: TransferIdentity.crc32(payload))))
+
+        try await waitUntil("delivery") { delivered != nil || failure != nil }
+        XCTAssertNil(failure, "granted grab must not fail: \(String(describing: failure))")
+        XCTAssertEqual(delivered?.name, "Clipping")
+        XCTAssertFalse(guest.received.contains { message in
+            if case .fileCancel = message { return true }
+            return false
+        }, "the host cancelled a grab the guest granted")
     }
 
     func testListingPagesThroughTheShare() async throws {
@@ -898,11 +1040,10 @@ final class TransferQueueTests: XCTestCase {
         XCTAssertTrue(model.queue.isEmpty)
     }
 
-    /// Replacing a running or locked classic application can accept every
-    /// byte and still fail when the receiver tries to delete-and-rename the
-    /// temporary file. That second `exists` is the final answer to an
-    /// already-authorized overwrite, not a new collision question.
-    func testAnOverwriteThatCannotFinalizeFailsWithoutPromptingAgain()
+    /// Finder-style replacement moves an in-use application aside after
+    /// the human authorizes the overwrite, then tells this side that the
+    /// process still in memory needs to be relaunched.
+    func testRunningApplicationReplacementSucceedsAndRequestsRelaunch()
         async throws {
         let guest = try await silentGuest()
         let url = try XCTUnwrap(tempFiles(["Running App.bin"]).first)
@@ -946,16 +1087,17 @@ final class TransferQueueTests: XCTestCase {
             !guest.bulkReceived.isEmpty
         }
         try guest.send(.fileDone(FileDone(
-            id: id, ok: false, code: "exists",
-            reason: "the running application could not be replaced")))
+            id: id, ok: true, code: nil, reason: nil,
+            relaunchRequired: true)))
 
-        try await waitUntil("overwrite failure settled") {
+        try await waitUntil("replacement settled") {
             self.model.transfer == nil
         }
         XCTAssertNil(model.overwritePrompt,
-                     "an overwrite refusal must fail closed, not loop")
-        XCTAssertTrue(model.lastError?.contains("could not be replaced")
-                      == true)
+                     "a completed replacement must not ask twice")
+        XCTAssertNil(model.lastError)
+        XCTAssertTrue(model.lastNotice?.contains("moved to the Trash") == true)
+        XCTAssertTrue(model.lastNotice?.contains("relaunch") == true)
     }
 
     func testADeadWireStopsTheQueueInsteadOfFailingEveryFile()

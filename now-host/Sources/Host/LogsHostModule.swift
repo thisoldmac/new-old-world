@@ -1,10 +1,10 @@
 import SwiftUI
 
 private enum LogsHostModuleError: Error, CustomStringConvertible {
-    case missingService
+    case missingServices
 
     var description: String {
-        "The host logging service is unavailable."
+        "The host logging or continuity service is unavailable."
     }
 }
 
@@ -14,12 +14,20 @@ private enum LogsHostModuleError: Error, CustomStringConvertible {
 @MainActor
 final class LogsHostModuleRuntime: HostModuleRuntime {
     let model: LogsModel
+    let continuity: MirrorContinuityController
+    /// `{ context.showSettings(.logs) }`, captured once at construction —
+    /// the page's "Settings…" button for "Log to disk", which moved out
+    /// of the header switches (`Invert` stays: display state, not a
+    /// disk-writing preference).
+    let openSettings: () -> Void
 
     init(context: HostModuleContext) throws {
-        guard let logs = context.logs else {
-            throw LogsHostModuleError.missingService
+        guard let logs = context.logs, let continuity = context.continuity else {
+            throw LogsHostModuleError.missingServices
         }
         model = logs
+        self.continuity = continuity
+        openSettings = { context.showSettings(.logs) }
     }
 }
 
@@ -40,6 +48,8 @@ enum LogsHostModule {
                     reason: "The Logs runtime has the wrong type."))
             }
             return AnyView(LogsModuleView(
-                model: runtime.model, log: runtime.model.log))
+                model: runtime.model, log: runtime.model.log,
+                continuity: runtime.continuity,
+                openSettings: runtime.openSettings))
         })
 }

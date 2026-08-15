@@ -444,6 +444,554 @@
         "ext/CMakeLists.txt"
       ],
       "reason": "RC manifest plumbing was privately cold-baked and verified; shared bake is deferred until release-candidate landing."
+    },
+    {
+      "at": "2026-08-11T18:35:33-0400",
+      "branch": "codex/dev/cross-cutting/continuity-cursor-v0",
+      "extDigest": "2c2eb9b55cb8ce8dc51850ad2b1d81f38f9f0e1d",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_core_logic.c",
+        "ext/src/now_ext_core_logic.h",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_cdm.S",
+        "ext/src/now_ext_cursor_input.h",
+        "ext/src/now_ext_drag.c",
+        "ext/src/now_ext_install.c",
+        "ext/src/now_ext_install.h"
+      ],
+      "reason": "Feature-branch integration checkpoint: focused Continuity and transactional INIT guards pass; full repository gates and an exact branch-private cold bake remain before release-candidate handoff."
+    },
+    {
+      "at": "2026-08-12T12:31:33-0400",
+      "branch": "codex/dev/cross-cutting/continuity-cursor-v0",
+      "extDigest": "28517d5cfcb7fa84b1347c67b84389fc83163ccd",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_tm.S",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h"
+      ],
+      "reason": "Recovered from exact session patches for the branch-private resident already metal-tested; shared oracle promotion remains deferred to release-candidate landing."
+    },
+    {
+      "at": "2026-08-12T12:32:07-0400",
+      "branch": "codex/dev/cross-cutting/continuity-cursor-v0",
+      "extDigest": "caf00ee4e6194135e0fc18bd044682e914b996ed",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h"
+      ],
+      "reason": "Recovered from exact session patches for the branch-private resident already tested and baked; shared oracle promotion remains deferred to release-candidate landing."
+    },
+    {
+      "at": "2026-08-12T12:33:15-0400",
+      "branch": "codex/dev/cross-cutting/continuity-cursor-v0",
+      "extDigest": "995f8fc24f833ebcdf1bfe0f99f4bb09d1f83322",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h",
+        "ext/src/now_ext_cursor_tracking.S"
+      ],
+      "reason": "Recovered from exact session patches for the branch-private resident already tested and baked; shared promotion remains reserved for release-candidate landing."
+    },
+    {
+      "at": "2026-08-12T12:33:48-0400",
+      "branch": "codex/dev/cross-cutting/continuity-cursor-v0",
+      "extDigest": "f1f68151e53ae731d0f181d9b17094041e56f8bc",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h",
+        "ext/src/now_ext_cursor_tracking.S"
+      ],
+      "reason": "Recovered from exact session patches for the branch-private resident already tested and baked; shared promotion remains reserved for release-candidate landing."
+    },
+    {
+      "at": "2026-08-12T15:21:00-0400",
+      "branch": "feat/continuity-direct-pointer",
+      "extDigest": "07627fb6acd9273211af623ddaa5b17cac93d115",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Branch-private Continuity target-context hook build was cold-baked and passed PMU and CUDA fault rigs; shared oracle promotion remains deferred to release-candidate landing."
+    },
+    {
+      "at": "2026-08-12T15:53:24-0400",
+      "branch": "feat/continuity-direct-pointer",
+      "extDigest": "1a20af1ab10c146de75a05e72668c8056c0e13c8",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h",
+        "ext/src/now_ext_cursor_tracking.S"
+      ],
+      "reason": "Private cold bake continuity-drag-matrix verified; shared bake deferred until feature reaches its release candidate after attended PowerBook drag testing."
+    },
+    {
+      "at": "2026-08-12T15:54:34-0400",
+      "branch": "feat/continuity-direct-pointer",
+      "extDigest": "1a20af1ab10c146de75a05e72668c8056c0e13c8",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h",
+        "ext/src/now_ext_cursor_tracking.S"
+      ],
+      "reason": "Private cold bake continuity-drag-matrix verified; shared bake deferred until feature reaches its release candidate after attended PowerBook drag testing."
+    },
+    {
+      "at": "2026-08-12T17:40:26-0400",
+      "branch": "feat/continuity-direct-pointer",
+      "extDigest": "3cfb6e376a7168bd3d44f57ea460f6c1b43a2c3b",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h"
+      ],
+      "reason": "Private bake continuity-release-cursor-hide verified exact resident, clean guest shutdown, clean HFS volume and qemu-img; shared promotion deferred until feature reaches release candidate after PowerBook metal verification."
+    },
+    {
+      "at": "2026-08-12T18:37:50-0400",
+      "branch": "feat/continuity-adb-input-spike",
+      "extDigest": "c0077d692a656605a207db0537eb4632228b903e",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_adb_observer.S",
+        "ext/src/now_ext_adb_observer.c",
+        "ext/src/now_ext_adb_observer.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Passive ADB observer checkpoint: branch-private PMU/CUDA cold boots and private bake verified; shared oracle promotion deferred until attended PowerBook verification and release landing."
+    },
+    {
+      "at": "2026-08-12T19:37:30-0400",
+      "branch": "feat/continuity-adb-input-spike",
+      "extDigest": "e3c8e8ef44ab04b5e86e1036ba48276a41e6c8ff",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_adb_observer.c",
+        "ext/src/now_ext_adb_observer.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Virtual ADB remains an emulator-only authority experiment; shared image promotion is deferred until the passive PowerBook trace establishes idle packet behavior and the release candidate selects this mechanism."
+    },
+    {
+      "at": "2026-08-12T20:02:02-0400",
+      "branch": "feat/continuity-keyboard",
+      "extDigest": "e3c8e8ef44ab04b5e86e1036ba48276a41e6c8ff",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_adb_observer.S",
+        "ext/src/now_ext_adb_observer.c",
+        "ext/src/now_ext_adb_observer.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Integrates the exact 5a601a18 V7 resident already verified by a clean branch-private bake; shared promotion remains deferred until the combined keyboard release candidate is baked and metal-tested."
+    },
+    {
+      "at": "2026-08-12T20:11:36-0400",
+      "branch": "feat/continuity-keyboard",
+      "extDigest": "5f75a302913250edcc0e4331f3cea83f8e9169dc",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_adb_observer.c",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_keyboard.c",
+        "ext/src/now_ext_continuity_keyboard.h",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "V8 keyboard resident queue checkpoint builds and native queue tests pass; private bake is deferred until the matched host/PPC protocol and escape-control path are integrated."
+    },
+    {
+      "at": "2026-08-12T20:44:09-0400",
+      "branch": "feat/continuity-keyboard",
+      "extDigest": "5e67cb7db68bbfbc6e8da35593073a53fff825e1",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity_keyboard.c"
+      ],
+      "reason": "Process-switch safety checkpoint before the final V8 private resident bake; focused typed-wire, native, and 68K cross-build gates pass."
+    },
+    {
+      "at": "2026-08-13T01:25:09-0400",
+      "branch": "feat/continuity-integration-candidate",
+      "extDigest": "547945fbb8f2d20795ac8582f85e1fa679302093",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "contract/resident_version.h",
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_adb_observer.c",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_keyboard.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Private 1.3 bake verified exact resident; shared oracle promotion is deferred until this feature branch is selected for a release candidate."
+    },
+    {
+      "at": "2026-08-13T14:05:32-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "8b74cabd93255c0e2b98440e83e456248fb5e78a",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "Private PR #27 retest bake verified; shared oracle remains unchanged until the attended hardware retest is accepted."
+    },
+    {
+      "at": "2026-08-13T14:44:16-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "c59fdb31e20441a1f9ba021f517459fa230a10ba",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "Private PR #27 retest bake verified exact resident d19c192cba60; shared oracle remains unchanged until the attended hardware retest accepts this candidate."
+    },
+    {
+      "at": "2026-08-13T15:28:15-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "dc50e060f94df385bf1b11b2f4e25bc7df759300",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_keyboard.c",
+        "ext/src/now_ext_continuity_trace.h",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "private verified retest bundle; shared oracle bake is due when this branch is promoted"
+    },
+    {
+      "at": "2026-08-13T17:38:11-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "27c80fe8f2253df64aac13adee7592c7e5d8b43f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_gne.S"
+      ],
+      "reason": "Private V10 diagnostic bake and matched handoff bundle follow this implementation checkpoint; no shared oracle landing is requested."
+    },
+    {
+      "at": "2026-08-13T17:39:13-0400",
+      "branch": "fix/continuity-retest-inputs",
+      "extDigest": "27c80fe8f2253df64aac13adee7592c7e5d8b43f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_gne.S"
+      ],
+      "reason": "Private V10 diagnostic bake and matched handoff bundle follow this implementation checkpoint; no shared oracle landing is requested."
+    },
+    {
+      "at": "2026-08-13T18:19:43-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "00c8a76b445b7360c39a629f0b194a151651924a",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "checkpoint before host/guest gates; bake follows with the test bundle build"
+    },
+    {
+      "at": "2026-08-13T19:18:42-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "76d485c73ac9467c166189538c95687eb1d074ad",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "mid-bundle checkpoint; bake follows with the click-reliability stack build"
+    },
+    {
+      "at": "2026-08-13T19:34:23-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "499b97ce90bd43d2955d50926180b369d363adb6",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_trace.h",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "redesign checkpoint; bake follows with the stack build"
+    },
+    {
+      "at": "2026-08-13T20:11:59-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "15ea71b0067bac35f82316f16030ad17b04fbe3d",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "fix checkpoint; bake follows with the stack rebuild"
+    },
+    {
+      "at": "2026-08-13T20:35:21-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "73aa04c4437a06fbefa533b3e7c664de9d29be86",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "entry-inset and instrument checkpoint; bake follows with the stack rebuild"
+    },
+    {
+      "at": "2026-08-13T21:53:00-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "f9ee3857269d604bdd3d5f4c9825e42635c13302",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "swarm-round checkpoint; bake follows with the merged stack build"
+    },
+    {
+      "at": "2026-08-13T21:53:50-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "e7541b57d08dc06ec80f885b7405d59ba9a8fe6d",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity_keyboard.c"
+      ],
+      "reason": "keyUp accounting checkpoint; bake follows with merged stack build"
+    },
+    {
+      "at": "2026-08-13T22:28:58-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "e85d31c9dc94429487fc674f88ad9d4f9334602f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "chain-window fix; bake follows with stack build"
+    },
+    {
+      "at": "2026-08-13T22:48:50-0400",
+      "branch": "claude/swarm-single-driver",
+      "extDigest": "9e8c66a1b8713076ecbeafdb515dfb6798645083",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h"
+      ],
+      "reason": "single-driver unit; orchestrator bakes the merged stack"
+    },
+    {
+      "at": "2026-08-13T22:54:01-0400",
+      "branch": "claude/swarm-observer-match",
+      "extDigest": "e85711dd956a467808499f2ab0e0c484733b0d08",
+      "kind": "deferral",
+      "paths": [
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "observer-match unit; orchestrator bakes merged stack"
+    },
+    {
+      "at": "2026-08-13T22:57:30-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "369ad09afa5694319c80b00344074d50f88453ae",
+      "kind": "deferral",
+      "paths": [
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "observer-match merge; orchestrator bakes the merged stack"
+    },
+    {
+      "at": "2026-08-13T23:16:02-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "fdda28b224e9f406bdab595098f45e49f4f5acc8",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "convergence round; bake follows with the final stack build"
+    },
+    {
+      "at": "2026-08-14T00:45:31-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "b5e9e60bdfe899223ff30cfd01a7cbbe01f2b121",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "deep click probe checkpoint; bake follows with the bundle for the metal diff run"
+    },
+    {
+      "at": "2026-08-14T02:12:13-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "08bc0e717ffd2f115d2aaea3214ea0da5e95b4f9",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "V12 contract base for parallel MBTicks+interrupt-press lanes; bake follows with the bundle"
+    },
+    {
+      "at": "2026-08-14T02:16:59-0400",
+      "branch": "claude/mirror-continuity-input-47eb68",
+      "extDigest": "fbf88547b234a85ed8e8c64b5d1a4d47944c96fa",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "MBTicks coherence + edges-driven interrupt press; bake follows with tonight's bundle"
+    },
+    {
+      "at": "2026-08-14T03:26:05-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "72d0abf933aa6dab58fbae28f4db7aace1e0db4f",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "Continuity consolidation contract classification; resident prune and emulator validation will follow in this branch before the shared landing bake."
+    },
+    {
+      "at": "2026-08-14T03:33:09-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "241be23f85eab59b174b1a510e81433a5feb0718",
+      "kind": "deferral",
+      "paths": [
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_cursor.c",
+        "ext/src/now_ext_cursor_input.h",
+        "ext/src/now_ext_cursor_tracking.S"
+      ],
+      "reason": "Resident consolidation removes rejected Continuity experiments; cross-build and native guards pass, with emulator validation and shared landing bake still to follow."
+    },
+    {
+      "at": "2026-08-14T03:54:40-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "ed88e81c4fe345de8fca6b281d4120ab88986797",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_trace.h",
+        "ext/src/now_ext_cursor.c"
+      ],
+      "reason": "No Metal access overnight; resident instrumentation retirement is built and emulator verification follows, shared bake and Metal verification are due before landing."
+    },
+    {
+      "at": "2026-08-14T03:57:01-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "fee8c9965e22e3c55cebdc6e1e2446f4d50136d2",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "No Metal access overnight; INIT audit corrected the interrupt-context contract comment after the built prune. Shared bake and Metal verification remain due before landing."
+    },
+    {
+      "at": "2026-08-14T04:03:13-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "ec54ece03736b4ba8a8a12df3eb2e7064bc5773f",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext_continuity.c"
+      ],
+      "reason": "No Metal access overnight; source-guard wording correction only. Shared bake and Metal verification remain due before landing."
+    },
+    {
+      "at": "2026-08-14T04:38:44-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "7867ac4d077a7f1b91d131aa2aa08da9c970e8f7",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "No Metal access overnight; private emulator clone verified the staged resident and a shared bake remains due before main"
+    },
+    {
+      "at": "2026-08-14T04:39:00-0400",
+      "branch": "refactor/continuity-consolidation",
+      "extDigest": "7867ac4d077a7f1b91d131aa2aa08da9c970e8f7",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "No Metal access overnight; private emulator clone verified the staged resident and a shared bake remains due before main"
+    },
+    {
+      "at": "2026-08-14T20:01:46-0400",
+      "branch": "refactor/mirror-continuity-split",
+      "extDigest": "2b8fd5ec4b924d183e1a95363d27a3c5ae446735",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_keyboard.c"
+      ],
+      "reason": "V13 host-modifier word + KeyMap co-write; bake with the round-2 bundle"
+    },
+    {
+      "at": "2026-08-15T02:58:31-0400",
+      "branch": "claude/host-guest-assessments-7b254f",
+      "extDigest": "2b8fd5ec4b924d183e1a95363d27a3c5ae446735",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_keyboard.c"
+      ],
+      "reason": "branch merge inherits the split thread's own 2026-08-14 deferral (V13 host-modifier word; bake with the round-2 bundle) \u2014 no new resident source authored on this branch"
     }
   ]
 }

@@ -231,9 +231,13 @@ final class GuestListenerTests: XCTestCase {
         name: String = "PowerBook 1400",
         contract: Int = Contract.revision,
         build: String? = nil,
+        extensionVersion: String? = nil,
+        extensionBuild: String? = nil,
         agent: AgentIntegrationGuestAccess? = nil) -> ControlMessage {
         .hello(Hello(contract: contract, side: "guest", version: "0.1.0",
-                     build: build, agent: agent, name: name, os: "9.1",
+                     build: build, extensionVersion: extensionVersion,
+                     extensionBuild: extensionBuild, agent: agent,
+                     name: name, os: "9.1",
                      chunk: 8192))
     }
 
@@ -416,6 +420,20 @@ final class GuestListenerTests: XCTestCase {
                        "the roster row carries it too")
     }
 
+    func testHelloResidentIdentityReachesHealthAndRoster() async throws {
+        let residentBuild = String(repeating: "c", count: 40)
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(extensionVersion: "1.2",
+                                  extensionBuild: residentBuild))
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        XCTAssertEqual(listener.health?.extensionVersion, "1.2")
+        XCTAssertEqual(listener.health?.extensionBuild, residentBuild)
+        XCTAssertEqual(listener.guests.first?.extensionVersion, "1.2")
+        XCTAssertEqual(listener.guests.first?.extensionBuild, residentBuild)
+    }
+
     /// A guest that reports no build leaves it absent.
     ///
     /// `build` is optional and NOW-68K sends none, so absence has to survive
@@ -445,6 +463,43 @@ final class GuestListenerTests: XCTestCase {
         XCTAssertEqual(hostHello.chunk, 8192)
         XCTAssertEqual(listener.state,
                        .connected(guestName: "PowerBook 1400"))
+    }
+
+    func testContinuityAuthorityTravelsOnTheActiveTCPConversation()
+        async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello())
+        try await waitUntil("host hello") { !guest.received.isEmpty }
+
+        let key = try XCTUnwrap(listener.activeKey)
+        var delivered: (GuestKey, ContinuityReport)?
+        listener.onContinuityReport = { delivered = ($0, $1) }
+        let id = try XCTUnwrap(listener.armContinuity(
+            nonceHi: 0x0102_0304, nonceLo: 0x0506_0708, epoch: 9,
+            requestedHz: 30, leaseTicks: 90))
+        try await waitUntil("continuity arm") {
+            guest.received.contains { message in
+                guard case .continuityArm(let arm) = message else {
+                    return false
+                }
+                return arm.version == ContinuityContract.version
+                    && arm.id == id && arm.epoch == 9
+                    && arm.requestedHz == 30 && arm.leaseTicks == 90
+            }
+        }
+
+        let report = ContinuityReport(
+            version: ContinuityContract.version,
+            id: id, epoch: 9, state: "armed", acceptedHz: 30,
+            udpPort: Int(listener.boundPort!), reason: nil,
+            acceptedPackets: 0, stalePackets: 0, malformedPackets: 0,
+            appliedPositionSequence: 0, appliedButtonGeneration: 0)
+        try guest.send(.continuityReport(report))
+        try await waitUntil("continuity report") { delivered != nil }
+
+        XCTAssertEqual(delivered?.0, key)
+        XCTAssertEqual(delivered?.1, report)
     }
 
     /// The symmetric census family: the guest may ask the host for a

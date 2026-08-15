@@ -103,7 +103,9 @@ build_guest() {
     # non-zero, because "cmake failed" with no output is a bug report
     # nobody can act on.
     if ! cmake -S "$repo_root/$src" -B "$dir" -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="$toolchain" >"$log" 2>&1 \
+            -DCMAKE_TOOLCHAIN_FILE="$toolchain" \
+            -DNOW_UPDATE_CHANNEL="${NOW_UPDATE_CHANNEL:-development}" \
+            >"$log" 2>&1 \
         || ! cmake --build "$dir" >>"$log" 2>&1; then
         echo "== $label: FAILED"
         tail -30 "$log"
@@ -116,6 +118,15 @@ build_guest() {
 if [ "$which" = both ] || [ "$which" = ppc ]; then
     build_guest "now-guest-ppc (PowerPC Carbon)" now-guest-ppc \
         "${NOW_PPC_TOOLCHAIN:-}" ppc
+    if have "${NOW_PPC_TOOLCHAIN:-}" && [ -f "$out_root/ppc/now-guest-ppc.xcoff" ]; then
+        retro_root=$(sed -n 's/^RETRO68_ROOT:PATH=//p' \
+            "$out_root/ppc/CMakeCache.txt" | head -1)
+        if ! "$repo_root/tools/verify-ppc-pef-imports" \
+                "$out_root/ppc/now-guest-ppc.xcoff" \
+                "$retro_root/bin/MakePEF"; then
+            rc=1
+        fi
+    fi
 fi
 
 if [ "$which" = both ] || [ "$which" = 68k ]; then

@@ -69,7 +69,14 @@ final class NearestNeighbourSamplingTests: XCTestCase {
         /* 9 → 8 on 2026-08-07: the pixel-island draw in `SceneRenderer` was
            removed with the rest of the wire-pixel path. The gate did its job
            — the deletion was loud. */
-        XCTAssertEqual(total, 8,
+        /* 8 → 9 on 2026-08-11: the attributed Apple menu mark joined the
+           semantic renderer. Its call site explicitly requests `.none`. */
+        /* 9 → 10 on 2026-08-11: the cross-proved Finder alias transform
+           joined the same local renderer and also explicitly requests
+           nearest-neighbour sampling. */
+        /* 10 → 11 on 2026-08-11: Apple-menu rows now draw their explicit
+           profile-joined native `ics8` identity with `.none`. */
+        XCTAssertEqual(total, 11,
                        "the number of drawn bitmaps in MirrorKitUI changed. "
                        + "That is fine — check the new one asks for "
                        + "nearest-neighbour, then update this number so the "

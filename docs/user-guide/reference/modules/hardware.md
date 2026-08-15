@@ -7,9 +7,9 @@ audience: user
 lifecycle: current
 authority: [docs/contract-coverage.md, contract/asyncapi.yaml]
 module_ids: [census]
-source_dependencies: [contract/asyncapi.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/census, now-guest-68k/src/census]
+source_dependencies: [contract/asyncapi.yaml, now-host/Sources/Host/CensusModel.swift, now-host/Sources/Host/CensusModuleView.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/census, now-guest-68k/src/census]
 media_ids: [hardware-host, hardware-ppc]
-last_verified: 2026-08-09
+last_verified: 2026-08-14
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -32,7 +32,9 @@ hardware can answer.
 ## On the modern Mac
 
 The host pages results without rewriting absent, partial, refused, or failed
-into empty rows. The selected machine remains part of the result.
+into empty rows. The selected machine remains part of the result. PowerPC
+volume capacity uses the wide HFS API when the guest supports it, rather than
+the legacy 2 GB-limited fields.
 
 ## On the classic Mac
 
@@ -44,6 +46,9 @@ the same probe registry through its wire and console at its smaller bounds.
 ## Common tasks
 
 - Run the overview before choosing a specialized probe.
+- Use **Dump ROM** to ask the selected PowerPC guest to copy its complete ROM
+  image into the Files share, transfer that exact file over NOW, and save it
+  with a unique name in Downloads.
 - Record the machine, build, probe, and verification rung with any result.
 
 ## Safety, consent, and privacy
@@ -59,7 +64,11 @@ and disconnect remain distinct.
 ## Current limitations
 
 A probe listed in the contract is not automatically implemented or proven on
-both guests. Consult the live capability and coverage table.
+both guests. The PowerBook 1400 ROM presentation combines the 3 MiB Toolbox
+region reported by Gestalt with its separate 1 MiB boot region, while retaining
+the raw measured row. The 64 GB volume result, 4 MiB ROM dump, and known corpus
+checksum remain to be verified on the physical PowerBook 1400c. Consult the
+live capability and coverage table.
 
 ## For developers
 

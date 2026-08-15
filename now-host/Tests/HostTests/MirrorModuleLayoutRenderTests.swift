@@ -80,6 +80,7 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
                                      run: rig.run,
                                      presentation: rig.presentation,
                                      window: rig.window,
+                                     fileTransfer: rig.fileTransfer,
                                      connectedMachineName: "Power Mac G4",
                                      timeline: rig.source.actTimeline,
                                      cycles: rig.source.cycleTimeline)
@@ -89,6 +90,29 @@ final class MirrorModuleLayoutRenderTests: XCTestCase {
                           named: "mirror-module-\(state)-\(label).png")
             }
         }
+    }
+
+    func testContinuityModuleRendersTheLayout() throws {
+        let rig = try makeRig()
+        rig.source.continuity.beginEdgeMode()
+        defer {
+            rig.source.continuity.endEdgeMode(reason: "test")
+            rig.source.stop()
+        }
+        let outDir = URL(fileURLWithPath:
+            ProcessInfo.processInfo.environment["NOW_MIRROR_LAYOUT_OUT"]
+                ?? NSTemporaryDirectory())
+        try? FileManager.default.createDirectory(
+            at: outDir, withIntermediateDirectories: true)
+        let view = AnyView(
+            ContinuityModuleView(controller: rig.source.continuity,
+                                 previews: .capturingNothing,
+                                 connectedMachineName: { "Power Mac G4" })
+                .frame(width: 900, height: 720))
+
+        let image = try render(view, candidate: "continuity", label: "wide")
+        try write(image, to: outDir,
+                  named: "continuity-module-wide.png")
     }
 }
 
@@ -159,6 +183,7 @@ extension MirrorModuleLayoutRenderTests {
         let run: MirrorRunControl
         let presentation: MirrorPresentation
         let window: NOWMirrorWindow
+        let fileTransfer: MirrorFileTransferModel
     }
 
     /// A probe that answers with facts rather than with a connection.
@@ -223,10 +248,14 @@ extension MirrorModuleLayoutRenderTests {
                                        defaults: defaults)
         model.connection = .connected(name: "Power Mac G4", key: key)
         model.refreshLifecycle()
+        let fileTransfer = MirrorFileTransferModel(listener: listener)
+        fileTransfer.connection = model.connection
         return Rig(model: model, source: source, run: run,
                    presentation: presentation,
                    window: NOWMirrorWindow(source: source,
-                                           presentation: presentation))
+                                           presentation: presentation,
+                                           fileTransfer: fileTransfer),
+                   fileTransfer: fileTransfer)
     }
 
     /// Acts and cycles a drive would actually have produced: a couple

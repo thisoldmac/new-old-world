@@ -17,6 +17,7 @@ final class SettingsHostModuleRuntime: HostModuleRuntime {
     let settings: SettingsModel
     let listener: GuestListener
     let onboarding: OnboardingPortal
+    let localNetworkAccess: LocalNetworkAccessController
     let startListening: () -> Void
     let stopListening: () -> Void
 
@@ -28,6 +29,7 @@ final class SettingsHostModuleRuntime: HostModuleRuntime {
         }
         self.settings = settings
         self.onboarding = onboarding
+        localNetworkAccess = context.localNetworkAccess
         listener = context.listener
         startListening = context.startListening
         stopListening = context.stopListening
@@ -60,6 +62,7 @@ enum SettingsHostModule {
                 settings: runtime.settings,
                 listener: runtime.listener,
                 onboarding: runtime.onboarding,
+                localNetworkAccess: runtime.localNetworkAccess,
                 onStart: runtime.startListening,
                 onStop: runtime.stopListening))
         })

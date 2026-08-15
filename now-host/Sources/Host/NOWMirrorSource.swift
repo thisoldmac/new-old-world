@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import MirrorKit
 import MirrorKitUI
@@ -211,6 +212,16 @@ enum MirrorPerformDisposition: Equatable {
 final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
 
     @Published private(set) var scene: MirrorKit.Scene?
+    /// The Mirror's in-picture cursor: moves the guest pointer while the
+    /// host pointer is over the rendered Mirror. It borrows the app-owned
+    /// continuity controller as a driver; screen-edge Continuity is its
+    /// own module, and the controller arbitrates so only one drives.
+    @Published var mirrorCursorEnabled = false {
+        didSet {
+            guard mirrorCursorEnabled != oldValue else { return }
+            continuity.setMirrorCursorActive(running && mirrorCursorEnabled)
+        }
+    }
 
     /// **What the machine last DID, not what the poll last saw.**
     ///
@@ -292,6 +303,15 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     nonisolated var planes: ActionPlanes { .residentActPlane }
 
     private let listener: GuestListener
+    private weak var localNetworkAccess: LocalNetworkAccessController?
+    let continuity: MirrorContinuityController
+    private var continuitySubscription: AnyCancellable?
+    var continuityInputDriver: ContinuityInputDriver? {
+        /* Edge mode wins: while the Continuity module owns the shared
+           edge, the in-picture cursor must not also drive the same guest
+           pointer. The controller publishes the fact; this hook obeys it. */
+        mirrorCursorEnabled && !continuity.edgeModeActive ? continuity : nil
+    }
     private let hostFinder: HostFinderSession
     private var lastGuestScene: MirrorKit.Scene?
     private let engineRegistry: MirrorStateEngineRegistry?
@@ -418,6 +438,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     init(listener: GuestListener,
          engineRegistry: MirrorStateEngineRegistry? = nil,
          act: AgentIntegrationActControl,
+         continuity: MirrorContinuityController? = nil,
+         localNetworkAccess: LocalNetworkAccessController? = nil,
          interval: TimeInterval = 0.75,
          planePolicy: @escaping @MainActor (GuestKey) -> Set<MirrorPlaneID> = {
              _ in
@@ -438,6 +460,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
          hostFinderDefaults: UserDefaults? = nil,
          lifecycleDidChange: @escaping @MainActor () -> Void = {}) {
         self.listener = listener
+        self.localNetworkAccess = localNetworkAccess
+        self.continuity = continuity ?? MirrorContinuityController(
+            listener: listener, localNetworkAccess: localNetworkAccess)
         self.workScheduler = listener.workScheduler
         self.hostFinder = hostFinderDefaults.map {
             HostFinderSession(listener: listener, defaults: $0)
@@ -457,6 +482,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         self.finderRefreshOverride = finderRefreshOverride
         self.visibilityRefreshOverride = visibilityRefreshOverride
         self.lifecycleDidChange = lifecycleDidChange
+        self.continuitySubscription = self.continuity.objectWillChange.sink {
+            [weak self] _ in self?.objectWillChange.send()
+        }
         self.hostFinder.onChange = { [weak self] in
             guard let self, self.running,
                   let base = self.lastGuestScene else { return }
@@ -504,6 +532,29 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         hostFinder.resetForGuestChange()
     }
 
+    // MARK: - What this surface asks the Macintosh to arm
+
+    /// **What policy allows, narrowed to what the visible surface needs.**
+    ///
+    /// `planePolicy` stays the authority on what is PERMITTED — this only
+    /// ever intersects, so no mode can arm a plane a person or the guest
+    /// has refused. It is separate from `planePolicy` on purpose: the
+    /// engine's projection keeps following the full policy, because hiding
+    /// retained evidence is a display decision and this is a guest cost.
+    private func armedPlanes(for key: GuestKey) -> Set<MirrorPlaneID> {
+        /* The mode intersection is gone with Continuity Mode itself:
+           screen-edge Continuity is its own module now, arms nothing here,
+           and its guest intake claims its one plane on its own wire. The
+           Mirror is the only surface left and it may use everything policy
+           permits. */
+        planePolicy(key)
+    }
+
+    /// The transition tail is started by front-process change rather than
+    /// by the cycle. With the mode narrowing gone, the Mirror always wants
+    /// it when policy allows; the policy check lives at the call sites.
+    private var armsTransitionTail: Bool { true }
+
     // MARK: - The poll
 
     func start() {
@@ -542,6 +593,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         }
         actTimeline.depth = 0
         running = true
+        continuity.setMirrorCursorActive(mirrorCursorEnabled)
         cycleGeneration = nil
         pollRequestedAfterCycle = false
         cycleIO.guestChanged()
@@ -551,6 +603,10 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     func stop() {
+        /* Only the Mirror's own claim on the pointer ends here. Screen-edge
+           Continuity is the module's session, and the Mirror stopping must
+           not tear it down. */
+        continuity.setMirrorCursorActive(false)
         let stoppingKey = pinnedGuestKey
         let canRelease = stoppingKey != nil
             && stoppingKey == cycleIO.activeKey()
@@ -633,6 +689,8 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     /// A later resume is a fresh start even when it is the same physical Mac.
     func activeGuestDidChange() {
         hostFinder.resetForGuestChange()
+        if let pinnedGuestKey,
+           pinnedGuestKey == cycleIO.activeKey() { return }
         guard let pinnedGuestKey,
               pinnedGuestKey != cycleIO.activeKey() else { return }
         endSession(
@@ -733,7 +791,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
         guard !cycleIO.isScenePending() else { return rearm() }
         let generation = runGeneration
         cycleGeneration = generation
-        let planes = planePolicy(pinnedGuestKey)
+        let planes = armedPlanes(for: pinnedGuestKey)
         cycleAsked = (at: Date(),
                       semantics: planes.contains(.semantics),
                       interaction: planes.contains(.interaction))
@@ -829,8 +887,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
     }
 
     private func armTransitionSampler(for scene: MirrorKit.Scene) {
-        guard transitionInvalidationEnabled, running,
-              let process = Self.frontProcess(in: scene) else { return }
+        guard transitionInvalidationEnabled, running else { return }
+        guard armsTransitionTail else { return releaseTransitionTail() }
+        guard let process = Self.frontProcess(in: scene) else { return }
         let target = "\(process.high).\(process.low)"
         guard target != transitionTarget else { return }
         transitionTarget = target
@@ -867,6 +926,29 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
                             self.armTransitionSampler(for: latest)
                         }
                     }
+                }
+            }
+    }
+
+    /// **Ending the P5 tail, not merely declining to renew it.**
+    ///
+    /// Its lease is 36 000 ticks — ten minutes — so a surface that stops
+    /// reading transitions and says nothing leaves the Macintosh sampling
+    /// them for the rest of that lease. Clearing `transitionTarget` matters
+    /// just as much: it is the "already armed for this process" memo, and
+    /// keeping it would make the return to Mirror read as armed and never
+    /// renew.
+    private func releaseTransitionTail() {
+        transitionLeaseTask?.cancel()
+        transitionLeaseTask = nil
+        guard transitionTarget != nil else { return }
+        transitionTarget = nil
+        workScheduler.submitCallback(
+            .command("transitions stop"), as: .structuralRepair,
+            coalescingKey: "mirror:transitions") { [weak self] _, finish in
+                guard let self else { finish(); return }
+                self.sendCommand("transitions", ["op": .text("stop")]) { _ in
+                    finish()
                 }
             }
     }
@@ -930,8 +1012,12 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard isCurrentCycle(generation), let key = pinnedGuestKey else {
                 return
             }
-            let planes = planePolicy(key)
-            _ = shadowEngine?.setEnabledPlanes(planes)
+            /* Two different questions, and they were one call. The engine
+               projects whatever POLICY allows, so retained semantic and
+               content evidence survives a trip through Continuity; the
+               content join below follows what this surface actually ARMED. */
+            let planes = armedPlanes(for: key)
+            _ = shadowEngine?.setEnabledPlanes(planePolicy(key))
             _ = shadowEngine?.accept(decoded)
             observeOperations()
             let sameGuest = delivery.guestKey != nil
@@ -941,6 +1027,9 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             sceneGuestKey = delivery.guestKey
             decoded = continuity.scene
             decoded = withIcons(decoded)
+            /* The guest's size no longer flows from here: the
+               continuity.report carries it on the pointer plane's own wire,
+               so the display layout works without Mirror having run. */
             armTransitionSampler(for: decoded)
             _ = shadowEngine?.enrichFinder(decoded)
             scene = projectedScene(fallback: decoded)
@@ -1876,7 +1965,7 @@ final class NOWMirrorSource: ObservableObject, MirrorSceneSource {
             guard f.count >= 2 else { continue }
             switch f[0] {
             case "P": path = f[1]
-            case "V": view = .init(rawValue: f[1]) ?? .unknown
+            case "V": view = .finderWord(f[1])
             case "I" where f.count >= 8:
                 if f[7].lowercased() == "true" { selected.insert(f[1]) }
             default: break

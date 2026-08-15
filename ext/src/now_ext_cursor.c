@@ -30,11 +30,13 @@
  * redraw it. **On Mac OS 8/9 the Cursor Device Manager owns the sprite,
  * and the low-memory globals are downstream of it rather than upstream.**
  *
- * SO THIS FILE CALLS THE MANAGER. `CursorDeviceMoveTo` is the call a
- * mouse driver's own interrupt handler makes, sixty times a second, on
- * the device the manager hands out - which is why it is safe from the
- * drag Time Manager task, and why it is an absolute move with no
- * acceleration applied, which is what an act needs.
+ * SO THIS FILE CALLS THE MANAGER, BUT ONLY AT TASK TIME. The first metal
+ * Continuity candidates treated `CursorDeviceMoveTo` as though calling it
+ * from our arbitrary Time Manager task were equivalent to the ADB driver's
+ * own interrupt path. Twice, the PowerBook stopped accepting clicks after
+ * one or a few placements. The manager and QuickDraw therefore settle from
+ * the next jGNE pass; interrupt time publishes low-memory state and one
+ * preallocated latest-point debt only.
  *
  * THE LOW-MEMORY WRITES DID NOT GO AWAY, and that is deliberate. They
  * are what a tracking loop reads, they are what makes an act's click
@@ -70,7 +72,10 @@
 #include <CursorDevices.h>
 
 #include "peek_table.h"
+#include "now_continuity_logic.h"
 #include "now_cursor_logic.h"
+#include "now_ext_continuity_trace.h"
+#include "now_ext_cursor_input.h"
 
 /* CrsrNew and CrsrCouple are past where this toolchain's LowMem.h stops
    (CrsrBusy, 0x08CD), and are reached through VOLATILE POINTER VARIABLES
@@ -101,16 +106,41 @@ static volatile UInt8 *volatile gCrsrObscure = (volatile UInt8 *)0x08D2UL;
    _QDExtensions; NGetTrapAddress masks it. */
 #define kNowCursorDeviceTrap 0xAADB
 #define kNowUnimplementedTrap 0xA89F
+#define kNowGetMouseTrap  0xA972
+#define kNowStillDownTrap 0xA973
+#define kNowButtonTrap    0xA974
 
 /* OSErr, from the assembly shims - see now_ext_cursor_cdm.S for why they
    cannot be C declarations with TWOWORDINLINE. */
 extern long now_cdm_move_to(void *device, long absX, long absY);
 extern long now_cdm_next_device(void **device);
-/* The cursor task, through JCrsrTask. The manager moves the POSITION and
-   this is what moves the PICTURE - see the shim's own header for how
-   that was established, because the two look identical from inside the
-   guest and the difference is 340 pixels of arrow. */
-extern void now_cdm_crsr_task(void);
+extern void now_cursor_getmouse_patch(void);
+extern void now_cursor_stilldown_patch(void);
+extern void now_cursor_button_patch(void);
+
+/* Assembly-visible chain state. The incumbents are captured together before
+   any trap is changed, so installation cannot leave one hook pointing at an
+   uninitialised destination. Once installed, these links live until reboot. */
+volatile unsigned char gNowCursorTrackingRedrawOwed = 0;
+volatile unsigned char gNowCursorTrackingSourceActive = 0;
+static volatile unsigned char gNowCursorTrackingSettleSyntheticDevice = 0;
+static volatile unsigned char gNowCursorSettleIdleCursor = 0;
+static NowPeekU32 gNowCursorIdleSettledSeq = 0;
+static NowPeekU32 gNowCursorIdleSettleCount = 0;
+static NowPeekU32 gNowCursorIdleLastSettleTicks = 0;
+static NowPeekU32 gNowCursorIdleMaxSettleGap = 0;
+void *gNowCursorOldGetMouse = NULL;
+void *gNowCursorOldStillDown = NULL;
+void *gNowCursorOldButton = NULL;
+static volatile unsigned short gNowCursorTrackingSourceSeq = 0;
+static volatile short gNowCursorTrackingSourceH = 0;
+static volatile short gNowCursorTrackingSourceV = 0;
+static Point gNowCursorTrackingPressPoint;
+static Boolean gNowCursorTrackingPressValid = false;
+static volatile unsigned char gNowCursorTrackingDeviceActive = 0;
+static NowPeekU32 gNowCursorTrackingDeviceEpoch = 0;
+static NowPeekU32 gNowCursorTrackingDeviceSearchEpoch = 0;
+static CursorDevicePtr gNowCursorTrackingDevice = NULL;
 
 static NowPeekTable *gTable = NULL;
 static CursorDevicePtr gDevice = NULL;
@@ -127,13 +157,699 @@ static Boolean gEverPlaced = false;
    same split P7 uses for its owed mouseUp, and for the same reason: the
    part that must not fail runs where it cannot, and the part that needs
    a context waits for one. */
-static Boolean gRedrawOwed = false;
+static volatile Boolean gTaskApplyOwed = false;
+static volatile NowPeekI32 gTaskH = 0;
+static volatile NowPeekI32 gTaskV = 0;
+static volatile NowPeekU32 gTaskApplySeq = 0;
+static volatile NowPeekI32 gTaskAppliedH = 0;
+static volatile NowPeekI32 gTaskAppliedV = 0;
+/* Native-input observation is deliberately task-time sampling of both the
+   CursorDevice record and RawMouse, not a Time Manager dereference and not
+   the jGNE EventRecord. Real ADB/USB input updates RawMouse on every tested
+   rig, while CursorData.where can remain at our last CursorDeviceMoveTo point.
+   The system filter also runs before Event Manager commits its returned
+   record, so treating A1 as an input notification misses real movement. */
+static volatile NowPeekU32 gPhysicalInputSeq = 0;
+static volatile NowPeekU32 gPhysicalSamples = 0;
+static volatile NowPeekU32 gPhysicalChanges = 0;
+static volatile NowPeekU32 gPhysicalTrigger = 0;
+static volatile NowPeekU32 gDebtCancels = 0;
+static unsigned gPhysicalButtons = 0;
+static Boolean gPhysicalButtonsValid = false;
+static Boolean gPhysicalValid = false;
+static Point gPhysicalRawWhere;
+static Boolean gPhysicalRawValid = false;
+static Point gPhysicalReportedWhere;
+static Point gOwnedDeviceWhere;
+static Boolean gOwnedDeviceValid = false;
+/* Cover more than one second of synthetic propagation at the maximum 60 Hz
+   rate. The PowerPC Cursor Device can publish an older requested point after a
+   tracking loop has advanced MouseLocation; eight entries aged that owned
+   point out in 267 ms at 30 Hz and falsely classified it as physical input.
+   Newest-first lookup keeps the ordinary cost near one comparison. */
+enum { kOwnedHistoryCount = 64 };
+typedef struct {
+    volatile unsigned short seq;
+    volatile Point point[kOwnedHistoryCount];
+    volatile unsigned short next;
+    volatile unsigned short used;
+} OwnedPointHistory;
+/* The PPC task and Continuity timer have separate single-writer histories.
+   A shared ring let the timer interrupt a task-time index update and made
+   native-input classification depend on a torn Point. */
+static OwnedPointHistory gOwnedDeviceHistory;
+static OwnedPointHistory gOwnedTrackingHistory;
 
 int now_ext_cursor_boot(NowPeekTable *table);
 void now_ext_cursor_rollback(NowPeekTable *table);
 void now_ext_cursor_gne(NowPeekTable *table);
+int now_ext_cursor_task_apply_state(NowPeekU32 *seq, NowPeekI32 *h,
+                                    NowPeekI32 *v);
 int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags);
 NowPeekCursorCell *now_ext_cursor_cell(NowPeekTable *table);
+
+static void remember_owned_history(OwnedPointHistory *history, Point pt)
+{
+    unsigned short next = history->next;
+    unsigned short used = history->used;
+
+    history->seq++;
+    history->point[next] = pt;
+    history->next = (unsigned short)((next + 1u) % kOwnedHistoryCount);
+    if (used < kOwnedHistoryCount)
+        history->used = (unsigned short)(used + 1u);
+    history->seq++;
+}
+
+static void remember_owned_device_point(Point pt)
+{
+    gOwnedDeviceWhere = pt;
+    gOwnedDeviceValid = gDevice != NULL;
+    if (!gOwnedDeviceValid)
+        return;
+    remember_owned_history(&gOwnedDeviceHistory, pt);
+}
+
+/* Continuity's held tracking path owns only MouseLocation. Remember it
+   separately from the physical CursorDevice so the next native-input sample
+   does not mistake the system's propagation of our own write for an ADB/USB
+   report. The short history closes the race where the timer advances the
+   latest point while the sampler classifies the preceding one. */
+static void remember_owned_lowmem_point(Point pt)
+{
+    remember_owned_history(&gOwnedTrackingHistory, pt);
+}
+
+/* Read the held gesture's point without returning a torn h/v pair. The timer
+   is the sole publisher; two bounded attempts cover one interrupt arriving
+   between the task-time reader's fields. */
+static Boolean continuity_tracking_source_point(Point *out)
+{
+    unsigned short attempt;
+
+    if (out == NULL)
+        return false;
+    for (attempt = 0; attempt < 2; attempt++) {
+        unsigned short before = gNowCursorTrackingSourceSeq;
+        Boolean active;
+        Point pt;
+
+        if ((before & 1u) != 0)
+            continue;
+        active = gNowCursorTrackingSourceActive != 0;
+        pt.h = gNowCursorTrackingSourceH;
+        pt.v = gNowCursorTrackingSourceV;
+        if (before == gNowCursorTrackingSourceSeq
+                && (before & 1u) == 0 && active) {
+            *out = pt;
+            return true;
+        }
+    }
+    return false;
+}
+
+static Boolean owned_history_contains(const OwnedPointHistory *history,
+                                      Point pt)
+{
+    unsigned short before = history->seq;
+    unsigned short used;
+    unsigned short next;
+    unsigned short i;
+    Boolean matched = false;
+
+    /* Treat an in-flight write as host-owned for this one sample. A false
+       negative here revokes a valid drag; the next 16 ms tick can classify
+       the stable history without weakening physical-input takeover. */
+    if ((before & 1u) != 0)
+        return true;
+    used = history->used;
+    next = history->next;
+    if (used > kOwnedHistoryCount)
+        return true;
+    for (i = 0; i < used; i++) {
+        unsigned short index = (unsigned short)(
+            (next + kOwnedHistoryCount - 1u - i)
+            & (kOwnedHistoryCount - 1u));
+
+        if (history->point[index].h == pt.h
+                && history->point[index].v == pt.v) {
+            matched = true;
+            break;
+        }
+    }
+    if (before != history->seq || (history->seq & 1u) != 0)
+        return true;
+    return matched;
+}
+
+static Boolean is_recent_owned_device_point(Point pt)
+{
+    return owned_history_contains(&gOwnedDeviceHistory, pt)
+        || owned_history_contains(&gOwnedTrackingHistory, pt);
+}
+
+static Boolean is_owned_or_pending_point(Point pt)
+{
+    if (gTaskApplyOwed
+        && pt.h == (short)gTaskH && pt.v == (short)gTaskV)
+        return true;
+    return is_recent_owned_device_point(pt);
+}
+
+/* Publish the low-memory position left by the most recent task-time manager
+   apply. The Time Manager reads only these resident globals; it never follows
+   a CursorDevice pointer. Odd means the task-time writer is between fields. */
+int now_ext_cursor_task_apply_state(NowPeekU32 *seq, NowPeekI32 *h,
+                                    NowPeekI32 *v)
+{
+    NowPeekU32 before = gTaskApplySeq;
+
+    if ((before & 1u) != 0)
+        return 0;
+    *h = gTaskAppliedH;
+    *v = gTaskAppliedV;
+    *seq = before;
+    return before == gTaskApplySeq ? 1 : 0;
+}
+
+/* Sample native mouse motion only from RawMouse. Continuity
+   deliberately does not inspect or mutate the physical CursorDevice record:
+   the PowerBook 1400 trackpad owns that ADB-backed object, and treating it as
+   our synthetic device produced two whole-system metal wedges. This routine
+   is bounded low-memory/resident-state work so the timer samples immediately
+   before each placement; that prevents a host point from overwriting an ADB
+   report before optimistic takeover sees it. Recent host-owned points are
+   excluded. Button state is tracked separately from position history. */
+NowPeekU32 now_ext_cursor_physical_input_seq(void)
+{
+    Point raw;
+    unsigned buttons;
+    Boolean owned_raw;
+    Boolean changed = false;
+    NowPeekU32 trigger = 0;
+
+    raw = LMGetRawMouseLocation();
+    buttons = (LMGetMouseButtonState() & 0x80u) ? 0u : 1u;
+    gPhysicalSamples++;
+    owned_raw = is_owned_or_pending_point(raw);
+
+    if (!gPhysicalRawValid) {
+        if (!owned_raw) {
+            gPhysicalRawWhere = raw;
+            gPhysicalReportedWhere = raw;
+            gPhysicalRawValid = true;
+            gPhysicalValid = true;
+        }
+    } else if (!owned_raw
+               && (raw.h != gPhysicalRawWhere.h
+                   || raw.v != gPhysicalRawWhere.v)) {
+        changed = true;
+        trigger |= (NowPeekU32)kNowCursorInputTriggerPosition;
+        gPhysicalReportedWhere = raw;
+    }
+    if (!owned_raw)
+        gPhysicalRawWhere = raw;
+    if (!gPhysicalButtonsValid) {
+        gPhysicalButtons = buttons;
+        gPhysicalButtonsValid = true;
+    } else if (buttons != gPhysicalButtons) {
+        changed = true;
+        trigger |= (NowPeekU32)kNowCursorInputTriggerButton;
+    }
+    gPhysicalButtons = buttons;
+    if (changed) {
+        gPhysicalInputSeq++;
+        gPhysicalChanges++;
+        gPhysicalTrigger = trigger;
+    }
+    return gPhysicalInputSeq;
+}
+
+/* CursorDevicesGlue now performs P9's placement from the PPC application.
+   The resident remembers the point only after the application publishes a
+   successful result, so RawMouse takeover does not classify our own report as
+   physical ADB/USB input. No Cursor Device pointer crosses this boundary. */
+void now_ext_cursor_remember_continuity_point(NowPeekI32 h, NowPeekI32 v)
+{
+    Point pt;
+
+    pt.h = (short)h;
+    pt.v = (short)v;
+    remember_owned_device_point(pt);
+}
+
+/* The synthetic PPC Cursor Device normally draws its own report, but an
+   application can leave either CrsrObscure or the sprite itself stale until
+   the next physical mouse move. Continuity is that next movement. Clear the
+   low-memory obscured state and always ask QuickDraw for one balanced redraw;
+   CrsrObscure == 0 does not prove that the sprite is currently visible. This
+   is called only from the PPC app's synchronous resident service in
+   cooperative task time, never from a timer. */
+void now_ext_cursor_reveal_continuity(void)
+{
+    *gCrsrObscure = 0;
+    HideCursor();
+    ShowCursor();
+}
+
+/* Called from Continuity's Time Manager task immediately after its sole
+   position write. Resident memory only: this does not follow a CursorDevice,
+   call a manager, or mutate another mouse global. */
+void now_ext_cursor_remember_continuity_tracking_point(NowPeekI32 h,
+                                                       NowPeekI32 v)
+{
+    Point pt;
+    Boolean beginning = gNowCursorTrackingSourceActive == 0;
+
+    pt.h = (short)h;
+    pt.v = (short)v;
+    if (beginning) {
+        gNowCursorTrackingPressPoint = pt;
+        gNowCursorTrackingPressValid = true;
+    }
+    gNowCursorTrackingSourceSeq++;
+    gNowCursorTrackingSourceH = pt.h;
+    gNowCursorTrackingSourceV = pt.v;
+    gNowCursorTrackingSourceActive = 1;
+    gNowCursorTrackingSourceSeq++;
+    remember_owned_lowmem_point(pt);
+    gNowCursorTrackingRedrawOwed = 1; /* publish after the point is complete */
+}
+
+/* Release the held source without removing the three trap links. The links
+   are permanent for this boot because a later extension may chain behind
+   them; inactive they only test resident bytes and tail-chain. */
+void now_ext_cursor_end_continuity_tracking(void)
+{
+    gNowCursorTrackingSourceSeq++;
+    gNowCursorTrackingSourceActive = 0;
+    gNowCursorTrackingSourceSeq++;
+    gNowCursorTrackingRedrawOwed = 0;
+    gNowCursorTrackingPressValid = false;
+}
+
+/* Epoch configuration is copied into one resident byte for the assembly hot
+   path. Unknown bits were already masked by the application, but masking here
+   keeps this entry safe if another resident caller appears later. */
+void now_ext_cursor_configure_continuity_tracking(NowPeekU32 options)
+{
+    gNowCursorTrackingSettleSyntheticDevice =
+        (options
+            & (NowPeekU32)kNowPeekContinuityTrackingSettleSyntheticDevice)
+            != 0;
+    gNowCursorSettleIdleCursor =
+        (options
+            & (NowPeekU32)kNowPeekContinuityTrackingSettleIdleCursor)
+            != 0;
+    gNowCursorIdleSettledSeq = 0;
+    gNowCursorIdleSettleCount = 0;
+    gNowCursorIdleLastSettleTicks = 0;
+    gNowCursorIdleMaxSettleGap = 0;
+    gNowCursorTrackingDeviceActive = 0;
+    gNowCursorTrackingDeviceEpoch = 0;
+    gNowCursorTrackingDeviceSearchEpoch = 0;
+    gNowCursorTrackingDevice = NULL;
+}
+
+/* Did the current (or most recent) gesture travel beyond click slop from
+   its press point? A drag's up must keep its real timing - compressing it
+   would misrepresent the gesture's duration to its own target - so the
+   when-compression chain asks this before shaping an up. Resident state
+   only; safe from the jGNE pass. */
+int now_ext_cursor_tracking_press_moved(void)
+{
+    Point cur;
+    short dh;
+    short dv;
+
+    if (!gNowCursorTrackingPressValid)
+        return 0;
+    if (!continuity_tracking_source_point(&cur))
+        return 0;
+    dh = (short)(cur.h - gNowCursorTrackingPressPoint.h);
+    dv = (short)(cur.v - gNowCursorTrackingPressPoint.v);
+    if (dh < 0)
+        dh = (short)-dh;
+    if (dv < 0)
+        dv = (short)-dv;
+    return dh > (short)kNowPeekContinuityClickSlopPixels
+        || dv > (short)kNowPeekContinuityClickSlopPixels;
+}
+
+/* Locate the application-owned synthetic device by its public devID. No
+   pointer crosses the PPC/resident boundary. The walk is bounded and runs
+   only in the target application's task-time hook context. */
+static CursorDevicePtr continuity_tracking_device(
+    NowPeekContinuityCell *cell)
+{
+    CursorDevicePtr device = NULL;
+    unsigned short visited;
+    long err = noErr;
+
+    if (gNowCursorTrackingDevice != NULL
+            && gNowCursorTrackingDeviceEpoch == cell->epoch)
+        return gNowCursorTrackingDevice;
+    if (gNowCursorTrackingDeviceSearchEpoch == cell->epoch)
+        return NULL;
+    gNowCursorTrackingDevice = NULL;
+    gNowCursorTrackingDeviceEpoch = 0;
+    gNowCursorTrackingDeviceSearchEpoch = cell->epoch;
+    for (visited = 0; visited < 32; visited++) {
+        err = now_cdm_next_device((void **)&device);
+        if (err != noErr || device == NULL)
+            break;
+        if (device->devID == (OSType)'NOWc') {
+            gNowCursorTrackingDevice = device;
+            gNowCursorTrackingDeviceEpoch = cell->epoch;
+            cell->tracking_device_found++;
+            return device;
+        }
+    }
+    cell->tracking_device_last_error = (NowPeekI32)err;
+    return NULL;
+}
+
+static void settle_continuity_tracking_device(
+    NowPeekContinuityCell *cell, Point held)
+{
+    CursorDevicePtr device;
+    Point before;
+    Point after;
+    long err;
+
+    /* The caller has already proved its own option bit; this shared body
+       serves both the gesture hooks (0x10) and the idle spike (0x40). */
+    if (cell == NULL)
+        return;
+    if (!cell->enabled
+            || cell->state != (NowPeekU32)kNowPeekContinuityStateActive
+            || cell->epoch == 0)
+        return;
+    if (gNowCursorTrackingDeviceActive) {
+        cell->tracking_device_reentries++;
+        return;
+    }
+    gNowCursorTrackingDeviceActive = 1;
+    cell->tracking_device_attempts++;
+    cell->tracking_device_last_ticks = (NowPeekU32)LMGetTicks();
+    cell->tracking_device_last_held_h = (NowPeekI32)held.h;
+    cell->tracking_device_last_held_v = (NowPeekI32)held.v;
+    device = continuity_tracking_device(cell);
+    if (device == NULL) {
+        cell->tracking_device_failures++;
+        gNowCursorTrackingDeviceActive = 0;
+        return;
+    }
+    before.h = before.v = 0;
+    if (device->whichCursor != NULL)
+        before = device->whichCursor->where;
+    cell->tracking_device_last_before_h = (NowPeekI32)before.h;
+    cell->tracking_device_last_before_v = (NowPeekI32)before.v;
+    err = now_cdm_move_to(device, (long)held.h, (long)held.v);
+    after = before;
+    if (device->whichCursor != NULL)
+        after = device->whichCursor->where;
+    cell->tracking_device_last_after_h = (NowPeekI32)after.h;
+    cell->tracking_device_last_after_v = (NowPeekI32)after.v;
+    cell->tracking_device_last_error = (NowPeekI32)err;
+    if (err == noErr)
+        cell->tracking_device_moves++;
+    else
+        cell->tracking_device_failures++;
+    gNowCursorTrackingDeviceActive = 0;
+}
+
+/* The idle-settle spike. Ordinary motion is smooth exactly where the settle
+   machinery drives the device from a foreign process's task time (drags and
+   menus, ~1400 settles/s in the 185037 run) and hitches where the sprite
+   rides the PPC application's own scheduling. This runs on every jGNE pass
+   in whatever process is pumping, and settles the NOWc device to the
+   freshest wire point ONLY when the application is provably behind - so a
+   healthy pump sees no double-driving, and a starved one gets its frames
+   drawn from whoever holds the CPU. The notifier writes want/position_seq
+   at interrupt time, so freshness needs no application cooperation. */
+static void settle_continuity_idle_cursor(void)
+{
+    NowPeekContinuityCell *cell;
+    NowPeekU32 position_seq;
+    Point want;
+
+    if (!gNowCursorSettleIdleCursor || gNowCursorTrackingSourceActive)
+        return;
+    if (gTable == NULL
+            || gTable->length
+                < (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                                + sizeof(NowPeekContinuityCell))
+            || gTable->continuity_format
+                != (NowPeekU32)NOW_CONTINUITY_FORMAT_CURRENT)
+        return;
+    cell = &gTable->continuity;
+    position_seq = cell->position_seq;
+    if (!now_continuity_sequence_newer(position_seq,
+                                       cell->applied_position_seq)
+            || !now_continuity_sequence_newer(position_seq,
+                                             gNowCursorIdleSettledSeq))
+        return;
+    want.h = (short)cell->want_h;
+    want.v = (short)cell->want_v;
+    /* Own the point BEFORE the manager can propagate it into RawMouse:
+       the sampler otherwise classifies our own settle as physical input
+       and hands the pointer back to the host - eleven guest-input exits
+       in under a minute of 0x73 epochs (2026-08-13 200240). */
+    {
+        NowPeekU32 moves_before = cell->tracking_device_moves;
+
+        remember_owned_device_point(want);
+        settle_continuity_tracking_device(cell, want);
+        /* A settle that actually moved the device makes this resident, not
+           the application, the driver that satisfied this sequence - so it
+           owns the acknowledgement currency too, or the host's acks describe
+           a point nobody reached. Only advance; a settle can race ahead of
+           an older applied sequence but must never walk one back.
+
+           Writer safety: both writers of applied_position_seq run at task
+           time under cooperative scheduling, so they cannot interleave. The
+           ACK BUILDER does read it at interrupt time from the Open Transport
+           notifier, under the status_seq seqlock - but a single aligned U32
+           store is atomic on 68K, so the reader sees the old or the new
+           value and never a torn one. */
+        if (cell->tracking_device_moves != moves_before
+                && now_continuity_sequence_newer(position_seq,
+                                                 cell->applied_position_seq))
+            cell->applied_position_seq = position_seq;
+    }
+    gNowCursorIdleSettledSeq = position_seq;
+    gNowCursorIdleSettleCount++;
+    /* jGNE is task time: one balanced redraw so the settled point is also
+       the drawn point, exactly as the gesture hooks settle their frame. */
+    *gCrsrObscure = 0;
+    HideCursor();
+    ShowCursor();
+    /* The spike's cadence is bounded by how often ANY process pumps
+       events; "multiple shorter hitches" is that bound made visible.
+       Track the largest gap between consecutive settles per sample
+       window so the residual can be measured rather than described. */
+    {
+        NowPeekU32 ticks = (NowPeekU32)LMGetTicks();
+
+        if (gNowCursorIdleLastSettleTicks != 0
+                && ticks - gNowCursorIdleLastSettleTicks
+                    > gNowCursorIdleMaxSettleGap)
+            gNowCursorIdleMaxSettleGap =
+                ticks - gNowCursorIdleLastSettleTicks;
+        gNowCursorIdleLastSettleTicks = ticks;
+    }
+    if ((gNowCursorIdleSettleCount & 31u) == 1u) {
+        now_ext_continuity_trace_idle_settle(gNowCursorIdleSettleCount,
+                                             gNowCursorIdleMaxSettleGap);
+        gNowCursorIdleMaxSettleGap = 0;
+    }
+}
+
+/* The freshest wire sequence the idle spike has taken responsibility for.
+   The service reads it to keep the two drivers of the one Cursor Device
+   exclusive: a sequence the spike has settled must not also be handed to the
+   PPC application, whose apply would be a backward move to a point the device
+   is already past. It advances on every settle ATTEMPT, not only the ones the
+   manager accepted, so a device the spike cannot move drops that one 60 Hz
+   point rather than retrying the same sequence on every jGNE pass; the
+   acknowledgement currency below is the half that requires success. Zero
+   until the spike settles anything, which includes every epoch that did not
+   select the option (configure resets it beside the option byte). */
+NowPeekU32 now_ext_cursor_idle_settled_seq(void)
+{
+    return gNowCursorIdleSettledSeq;
+}
+
+/* Settle only the picture. This is entered from Toolbox hooks in
+   the tracked application's task-time context. Clearing first makes nested
+   GetMouse/StillDown/Button calls harmless; a timer interrupt that publishes
+   a newer point during QuickDraw leaves a fresh debt for the next hook. */
+void now_ext_cursor_settle_continuity_tracking(void)
+{
+    Point pt;
+    Point live;
+    Boolean moved;
+    Boolean owed = gNowCursorTrackingRedrawOwed != 0;
+    NowPeekContinuityCell *cell = NULL;
+
+    if (gTable != NULL
+            && gTable->length
+                >= (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                                 + sizeof(NowPeekContinuityCell))
+            && gTable->continuity_format
+                == (NowPeekU32)NOW_CONTINUITY_FORMAT_CURRENT) {
+        cell = &gTable->continuity;
+        cell->tracking_settle_calls++;
+    }
+
+    if (!continuity_tracking_source_point(&pt)) {
+        if (!owed)
+            return;
+        gNowCursorTrackingRedrawOwed = 0;
+        return;
+    }
+    live = LMGetMouseLocation();
+    moved = live.h != pt.h || live.v != pt.v;
+    /* The PowerBook's ADB path can republish its stationary physical point
+       between host ticks. Reassert our held point on every tracking call.
+       The baseline mode then lets the real Toolbox trap answer normally;
+       Virtual GetMouse may answer its out parameter directly afterwards. */
+    LMSetMouseLocation(pt);
+    if (cell != NULL)
+        cell->tracking_settle_reasserts++;
+    if (gNowCursorTrackingSettleSyntheticDevice)
+        settle_continuity_tracking_device(cell, pt);
+    if (!owed && !moved)
+        return;
+    gNowCursorTrackingRedrawOwed = 0;
+    if (cell == NULL)
+        return;
+    *gCrsrObscure = 0;
+    HideCursor();
+    ShowCursor();
+    cell->tracking_settle_redraws++;
+    /* Hide/Show may itself enter manager glue. Put the sourced point back
+       once more immediately before the patched trap tail-chains. */
+    if (continuity_tracking_source_point(&pt)) {
+        LMSetMouseLocation(pt);
+        cell->tracking_settle_reasserts++;
+    }
+}
+
+/* Normal mouse-up keeps the held source alive until the PPC application's
+   corrected Cursor Device move and button-up have both returned. This final
+   task-time step makes the last host point authoritative for the redraw,
+   then removes the source. */
+void now_ext_cursor_complete_continuity_tracking(void)
+{
+    Point pt;
+    Boolean have_point = continuity_tracking_source_point(&pt);
+
+    now_ext_cursor_end_continuity_tracking();
+    if (have_point)
+        LMSetMouseLocation(pt);
+    if (have_point) {
+        *gCrsrObscure = 0;
+        HideCursor();
+        ShowCursor();
+    }
+}
+
+/* Install the three tracking-loop hooks lazily in the CURRENT process context.
+
+   The act plane proved on metal that Toolbox trap dispatch can differ between
+   process contexts: installing a patch while NOW is running does not imply the
+   Finder's next MenuSelect/StillDown/GetMouse will see it. Continuity first
+   installs here from NOW's arm path, then now_ext_cursor_gne() repeats this
+   bounded check while the held source is active. The target process therefore
+   installs its own links on the jGNE pass that returns the synthetic mouseDown,
+   before it enters the nested tracking loop.
+
+   The links are permanent for this boot. Another extension may subsequently
+   chain behind us, so removing our link later could strand its incumbent
+   pointer. */
+int now_ext_cursor_enable_continuity_tracking(void)
+{
+    void *getmouse;
+    void *stilldown;
+    void *button;
+    Boolean getmouse_ours;
+    Boolean stilldown_ours;
+    Boolean button_ours;
+
+    if (gTable == NULL)
+        return 0;
+
+    getmouse = (void *)NGetTrapAddress(kNowGetMouseTrap, ToolTrap);
+    stilldown = (void *)NGetTrapAddress(kNowStillDownTrap, ToolTrap);
+    button = (void *)NGetTrapAddress(kNowButtonTrap, ToolTrap);
+    if (getmouse == NULL || stilldown == NULL || button == NULL)
+        return 0;
+    getmouse_ours = getmouse == (void *)now_cursor_getmouse_patch;
+    stilldown_ours = stilldown == (void *)now_cursor_stilldown_patch;
+    button_ours = button == (void *)now_cursor_button_patch;
+    if (getmouse_ours && stilldown_ours && button_ours)
+        return 1;
+    /* A mixed set cannot be repaired safely: saving one of our own shims as an
+       incumbent would make that hook tail-chain to itself forever. Installation
+       snapshots all three before changing any, so this means foreign mutation
+       or a previously interrupted install and must fail closed. */
+    if (getmouse_ours || stilldown_ours || button_ours)
+        return 0;
+
+    gNowCursorOldGetMouse = getmouse;
+    gNowCursorOldStillDown = stilldown;
+    gNowCursorOldButton = button;
+    NSetTrapAddress((UniversalProcPtr)now_cursor_getmouse_patch,
+                    kNowGetMouseTrap, ToolTrap);
+    NSetTrapAddress((UniversalProcPtr)now_cursor_stilldown_patch,
+                    kNowStillDownTrap, ToolTrap);
+    NSetTrapAddress((UniversalProcPtr)now_cursor_button_patch,
+                    kNowButtonTrap, ToolTrap);
+    gTable->rest_state |=
+        (NowPeekU16)kNowPeekRestCursorTrackingPatched;
+    return 1;
+}
+
+/* MBState is shared with the physical driver. When Continuity deliberately
+   changes it, advance the sampler's expected value so the next sample does
+   not report our own transition as local takeover. A later ADB/USB change is
+   still different and therefore wins. */
+void now_ext_cursor_remember_continuity_button(unsigned down)
+{
+    gPhysicalButtons = down ? 1u : 0u;
+    gPhysicalButtonsValid = true;
+}
+
+/* Revoking authority also revokes an interrupt-published redraw debt. Without
+   this, the following jGNE pass can move the manager back to a stale host
+   point after Continuity has already reported that the guest took over. */
+void now_ext_cursor_cancel_task_apply(void)
+{
+    if (gTaskApplyOwed || gNowCursorTrackingRedrawOwed)
+        gDebtCancels++;
+    gTaskApplyOwed = false;
+    now_ext_cursor_end_continuity_tracking();
+}
+
+void now_ext_cursor_input_diagnostics(NowCursorInputDiagnostics *out)
+{
+    if (out == NULL)
+        return;
+    out->sequence = gPhysicalInputSeq;
+    out->samples = gPhysicalSamples;
+    out->changes = gPhysicalChanges;
+    out->trigger = gPhysicalTrigger;
+    out->h = (NowPeekI32)gPhysicalReportedWhere.h;
+    out->v = (NowPeekI32)gPhysicalReportedWhere.v;
+    out->owned_h = (NowPeekI32)gOwnedDeviceWhere.h;
+    out->owned_v = (NowPeekI32)gOwnedDeviceWhere.v;
+    out->buttons = (NowPeekU32)gPhysicalButtons;
+    out->physical_valid = gPhysicalValid ? 1u : 0u;
+    out->owned_valid = gOwnedDeviceValid ? 1u : 0u;
+    out->debt_cancels = gDebtCancels;
+}
 
 /* The cursor cell, or NULL when this table is too short to hold one.
    The accretive rule's other half, and the same check the drag cell
@@ -180,10 +896,10 @@ static Boolean cursor_manager_present(void)
  * caller is holding the pointer for the duration of a gesture and must
  * never yield.
  *
- * INTERRUPT-SAFE: the drag task calls this every tick. Nothing here
- * allocates, blocks or moves memory - the low-memory accessors are
- * absolute moves, and CursorDeviceMoveTo is the call the ADB driver
- * makes from its own interrupt handler. */
+ * INTERRUPT-SAFE: the P7 drag task calls this every tick. Continuity has a
+ * narrower MouseLocation-only path in now_ext_continuity.c. The
+ * interrupt branch returns after low-memory writes and a preallocated debt;
+ * it neither dereferences Cursor Device records nor calls a manager. */
 int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
 {
     NowPeekCursorCell *cell = now_ext_cursor_cell(gTable);
@@ -194,6 +910,36 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
 
     pt.h = (short)h;
     pt.v = (short)v;
+
+    if (flags & kNowCursorPlaceInterrupt) {
+        /* This is deliberately the complete interrupt-time surface. A call
+           that is safe inside an ADB driver's private interrupt contract is
+           not thereby safe inside an unrelated Time Manager callback. */
+        LMSetMouseTemp(pt);
+        LMSetRawMouseLocation(pt);
+        LMSetMouseLocation(pt);
+        remember_owned_lowmem_point(pt);
+        gTaskH = h;
+        gTaskV = v;
+        if (flags & kNowCursorPlaceApplicationRedraw) {
+            /* A low-memory byte, not QuickDraw: a real device report clears
+               this before the cursor is redrawn too. The PPC application
+               performs the balanced HideCursor/ShowCursor at task time. */
+            *gCrsrObscure = 0;
+        } else {
+            gTaskApplyOwed = true;   /* publish after the coordinates */
+        }
+        if (cell != NULL) {
+            cell->seq++;
+            cell->asked++;
+            cell->at_h = h;
+            cell->at_v = v;
+            cell->by_lowmem++;
+            cell->route = (NowPeekU32)kNowPeekCursorRouteLowMem;
+            cell->seq++;
+        }
+        return kNowPeekCursorRouteLowMem;
+    }
 
     /* WHO MOVED IT LAST, asked of the MANAGER rather than of RawMouse.
        It was RawMouse, and that was wrong in a way only driving found:
@@ -255,7 +1001,7 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
         if (cell != NULL) {
             cell->yielded++;
         }
-    } else if (!(flags & kNowCursorPlaceInterrupt)) {
+    } else {
         /* THE ONLY ROUTE THAT MOVES THE PICTURE, and it is the crudest
            of the three.
 
@@ -281,53 +1027,14 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
            The drag vehicle does not, which is why the flag exists and
            why a drag still reports `device` and is still invisible. */
         (void)now_cdm_move_to(gDevice, (long)h, (long)v);
+        remember_owned_device_point(pt);
         *gCrsrObscure = 0;
         HideCursor();
         ShowCursor();
-        gRedrawOwed = false;
+        gTaskApplyOwed = false;
         route = kNowPeekCursorRouteQuickDraw;
         if (cell != NULL) {
             cell->by_device++;
-        }
-    } else if (gDevice != NULL) {
-        long err = now_cdm_move_to(gDevice, (long)h, (long)v);
-        if (err == 0) {
-            /* State, then picture, and BOTH are required. The manager
-               call alone leaves CursorData holding the new point with
-               the arrow still drawn at the old one; the task alone would
-               redraw from a position the manager does not agree with.
-               CrsrNew is set first because the task is what consumes
-               it. */
-            *gCrsrNew = *gCrsrCouple;
-            now_cdm_crsr_task();
-            /* Neither of those draws - see the QuickDraw branch above.
-               The debt is what makes an interrupt-time placement visible
-               at all, at the next moment there is a context. */
-            gRedrawOwed = true;
-            route = kNowPeekCursorRouteDevice;
-            if (cell != NULL) {
-                cell->by_device++;
-            }
-        } else {
-            /* A manager that refused is not a manager that is absent,
-               and the fallback runs anyway: a sprite that did not move
-               is better than a pointer the Toolbox and the picture
-               disagree about. The errno is kept because "it refused"
-               and "it refused with -1" are different investigations. */
-            *gCrsrNew = *gCrsrCouple;
-            now_cdm_crsr_task();
-            route = kNowPeekCursorRouteLowMem;
-            if (cell != NULL) {
-                cell->last_err = (NowPeekI32)err;
-                cell->by_lowmem++;
-            }
-        }
-    } else {
-        *gCrsrNew = *gCrsrCouple;
-        now_cdm_crsr_task();
-        route = kNowPeekCursorRouteLowMem;
-        if (cell != NULL) {
-            cell->by_lowmem++;
         }
     }
 
@@ -357,40 +1064,58 @@ int now_ext_cursor_place(NowPeekI32 h, NowPeekI32 v, unsigned flags)
  * armed: the debt is a picture that disagrees with the machine, and
  * disarming the plane does not make the arrow correct again.
  *
- * The yield rule is re-checked here rather than trusted from the
- * placement, because time has passed and a person may have taken the
- * mouse in between - which is exactly the window this settles into. */
+ * Native movement is sampled from the driver-owned CursorData record before
+ * this routine runs. The debt itself is owned input and always settles the
+ * latest point; letting the manager's stale record veto it recreates the
+ * fight this task-time split is meant to remove. */
 void now_ext_cursor_gne(NowPeekTable *table)
 {
     NowPeekCursorCell *cell;
-    Point where;
+    Point pt;
+    NowPeekI32 h;
+    NowPeekI32 v;
+    long err = 0;
 
     (void)table;
-    if (!gRedrawOwed) {
+    /* The active source is published before the target dequeues mouseDown.
+       Install in that target's trap context on this very jGNE pass; an install
+       performed only by NOW cannot protect a Finder/Menu Manager tracking loop. */
+    if (gNowCursorTrackingSourceActive)
+        (void)now_ext_cursor_enable_continuity_tracking();
+    settle_continuity_idle_cursor();
+    if (!gTaskApplyOwed) {
         return;
     }
-    gRedrawOwed = false;
-    if (gDevice != NULL && gDevice->whichCursor != NULL) {
-        where = gDevice->whichCursor->where;
-        /* A debt can only exist because a placement created one, so
-           gEverPlaced is necessarily true by the time this runs. It is
-           passed rather than hardcoded because the invariant is the
-           caller's and would go quiet if the debt were ever set from
-           somewhere else. */
-        if (now_cursor_is_foreign((NowPeekI32)where.h, (NowPeekI32)where.v,
-                                  (NowPeekI32)gLastPlaced.h,
-                                  (NowPeekI32)gLastPlaced.v,
-                                  gEverPlaced ? 1 : 0)) {
-            return;                 /* somebody else has it now */
-        }
-    }
+    /* Snapshot after observing the debt. A timer may publish a newer point
+       while this task-time apply runs; only clear the debt if the snapshot
+       is still current afterwards. */
+    h = gTaskH;
+    v = gTaskV;
+    pt.h = (short)h;
+    pt.v = (short)v;
+    gTaskApplySeq++;                  /* odd: manager apply in progress */
+    if (gDevice != NULL)
+        err = now_cdm_move_to(gDevice, (long)h, (long)v);
+    remember_owned_device_point(pt);
     *gCrsrObscure = 0;
     HideCursor();
     ShowCursor();
+    gLastPlaced = pt;
+    gEverPlaced = true;
+    pt = LMGetRawMouseLocation();
+    gTaskAppliedH = (NowPeekI32)pt.h;
+    gTaskAppliedV = (NowPeekI32)pt.v;
+    gTaskApplySeq++;                  /* even: applied position committed */
+    if (gTaskH == h && gTaskV == v)
+        gTaskApplyOwed = false;
     cell = now_ext_cursor_cell(gTable);
     if (cell != NULL) {
         cell->seq++;
         cell->route = (NowPeekU32)kNowPeekCursorRouteQuickDraw;
+        if (err != 0)
+            cell->last_err = (NowPeekI32)err;
+        else
+            cell->by_device++;
         cell->seq++;
     }
 }
@@ -418,6 +1143,26 @@ int now_ext_cursor_boot(NowPeekTable *table)
     gLastPlaced.h = 0;
     gLastPlaced.v = 0;
     gEverPlaced = false;
+    gPhysicalValid = false;
+    gPhysicalButtonsValid = false;
+    gPhysicalRawValid = false;
+    gPhysicalReportedWhere.h = 0;
+    gPhysicalReportedWhere.v = 0;
+    gOwnedDeviceValid = false;
+    gOwnedDeviceHistory.seq = 0;
+    gOwnedDeviceHistory.next = 0;
+    gOwnedDeviceHistory.used = 0;
+    gOwnedTrackingHistory.seq = 0;
+    gOwnedTrackingHistory.next = 0;
+    gOwnedTrackingHistory.used = 0;
+    gNowCursorTrackingRedrawOwed = 0;
+    gNowCursorTrackingSourceActive = 0;
+    gNowCursorTrackingSourceSeq = 0;
+    gNowCursorTrackingSourceH = 0;
+    gNowCursorTrackingSourceV = 0;
+    gNowCursorOldGetMouse = NULL;
+    gNowCursorOldStillDown = NULL;
+    gNowCursorOldButton = NULL;
 
     /* THE CELL IS REACHED DIRECTLY HERE, and only here.
        now_ext_cursor_cell() checks `magic`, and at boot MAGIC HAS NOT
@@ -479,5 +1224,34 @@ void now_ext_cursor_rollback(NowPeekTable *table)
     gForeignTicks = 0;
     gBooted = false;
     gEverPlaced = false;
-    gRedrawOwed = false;
+    gTaskApplyOwed = false;
+    gNowCursorTrackingRedrawOwed = 0;
+    gNowCursorTrackingSourceActive = 0;
+    gNowCursorTrackingSourceSeq = 0;
+    gNowCursorTrackingSourceH = 0;
+    gNowCursorTrackingSourceV = 0;
+    gTaskH = 0;
+    gTaskV = 0;
+    gTaskApplySeq = 0;
+    gTaskAppliedH = 0;
+    gTaskAppliedV = 0;
+    gPhysicalInputSeq = 0;
+    gPhysicalSamples = 0;
+    gPhysicalChanges = 0;
+    gPhysicalTrigger = 0;
+    gDebtCancels = 0;
+    gPhysicalButtons = 0;
+    gPhysicalButtonsValid = false;
+    gPhysicalValid = false;
+    gPhysicalRawValid = false;
+    gOwnedDeviceValid = false;
+    gOwnedDeviceHistory.seq = 0;
+    gOwnedDeviceHistory.next = 0;
+    gOwnedDeviceHistory.used = 0;
+    gOwnedTrackingHistory.seq = 0;
+    gOwnedTrackingHistory.next = 0;
+    gOwnedTrackingHistory.used = 0;
+    gNowCursorOldGetMouse = NULL;
+    gNowCursorOldStillDown = NULL;
+    gNowCursorOldButton = NULL;
 }

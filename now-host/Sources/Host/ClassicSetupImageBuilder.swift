@@ -1,6 +1,22 @@
 import Foundation
 
 struct ClassicSetupImageBuilder: Sendable {
+    private static func instructions(host: String, port: UInt16) -> String {
+        """
+            NEW OLD WORLD SETUP\r
+            \r
+            1. Copy New Old World anywhere on your hard disk.\r
+            2. Put New Old World Prefs in System Folder:Preferences.\r
+            3. Open New Old World. It will connect to \(host):\(port).\r
+            \r
+            OPTIONAL\r
+            CodeKitten is a standalone IDE; copy it wherever you keep applications.\r
+            Put NOW Extension in System Folder:Extensions and restart.\r
+            Dependencies downloaded by the host are in the Dependencies folder.\r
+            Run the CarbonLib installer if CarbonLib 1.6 is not installed.\r
+            """
+    }
+
     enum BuildError: LocalizedError {
         case missingApplication
         case packageTooLarge
@@ -20,7 +36,7 @@ struct ClassicSetupImageBuilder: Sendable {
             case .missingDevice:
                 return "macOS did not return the setup image device."
             case .couldNotEncode:
-                return "The setup image could not be wrapped for the classic Mac."
+                return "The setup image could not be wrapped for " + MachineNaming.simpleReference + "."
             case .invalidStarterPack(let reason):
                 return "The Development starter pack was refused: \(reason)"
             }
@@ -62,8 +78,8 @@ struct ClassicSetupImageBuilder: Sendable {
             "contents", isDirectory: true)
         try fileManager.createDirectory(
             at: contents, withIntermediateDirectories: true)
-        try populate(destination: contents, host: host,
-                     wirePort: wirePort, assets: assets,
+        try populate(destination: contents, host: host, wirePort: wirePort,
+                     assets: assets,
                      dependencies: selectedDependencies)
 
         let fittedImage = workspace.appendingPathComponent(
@@ -115,7 +131,7 @@ struct ClassicSetupImageBuilder: Sendable {
         let readMe = MacBinaryFile(
             name: "Read Me First", type: "TEXT", creator: "ttxt",
             finderFlags: 0,
-            dataFork: instructions(host: host, port: wirePort)
+            dataFork: Self.instructions(host: host, port: wirePort)
                 .data(using: .macOSRoman) ?? Data(),
             resourceFork: Data())
         _ = try readMe.write(to: destination)
@@ -315,19 +331,4 @@ struct ClassicSetupImageBuilder: Sendable {
         return stdout
     }
 
-    private func instructions(host: String, port: UInt16) -> String {
-        """
-        NEW OLD WORLD SETUP\r
-        \r
-        1. Copy New Old World anywhere on your hard disk.\r
-        2. Put New Old World Prefs in System Folder:Preferences.\r
-        3. Open New Old World. It will connect to \(host):\(port).\r
-        \r
-        OPTIONAL\r
-        CodeKitten is a standalone IDE; copy it wherever you keep applications.\r
-        Put NOW Extension in System Folder:Extensions and restart.\r
-        Dependencies downloaded by the host are in the Dependencies folder.\r
-        CarbonLib belongs in System Folder:Extensions; restart after adding it.\r
-        """
-    }
 }

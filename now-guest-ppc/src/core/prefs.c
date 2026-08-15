@@ -5,6 +5,10 @@
 #include "contract.h"
 #include "product_identity.h"
 #include "log_retention.h"
+/* The one place the four retired Mirror gates collapse into the master
+   consent. Toolbox-free and shared with the wire, so this migration and
+   the compatibility fields cannot drift apart. */
+#include "mirror_consent.h"
 
 #define kPrefsMagic 'NOWp'
 
@@ -99,7 +103,11 @@ typedef struct {
    24 shorts so this layout never has to grow again for it. */
 typedef struct {
     PrefsRecordV15 v15;               /* format = 19 */
-    short sidebar_compact;
+    /* Was the sidebar's density, retired when the rail became
+       compact-only. The SLOT stays: this layout is what every format >=
+       19 file on disk is, and reclaiming a field would renumber every
+       byte after it. Written as zero, never read. */
+    short sidebar_density_retired;
     short sidebar_order[kNowSidebarOrderMax];
 } PrefsRecordV19;
 
@@ -144,6 +152,38 @@ typedef struct {
     PrefsRecordV24 v24;               /* format = 25 */
     short log_retention;
 } PrefsRecordV25;
+
+typedef struct {
+    PrefsRecordV25 v25;               /* format = 26 */
+    char pending_extension_build[65];
+    short carbon_warning_suppressed;
+} PrefsRecordV26;
+
+typedef struct {
+    PrefsRecordV26 v26;               /* format = 27 */
+    short workshop_open_at_quit;
+} PrefsRecordV27;
+
+/* Format 28: which project this Mac is working on. An identity, not a
+   path - the Projects root is already persisted above, and a project is
+   found by walking it, so a stale id costs a lookup that fails rather
+   than a folder reference that outlives the folder. */
+typedef struct {
+    PrefsRecordV27 v27;               /* format = 28 */
+    char active_project_id[kNowProjectIDCap];
+} PrefsRecordV28;
+
+/* Format 29: the four V22 gates collapse into one master consent. The V22
+   SLOTS stay where they are and are written from the master (all four
+   equal to it), for the same reason sidebar_density_retired stayed:
+   reclaiming a field renumbers every byte after it. Writing them rather
+   than zeroing them buys one more thing — a file this build saved, read
+   back by a format-28 build, grants exactly the permission the master
+   granted, because the collapse rule is its own inverse. */
+typedef struct {
+    PrefsRecordV28 v28;               /* format = 29 */
+    short mirror_enabled;
+} PrefsRecordV29;
 
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
@@ -239,22 +279,28 @@ static void set_defaults(NowPrefs *prefs)
     prefs->agent_access = 2;
     prefs->workshop_module = 1;       /* Screenshots */
     SetRect(&prefs->workshop_rect, 0, 0, 0, 0);
-    /* An all-zero order means "no opinion": the sidebar fills it from the
-       enum, which is the arrangement every existing machine already has.
-       Rich is likewise what is already on screen, so a file that predates
-       the field changes nothing about how the rail looks. */
-    prefs->sidebar_compact = false;
+    /* An all-zero order means "no opinion": the sidebar fills it from its
+       own curated default, so a file that predates the field - or one
+       saved before the default existed - gets the curation rather than a
+       half-remembered arrangement. */
     prefs->sidebar_collapsed = false;
-    /* Passive structure is the useful safe baseline. The other three are
-       opt-in while the PB1400 Finder crash is isolated: none may spring to
-       life merely because an older preference record lacks the field. */
-    prefs->mirror_structure = true;
-    prefs->mirror_finder_complements = false;
-    prefs->mirror_content = false;
-    prefs->mirror_foreground_cycle = false;
+    /* This Mac may be mirrored unless somebody says otherwise, which is
+       what the four gates it replaces already meant in practice: the one
+       that was on by default, structure, is the one without which the
+       Mirror shows nothing at all. The three that were off by default were
+       granularity, and granularity is the host's now — including the
+       drawing trace, which the host must still switch on per machine and
+       whose default moved there with it (MirrorPlanePolicyStore). Nothing
+       springs to life here that was not already reachable; what changed is
+       which side is asked. */
+    prefs->mirror_enabled = true;
     prefs->web_proxy_port = 5180;
     prefs->web_profile = 1;            /* Classilla */
     prefs->web_lens = 1;               /* Compatible Page */
+    /* Every existing machine already launches with the window open; a
+       file that predates the field must keep seeing that, not a closed
+       Workshop it never asked for. */
+    prefs->workshop_open_at_quit = true;
 }
 
 static Boolean valid_depth(short depth)
@@ -267,7 +313,11 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV25);
+    long count = sizeof(PrefsRecordV29);
+    PrefsRecordV29 v29;
+    PrefsRecordV28 v28;
+    PrefsRecordV27 v27;
+    PrefsRecordV26 v26;
     PrefsRecordV25 v25;
     PrefsRecordV24 v24;
     PrefsRecordV23 v23;
@@ -289,9 +339,13 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v25, 0, sizeof v25);
-    err = FSRead(ref, &count, &v25);
+    memset(&v29, 0, sizeof v29);
+    err = FSRead(ref, &count, &v29);
     FSClose(ref);
+    v28 = v29.v28;
+    v27 = v28.v27;
+    v26 = v27.v26;
+    v25 = v26.v25;
     v24 = v25.v24;
     v23 = v24.v23;
     v22 = v23.v22;
@@ -496,7 +550,6 @@ void now_prefs_load(NowPrefs *prefs)
             /* Stored raw, sanitised by the sidebar: this file does not
                know which ids are nav rows, and a half-validated order
                would be a second opinion about the same list. */
-            prefs->sidebar_compact = v19.sidebar_compact != 0;
             memcpy(prefs->sidebar_order, v19.sidebar_order,
                    sizeof prefs->sidebar_order);
         }
@@ -504,12 +557,18 @@ void now_prefs_load(NowPrefs *prefs)
             prefs->sidebar_collapsed = v20.sidebar_collapsed != 0;
         }
         if (record.format >= 22 && count >= (long)sizeof(PrefsRecordV22)) {
-            prefs->mirror_structure = v22.mirror_structure != 0;
-            prefs->mirror_finder_complements =
-                v22.mirror_finder_complements != 0;
-            prefs->mirror_content = v22.mirror_content != 0;
-            prefs->mirror_foreground_cycle =
-                v22.mirror_foreground_cycle != 0;
+            /* The four retired gates, collapsed by the one rule that owns
+               that collapse. A format-29 record overwrites this below; a
+               file written by any build between 22 and 28 is answered
+               here, and answered conservatively — consent only where all
+               four were on. Almost every such file says no, because only
+               structure was ever on by default, and that is the intended
+               reading: a person who chose three of four never consented to
+               the fourth, and a master switch inferred from a majority
+               would be consent this Mac was never asked for. */
+            prefs->mirror_enabled = now_mirror_consent_from_gates(
+                v22.mirror_structure, v22.mirror_finder_complements,
+                v22.mirror_content, v22.mirror_foreground_cycle) != 0;
         }
         if (record.format >= 23 && count >= (long)sizeof(PrefsRecordV23)) {
             prefs->projects_vref = v23.projects_vref;
@@ -533,6 +592,26 @@ void now_prefs_load(NowPrefs *prefs)
             prefs->log_retention =
                 (short)now_log_retention_sanitize(v25.log_retention);
         }
+        if (record.format >= 26 && count >= (long)sizeof(PrefsRecordV26)) {
+            v26.pending_extension_build[
+                sizeof v26.pending_extension_build - 1] = '\0';
+            strncpy(prefs->pending_extension_build,
+                    v26.pending_extension_build,
+                    sizeof prefs->pending_extension_build - 1);
+            prefs->carbon_warning_suppressed =
+                v26.carbon_warning_suppressed != 0;
+        }
+        if (record.format >= 27 && count >= (long)sizeof(PrefsRecordV27)) {
+            prefs->workshop_open_at_quit = v27.workshop_open_at_quit != 0;
+        }
+        if (record.format >= 28 && count >= (long)sizeof(PrefsRecordV28)) {
+            v28.active_project_id[sizeof v28.active_project_id - 1] = '\0';
+            strncpy(prefs->active_project_id, v28.active_project_id,
+                    sizeof prefs->active_project_id - 1);
+        }
+        if (record.format >= 29 && count >= (long)sizeof(PrefsRecordV29)) {
+            prefs->mirror_enabled = v29.mirror_enabled != 0;
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -545,7 +624,11 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV25);
+    long count = sizeof(PrefsRecordV29);
+    PrefsRecordV29 v29;
+    PrefsRecordV28 v28;
+    PrefsRecordV27 v27;
+    PrefsRecordV26 v26;
     PrefsRecordV25 v25;
     PrefsRecordV24 v24;
     PrefsRecordV23 v23;
@@ -561,7 +644,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 25;               /* bounded launch-log retention */
+    record.format = 29;               /* one master Mirror consent */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -611,7 +694,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v15.agent_access = prefs->agent_access;
     memset(&v19, 0, sizeof v19);
     v19.v15 = v15;
-    v19.sidebar_compact = prefs->sidebar_compact ? 1 : 0;
+    v19.sidebar_density_retired = 0;
     memcpy(v19.sidebar_order, prefs->sidebar_order,
            sizeof v19.sidebar_order);
     memset(&v20, 0, sizeof v20);
@@ -619,10 +702,14 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v20.sidebar_collapsed = prefs->sidebar_collapsed ? 1 : 0;
     memset(&v22, 0, sizeof v22);
     v22.v20 = v20;
-    v22.mirror_structure = prefs->mirror_structure ? 1 : 0;
-    v22.mirror_finder_complements = prefs->mirror_finder_complements ? 1 : 0;
-    v22.mirror_content = prefs->mirror_content ? 1 : 0;
-    v22.mirror_foreground_cycle = prefs->mirror_foreground_cycle ? 1 : 0;
+    /* The retired slots, written from the master rather than zeroed. A
+       format-28 build reading this file collapses them straight back to
+       the same answer; zeroes would have read as "everything refused". */
+    v22.mirror_structure =
+        (short)now_mirror_consent_to_gates(prefs->mirror_enabled);
+    v22.mirror_finder_complements = v22.mirror_structure;
+    v22.mirror_content = v22.mirror_structure;
+    v22.mirror_foreground_cycle = v22.mirror_structure;
     memset(&v23, 0, sizeof v23);
     v23.v22 = v22;
     v23.projects_vref = prefs->projects_vref;
@@ -643,7 +730,23 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v25.v24 = v24;
     v25.log_retention =
         (short)now_log_retention_sanitize(prefs->log_retention);
-    err = FSWrite(ref, &count, &v25);
+    memset(&v26, 0, sizeof v26);
+    v26.v25 = v25;
+    strncpy(v26.pending_extension_build, prefs->pending_extension_build,
+            sizeof v26.pending_extension_build - 1);
+    v26.carbon_warning_suppressed =
+        prefs->carbon_warning_suppressed ? 1 : 0;
+    memset(&v27, 0, sizeof v27);
+    v27.v26 = v26;
+    v27.workshop_open_at_quit = prefs->workshop_open_at_quit ? 1 : 0;
+    memset(&v28, 0, sizeof v28);
+    v28.v27 = v27;
+    strncpy(v28.active_project_id, prefs->active_project_id,
+            sizeof v28.active_project_id - 1);
+    memset(&v29, 0, sizeof v29);
+    v29.v28 = v28;
+    v29.mirror_enabled = prefs->mirror_enabled ? 1 : 0;
+    err = FSWrite(ref, &count, &v29);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

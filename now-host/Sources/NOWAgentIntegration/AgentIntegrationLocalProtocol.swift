@@ -40,7 +40,16 @@ public enum AgentIntegrationLocalProtocol {
     /// asked about another.
     ///
     /// Version 6 added the read-only session capability report.
-    public static let version = 12
+    ///
+    /// Version 13 turned `guest_log_tail` from one 40-line page into a
+    /// paged retrieval of the guest's whole 2000-line ring, with an area
+    /// filter: `logLineCount`'s bound became the ring's size, `logArea`
+    /// arrived, and the result became
+    /// `AgentIntegrationGuestLogRetrieval` — whole lines with declared
+    /// edges, the host log's shape — rather than the row report. A v12
+    /// companion would read the new result as a malformed row report, so
+    /// the version moves.
+    public static let version = 13
     public static let maximumMessageBytes = 64 * 1024
 }
 
@@ -105,6 +114,14 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         case transferCancel = "transfer_cancel"
         /// The last lines of the guest's log for this launch.
         case guestLogTail = "guest_log_tail"
+        /// The last lines of THIS Mac's own log for this launch.
+        ///
+        /// Its own operation beside the guest's rather than an argument on
+        /// it: they read two different machines' memory, over two different
+        /// paths, and one of them reaches no wire at all. A `machine` flag
+        /// on one operation would make "which Mac am I reading" a value a
+        /// caller could get wrong silently.
+        case hostLogTail = "host_log_tail"
         /// The machine's own account of itself, via Gestalt.
         case machineFacts = "machine_facts"
         /// The PPC guest's qualified, path-free development registration.
@@ -209,6 +226,11 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// anywhere downstream for "whatever is frontmost".
         case observeElements = "observe_elements"
         case projects = "projects"
+        // Names the guest's build/toolchain operation, not this file's
+        // unrelated `.projects` case above (the app-owned project catalog).
+        // The host module this operation drives is titled "Projects" in
+        // the UI now (034 G-2); this wire operation string stays
+        // "development" on purpose — MCP tool names are a separate rename.
         case development = "development"
     }
 
@@ -282,8 +304,19 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// The name a `trash` reported, which is the only key a `restore`
     /// takes. `guestFilePath` carries where it is going back to.
     public var guestFileTrashName: String? = nil
-    /// How many log lines, newest last.
+    /// How many GUEST log lines, newest last, and which area tag to keep.
+    /// The count's bound is the guest ring's size, not one page: the host
+    /// side pages the guest's `tail` verb itself, so the socket asks for
+    /// the answer and never for a page.
     public var logLineCount: Int? = nil
+    public var logArea: String? = nil
+    /// How many lines of the HOST's own log, and which area tag to keep.
+    /// Their own fields rather than `logLineCount` reused: the two logs have
+    /// different bounds (40 there, the ring's own size here), and one field
+    /// bounded by two rules is a field bounded by whichever the reader
+    /// remembered.
+    public var hostLogLineCount: Int? = nil
+    public var hostLogArea: String? = nil
     /// What to reveal: an item name, a full HFS path (the software
     /// listing's path doubles as the reveal key), or `#n` from the guest's
     /// stored match list. Not `guestFilePath`: this one is resolved by the
@@ -747,13 +780,29 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         projected(.transferCancel, requestID: requestID)
     }
 
-    /// #9 — the last lines of the guest's log for this launch.
+    /// #9 — lines of the guest's log for this launch, paged off the ring
+    /// by the host side however many `tail` round trips that takes.
     public static func guestLogTail(
         lines: Int? = nil,
+        area: String? = nil,
         requestID: UUID = UUID()
     ) -> Self {
         var request = projected(.guestLogTail, requestID: requestID)
         request.logLineCount = lines
+        request.logArea = area
+        return request
+    }
+
+    /// The host's own log for this launch. Every field optional, so a bare
+    /// operation IS a complete request.
+    public static func hostLogTail(
+        lines: Int? = nil,
+        area: String? = nil,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.hostLogTail, requestID: requestID)
+        request.hostLogLineCount = lines
+        request.hostLogArea = area
         return request
     }
 
@@ -988,12 +1037,21 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     case bringToFront(AgentIntegrationFrontResult)
     case guestFileMutation(AgentIntegrationGuestFileMutationResult)
     case transferCancel(AgentIntegrationTransferCancelResult)
-    /* Four capabilities, one payload type: their verbs' declared output is
-       the same `x-rowArray` shape, so this side does not invent four. The
-       CASES stay distinct — a caller must be able to tell a log tail from a
-       Gestalt read, and the response's exactly-one-of guard counts them
-       separately. */
-    case guestLogTail(AgentIntegrationGuestRowReportResult)
+    /* Three capabilities, one payload type: their verbs' declared output is
+       the same `x-rowArray` shape, so this side does not invent three. The
+       CASES stay distinct — a caller must be able to tell a catalog search
+       from a Gestalt read, and the response's exactly-one-of guard counts
+       them separately. */
+    /// The guest's log, reassembled from however many `tail` pages the
+    /// ring took. Its own payload type since v13, for the reason the host
+    /// log has one: whole lines with the answer's declared edges, not the
+    /// row report the guest's single-page verbs share.
+    case guestLogTail(AgentIntegrationGuestLogRetrievalResult)
+    /// This Mac's own log. Its own payload type rather than the row report
+    /// the four above share: those carry a guest's words in the contract's
+    /// `x-rowArray` shape, and this carries whole host log lines with the
+    /// declared edges of the answer beside them.
+    case hostLogTail(AgentIntegrationHostLogTailResult)
     case machineFacts(AgentIntegrationGuestRowReportResult)
     case developmentEnvironment(AgentIntegrationGuestRowReportResult)
     case catalogSearch(AgentIntegrationGuestRowReportResult)
@@ -1086,7 +1144,9 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public var transferCancelResult:
         AgentIntegrationTransferCancelResult? = nil
     public var guestLogTailResult:
-        AgentIntegrationGuestRowReportResult? = nil
+        AgentIntegrationGuestLogRetrievalResult? = nil
+    public var hostLogTailResult:
+        AgentIntegrationHostLogTailResult? = nil
     public var machineFactsResult:
         AgentIntegrationGuestRowReportResult? = nil
     public var developmentEnvironmentResult:
@@ -1438,10 +1498,18 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
 
     public init(
         requestID: UUID,
-        guestLogTailResult: AgentIntegrationGuestRowReportResult
+        guestLogTailResult: AgentIntegrationGuestLogRetrievalResult
     ) {
         self.init(empty: requestID)
         self.guestLogTailResult = guestLogTailResult
+    }
+
+    public init(
+        requestID: UUID,
+        hostLogTailResult: AgentIntegrationHostLogTailResult
+    ) {
+        self.init(empty: requestID)
+        self.hostLogTailResult = hostLogTailResult
     }
 
     public init(
@@ -1592,7 +1660,8 @@ public enum AgentIntegrationLocalCodec {
         "censusResult", "softwareInventoryResult",
         "guestFileDownloadResult", "bringToFrontResult",
         "guestFileMutationResult", "transferCancelResult",
-        "guestLogTailResult", "machineFactsResult",
+        "guestLogTailResult", "hostLogTailResult",
+        "machineFactsResult",
         "developmentEnvironmentResult",
         "catalogSearchResult", "revealItemResult",
         "diagnosticsResult", "mirrorReadResult", "mirrorDriveResult",
@@ -1707,7 +1776,8 @@ public enum AgentIntegrationLocalCodec {
             "censusProbe", "censusCursor", "softwareDomain",
             "softwareCursor", "guestFileMutation",
             "guestFileDestinationPath", "guestFileTrashName",
-            "logLineCount", "revealTarget", "diagnosticProbe",
+            "logLineCount", "logArea", "hostLogLineCount", "hostLogArea",
+            "revealTarget", "diagnosticProbe",
             "mirrorReadRequest",
             "mirrorDriveRequest",
             // The bracket's fields, clearing the same two gates.
@@ -2131,18 +2201,55 @@ public enum AgentIntegrationLocalCodec {
                 "version", "requestID", "operation",
             ]
             if let lines = request.logLineCount {
-                /* The verb's own bound, refused here rather than a round
+                /* The ring's own bound, refused here rather than a round
                    trip to a 68030 to be refused there. */
                 guard AgentIntegrationGuestLogPolicy.isValidLineCount(lines)
                 else {
                     throw AgentIntegrationLocalTransportError.invalidMessage(
-                        "The guest serves at most "
+                        "The guest ring holds at most "
                             + "\(AgentIntegrationGuestLogPolicy.maximumLineCount)"
                             + " log lines")
                 }
                 tailKeys.insert("logLineCount")
             }
+            if let area = request.logArea {
+                guard AgentIntegrationGuestLogPolicy.isValidArea(area) else {
+                    throw AgentIntegrationLocalTransportError.invalidMessage(
+                        "A guest log area is a tag of 1 to "
+                            + "\(AgentIntegrationGuestLogPolicy.areaTagScalars)"
+                            + " characters, as the log writes it")
+                }
+                tailKeys.insert("logArea")
+            }
             expectedKeys = tailKeys
+        case .hostLogTail:
+            /* Both fields optional, so a bare operation is complete — and
+               both bounded HERE as well as at the projection, because this
+               socket is reachable by `tools/now-agent` and by anything else
+               that speaks it, not only by a row that already checked. */
+            var hostTailKeys: Set<String> = [
+                "version", "requestID", "operation",
+            ]
+            if let lines = request.hostLogLineCount {
+                guard AgentIntegrationHostLogPolicy.isValidLineCount(lines)
+                else {
+                    throw AgentIntegrationLocalTransportError.invalidMessage(
+                        "The host's log ring holds at most "
+                            + "\(AgentIntegrationHostLogPolicy.maximumLineCount)"
+                            + " lines")
+                }
+                hostTailKeys.insert("hostLogLineCount")
+            }
+            if let area = request.hostLogArea {
+                guard AgentIntegrationHostLogPolicy.isValidArea(area) else {
+                    throw AgentIntegrationLocalTransportError.invalidMessage(
+                        "A host log area is 1 to "
+                            + "\(AgentIntegrationHostLogPolicy.areaTagScalars)"
+                            + " characters, as the log writes it")
+                }
+                hostTailKeys.insert("hostLogArea")
+            }
+            expectedKeys = hostTailKeys
         case .revealItem:
             expectedKeys = [
                 "version", "requestID", "operation", "revealTarget",

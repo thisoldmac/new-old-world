@@ -1,0 +1,9 @@
+{
+  "id": "finder-clean-desktop",
+  "description": "Use Finder's Command-Option-W close-all gesture, then clear desktop selection.",
+  "actions": [
+    "keydown 55", "keydown 58", "keydown 13",
+    "keyup 13", "keyup 58", "keyup 55",
+    "move 400 550", "down 0", "up 0"
+  ]
+}

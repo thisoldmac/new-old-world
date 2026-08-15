@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# One front door for NOW's deliberately different emulator domains.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TOOLS="${NOW_EMULATOR_TOOL_ROOT:-$REPO/scripts}"
+
+usage () {
+    cat <<'EOF'
+usage: scripts/emulator DOMAIN [DOMAIN OPTIONS]
+
+domains:
+  qemu-ppc        Full-stack PPC/mac99 lane; Mac OS 9.1+, resident, wire,
+                  networking, hardware interactions, deterministic QMP.
+  sheepshaver-86  Fast PPC Carbon UI lane; Mac OS 8.6 + CarbonLib 1.6,
+                  native Toolbox appearance, no full-stack equivalence.
+  qemu-68k        68K correctness lane on q800; not an exact target machine.
+  matrix          Print this ownership boundary without launching anything.
+
+Metal remains the physical-hardware verification tier, not an emulator domain.
+EOF
+}
+
+case "${1:-}" in
+    matrix|--help|-h|"") usage ;;
+    qemu-ppc) shift; exec "$TOOLS/spin-up-ppc" "$@" ;;
+    sheepshaver-86) shift; exec "$TOOLS/sheepshaver-86" "$@" ;;
+    qemu-68k) shift; exec "$TOOLS/q800-68k" "$@" ;;
+    *) echo "emulator: unknown domain: $1" >&2; usage >&2; exit 2 ;;
+esac

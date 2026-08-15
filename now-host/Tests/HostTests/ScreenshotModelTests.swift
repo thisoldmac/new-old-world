@@ -8,10 +8,11 @@ final class ScreenshotModelTests: XCTestCase {
         ScreenshotModuleModel(listener: GuestListener(
             identity: .init(version: "0.1-test", name: "Test Host")))
     }
-
     func testSupportedDepthsMatchGuestContract() {
         XCTAssertEqual(CaptureDepth.allCases.map(\.rawValue),
-                       [1, 2, 4, 8, 16, 32])
+                       [0, 1, 2, 4, 8, 16, 32])
+        XCTAssertEqual(CaptureDepth.native.title, "Native")
+        XCTAssertEqual(makeModel().selectedDepth, .native)
     }
 
     func testCaptureRequiresARealConnection() {

@@ -6,9 +6,9 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md]
-source_dependencies: [RELEASING.md, docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md, product/features.yaml, docs/onboarding.md, docs/development.md]
+source_dependencies: [docs/status.md, docs/known-wrong.md, docs/open-issues.md, SECURITY.md, product/features.yaml, docs/distribution-profile.yaml, docs/onboarding.md, docs/development.md]
 media_ids: []
-last_verified: 2026-08-10
+last_verified: 2026-08-13
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -17,12 +17,13 @@ last_verified: 2026-08-10
 
 - **Trusted network only.** The classic wire is plaintext and unauthenticated;
   the host listener must not be internet-facing.
-- **Alpha packaging.** The repository does not yet have one command that
-  assembles, provenance-checks, and inventories the complete downloadable
-  alpha bundle. Do not describe a hand-built folder as reproducible. The
-  connected host can publish validated guest and Extension artifacts, but they
-  remain unsigned and the flow is not an internet updater, notarization flow,
-  or download service. See [the release procedure](../../../RELEASING.md).
+- **Alpha packaging.** A fail-closed assembler now produces the signed host
+  DMG, embedded classic catalog, generic `.img.bin`, loose update pairs,
+  release manifest, and checksums from one recorded component set. A real
+  release still needs its licensed CarbonLib descriptor, signing identity, and
+  release-commit review. Classic updates remain unsigned, and website
+  integration, notarization, internet update discovery, and host self-update
+  are not implemented.
 - **Guided setup is not yet metal-verified.** Its routes and media builders are
   tested and the image mounts in Mac OS 9.1 QEMU, but a classic-browser
   download, automatic decoding, and first physical-hardware hello have not

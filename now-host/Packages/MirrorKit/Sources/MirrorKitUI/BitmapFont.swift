@@ -27,6 +27,8 @@ public final class BitmapFont {
     /// nearest one, and this is how it finds out which it got.
     public let face: String
     public let pointSize: Int
+    /// QuickDraw style bits from the source strike (1 bold, 2 italic).
+    public let style: Int
 
     private let sheet: CGImage
     private let sheetW: CGFloat
@@ -56,6 +58,7 @@ public final class BitmapFont {
             ?? (ascent + descent + leading)
         self.face = (meta["face"] as? String) ?? face
         pointSize = (meta["pointSize"] as? Int) ?? 0
+        style = (meta["style"] as? Int) ?? 0
 
         var table: [Character: Glyph] = [:]
         for (key, value) in (meta["glyphs"] as? [String: [String: Int]] ?? [:]) {
@@ -88,11 +91,23 @@ public final class BitmapFont {
         return w
     }
 
+    /// QuickDraw's synthesized italic slants a bitmap strike one pixel for
+    /// every two scanlines, with the top moving furthest right. This is a
+    /// drawing transform, not a second font: Finder's OS 8.6 desktop aliases
+    /// use the Geneva 10 strike that ordinary labels use, then ask QuickDraw
+    /// for italic. Keeping the rule here lets any acquired Geneva 10 strike
+    /// take the same route instead of baking one observed word into an asset.
+    static func syntheticItalicShift(row: Int, height: Int) -> Int {
+        max(0, (height - row) / 2)
+    }
+
     /// Draw `string` in `color` with its left baseline at (x, baselineY).
     /// One clip layer masks all glyphs, then a single fill tints them — so
-    /// any Platinum gray comes from the same black strike.
+    /// any Platinum gray comes from the same black strike. `syntheticItalic`
+    /// applies QuickDraw's row shear to that exact strike.
     public func draw(_ string: String, in ctx: GraphicsContext,
-                     x: CGFloat, baselineY: CGFloat, color: Color) {
+                     x: CGFloat, baselineY: CGFloat, color: Color,
+                     syntheticItalic: Bool = false) {
         /* **THE PEN LANDS ON A WHOLE PIXEL, and that is faithful rather
            than tidy.** QuickDraw has no sub-pixel pen: a bitmap strike on
            the real machine is blitted at an integer position, and every
@@ -112,30 +127,52 @@ public final class BitmapFont {
            because that pair is compared byte for byte. */
         var pen = x.rounded()
         let top = baselineY.rounded() - CGFloat(ascent)
-        var boxes: [(dst: CGRect, g: Glyph)] = []
+        struct Slice {
+            var dst: CGRect
+            var sourceX: Int
+            var sourceY: Int
+        }
+        var slices: [Slice] = []
         for ch in string {
             let g = glyphs[ch] ?? space
             if g.w > 0, g.h > 0 {
-                // The sheet cell's top sits (ascent) above the baseline.
-                let dst = CGRect(x: pen + CGFloat(g.left),
-                                 y: top,
-                                 width: CGFloat(g.w), height: CGFloat(g.h))
-                boxes.append((dst, g))
+                if syntheticItalic {
+                    for row in 0..<g.h {
+                        let shift = Self.syntheticItalicShift(
+                            row: row, height: g.h)
+                        slices.append(Slice(
+                            dst: CGRect(
+                                x: pen + CGFloat(g.left + shift),
+                                y: top + CGFloat(row),
+                                width: CGFloat(g.w), height: 1),
+                            sourceX: g.x, sourceY: g.y + row))
+                    }
+                } else {
+                    // The sheet cell's top sits ascent above the baseline.
+                    slices.append(Slice(
+                        dst: CGRect(x: pen + CGFloat(g.left), y: top,
+                                    width: CGFloat(g.w), height: CGFloat(g.h)),
+                        sourceX: g.x, sourceY: g.y))
+                }
             }
             pen += CGFloat(g.advance)
         }
-        guard !boxes.isEmpty else { return }
-        let union = boxes.dropFirst().reduce(boxes[0].dst) { $0.union($1.dst) }
+        guard !slices.isEmpty else { return }
+        let union = slices.dropFirst().reduce(slices[0].dst) {
+            $0.union($1.dst)
+        }
         var layer = ctx
         layer.clipToLayer { inner in
-            for (dst, g) in boxes {
+            for slice in slices {
                 var gg = inner
-                gg.clip(to: Path(dst))
-                // Position the whole sheet so this glyph's (x,y) lands at dst.
+                gg.clip(to: Path(slice.dst))
+                // Position the whole sheet so this source slice lands at dst.
                 gg.draw(Image(decorative: sheet, scale: 1)
                             .interpolation(.none),
-                        in: CGRect(x: dst.minX - CGFloat(g.x),
-                                   y: dst.minY - CGFloat(g.y),
+                        in: CGRect(x: slice.dst.minX
+                                      - CGFloat(slice.sourceX),
+                                   y: slice.dst.minY
+                                      - CGFloat(slice.sourceY),
                                    width: sheetW, height: sheetH))
             }
         }
@@ -261,6 +298,13 @@ public enum FontBook {
     /// Geneva 9 — the smallest UI text (shelf, generic labels). Falls back
     /// to Geneva 10 if the 9 strike isn't bundled.
     public static var small: BitmapFont? { font("geneva-9") ?? font("geneva-10") }
+    /// Finder's alias-label face on the OS 8.6 desktop. This is a distinct
+    /// NFNT strike, not a shear applied by the host renderer. An older pack
+    /// degrades to the plain strike, while `AssetPack` keeps that dependency
+    /// state visible beside the mirror.
+    public static var smallItalic: BitmapFont? {
+        font("geneva-9-italic") ?? small
+    }
 }
 
 /// The extracted default desktop pattern ('ppat' 16 "Mac OS Default"), tiled.
@@ -327,6 +371,30 @@ public enum DesktopPattern {
         return CGImageSourceCreateImageAtIndex(src, 0, nil)
     }
 
+    /// Resolve a pattern by the identity the guest reports, through the
+    /// extractor's own manifest. Filenames are sanitized for the filesystem
+    /// (`Bossanova Bondi` → `Bossanova_Bondi.png`), so constructing a path
+    /// from the live name silently misses every name containing punctuation
+    /// or spaces.
+    private static func patternImage(named name: String) -> CGImage? {
+        guard let patterns = manifest?["patterns"] as? [String: Any] else {
+            return nil
+        }
+        if let ppats = patterns["ppat"] as? [[String: Any]],
+           let row = ppats.first(where: { $0["name"] as? String == name }),
+           let file = row["file"] as? String,
+           let art = image("patterns/\(file)") {
+            return art
+        }
+        if let appearance = patterns["appearance"] as? [String: Any],
+           let rows = appearance["patterns"] as? [[String: Any]],
+           let row = rows.first(where: { $0["name"] as? String == name }),
+           let file = row["file"] as? String {
+            return image("patterns/appearance/\(file)")
+        }
+        return nil
+    }
+
     /// Resolve the desktop for a screen of this size.
     ///
     /// The size test is the load-bearing part and it is not fussiness:
@@ -359,8 +427,9 @@ public enum DesktopPattern {
             }
             return .picture(art)
         case "pattern":
-            guard let name = desktop["name"] as? String,
-                  let art = image("patterns/appearance/\(name).png") else {
+            let direct = file.flatMap(image)
+            guard let art = direct ?? (desktop["name"] as? String).flatMap(
+                    patternImage(named:)) else {
                 return .unknown("this guest's pattern is not in the pack")
             }
             return .pattern(art)
@@ -477,7 +546,7 @@ public enum DesktopPattern {
                     why: "the guest reports a pattern and names none, and the "
                          + "pack does not hold a pattern either")
             }
-            guard let art = image("patterns/appearance/\(name).png") else {
+            guard let art = patternImage(named: name) else {
                 /* NOT a licence to draw the pack's own pattern. The machine
                    named this one; drawing a different one would be a
                    confident wrong answer with the machine on record

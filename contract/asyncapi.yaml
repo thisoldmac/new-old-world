@@ -110,6 +110,33 @@
 #   ADDITIVE — no revision bump. A host that has never heard of the field
 #   sees a hello it will refuse busy, which is the previous behaviour and
 #   costs a machine nothing it had.
+# - Continuity adds one lossy state lane beside this reliable stream. It is
+#   UDP on the SAME numeric port as TCP: the host sends from an ephemeral UDP
+#   source port and the PowerPC guest binds UDP/N while its TCP session uses
+#   TCP/N. They are separate transport namespaces, so no second configured
+#   port is required. QEMU must forward both protocols explicitly.
+#   UDP NEVER ARMS CONTINUITY. A continuity.arm on this TCP session
+#   establishes a fresh 64-bit nonce and monotonically-new epoch; fixed-size
+#   state datagrams in continuity_udp.h are accepted only while both match
+#   that live arm. Reconnect, disarm, lease expiry and local guest input
+#   invalidate the epoch. Stale, replayed and malformed packets are counted
+#   and ignored.
+#   Version 3 state is absolute and coalescible: a later position supersedes an
+#   earlier one. Primary-button transitions carry a monotonically-new
+#   generation. A host does not send the release until the press generation is
+#   acknowledged; while held, the resident consumes the newest point and owns
+#   the dead-man release even when the cooperative PPC application is starved.
+#   Keyboard events stay on this reliable stream. The PPC application queues
+#   them for the foreground process and the resident posts them only from that
+#   process's target-context jGNE pass. They model Event Manager input, not
+#   physical ADB state or GetKeys.
+#   The `modifiers` action on that same message reports a bare modifier
+#   change — the thing macOS calls flagsChanged and the classic Event Manager
+#   has no event for. It is the ONLY way the guest learns that a modifier
+#   moved while no key did, which is the case a Finder drag reads to choose
+#   between move, copy and alias. Carrying it does not by itself make
+#   `GetKeys` answer with it; see continuity-mode.md for what the resident
+#   does and does not do with the live word.
 # - Control messages that expect an answer carry `id`; answers echo it.
 # - Bulk transfers are announced on control (`capture.begin`), stream on the
 #   bulk channel in chunks (default 8192 bytes, negotiable in hello), and
@@ -287,6 +314,13 @@ channels:
       softwareList: { $ref: "#/components/messages/softwareList" }
       softwareListing: { $ref: "#/components/messages/softwareListing" }
       agentAccess: { $ref: "#/components/messages/agentAccess" }
+      continuityArm: { $ref: "#/components/messages/continuityArm" }
+      continuityReport: { $ref: "#/components/messages/continuityReport" }
+      continuityDisarm: { $ref: "#/components/messages/continuityDisarm" }
+      continuityKey: { $ref: "#/components/messages/continuityKey" }
+      continuityKeyReport: { $ref: "#/components/messages/continuityKeyReport" }
+      continuitySelection: { $ref: "#/components/messages/continuitySelection" }
+      continuityGrab: { $ref: "#/components/messages/continuityGrab" }
       cloudServices: { $ref: "#/components/messages/cloudServices" }
       cloudReport: { $ref: "#/components/messages/cloudReport" }
       cloudList: { $ref: "#/components/messages/cloudList" }
@@ -304,6 +338,11 @@ channels:
       chatResult: { $ref: "#/components/messages/chatResult" }
       chatCancel: { $ref: "#/components/messages/chatCancel" }
       chatReset: { $ref: "#/components/messages/chatReset" }
+      webRequest: { $ref: "#/components/messages/webRequest" }
+      webResponseBegin: { $ref: "#/components/messages/webResponseBegin" }
+      webResponseChunk: { $ref: "#/components/messages/webResponseChunk" }
+      webResponseEnd: { $ref: "#/components/messages/webResponseEnd" }
+      webCancel: { $ref: "#/components/messages/webCancel" }
       previewBegin: { $ref: "#/components/messages/previewBegin" }
       previewEnd: { $ref: "#/components/messages/previewEnd" }
       hostShow: { $ref: "#/components/messages/hostShow" }
@@ -320,6 +359,11 @@ channels:
       (scene.begin: UTF-8 JSON, the Mirror IR whose major is irVersion —
       or, when scene.begin says delta:true, a delta against the baseline
       the request named),
+      with menu rows carrying an additive optional `submenu` boolean. Classic
+      Menu Manager records overload the hierarchical row's command byte and
+      store the submenu id in the mark byte, so `submenu:true` and
+      `mark:true` are distinct visual and interaction facts rather than two
+      readings of the same byte.
       and a cloud preview (preview.begin: raw indexed rows, top-to-bottom,
       rowBytes apart, already dithered by the HOST to the depth the guest
       asked — no palette block, because the target is the classic system
@@ -337,7 +381,10 @@ operations:
       application artifact and one optional resident-extension artifact.
       Offers are facts about exact published bytes, not an instruction to
       install; the guest compares version AND build and keeps the decision
-      human-owned. An absent offer means the host has no validated artifact.
+      human-owned. A person may approve the offered artifact from either
+      machine: the guest Connections page confirms locally, while the host
+      Connections page sends the `update` command with `hostApproved:true`.
+      An absent offer means the host has no validated artifact.
   guestRequestsUpdate:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -349,8 +396,9 @@ operations:
       the ordinary file.offer/file.accept/bulk/file.end lane, with purpose
       update.application or update.extension and SHA-256 over the exact
       MacBinary stream. The guest sends update.result after installation,
-      not merely after download. Applications relaunch; extensions require
-      a cold restart. NOW-68K does not implement this additive family.
+      not merely after download. Applications remain connected and report
+      relaunch-required; extensions require a cold restart. NOW-68K does not
+      implement this additive family.
   hostExecutesLine:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -1170,6 +1218,31 @@ operations:
       transfer. A service that cannot render one refuses not-listable —
       the same well-formed refusal an older host's silence approximates,
       which is what keeps the ask additive.
+  guestAsksWeb:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/webRequest"
+      - $ref: "#/channels/control/messages/webCancel"
+    description: >
+      A browser connects only to the guest application's loopback listener.
+      The guest parses one bounded GET or HEAD request and asks the host to
+      render its target. The classic LAN never reaches a second host listener;
+      modern TLS, JavaScript, destination policy and page transformation remain
+      owned by the host. One request is active per guest connection.
+  hostServesWeb:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/webResponseBegin"
+      - $ref: "#/channels/control/messages/webResponseChunk"
+      - $ref: "#/channels/control/messages/webResponseEnd"
+    description: >
+      The host returns one bounded HTTP/1.0 response. Chunks are base64 so Web
+      does not acquire or stall the one-wide bulk lane used by Files, Screen,
+      Mirror and previews. Sequence is contiguous from zero and the guest
+      accepts exactly the byte count announced by begin before delivering the
+      response to its local browser.
   guestAsksHostSurface:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -1221,6 +1294,47 @@ operations:
       it is. `reason` carries the host's own words for the human-facing
       status line and is MacRoman-expressible, the hostServesCloud rule
       verbatim.
+  hostAsksGuestContinuity:
+    action: send
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/continuityArm"
+      - $ref: "#/channels/control/messages/continuityDisarm"
+      - $ref: "#/channels/control/messages/continuityKey"
+      - $ref: "#/channels/control/messages/continuityGrab"
+    description: >
+      Reliable session ownership for the optional Continuity input plane.
+      The host arms before sending UDP state and disarms on disable,
+      disconnect, Mirror close, or an explicit guest-side exit report. An
+      older or unsupported receiver refuses by continuity.report rather than
+      treating UDP arrival as authority. This is user-only Mirror input, not
+      an MCP verb, automation capability, or generic coordinate click API.
+  guestReportsContinuity:
+    action: receive
+    channel: { $ref: "#/channels/control" }
+    messages:
+      - $ref: "#/channels/control/messages/continuityReport"
+      - $ref: "#/channels/control/messages/continuityKeyReport"
+      - $ref: "#/channels/control/messages/continuitySelection"
+    description: >
+      The PowerPC guest answers every arm and disarm and may also report an
+      asynchronous guest-input or lease-expiry exit. The `state` and `reason`
+      fields are the authoritative ownership answer; UDP acknowledgements are
+      transport telemetry and cannot re-arm an exited session.
+
+      continuity.selection is unsolicited and rides the same epoch. The
+      guest sends one whenever the Finder selection it can see changes,
+      and never outside a live epoch.
+
+      DECLARED ASYMMETRY. Neither continuity.selection nor continuity.grab
+      has a console verb, for the same reason continuity.arm and
+      continuity.key do not: the capability is a pointer plane the person
+      at the guest drives with their own hand and eyes. There is nothing a
+      typed word at the Macintosh could add to "the thing you have
+      selected", and a `grab` a person could type would be exactly the
+      general read outside the share that the gesture boundary below
+      exists to refuse. NOW-68K serves neither; it has no Continuity
+      plane at all.
   peerAnnouncesMirrorInvalidation:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -1422,6 +1536,27 @@ components:
     agentAccess:
       name: agent.access
       payload: { $ref: "#/components/schemas/AgentAccess" }
+    continuityArm:
+      name: continuity.arm
+      payload: { $ref: "#/components/schemas/ContinuityArm" }
+    continuityReport:
+      name: continuity.report
+      payload: { $ref: "#/components/schemas/ContinuityReport" }
+    continuityDisarm:
+      name: continuity.disarm
+      payload: { $ref: "#/components/schemas/ContinuityDisarm" }
+    continuityKey:
+      name: continuity.key
+      payload: { $ref: "#/components/schemas/ContinuityKey" }
+    continuityKeyReport:
+      name: continuity.keyReport
+      payload: { $ref: "#/components/schemas/ContinuityKeyReport" }
+    continuitySelection:
+      name: continuity.selection
+      payload: { $ref: "#/components/schemas/ContinuitySelection" }
+    continuityGrab:
+      name: continuity.grab
+      payload: { $ref: "#/components/schemas/ContinuityGrab" }
     cloudServices:
       name: cloud.services
       payload: { $ref: "#/components/schemas/CloudServices" }
@@ -1473,6 +1608,21 @@ components:
     chatReset:
       name: chat.reset
       payload: { $ref: "#/components/schemas/ChatReset" }
+    webRequest:
+      name: web.request
+      payload: { $ref: "#/components/schemas/WebRequest" }
+    webResponseBegin:
+      name: web.response.begin
+      payload: { $ref: "#/components/schemas/WebResponseBegin" }
+    webResponseChunk:
+      name: web.response.chunk
+      payload: { $ref: "#/components/schemas/WebResponseChunk" }
+    webResponseEnd:
+      name: web.response.end
+      payload: { $ref: "#/components/schemas/WebResponseEnd" }
+    webCancel:
+      name: web.cancel
+      payload: { $ref: "#/components/schemas/WebCancel" }
     previewBegin:
       name: preview.begin
       payload: { $ref: "#/components/schemas/PreviewBegin" }
@@ -1536,6 +1686,31 @@ components:
             the same as any other. A receiver shows nothing rather than
             guessing, and must not fall back to `version` — a version equal
             across two builds is exactly the failure this field exists for.
+        extensionVersion:
+          type: string
+          description: >
+            Version of the active NOW Extension observed by a normal PPC
+            guest application. Absent means the sender cannot establish an
+            active resident; it is not a claim that no Extension is on disk.
+            Resident-role connections omit it because they describe
+            themselves through `version`.
+        extensionBuild:
+          type: string
+          pattern: "^[0-9a-f]{40}$"
+          description: >
+            First 160 bits of the active NOW Extension's deterministic build
+            identity, as carried by the resident table ABI. It is compared
+            with the prefix of an offered full build identity. Absent stays
+            unknown and is never inferred from extensionVersion.
+        mirrorTransfer:
+          type: boolean
+          description: >
+            Whether this peer understands the Mirror-specific `mirrorSource`
+            and `mirrorDrop` descriptors on the existing file family. A PPC
+            guest that implements both directions sends true. ABSENT or false
+            means the receiver must not send either descriptor: an older guest
+            can otherwise ignore the optional field, perform an ordinary share
+            transfer, and report success for the wrong destination.
         agent:
           enum: [disabled, read-only, full]
           description: >
@@ -1749,18 +1924,11 @@ components:
               defaultSize:
                 type: string
                 description: >
-                  For a service that sizes its deliveries (photos
-                  today): the host's OWN configured CloudGet.size
-                  token. It exists so a guest that offers the choice
-                  can PRESELECT the host's setting instead of carrying
-                  a "host default" item whose meaning it cannot name
-                  on screen — the setting arrives as data and the
-                  guest's ask is always an explicit token.
-                  Additive and optional: a host that omits it, or that
-                  names a token this guest has never heard of, leaves
-                  the guest to open on a size of its own choosing.
-                  Data, not a command — the guest may still send any
-                  token the CloudGet.size enum allows.
+                  Legacy compatibility hint from hosts that owned a
+                  download-size preference. Current hosts omit it because
+                  the guest owns download size and sends an explicit token.
+                  A guest may still accept this optional hint from an older
+                  host without giving it authority over a later local pick.
     CloudList:
       type: object
       required: [type, id, service]
@@ -1922,12 +2090,9 @@ components:
             long edge — the asker already has both numbers, and a
             fifth wire round trip to learn their ratio would be the
             wire doing the asker's arithmetic for it.
-            The field stays optional. Absent means the host's
-            configured default, which is what a guest with no size UI
-            of its own sends. A guest that OFFERS the choice does not
-            use absence for it: it learns the host's configured token
-            from cloud.report's defaultSize, preselects that, and
-            always sends an explicit token — so what a person sees
+            The field stays optional for older guests. Absent asks the host
+            for its conservative compatibility default. A guest that offers
+            the choice always sends an explicit token, so what a person sees
             selected and what actually arrives cannot disagree. A
             token outside the enum is refused with a reason, never
             guessed at; a service that does not size its deliveries
@@ -2053,6 +2218,441 @@ components:
           description: >
             The host's own words, converted MacRoman-expressible, for
             the guest's status line. Shown, not swallowed.
+    ContinuityArm:
+      type: object
+      required: [type, version, id, nonceHi, nonceLo, epoch, requestedHz, leaseTicks]
+      additionalProperties: false
+      properties:
+        type: { const: continuity.arm }
+        version:
+          const: 4
+          description: >
+            Continuity control-contract version. This matches the fixed-size
+            UDP lane's version; a receiver refuses a missing or different
+            value as wrong-version before granting pointer ownership.
+        id: { type: integer }
+        nonceHi: { type: integer, minimum: 0, maximum: 4294967295 }
+        nonceLo: { type: integer, minimum: 0, maximum: 4294967295 }
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: Newer than the preceding arm on this TCP session.
+        requestedHz:
+          enum: [15, 30, 60]
+          description: User-selected send ceiling; the guest reports acceptance.
+        leaseTicks:
+          type: integer
+          minimum: 15
+          maximum: 600
+          description: >
+            Classic 60 Hz ticks. After the first accepted state, the
+            resident releases pointer ownership if no later accepted state
+            refreshes this lease. Before the first state,
+            the resident uses its fixed five-second arming grace so UDP
+            setup cannot consume the live-input dead-man.
+        fastPump:
+          type: boolean
+          default: false
+          description: >
+            Experimental and host-selected. While this Continuity epoch is
+            armed, the guest's cooperative event loop uses its existing
+            one-tick work-in-flight sleep instead of the ordinary idle sleep.
+            This never moves Cursor Device, Event Manager, or QuickDraw work
+            into an Open Transport notifier or resident timer.
+        pinHeldPoint:
+          type: boolean
+          default: false
+          deprecated: true
+          description: >
+            Reserved compatibility field from the held-point pin experiment.
+            Synthetic-device settlement superseded it; current guests ignore
+            the field and its name is never reused.
+        virtualGetMouse:
+          type: boolean
+          default: false
+          deprecated: true
+          description: >
+            Reserved compatibility field from the target-context GetMouse
+            experiment. Synthetic-device settlement superseded it; current
+            guests ignore the field and its name is never reused.
+        settleSyntheticDevice:
+          type: boolean
+          default: false
+          description: >
+            From the tracked application's task-time
+            hook, the resident discovers the synthetic Cursor Device whose
+            devID is NOWc and moves that device to the held host point before
+            tail-chaining. The walk is bounded, epoch-bound and guarded
+            against reentry. No CursorDevice pointer crosses the resident
+            contract. This is the product mechanism that keeps the drawn
+            device coherent with the held tracking point.
+        wideDoubleTime:
+          type: boolean
+          default: false
+          description: >
+            Host-selected. While this epoch runs, the resident saves the
+            guest's low-memory DoubleTime and installs the wider recognition
+            window stated once in peek_table.h, restoring the saved value on
+            every epoch exit including forced releases. Cooperative
+            scheduling stretches a sub-200 ms host double-click to 40-45
+            guest ticks between manager downs, which a stock 32-tick
+            DoubleTime can never recognize; the recognition window is the
+            only half of that comparison Continuity can honestly control.
+        interruptPress:
+          type: boolean
+          default: false
+          description: >
+            Host-selected. When a second press sits
+            deferred behind an unsettled manager-up, the resident's
+            interrupt timer delivers the completed pair itself - mouseUp
+            event, MBState down, mouseDown event - so the second click can
+            enter the queue while the target application holds cooperative
+            task time processing the first click. The manager-busy handshake
+            prevents concurrent task-time delivery, and the manager ledger
+            reconciles at the next safe boundary. This is the metal-verified
+            double-click mechanism; its product default remains host policy.
+        deepClickLog:
+          type: boolean
+          default: false
+          description: >
+            Diagnostic spike, host-selected, logging only. The resident
+            records every mouse event at the jGNE boundary - native and
+            synthetic alike - with the full post-shape event record and
+            the click-relevant low-memory state beside it, into a rolling
+            ring the application drains into the uploadable log. The latch
+            deliberately survives epoch exit: the native half of the
+            comparison this exists for can only be clicked after takeover
+            has ended the epoch. A later arm without this flag stops it.
+            Exists because both timestamp theories of the Finder
+            double-click failure were eliminated by measurement; whatever
+            distinguishes a synthetic pair is a field, and fields are
+            captured, not theorized about.
+        compressClickWhen:
+          type: boolean
+          default: false
+          description: >
+            Host-selected. At the jGNE boundary, while an epoch is active,
+            the resident rewrites synthetic mouse-event `when` values so a
+            click pair produced within the wide recognition window reads as
+            a few ticks apart to whichever application dequeues it. Exists
+            because the Finder pairs clicks against a private copy of the
+            double-click time that widening the low-memory global cannot
+            reach; SimpleText accepted the same stream unmodified.
+        settleIdleCursor:
+          type: boolean
+          default: false
+          description: >
+            Host-selected. On every jGNE pass, in
+            whatever process is pumping, the resident settles the NOWc
+            synthetic device to the freshest wire point when the PPC
+            application is provably behind it, with one balanced redraw.
+            Ordinary motion hitches exactly where the sprite rides the
+            application's own cooperative scheduling and is smooth where
+            the settle machinery drives it; this extends the product
+            mechanism to idle motion.
+        hideGuestCursorWhileDragging:
+          type: boolean
+          default: false
+          deprecated: true
+          description: >
+            Reserved compatibility field from a rejected cursor-hiding
+            experiment. Current guests ignore it. The field remains in the
+            accretive contract so its name cannot acquire a new meaning.
+        virtualADB:
+          type: boolean
+          default: false
+          deprecated: true
+          description: >
+            Reserved compatibility field from the rejected virtual-ADB
+            carrier experiment. Current guests ignore it. The observer and
+            injection implementation are retired; the field remains so the
+            accretive contract never reuses its name for another mechanism.
+    ContinuityDisarm:
+      type: object
+      required: [type, version, id, epoch, reason]
+      additionalProperties: false
+      properties:
+        type: { const: continuity.disarm }
+        version: { const: 4 }
+        id: { type: integer }
+        epoch: { type: integer, minimum: 1, maximum: 4294967295 }
+        reason:
+          enum: [disabled, host-left, mirror-closed, disconnecting]
+    ContinuityReport:
+      type: object
+      required: [type, version, epoch, state]
+      additionalProperties: false
+      properties:
+        type: { const: continuity.report }
+        version: { const: 4 }
+        id:
+          type: integer
+          description: Echoed for an arm or disarm answer; absent for takeover.
+        epoch: { type: integer, minimum: 0, maximum: 4294967295 }
+        state: { enum: [inactive, armed, active, exited, refused] }
+        acceptedHz: { enum: [15, 30, 60] }
+        udpPort: { type: integer, minimum: 1, maximum: 65535 }
+        reason:
+          enum: [unsupported, unavailable, wrong-version, resident-unavailable, guest-input,
+                 lease-expired, host-left, disarmed, bad-epoch]
+        acceptedPackets: { type: integer, minimum: 0 }
+        stalePackets: { type: integer, minimum: 0 }
+        malformedPackets: { type: integer, minimum: 0 }
+        appliedPositionSequence:
+          { type: integer, minimum: 0, maximum: 4294967295 }
+        appliedButtonGeneration:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
+          description: >
+            Newest primary-button transition the guest applied. A press is
+            acknowledged only after the PPC application completed the
+            synthetic Cursor Device's ButtonDown transition. A release is
+            acknowledged only after MBState is up; the resident may do that
+            first as a dead-man escape, then reconcile CursorDeviceButtonUp at
+            the next safe task-time pass.
+        screenWidth: { type: integer, minimum: 1, maximum: 32767 }
+        screenHeight:
+          type: integer
+          minimum: 1
+          maximum: 32767
+          description: >
+            The guest's main display bounds in guest pixels, from the same
+            device the pointer plane drives. Continuity's display layout
+            needs the guest's size to map the shared edge, and this reply is
+            the pointer plane's own wire - before these fields the only
+            source was Mirror's decoded scene, which quietly coupled
+            Continuity to Mirror having run first. Optional at the decoder
+            for older guests; this build always sends both.
+    ContinuityKey:
+      type: object
+      required: [type, version, id, epoch, generation, action, code,
+                 character, modifiers]
+      additionalProperties: false
+      properties:
+        type: { const: continuity.key }
+        version: { const: 4 }
+        id: { type: integer }
+        epoch: { type: integer, minimum: 1, maximum: 4294967295 }
+        generation: { type: integer, minimum: 1, maximum: 4294967295 }
+        action:
+          enum: [down, up, repeat, modifiers]
+          description: >
+            `down`/`up`/`repeat` are key events and carry a real `code`.
+
+            `modifiers` IS NOT A KEY. It reports that the person's held
+            modifiers changed while no key moved, and it exists because the
+            two machines disagree about whether that is an event at all.
+            macOS raises `flagsChanged`; the classic Event Manager has no
+            such event, so a classic application learns a bare modifier
+            change only by reading `GetKeys`/`KeyMap` — which is exactly
+            what a Finder drag does when it decides between move, copy and
+            alias mid-gesture. Without this action the guest's live
+            modifier word can only advance when some other key happens to
+            move, and a modifier pressed during a drag is invisible.
+
+            A `modifiers` message sends `code: 0` and `character: 0`; both
+            are meaningless and a receiver must not post a key event for
+            it. It is state, not an edge: it carries the whole modifier
+            word after the change rather than which modifier moved, so a
+            dropped one is corrected by the next.
+
+            ADDITIVE — no version bump. A receiver that has never heard of
+            it parses no known action and answers `refused`/`malformed` on
+            the existing `continuity.keyReport`, which costs that guest
+            nothing it had.
+        code:
+          type: integer
+          minimum: 0
+          maximum: 127
+          description: >
+            Classic virtual key code; macOS inherits this table. Zero and
+            meaningless when `action` is `modifiers`.
+        character:
+          type: integer
+          minimum: 0
+          maximum: 255
+          description: >
+            MacRoman byte placed in the EventRecord message. Zero and
+            meaningless when `action` is `modifiers`.
+        modifiers:
+          type: integer
+          minimum: 0
+          maximum: 65535
+          description: >
+            Classic Event Manager modifier bits. On a key action these are
+            the modifiers held while that key moved; on `modifiers` they
+            are the whole live word and the entire payload.
+    ContinuityKeyReport:
+      type: object
+      required: [type, version, id, epoch, generation, state]
+      additionalProperties: false
+      properties:
+        type: { const: continuity.keyReport }
+        version: { const: 4 }
+        id: { type: integer }
+        epoch: { type: integer, minimum: 0, maximum: 4294967295 }
+        generation: { type: integer, minimum: 0, maximum: 4294967295 }
+        state: { enum: [queued, refused] }
+        reason:
+          enum: [wrong-version, bad-epoch, target-unavailable, queue-full,
+                 malformed]
+    ContinuitySelection:
+      type: object
+      required: [type, version, epoch, generation]
+      additionalProperties: false
+      description: >
+        What the person at the Macintosh has selected in the Finder right
+        now, pushed unsolicited while a Continuity epoch is live.
+
+        WHY A STUB EXISTS AT ALL. During a drag the guest is unqueryable:
+        the Finder sits inside its own nested Drag Manager loop and will
+        not answer an Apple Event until the gesture ends. So everything
+        the host needs at cross-the-edge time has to be on this side of
+        the wire BEFORE the press — which makes selection, not the drag,
+        the thing worth watching. The guest polls at ordinary task time
+        at a bounded cadence and only while the epoch runs.
+
+        v1 SENDS THE FIRST ITEM ONLY. A multiple selection is reported as
+        its first item, and the host is told nothing about the rest. That
+        is a deliberate narrowing rather than a limit of the poll: a
+        multi-item drag needs a promise group and a host-side answer to
+        "some of these arrived", which single-item drags do not, so it is
+        a later slice and not a field to be added quietly here.
+      properties:
+        type: { const: continuity.selection }
+        version:
+          const: 4
+          description: The Continuity control-contract version, as elsewhere.
+        epoch: { type: integer, minimum: 1, maximum: 4294967295 }
+        generation:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            Monotonic per SELECTION CHANGE within the epoch, not per send.
+            It is the name a later continuity.grab uses, so it must move
+            whenever the item behind it could differ — including to an
+            empty selection, which gets a generation of its own.
+        item:
+          type: object
+          additionalProperties: false
+          description: >
+            Absent when nothing is selected. An absent item with a fresh
+            generation is the instruction to clear whatever the host
+            cached; it is not "the poll found nothing to say".
+          required: [name, volumeRef, dirID, isFolder]
+          properties:
+            name:
+              type: string
+              maxLength: 31
+              description: The item's displayed name, HFS's own 31-byte limit.
+            volumeRef:
+              type: integer
+              minimum: -32768
+              maximum: 32767
+              description: >
+                Classic vRefNum. Together with dirID and name this is the
+                item's identity as the File Manager understands it. A PATH
+                STRING IS NOT OFFERED and never will be: HFS paths are
+                ambiguous across mounted volumes with the same name, and
+                the whole point of carrying the triple is that the guest
+                can reach the item again at grab time without re-parsing
+                anything a person may have renamed in between.
+            dirID: { type: integer, description: Parent directory ID. }
+            fileType:
+              type: string
+              maxLength: 4
+              description: Four-byte OSType. Absent for a folder.
+            creator:
+              type: string
+              maxLength: 4
+              description: Four-byte creator. Absent for a folder.
+            dataSize: { type: integer, minimum: 0 }
+            resourceSize: { type: integer, minimum: 0 }
+            modifiedAt:
+              type: integer
+              minimum: 0
+              description: >
+                Classic seconds since 1904, the File Manager's own clock.
+                Paired with the identity triple it is also how the guest
+                decides the selection CHANGED without re-reading contents.
+            isFolder: { type: boolean }
+            icon:
+              type: string
+              contentEncoding: base64
+              description: >
+                DECLARED, NOT IMPLEMENTED as of this slice. A small icon
+                payload so the host's drag image is honest before any wire
+                round-trip. Extraction from the desktop database costs more
+                than the rest of the poll put together, so it is named here
+                to fix its shape and left unsent; a host must treat its
+                absence as ordinary.
+    ContinuityGrab:
+      type: object
+      required: [type, version, id, epoch, generation]
+      additionalProperties: false
+      description: >
+        Serve the item named by one continuity.selection generation.
+
+        WHY THIS BYPASSES THE SHARE BOUNDARY, said plainly because it is
+        the only place in this contract where a guest reads a file outside
+        the Files share on a host's word. file.get is share-scoped by
+        design, and a Finder selection can name anything on the machine —
+        so a grab is not a wider file.get, it is a DIFFERENT KIND OF
+        AUTHORITY: the drag gesture is the consent, exactly as a
+        host-to-guest drop is already consent-by-gesture. A person picked
+        this item with their own hand and then pulled it across the edge.
+
+        Three properties keep that honest, and all three are checked by
+        the guest before a byte moves:
+
+          - It is bound to ONE generation. The guest serves the item its
+            own cache holds under that number and nothing else; a
+            generation it does not hold is refused, not resolved.
+          - It expires with the epoch, plus ONE in-flight gesture. The
+            crossing that carries a file to the host is also what ends host
+            ownership, so the drag a person is still holding always names
+            an epoch that is already over — refusing it bad-epoch would
+            refuse every guest→host drag there is (measured on metal
+            2026-08-14). The guest therefore keeps the LAST generation of
+            an ending epoch grantable for a bounded window: 30 seconds, or
+            until the next epoch publishes a selection of its own,
+            whichever comes first. Nothing else about the grant widens —
+            same one generation, same item, no path — and a request
+            arriving after that window is refused `grant-expired` rather
+            than served. Every other way an epoch can end (disarm, lease
+            expiry, guest input) holds the same grant for the same window;
+            the LINK dropping does not, because consent is given to one
+            host over one connection.
+          - It names no path. The host cannot ASK for an arbitrary file
+            here — it can only ask for the one the guest already told it
+            about, so the reachable set is whatever a human selected.
+
+        The answer is the ordinary file lane: file.begin, the bulk stream,
+        file.end, and file.refuse for every failure. There is no second
+        bulk path — reusing it is why a grabbed file resumes, cancels and
+        reports progress the same way a Files pull does.
+      properties:
+        type: { const: continuity.grab }
+        version: { const: 4 }
+        id: { type: integer }
+        epoch: { type: integer, minimum: 1, maximum: 4294967295 }
+        generation:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            Must equal the guest's CURRENT selection generation. An older
+            one is refused `stale-selection` rather than served from a
+            history: the consent was given for what the person was looking
+            at, and the guest keeps no ledger of what they used to be.
+        container:
+          enum: [auto, data, macbinary]
+          description: >
+            The file lane's own knob, unchanged in meaning. auto (default)
+            applies the container rule.
     MirrorInvalidate:
       type: object
       required: [type, generation, domains, quality]
@@ -2372,6 +2972,57 @@ components:
             when discarded, ok:false busy while a turn streams
             (cancel first). Reconnecting resets implicitly — this
             message exists so a person keeps the link.
+    WebRequest:
+      type: object
+      required: [type, id, method, target]
+      additionalProperties: false
+      properties:
+        type: { const: web.request }
+        id: { type: integer }
+        method: { enum: [GET, HEAD] }
+        target:
+          type: string
+          maxLength: 2048
+          description: Absolute HTTP or HTTPS proxy target, or a NOW Web path.
+    WebResponseBegin:
+      type: object
+      required: [type, id, status, contentType, bytes]
+      additionalProperties: false
+      properties:
+        type: { const: web.response.begin }
+        id: { type: integer }
+        status: { type: integer, minimum: 100, maximum: 599 }
+        contentType: { type: string, maxLength: 96 }
+        bytes: { type: integer, minimum: 0, maximum: 524288 }
+    WebResponseChunk:
+      type: object
+      required: [type, id, seq, data]
+      additionalProperties: false
+      properties:
+        type: { const: web.response.chunk }
+        id: { type: integer }
+        seq: { type: integer, minimum: 0 }
+        data:
+          type: string
+          maxLength: 3072
+          description: Base64 body bytes; decoded chunks are at most 2304 bytes.
+    WebResponseEnd:
+      type: object
+      required: [type, id, ok]
+      additionalProperties: false
+      properties:
+        type: { const: web.response.end }
+        id: { type: integer }
+        ok: { type: boolean }
+        code: { enum: [busy, unavailable, invalid, too-large, cancelled, fetch-failed] }
+        reason: { type: string, maxLength: 192 }
+    WebCancel:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: web.cancel }
+        id: { type: integer }
     Refuse:
       type: object
       required: [type, contract, reason]
@@ -2698,7 +3349,11 @@ components:
       properties:
         type: { const: capture.request }
         id: { type: integer }
-        depth: { enum: [1, 2, 4, 8, 16, 32] }
+        depth:
+          enum: [0, 1, 2, 4, 8, 16, 32]
+          description: >
+            0 asks the guest to capture at its main display's current native
+            depth. The positive values request an explicit conversion depth.
         chunkKb: { type: integer, minimum: 1, maximum: 32 }
         paceMs: { type: integer, minimum: 0, maximum: 100 }
         pack: { type: boolean }
@@ -2708,7 +3363,11 @@ components:
       additionalProperties: false
       properties:
         type: { const: stream.request }
-        depth: { enum: [1, 2, 4, 8, 16, 32] }
+        depth:
+          enum: [0, 1, 2, 4, 8, 16, 32]
+          description: >
+            0 asks the receiving guest to use its main display's current
+            native depth; positive values request an explicit depth.
     StreamStart:
       type: object
       required: [type, id, depth]
@@ -2718,7 +3377,11 @@ components:
         id:
           type: integer
           description: Stream id; every frame's capture.begin carries it.
-        depth: { enum: [1, 2, 4, 8, 16, 32] }
+        depth:
+          enum: [0, 1, 2, 4, 8, 16, 32]
+          description: >
+            0 follows the guest display's current native depth for the whole
+            stream. Positive values request an explicit conversion depth.
         minIntervalMs:
           type: integer
           description: >
@@ -2828,6 +3491,13 @@ components:
                   precondition recomputed immediately before acting.
         more: { type: boolean }
         cursor: { type: integer }
+        freeBytes:
+          type: integer
+          minimum: 0
+          description: >
+            Responder-observed free bytes on the volume containing the
+            listed folder. Optional when the file system cannot report it.
+            Presentation metadata only; it grants no additional file access.
         root:
           type: string
           description: >
@@ -2976,8 +3646,10 @@ components:
             ok:false with this id, so the requester never waits forever.
         psnLow: { type: integer }
         depth:
-          enum: [1, 2, 4, 8, 16, 32]
-          description: Capture bit depth; the guest's preference if omitted.
+          enum: [0, 1, 2, 4, 8, 16, 32]
+          description: >
+            Capture bit depth. 0 asks for the main display's current native
+            depth; omission keeps the guest's saved preference.
     ProcessResult:
       type: object
       required: [type, id, ok]
@@ -3128,6 +3800,29 @@ components:
             head of a different one is worse than starting over. Absent
             with offset > 0 is refused `changed` as well — resuming
             blind is not offered.
+        mirrorSource:
+          $ref: "#/components/schemas/MirrorFileSource"
+          description: >
+            A source chosen by a person dragging an item out of Mirror.
+            When present, path is the empty share-relative placeholder and
+            the responder resolves this exact desktop or Finder item outside
+            the share. This is not a general absolute-path file.get: the
+            closed kind/path/name shape is owned by Mirror's local drag UI,
+            folders are refused, and an unknown Finder path fails closed.
+    MirrorFileSource:
+      type: object
+      required: [kind, name]
+      additionalProperties: false
+      properties:
+        kind: { enum: [desktop, finder-window] }
+        name:
+          type: string
+          description: The exact displayed item name at drag start.
+        path:
+          type: string
+          description: >
+            Exact absolute HFS folder path for finder-window. Absent for the
+            desktop, whose directory identity is resolved by FindFolder.
     FileOffer:
       type: object
       required: [type, id, name, path, container, bytes]
@@ -3194,6 +3889,32 @@ components:
             guest resolves path beneath this previously prepared inactive
             candidate rather than beneath the generic Files share. It is not
             accepted by any Files, Chat or MCP request schema.
+        mirrorDrop:
+          $ref: "#/components/schemas/MirrorFileDrop"
+          description: >
+            A release target chosen by a person over Mirror. When present,
+            the receiver resolves the named desktop, Finder folder, or
+            application identity before accepting bytes. The file is copied;
+            this field never requests a source move.
+    MirrorFileDrop:
+      type: object
+      required: [kind]
+      additionalProperties: false
+      properties:
+        kind:
+          enum: [desktop, finder-folder, application-process, application-creator]
+        path:
+          type: string
+          description: Exact absolute HFS folder path for finder-folder.
+        psn:
+          type: string
+          description: ProcessSerialNumber as high:low for application-process.
+        creator:
+          type: string
+          description: Four-byte creator for application-creator.
+        name:
+          type: string
+          description: Display name used to validate or explain the target.
     UpdateOffer:
       type: object
       required: [type, component, version, build, bytes, sha256, channel,
@@ -3234,7 +3955,7 @@ components:
         id: { type: integer }
         component: { enum: [application, extension] }
         ok: { type: boolean }
-        action: { enum: [relaunch, restart-required] }
+        action: { enum: [relaunch, relaunch-required, restart-required] }
         code: { type: string }
         reason: { type: string }
     FileAccept:
@@ -3293,6 +4014,14 @@ components:
         cleanup:
           enum: [temp-renamed, temp-discarded, partial-retained, unknown]
           description: What happened to the receiver's staging artifact.
+        relaunchRequired:
+          type: boolean
+          description: >
+            True only when an overwrite moved a running application to the
+            receiver's Trash before the new application took its name. The
+            process already in memory keeps running the old code until the
+            person quits and relaunches it. Absent and false mean no relaunch
+            consequence was reported; absence remains valid for older peers.
     FileProgress:
       type: object
       required: [type, id, received]
@@ -3322,7 +4051,32 @@ components:
         id: { type: integer }
         code:
           enum: [busy, exists, bad-path, not-found, io-error, too-big,
-                 changed]
+                 changed, bad-source, project-file-unavailable,
+                 bad-epoch, stale-selection, no-selection, folder-not-yet,
+                 grant-expired]
+          description: >
+            The first seven are the file lane's own answers. The rest name
+            a REQUEST SHAPE the responder would not resolve, and they are
+            listed here because the message is one message: bad-source and
+            project-file-unavailable have been on the wire since the Mirror
+            drag and Development lanes shipped and were simply never
+            written down, which is the drift this enum exists to prevent.
+
+            bad-epoch, stale-selection and no-selection are
+            continuity.grab's refusals — the epoch is not the live one, the
+            generation is not the current one, and nothing is selected.
+            folder-not-yet is the honest edge of the first grab slice: the
+            selection stub carries isFolder, so a host can see a folder
+            coming, and a folder grab is refused by name rather than
+            served as an empty file.
+
+            grant-expired is bad-epoch's other half, and the two are kept
+            apart deliberately: bad-epoch means the request names an epoch
+            this guest never had or never finished, while grant-expired
+            means it named the right one and arrived after the in-flight
+            window closed. A person whose drag took too long and a host
+            asking for something that was never granted are different
+            sentences, and only one of them is worth trying again.
         reason: { type: string }
     FileBegin:
       type: object
@@ -3980,23 +4734,32 @@ components:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
     development-project:
       description: >
-        Measures and pages one active source tree beneath the human-selected
-        Projects root. Only opaque project identity and project-relative
-        manifest entries cross; the Projects root and HFS path remain private.
+        Lists the active projects beneath the human-selected Projects root,
+        or measures and pages one of them. Exactly one of `action: catalog`
+        and `projectID` is given; a catalog page carries at most eight
+        `Project` rows of `identity|name`, and a `Next` cursor of -1 at the
+        end of the root. Only opaque project identity, the project's own
+        name and project-relative manifest entries cross; the Projects root
+        and every HFS path remain private. Inactive staged candidates are
+        NOT in the catalog: they have their own identity space and their own
+        verb (development-stage). The cursor means different things to the
+        two actions - a catalog cursor indexes the root's folders, a
+        manifest cursor indexes one project's files - so each is bounded by
+        the guest at its own limit rather than at this shared maximum.
         NOW-68K does not register this command.
       args:
         type: object
-        required: [projectID]
         additionalProperties: false
         properties:
+          action: { enum: [catalog] }
           projectID:
             type: string
             pattern: "^[0-9a-f]{32}$"
           cursor:
             type: integer
             minimum: 0
-            maximum: 128
-      x-line: "One project ID; optional cursor is host paging state."
+            maximum: 256
+      x-line: "catalog, or one project ID; optional cursor is paging state."
       output:
         type: object
         properties:
@@ -4138,12 +4901,22 @@ components:
         has published. With `application` or `extension`, asks for that
         offered build; download, verification, installation and the terminal
         update.result remain one guest-owned operation. The application
-        relaunches only after its replacement is complete. An extension
-        install reports restart-required and never restarts the Mac itself.
+        remains running from its trashed rollback copy after replacement and
+        reports relaunch-required. An extension install reports
+        restart-required and never restarts the Mac itself.
       args:
         type: object
         properties:
           component: { enum: [application, extension] }
+          hostApproved:
+            type: boolean
+            description: >
+              The native host emits true only after a person presses its
+              install button. It permits today's unsigned development
+              artifact to take the same path as confirmation in the guest
+              Connections page. Omitted or false remains inspect-only/refused.
+              This is product authorization, not authentication: the trusted-
+              LAN wire is plaintext and a hostile raw peer could forge it.
       x-line: Empty shows status; application or extension installs it.
       output:
         type: object
@@ -4189,6 +4962,20 @@ components:
           minItems: 2
           maxItems: 2
           items: { type: string }
+    romdump:
+      description: >
+        Writes the responder's complete ROM to `New Old World ROM.bin` under
+        its configured Files share. The file is then retrieved through the
+        existing file.get / bulk stream; ROM bytes do not define a second
+        transfer protocol. On the PowerBook 1400, complete means the measured
+        4 MiB physical image: the 3 MiB Toolbox section reported by
+        gestaltROMSize plus the adjacent 1 MiB boot/nanokernel section.
+        NOW-68K does not register this command.
+      args: {}
+      output:
+        type: object
+        properties:
+          romdump: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     ls:
       description: >
         List a folder in the guest's share. No path = the share root.
@@ -4249,9 +5036,11 @@ components:
         anything again; and the person most likely to need that is
         standing at a classic Mac whose host has stopped answering,
         which is precisely when the wire is not the face available.
-        NOW-68K answers it; the PowerPC guest reaches the same
-        capability from its own UI and from file.cancel, and declares
-        no verb.
+        NOW-68K answers it. The PowerPC guest declares no verb: a host
+        cancels it by sending file.cancel, and the person standing at
+        that guest reaches the same implementation from its receive
+        windoid and from `cancel` typed at its own console — the
+        console-only split docs/command-parity.md records for `put`.
 
         Answers ok:false with code "nothing-to-cancel" when no transfer
         is in flight. That is a refusal, not a protocol error: asking a
@@ -4443,23 +5232,55 @@ components:
           wirestat: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     tail:
       description: >
-        The last lines of the guest's log for this launch. The log is a
-        file per launch in a "now-logs" folder beside the application, so
-        what happened survives a crash that takes the window, the status
-        line and every in-memory buffer with it. The same command answers
-        on that Mac's own console; this is the copy read from here, which
-        matters because that machine is the harder one to look at.
+        Lines of the guest's log for this launch, read from the in-memory
+        ring — 2000 lines (the guest's kLogKept, restated here so both
+        sides read one number), live even when disk logging is off. A
+        copy also lands in a file per launch in a "now-logs" folder
+        beside the application, so what happened survives a crash that
+        takes the window, the status line and every in-memory buffer with
+        it. The same command answers on that Mac's own console; this is
+        the copy read from here, which matters because that machine is
+        the harder one to look at.
+
+        One answer carries at most 40 lines because it must fit a 4 KB
+        control frame; the REST of the ring is reached by paging, not by
+        a bigger answer. Every line has a sequence number, counted from 1
+        at launch, and every answer's "log" group names — as its "next"
+        row — the cursor to pass back as `before` for the next-older
+        page, until no row is offered because nothing older matches.
+        Paging by sequence is stable against a live ring: new lines
+        change nothing already numbered, and lines that roll off are
+        simply no longer served. The "log" group also reports "matching"
+        (how many held lines match the filter), "held" ("H of 2000"),
+        "shown" ("N of M"), the applied "area" when one was, and "file".
       args:
         lines:
           type: integer
-          description: How many, newest last. Default 20, most 40.
+          description: How many, newest last. Default 20, most 40 per answer.
+        area:
+          type: string
+          description: >
+            One area tag, at most 6 characters, matched exactly against
+            the tag the guest wrote (a line is "HH:MM:SS area message";
+            the tag field is 6 wide, so "contin" and never "continuity").
+            Filtering happens on the guest, before the wire — worth far
+            more than after it on this link. Absent means every area.
+        before:
+          type: integer
+          description: >
+            The paging cursor: return only lines with a sequence number
+            BELOW this one. Use the previous answer's "next" row. Absent
+            or 0 starts at the newest line.
       x-line: >
-        The first integer on the line is the count; anything else is
-        ignored. Empty means the default.
+        "tail [lines] [area] [before N]" — the first bare integer is the
+        count, a bare word is an area tag, and the integer after the word
+        "before" is the cursor. Empty means the default. Anything else is
+        ignored.
       output:
         type: object
         properties:
           tail: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          log: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     vprobe:
       description: >
         Measure the guest's VRAM read cost by access method: raw
@@ -6715,22 +7536,32 @@ components:
         facts: installation/load state, exact resident build, capability and
         format words, application request bits, resident active bits,
         generation/freshness, and any refusal or degradation it can prove.
-        It also owns four local safety gates: passive structure observation,
-        automatic Finder complements, drawing-content tracing, and explicit
-        foreground discovery. These are application preferences, not resident
-        facts and not host policy.
+        It also owns ONE local safety gate: a master consent that either
+        permits mirroring of this Mac or refuses all of it. That is an
+        application preference, not a resident fact and not host policy.
 
-        The host joins these facts and guest gates with its per-machine policy;
-        both sides must permit an operation before it is scheduled. Unsupported
-        planes remain unsupported even when an old preference says enabled;
-        an unanchored machine identity gets session-only safe defaults. The
-        unified shape deliberately replaces the old AXPeek/QDPeek/Portal and
-        mirror-agent inventory. A valid NOW Extension reply can never be
-        diagnosed as missing those retired components.
+        Two keys, and they are not the same key. Both sides must still
+        permit an operation before it is scheduled — the guest's veto is
+        untouched — but the two keys now differ in SHAPE rather than
+        overlapping: the guest answers whether this Mac may be mirrored at
+        all, and the host's per-machine plane policy answers which planes.
+        Until 2026-08-15 the guest carried four gates of its own (passive
+        structure observation, automatic Finder complements, drawing-content
+        tracing, explicit foreground discovery) whose vocabulary never
+        mapped one-to-one onto the host's five planes, so a person reading
+        one side could not predict the other. It is the guest's
+        GRANULARITY that retired here, never its refusal.
+
+        Unsupported planes remain unsupported even when an old preference
+        says enabled; an unanchored machine identity gets session-only safe
+        defaults. The unified shape deliberately replaces the old
+        AXPeek/QDPeek/Portal and mirror-agent inventory. A valid NOW
+        Extension reply can never be diagnosed as missing those retired
+        components.
       args: {}
       x-line: >
-        Takes nothing. Every field is either an observed guest fact or one of
-        the four guest-owned policy gates shown on the Workshop's Mirror page.
+        Takes nothing. Every field is either an observed guest fact or the
+        one guest-owned consent switch shown on the Workshop's Mirror page.
       output:
         type: object
         properties:
@@ -6897,16 +7728,46 @@ components:
               policy:
                 type: object
                 description: >
-                  Guest-owned safety gates. A current guest always reports
-                  these; hosts accept absence for guests built before the
-                  fields existed. False means the guest refuses that class of
-                  work even when host policy enables it.
-                required: [structure, finderComplements, content, foregroundCycle]
+                  The guest-owned safety gate — one master consent, since
+                  2026-08-15. A current guest always reports `enabled`;
+                  hosts accept its absence for guests built before it
+                  existed. False means this Mac refuses to be mirrored at
+                  all, whatever host policy says; true means the guest
+                  permits mirroring and the host's per-machine plane policy
+                  decides which planes are actually asked for.
+
+                  The four retired fields are the guest's old per-plane
+                  gates. A CURRENT GUEST STILL SENDS THEM, all four set to
+                  the master consent, so a host that predates this change
+                  reads exactly the permission the master grants rather
+                  than a missing object; they are output-only compatibility
+                  and no current guest reads them back. A host reading a
+                  guest that predates `enabled` collapses the four by the
+                  same rule the guest used to migrate its own preferences —
+                  consent only when ALL FOUR were on. That rule is stated
+                  once and applied in both places on purpose: it is its own
+                  inverse, so a record written by either build and read by
+                  the other means the same thing. Widening a consent
+                  silently is the failure this shape exists to avoid.
+                required: [enabled]
                 properties:
-                  structure: { type: boolean }
-                  finderComplements: { type: boolean }
-                  content: { type: boolean }
-                  foregroundCycle: { type: boolean }
+                  enabled: { type: boolean }
+                  structure:
+                    type: boolean
+                    deprecated: true
+                    description: Retired gate; equals `enabled`.
+                  finderComplements:
+                    type: boolean
+                    deprecated: true
+                    description: Retired gate; equals `enabled`.
+                  content:
+                    type: boolean
+                    deprecated: true
+                    description: Retired gate; equals `enabled`.
+                  foregroundCycle:
+                    type: boolean
+                    deprecated: true
+                    description: Retired gate; equals `enabled`.
               planes:
                 type: array
                 description: >
@@ -6956,6 +7817,48 @@ components:
                     reason:
                       type: string
                       description: Present for refused or degraded states.
+    mirrorlog:
+      description: >
+        The `mirror` log area's DEBUG TIER, on one session-scoped switch
+        that is OFF each launch. Off — the default — the guest's ring
+        and launch file keep the product's story: arm/disarm requests
+        and outcomes, epoch begin, selection and grant lines, the writer
+        verdict, and every warning and error, which stay unconditional
+        whatever this switch says. On, the plane's own diagnostics
+        return: the ~25-line per-epoch counter dump each disarm writes,
+        per-press and per-move traces, idle-settle cadence, and the
+        per-report counter block.
+
+        It exists because the diagnostics ate the log: a three-minute
+        session cycling 18 Continuity epochs left the 2000-line ring
+        ~97% mirror counters, and `tail` — capped at 40 lines — could
+        answer "what happened" only with counters. Someone diagnosing
+        the MIRROR PLANE turns this on; someone diagnosing a FEATURE
+        needs the lines that were being buried.
+
+        DELIBERATELY NOT SAVED, same argument as wirestat's settings: a
+        diagnostic that survives a relaunch is a configuration nobody
+        chose, and this one quietly ruins every later log. The guest
+        logs each transition, so the log itself names who turned the
+        firehose on. A bare or unrecognised call reports without
+        changing anything.
+
+        PowerPC only: NOW-68K has no mirror plane and answers
+        unknown-command.
+      args:
+        type: object
+        properties:
+          action:
+            type: string
+            description: >
+              "on" or "off". Absent or anything else reports the current
+              state without changing it.
+      x-line: The action alone, e.g. "on", "off", or empty for status.
+      output:
+        type: object
+        properties:
+          mirrorlog:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a

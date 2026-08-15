@@ -272,8 +272,8 @@ int main(void)
     check(offsetof(NowPeekTable, cursor)
               == offsetof(NowPeekTable, cursor_format) + sizeof(NowPeekU32),
           "the cursor cell follows its format word");
-    /* U13's rest-state pair and pass counter are the new tail. The OS
-       cursor cell is no longer it, and that is the append rule working
+    /* U13's rest-state pair and pass counter keep their offsets. The OS
+       cursor cell is no longer the tail, and that is the append rule working
        than a check going stale: an application built against U10 reads a
        shorter `length`, never looks past the string, and is right not to. */
     check(offsetof(NowPeekTable, rest_format)
@@ -282,17 +282,27 @@ int main(void)
     check(offsetof(NowPeekTable, gne_passes)
               == offsetof(NowPeekTable, rest_format) + sizeof(NowPeekU32),
           "the filter pass counter follows the rest-state pair");
-    check(offsetof(NowPeekTable, gne_passes) + sizeof(NowPeekU32)
-              == sizeof(NowPeekTable),
-          "the filter pass counter is the tail, so shorter means absent");
+    /* U14 P9 takes the tail without moving any field above it. */
+    check(offsetof(NowPeekTable, continuity_format)
+              == offsetof(NowPeekTable, gne_passes) + sizeof(NowPeekU32),
+          "continuity appends behind the filter pass counter");
+    check(offsetof(NowPeekTable, continuity)
+              == offsetof(NowPeekTable, continuity_format)
+                   + sizeof(NowPeekU32),
+          "the continuity cell follows its format word");
+    check(offsetof(NowPeekTable, continuity)
+              + sizeof(NowPeekContinuityCell) == sizeof(NowPeekTable),
+          "the continuity cell is the tail, so shorter means absent");
     /* The bits are the contract and must not collide, because a reader
        that mistook "the trap table is patched" for "the block is
        allocated" would report the wrong durable fact about a machine. */
     check((kNowPeekRestGNEFilter | kNowPeekRestLivenessTicking
            | kNowPeekRestTransport | kNowPeekRestContentBlock
            | kNowPeekRestContentHooks | kNowPeekRestActPatched
-           | kNowPeekRestQDExtPatched) == 0x7F,
-          "the seven rest-state bits are distinct and contiguous");
+           | kNowPeekRestQDExtPatched
+           | kNowPeekRestCursorTrackingPatched
+           | kNowPeekRestADBObserverInstalled) == 0x1FF,
+          "the nine rest-state bits are distinct and contiguous");
 
     /* Reachability is not a dial, and the values are the contract rather
        than an ordering — a refusal carries the driver's own OSErr so that

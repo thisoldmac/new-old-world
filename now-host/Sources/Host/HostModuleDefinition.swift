@@ -17,12 +17,23 @@ struct HostModuleContext {
     let agentActivity: AgentActivityModel?
     let agentCompanions: AgentCompanionModel?
     let logs: LogsModel?
+    let continuity: MirrorContinuityController?
+    /// One host-side file lane, app-owned because the Continuity edge seam
+    /// uses it with no Mirror page in the picture.
+    let fileTransfer: MirrorFileTransferModel
     let settings: SettingsModel?
     let onboarding: OnboardingPortal?
+    let localNetworkAccess: LocalNetworkAccessController
     let guestScreen: @Sendable () async -> ChatSystemPrompt.Screen?
     let mirrorEngines: MirrorStateEngineRegistry?
     let selectedModuleID: () -> String
     let selectModule: (String) -> Void
+    /// The deep-link seam beside `selectModule`: a module builds
+    /// `{ context.showSettings(.someTab) }` once at construction and hands
+    /// it to its view as a "Settings…" button, the same shape `selectModule`
+    /// already is. Settings itself is not a shelf module — it is a separate
+    /// `NSWindow` — so this cannot simply BE `selectModule` with a tab id.
+    let showSettings: (HostSettingsTab?) -> Void
     let selectGuest: (GuestKey) -> Bool
     let startListening: () -> Void
     let stopListening: () -> Void
@@ -37,13 +48,17 @@ struct HostModuleContext {
          agentActivity: AgentActivityModel? = nil,
          agentCompanions: AgentCompanionModel? = nil,
          logs: LogsModel? = nil,
+         continuity: MirrorContinuityController? = nil,
+         fileTransfer: MirrorFileTransferModel? = nil,
          settings: SettingsModel? = nil,
          onboarding: OnboardingPortal? = nil,
+         localNetworkAccess: LocalNetworkAccessController? = nil,
          guestScreen: @escaping @Sendable () async
             -> ChatSystemPrompt.Screen? = { nil },
          mirrorEngines: MirrorStateEngineRegistry? = nil,
          selectedModuleID: @escaping () -> String = { "" },
          selectModule: @escaping (String) -> Void = { _ in },
+         showSettings: @escaping (HostSettingsTab?) -> Void = { _ in },
          selectGuest: @escaping (GuestKey) -> Bool = { _ in false },
          startListening: @escaping () -> Void = {},
          stopListening: @escaping () -> Void = {},
@@ -59,12 +74,18 @@ struct HostModuleContext {
         self.agentActivity = agentActivity
         self.agentCompanions = agentCompanions
         self.logs = logs
+        self.continuity = continuity
+        self.fileTransfer = fileTransfer
+            ?? MirrorFileTransferModel(listener: listener)
         self.settings = settings
         self.onboarding = onboarding
+        self.localNetworkAccess = localNetworkAccess
+            ?? LocalNetworkAccessController()
         self.guestScreen = guestScreen
         self.mirrorEngines = mirrorEngines
         self.selectedModuleID = selectedModuleID
         self.selectModule = selectModule
+        self.showSettings = showSettings
         self.selectGuest = selectGuest
         self.startListening = startListening
         self.stopListening = stopListening

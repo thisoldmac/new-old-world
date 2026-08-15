@@ -87,7 +87,7 @@ final class ProcessesModel: ObservableObject, GuestScopedModel {
     /// The capture depth this page asks for. Shares `CaptureDepth` with the
     /// Screen module — one notion of bit depth, chosen per page, because a
     /// window shot and a full-screen shot are wanted at different weights.
-    @Published var captureDepth: CaptureDepth = .indexed
+    @Published var captureDepth: CaptureDepth = .native
 
     /// The shot on screen, and which process it is of. Non-nil IS the
     /// preview state: the details side shows the picture instead of the

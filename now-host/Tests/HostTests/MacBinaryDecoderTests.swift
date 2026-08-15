@@ -59,6 +59,83 @@ final class MacBinaryDecoderTests: XCTestCase {
         XCTAssertEqual(xattr[8], 1)
     }
 
+    func testPromiseMaterializerConsumesEnvelopeAndRestoresPromisedFile()
+        throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let envelope = temporary.appendingPathComponent(".incoming.bin")
+        let promised = temporary.appendingPathComponent("Promised Name")
+        let modified = Date(timeIntervalSince1970: 1_700_000_000)
+        let encoded = try XCTUnwrap(MacBinaryEncoder.data(
+            name: "Guest Name", type: "APPL", creator: "NOWo",
+            dataFork: Data([1, 2]), resourceFork: Data([3, 4, 5])))
+        try encoded.write(to: envelope)
+
+        try MacBinaryFile.materializePromise(
+            envelope: envelope, destination: promised, modified: modified)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: envelope.path),
+                       "the transport envelope must be consumed")
+        XCTAssertEqual(try Data(contentsOf: promised), Data([1, 2]))
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath:
+            promised.path + "/..namedfork/rsrc")), Data([3, 4, 5]))
+        let xattr = try finderInfoBytes(at: promised)
+        XCTAssertEqual(String(bytes: xattr[0..<4], encoding: .ascii), "APPL")
+        XCTAssertEqual(String(bytes: xattr[4..<8], encoding: .ascii), "NOWo")
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: promised.path)
+        let writtenDate = try XCTUnwrap(attributes[.modificationDate] as? Date)
+        XCTAssertEqual(writtenDate.timeIntervalSince1970,
+                       modified.timeIntervalSince1970, accuracy: 1)
+    }
+
+    func testPromiseMaterializerPreservesAnExistingDestination() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let envelope = temporary.appendingPathComponent(".incoming.bin")
+        let promised = temporary.appendingPathComponent("Promised Name")
+        let encoded = try XCTUnwrap(MacBinaryEncoder.data(
+            name: "Guest Name", type: "APPL", creator: "NOWo",
+            dataFork: Data("guest".utf8), resourceFork: Data()))
+        try encoded.write(to: envelope)
+        try Data("mine".utf8).write(to: promised)
+
+        XCTAssertThrowsError(try MacBinaryFile.materializePromise(
+            envelope: envelope, destination: promised, modified: nil))
+
+        XCTAssertEqual(try Data(contentsOf: promised), Data("mine".utf8))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: envelope.path))
+    }
+
+    func testPromiseMaterializerKeepsFinderInfoWithoutAResourceFork() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let envelope = temporary.appendingPathComponent(".incoming.bin")
+        let promised = temporary.appendingPathComponent("Notes.txt")
+        let encoded = try XCTUnwrap(MacBinaryEncoder.data(
+            name: "Notes.txt", type: "TEXT", creator: "ttxt",
+            dataFork: Data("hello".utf8), resourceFork: Data()))
+        try encoded.write(to: envelope)
+
+        try MacBinaryFile.materializePromise(
+            envelope: envelope, destination: promised, modified: nil)
+
+        let finderInfo = try finderInfoBytes(at: promised)
+        XCTAssertEqual(String(bytes: finderInfo[0..<4], encoding: .ascii),
+                       "TEXT")
+        XCTAssertEqual(String(bytes: finderInfo[4..<8], encoding: .ascii),
+                       "ttxt")
+    }
+
     private func finderInfoBytes(at url: URL) throws -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: 32)
         let result = url.path.withCString { path in

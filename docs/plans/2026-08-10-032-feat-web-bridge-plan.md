@@ -13,7 +13,19 @@ search:
 
 ## Implementation receipt
 
-The Direct baseline is implemented on `codex/web-proxy`: a bundled NOW-owned
+**Superseded (2026-08-15, plan 034 item H1):** the Direct baseline this
+receipt describes is no longer what compiles. The shipped design is the
+guest-local loopback relay — the PPC guest opens its OWN Open Transport
+listener on the guest's 127.0.0.1 (`web_proxy_ot.c`) and page content
+crosses the existing NOW wire (`now_wire_web_request/response_*`); no
+browser-facing host port is opened and no `10.0.2.2`-style address is
+derived or needed. `docs/user-guide/reference/modules/web.md` documents
+the current behavior. The paragraphs below are retained as the history
+of the Direct phase; reintroducing Direct as an opt-in LAN topology
+would be new, security-relevant feature work, not a revival of this
+receipt.
+
+The Direct baseline was implemented on `codex/web-proxy`: a bundled NOW-owned
 helper, host supervision and Web module, a PowerPC Workshop page with migrated
 preferences, Classilla/MacWeb/Generic profiles, Compatible/Reader/AI lenses,
 Wikipedia and Reddit handlers, and an explicit adapter for the preserved local

@@ -1,6 +1,29 @@
 import SwiftUI
 import MirrorKit
 
+/// Optional raw pointer ownership layered over the semantic Mirror act plane.
+/// The view only knows whether an event was accepted; session authority,
+/// transport, acknowledgements, and release guarantees stay with the driver.
+@MainActor
+public protocol ContinuityInputDriver: AnyObject {
+    var isEnabled: Bool { get set }
+    var isActive: Bool { get }
+    var requestedHz: Int { get set }
+    var status: String { get }
+    /// True while the raw lane is deliberately keeping the guest Menu
+    /// Manager's tracking loop open. This is host-authored gesture state, not
+    /// a claim that an independently opened guest menu was observed.
+    var isMenuTracking: Bool { get }
+
+    func pointerMoved(to point: MirrorKit.Point)
+    func pointerLeft()
+    @discardableResult func primaryDown(
+        at point: MirrorKit.Point, inMenuBar: Bool) -> Bool
+    @discardableResult func primaryDragged(to point: MirrorKit.Point) -> Bool
+    @discardableResult func primaryUp(at point: MirrorKit.Point) -> Bool
+    func cancel(reason: String)
+}
+
 /// **What the live view actually needs from whatever is driving it.**
 ///
 /// DIVERGENCE FROM MIRROR ORIGIN, 2026-08-02, and the smallest one that
@@ -55,6 +78,8 @@ public protocol MirrorSceneSource: ObservableObject {
     var scrollbarDragDriver: ScrollbarDragDriver? { get }
     /// Bulk selection, open-selection, and rename for host-owned Finder UI.
     var finderInteractionDriver: FinderInteractionDriver? { get }
+    /// Raw guest pointer ownership, when this source can negotiate it.
+    var continuityInputDriver: ContinuityInputDriver? { get }
     /// Abandon the in-flight act and everything queued behind it,
     /// answering how many acts were ended. The default does nothing, for
     /// a driver with no lane to free.
@@ -95,6 +120,7 @@ public extension MirrorSceneSource {
     var itemDragDriver: ItemDragDriver? { nil }
     var scrollbarDragDriver: ScrollbarDragDriver? { nil }
     var finderInteractionDriver: FinderInteractionDriver? { nil }
+    var continuityInputDriver: ContinuityInputDriver? { nil }
     @discardableResult
     func cancelPendingActs() -> Int { 0 }
 
@@ -146,11 +172,19 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
 
     @ObservedObject var controller: Source
     let keyboard: Keyboard
+    private let hostFilePromise:
+        ((CrossMachineFileTargeting.Source) -> NSPasteboardWriting?)?
+    private let hostFilesDropped:
+        (([URL], CrossMachineFileTargeting.Destination) -> Void)?
     /// Whether a person has clicked into the mirror, in `sharesWindow`.
     /// Meaningless in `ownsWindow`, where the keyboard is always the
     /// mirror's.
     @State private var keyboardEngaged = false
     @State private var openMenu: Int?
+    /// Distinguishes a menu projected from a raw Continuity gesture from the
+    /// semantic Mirror's own local dropdown. Only the former is reconciled to
+    /// `isMenuTracking`; closing it must not dismiss an unrelated local menu.
+    @State private var continuityOwnsOpenMenu = false
     /// The row under the pointer in the open menu, 1-based. Menus are a
     /// selectable surface: this is what inverts, and what acts.
     @State private var hoveredItem: Int?
@@ -175,6 +209,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// `ItemDragSession` in the core; this view feeds it a pointer and draws
     /// what it says.
     @State private var itemDrag: ItemDragSession?
+    @State private var guestFileDragReference: GuestFileDragReference?
+
+    /// A reference to the guest file itself. `source` is what the guest will
+    /// resolve and validate when the promise is redeemed; `subject` exists
+    /// only for selection geometry and the original icon shown by AppKit.
+    private struct GuestFileDragReference {
+        var subject: DragTargeting.Subject
+        var source: CrossMachineFileTargeting.Source
+        var writer: NSPasteboardWriting
+        var start: (x: Int, y: Int)
+    }
 
     /// A button the person is pressing. Same split as `itemDrag` above and
     /// for the same reason: the transitions live in `PressSession`, where a
@@ -204,9 +249,18 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     /// `keyboard` defaults to `.ownsWindow`, which is what every caller
     /// meant before there was a second container — so the dedicated
     /// window and `MirrorApp` are unchanged by this parameter existing.
-    public init(controller: Source, keyboard: Keyboard = .ownsWindow) {
+    public init(
+        controller: Source,
+        keyboard: Keyboard = .ownsWindow,
+        hostFilePromise:
+            ((CrossMachineFileTargeting.Source) -> NSPasteboardWriting?)? = nil,
+        hostFilesDropped:
+            (([URL], CrossMachineFileTargeting.Destination) -> Void)? = nil
+    ) {
         self.controller = controller
         self.keyboard = keyboard
+        self.hostFilePromise = hostFilePromise
+        self.hostFilesDropped = hostFilesDropped
     }
 
     public var body: some View {
@@ -263,7 +317,153 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                         .gesture(mouseGesture(scene: scene, size: geo.size))
                         .overlay {
                             PointerCaptureView(
-                                onLeftDown: { _, mods in pointerMods = mods },
+                                onMove: { point in
+                                    guard let guest = continuityGuestPoint(
+                                        point, scene: scene, size: geo.size)
+                                    else {
+                                        controller.continuityInputDriver?
+                                            .pointerLeft()
+                                        return
+                                    }
+                                    controller.continuityInputDriver?
+                                        .pointerMoved(to: .init(
+                                            x: guest.x, y: guest.y))
+                                    syncContinuityMenu(
+                                        scene, at: guest,
+                                        driver: controller.continuityInputDriver)
+                                },
+                                onExit: {
+                                    controller.continuityInputDriver?
+                                        .pointerLeft()
+                                    closeContinuityMenu()
+                                },
+                                onLeftDown: { point, mods in
+                                    pointerMods = mods
+                                    guard let guest = continuityGuestPoint(
+                                        point, scene: scene, size: geo.size)
+                                    else { return false }
+                                    let pointerDriver =
+                                        controller.continuityInputDriver
+                                    if HostFileDragPolicy.claimsPress(
+                                        filePromiseAvailable:
+                                            hostFilePromise != nil,
+                                        mirrorCursorActive:
+                                            pointerDriver != nil),
+                                       case .success(let subject) =
+                                        DragTargeting.subject(
+                                            scene, x: guest.x, y: guest.y),
+                                       case .success(let source) =
+                                        CrossMachineFileTargeting.source(
+                                            subject, in: scene),
+                                       let writer = hostFilePromise?(source) {
+                                        if case .sharesWindow = keyboard {
+                                            keyboardEngaged = true
+                                        }
+                                        guestFileDragReference = .init(
+                                            subject: subject, source: source,
+                                            writer: writer,
+                                            start: guest)
+                                        return true
+                                    }
+                                    if let driver = pointerDriver {
+                                        let consumed = driver.primaryDown(
+                                            at: .init(x: guest.x, y: guest.y),
+                                            inMenuBar: guest.y
+                                                < HitTester.menubarHeight)
+                                        if consumed,
+                                           case .menuTitle(let index) =
+                                                HitTester.hitTest(
+                                                    scene, x: guest.x,
+                                                    y: guest.y) {
+                                            openMenu = index
+                                            hoveredItem = nil
+                                            continuityOwnsOpenMenu = true
+                                        }
+                                        if consumed { return true }
+                                    }
+                                    return false
+                                },
+                                onLeftDragged: { point, _ in
+                                    if let reference = guestFileDragReference {
+                                        guard let guest = continuityGuestPoint(
+                                            point, scene: scene, size: geo.size,
+                                            clampToEdge: true)
+                                        else { return nil }
+                                        guard HostFileDragPolicy.hasBegun(
+                                            from: reference.start, to: guest)
+                                        else { return nil }
+                                        selectGuestFile(reference, in: scene)
+                                        guestFileDragReference = nil
+                                        controller.note("copying "
+                                            + "\(reference.source.file.name) "
+                                            + "to this Mac on release")
+                                        return hostDragItem(
+                                            for: reference, in: scene)
+                                    }
+                                    guard let guest = continuityGuestPoint(
+                                        point, scene: scene, size: geo.size,
+                                        clampToEdge: true)
+                                    else {
+                                        controller.continuityInputDriver?
+                                            .cancel(reason: "guest screen unavailable")
+                                        return nil
+                                    }
+                                    guard let driver =
+                                            controller.continuityInputDriver
+                                    else { return nil }
+                                    let consumed = driver.primaryDragged(
+                                        to: .init(x: guest.x, y: guest.y))
+                                    if consumed {
+                                        syncContinuityMenu(
+                                            scene, at: guest, driver: driver)
+                                    }
+                                    return nil
+                                },
+                                onLeftUp: { point, _ in
+                                    if let reference = guestFileDragReference {
+                                        guestFileDragReference = nil
+                                        defer {
+                                            dragMode = nil
+                                            dragOutline = nil
+                                        }
+                                        guard guestPoint(
+                                            point, scene: scene,
+                                            size: geo.size) != nil
+                                        else { return true }
+                                        handleFinderAwareClick(
+                                            scene, at: reference.start,
+                                            count: clickCount(
+                                                at: reference.start),
+                                            mods: pointerMods)
+                                        return true
+                                    }
+                                    guard let guest = continuityGuestPoint(
+                                        point, scene: scene, size: geo.size,
+                                        clampToEdge: true)
+                                    else {
+                                        controller.continuityInputDriver?
+                                            .cancel(reason: "guest screen unavailable")
+                                        return true
+                                    }
+                                    guard let driver =
+                                            controller.continuityInputDriver
+                                    else { return false }
+                                    let consumed = driver.primaryUp(
+                                        at: .init(x: guest.x, y: guest.y))
+                                    if consumed {
+                                        syncContinuityMenu(
+                                            scene, at: guest, driver: driver)
+                                    }
+                                    return consumed
+                                },
+                                onCancel: {
+                                    controller.continuityInputDriver?
+                                        .cancel(reason: "host focus changed")
+                                    guestFileDragReference = nil
+                                    itemDrag = nil
+                                    dragMode = nil
+                                    closeContinuityMenu()
+                                },
                                 onRightDown: { point, mods in
                                     if case .sharesWindow = keyboard {
                                         keyboardEngaged = true
@@ -285,6 +485,21 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                 .frame(maxWidth: .infinity,
                                        maxHeight: .infinity)
                         }
+                        .dropDestination(for: URL.self) { urls, point in
+                            guard let hostFilesDropped,
+                                  let guest = guestPoint(
+                                    point, scene: scene, size: geo.size)
+                            else { return false }
+                            switch CrossMachineFileTargeting.destination(
+                                scene, x: guest.x, y: guest.y) {
+                            case .failure(let refusal):
+                                controller.note(refusal.message)
+                                return false
+                            case .success(let target):
+                                hostFilesDropped(urls, target)
+                                return true
+                            }
+                        }
                         /* THE CLOCK THE DEADLINE NEEDS. Armed only while a
                            press is in flight — a timer that ran all the time
                            would redraw the whole mirror ten times a second
@@ -304,7 +519,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                             finderInterior.reconcile(with: observedScene)
                             reconcilePress(with: observedScene)
                         }
+                        .onChange(of: controller.continuityInputDriver?
+                            .isMenuTracking ?? false) { tracking in
+                            if !tracking { closeContinuityMenu() }
+                        }
                         .onContinuousHover { phase in
+                            /* Visual hover is observation-only. SwiftUI can
+                               emit ended while rebuilding this region for a
+                               new guest scene, even though the pointer never
+                               left. PointerCaptureView owns the raw pointer
+                               lease because its AppKit monitor follows the
+                               actual window event instead. */
                             /* Name what is under the pointer, and shape
                                the cursor to it. A mirror is a picture of
                                another machine, and a person cannot tell a
@@ -430,6 +655,45 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
             return nil
         }
         return FitTransform(logical: logical, view: size).toGuest(p)
+    }
+
+    private func continuityGuestPoint(
+        _ p: CGPoint, scene: MirrorKit.Scene, size: CGSize,
+        clampToEdge: Bool = false
+    ) -> (x: Int, y: Int)? {
+        guard let logical = SceneRenderer(scene: scene).logicalSize else {
+            return nil
+        }
+        let fit = FitTransform(logical: logical, view: size)
+        return clampToEdge ? fit.toGuestClamped(p) : fit.toGuestIfInside(p)
+    }
+
+    /// Project the host-authored raw menu gesture into Mirror's existing
+    /// Platinum dropdown. The guest's real MenuSelect loop cannot publish a
+    /// scene while it is tracking, so the initiating host gesture is the only
+    /// live fact available here. Independently opened guest menus remain a
+    /// transport limitation rather than being guessed from cursor position.
+    private func syncContinuityMenu(
+        _ scene: MirrorKit.Scene, at point: (x: Int, y: Int),
+        driver: ContinuityInputDriver?
+    ) {
+        guard continuityOwnsOpenMenu else { return }
+        guard driver?.isMenuTracking == true else {
+            closeContinuityMenu()
+            return
+        }
+        guard point.y < HitTester.menubarHeight,
+              case .menuTitle(let index) = HitTester.hitTest(
+                  scene, x: point.x, y: point.y) else { return }
+        openMenu = index
+        hoveredItem = nil
+    }
+
+    private func closeContinuityMenu() {
+        guard continuityOwnsOpenMenu else { return }
+        continuityOwnsOpenMenu = false
+        openMenu = nil
+        hoveredItem = nil
     }
 
     /// What the capture view is told about focus. In `ownsWindow` this is
@@ -640,6 +904,17 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
            let window = scene.windows.first(where: { $0.id == id }) {
             let contextual = FinderItems.isHostOwnedWindow(window)
                 && (secondary || mods & KeyCaptureView.Mods.control != 0)
+            if !contextual,
+               FinderItems.activatesOnPrimaryClick(window) {
+                guard let driver = controller.finderInteractionDriver else {
+                    controller.note("this mirror cannot open Finder items")
+                    return
+                }
+                driver.openFinderItems(
+                    [name], in: finderContainer(for: window),
+                    at: Point(x: point.x, y: point.y))
+                return
+            }
             let names: Set<String>
             if contextual, finderInterior.isSelected(name, in: window) {
                 /* A contextual click never toggles an already-selected item
@@ -854,6 +1129,41 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
                                        to end: (x: Int, y: Int)) -> Rect {
         Rect(l: min(start.x, end.x), t: min(start.y, end.y),
              r: max(start.x, end.x) + 1, b: max(start.y, end.y) + 1)
+    }
+
+    // MARK: - Copying a guest file out
+
+    /// Match native Finder drag selection before AppKit takes the gesture.
+    /// This changes guest selection only; it never presses or moves the guest
+    /// pointer and never enters the resident-backed item-drag lane.
+    private func selectGuestFile(_ reference: GuestFileDragReference,
+                                 in scene: MirrorKit.Scene) {
+        switch reference.subject {
+        case .windowItem(let id, let item):
+            guard let window = scene.windows.first(where: { $0.id == id }),
+                  !finderInterior.isSelected(item.name, in: window)
+            else { return }
+            let names = finderInterior.select(
+                item.name, in: window, mode: .replace)
+            sendFinderSelection(names, in: window)
+        case .desktopItem(let item):
+            guard !finderInterior.selectedDesktopNames.contains(item.name)
+            else { return }
+            let desktop = scene.desktopItems ?? []
+            let names = finderInterior.selectDesktop(
+                item.name, items: desktop, mode: .replace)
+            sendFinderSelection(
+                names, in: .desktop, orderedBy: desktop,
+                at: Point(x: reference.start.x, y: reference.start.y))
+        }
+    }
+
+    /// The promise writer is the real guest-file reference. The scene item is
+    /// consulted only to give AppKit the icon the guest presented.
+    private func hostDragItem(for reference: GuestFileDragReference,
+                              in scene: MirrorKit.Scene) -> HostFileDragItem {
+        HostFileDragItem(writer: reference.writer,
+                         subject: reference.subject, scene: scene)
     }
 
     // MARK: - Dragging an item
@@ -1224,7 +1534,7 @@ public struct LiveMirrorView<Source: MirrorSceneSource>: View {
     ) -> MirrorKit.Scene.FinderPresentation.View? {
         switch title.lowercased() {
         case "as icons": return .icon
-        case "as buttons": return .smallIcon
+        case "as buttons": return .button
         case "as list": return .name
         default: return nil
         }

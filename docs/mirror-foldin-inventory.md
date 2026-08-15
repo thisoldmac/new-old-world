@@ -367,7 +367,7 @@ with.
 
 **2026-08-01, later: the deploy half is closed too.** `tools/stage-ext.py`,
 `tools/askguest.py`, and `scripts/spin-up-ppc` are the port, and they ran:
-boot a session-private mac99 clone, stage `NowExt.bin` into
+boot a session-private mac99 clone, stage `NOW Extension.bin` into
 `System Folder:Extensions` and the app beside it, wait for the volume flush,
 hard QMP `quit` and relaunch (an INIT loads at boot only), re-verify the
 files survived, launch NOW, and let the *guest* answer. See

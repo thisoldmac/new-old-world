@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Hardware dossier: the guest's census, run and read from this Mac. A
 /// probe list on the left, the selected probe's rows on the right. It mirrors
@@ -27,29 +29,100 @@ struct CensusModuleView: View {
     // MARK: header
 
     private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Hardware")
-                    .font(.headline)
-                Text("A passive census of "
-                     + "\(MachineNaming.sentence(model.connection)).")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Hardware")
+                        .font(.headline)
+                    Text("A passive census of "
+                         + "\(MachineNaming.sentence(model.connection)).")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if model.isSweeping {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.trailing, 4)
+                }
+                Button {
+                    dumpROM()
+                } label: {
+                    Label("Dump ROM", systemImage: "memorychip")
+                }
+                .disabled(!model.isConnected || model.romDumpState.isRunning)
+                Button {
+                    model.runAll()
+                } label: {
+                    Label("Run Census", systemImage: "play.fill")
+                }
+                .disabled(!model.isConnected || model.isSweeping)
             }
-            Spacer()
-            if model.isSweeping {
-                ProgressView()
-                    .controlSize(.small)
-                    .padding(.trailing, 4)
-            }
-            Button {
-                model.runAll()
-            } label: {
-                Label("Run Census", systemImage: "play.fill")
-            }
-            .disabled(!model.isConnected || model.isSweeping)
+            romDumpStatus
         }
         .padding(12)
+    }
+
+    @ViewBuilder
+    private var romDumpStatus: some View {
+        switch model.romDumpState {
+        case .idle:
+            EmptyView()
+        case .writing:
+            // No wire signal exists for this phase (a synchronous guest-side
+            // File Manager read) — indeterminate is the honest picture.
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Reading the ROM into the guest Files share…")
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        case .transferring:
+            VStack(alignment: .leading, spacing: 2) {
+                if let progress = model.romDumpProgress, progress.expected > 0 {
+                    ProgressView(value: progress.fraction)
+                        .frame(maxWidth: 260)
+                    Text("Transferring the ROM to this Mac… "
+                         + byteCaption(progress))
+                } else {
+                    ProgressView().frame(maxWidth: 260)
+                    Text("Transferring the ROM to this Mac…")
+                }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+        case .saved(let url):
+            HStack(spacing: 6) {
+                Label("Saved \(url.lastPathComponent)",
+                      systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.secondary)
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                .buttonStyle(.link)
+            }
+            .font(.caption)
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption).foregroundStyle(.red)
+        }
+    }
+
+    /// "1.2/4.0 MB" — `received`/`expected` are already bytes.
+    private func byteCaption(_ progress: GuestListener.CaptureProgress) -> String {
+        let mb = 1_048_576.0
+        return String(format: "%.1f/%.1f MB",
+                      Double(progress.received) / mb, Double(progress.expected) / mb)
+    }
+
+    /// `NSSavePanel` for destination + filename, then hands off to
+    /// `dumpROM(to:)`. One artifact shape (raw `.bin`) — no format picker.
+    private func dumpROM() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.data]
+        panel.directoryURL = model.romDumpDirectory
+        panel.nameFieldStringValue = model.suggestedROMDumpURL.lastPathComponent
+        if panel.runModal() == .OK, let url = panel.url {
+            model.dumpROM(to: url)
+        }
     }
 
     // MARK: probe list

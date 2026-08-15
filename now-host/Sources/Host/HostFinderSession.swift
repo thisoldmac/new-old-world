@@ -633,7 +633,9 @@ final class HostFinderSession {
             pages: 1, complete: true)
         local.verticalScroll = max(0, FinderItems.scrollPosition(guest).y)
         var projected = guest
-        projected.items = HostFinderDomain.projectedWindow(local, z: guest.z).items
+        let semantic = HostFinderDomain.projectedWindow(local, z: guest.z)
+        projected.items = semantic.items
+        projected.finder?.itemMetadata = semantic.finder?.itemMetadata ?? [:]
         projected.display = nil
         projected.displayEpoch = nil
         return projected
@@ -815,7 +817,7 @@ final class HostFinderSession {
               let full = HostFinderDomain.fullPath(
                 root: window.rootLabel ?? desktopRootLabel,
                 relative: window.path) else { return }
-        let word = pending.0.rawValue
+        let word = pending.0 == .button ? "button" : pending.0.rawValue
         guard pending.0 != .unknown else { return }
         dispatchedViews[id] = pending.0
         let source = """
@@ -993,6 +995,7 @@ final class HostFinderSession {
                 self.onChange()
             case .success(let listing):
                 self.windows[index].rootLabel = listing.root
+                self.windows[index].availableBytes = listing.freeBytes
                 self.windows[index].entries.append(contentsOf: listing.entries)
                 self.windows[index].pages += 1
                 self.sendPendingGuestView(id: windowID)
