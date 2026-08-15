@@ -7,6 +7,45 @@ search:
 
 # Open issues
 
+## DECLARED ONLY — NO MACHINE SERVES ANY OF IT: the host→guest crossing has a contract and nothing behind it (2026-08-15, `feat/hg-drag-contract`)
+
+`contract/asyncapi.yaml` now describes a person dragging a file from this
+Mac's Finder onto the Macintosh: `continuity.offer` publishes the item's
+identity at the edge, `continuity.grab` is answered by the HOST with the
+roles swapped, `continuity.report`'s `acceptsOffer` says whether a guest
+can take one at all, `offer-expired` names the host's own clock running
+out, and an `offer` console verb is declared in `x-commands`. The
+naming, type/creator and text-conversion policy is stated for BOTH
+directions in one place (`guestServesFiles`), written as the default
+Michelle owns and marked as open to review.
+
+**Every one of those is a sentence, not a behaviour.** No host code sends
+an offer, no guest decodes one, no guest answers the verb, and nothing
+has been run against a Macintosh. The debt is recorded where a gate can
+see it — `CommandRegistryTests.servedByNoGuestYet` carries `offer` with
+its reason and FAILS the day a guest answers it, which is how the
+exemption comes out rather than aging into a description of a verb that
+works. `docs/contract-coverage.md` marks `continuity.offer` served by
+nobody, and `docs/mcp-coverage.md` gives `continuity.grab` its first row
+because a second sender made it host-askable by that table's own
+derivation.
+
+What is NOT settled, and should be argued rather than discovered:
+
+- **The size cap and what happens above it** is named in the plan
+  (`docs/local/plan-host-to-guest-drag-2026-08-15.md`) and deliberately
+  absent from the wire: the receiver's ceiling is its own policy. A
+  guest that fills a fork after the promise returns must mark the file
+  as still filling, or it has shipped a lie shaped like a file.
+- **Conversion by default on `container=data`** is now written down as a
+  default for the first time, in both directions at once. It was
+  previously settled by whatever each side happened to do. Writing it
+  down is not the same as deciding it, and the decision is Michelle's.
+- **The 68K seams are documented and deferred** until the Carbon guest
+  reaches public alpha. The message carries no Drag-Manager-shaped
+  field, so a guest that can only stage a file serves the whole of it;
+  that is the property to check before anyone adds a field to it.
+
 ## REPRODUCED IN THE EMULATOR AND FIXED, NOT METAL-VERIFIED: a retained UDP endpoint goes permanently deaf, and every status still says "armed" (2026-08-15, `fix/continuity-udp-endpoint-wedge`)
 
 The host application was restarted at 12:15 on 2026-08-15 while the guest
