@@ -27,6 +27,7 @@
 #include "act_cmds.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
+#include "receive_progress.h"
 #include "update_install.h"
 
 enum {
@@ -264,9 +265,28 @@ static void set_window_active(WindowRef window, Boolean active)
     }
 }
 
+/* The window a person means when they press a key or Cmd-W.
+ *
+ * FrontWindow() includes the receive windoid, which floats: while a file
+ * is landing it IS the front window, and every `workshop_is(FrontWindow())`
+ * test would answer false - Cmd-W would stop closing the Workshop and
+ * keystrokes would stop reaching it, for the length of a transfer.
+ *
+ * Carbon has FrontNonFloatingWindow for exactly this, and it is declared
+ * for CarbonLib 1.0. It is not used here because this application has
+ * only ever two windows and knows which is which, and a symbol declared
+ * in these headers is not proof CarbonLib 1.6 exports it - GetControlKind
+ * is the one that cost this project a link failure (control_kind.h). */
+static WindowRef front_document_window(void)
+{
+    WindowRef front = FrontWindow();
+
+    return now_receive_progress_is(front) ? workshop_ref() : front;
+}
+
 static void close_front_window(void)
 {
-    if (workshop_is(FrontWindow())) {
+    if (workshop_is(front_document_window())) {
         workshop_close();
     }
 }
@@ -360,6 +380,13 @@ static void handle_mouse_down(const EventRecord *event)
         }
         return;
     }
+    /* The receive windoid floats above the Workshop, so it is hit first
+       and answers for itself (receive_progress.h). It is the only other
+       window this loop routes to; confirm.c's modal runs its own. */
+    if (now_receive_progress_is(window)) {
+        now_receive_progress_click(event, part);
+        return;
+    }
     if (workshop_is(window)) {
         if (part == inDrag) {
             DragWindow(window, event->where, &g_screen_bounds);
@@ -385,7 +412,11 @@ static void handle_mouse_down(const EventRecord *event)
                 workshop_resized();
             }
         } else if (part == inContent) {
-            if (window != FrontWindow()) {
+            /* front_document_window, not FrontWindow: with the receive
+               windoid floating above, every click here would otherwise
+               be spent selecting a window that is already the active
+               one and can never be "front". */
+            if (window != front_document_window()) {
                 SelectWindow(window);
                 return;
             }
@@ -403,7 +434,7 @@ static void handle_key_down(const EventRecord *event)
         long choice = MenuKey(key);
         handle_menu_choice(choice);
         HiliteMenu(0);
-    } else if (workshop_is(FrontWindow())) {
+    } else if (workshop_is(front_document_window())) {
         workshop_key(event);
     }
 }
@@ -523,6 +554,10 @@ int main(void)
         conn_service();
         dispatch_pending_menu_choice();
         workshop_idle();
+        /* Whether or not the Workshop is open: a file the host pushes
+           arrives without anyone here having asked for it, so its
+           progress cannot live on a page. */
+        now_receive_progress_idle();
         /* The writer heartbeat, renewed because this loop is running -
            which is the fact it exists to prove. Renewed anywhere else it
            measures something else; see now_peek_idle's header comment
@@ -570,7 +605,11 @@ int main(void)
             handle_key_down(&event);
             break;
         case updateEvt:
-            if (workshop_is((WindowRef)event.message)) {
+            if (now_receive_progress_is((WindowRef)event.message)) {
+                BeginUpdate((WindowRef)event.message);
+                now_receive_progress_draw();
+                EndUpdate((WindowRef)event.message);
+            } else if (workshop_is((WindowRef)event.message)) {
                 BeginUpdate(workshop_ref());
                 workshop_draw();
                 EndUpdate(workshop_ref());
@@ -584,7 +623,7 @@ int main(void)
             /* Suspend and resume. The high byte of the message names the
                kind of osEvt; only this one concerns us. */
             if (((event.message >> 24) & 0x0FF) == suspendResumeMessage) {
-                set_window_active(FrontWindow(),
+                set_window_active(front_document_window(),
                                   (event.message & resumeFlag) != 0);
             }
             break;
@@ -633,6 +672,7 @@ int main(void)
 
     now_log(kLogInfo, "app", "quit: disposing window");
     now_log_flush();
+    now_receive_progress_shutdown();
     workshop_close();
 
     now_log(kLogInfo, "app", "quit: clean");
