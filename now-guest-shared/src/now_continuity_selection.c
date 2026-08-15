@@ -29,6 +29,42 @@ int now_continuity_stub_same(const NowContinuityStubItem *a,
         && strcmp(a->name, b->name) == 0;
 }
 
+int now_continuity_stub_same_item(const NowContinuityStubItem *a,
+                                  const NowContinuityStubItem *b)
+{
+    if (a == NULL || b == NULL) {
+        return a == b;
+    }
+    return a->volume_ref == b->volume_ref
+        && a->dir_id == b->dir_id
+        && a->is_folder == b->is_folder
+        && strcmp(a->name, b->name) == 0;
+}
+
+int now_continuity_grab_confirm(const NowContinuityStubItem *serve,
+                                int read_ok,
+                                const NowContinuityStubItem *observed)
+{
+    if (serve == NULL) {
+        return kNowGrabNoSelection;
+    }
+    if (!read_ok) {
+        /* Reported as a stale selection rather than as a new code: the
+           contract's refusal vocabulary is a closed set both halves already
+           speak, and what the host must do about it — stop, do not transfer,
+           the selection is not what you think — is the same sentence. The
+           guest's log carries the difference for whoever is diagnosing. */
+        return kNowGrabStaleSelection;
+    }
+    if (observed == NULL) {
+        return kNowGrabNoSelection;
+    }
+    if (!now_continuity_stub_same_item(serve, observed)) {
+        return kNowGrabStaleSelection;
+    }
+    return kNowGrabOK;
+}
+
 int now_continuity_stub_observe(NowContinuityStubTable *table,
                                 const NowContinuityStubItem *item)
 {

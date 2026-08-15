@@ -16,6 +16,7 @@
 #include <MixedMode.h>
 
 #include "continuity_cursor.h"
+#include "continuity_selection.h"
 #include "mirror_debug.h"
 #include "now_continuity_logic.h"
 #include "nowlog.h"
@@ -451,6 +452,15 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
             err = now_continuity_cursor_move((unsigned long)cell->epoch,
                                              (unsigned long)request_seq,
                                              (long)h, (long)v);
+            /* A position applied under a held button is this side's first
+               evidence that the press is a DRAG rather than a click, and it
+               is the moment the press probe becomes due. The Finder has by
+               now processed the down and selected whatever was under it —
+               which is the selection the button gate would otherwise make
+               unpublishable for the whole gesture. See the press probe
+               block in continuity_selection.c. */
+            if (err == noErr && cell->button_down != 0)
+                now_continuity_selection_note_press_drag();
             cell->apply_result_err = (NowPeekI32)err;
             cell->apply_result_seq = request_seq; /* publish result last */
             published_result = 1;
@@ -537,6 +547,16 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
                                      (NowPeekI32)err);
                 if (event_down != 0 && err == noErr)
                     log_front_process_at_down(event_generation);
+                /* Arm and disarm the press probe on the real edges rather
+                   than on the wire's intent: an edge the manager refused
+                   never reached the Finder, so no selection of its making
+                   exists to go looking for. */
+                if (err == noErr) {
+                    if (event_down != 0)
+                        now_continuity_selection_note_press();
+                    else
+                        now_continuity_selection_note_release();
+                }
                 /* The resident's interrupt-time release flips MBState before
                    this manager call runs, so CursorDeviceButtonUp sees no
                    transition and posts nothing: across every logged run, no

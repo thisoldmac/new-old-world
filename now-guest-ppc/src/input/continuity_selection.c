@@ -17,6 +17,35 @@ static unsigned long g_table_epoch;
 static unsigned long g_next_poll;
 static int g_poll_seeded;
 
+/* --- the one poll allowed inside a gesture --------------------------------
+
+   The button gate below is right about the ordinary case and wrong about
+   exactly one: the press that SELECTS the thing it then drags. That click
+   is the same button-down that closes the gate, so its own selection can
+   never be published, and the host binds whatever the previous gesture
+   left cached — which on 2026-08-15 at 17:19 transferred `hello.txt` while
+   a person watched `main.c` leave.
+
+   So one probe is allowed per press, and the three fields below are what
+   keep "one" honest across a gesture that can last a minute.
+
+   ARMED AT THE DOWN, DUE AT THE FIRST DRAG. Not due at the down: a plain
+   click is not a drag, and making every click across the edge pay a
+   bounded Apple Event wait would be a feel regression charged to the whole
+   feature for a case that only arises when the pointer moves. The first
+   position applied under a held button is the earliest instant this can be
+   distinguished, and it is still seconds before any cross.
+
+   Whether the Finder answers at all from inside its drag loop is not
+   assumed here — the probe logs its own outcome, which is how that
+   question gets an answer rather than an argument. It is the improvement;
+   the guarantee is confirm_serve_against_finder. */
+#define kNowSelectionPressProbeTimeout 20L   /* ticks; ~1/3 second */
+#define kNowSelectionPressProbeDelay 2UL     /* ticks after the drag begins */
+static int g_press_probe_armed;
+static int g_press_probe_due;
+static unsigned long g_press_probe_at;
+
 const NowContinuityStubTable *now_continuity_selection_table(void)
 {
     return &g_table;
@@ -124,7 +153,8 @@ static OSErr build_selection_specifier(AEDesc *out)
    later slice. Returns noErr with `found` false for an empty selection —
    which is an ANSWER, not a failure, and the difference matters because
    only one of the two should clear the host's cache. */
-static OSErr ask_finder_for_selection(FSSpec *spec, Boolean *found)
+static OSErr ask_finder_for_selection(FSSpec *spec, Boolean *found,
+                                      long timeout_ticks)
 {
     AEAddressDesc target = { typeNull, NULL };
     AppleEvent event = { typeNull, NULL };
@@ -162,9 +192,17 @@ static OSErr ask_finder_for_selection(FSSpec *spec, Boolean *found)
            served for the whole bounded wait (pump.h). Two seconds is
            generous for a live Finder and short enough that a wedged one
            costs a poll rather than the connection; the cadence means the
-           next attempt is along shortly either way. */
+           next attempt is along shortly either way.
+
+           THE TIMEOUT IS THE CALLER'S because the callers are not asking
+           the same question under the same conditions. The ordinary poll
+           runs with the Finder idle and can afford to wait. The press
+           probe runs with the Finder inside its own Drag Manager loop,
+           where the honest expectation is no answer at all — so it pays a
+           fraction of a second for the chance of one and gives up. */
         err = AESend(&event, &reply, kAEWaitReply | kAENeverInteract,
-                     kAENormalPriority, 120, now_pump_ae_idle(), NULL);
+                     kAENormalPriority, timeout_ticks, now_pump_ae_idle(),
+                     NULL);
     }
     if (err == noErr) {
         OSErr list_err = AEGetParamDesc(&reply, keyDirectObject,
@@ -274,6 +312,45 @@ static void release_grant_for_new_epoch(unsigned long live_epoch)
     now_continuity_grant_release(&g_hold);
 }
 
+void now_continuity_selection_note_press(void)
+{
+    g_press_probe_armed = 1;
+    g_press_probe_due = 0;
+}
+
+void now_continuity_selection_note_press_drag(void)
+{
+    if (!g_press_probe_armed || g_press_probe_due) {
+        return;
+    }
+    g_press_probe_due = 1;
+    g_press_probe_at = (unsigned long)TickCount()
+        + kNowSelectionPressProbeDelay;
+}
+
+void now_continuity_selection_note_release(void)
+{
+    g_press_probe_armed = 0;
+    g_press_probe_due = 0;
+}
+
+/* Consumed whatever it returns. A probe that fired and learned nothing has
+   still spent its one turn: the alternative is an Apple Event per service
+   pass for the length of a drag, which is the starvation the button gate
+   exists to prevent, arriving one door further in. */
+static int press_probe_take(void)
+{
+    if (!g_press_probe_armed || !g_press_probe_due) {
+        return 0;
+    }
+    if ((long)((unsigned long)TickCount() - g_press_probe_at) < 0) {
+        return 0;
+    }
+    g_press_probe_armed = 0;
+    g_press_probe_due = 0;
+    return 1;
+}
+
 int now_continuity_selection_poll(unsigned long live_epoch)
 {
     FSSpec spec;
@@ -281,6 +358,8 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     NowContinuityStubItem item;
     OSErr err;
     unsigned long now;
+    long timeout = (long)kNowSelectionPollTimeoutTicks;
+    int probe = 0;
 
     /* Settling here rather than at the disarm handler is what makes the
        gate true however the epoch ended, including the ways nobody calls a
@@ -295,17 +374,39 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     if (now_continuity_button_is_down()) {
         /* Mid-gesture. Do not touch the deadline: the next pass after the
            button comes up should poll immediately, because that is the
-           moment the selection is most likely to have just changed. */
-        return 0;
-    }
-    now = (unsigned long)TickCount();
-    if (g_poll_seeded && now < g_next_poll) {
-        return 0;
-    }
-    g_poll_seeded = 1;
-    g_next_poll = now + kNowSelectionPollTicks;
+           moment the selection is most likely to have just changed.
 
-    err = ask_finder_for_selection(&spec, &found);
+           The one exception is the press probe, and it is an exception to
+           the CADENCE too — the whole point is to ask once, now, about a
+           selection this gesture created and nothing else will publish. */
+        if (!press_probe_take()) {
+            return 0;
+        }
+        probe = 1;
+        timeout = kNowSelectionPressProbeTimeout;
+    }
+    if (!probe) {
+        now = (unsigned long)TickCount();
+        if (g_poll_seeded && now < g_next_poll) {
+            return 0;
+        }
+        g_poll_seeded = 1;
+        g_next_poll = now + kNowSelectionPollTicks;
+    }
+
+    err = ask_finder_for_selection(&spec, &found, timeout);
+    if (probe) {
+        /* Logged whatever happened, including the boring answer. Whether a
+           Finder inside its own drag loop answers an Apple Event at all is
+           the ordering fact this whole defect turns on, and it is not
+           something either half can be reasoned into: an `err=-1712`
+           (errAETimeout) line here says the probe cannot fix the
+           single-gesture bind and the grab confirmation is carrying it
+           alone, which is a different piece of news from silence. */
+        now_log(kLogInfo, "mirror",
+                "selection press probe epoch=%lu err=%d found=%d",
+                live_epoch, (int)err, found ? 1 : 0);
+    }
     if (err != noErr) {
         /* NOT SILENT, and not reported to the host either. A Finder that
            did not answer says nothing about what is selected, so the
@@ -336,6 +437,51 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     return 1;
 }
 
+/* Ask the Finder what is selected RIGHT NOW and hold the serve up against
+   it. See now_continuity_selection.h for why this exists at all; what
+   belongs here is why it can be asked at this moment when the poll cannot.
+
+   By the time a grab arrives the guest press has been released — the host
+   settles the pointer to the press origin and releases it before it hands
+   anything to its own drag session (docs/open-issues.md, the unbound
+   cross-release entry) — so the Finder is out of the Drag Manager's nested
+   loop and back in its event loop, which is precisely the condition the
+   poll's button gate is protecting against. The ordinary timeout is right
+   here for the same reason: nothing is being dragged while we wait, and
+   the person is watching a transfer they asked for. */
+static int confirm_serve_against_finder(const NowContinuityStubItem *serve)
+{
+    FSSpec spec;
+    Boolean found = false;
+    NowContinuityStubItem observed;
+    OSErr err;
+    int read_ok;
+    int verdict;
+
+    err = ask_finder_for_selection(&spec, &found,
+                                   (long)kNowSelectionPollTimeoutTicks);
+    read_ok = (err == noErr);
+    if (read_ok && found && stub_from_spec(&spec, &observed) != noErr) {
+        /* The Finder named something this side cannot describe. That is not
+           a confirmation, and treating it as one would be the guard reading
+           its own failure as a pass. */
+        found = false;
+    }
+    verdict = now_continuity_grab_confirm(
+        serve, read_ok,
+        (read_ok && found) ? &observed : (const NowContinuityStubItem *)0);
+    if (verdict == kNowGrabOK) {
+        return verdict;
+    }
+    now_log(kLogWarn, "mirror",
+            "grab refused: the Mac's selection is not what this grab names "
+            "— serving=%.31s selected=%.31s err=%d",
+            serve->name,
+            (read_ok && found) ? observed.name : "<unreadable>",
+            (int)err);
+    return verdict;
+}
+
 int now_continuity_selection_grab(unsigned long live_epoch,
                                   unsigned long epoch,
                                   unsigned long generation,
@@ -364,6 +510,14 @@ int now_continuity_selection_grab(unsigned long live_epoch,
                 (unsigned long)kNowContinuityGrantTicks);
         return verdict;
     }
+    if (verdict != kNowGrabOK) {
+        return verdict;
+    }
+    /* THE LAST CHECK, AND THE ONLY ONE THAT ASKS THE MACHINE. Everything
+       above proves consent was given for this generation; none of it can
+       notice the generation stopped describing what the person is holding.
+       Before the checks below turn a stub into a real FSSpec, ask. */
+    verdict = confirm_serve_against_finder(serve);
     if (verdict != kNowGrabOK) {
         return verdict;
     }
