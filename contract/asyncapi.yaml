@@ -922,6 +922,56 @@ operations:
       MacBinary; both-forks defaults to the data fork with MacBinary on
       request. Text conversion is the HOST's job - the guest ships raw
       bytes and metadata.
+
+      NAMING AND STAMPING A FILE THAT CROSSES, BOTH DIRECTIONS, STATED
+      HERE ONCE. The rule above says who converts CONTENT; this says who
+      converts the three things a Macintosh needs before a file is a
+      file — its name, its type and its creator — and it is written in
+      one place because two places is how the two directions came to
+      disagree everywhere else in this project.
+
+      The host does all three, in both directions, for the reason it
+      already does text: the modern machine is the only side that can
+      spell both alphabets, and the classic machine should never be
+      asked to guess at one it cannot represent.
+
+        - NAME. Toward the guest: Unicode is normalised, transliterated
+          into MacRoman where a character has an honest equivalent,
+          stripped of colons (HFS's one forbidden byte), and truncated
+          to 31 bytes with the extension kept in preference to the middle
+          of the stem. The result is what continuity.offer and file.begin
+          carry, and the sender says when conversion cost something
+          (`nameAdjusted`) rather than letting a person discover it after
+          the drop. Toward the host: the guest's name is MacRoman by
+          construction and the host decodes it as MacRoman — never as
+          UTF-8, the encoding rule stated for guest text elsewhere in
+          this file.
+        - TYPE AND CREATOR. Toward the guest the host maps from what it
+          knows — UTI, then filename extension — to an OSType/creator
+          pair, and MAY DECLINE: an unmapped item travels with neither
+          field rather than with a guessed pair, because a wrong creator
+          opens a person's file in the wrong application, which is worse
+          than an untyped document they can open by hand. Toward the host
+          the guest's existing fileType/creator ride the file lane
+          unchanged and are not translated into an extension by the
+          sender; the receiver decides what to do with them.
+        - CONTENT. Unchanged and unmoved: whoever receives serves raw
+          bytes, and any line-ending or encoding conversion is the host's.
+
+      DECISION MICHELLE OWNS, WRITTEN AS THE DEFAULT AND OPEN TO REVIEW.
+      The default above is: convert names always, map type/creator on a
+      best effort that may decline, and convert TEXT CONTENT — line
+      endings and encoding — only for items the host has typed as text,
+      only on `container=data`, and never on MacBinary (a MacBinary file
+      is a Macintosh artifact already; rewriting its bytes would be a
+      lie about a container that describes itself). The second half of
+      that sentence is the part nobody had consciously owned: whether
+      `container=data` converts content by default was settled by
+      whatever each side happened to do, not by a decision, and the
+      first person to notice was the person watching a file cross on
+      2026-08-15. It is written down here as the default so that it can
+      be argued with — both directions in one paragraph, so a revision
+      cannot land on one of them and leave the other reading as current.
   hostAnswersOffer:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -8086,6 +8136,59 @@ components:
         properties:
           mirrorlog:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
+
+    # The console face of the inverted crossing, declared 2026-08-15
+    # AHEAD OF ANY GUEST — legal by this file's own rule, the same way
+    # the act plane's verbs were: adding a command is additive, and a
+    # peer that does not serve one answers unknown-command cleanly.
+    offer:
+      description: >
+        The file the person at the Mac is holding out to this Macintosh,
+        and the one thing somebody standing at this Macintosh can do
+        about it.
+
+        A bare call REPORTS: the offer's generation, the name the item
+        will land under, its type and creator when the host mapped them,
+        its size, and nothing else. `--take` asks for it — the same
+        continuity.grab the wire sends, answered down the same file lane
+        — and reports where the bytes landed. There is no third act: this
+        verb cannot browse the Mac, cannot name a file, and cannot reach
+        anything the host has not published by a person's own gesture.
+
+        WHY THIS DIRECTION HAS A CONSOLE VERB WHEN THE OTHER REFUSES ONE.
+        A typed `grab` on the guest→host crossing would have let a person
+        at the keyboard ask the host for a file of their choosing, which
+        is the general read outside the share that the whole gesture
+        boundary exists to refuse. Typing `offer --take` asks for the ONE
+        item already published — the identical bounded set the wire may
+        reach, no wider by a single file. The rule did not bend; it reads
+        differently from the other end, and the argument is stated beside
+        the DECLARED ASYMMETRY in the guestReportsContinuity operation.
+
+        It reports honestly when there is nothing to report: no live
+        Continuity epoch, no offer under it, or an offer whose lifetime
+        has closed are three different sentences, not one empty answer.
+        A guest whose continuity.report says `acceptsOffer: none` does
+        not register this verb at all and answers unknown-command, which
+        is what a closed registry is for.
+
+        NOW-68K answers unknown-command: it has no Continuity plane.
+      args:
+        type: object
+        properties:
+          action:
+            type: string
+            description: >
+              "--take" to request the published item. Absent or anything
+              else reports without asking for a byte — a read is the safe
+              default for a verb whose other half moves a file.
+      x-line: >
+        The flag alone, "--take", or empty to report. No name and no
+        path: this verb takes neither, which is the point of it.
+      output:
+        type: object
+        properties:
+          offer: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a
