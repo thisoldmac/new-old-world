@@ -62,11 +62,11 @@ final class SidebarPreferencesTests: XCTestCase {
         let id = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
         var changed = prefs.layout
         changed.upper.removeAll {
-            $0 == .module("chat") || $0 == .module("development")
+            $0 == .module("chat") || $0 == .module("projects")
         }
         changed.upper.append(.shelf(NavigationShelf(
             id: .user(id), title: "New Shelf",
-            moduleIDs: ["chat", "development"])))
+            moduleIDs: ["chat", "projects"])))
 
         prefs.replaceLayout(changed)
         XCTAssertEqual(prefs.shelfBeingRenamed, .user(id))
@@ -82,11 +82,11 @@ final class SidebarPreferencesTests: XCTestCase {
         let id = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
         var changed = previous
         changed.upper.removeAll {
-            $0 == .module("chat") || $0 == .module("development")
+            $0 == .module("chat") || $0 == .module("projects")
         }
         changed.upper.append(.shelf(NavigationShelf(
             id: .user(id), title: "New Shelf",
-            moduleIDs: ["chat", "development"])))
+            moduleIDs: ["chat", "projects"])))
 
         prefs.replaceLayout(changed)
         prefs.cancelShelfCreation(id: .user(id))

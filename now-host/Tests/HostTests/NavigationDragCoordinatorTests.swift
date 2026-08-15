@@ -23,7 +23,7 @@ final class NavigationDragCoordinatorTests: XCTestCase {
     func testDroppingLooseModuleOnLooseModuleCombinesThem() throws {
         let layout = NavigationLayout.standard(for: .standard)
         let command = try XCTUnwrap(NavigationDragCoordinator.command(
-            for: .module("development"),
+            for: .module("projects"),
             droppingOn: .module("chat"),
             in: layout,
             makeShelfID: { self.shelfUUID }))
@@ -31,10 +31,10 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         let changed = try layout.applying(command)
         let shelf = try XCTUnwrap(changed.shelf(id: .user(shelfUUID)))
 
-        XCTAssertEqual(shelf.moduleIDs, ["chat", "development"])
+        XCTAssertEqual(shelf.moduleIDs, ["chat", "projects"])
         XCTAssertEqual(shelf.title, "New Shelf")
         XCTAssertFalse(changed.upper.contains(.module("chat")))
-        XCTAssertFalse(changed.upper.contains(.module("development")))
+        XCTAssertFalse(changed.upper.contains(.module("projects")))
     }
 
     func testNewShelfNamesAdvancePastExistingDefaults() throws {
@@ -49,7 +49,7 @@ final class NavigationDragCoordinatorTests: XCTestCase {
             moduleIDs: ["console", "logs"])), at: 0)
 
         let command = try XCTUnwrap(NavigationDragCoordinator.command(
-            for: .module("development"),
+            for: .module("projects"),
             droppingOn: .module("chat"),
             in: layout,
             makeShelfID: { self.shelfUUID }))
@@ -98,20 +98,20 @@ final class NavigationDragCoordinatorTests: XCTestCase {
     func testTwoMemberUserShelfCanReorderWithoutDecomposing() throws {
         var layout = NavigationLayout.standard(for: .standard)
         layout.upper.removeAll {
-            $0 == .module("chat") || $0 == .module("development")
+            $0 == .module("chat") || $0 == .module("projects")
         }
         layout.upper.append(.shelf(NavigationShelf(
-            id: .user(shelfUUID), moduleIDs: ["chat", "development"])))
+            id: .user(shelfUUID), moduleIDs: ["chat", "projects"])))
 
         let changed = try layout.applying(try XCTUnwrap(
             NavigationDragCoordinator.command(
-                for: .module("development"),
+                for: .module("projects"),
                 droppingOn: .shelf(.user(shelfUUID), beforeModuleID: "chat"),
                 in: layout,
                 makeShelfID: { self.shelfUUID })))
 
         XCTAssertEqual(changed.shelf(id: .user(shelfUUID))?.moduleIDs,
-                       ["development", "chat"])
+                       ["projects", "chat"])
     }
 
     func testPreviewReflowsTopLevelItemsWithoutMutatingTheBaseline() throws {
@@ -174,7 +174,7 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         let baseline = NavigationLayout.standard(for: .standard)
 
         let preview = try XCTUnwrap(NavigationDragPreview(
-            dragged: .module("development"),
+            dragged: .module("projects"),
             target: .module("chat"),
             baseline: baseline,
             makeShelfID: { self.shelfUUID }))
@@ -215,13 +215,13 @@ final class NavigationDragCoordinatorTests: XCTestCase {
 
     func testUserShelfDecomposesAtOneButSpecialShelvesDoNot() throws {
         var layout = NavigationLayout.standard(for: .standard)
-        layout.upper.removeAll { $0 == .module("chat") || $0 == .module("development") }
+        layout.upper.removeAll { $0 == .module("chat") || $0 == .module("projects") }
         layout.upper.append(.shelf(NavigationShelf(
-            id: .user(shelfUUID), moduleIDs: ["chat", "development"])))
+            id: .user(shelfUUID), moduleIDs: ["chat", "projects"])))
 
         let changed = try layout.applying(try XCTUnwrap(
             NavigationDragCoordinator.command(
-                for: .module("development"),
+                for: .module("projects"),
                 droppingOn: .zone(.lower, index: 0),
                 in: layout,
                 makeShelfID: { self.shelfUUID })))

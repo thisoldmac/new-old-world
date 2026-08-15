@@ -34,7 +34,7 @@ struct DevelopmentModuleView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Development").font(.headline)
+                Text("Projects").font(.headline)
                 Text("Projects and build environments for classic Macintosh software.")
                     .font(.subheadline).foregroundStyle(.secondary)
             }

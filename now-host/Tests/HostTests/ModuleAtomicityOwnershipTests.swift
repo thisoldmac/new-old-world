@@ -315,7 +315,7 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
     func testDevelopmentDefinitionOwnsItsRuntimeAndMetadata() {
         let definition = DevelopmentHostModule.definition
 
-        XCTAssertEqual(definition.descriptor.id, "development")
+        XCTAssertEqual(definition.descriptor.id, "projects")
         XCTAssertEqual(definition.descriptor.tier, .experimental)
         XCTAssertNotNil(definition.makeRuntime)
         XCTAssertNotNil(definition.makeView)

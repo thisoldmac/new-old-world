@@ -256,7 +256,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
                 .shelf(NavigationShelf(
                     id: .files,
                     moduleIDs: present(Self.members(of: .files)))),
-            ] + present(["chat", "development"]).map(NavigationItem.module),
+            ] + present(["chat", "projects"]).map(NavigationItem.module),
             lower: [
                 .shelf(NavigationShelf(
                     id: .debug,
