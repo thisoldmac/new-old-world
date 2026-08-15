@@ -92,7 +92,7 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                 in: layout,
                 makeShelfID: { self.shelfUUID })))
         XCTAssertEqual(reordered.shelf(id: .network)?.moduleIDs,
-                       ["mcp", "settings", "networking", "web"])
+                       ["mcp", "settings", "web"])
     }
 
     func testTwoMemberUserShelfCanReorderWithoutDecomposing() throws {
@@ -139,9 +139,9 @@ final class NavigationDragCoordinatorTests: XCTestCase {
             makeShelfID: { self.shelfUUID }))
 
         XCTAssertEqual(preview.layout.shelf(id: .network)?.moduleIDs,
-                       ["mcp", "settings", "networking", "web"])
+                       ["mcp", "settings", "web"])
         XCTAssertEqual(baseline.shelf(id: .network)?.moduleIDs,
-                       ["settings", "networking", "mcp", "web"])
+                       ["settings", "mcp", "web"])
     }
 
     /// Hovering a shelf must not lift the dragged row out of the stack.
@@ -277,7 +277,10 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         layout.upper.removeAll { $0 == .module("chat") }
 
         XCTAssertEqual(NavigationDrawerSummary(items: layout.drawer),
-                       NavigationDrawerSummary(moduleCount: 5,
+                       /* The Connections shelf carries three modules since
+                          Networking moved to the Machine shelf, plus the
+                          loose chat row. */
+                       NavigationDrawerSummary(moduleCount: 4,
                                                containsNetworkShelf: true))
     }
 

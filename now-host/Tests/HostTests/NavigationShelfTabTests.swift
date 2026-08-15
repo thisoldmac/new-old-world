@@ -10,13 +10,15 @@ final class NavigationShelfTabTests: XCTestCase {
         let tabs = NavigationShelfTab.tabs(for: shelf, registry: .standard)
 
         XCTAssertEqual(tabs.map(\.title), [
-            "Overview", "Hardware", "Software", "Processes", "Diagnostics",
+            "Overview", "Hardware", "Software", "Processes", "Networking",
+            "Diagnostics",
         ])
         XCTAssertEqual(tabs.first?.selection,
                        NavigationSelection(destination: .shelfHero(.machine),
                                            containingShelfID: .machine))
         XCTAssertEqual(tabs.dropFirst().compactMap(\.moduleID),
-                       ["census", "software", "processes", "diagnostics"])
+                       ["census", "software", "processes", "networking",
+                        "diagnostics"])
     }
 
     func testNetworkShelfUsesConnectionsAsItsFirstPill() throws {
@@ -26,7 +28,7 @@ final class NavigationShelfTabTests: XCTestCase {
         let tabs = NavigationShelfTab.tabs(for: shelf, registry: .standard)
 
         XCTAssertEqual(tabs.map(\.title),
-                       ["Connections", "Networking", "MCP", "Web Proxy"])
+                       ["Connections", "MCP", "Web Proxy"])
         XCTAssertEqual(tabs.first?.moduleID, "settings")
         XCTAssertEqual(tabs.first?.selection,
                        NavigationSelection(destination: .module("settings"),
@@ -116,11 +118,12 @@ final class NavigationShelfTabTests: XCTestCase {
             for: shelf, registry: .standard)
 
         XCTAssertEqual(entries.map(\.title), [
-            "Hardware", "Software", "Processes", "Diagnostics",
+            "Hardware", "Software", "Processes", "Networking",
+            "Diagnostics",
         ])
         XCTAssertEqual(entries.map(\.payload), [
             .module("census"), .module("software"), .module("processes"),
-            .module("diagnostics"),
+            .module("networking"), .module("diagnostics"),
         ])
         XCTAssertTrue(entries.allSatisfy {
             $0.selection.containingShelfID == .machine

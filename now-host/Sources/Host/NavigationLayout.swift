@@ -172,7 +172,7 @@ extension NavigationItem: Codable {
 /// The serializable navigation contract. It stores identities and composition,
 /// never registry descriptors or derived presentation such as drawer counts.
 struct NavigationLayout: Codable, Equatable, Sendable {
-    static let currentVersion = 3
+    static let currentVersion = 4
 
     var version: Int
     var upper: [NavigationItem]
@@ -296,6 +296,8 @@ struct NavigationLayout: Codable, Equatable, Sendable {
     /// Version 2 turns the old outer utility strip into a second stack inside
     /// the sidebar canvas. Version 3 groups the two loose debug tools and puts
     /// Connections at the bottom when it already belongs to that stack.
+    /// Version 4 moves Networking off the Connections shelf and in beside the
+    /// other facts about the driven machine.
     /// User shelves and items deliberately moved to other zones stay put.
     func migratedToCurrentVersion() -> NavigationLayout {
         guard version < Self.currentVersion else { return self }
@@ -310,8 +312,28 @@ struct NavigationLayout: Codable, Equatable, Sendable {
             migrated.groupLooseDebugModules()
             migrated.moveConnectionsToBottomOfLowerStack()
         }
+        if version < 4 {
+            migrated.moveNetworkingToTheMachineShelf()
+        }
         migrated.version = Self.currentVersion
         return migrated
+    }
+
+    /// Version 4's move, and it is deliberately narrow.
+    ///
+    /// It only lifts Networking out of the **Connections shelf** — the place
+    /// the old default put it. A person who had already dragged it somewhere
+    /// else (a user shelf, the drawer, a loose row) chose that, and a
+    /// migration that hunted the module down wherever it was would overwrite
+    /// an arrangement rather than update a default. Nothing happens either if
+    /// the machine shelf is gone: `sanitised` recreates it and adopts the
+    /// module through `defaultShelf(for:)`, which is now the same answer.
+    private mutating func moveNetworkingToTheMachineShelf() {
+        guard let network = shelf(id: .network),
+              network.moduleIDs.contains("networking"),
+              shelf(id: .machine) != nil else { return }
+        removeModule("networking")
+        _ = append("networking", toShelf: .machine)
     }
 
     /// Repairs stored state into a total partition of the live registry.
@@ -386,14 +408,21 @@ struct NavigationLayout: Codable, Equatable, Sendable {
     }
 
     private static let shelfSpecifications = [
+        /* Networking sits here rather than on the Connections shelf because
+           it answers a question about the DRIVEN machine — its address, its
+           interfaces, its stack — the same kind of question Hardware,
+           Software and Processes answer. The Connections shelf is about this
+           Mac's link and the machines on it, which is a different subject
+           that happened to share the word "network". */
         ShelfSpecification(id: .machine,
-            moduleIDs: ["census", "software", "processes", "diagnostics"]),
+            moduleIDs: ["census", "software", "processes", "networking",
+                        "diagnostics"]),
         ShelfSpecification(id: .screen,
             moduleIDs: ["screen", "mirror", "continuity"]),
         ShelfSpecification(id: .files, moduleIDs: ["files", "icloud"]),
         ShelfSpecification(id: .debug, moduleIDs: ["console", "logs"]),
         ShelfSpecification(id: .network,
-            moduleIDs: ["settings", "networking", "mcp", "web"]),
+            moduleIDs: ["settings", "mcp", "web"]),
     ]
 
     private static func members(of shelfID: NavigationShelfID) -> [String] {

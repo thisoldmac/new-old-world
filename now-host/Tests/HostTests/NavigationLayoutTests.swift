@@ -16,6 +16,14 @@ final class NavigationLayoutTests: XCTestCase {
              NavigationShelfID.network.rawValue])
         XCTAssertEqual(layout.shelf(id: .debug)?.moduleIDs,
                        ["console", "logs"])
+        /* Networking is a fact about the driven machine, so it sits with the
+           other three; the Connections shelf keeps only this Mac's own link
+           and the surfaces that ride it. */
+        XCTAssertEqual(layout.shelf(id: .machine)?.moduleIDs,
+                       ["census", "software", "processes", "networking",
+                        "diagnostics"])
+        XCTAssertEqual(layout.shelf(id: .network)?.moduleIDs,
+                       ["settings", "mcp", "web"])
         XCTAssertEqual(layout.shelf(id: .machine)?.hero, .overview)
         XCTAssertEqual(layout.shelf(id: .network)?.hero, .module("settings"))
         XCTAssertTrue(layout.drawer.isEmpty)
@@ -158,6 +166,55 @@ final class NavigationLayoutTests: XCTestCase {
 
         XCTAssertEqual(repaired.allModuleIDs.filter { $0 == "notes" }.count, 1)
         assertTotalPartition(repaired, registry: registry)
+    }
+
+    /// A layout stored before the move carries Networking on the Connections
+    /// shelf; version 4 lifts it across without disturbing anything else.
+    func testVersionThreeLayoutMovesNetworkingToTheMachineShelf() {
+        var stored = NavigationLayout.standard(for: .standard)
+        stored.version = 3
+        stored.setItems(stored.upper.map { item in
+            guard case .shelf(var shelf) = item, shelf.id == .machine
+            else { return item }
+            shelf.moduleIDs.removeAll { $0 == "networking" }
+            return .shelf(shelf)
+        }, in: .upper)
+        stored.setItems(stored.lower.map { item in
+            guard case .shelf(var shelf) = item, shelf.id == .network
+            else { return item }
+            shelf.moduleIDs.insert("networking", at: 1)
+            return .shelf(shelf)
+        }, in: .lower)
+
+        let migrated = stored.migratedToCurrentVersion()
+
+        XCTAssertEqual(migrated.version, NavigationLayout.currentVersion)
+        XCTAssertEqual(migrated.shelf(id: .machine)?.moduleIDs.last,
+                       "networking")
+        XCTAssertEqual(migrated.shelf(id: .network)?.moduleIDs,
+                       ["settings", "mcp", "web"])
+        assertTotalPartition(migrated, registry: .standard)
+    }
+
+    /// The migration updates a DEFAULT, never an arrangement. Networking
+    /// parked somewhere on purpose is left exactly where it was put.
+    func testVersionThreeMigrationLeavesADeliberatelyPlacedNetworkingAlone() {
+        var stored = NavigationLayout.standard(for: .standard)
+        stored.version = 3
+        stored.setItems(stored.upper.map { item in
+            guard case .shelf(var shelf) = item, shelf.id == .machine
+            else { return item }
+            shelf.moduleIDs.removeAll { $0 == "networking" }
+            return .shelf(shelf)
+        }, in: .upper)
+        stored.drawer.append(.module("networking"))
+
+        let migrated = stored.migratedToCurrentVersion()
+
+        XCTAssertEqual(migrated.zone(containing: "networking"), .drawer)
+        XCTAssertFalse(
+            migrated.shelf(id: .machine)?.moduleIDs.contains("networking")
+                == true)
     }
 
     private func assertTotalPartition(_ layout: NavigationLayout,
