@@ -122,6 +122,7 @@ add_application(now-guest-ppc
     src/development/development_module.c
     src/development/development_module_definition.c
     src/web/web_model.c
+    src/web/web_accept.c
     src/web/web_proxy_request.c
     src/web/web_proxy_ot.c
     src/web/web_port_dialog.c

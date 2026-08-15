@@ -7634,11 +7634,17 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "web.response.end")) {
         char reason[193];
-        reason[0] = '\0';
+        char code[24];
+        Boolean ok = (Boolean)now_json_find_bool(reply, "ok", 0);
+        reason[0] = code[0] = '\0';
         (void)now_json_find_text(reply, "reason", reason, sizeof reason);
+        (void)now_json_find_string(reply, "code", code, sizeof code);
+        /* The contract has declared `code` on this message since the Web
+           family landed; nothing on this side read it, so the guest page
+           could say nothing at all about the host's Web service. */
+        now_web_proxy_note_host(ok, code, reason);
         now_web_proxy_response_end(
-            now_json_find_int(reply, "id", -1),
-            now_json_find_bool(reply, "ok", 0), reason);
+            now_json_find_int(reply, "id", -1), ok, reason);
         return 1;
     }
     if (now_json_type_is(reply, "preview.begin")) {

@@ -128,9 +128,19 @@ static void web_content(const WorkshopSceneWriter *writer)
     char line[220];
     char value[180];
 
-    now_prefs_load(&prefs);
-    now_web_endpoint("127.0.0.1", prefs.web_proxy_port, value, sizeof value);
-    snprintf(line, sizeof line, "HTTP proxy: %s", value);
+    /* The address Open Transport granted, when there is one. The page used
+       to print "127.0.0.1:<preference>" whether or not anything was
+       listening there, which is the same class of claim as the status line
+       that said "Listening" while every request was being refused. */
+    now_web_proxy_endpoint(value, sizeof value);
+    if (value[0] != '\0') {
+        snprintf(line, sizeof line, "HTTP proxy: %s", value);
+    } else {
+        now_prefs_load(&prefs);
+        now_web_endpoint("127.0.0.1", prefs.web_proxy_port, value,
+                         sizeof value);
+        snprintf(line, sizeof line, "HTTP proxy: %s (not listening)", value);
+    }
     web_line(writer, &g_r.endpoint, line, truncEnd);
     web_line(writer, &g_r.direct_note,
              "Set the browser's HTTP proxy to this loopback address. It is not exposed on the LAN.",
@@ -169,7 +179,10 @@ static Boolean web_click(const EventRecord *event, Point local)
                 if (now_prefs_save(&prefs) == noErr) {
                     char reason[96];
                     if (now_web_proxy_start(port, reason, sizeof reason) == 0) {
-                        strcpy(g_status, "Proxy restarted on the new loopback port.");
+                        /* Yield the status area back to the listener: a
+                           sticky "restarted" would outlive the fact and
+                           hide the refusal line behind it. */
+                        g_status[0] = '\0';
                     } else {
                         strncpy(g_status, reason, sizeof g_status - 1);
                         g_status[sizeof g_status - 1] = '\0';
@@ -193,7 +206,9 @@ static void web_activate(Boolean active)
 
 static void web_status(char *out, long cap)
 {
-    char live[128];
+    /* Room for the listener line plus a refusal and the host's last word;
+       the proxy composes them and this only chooses which voice wins. */
+    char live[288];
     const char *text;
     now_web_proxy_status(live, sizeof live);
     text = g_status[0] ? g_status : live;
