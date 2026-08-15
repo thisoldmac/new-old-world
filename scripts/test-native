@@ -216,6 +216,13 @@ run_c now-guest-shared now_continuity_selection_test.c "" \
 # be sent. Deliberately runs no clock (see the header on why).
 run_c now-guest-shared now_continuity_offer_test.c "" \
       src/now_continuity_offer.c
+# The promise drag over that table: the size line, the arm that ripens on
+# an APPLIED button rather than on wire arrival, and every way a drag
+# ends - the cancel path most of all, because classic Finder is
+# unforgiving of a drag that never ends and the Drag Manager half cannot
+# be tested here at all.
+run_c now-guest-shared now_continuity_drag_test.c "" \
+      src/now_continuity_drag.c src/now_continuity_offer.c
 run_c now-guest-shared now_continuity_keyboard_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
 run_py now-guest-shared continuity_keyboard_safety_source_test.py

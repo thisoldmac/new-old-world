@@ -98,8 +98,17 @@ int now_continuity_drag_tick(NowContinuityDragState *st, int button_down,
     }
     /* Unsigned subtraction, so a TickCount wrap reads as a small
        elapsed rather than an enormous one - the arm survives the wrap
-       instead of expiring the instant it happens. */
-    if ((unsigned long)(now_ticks - st->armed_at)
+       instead of expiring the instant it happens.
+
+       THE MASK IS NOT DECORATION. The clock here is TickCount, which is
+       32 bits wide on the machine this runs on; `unsigned long` is that
+       width there and SIXTY-FOUR on the host cc that watches this file
+       fail. Without the mask the wrap case is simply a different
+       calculation in the test than in the product, and the guard reads
+       green having never been exercised - the same shape as a gate that
+       never reached the thing it names. Stating the width makes the one
+       arithmetic run in both places. */
+    if (((now_ticks - st->armed_at) & 0xFFFFFFFFUL)
         >= (unsigned long)kNowContinuityDragArmTicks) {
         st->state = kNowDragIdle;
         st->last_verdict = kNowDragButtonNeverCame;
