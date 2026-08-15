@@ -133,14 +133,64 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(extracted.shelf(id: .screen)?.moduleIDs,
                        ["screen", "continuity"])
 
+        // Not "before settings": that is the shelf's fixed hero, and the
+        // save path undoes it — see
+        // testDroppingBeforeAShelfHeroSurvivesTheSaveOrIsRefused.
         let reordered = try layout.applying(try XCTUnwrap(
             NavigationDragCoordinator.command(
-                for: .module("mcp"),
-                droppingOn: .shelf(.network, beforeModuleID: "settings"),
+                for: .module("web"),
+                droppingOn: .shelf(.network, beforeModuleID: "mcp"),
                 in: layout,
                 makeShelfID: { self.shelfUUID })))
         XCTAssertEqual(reordered.shelf(id: .network)?.moduleIDs,
+                       ["settings", "web", "mcp"])
+    }
+
+    /// A drop the save path would undo must be refused, not swallowed.
+    ///
+    /// `sanitised` runs `enforceSpecialHeroes`, which re-prepends each fixed
+    /// hero to its shelf, and `SidebarPreferences.replaceLayout` returns
+    /// early when the canonical result equals what was already stored. So a
+    /// drop in front of the Settings pill — the Connections shelf's hero,
+    /// its leftmost tab, and the natural aim point for "put it first" — was
+    /// accepted by `performDragOperation`, animated by AppKit, and then
+    /// reverted with no state change at all.
+    ///
+    /// The suite could not see it: every existing case asserted
+    /// `applying(command)` and stopped there. This one goes through the save.
+    func testDroppingBeforeAShelfHeroSurvivesTheSaveOrIsRefused() throws {
+        let layout = NavigationLayout.standard(for: .standard)
+
+        XCTAssertNil(NavigationDragCoordinator.command(
+            for: .module("mcp"),
+            droppingOn: .shelf(.network, beforeModuleID: "settings"),
+            in: layout,
+            makeShelfID: { self.shelfUUID }),
+                     "a drop the save path would undo must not be accepted")
+
+        // Why it is refused rather than allowed: the save really does undo
+        // it. This is the assertion that proves the refusal above is about
+        // the hero rule and not about some other guard.
+        let wouldBeUndone = try layout.applying(
+            .insert(moduleID: "mcp", into: .network,
+                    beforeModuleID: "settings"))
+        XCTAssertEqual(wouldBeUndone.shelf(id: .network)?.moduleIDs,
                        ["mcp", "settings", "web"])
+        XCTAssertEqual(wouldBeUndone.sanitised(for: .standard)
+                        .shelf(id: .network)?.moduleIDs,
+                       ["settings", "mcp", "web"],
+                       "enforceSpecialHeroes re-prepends the hero on save")
+
+        // And a drop that displaces nothing fixed is accepted AND survives.
+        let command = try XCTUnwrap(NavigationDragCoordinator.command(
+            for: .module("web"),
+            droppingOn: .shelf(.network, beforeModuleID: "mcp"),
+            in: layout,
+            makeShelfID: { self.shelfUUID }))
+        let saved = try layout.applying(command).sanitised(for: .standard)
+        XCTAssertEqual(saved.shelf(id: .network)?.moduleIDs,
+                       ["settings", "web", "mcp"],
+                       "a drop that is accepted must survive the save")
     }
 
     func testTwoMemberUserShelfCanReorderWithoutDecomposing() throws {
@@ -196,15 +246,22 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         let baseline = NavigationLayout.standard(for: .standard)
 
         let preview = try XCTUnwrap(NavigationDragPreview(
-            dragged: .module("mcp"),
-            target: .shelf(.network, beforeModuleID: "settings"),
+            dragged: .module("web"),
+            target: .shelf(.network, beforeModuleID: "mcp"),
             baseline: baseline,
             makeShelfID: { self.shelfUUID }))
 
         XCTAssertEqual(preview.layout.shelf(id: .network)?.moduleIDs,
-                       ["mcp", "settings", "web"])
+                       ["settings", "web", "mcp"])
         XCTAssertEqual(baseline.shelf(id: .network)?.moduleIDs,
                        ["settings", "mcp", "web"])
+
+        // The hero's own pill previews nothing, because its drop is refused.
+        XCTAssertNil(NavigationDragPreview(
+            dragged: .module("web"),
+            target: .shelf(.network, beforeModuleID: "settings"),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
     }
 
     /// Hovering a shelf must not lift the dragged row out of the stack.
