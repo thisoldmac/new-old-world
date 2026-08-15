@@ -348,6 +348,16 @@ final class ConnectionsModel: ObservableObject {
     @Published private(set) var renameProblem: String?
     @Published private(set) var pendingUpdates: Set<UpdateKey> = []
     @Published private(set) var updateNotices: [UpdateKey: String] = [:]
+    /// Bytes in over bytes promised, while an install is in flight — the
+    /// same `captureProgress` bus Screenshots reads (`.transferProgressed`/
+    /// `.transferEnded`), which is shared across every transfer kind on
+    /// the listener. Gated on `pendingUpdates` being non-empty so an
+    /// unrelated capture or Files transfer does not paint a phantom
+    /// update progress bar; the flip side, not corrected here, is that a
+    /// concurrent capture WHILE an update is pending can still show the
+    /// wrong numbers — the same looseness `ScreenshotModel` already has,
+    /// since the bus does not say which purpose a byte belongs to.
+    @Published private(set) var updateProgress: GuestListener.CaptureProgress?
 
     struct UpdateKey: Hashable {
         let guest: GuestKey
@@ -362,6 +372,9 @@ final class ConnectionsModel: ObservableObject {
     private var ended: [String: EndedGuestSession] = [:]
     private var liveGuests: [GuestKey: ConnectedGuest] = [:]
     private var watch: HostEventSubscription?
+    /// One per pending update, keyed the same as `pendingUpdates` — see
+    /// `armUpdateWatchdog`.
+    private var updateWatchdogs: [UpdateKey: Task<Void, Never>] = [:]
 
     /// Bounded by machines rather than by connections, so a desk that
     /// reconnects all day does not grow a ledger.
@@ -396,6 +409,12 @@ final class ConnectionsModel: ObservableObject {
                 self?.refresh()
             case .updateFinished(let key, let result):
                 self?.finishUpdate(key: key, result: result)
+            case .transferProgressed(_, let received, let expected):
+                guard let self, !self.pendingUpdates.isEmpty else { return }
+                self.updateProgress = .init(received: received,
+                                            expected: expected)
+            case .transferEnded:
+                self?.updateProgress = nil
             default:
                 break
             }
@@ -529,6 +548,7 @@ final class ConnectionsModel: ObservableObject {
         let key = UpdateKey(guest: guest, component: component)
         pendingUpdates.insert(key)
         updateNotices[key] = "Downloading and installing…"
+        armUpdateWatchdog(key)
         let installed = component == .application
             ? (row.version, row.build)
             : (row.extensionVersion, row.extensionBuild)
@@ -536,10 +556,32 @@ final class ConnectionsModel: ObservableObject {
             component, for: guest, installedVersion: installed.0,
             installedBuild: installed.1) { [weak self] result in
                 guard let self, !result.ok else { return }
+                self.clearUpdateWatchdog(key)
                 self.pendingUpdates.remove(key)
                 self.updateNotices[key] = result.error?.message
                     ?? "The guest refused the update."
             }
+    }
+
+    /// Stops waiting, on the person's own say-so. The wire-level half is
+    /// best-effort (`GuestListener.cancelUpdateTransfer`'s own doc comment
+    /// explains why it can be a no-op); the LOCAL half always settles
+    /// immediately, same philosophy as `GuestListener.cancelCapture` —
+    /// cancel means "stop waiting", not "prove the far side agrees" — by
+    /// routing through the identical `finishUpdate` path a real answer or
+    /// a watchdog timeout would take, so the pending set, the notice and
+    /// the progress bar all converge the same way regardless of how the
+    /// wait ended.
+    func cancelUpdate(for row: ConnectionRow,
+                      component: UpdateProvider.Component) {
+        guard let guest = row.key else { return }
+        let key = UpdateKey(guest: guest, component: component)
+        guard pendingUpdates.contains(key) else { return }
+        listener.cancelUpdateTransfer(for: guest)
+        finishUpdate(key: guest, result: .init(
+            id: 0, component: component.rawValue, ok: false,
+            action: nil, code: "cancelled",
+            reason: "Cancelled."))
     }
 
     func updateNotice(for row: ConnectionRow,
@@ -559,7 +601,23 @@ final class ConnectionsModel: ObservableObject {
         guard let component = UpdateProvider.Component(
             rawValue: result.component) else { return }
         let key = UpdateKey(guest: guest, component: component)
+        /* Whichever of the three endings gets here FIRST — a real
+           `.updateFinished`, the watchdog, or a person's Cancel — wins,
+           and this is what makes the other two late arrivals rather than
+           second opinions: a real answer that lands after the watchdog
+           already gave up must not silently overwrite the timeout notice
+           with a stale "Installed", any more than a `file.done` for a
+           transfer `GuestListener` already settled does (its `putId` is
+           cleared for exactly this reason). */
+        guard pendingUpdates.contains(key) else { return }
+        clearUpdateWatchdog(key)
         pendingUpdates.remove(key)
+        /* `installUpdate` never sets `putId` (see `cancelUpdateTransfer`'s
+           doc comment), so nothing on the listener's side ever settles
+           `captureProgress` back to nil for an update the way `settlePut`
+           does for an ordinary push — left alone, the bar would freeze at
+           its last value instead of giving way to the notice below. */
+        updateProgress = nil
         if result.ok {
             updateNotices[key] = component == .application
                 ? "Installed. Quit NOW on the guest, then launch it again."
@@ -571,8 +629,53 @@ final class ConnectionsModel: ObservableObject {
     }
 
     private func abandonUpdates(for guest: GuestKey) {
+        for key in pendingUpdates where key.guest == guest {
+            clearUpdateWatchdog(key)
+        }
         pendingUpdates = pendingUpdates.filter { $0.guest != guest }
         updateNotices = updateNotices.filter { $0.key.guest != guest }
+    }
+
+    /// Fires once, `updateResultWatchdogSeconds` after an install starts,
+    /// unless `finishUpdate` (a real `.updateFinished`, a cancel, or an
+    /// earlier expiry) has already cleared it. Synthesizes a failure
+    /// through the same `finishUpdate` path a real answer takes, so a
+    /// silent guest converges the pending set, the notice and the
+    /// progress bar exactly as an answered one would — the reason
+    /// `finishUpdate` is the one place either kind of ending goes through.
+    private func armUpdateWatchdog(_ key: UpdateKey) {
+        updateWatchdogs[key]?.cancel()
+        updateWatchdogs[key] = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(
+                GuestListener.updateResultWatchdogSeconds
+                    * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.finishUpdate(key: key.guest,
+                              result: Self.timeoutResult(for: key))
+        }
+    }
+
+    private func clearUpdateWatchdog(_ key: UpdateKey) {
+        updateWatchdogs.removeValue(forKey: key)?.cancel()
+    }
+
+    private static func timeoutResult(for key: UpdateKey) -> UpdateResult {
+        .init(id: 0, component: key.component.rawValue, ok: false,
+             action: nil, code: "timeout",
+             reason: "The guest did not confirm the update in time.")
+    }
+
+    /// Test seam: expire every armed update watchdog immediately, mirroring
+    /// `GuestListener.expireWatchdogsForTesting` — a test that actually
+    /// slept `updateResultWatchdogSeconds` would be the slowest thing in
+    /// the suite for no reason.
+    func expireUpdateWatchdogsForTesting() {
+        let expiring = updateWatchdogs
+        updateWatchdogs = [:]
+        for (key, task) in expiring {
+            task.cancel()
+            finishUpdate(key: key.guest, result: Self.timeoutResult(for: key))
+        }
     }
 
     /// The failure in the words of what to do about it. `taken` names the

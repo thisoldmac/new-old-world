@@ -394,10 +394,17 @@ private struct GuestUpdateRow: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
-                if case .replacement = availability {
+                if isPending {
+                    Button("Cancel") {
+                        model.cancelUpdate(for: row, component: component)
+                    }
+                } else if case .replacement = availability {
                     Button(buttonTitle) { onInstall(component) }
-                        .disabled(row.presence != .driving || isPending)
+                        .disabled(row.presence != .driving)
                 }
+            }
+            if isPending {
+                transferProgress
             }
             if let notice = model.updateNotice(for: row,
                                                component: component) {
@@ -411,6 +418,26 @@ private struct GuestUpdateRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// Determinate once bytes have moved on the wire (the same
+    /// `captureProgress` bus Screenshots reads); indeterminate before that
+    /// and during the guest's own install step, which has no wire signal
+    /// — the same "writing" phase H3's ROM dump progress bar also has no
+    /// signal for.
+    @ViewBuilder
+    private var transferProgress: some View {
+        if let progress = model.updateProgress, progress.expected > 0 {
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: progress.fraction)
+                Text("\(progress.received / 1024) KB of "
+                     + "\(progress.expected / 1024) KB")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else {
+            ProgressView().progressViewStyle(.linear)
         }
     }
 

@@ -842,6 +842,25 @@ final class GuestListener: ObservableObject {
     /// gave up has to be able to say so — see `commandTimeouts`.
     static let commandWatchdogSeconds: TimeInterval = 20
 
+    /// The bound `ConnectionsModel` arms while waiting for `update.result`
+    /// after `installUpdate` starts one. Kept beside
+    /// `commandWatchdogSeconds` because it answers the same question for
+    /// the same family, but it is NOT that watchdog scaled up: the initial
+    /// `runCommand("update", …)` call above resolves almost instantly
+    /// (the guest replies "Downloading" the moment it accepts, long
+    /// before any bytes move), so `commandWatchdogSeconds` only ever
+    /// covers that instant acknowledgment. The real completion —
+    /// download, then a synchronous Trash-move-and-install on a
+    /// cooperatively scheduled guest where a blocked Toolbox call blocks
+    /// the entire event loop, including ping replies — rides
+    /// `.updateFinished` alone, with nothing bounding the wait before
+    /// this existed. Flat rather than scaled off artifact size: this is a
+    /// rare, human-attended action rather than a polling hot path, and 3
+    /// minutes is a generous ceiling absent measured install times on
+    /// real hardware — this path is exactly the fBsyErr-adjacent code
+    /// this project has been bitten by trusting without a metal run.
+    static let updateResultWatchdogSeconds: TimeInterval = 180
+
     /// How many `command.request`s have died of silence on this listener.
     /// Monotonic for the listener's life; a caller that wants "did THIS
     /// cycle give up" samples it either side and reports the difference
@@ -2109,6 +2128,27 @@ final class GuestListener: ObservableObject {
         if pendingPut != nil { return .outgoing }
         if pendingFile != nil { return .incoming }
         return nil
+    }
+
+    /// Best-effort stop of an update artifact still crossing the wire.
+    /// `installUpdate` never sets `pendingPut`/`putId` — the artifact goes
+    /// out via `sendUpdateArtifact` in reaction to the GUEST's own
+    /// `update.request`, not through `putFile`'s host-initiated push
+    /// bookkeeping — so this calls `cancelOutbound()` directly rather than
+    /// routing through `cancelFile()`'s pendingPut branch, which would
+    /// never fire for an update. It settles nothing locally: unlike
+    /// `cancelFile`, the caller (`ConnectionsModel.cancelUpdate`) owns
+    /// `pendingUpdates`/`updateNotices` and settles those itself the same
+    /// way a watchdog timeout does, through `finishUpdate`.
+    ///
+    /// A no-op once the guest already has every byte and is running
+    /// `now_update_install` synchronously — nothing on the wire can
+    /// interrupt a Toolbox call already in flight on a cooperatively
+    /// scheduled guest. That window is exactly what
+    /// `updateResultWatchdogSeconds` exists to bound instead.
+    func cancelUpdateTransfer(for key: GuestKey) {
+        guard activeKey == key else { return }
+        session?.cancelOutbound()
     }
 
     /// Abandons the file transfer; settles locally for the same reason
