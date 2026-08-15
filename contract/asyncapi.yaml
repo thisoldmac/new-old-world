@@ -2849,12 +2849,32 @@ components:
 
         WHY IDENTITY CROSSES FIRST. The guest must draw the drag before
         any content byte moves: the right name under the pointer, the
-        right kind of icon, and a refusal it can give immediately if the
-        item is one it will not take. Everything after that is the
+        right kind of icon, and — if the item is one it will not take —
+        a refusal it can make at the machine, immediately, without
+        asking. Everything after that is the
         existing lane — a continuity.grab the guest sends, answered by
         file.begin, the bulk stream and file.end — so this message is
         where the feature's whole new surface lives, and it is
         deliberately as small as the stub it mirrors.
+
+        AN OFFER IS NOT ANSWERED, AND NOTHING WAITS ON ONE. There is no
+        accept and no decline on this wire: a guest that will take the
+        item sends a continuity.grab, and a guest that will not simply
+        never sends one — its Finder refuses the drop and the person
+        watching both screens sees it refused, on the machine that
+        refused it. Declining is therefore silence, and the host must
+        read it as silence: no timer waiting for a verdict, no state
+        machine parked on an answer that is not coming, and no
+        conclusion drawn about the guest from the absence of a grab.
+        This is the one place this direction is DELIBERATELY thinner
+        than the forward one, where an unsolicited continuity.selection
+        is likewise never answered — inverted, the same shape means the
+        host learns nothing, so it must be built to need nothing. What
+        the guest CAN say ahead of a person's gesture it says once, per
+        epoch, in continuity.report's `acceptsOffer`; a per-item refusal
+        would be a second, quieter capability negotiation, and the
+        message it would need is the sibling this slice exists not to
+        mint.
 
         IT CARRIES NO SOURCE IDENTITY, and that is the deliberate half of
         the inversion. The selection stub carries volumeRef/dirID/name
@@ -2962,9 +2982,12 @@ components:
               minimum: 0
               description: >
                 Bytes the data fork will carry, known BEFORE the drag is
-                drawn so a guest can refuse an item it cannot take
-                (`too-big`) while the person can still change their mind,
-                rather than partway through a stream. What the ceiling is
+                drawn so a guest can turn down an item it cannot take
+                while the person can still change their mind, rather than
+                partway through a stream. That refusal is local and
+                silent on the wire, like every other decline of an offer;
+                `too-big` is the word for it in what the guest tells its
+                own person, not a message it sends. What the ceiling is
                 remains the receiver's own policy and is not on this wire.
             resourceSize:
               type: integer
