@@ -576,11 +576,15 @@ final class ChatModuleModel: ObservableObject {
             /* Whatever is already on screen becomes chat #1 rather than
                being lost the first time this runs against an existing
                session. */
-            let adopted = try chatStore.bootstrap(
-                adopting: storedTranscript())
+            let live = storedTranscript()
+            let adopted = try chatStore.bootstrap(adopting: live)
             selectedChatID = adopted.id
-            if !storedTranscript().isEmpty { return }
-            apply(try chatStore.loadTranscript(adopted.id))
+            /* Nothing on screen: draw the chat we landed on. Something
+               on screen: it IS that chat now, and re-reading would
+               only replace it with what was just written. */
+            if live.isEmpty {
+                apply(try chatStore.loadTranscript(adopted.id))
+            }
         } catch {
             note(error)
         }
