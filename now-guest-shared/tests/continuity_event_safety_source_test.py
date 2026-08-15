@@ -602,6 +602,34 @@ check("deadline=%lu" in edge_log,
       "against, so a metal round can't tell a press timeout from a "
       "release timeout without reading the source")
 
+# THE EDGE'S OWN POINT, ON BOTH SIDES OF THE WAIT (2026-08-15 metal, second
+# round). A barrier is only satisfiable if what this side applied IS what the
+# edge rides with, and the cross-edge handoff exits the epoch in the same
+# breath as the release it settles - so the active-gated apply above declines
+# and this side's last applied point stays where the target's drag loop
+# starved it. Two halves, and neither is worth anything alone: reconcile the
+# edge's point through the Cursor Device first, then hold the barrier against
+# THAT point (`h`/`v`, the round's own snapshot) rather than against whatever
+# this side last moved to.
+settle_block = invoke[:invoke.index(AWAIT)]
+check("now_continuity_settle_before_edge(" in settle_block
+      and "now_continuity_cursor_move(" in settle_block,
+      "a button edge no longer reconciles the point it rides with before "
+      "acting, so a release served after the epoch exits waits on a point "
+      "this side moved away from and can never return to")
+await_call = invoke[invoke.index(AWAIT):invoke.index(AWAIT) + 400]
+check("(long)h, (long)v" in await_call
+      and "applied.requested_h == (long)h" in await_call
+      and "applied.requested_v == (long)v" in await_call,
+      "the barrier's target is no longer the edge's own point held by this "
+      "side; holding it against this module's last move is the 17:19:06 "
+      "metal failure exactly (applied=501,446, exposed=504,451 settled)")
+# A target this side does not hold is unaskable, not something to spin on -
+# and the line must not then print a point nobody applied.
+check('"unheld"' in edge_log,
+      "an edge whose point this side never applied is no longer "
+      "distinguishable from one that waited and was exposed")
+
 # The wait itself: Carbon's accessor, the guarded pure decision, and a spin
 # rather than a yield. The caller that needs this most is a release inside
 # the Finder's drag loop, which is exactly where further task time may never

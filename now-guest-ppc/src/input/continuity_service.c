@@ -465,7 +465,46 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
             NowPeekU32 manager_begin;
             NowPeekU32 manager_end;
             NowContinuityCursorExposure exposure;
+            NowContinuityCursorDiagnostics applied;
             int barrier;
+
+            /* THE EDGE'S OWN POSITION, RECONCILED FIRST. The apply above is
+               gated on an ACTIVE epoch, and the cross-edge handoff ends the
+               epoch in the same breath as the release it settles - so on
+               precisely the path the barrier exists for, the settled point
+               never reaches the Cursor Device and this side's last applied
+               point stays where the target's drag loop starved it. The
+               resident has already put low memory on the settled point; the
+               Cursor Device record is UPSTREAM of low memory, so leaving it
+               stale is not a wrong reading but a pending re-assertion, and
+               the barrier below would then hold this edge against a point
+               nothing will ever return to (metal 2026-08-15: applied=501,446
+               against an exposed 504,451 that was the host's settled origin
+               exactly, expiring the full 30-tick bound). Deliberately outside
+               the resident's request/result handshake: it publishes no
+               apply_result, because the resident commits only the exact
+               request it published and this reconcile has no sequence of its
+               own. See now_continuity_settle_before_edge. */
+            now_continuity_cursor_diagnostics(&applied);
+            if (now_continuity_settle_before_edge(
+                    cell->exit_reason, 1,
+                    request_seq != 0 || cell->applied_position_seq != 0,
+                    applied.requested_valid,
+                    h, v,
+                    (NowPeekI32)applied.requested_h,
+                    (NowPeekI32)applied.requested_v)) {
+                long settle_err = now_continuity_cursor_move(
+                    (unsigned long)cell->epoch,
+                    (unsigned long)request_seq, (long)h, (long)v);
+                now_log(settle_err == 0 ? kLogInfo : kLogWarn, "mirror",
+                        "button edge settle gen=%lu at=%ld,%ld from=%ld,%ld "
+                        "state=%lu reason=%lu err=%ld",
+                        (unsigned long)event_generation, (long)h, (long)v,
+                        applied.requested_valid ? applied.requested_h : -1,
+                        applied.requested_valid ? applied.requested_v : -1,
+                        (unsigned long)cell->state,
+                        (unsigned long)cell->exit_reason, settle_err);
+            }
 
             /* THE EDGE WAITS FOR ITS OWN POSITION. A round applies the
                position request above and then acts on it here, and until
@@ -486,15 +525,33 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
                now_continuity_logic.h for the argument and
                now_continuity_cursor_await_exposure for the worst-case
                spin cost of each. */
+            /* Re-read: the barrier's target is the edge's own point, and
+               this side may only WAIT for it while it genuinely holds it.
+               A settle suppressed because the human's own hand ended the
+               epoch leaves the target unheld, and the honest answer there
+               is unaskable rather than half a second of spinning against a
+               point nothing is moving toward. A REFUSED manager move is
+               not distinguished here: `requested_*` has always meant what
+               this side asked for, the refusal logs its own error line, and
+               teaching this read to second-guess it would put two meanings
+               on one field. */
+            now_continuity_cursor_diagnostics(&applied);
             barrier = now_continuity_cursor_await_exposure(&exposure,
-                                                           event_down == 0);
+                event_down == 0,
+                applied.requested_valid
+                    && applied.requested_h == (long)h
+                    && applied.requested_v == (long)v,
+                (long)h, (long)v);
             /* One FILE-logged line per edge, naming applied against exposed:
                a metal round can then read whether the barrier held, how
                long, and whether it had to expire - which "the icon dropped
                in the wrong place" cannot distinguish on its own. The
                deadline rides along so an `expired` line names the bound it
                was measured against without a reader needing to know which
-               edge type maps to which constant. */
+               edge type maps to which constant. `applied` always names a
+               point this side really applied - on an `unheld` line that is
+               the last one, not the edge's, because a field called applied
+               must never print a point nobody applied. */
             now_log(barrier == kNowContinuityBarrierExpired
                         ? kLogWarn : kLogInfo,
                     "mirror",
@@ -502,14 +559,18 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
                     "exposed=%ld,%ld via=%s waited=%lu deadline=%lu %s",
                     (unsigned long)event_generation,
                     (unsigned long)event_down,
-                    exposure.request_h, exposure.request_v,
+                    exposure.request_valid ? exposure.request_h
+                        : (applied.requested_valid ? applied.requested_h : -1),
+                    exposure.request_valid ? exposure.request_v
+                        : (applied.requested_valid ? applied.requested_v : -1),
                     exposure.observed_h, exposure.observed_v,
                     exposure.observed_is_record ? "record" : "global",
                     exposure.waited_ticks,
                     exposure.deadline_ticks,
                     barrier == kNowContinuityBarrierExpired ? "expired"
+                        : (!exposure.request_valid ? "unheld"
                         : (exposure.waited_ticks != 0 ? "settled"
-                                                      : "exposed"));
+                                                      : "exposed")));
 
             /* The manager call runs BETWEEN resident invokes, where status_seq
                is even, so the resident's mid-invoke guard cannot see it at all.

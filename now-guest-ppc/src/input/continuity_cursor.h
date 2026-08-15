@@ -58,9 +58,15 @@ int now_continuity_cursor_ready(void);
    ordinary press, where latency is feel and the bound stays tight. Worst
    case this spins for the chosen bound's full length with the guest's task
    time blocked and nothing pumped; see the definition for why that is
-   the right trade at each call site. */
+   the right trade at each call site.
+   `target_valid`/`target_h`/`target_v` are the point THIS EDGE rides with,
+   named by the caller: the barrier holds against that point and nothing
+   else, and a caller that does not hold it passes target_valid 0 rather
+   than have the barrier wait on a point no longer on the wire. */
 int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out,
-                                         int release_edge);
+                                         int release_edge,
+                                         int target_valid,
+                                         long target_h, long target_v);
 void now_continuity_cursor_begin_epoch(unsigned long epoch);
 long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
                                 long h, long v);

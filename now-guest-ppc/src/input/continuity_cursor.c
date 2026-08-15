@@ -281,7 +281,9 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
  * confined to the drag-release edge because that is the one case where a
  * stale point is a real relocated file rather than a feel complaint. */
 int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out,
-                                         int release_edge)
+                                         int release_edge,
+                                         int target_valid,
+                                         long target_h, long target_v)
 {
     NowContinuityCursorExposure state;
     unsigned long start;
@@ -291,9 +293,16 @@ int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out,
     NowPeekU32 deadline_ticks;
 
     memset(&state, 0, sizeof state);
-    state.request_valid = gDiagnostics.requested_valid;
-    state.request_h = gDiagnostics.requested_h;
-    state.request_v = gDiagnostics.requested_v;
+    /* The TARGET is the caller's, not this module's last move. Reading
+       gDiagnostics here is what made the barrier unsatisfiable on metal:
+       during a target's own drag loop this side's last applied point is
+       whatever the starvation left behind, and an edge held against that
+       point waits for a return that is never coming. A caller that cannot
+       name the point its edge rides with passes target_valid 0 and gets
+       Exposed - unaskable has always meant apply, never hang. */
+    state.request_valid = target_valid;
+    state.request_h = target_h;
+    state.request_v = target_v;
     deadline_ticks = release_edge
         ? (NowPeekU32)kNowContinuityExposureDeadlineTicksRelease
         : (NowPeekU32)kNowContinuityExposureDeadlineTicksPress;
