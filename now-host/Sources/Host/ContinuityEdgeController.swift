@@ -815,16 +815,16 @@ final class ContinuityEdgeController: ObservableObject {
         let hit = fileEdge.map {
             environment.catchSurfaceHitTest($0, at: waiting.returnPoint)
         }
-        let where_ = hit?.summary ?? "there is no catch surface at all"
+        let verdict = hit?.summary ?? "there is no catch surface at all"
         guard hit?.ownsPoint == true else {
             if waiting.armAttempts == 1 {
                 audit(.info, "holding the synthetic primary down until the "
                     + "window server puts the catch surface under the seed "
-                    + "point: \(where_) — posted now it would press the "
+                    + "point: \(verdict) — posted now it would press the "
                     + "button on whatever is underneath")
             } else if waiting.armAttempts == Self.catchSurfaceArmAttemptLimit {
                 audit(.error, "the catch surface still does not own the seed "
-                    + "point after \(waiting.armAttempts) samples: \(where_) "
+                    + "point after \(waiting.armAttempts) samples: \(verdict) "
                     + "— this Mac will not press a button into another "
                     + "application, so this file drag will end without "
                     + "starting")
@@ -832,7 +832,7 @@ final class ContinuityEdgeController: ObservableObject {
             pendingReturnDrag = waiting
             return false
         }
-        audit(.info, "the catch surface owns the seed point: \(where_), "
+        audit(.info, "the catch surface owns the seed point: \(verdict), "
             + "samples=\(waiting.armAttempts)")
         if environment.postSyntheticPrimaryButton(down: true,
                                                   at: waiting.returnPoint) {
