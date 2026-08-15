@@ -33,9 +33,13 @@ the unmodified committed script and proved nothing. Commit, then run.
 Not closed by this: `tools/release/image.py` still calls `hdiutil
 create` for the generic classic-Mac setup image, and cannot move. It
 needs `-fs HFS+`, `-size` and `-layout NONE`; `diskutil image create
-from` has no equivalent of any of the three and produces APFS only. That
-is a different problem from this one, and it is unsolved rather than
-deferred.
+from` has no equivalent of any of the three and produces APFS only.
+Worse, `diskutil listFilesystems` on macOS 27 no longer offers an HFS+
+personality at all, so the replacement tool has retired the capability
+the classic image depends on rather than merely not grown it yet. That
+is a different problem from this one, tracked as
+[issue #28](https://github.com/thisoldmac/new-old-world/issues/28), and
+it is unsolved rather than deferred.
 
 ## EMULATOR-OBSERVED AT BEST, METAL NOT AT ALL: 034 wave 4 — the Files cocktail, one name rule, files drop in from outside (2026-08-15, five lanes merged, gate green)
 
