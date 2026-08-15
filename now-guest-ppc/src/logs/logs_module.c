@@ -600,7 +600,9 @@ static const WorkshopModuleOps k_ops = {
     logs_idle,
     logs_status_text,
     logs_describe_scene,
-    NULL   /* copy_text: a log would copy well; the page already writes to disk, which is the route people use */
+    /* copy_text: a log would copy well, but this page already writes to
+       disk, which is the route people actually use for one. */
+    NULL
 };
 
 const WorkshopModuleOps *logs_module_ops(void)

@@ -205,7 +205,8 @@ static void web_status(char *out, long cap)
 static const WorkshopModuleOps k_ops = {
     web_create, web_dispose, web_show, web_layout, web_draw, web_click,
     NULL, web_activate, NULL, web_status, web_describe_scene,
-    NULL   /* copy_text: two sentences and a port, all of it visible at once */
+    /* copy_text: two sentences and a port, all visible at once. */
+    NULL
 };
 
 const WorkshopModuleOps *web_module_ops(void) { return &k_ops; }

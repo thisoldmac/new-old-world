@@ -1728,7 +1728,10 @@ static const WorkshopModuleOps k_ops = {
     cloud_idle,
     cloud_status_text,
     cloud_describe_scene,
-    NULL   /* copy_text: the card pane is not even described yet (see describe) */
+    /* copy_text: the card pane is not even DESCRIBED yet (see the
+       comment at cloud_describe_scene), so there is nothing honest to
+       copy off it. */
+    NULL
 };
 
 const WorkshopModuleOps *cloud_module_ops(void)

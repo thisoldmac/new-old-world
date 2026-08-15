@@ -337,7 +337,8 @@ static const WorkshopModuleOps k_ops = {
     mcp_idle,
     mcp_status_line,
     mcp_describe_scene,
-    NULL   /* copy_text: a tier and three lines about it, all visible at once */
+    /* copy_text: a tier and three lines about it, all visible at once. */
+    NULL
 };
 
 const WorkshopModuleOps *mcp_module_ops(void)
