@@ -8,10 +8,24 @@ import SwiftUI
 public struct HostFileDragItem {
     public var writer: NSPasteboardWriting
     public var image: NSImage
+    /// A late decision, asked exactly once, at the last instant before a
+    /// real `NSDraggingSession` is started — never after.
+    ///
+    /// `writer` is the value used when this is nil, which is every ordinary
+    /// case: a scene-hit drag, or a selection drag with nothing left to
+    /// decide. The one caller that sets it is the guest→host selection
+    /// lane's eager-fetch decision (`ContinuityGrabTransfer`), because that
+    /// decision genuinely cannot be made at press time — the fetch it might
+    /// be waiting on only starts then. The pasteboard cannot be mutated once
+    /// a drag session exists, so the resolver must run, and be believed,
+    /// BEFORE `beginDraggingSession` — `finalized()` is that one call site.
+    public var resolve: (() -> NSPasteboardWriting)?
 
-    public init(writer: NSPasteboardWriting, image: NSImage) {
+    public init(writer: NSPasteboardWriting, image: NSImage,
+                resolve: (() -> NSPasteboardWriting)? = nil) {
         self.writer = writer
         self.image = image
+        self.resolve = resolve
     }
 
     /// Builds the native drag image from the exact guest item which supplied
@@ -35,6 +49,20 @@ public struct HostFileDragItem {
                         size: NSSize(width: 32, height: 32))
             } ?? NSWorkspace.shared.icon(for: .data)
         self.writer = writer
+        self.resolve = nil
+    }
+
+    /// Runs `resolve` once, if there is one, and returns the item that
+    /// carries whatever it decided. Idempotent: a second call sees `resolve`
+    /// already nil and returns `self` unchanged, so a caller that finalizes
+    /// defensively cannot re-run a decision (and, for the eager-fetch case,
+    /// cannot re-block on a wait already paid for).
+    public func finalized() -> HostFileDragItem {
+        guard let resolve else { return self }
+        var resolved = self
+        resolved.writer = resolve()
+        resolved.resolve = nil
+        return resolved
     }
 }
 

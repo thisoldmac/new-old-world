@@ -1000,6 +1000,267 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertEqual(asked.generation, 3)
     }
 
+    // MARK: - Eager fetch for app drop targets
+    //
+    // Metal, 2026-08-15: the drag pasteboard carried only an
+    // NSFilePromiseProvider, so Finder took the drop and every other
+    // application refused it silently — a promise-only pasteboard reads as
+    // nothing-droppable to anything that never adopted
+    // NSFilePromiseReceiver. The host knows a stub's size before the drag
+    // even starts, so a small one is fetched during the crossing and the
+    // drag carries a real file:// URL instead — see
+    // ContinuityFileDragPolicy for the cap this reads, and
+    // ContinuityGrabTransfer.EagerFetch for why resolving it must never
+    // block.
+
+    func testEagerEligibilityIsExactlyAtTheCapBoundary() {
+        let cap = ContinuityFileDragPolicy.eagerFetchCapBytes
+        XCTAssertTrue(ContinuityFileDragPolicy.eligibleForEagerFetch(
+            dataSize: cap, resourceSize: 0), "the cap itself is eligible")
+        XCTAssertFalse(ContinuityFileDragPolicy.eligibleForEagerFetch(
+            dataSize: cap + 1, resourceSize: 0),
+            "one byte over must not round down into eligibility")
+        XCTAssertTrue(ContinuityFileDragPolicy.eligibleForEagerFetch(
+            dataSize: cap / 2, resourceSize: cap / 2),
+            "the two forks must be summed, not checked separately")
+        XCTAssertFalse(ContinuityFileDragPolicy.eligibleForEagerFetch(
+            dataSize: cap / 2, resourceSize: cap / 2 + 1))
+    }
+
+    /// The design's small-file path, start to finish: a stub under the cap
+    /// gets a real fetch started immediately, and once that fetch finishes
+    /// the drag's writer is a real file, not a promise.
+    func testASmallStubStartsAnEagerFetchAndTheDragCarriesARealFileURL()
+        throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        var audits: [(HostLog.LogLevel, String)] = []
+        let fetched = expectation(description: "eager fetch completed")
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in completion(.success(delivery)) },
+            audit: {
+                audits.append(($0, $1))
+                if $1.contains("eager fetch completed") { fetched.fulfill() }
+            })
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        let item = transfer.dragItem(for: stub)
+        XCTAssertNotNil(item.resolve,
+                        "a stub under the cap must attempt an eager fetch")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("drag payload: eager") && $0.1.contains("5 bytes")
+                && $0.1.contains("fetching during the crossing")
+        }, "the decision must be logged the instant it is made, not only "
+            + "once it resolves")
+        wait(for: [fetched], timeout: 5)
+
+        let resolved = item.finalized()
+        let url = try XCTUnwrap(resolved.writer as? NSURL,
+                                "a finished eager fetch must hand the drag "
+                                    + "a real file, not a promise")
+        XCTAssertEqual(try String(contentsOf: url as URL, encoding: .utf8),
+                       "hello")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("drag payload: eager") && $0.1.contains("bytes")
+                && $0.1.contains("fetched in") && $0.1.contains("ms")
+                && $0.1.contains("using a real file URL, not a promise")
+        })
+    }
+
+    /// The other half of the cap: a large stub must never even attempt a
+    /// grab from `dragItem` — that grab belongs to the promise alone, on
+    /// release, exactly as before this slice existed.
+    func testAStubOverTheCapNeverAttemptsAnEagerFetch() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, _ in
+                XCTFail("a stub over the cap must never start a grab from "
+                    + "dragItem")
+            }, audit: { audits.append(($0, $1)) })
+        var oversized = Self.file(name: "Big File")
+        oversized.dataSize = ContinuityFileDragPolicy.eagerFetchCapBytes + 1
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: oversized)
+
+        let item = transfer.dragItem(for: stub)
+
+        XCTAssertNil(item.resolve)
+        XCTAssertTrue(item.writer is NSFilePromiseProvider)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("drag payload: promise") && $0.1.contains("over cap")
+        })
+    }
+
+    /// **Resolving must never block**, however far from finished the fetch
+    /// still is. Everything in this app — including the wire listener the
+    /// fetch itself asks — runs on the main actor; a synchronous wait here
+    /// would be this app deadlocking against its own completion.
+    func testAnEagerFetchStillPendingAtDragStartFallsBackWithoutBlocking() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let held = Held()
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in held.completion = completion },
+            audit: { audits.append(($0, $1)) })
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        let item = transfer.dragItem(for: stub)
+        XCTAssertNotNil(item.resolve)
+
+        let start = Date()
+        let resolved = item.finalized()
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.1,
+                          "resolving must never block on a fetch still in "
+                            + "flight")
+        XCTAssertTrue(resolved.writer is NSFilePromiseProvider,
+                      "an unfinished fetch must fall back to the promise "
+                        + "rather than hold the drag up")
+        XCTAssertTrue(audits.contains {
+            $0.0 == .warn
+                && $0.1.contains("had not finished when the drag started")
+        })
+        XCTAssertNotNil(held.completion,
+                        "the fetch is not cancelled, only not waited for — "
+                            + "it may still finish and simply go unused")
+    }
+
+    /// A refusal from the Mac (a stale selection, a bad epoch) must fall
+    /// back exactly like a slow one, named by its own code — indistinguishable
+    /// from a dead fetch is the failure mode `ContinuityGrabTransfer`'s
+    /// other refusal paths were built to avoid, and this path inherits it.
+    func testAFailedEagerFetchFallsBackToThePromiseAndIsNamed() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let refused = expectation(description: "eager fetch refused")
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                completion(.failure(.init(code: "stale-selection",
+                                          message: "the selection changed")))
+            },
+            audit: {
+                audits.append(($0, $1))
+                if $1.contains("eager fetch refused by the Mac") {
+                    refused.fulfill()
+                }
+            })
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        let item = transfer.dragItem(for: stub)
+        wait(for: [refused], timeout: 5)
+
+        let resolved = item.finalized()
+        XCTAssertTrue(resolved.writer is NSFilePromiseProvider)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("eager fetch refused by the Mac")
+                && $0.1.contains("stale-selection")
+        })
+    }
+
+    /// One grab lane, shared with the promise machinery: a stub bound while
+    /// another grab is already in flight must not attempt a second one —
+    /// that is what `ContinuityGrabTransfer.isBusy` already refuses on the
+    /// promise side, and the eager lane must honor the same one-at-a-time
+    /// rule rather than opening a second wire request underneath it.
+    func testABusyGrabLaneSkipsTheEagerFetchAndUsesThePromiseOutright() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let asked = expectation(description: "the first grab reached the wire")
+        let held = Held()
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                held.completion = completion
+                asked.fulfill()
+            }, audit: { audits.append(($0, $1)) })
+        let busyStub = ContinuityDragStub(epoch: 7, generation: 1,
+                                          item: Self.file(name: "First"))
+        let first = transfer.promise(for: busyStub)
+        transfer.filePromiseProvider(
+            first, writePromiseTo: FileManager.default.temporaryDirectory
+                .appendingPathComponent("First")) { _ in }
+        wait(for: [asked], timeout: 5)
+        XCTAssertTrue(transfer.isBusy)
+
+        let secondStub = ContinuityDragStub(epoch: 7, generation: 2,
+                                            item: Self.file(name: "Second"))
+        let item = transfer.dragItem(for: secondStub)
+
+        XCTAssertNil(item.resolve)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("eager fetch skipped")
+                && $0.1.contains("already in flight")
+        })
+        _ = held
+    }
+
+    /// End to end through the real controller wiring, not `dragItem`
+    /// called directly: the fetch that started at press time has finished
+    /// by the time the crossing hands AppKit the drag, and the item that
+    /// reaches AppKit is a real file.
+    func testTheControllerHandsAppKitARealFileWhenTheFetchWonTheRace()
+        throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        let rig = Rig(grabRequest: { _, _, _, _, completion in
+            completion(.success(delivery))
+        })
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        waitForAudit(rig, containing: "eager fetch completed")
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let url = try XCTUnwrap(item.writer as? NSURL,
+                                "the fetch finished before the drag "
+                                    + "started; AppKit must have been "
+                                    + "handed the real file, not a promise")
+        XCTAssertEqual(try String(contentsOf: url as URL, encoding: .utf8),
+                       "hello")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("using a real file URL, not a promise")
+        })
+    }
+
+    /// The same race lost: nothing waits, so the ordinary promise still
+    /// reaches AppKit and the drag is not held up a moment for it.
+    func testTheControllerFallsBackToThePromiseWhenTheFetchIsStillPending()
+        throws {
+        let held = Held()
+        let rig = Rig(grabRequest: { _, _, _, _, completion in
+            held.completion = completion   /* never answers in this test */
+        })
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        XCTAssertTrue(item.writer is NSFilePromiseProvider)
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn
+                && $0.1.contains("had not finished when the drag started")
+        })
+        _ = held
+    }
+
+    private func waitForAudit(_ rig: Rig, containing text: String,
+                              timeout: TimeInterval = 5) {
+        let predicate = NSPredicate { _, _ in
+            rig.recorder.lines.contains { $0.1.contains(text) }
+        }
+        let met = XCTNSPredicateExpectation(predicate: predicate,
+                                            object: NSObject())
+        wait(for: [met], timeout: timeout)
+    }
+
     // MARK: - Fulfillment
 
     func testGrabWritesTheFileAndReportsWhatArrived() throws {
@@ -1215,7 +1476,10 @@ private final class Rig {
     /// must never need one.
     var sceneLookups: Int { sceneCalls.steps.count }
 
-    init() {
+    /// Nil keeps the ordinary "no Mac in this test" refusal every existing
+    /// test relies on; a rig built for the eager-fetch lane supplies its own
+    /// so a `dragItem(for:)` call can actually succeed or hang on demand.
+    init(grabRequest: ContinuityGrabTransfer.GrabRequest? = nil) {
         let recorder = self.recorder
         let audit: (HostLog.LogLevel, String) -> Void = {
             recorder.lines.append(($0, $1))
@@ -1236,7 +1500,7 @@ private final class Rig {
                                                  name: "Host"))
         fileTransfer = MirrorFileTransferModel(listener: listener)
         grab = ContinuityGrabTransfer(
-            grab: { _, _, _, _, completion in
+            grab: grabRequest ?? { _, _, _, _, completion in
                 completion(.failure(.init(code: "disconnected",
                                           message: "no Mac in this test")))
             }, audit: audit)
