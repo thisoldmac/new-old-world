@@ -451,8 +451,8 @@ static void start_drag(void)
 
 int now_continuity_dragmgr_request(char *err, long cap)
 {
-    int verdict = now_continuity_drag_request(&g_drag,
-                                              now_continuity_offer_table(),
+    const NowContinuityOfferTable *offer = now_continuity_offer_table();
+    int verdict = now_continuity_drag_request(&g_drag, offer,
                                               now_continuity_live_epoch(),
                                               TickCount());
 
@@ -470,10 +470,17 @@ int now_continuity_dragmgr_request(char *err, long cap)
                  "That is a folder; this Mac cannot drag one yet");
         break;
     case kNowDragTooLarge:
+        /* THE SIZE COMES FROM THE OFFER, NOT FROM g_drag. A refusal
+           deliberately leaves the drag state untouched - that is what
+           lets `busy` refuse without trampling a drag in flight - so
+           g_drag.item is either empty or somebody else's. The first
+           live emulator run said "0 bytes; the limit is 1048576" for a
+           1048577-byte file, which is a refusal that argues against
+           itself. */
         snprintf(err, (size_t)cap,
                  "Too big to hand over inside a drop (%ld bytes; the "
                  "limit is %ld)",
-                 g_drag.item.data_size,
+                 offer->item.data_size,
                  (long)kNowContinuityDragPromiseCapBytes);
         break;
     case kNowDragBusy:
