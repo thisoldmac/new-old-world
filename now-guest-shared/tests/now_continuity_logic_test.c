@@ -125,6 +125,32 @@ int main(void)
     CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 0, 0)
           == kNowContinuityBarrierExpired);
 
+    /* The asymmetric bounds themselves (2026-08-15 metal: PowerBook 1400c
+       routinely exceeded the old shared 4-tick bound on release edges).
+       Press stays tight for feel; release gets a generous 0.5s bound
+       because what is at stake there is a real file's location. Pinned as
+       values, not just as "release > press", because a caller wiring the
+       wrong constant to the wrong edge compiles fine and only shows up as
+       a stale-point relocation on metal. */
+    CHECK(kNowContinuityExposureDeadlineTicksPress == 4);
+    CHECK(kNowContinuityExposureDeadlineTicksRelease == 30);
+    CHECK(kNowContinuityExposureDeadlineTicksRelease
+          > kNowContinuityExposureDeadlineTicksPress);
+    /* The exact release-edge failure from the 2026-08-15 metal round:
+       `gen=282 down=0 applied=18,111 exposed=74,146 via=record waited=4
+       expired` - a release beat the propagation by 60px at the old shared
+       4-tick bound. Same wait must now still be WAITing under the release
+       deadline; the old press-sized bound would still expire it, which is
+       exactly why press and release may not share one constant. */
+    CHECK(now_continuity_button_barrier(
+              1, 1, 18, 111, 74, 146, 4,
+              kNowContinuityExposureDeadlineTicksRelease)
+          == kNowContinuityBarrierWait);
+    CHECK(now_continuity_button_barrier(
+              1, 1, 18, 111, 74, 146, 4,
+              kNowContinuityExposureDeadlineTicksPress)
+          == kNowContinuityBarrierExpired);
+
     CHECK(now_continuity_exit_due(
         100, 90, 90, 1, 1, 11, 20, 0, 10, 20, 0)
         == kNowPeekContinuityExitGuestInput);

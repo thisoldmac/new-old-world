@@ -561,12 +561,20 @@ check("now_continuity_sequence_newer(" in
 # The host's packet order was never the missing guarantee (the wire is a
 # latest-state mailbox and both packets carried the same point); the barrier
 # between applying a point and acting on it was.
-AWAIT = "now_continuity_cursor_await_exposure(&exposure)"
+AWAIT = "now_continuity_cursor_await_exposure(&exposure"
 check(AWAIT in invoke
       and invoke.index(AWAIT) < invoke.index("now_continuity_cursor_button(")
       and invoke.index(AWAIT) < invoke.index(BUSY_SET),
       "a button edge is applied without waiting for its own position to be "
       "exposed, or waits while holding the manager-busy flag up")
+# ASYMMETRIC DEADLINE (2026-08-15 metal, PowerBook 1400c): a release that
+# follows a settle waits against the longer of the two shared bounds, an
+# ordinary press against the tight one. The call site is where that
+# selection has to happen - the barrier and the spin only know the bound
+# they were handed, not which edge type they are serving.
+check("event_down == 0" in invoke[invoke.index(AWAIT):invoke.index(AWAIT) + 200],
+      "a button edge no longer tells await_exposure whether it is a "
+      "release, so press and release can no longer use different bounds")
 # One FILE-logged line per edge naming applied against exposed. Without it a
 # metal round cannot tell a barrier that held from a barrier that never had
 # anything to hold, and "the icon landed in the wrong place" says neither.
@@ -585,6 +593,14 @@ check("now_log(" in edge_log
 check("kNowContinuityBarrierExpired" in edge_log,
       "an edge applied on the deadline is no longer distinguishable from one "
       "whose position was actually exposed")
+# Two bounds now exist per now_continuity_logic.h; a bare "expired" no
+# longer says which one was measured against. The deadline rides in the
+# same logged line so a metal round can read it without cross-referencing
+# event_down against the source.
+check("deadline=%lu" in edge_log,
+      "an expired edge no longer names the deadline it was measured "
+      "against, so a metal round can't tell a press timeout from a "
+      "release timeout without reading the source")
 
 # The wait itself: Carbon's accessor, the guarded pure decision, and a spin
 # rather than a yield. The caller that needs this most is a release inside
@@ -607,6 +623,26 @@ check("now_continuity_button_barrier(" in await_body,
       "the exposure wait no longer uses the guarded pure barrier")
 check("kNowContinuityExposureDeadlineTicks" in await_body,
       "the exposure spin lost its deadline and can now hold an edge forever")
+# Both bounds must be reachable from this one function, and it must be the
+# one place that chooses between them - a caller wiring release_edge to the
+# wrong constant is the whole failure mode this asymmetry exists to avoid.
+check("kNowContinuityExposureDeadlineTicksPress" in await_body
+      and "kNowContinuityExposureDeadlineTicksRelease" in await_body
+      and "release_edge" in await_body,
+      "the exposure spin no longer selects between the press and release "
+      "deadlines by the edge type it was told about")
+# Direction, not just presence: `release_edge` truthy must select the
+# RELEASE constant. A source-shape check cannot run the ternary, so it pins
+# the exact wiring instead - the failure mode this guards is a swap that
+# gives presses the generous 0.5s bound and releases the tight one, which
+# would compile clean and read fine on an emulator that never waits long
+# enough to notice.
+check("release_edge\n        ? (NowPeekU32)kNowContinuityExposureDeadlineTicksRelease\n"
+      "        : (NowPeekU32)kNowContinuityExposureDeadlineTicksPress;"
+      in await_body,
+      "release_edge no longer selects the release deadline (and press the "
+      "press deadline) in that exact order - the two bounds may have been "
+      "swapped")
 for yielder in ("WaitNextEvent", "SystemTask", "now_continuity_pump",
                 "now_wire_pump"):
     check(yielder not in await_body,

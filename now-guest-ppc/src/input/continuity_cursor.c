@@ -262,19 +262,42 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
  * needs this barrier most is a release during a Finder drag loop - the
  * exact case where further task time may not come back to us at all.
  * Yielding here would trade a wrong drop point for a stuck drag. The spin
- * is bounded by the barrier's own deadline and touches nothing reentrant. */
-int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out)
+ * is bounded by the barrier's own deadline and touches nothing reentrant -
+ * it must not pump the wire either, for the same reason it must not yield.
+ *
+ * TWO BOUNDS, NOT ONE (2026-08-15 metal). `release_edge` selects
+ * kNowContinuityExposureDeadlineTicksRelease (0.5s) for a release that
+ * follows a settle and kNowContinuityExposureDeadlineTicksPress (4 ticks)
+ * for an ordinary press; see now_continuity_logic.h for the argument.
+ * Worst case this call blocks the guest's task time for the full chosen
+ * bound with nothing else running: ~67ms for a press, ~0.5s for a release.
+ * Both are paid only on the rare tick where the record or global has not
+ * yet caught up - the emulator run that calibrated the old shared bound
+ * never measured more than 1 tick of wait, and the diagnostics counters
+ * below (`exposure_waits`, `exposure_wait_ticks`) are already how this
+ * project tells "acceptable, rare, edges" from "systemic hang" without
+ * guessing from a single run. A stuck 0.5s spin from a caller wired to
+ * `release_edge` on every press would be the wrong trade; it stays
+ * confined to the drag-release edge because that is the one case where a
+ * stale point is a real relocated file rather than a feel complaint. */
+int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out,
+                                         int release_edge)
 {
     NowContinuityCursorExposure state;
     unsigned long start;
     Point global;
     Point record;
     int verdict;
+    NowPeekU32 deadline_ticks;
 
     memset(&state, 0, sizeof state);
     state.request_valid = gDiagnostics.requested_valid;
     state.request_h = gDiagnostics.requested_h;
     state.request_v = gDiagnostics.requested_v;
+    deadline_ticks = release_edge
+        ? (NowPeekU32)kNowContinuityExposureDeadlineTicksRelease
+        : (NowPeekU32)kNowContinuityExposureDeadlineTicksPress;
+    state.deadline_ticks = (unsigned long)deadline_ticks;
     start = TickCount();
     for (;;) {
         GetGlobalMouse(&global);
@@ -295,7 +318,7 @@ int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out)
             (NowPeekI32)state.request_h, (NowPeekI32)state.request_v,
             (NowPeekI32)state.observed_h, (NowPeekI32)state.observed_v,
             (NowPeekU32)state.waited_ticks,
-            (NowPeekU32)kNowContinuityExposureDeadlineTicks);
+            deadline_ticks);
         if (verdict != kNowContinuityBarrierWait)
             break;
     }

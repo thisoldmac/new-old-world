@@ -36,6 +36,7 @@ typedef struct {
     long observed_h;
     long observed_v;
     unsigned long waited_ticks;
+    unsigned long deadline_ticks;  /* which bound this edge waited against */
     int verdict;                  /* kNowContinuityBarrier* */
     int request_valid;
     int observed_valid;
@@ -49,8 +50,17 @@ int now_continuity_cursor_ready(void);
 /* Block until the mouse global the guest's tracking loops sample reports the
    point this side last requested, or the barrier's deadline expires. Returns
    the verdict and fills `out`. Never waits when there is nothing to wait for,
-   and never waits unboundedly: see now_continuity_button_barrier. */
-int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out);
+   and never waits unboundedly: see now_continuity_button_barrier.
+   `release_edge` selects which of the two shared bounds this edge waits
+   against (now_continuity_logic.h): nonzero for a release that follows a
+   settle - the Finder-drag case where correctness is a real file's
+   location and 0.5s of blocking is an acceptable price - zero for an
+   ordinary press, where latency is feel and the bound stays tight. Worst
+   case this spins for the chosen bound's full length with the guest's task
+   time blocked and nothing pumped; see the definition for why that is
+   the right trade at each call site. */
+int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out,
+                                         int release_edge);
 void now_continuity_cursor_begin_epoch(unsigned long epoch);
 long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
                                 long h, long v);

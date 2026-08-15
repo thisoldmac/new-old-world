@@ -476,23 +476,37 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
                packet, release in the next); the wire is a latest-state
                mailbox and both packets carried the SAME point, so nothing
                about packet ordering was ever the missing guarantee. This
-               is. See now_continuity_button_barrier. */
-            barrier = now_continuity_cursor_await_exposure(&exposure);
+               is. See now_continuity_button_barrier.
+
+               A release (event_down == 0) waits against the longer
+               kNowContinuityExposureDeadlineTicksRelease bound: it follows
+               a settle inside the guest's own drag loop, where correctness
+               is a real file's location, not feel. An ordinary press keeps
+               the tight kNowContinuityExposureDeadlineTicksPress bound. See
+               now_continuity_logic.h for the argument and
+               now_continuity_cursor_await_exposure for the worst-case
+               spin cost of each. */
+            barrier = now_continuity_cursor_await_exposure(&exposure,
+                                                           event_down == 0);
             /* One FILE-logged line per edge, naming applied against exposed:
                a metal round can then read whether the barrier held, how
                long, and whether it had to expire - which "the icon dropped
-               in the wrong place" cannot distinguish on its own. */
+               in the wrong place" cannot distinguish on its own. The
+               deadline rides along so an `expired` line names the bound it
+               was measured against without a reader needing to know which
+               edge type maps to which constant. */
             now_log(barrier == kNowContinuityBarrierExpired
                         ? kLogWarn : kLogInfo,
                     "mirror",
                     "button edge gen=%lu down=%lu applied=%ld,%ld "
-                    "exposed=%ld,%ld via=%s waited=%lu %s",
+                    "exposed=%ld,%ld via=%s waited=%lu deadline=%lu %s",
                     (unsigned long)event_generation,
                     (unsigned long)event_down,
                     exposure.request_h, exposure.request_v,
                     exposure.observed_h, exposure.observed_v,
                     exposure.observed_is_record ? "record" : "global",
                     exposure.waited_ticks,
+                    exposure.deadline_ticks,
                     barrier == kNowContinuityBarrierExpired ? "expired"
                         : (exposure.waited_ticks != 0 ? "settled"
                                                       : "exposed"));
