@@ -32,6 +32,11 @@ added to now_wire_pump's bounce path, and the AESend's idle proc
 replaced with NULL. Four checks, four distinct failure texts - a guard
 watched failing against ONE mutation has only been watched against that
 one, and this file makes four claims.
+
+Check 6 gained a half on 2026-08-15: the grab must settle the epoch
+transition too, not just the poll. Watched failing against exactly that
+mutation - settle_to_epoch removed from now_continuity_selection_grab,
+and separately the settle removed from now_continuity_grab_resolve.
 """
 
 import re
@@ -61,6 +66,12 @@ SRC = Path(__file__).resolve().parents[1] / "src"
 POLL_C = uncommented((SRC / "input" / "continuity_selection.c").read_text())
 POLL_H = uncommented((SRC / "input" / "continuity_selection.h").read_text())
 WIRE = uncommented((SRC / "core" / "wire.c").read_text())
+# The state machine itself lives in now-guest-shared, compiled into both
+# guests. The wiring question this file asks spans the two files.
+SHARED = uncommented(
+    (SRC.parents[1] / "now-guest-shared" / "src"
+     / "now_continuity_selection.c").read_text()
+)
 
 
 def function_body(text: str, signature: str, where: str) -> str:
@@ -192,12 +203,41 @@ forget = function_body(
     "continuity_selection.c",
 )
 
-if poll.count("hold_grant_for_gesture") != 2:
+if "settle_to_epoch" not in poll:
     raise SystemExit(
-        "the selection poll no longer hands the ending epoch's grant to "
-        "the hold on BOTH of its epoch exits (live_epoch == 0, and a "
-        "changed epoch). Crossing back ends the epoch by design, so the "
-        "exit nobody covered is a held drag refused bad-epoch."
+        "the selection poll no longer settles the epoch transition, so "
+        "nothing hands the ending epoch's grant to the hold for the "
+        "endings no frame announces - lease expiry, a resident reset, the "
+        "host walking away. Crossing back ends the epoch by design, so the "
+        "exit nobody covers is a held drag refused bad-epoch."
+    )
+
+# AND THE GRAB SETTLES TOO, which is the half that cost a metal round.
+# The poll runs AFTER the guest dispatches the frames it read in the same
+# pass, and a host that stands down for a drag it is still holding sends
+# continuity.disarm and continuity.grab together - so the grab is the first
+# code to notice the epoch ended. It noticed by answering bad-epoch.
+if "settle_to_epoch" not in grab:
+    raise SystemExit(
+        "the grab no longer settles the epoch transition before deciding. "
+        "continuity.disarm and continuity.grab arrive in the same pass and "
+        "are dispatched before the poll runs, so a grab that reads the "
+        "hold without settling reads an EMPTY hold and refuses bad-epoch - "
+        "measured on metal 2026-08-15 01:04, three seconds into a "
+        "thirty-second window."
+    )
+
+if "now_continuity_selection_settle" not in function_body(
+    SHARED,
+    "int now_continuity_grab_resolve(NowContinuityStubTable *table,",
+    "now_continuity_selection.c",
+):
+    raise SystemExit(
+        "now_continuity_grab_resolve no longer settles before it decides. "
+        "The glue calling settle first is not enough on its own: this is "
+        "the one decision that can outrun the poll, so there must be no "
+        "version of it that a caller can make against a table nobody has "
+        "moved yet."
     )
 
 if "now_continuity_grant_release" not in forget:

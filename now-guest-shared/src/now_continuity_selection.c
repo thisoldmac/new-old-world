@@ -116,6 +116,30 @@ void now_continuity_grant_release(NowContinuityGrantHold *hold)
     memset(hold, 0, sizeof *hold);
 }
 
+int now_continuity_selection_settle(NowContinuityStubTable *table,
+                                    NowContinuityGrantHold *hold,
+                                    unsigned long *table_epoch,
+                                    unsigned long live_epoch,
+                                    unsigned long now_ticks)
+{
+    if (table == NULL || table_epoch == NULL) {
+        return 0;
+    }
+    if (live_epoch == *table_epoch) {
+        return 0;
+    }
+    /* The grant comes out FIRST, while the table it is made of is still
+       standing. A gesture may be in the air whichever way the epoch ended —
+       disarm, lease expiry, a resident reset, the host walking away — so
+       this is unconditional rather than a disarm handler's business. */
+    if (*table_epoch != 0) {
+        now_continuity_grant_hold(hold, table, now_ticks);
+    }
+    now_continuity_stub_reset(table, live_epoch);
+    *table_epoch = live_epoch;
+    return 1;
+}
+
 /* Has the held grant's window closed? Signed difference, so a TickCount
    that wrapped under a long uptime does not read as an expiry that will
    not arrive for two years. */
@@ -125,8 +149,9 @@ static int grant_expired(const NowContinuityGrantHold *hold,
     return (long)(now_ticks - hold->expires_at) > 0;
 }
 
-int now_continuity_grab_resolve(const NowContinuityStubTable *table,
-                                const NowContinuityGrantHold *hold,
+int now_continuity_grab_resolve(NowContinuityStubTable *table,
+                                NowContinuityGrantHold *hold,
+                                unsigned long *table_epoch,
                                 unsigned long live_epoch,
                                 unsigned long asked_epoch,
                                 unsigned long asked_generation,
@@ -134,8 +159,17 @@ int now_continuity_grab_resolve(const NowContinuityStubTable *table,
                                 const NowContinuityStubItem **item_out,
                                 int *after_epoch_out)
 {
-    int verdict = now_continuity_grab_check(table, live_epoch, asked_epoch,
-                                            asked_generation);
+    int verdict;
+
+    /* BEFORE THE DECISION, NOT AFTER IT. A grab arrives on the same wire
+       as the disarm that ended its epoch and is dispatched in the same
+       pass, so the poll that used to own this transition has not run yet.
+       Deciding first would read an empty hold and answer bad-epoch — the
+       one refusal the contract says this window exists to prevent. */
+    (void)now_continuity_selection_settle(table, hold, table_epoch,
+                                          live_epoch, now_ticks);
+    verdict = now_continuity_grab_check(table, live_epoch, asked_epoch,
+                                        asked_generation);
 
     if (item_out != NULL) {
         *item_out = (const NowContinuityStubItem *)0;

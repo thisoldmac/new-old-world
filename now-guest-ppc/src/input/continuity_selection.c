@@ -31,22 +31,35 @@ static void forget_table(void)
     g_poll_seeded = 0;
 }
 
-/* Hand the dying epoch's final generation to the hold, and say so. A
-   crossing gesture is still physically held at this instant; without this
-   the grab it is about to make is refused for an epoch the crossing
-   itself ended. */
-static void hold_grant_for_gesture(void)
+/* Move the table onto `live_epoch`, handing the dying epoch's final
+   generation to the hold on the way. A crossing gesture is still
+   physically held at this instant; without this the grab it is about to
+   make is refused for an epoch the crossing itself ended.
+
+   THE POLL IS NO LONGER THE ONLY CALLER. now_continuity_grab_resolve
+   settles too, because a grab arrives on the same wire as the disarm and
+   is dispatched before the poll runs; see now_continuity_selection.h. The
+   log below therefore also fires from the grab path, which is where the
+   evidence is worth having. */
+static void settle_to_epoch(unsigned long live_epoch)
 {
-    if (!g_table.have_item || g_table.epoch == 0) {
-        now_continuity_grant_release(&g_hold);
+    unsigned long was = g_table_epoch;
+
+    if (!now_continuity_selection_settle(&g_table, &g_hold, &g_table_epoch,
+                                         live_epoch,
+                                         (unsigned long)TickCount())) {
         return;
     }
-    now_continuity_grant_hold(&g_hold, &g_table,
-                              (unsigned long)TickCount());
-    now_log(kLogInfo, "mirror",
-            "grant held past epoch=%lu gen=%lu for %lu ticks %.31s",
-            g_hold.epoch, g_hold.generation,
-            (unsigned long)kNowContinuityGrantTicks, g_hold.item.name);
+    /* A fresh table has nothing polled into it yet, so the next pass must
+       ask the Finder rather than wait out a cadence set under the old
+       epoch. */
+    g_poll_seeded = 0;
+    if (was != 0 && g_hold.epoch != 0) {
+        now_log(kLogInfo, "mirror",
+                "grant held past epoch=%lu gen=%lu for %lu ticks %.31s",
+                g_hold.epoch, g_hold.generation,
+                (unsigned long)kNowContinuityGrantTicks, g_hold.item.name);
+    }
 }
 
 void now_continuity_selection_forget(void)
@@ -269,26 +282,15 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     OSErr err;
     unsigned long now;
 
+    /* Settling here rather than at the disarm handler is what makes the
+       gate true however the epoch ended, including the ways nobody calls a
+       handler for (lease expiry, a resident reset, the host walking away).
+       It is no longer the ONLY place that settles — the grab resolves
+       through the same function — but it is still the backstop for the
+       endings no frame announces. */
+    settle_to_epoch(live_epoch);
     if (live_epoch == 0) {
-        /* NO EPOCH, NO POLL — and no table either. Forgetting here rather
-           than at the disarm handler is what makes the gate true however
-           the epoch ended, including the ways nobody calls a handler for
-           (lease expiry, a resident reset, the host walking away). The
-           grant is moved aside first, for the same reason: whichever way
-           the epoch ended, a gesture may still be in the air. */
-        if (g_table_epoch != 0) {
-            hold_grant_for_gesture();
-            forget_table();
-        }
-        return 0;
-    }
-    if (live_epoch != g_table_epoch) {
-        if (g_table_epoch != 0) {
-            hold_grant_for_gesture();
-        }
-        now_continuity_stub_reset(&g_table, live_epoch);
-        g_table_epoch = live_epoch;
-        g_poll_seeded = 0;
+        return 0;                  /* no epoch, no poll */
     }
     if (now_continuity_button_is_down()) {
         /* Mid-gesture. Do not touch the deadline: the next pass after the
@@ -342,11 +344,18 @@ int now_continuity_selection_grab(unsigned long live_epoch,
     Str63 name;
     const NowContinuityStubItem *serve = (const NowContinuityStubItem *)0;
     int after_epoch = 0;
-    int verdict = now_continuity_grab_resolve(&g_table, &g_hold, live_epoch,
-                                              epoch, generation,
-                                              (unsigned long)TickCount(),
-                                              &serve, &after_epoch);
+    int verdict;
     unsigned long len;
+
+    /* The settle the resolve does is not silent: it can be the moment the
+       grant is taken, and this is the only path that reaches it before the
+       poll does. Take the transition through the glue so the log fires, then
+       decide against a table that has already moved. */
+    settle_to_epoch(live_epoch);
+    verdict = now_continuity_grab_resolve(&g_table, &g_hold, &g_table_epoch,
+                                          live_epoch, epoch, generation,
+                                          (unsigned long)TickCount(),
+                                          &serve, &after_epoch);
 
     if (verdict == kNowGrabGrantExpired) {
         now_log(kLogWarn, "mirror",
