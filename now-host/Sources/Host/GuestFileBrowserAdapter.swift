@@ -406,6 +406,13 @@ final class GuestFileBrowserAdapter: FilesBrowserAdapter {
     /// file to the ordinary upload queue as it lands, rather than waiting
     /// for the whole set: `enqueue` appends, so a slow promise does not hold
     /// up the ones already written.
+    ///
+    /// The staging directory is deliberately NOT removed here. The upload
+    /// queue reads each file later and on its own schedule, and there is no
+    /// per-item completion to hang a delete on without reaching into
+    /// `FilesModuleModel`; it lives under the process's temporary directory,
+    /// which the system reclaims. Said plainly rather than left to be
+    /// discovered: this leaves the dropped bytes on disk until then.
     private func receive(_ receivers: [NSFilePromiseReceiver],
                          into folder: String?) {
         let staging = FileManager.default.temporaryDirectory
