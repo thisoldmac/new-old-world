@@ -9,6 +9,7 @@
 #include "../core/contract.h"
 #include "../core/pump.h"
 #include "../core/wire.h"
+#include "workshop_scene_text.h"
 
 /* The Chat page: a transcript of pre-wrapped lines (the Console's
    shape - no variable-height rows anywhere in this application), a
@@ -998,6 +999,25 @@ static void chat_describe_scene(const WorkshopSceneWriter *writer)
                        true);
 }
 
+/* Edit>Copy: the transcript and the status line — the prompt's own
+   keystrokes are deliberately not described above, so they are not
+   copyable either; a person mid-sentence does not want Copy to hand
+   someone else what they have not sent yet.
+
+   Served by pointing this page's own describe_scene at a buffer
+   instead of at the host, so what lands on the clipboard is by
+   construction what the page describes, which is by construction what
+   it drew. */
+static long chat_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    chat_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static Boolean chat_click(const EventRecord *event, Point local)
 {
     ControlRef control;
@@ -1244,7 +1264,7 @@ const WorkshopModuleOps *chat_module_ops(void)
         chat_idle,
         chat_status_text,
         chat_describe_scene,
-        NULL   /* copy_text: a transcript would copy well; not wired yet */
+        chat_copy_text
     };
 
     return &k_ops;

@@ -27,4 +27,14 @@ void cloud_list_view_draw_card(const CloudLayout *r,
                                const CloudStore *store,
                                const CloudService *service, int selected);
 
+/* The same render's describing half, for a view (photos) that falls
+   through to this card and wants the description to fall through with
+   it — one walk, so the drawn card and the described card cannot
+   drift from each other either. */
+void cloud_list_view_describe_card(const WorkshopSceneWriter *writer,
+                                   const CloudLayout *r,
+                                   const CloudStore *store,
+                                   const CloudService *service,
+                                   int selected);
+
 #endif /* NOW_CLOUD_LIST_VIEW_H */

@@ -13,6 +13,7 @@
 #include "pump.h"
 #include "screenshot.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* The Processes page: a Data Browser of everything the Process Manager
    reports on the left, the selected process on the right, and the two
@@ -1189,6 +1190,25 @@ static void procs_describe_scene(const WorkshopSceneWriter *writer)
                        &g_r.peek_line, true);
 }
 
+/* Edit>Copy: the detail column and the plane's status line, exactly what
+   procs_describe_scene already reports — one walk, so nothing here can
+   drift from either. The roster itself is a DataBrowser, already
+   reachable through control_kind, so this is the honest whole of what a
+   person cannot already get some other way.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long procs_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    procs_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static Boolean procs_click(const EventRecord *event, Point local)
 {
     if (g_owner == NULL || !g_visible) {
@@ -1480,7 +1500,7 @@ static const WorkshopModuleOps k_ops = {
     procs_idle,
     procs_status_text,
     procs_describe_scene,
-    NULL   /* copy_text: the detail column would copy well; not wired yet */
+    procs_copy_text
 };
 
 const WorkshopModuleOps *processes_module_ops(void)
