@@ -344,6 +344,142 @@ final class ContinuityGuestDragTests: XCTestCase {
         })
     }
 
+    /// **The synthetic down waits for the WINDOW SERVER, not for the widen.**
+    ///
+    /// Metal, 2026-08-15 13:43: the transfer worked and the presentation did
+    /// not — a rubber-band selection dragged across the Finder desktop for
+    /// the length of the handoff, and the drag image stuck at the screen edge
+    /// while the session tracked 240 px and dropped correctly. The seed line
+    /// named the cause without anyone reading it that way: `type=1,
+    /// windowNumber=30, ourWindow=no` is a **`leftMouseDown`** — this app's
+    /// own synthetic one, handed back by the global monitor after the window
+    /// server delivered it to the Finder.
+    ///
+    /// Measured here the same day: a widened panel takes 15–25 ms and several
+    /// runloop turns to reach the window server, and no synchronous flush
+    /// brings it forward — while `panel.frame.contains(point)` is true the
+    /// instant `setFrame` returns. The old code widened and posted in one
+    /// synchronous block and read the second fact as the first.
+    func testNoSyntheticDownIsPostedUntilTheServerOwnsTheSeedPoint() {
+        let rig = Rig()
+        rig.environment.catchSurfaceOwnsSeedPoint = false
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+
+        XCTAssertTrue(rig.environment.syntheticButtonPosts.isEmpty,
+                      "posted while the server still gives that point to "
+                        + "another application, the down presses a button in "
+                        + "somebody else's window")
+        XCTAssertEqual(rig.environment.catchChanges, [true],
+                       "the surface is still widened; it is the POST that "
+                        + "waits")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("holding the synthetic primary down until the "
+                + "window server")
+        })
+
+        rig.deliverRealDragEvent()
+        XCTAssertTrue(rig.environment.syntheticButtonPosts.isEmpty,
+                      "a real event is not the thing that was missing")
+        XCTAssertTrue(rig.environment.fileDrags.isEmpty,
+                      "and no session may begin before the button is re-armed")
+    }
+
+    /// The other half: once the server takes the surface the handoff
+    /// proceeds, in the pinned order, from the real event that arrived while
+    /// it was still catching up. That event is KEPT rather than dropped — it
+    /// is the scarce thing on this path.
+    func testTheHeldEventStartsTheDragOnceTheServerTakesTheSurface() throws {
+        let rig = Rig()
+        rig.environment.catchSurfaceOwnsSeedPoint = false
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent(eventNumber: 9182)
+
+        rig.environment.catchSurfaceOwnsSeedPoint = true
+        rig.deliverHeldSampleWithoutEvent()
+
+        XCTAssertEqual(rig.environment.fileDrags.first?.event.eventNumber,
+                       9182,
+                       "the drag must start from the real event held back "
+                        + "while the server caught up, not wait for another")
+        let rearm = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .sessionButtonRearmed))
+        let session = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .hostDragBegan))
+        XCTAssertLessThan(rearm, session,
+                          "the order this whole path exists to hold")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("the catch surface owns the seed point")
+                && $0.1.contains("ownsPoint=yes")
+        })
+    }
+
+    /// A surface the server never takes is an ERROR naming the consequence.
+    /// It keeps trying — the release ends it either way — but a silence here
+    /// reads exactly like a drag that never happened.
+    func testACatchSurfaceTheServerNeverTakesIsNamedOutLoud() {
+        let rig = Rig()
+        rig.environment.catchSurfaceOwnsSeedPoint = false
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        for _ in 0..<40 { rig.deliverHeldSampleWithoutEvent() }
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error
+                && $0.1.contains("still does not own the seed point")
+                && $0.1.contains("will not press a button into another "
+                    + "application")
+        })
+        XCTAssertEqual(
+            rig.recorder.lines.filter {
+                $0.1.contains("still does not own the seed point")
+            }.count, 1,
+            "once, not per sample: a burst would bury the line that matters")
+        XCTAssertTrue(rig.environment.syntheticButtonPosts.isEmpty)
+    }
+
+    /// **`ourWindow=yes` and `serverOwnsPoint=no` is the shape that shipped**,
+    /// and the two must stay separable in the log. The seed this app
+    /// CONSTRUCTS can carry our own panel while the window server still hands
+    /// every real event at that point to somebody else — which is a tracking
+    /// session with a frozen image, exactly what 13:43 produced.
+    func testASeedTheServerDoesNotOwnIsNamedEvenWhenItIsOurWindow() {
+        let rig = Rig()
+        rig.environment.dragSeed = ContinuityDragSeed(
+            eventType: 6, serverTopWindowNumber: 30, appActive: false,
+            windowNumber: 77, panelWindowNumber: 77,
+            resolvedToPanel: true, clickCount: 1, panelKey: true,
+            panelCoversPoint: true)
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("window this app does not own")
+        }, "the anchor was ours; naming the wrong half sends the next round "
+            + "after the wrong defect")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error
+                && $0.1.contains("the window server does not put the catch "
+                    + "surface under the seed point")
+        })
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error && $0.1.contains("host drag session seed")
+                && $0.1.contains("ourWindow=yes")
+                && $0.1.contains("serverOwnsPoint=no")
+                && $0.1.contains("appActive=no")
+        })
+    }
+
     /// The unbound path needs no session truth — there is no AppKit session
     /// to drive — and a synthetic down posted there would be this app
     /// pressing a button on the host with nothing to receive it.
@@ -368,7 +504,8 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertTrue(rig.environment.fileDrags.isEmpty,
                       "no real event yet means no drag session at all")
         XCTAssertTrue(rig.recorder.lines.contains {
-            $0.1.contains("waiting for the first real one")
+            $0.1.contains("waiting for the catch surface and the first real "
+                + "host mouse event")
         })
         XCTAssertEqual(rig.environment.catchChanges.first, true,
                        "two pixels cannot catch a moving pointer")
@@ -545,6 +682,68 @@ final class ContinuityGuestDragTests: XCTestCase {
                       "a seed anchored to our window at a point outside it "
                         + "is the next shape of the same defect")
         XCTAssertTrue(seed.summary.contains("ourWindow=yes"))
+    }
+
+    /// **A window the window server cannot see is not a catch surface.**
+    ///
+    /// The strip was `backgroundColor = .clear` over a view that draws
+    /// nothing — every pixel at alpha zero — and the server routes mouse
+    /// events straight through such a window.
+    /// `NSWindow.windowNumber(at:)` never returned it, at any delay,
+    /// deterministically over three rounds; frontness and key state made no
+    /// difference and only the alpha did (measured 2026-08-15). That is why
+    /// the synthetic down landed on the Finder desktop.
+    ///
+    /// Asserted against a real AppKit panel because both properties it reads
+    /// are exactly the pair whose defaults look harmless in a diff.
+    func testTheCatchPanelIsSomethingTheWindowServerCanHitTest() {
+        let host = HostDisplayDescriptor(
+            id: 41, name: "Studio Display",
+            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
+        let fileEdge = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            callbacks: .init(entered: { _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { fileEdge.close() }
+
+        XCTAssertTrue(fileEdge.catchSurfaceIsHitTestable,
+                      "a fully transparent strip is a hole the seeding down "
+                        + "falls through onto whatever is underneath")
+        XCTAssertGreaterThan(ContinuityFileEdge.hitTestableAlpha, 0)
+        XCTAssertLessThan(ContinuityFileEdge.hitTestableAlpha, 0.01,
+                          "and it must stay below a visible tint: this strip "
+                            + "sits over another app's window all day")
+    }
+
+    /// The seed-time audit line carries the three facts that separate the
+    /// failures a single frozen drag image could mean: the panel never went
+    /// key, the window server never handed us the point, or this app was
+    /// never front.
+    func testTheSeedNamesKeyServerAndActivationTogether() throws {
+        let host = HostDisplayDescriptor(
+            id: 41, name: "Studio Display",
+            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
+        let fileEdge = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            callbacks: .init(entered: { _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { fileEdge.close() }
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: CGPoint(x: 10, y: 10),
+            modifierFlags: [], timestamp: 12, windowNumber: 14932,
+            context: nil, eventNumber: 4242, clickCount: 1, pressure: 1))
+
+        let seed = try XCTUnwrap(
+            fileEdge.makeDragSeed(at: CGPoint(x: 1380, y: 450), from: event))
+
+        for fact in ["panelKey=", "panelCoversPoint=", "serverTopWindow=",
+                     "serverOwnsPoint=", "appActive="] {
+            XCTAssertTrue(seed.summary.contains(fact),
+                          "the audit line must carry \(fact) or the next "
+                            + "metal round cannot tell these apart")
+        }
     }
 
     func testReleasingBeforeARealEventAbandonsTheDragOutLoud() {
@@ -1006,6 +1205,15 @@ private final class Rig {
                                              CGPoint(x: 900, y: 400))
     }
 
+    /// A held motion sample carrying no NSEvent — what the monitor keeps
+    /// delivering while the window server catches up with the widen.
+    func deliverHeldSampleWithoutEvent() {
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1300, y: 450),
+                               delta: CGPoint(x: -8, y: 0),
+                               buttonsDown: true))
+    }
+
     /// The first physical `mouseDragged` after the tap died.
     func deliverRealDragEvent(eventNumber: Int = 4242) {
         // swiftlint:disable:next force_unwrapping
@@ -1124,6 +1332,24 @@ private final class Rig {
             _ = token
             catchChanges.append(catching)
         }
+        /// Whether the WINDOW SERVER has put the catch surface under the
+        /// seed point. True by default so the ordinary tests describe a Mac
+        /// where it worked; the tests for the metal defect start it false
+        /// and let it become true, which is what actually happens 15–25 ms
+        /// after the widen.
+        var catchSurfaceOwnsSeedPoint = true
+        /// Every point the controller asked about, in order — the evidence
+        /// that it asked at all rather than assumed.
+        var catchHitTests: [CGPoint] = []
+
+        func catchSurfaceHitTest(_ token: AnyObject, at screenPoint: CGPoint)
+            -> ContinuityCatchHitTest {
+            _ = token
+            catchHitTests.append(screenPoint)
+            return ContinuityCatchHitTest(
+                serverTopWindowNumber: catchSurfaceOwnsSeedPoint ? 77 : 30,
+                panelWindowNumber: 77)
+        }
         func hideFileEdge(_ token: AnyObject) {
             _ = token
             fileCallbacks = nil
@@ -1132,7 +1358,8 @@ private final class Rig {
         /// started. Own-window by default; a test that wants the metal
         /// failure sets a foreign one.
         var dragSeed: ContinuityDragSeed? = ContinuityDragSeed(
-            eventType: 6, windowNumber: 77, panelWindowNumber: 77,
+            eventType: 6, serverTopWindowNumber: 77, appActive: true,
+            windowNumber: 77, panelWindowNumber: 77,
             resolvedToPanel: true, clickCount: 1, panelKey: true,
             panelCoversPoint: true)
 

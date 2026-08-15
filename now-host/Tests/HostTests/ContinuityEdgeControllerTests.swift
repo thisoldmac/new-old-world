@@ -1056,7 +1056,8 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertTrue(environment.fileDrags.isEmpty,
                       "no real event means no drag session at all")
         XCTAssertTrue(audits.contains {
-            $0.1.contains("no host mouse event yet")
+            $0.1.contains("waiting for the catch surface and the first real "
+                + "host mouse event")
         }, "a drag that cannot start yet must say so")
         XCTAssertEqual(environment.associationChanges, [false, true],
                        "the pass still hands the mouse back")
@@ -1363,6 +1364,15 @@ private extension ContinuityEdgeControllerTests {
             _ = token
             catchChanges.append(catching)
         }
+        var catchSurfaceOwnsSeedPoint = true
+
+        func catchSurfaceHitTest(_ token: AnyObject, at screenPoint: CGPoint)
+            -> ContinuityCatchHitTest {
+            _ = (token, screenPoint)
+            return ContinuityCatchHitTest(
+                serverTopWindowNumber: catchSurfaceOwnsSeedPoint ? 77 : 30,
+                panelWindowNumber: 77)
+        }
         func hideFileEdge(_ token: AnyObject) {
             _ = token
             fileCallbacks = nil
@@ -1371,7 +1381,8 @@ private extension ContinuityEdgeControllerTests {
         /// started. Own-window by default, because that is what the fixed
         /// implementation does; a test that wants the failure sets it.
         var dragSeed: ContinuityDragSeed? = ContinuityDragSeed(
-            eventType: 6, windowNumber: 77, panelWindowNumber: 77,
+            eventType: 6, serverTopWindowNumber: 77, appActive: true,
+            windowNumber: 77, panelWindowNumber: 77,
             resolvedToPanel: true, clickCount: 1, panelKey: true,
             panelCoversPoint: true)
 
