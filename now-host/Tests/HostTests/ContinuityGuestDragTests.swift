@@ -423,6 +423,63 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertEqual(rig.environment.catchChanges, [true, false])
     }
 
+    // MARK: - The gesture's consent outlives the epoch
+
+    /// **The press binds; the cache merely published.**
+    ///
+    /// The round-2 audit recorded `selection dropped: the Continuity epoch
+    /// ended` as the pointer crossed BACK — which is when the epoch ends by
+    /// design, before any drop could have happened. If fulfillment read the
+    /// cache, every crossing would redeem nothing. It reads the copy taken
+    /// at press time, and this is that fact asserted rather than assumed.
+    func testTheBoundStubOutlivesTheCacheItWasPublishedIn() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.endEpochDroppingTheCache()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.epoch, 7)
+        XCTAssertEqual(stub.generation, 3,
+                       "the drag carries the generation it was BOUND under, "
+                        + "not whatever the cache holds at drop time")
+    }
+
+    /// And the wire is asked with that bound pair, from a cache that no
+    /// longer exists at all.
+    func testFulfillmentAsksWithTheBoundEpochNotTheLiveOne() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let asked = Asked()
+        let transfer = ContinuityGrabTransfer(
+            grab: { epoch, generation, _, _, completion in
+                asked.epoch = epoch
+                asked.generation = generation
+                completion(.failure(.init(code: "grant-expired",
+                                          message: "too late")))
+            }, audit: { _, _ in })
+        let cache = ContinuitySelectionCache { _, _ in }
+        cache.apply(Self.selection(epoch: 7, generation: 3,
+                                   item: Self.file(name: "Read Me")),
+                    activeEpoch: 7)
+        let bound = try cache.bindable(activeEpoch: 7).get()
+        let dragged = transfer.dragItem(for: bound)     /* press time */
+        cache.clear(reason: "the Continuity epoch ended")
+        XCTAssertNil(cache.stub)
+
+        let provider = try XCTUnwrap(dragged.writer as? NSFilePromiseProvider)
+        _ = fulfill(transfer, to: staging.appendingPathComponent("Read Me"),
+                    provider: provider)
+
+        XCTAssertEqual(asked.epoch, 7)
+        XCTAssertEqual(asked.generation, 3)
+    }
+
     // MARK: - Fulfillment
 
     func testGrabWritesTheFileAndReportsWhatArrived() throws {
@@ -529,12 +586,19 @@ final class ContinuityGuestDragTests: XCTestCase {
 
     private func fulfill(_ transfer: ContinuityGrabTransfer, to url: URL,
                          stub: ContinuityDragStub) -> Error? {
+        fulfill(transfer, to: url, provider: transfer.promise(for: stub))
+    }
+
+    /// The same redemption from a provider built EARLIER — the one the drag
+    /// has been carrying since the press.
+    private func fulfill(_ transfer: ContinuityGrabTransfer, to url: URL,
+                         provider: NSFilePromiseProvider) -> Error? {
         let done = expectation(description: "promise")
         let box = Held()
         var thrown: Error?
         _ = box
         transfer.filePromiseProvider(
-            transfer.promise(for: stub), writePromiseTo: url
+            provider, writePromiseTo: url
         ) { error in
             thrown = error
             done.fulfill()
@@ -672,6 +736,13 @@ private final class Rig {
 
     deinit {
         MainActor.assumeIsolated { listener.stop() }
+    }
+
+    /// The epoch ending under a gesture that is still physically in flight.
+    /// Crossing back ENDS the epoch by design, so this is the ordinary
+    /// order of events and not a corner case.
+    func endEpochDroppingTheCache() {
+        cache.clear(reason: "the Continuity epoch ended")
     }
 
     func select(_ item: ContinuitySelection.Item) {
