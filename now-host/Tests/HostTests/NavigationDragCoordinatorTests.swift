@@ -144,6 +144,32 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                        ["settings", "networking", "mcp", "web"])
     }
 
+    /// Hovering a shelf must not lift the dragged row out of the stack.
+    ///
+    /// This is H7 at its root, and it is a mechanism no band width reaches:
+    /// the whole sidebar renders the preview layout, so an insert that takes
+    /// a module out of the top level closes its row up and raises every row
+    /// below — the shelf the pointer is resting on included. The drag then
+    /// leaves the row it was aimed at, which both reads as "the connections
+    /// shelf gets out of the way" and restarts the spring-load dwell.
+    /// `testPreviewReflowsShelfTabsBeforeDrop` is the other half: a module
+    /// already inside the shelf displaces nothing, and still previews live.
+    func testHoveringAShelfDoesNotLiftTheDraggedRowOutOfTheStack() throws {
+        let baseline = NavigationLayout.standard(for: .standard)
+        XCTAssertTrue(baseline.upper.contains(.module("chat")),
+                      "the fixture wants a module that is its own row")
+
+        let preview = try XCTUnwrap(NavigationDragPreview(
+            dragged: .module("chat"),
+            target: .shelf(.network, beforeModuleID: nil),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
+
+        XCTAssertEqual(preview.layout, baseline,
+                       "the stack must stand still until the drop")
+        XCTAssertEqual(preview.target, .shelf(.network, beforeModuleID: nil))
+    }
+
     func testCombiningModulesWaitsForDropInsteadOfCollapsingTheDragTarget() throws {
         let baseline = NavigationLayout.standard(for: .standard)
 
@@ -305,18 +331,46 @@ final class NavigationDragCoordinatorTests: XCTestCase {
             before: .zone(.upper, index: 1),
             center: .module("chat"),
             after: .zone(.upper, index: 2))
+        // Neither the row's own targets nor nil: the settled bands apply
+        // without any stickiness from a previous answer.
+        let elsewhere = NavigationDropTarget.zone(.lower, index: 9)
 
-        XCTAssertEqual(targets.target(at: 0, height: 90, previous: nil),
+        XCTAssertEqual(targets.target(at: 0, height: 90, previous: elsewhere),
                        targets.before)
-        XCTAssertEqual(targets.target(at: 29, height: 90, previous: nil),
+        XCTAssertEqual(targets.target(at: 17, height: 90, previous: elsewhere),
                        targets.before)
-        XCTAssertEqual(targets.target(at: 31, height: 90, previous: nil),
+        XCTAssertEqual(targets.target(at: 19, height: 90, previous: elsewhere),
                        targets.center)
-        XCTAssertEqual(targets.target(at: 59, height: 90, previous: nil),
+        XCTAssertEqual(targets.target(at: 71, height: 90, previous: elsewhere),
                        targets.center)
-        XCTAssertEqual(targets.target(at: 61, height: 90, previous: nil),
+        XCTAssertEqual(targets.target(at: 73, height: 90, previous: elsewhere),
                        targets.after)
-        XCTAssertEqual(targets.target(at: 90, height: 90, previous: nil),
+        XCTAssertEqual(targets.target(at: 90, height: 90, previous: elsewhere),
+                       targets.after)
+    }
+
+    /// The row must not reorder the stack on the frame the pointer arrives.
+    ///
+    /// `previewDrop` applies an insertion's move live, and the connections
+    /// shelf is the row a drag is most likely to enter through its top edge
+    /// — it is the last one before the window edge. Resolving an insertion
+    /// on first contact moved the shelf out from under a pointer that had
+    /// not moved, which is why it could not be spring-loaded into.
+    func testFirstContactResolvesTheRowRatherThanDisplacingIt() {
+        let targets = NavigationRowDropTargets(
+            before: .zone(.upper, index: 1),
+            center: .shelf(.network, beforeModuleID: nil),
+            after: .zone(.upper, index: 2))
+
+        // Under thirds these two were `before` and `after`.
+        XCTAssertEqual(targets.target(at: 12, height: 90, previous: nil),
+                       targets.center)
+        XCTAssertEqual(targets.target(at: 78, height: 90, previous: nil),
+                       targets.center)
+        // Aiming deliberately at the gap either side still reaches it.
+        XCTAssertEqual(targets.target(at: 4, height: 90, previous: nil),
+                       targets.before)
+        XCTAssertEqual(targets.target(at: 86, height: 90, previous: nil),
                        targets.after)
     }
 
@@ -326,24 +380,54 @@ final class NavigationDragCoordinatorTests: XCTestCase {
             center: .module("chat"),
             after: .zone(.upper, index: 2))
 
-        XCTAssertEqual(targets.target(at: 28, height: 90,
+        XCTAssertEqual(targets.target(at: 15, height: 90,
                                       previous: targets.center),
                        targets.center)
-        XCTAssertEqual(targets.target(at: 25, height: 90,
+        XCTAssertEqual(targets.target(at: 13, height: 90,
                                       previous: targets.center),
                        targets.before)
-        XCTAssertEqual(targets.target(at: 33, height: 90,
+        XCTAssertEqual(targets.target(at: 21, height: 90,
                                       previous: targets.before),
                        targets.before)
-        XCTAssertEqual(targets.target(at: 35, height: 90,
+        XCTAssertEqual(targets.target(at: 23, height: 90,
                                       previous: targets.before),
                        targets.center)
-        XCTAssertEqual(targets.target(at: 57, height: 90,
+        XCTAssertEqual(targets.target(at: 69, height: 90,
                                       previous: targets.after),
                        targets.after)
-        XCTAssertEqual(targets.target(at: 55, height: 90,
+        XCTAssertEqual(targets.target(at: 67, height: 90,
                                       previous: targets.after),
                        targets.center)
+    }
+
+    /// Spring loading is armed against the ROW, not the band under the
+    /// pointer.
+    ///
+    /// `springLoadingEntered` used to resolve the band and refuse to arm
+    /// unless that band supported spring loading — and two of a row's three
+    /// bands are `.zone` insertions, which never do. A drag resting anywhere
+    /// but the middle answered AppKit with "no spring loading here", so the
+    /// double flash had nothing to fire from.
+    func testSpringLoadingArmsFromTheRowNotTheBandUnderThePointer() {
+        let shelfRow = NavigationRowDropTargets(
+            before: .zone(.upper, index: 1),
+            center: .shelf(.network, beforeModuleID: nil),
+            after: .zone(.upper, index: 2))
+
+        XCTAssertFalse(shelfRow.before.supportsSpringLoading)
+        XCTAssertFalse(shelfRow.after.supportsSpringLoading)
+        XCTAssertEqual(shelfRow.springLoadingTarget { _ in true },
+                       shelfRow.center)
+        XCTAssertNil(shelfRow.springLoadingTarget { $0 != shelfRow.center })
+
+        // The drawer is the one insertion target that does spring-load, so
+        // asking the row still has to find it when the centre is refused.
+        let drawerRow = NavigationRowDropTargets(
+            before: .zone(.drawer, index: 0),
+            center: .module("chat"),
+            after: .zone(.drawer, index: 1))
+        XCTAssertEqual(drawerRow.springLoadingTarget { $0 != drawerRow.center },
+                       drawerRow.before)
     }
 
     func testNavigationRowFeedbackDistinguishesInsertionFromAttachment() {

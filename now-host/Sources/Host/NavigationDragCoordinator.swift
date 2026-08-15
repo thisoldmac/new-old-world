@@ -24,15 +24,29 @@ enum NavigationDropTarget: Equatable, Sendable {
 }
 
 /// One navigation row is both a drag source and a continuous destination.
-/// Its outer thirds insert before or after the row while its middle third
-/// activates the row's own combine/shelf destination. A small dead band keeps
-/// tiny pointer movements from flickering between adjacent targets.
+/// Its outer bands insert before or after the row while its middle activates
+/// the row's own combine/shelf destination. A small dead band keeps tiny
+/// pointer movements from flickering between adjacent targets.
 struct NavigationRowDropTargets: Equatable, Sendable {
     enum Feedback: Equatable, Sendable {
         case insertionBefore
         case center
         case insertionAfter
     }
+
+    /// Share of the row height given to each insertion band once the pointer
+    /// has settled on the row. This was a third each, which left the row's
+    /// own destination — the only spring-loadable one — about twelve points
+    /// tall on a standard sidebar row. A drag cannot be held still inside
+    /// that for the dwell spring loading needs, and Finder gives a folder a
+    /// far more generous "into" zone than the gaps either side of it.
+    static let insertionBandFraction: CGFloat = 0.2
+
+    /// Narrower still on first contact. `previewDrop` applies an insertion's
+    /// move live, so resolving one on the frame the pointer arrives reorders
+    /// the stack out from under a pointer that has not moved — which is what
+    /// "the connections shelf moves itself out of the way" describes.
+    static let firstContactInsertionBandFraction: CGFloat = 0.1
 
     let before: NavigationDropTarget
     let center: NavigationDropTarget
@@ -41,8 +55,11 @@ struct NavigationRowDropTargets: Equatable, Sendable {
     func target(at verticalOffset: CGFloat, height: CGFloat,
                 previous: NavigationDropTarget?) -> NavigationDropTarget {
         guard height > 0 else { return center }
-        let firstBoundary = height / 3
-        let secondBoundary = height * 2 / 3
+        let band = height * (previous == nil
+            ? Self.firstContactInsertionBandFraction
+            : Self.insertionBandFraction)
+        let firstBoundary = band
+        let secondBoundary = height - band
         let hysteresis = min(4, max(2, height * 0.06))
 
         if previous == before,
@@ -92,6 +109,22 @@ struct NavigationRowDropTargets: Equatable, Sendable {
         if target == before { return .insertionBefore }
         if target == after { return .insertionAfter }
         return .center
+    }
+
+    /// The destination this ROW can spring-load into, if the drag may use it.
+    ///
+    /// Arming is asked of the row rather than of the band under the pointer.
+    /// It used to be asked of the resolved band, and an insertion band is
+    /// never spring-loadable — so a drag sitting anywhere but the row's
+    /// middle answered AppKit with "no spring loading here", and each
+    /// revocation restarts the hover dwell from zero. That is the
+    /// best-supported reason nobody has ever seen the double flash fire.
+    func springLoadingTarget(
+        accepting: (NavigationDropTarget) -> Bool
+    ) -> NavigationDropTarget? {
+        [center, before, after].first {
+            $0.supportsSpringLoading && accepting($0)
+        }
     }
 }
 
@@ -183,7 +216,21 @@ struct NavigationDragPreview: Equatable, Sendable {
         switch command {
         case .combine:
             previewLayout = baseline
-        case .move, .insert:
+        case .insert:
+            guard let changed = try? baseline.applying(command) else {
+                return nil
+            }
+            // Reordering a shelf's own tabs is worth showing live. Lifting a
+            // module OUT of the top-level stack is not: its row closes up,
+            // every row below rises, and the shelf the pointer is resting on
+            // moves out from under it — the "connections shelf gets out of
+            // the way" report, and a spring-load dwell that can never finish
+            // because the drag keeps leaving the row. Nothing is lost by
+            // waiting: a collapsed shelf shows no tabs to preview into, and
+            // the row's centre highlight already says where the module lands.
+            previewLayout = baseline.topLevelLocation(of: dragged) == nil
+                ? changed : baseline
+        case .move:
             guard let changed = try? baseline.applying(command) else {
                 return nil
             }
@@ -341,7 +388,7 @@ extension NavigationLayout {
         return nil
     }
 
-    private func topLevelLocation(of dragged: NavigationDraggedItem)
+    fileprivate func topLevelLocation(of dragged: NavigationDraggedItem)
         -> (zone: NavigationZone, index: Int)? {
         switch dragged {
         case .shelf(let shelfID): return shelfLocation(shelfID)

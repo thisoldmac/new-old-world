@@ -58,6 +58,90 @@ guest-originated stop; the console verb says so by name rather than
 reporting a quiet machine. Cloud-page receives stay with the Cloud page,
 since two windows reporting one transfer is worse than one.
 
+## TESTED, THE SYMPTOM ITSELF NOT YET WATCHED: sidebar spring loading was armed against the wrong thing (2026-08-14, `claude/034-inv-drag`)
+
+Assessment items H6, H7 and H16. Michelle reported from a running build
+that the Finder-style double flash never appears, that the connections
+shelf cannot be spring-loaded into because it moves out of the way, and
+that a shelf's dropdown leaves its row lit after closing. All three had
+implementation and passing tests; the code read as correct.
+
+**H6's cause is best-supported, not confirmed.** The chain: her own H7
+report is live evidence that `draggingUpdated` reaches
+`NativeNavigationDragView` and that `previewDrop` applies moves on
+screen, so the drag plumbing is not the problem. What was gated is the
+arming. `springLoadingEntered` resolved the drop target from the *band*
+under the pointer and refused `.enabled` unless that band supported
+spring loading — and two of a row's three bands are `.zone` insertions,
+which never do. A drag entering a shelf row anywhere but its middle
+third told AppKit "no spring loading here", and every band crossing
+revoked the arm and restarted the dwell. `flashTwice()` is reached only
+from `springLoadingActivated`, so it had nothing to fire from. Arming now
+asks the row (`NavigationRowDropTargets.springLoadingTarget`) and keeps
+its own feedback state, disarmed only when the drag leaves or ends.
+
+Arming and activating had to be split apart to do that, and they answer
+different questions. The row arms wherever the pointer is, so AppKit's
+dwell survives a band crossing; the *activation* still asks the band,
+because a dwell spent aiming at the gap between two rows is aiming at an
+insertion, and springing a shelf open there would expand it under a
+pointer deliberately held still — H7 in another costume. The options
+gained `.continuousActivation` so that the single activation an entry
+would otherwise be given is not spent while the person was aiming at a
+gap.
+
+Nobody has watched the flash fire. If it still does not appear with the
+arming fixed, the next suspect is the flash itself rather than the
+gate — 0.28-alpha accent for 0.13s over `nowGlassShelf()` material may
+simply not read, and U3 sketched the brightening and the icon scale pulse
+that would answer that. Do not add a second animation before looking.
+
+**H7 has two mechanisms and the sharper one is not about bands at all.**
+The whole sidebar renders `dragPreview.layout`, so any preview that
+changes the layout moves rows live. Dropping a module INTO a shelf is an
+`.insert`, and applying it takes that module out of the top-level stack:
+its row closes up and every row below rises — including the shelf the
+pointer is resting on. The drag then leaves the row it was aimed at,
+which is both "the connections shelf gets out of the way" and a
+spring-load dwell that can never finish. An insert now previews the
+baseline unchanged when the module is a top-level row, the way `.combine`
+already did; a module already inside the shelf still reflows its tabs
+live, because that displaces nothing and is the affordance
+`testPreviewReflowsShelfTabsBeforeDrop` was written for.
+
+The second mechanism is the bands, and it is the one that fires before
+the pointer has settled: they shrink from a third of the row each to 20%,
+and to 10% on first contact, so arriving on a row resolves the row rather
+than an insertion whose `.move` really does reorder the stack. Both fixes
+are deliberately general rather than a network-shelf special case — the
+connections shelf is only the row most likely to reproduce it, being the
+last one before the window edge.
+
+H16 is the ordinary AppKit trap: `NSMenu.popUp` runs its own tracking
+loop and the `mouseExited` that would clear the row highlight is spent
+inside it. The row's hover is now recomputed after `popUp` returns, from
+where the pointer actually is rather than forced to `false`, so
+dismissing with the pointer still on the row keeps it lit.
+
+One thing this work found about itself, and it is the reason the
+interrupted run's "the host gate passed" line is not repeated here: it
+had not. `NavigationShelfTabTests` gates the spring-load handler by
+reading this source, and the refactor moved the check inside
+`springLoadingTarget`, where it reads unwrapped — so the string the gate
+looked for was gone. The compile error in a later run masked it. A gate
+that reads source is worth its line, and it is also a second place to be
+wrong.
+
+Still open: none of the three has been watched on screen. Nine claims
+here are pinned by a mutation somebody watched fail, each against the
+claim its own test names and each confirmed to have built and run first.
+The three that carry the arming argument
+are driven through a stub `NSDraggingInfo` rather than read out of the
+source, so they fail on behaviour: arm from the band again and the row's
+edges stop arming; share one feedback state and a band round-trip springs
+an already-sprung row a second time; drop the activation gate and a dwell
+over an insertion opens the shelf.
+
 ## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
 
 Slice 4 of the cross-edge file drag plan, and the consumer the entry
