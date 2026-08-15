@@ -673,7 +673,14 @@ void workshop_resized(void)
    own a copy buffer and no page decides how much memory copying costs.
    8 KB is deliberate - a console scrollback or a census detail is a few
    hundred lines of short lines, and the cap truncating a very long page
-   is a better failure than a page-sized allocation on a 32 MB machine. */
+   is a better failure than a page-sized allocation on a 32 MB machine.
+
+   Capability: ClearCurrentScrap, GetCurrentScrap and PutScrapFlavor are
+   each "CarbonLib 1.0 and later" in Scrap.h, comfortably below this
+   application's 1.6 floor, and are core CarbonLib rather than a lazily
+   loaded backing library - so no Gestalt gate. Every one is checked for
+   its OSStatus anyway: a scrap that refused is reported as a Copy that
+   did not happen. */
 enum { kWorkshopCopyCap = 8192 };
 
 Boolean workshop_can_copy(void)
