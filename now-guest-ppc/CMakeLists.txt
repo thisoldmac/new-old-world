@@ -100,6 +100,7 @@ add_application(now-guest-ppc
     src/mirror/mirror_anchor.c
     src/mirror/mirror_layout.c
     src/mirror/mirror_log.c
+    src/mirror/mirror_consent.c
     src/mirror/mirror_policy.c
     src/mirror/mirror_json.c
     src/mirror/mirror_probe.c

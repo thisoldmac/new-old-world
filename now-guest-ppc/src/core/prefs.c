@@ -5,6 +5,10 @@
 #include "contract.h"
 #include "product_identity.h"
 #include "log_retention.h"
+/* The one place the four retired Mirror gates collapse into the master
+   consent. Toolbox-free and shared with the wire, so this migration and
+   the compatibility fields cannot drift apart. */
+#include "mirror_consent.h"
 
 #define kPrefsMagic 'NOWp'
 
@@ -169,6 +173,18 @@ typedef struct {
     char active_project_id[kNowProjectIDCap];
 } PrefsRecordV28;
 
+/* Format 29: the four V22 gates collapse into one master consent. The V22
+   SLOTS stay where they are and are written from the master (all four
+   equal to it), for the same reason sidebar_density_retired stayed:
+   reclaiming a field renumbers every byte after it. Writing them rather
+   than zeroing them buys one more thing — a file this build saved, read
+   back by a format-28 build, grants exactly the permission the master
+   granted, because the collapse rule is its own inverse. */
+typedef struct {
+    PrefsRecordV28 v28;               /* format = 29 */
+    short mirror_enabled;
+} PrefsRecordV29;
+
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
    again). It adds no persisted field, like formats 10, 11 and 14 before
@@ -268,13 +284,16 @@ static void set_defaults(NowPrefs *prefs)
        saved before the default existed - gets the curation rather than a
        half-remembered arrangement. */
     prefs->sidebar_collapsed = false;
-    /* Passive structure is the useful safe baseline. The other three are
-       opt-in while the PB1400 Finder crash is isolated: none may spring to
-       life merely because an older preference record lacks the field. */
-    prefs->mirror_structure = true;
-    prefs->mirror_finder_complements = false;
-    prefs->mirror_content = false;
-    prefs->mirror_foreground_cycle = false;
+    /* This Mac may be mirrored unless somebody says otherwise, which is
+       what the four gates it replaces already meant in practice: the one
+       that was on by default, structure, is the one without which the
+       Mirror shows nothing at all. The three that were off by default were
+       granularity, and granularity is the host's now — including the
+       drawing trace, which the host must still switch on per machine and
+       whose default moved there with it (MirrorPlanePolicyStore). Nothing
+       springs to life here that was not already reachable; what changed is
+       which side is asked. */
+    prefs->mirror_enabled = true;
     prefs->web_proxy_port = 5180;
     prefs->web_profile = 1;            /* Classilla */
     prefs->web_lens = 1;               /* Compatible Page */
@@ -294,7 +313,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV28);
+    long count = sizeof(PrefsRecordV29);
+    PrefsRecordV29 v29;
     PrefsRecordV28 v28;
     PrefsRecordV27 v27;
     PrefsRecordV26 v26;
@@ -319,9 +339,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v28, 0, sizeof v28);
-    err = FSRead(ref, &count, &v28);
+    memset(&v29, 0, sizeof v29);
+    err = FSRead(ref, &count, &v29);
     FSClose(ref);
+    v28 = v29.v28;
     v27 = v28.v27;
     v26 = v27.v26;
     v25 = v26.v25;
@@ -536,12 +557,18 @@ void now_prefs_load(NowPrefs *prefs)
             prefs->sidebar_collapsed = v20.sidebar_collapsed != 0;
         }
         if (record.format >= 22 && count >= (long)sizeof(PrefsRecordV22)) {
-            prefs->mirror_structure = v22.mirror_structure != 0;
-            prefs->mirror_finder_complements =
-                v22.mirror_finder_complements != 0;
-            prefs->mirror_content = v22.mirror_content != 0;
-            prefs->mirror_foreground_cycle =
-                v22.mirror_foreground_cycle != 0;
+            /* The four retired gates, collapsed by the one rule that owns
+               that collapse. A format-29 record overwrites this below; a
+               file written by any build between 22 and 28 is answered
+               here, and answered conservatively — consent only where all
+               four were on. Almost every such file says no, because only
+               structure was ever on by default, and that is the intended
+               reading: a person who chose three of four never consented to
+               the fourth, and a master switch inferred from a majority
+               would be consent this Mac was never asked for. */
+            prefs->mirror_enabled = now_mirror_consent_from_gates(
+                v22.mirror_structure, v22.mirror_finder_complements,
+                v22.mirror_content, v22.mirror_foreground_cycle) != 0;
         }
         if (record.format >= 23 && count >= (long)sizeof(PrefsRecordV23)) {
             prefs->projects_vref = v23.projects_vref;
@@ -582,6 +609,9 @@ void now_prefs_load(NowPrefs *prefs)
             strncpy(prefs->active_project_id, v28.active_project_id,
                     sizeof prefs->active_project_id - 1);
         }
+        if (record.format >= 29 && count >= (long)sizeof(PrefsRecordV29)) {
+            prefs->mirror_enabled = v29.mirror_enabled != 0;
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -594,7 +624,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV28);
+    long count = sizeof(PrefsRecordV29);
+    PrefsRecordV29 v29;
     PrefsRecordV28 v28;
     PrefsRecordV27 v27;
     PrefsRecordV26 v26;
@@ -613,7 +644,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 28;               /* the chosen active project */
+    record.format = 29;               /* one master Mirror consent */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -671,10 +702,14 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v20.sidebar_collapsed = prefs->sidebar_collapsed ? 1 : 0;
     memset(&v22, 0, sizeof v22);
     v22.v20 = v20;
-    v22.mirror_structure = prefs->mirror_structure ? 1 : 0;
-    v22.mirror_finder_complements = prefs->mirror_finder_complements ? 1 : 0;
-    v22.mirror_content = prefs->mirror_content ? 1 : 0;
-    v22.mirror_foreground_cycle = prefs->mirror_foreground_cycle ? 1 : 0;
+    /* The retired slots, written from the master rather than zeroed. A
+       format-28 build reading this file collapses them straight back to
+       the same answer; zeroes would have read as "everything refused". */
+    v22.mirror_structure =
+        (short)now_mirror_consent_to_gates(prefs->mirror_enabled);
+    v22.mirror_finder_complements = v22.mirror_structure;
+    v22.mirror_content = v22.mirror_structure;
+    v22.mirror_foreground_cycle = v22.mirror_structure;
     memset(&v23, 0, sizeof v23);
     v23.v22 = v22;
     v23.projects_vref = prefs->projects_vref;
@@ -708,7 +743,10 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v28.v27 = v27;
     strncpy(v28.active_project_id, prefs->active_project_id,
             sizeof v28.active_project_id - 1);
-    err = FSWrite(ref, &count, &v28);
+    memset(&v29, 0, sizeof v29);
+    v29.v28 = v28;
+    v29.mirror_enabled = prefs->mirror_enabled ? 1 : 0;
+    err = FSWrite(ref, &count, &v29);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }

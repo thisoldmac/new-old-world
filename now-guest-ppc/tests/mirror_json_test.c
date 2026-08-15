@@ -65,10 +65,10 @@ int main(void)
           "source identity is exact lowercase SHA-1 hex");
     check(strstr(buf, "\"buildFingerprint\":\"0000001000000011000000120000001300000014\"") != NULL,
           "resident build identity travels beside source identity");
-    check(strstr(buf, "\"policy\":{\"structure\":false,"
+    check(strstr(buf, "\"policy\":{\"enabled\":false,\"structure\":false,"
                       "\"finderComplements\":false,\"content\":false,"
                       "\"foregroundCycle\":false}") != NULL,
-          "guest policy is a typed domain object, not inferred from planes");
+          "consent withheld is stated, not inferred from planes");
     check(strstr(buf, "\"id\":\"structure\"") != NULL,
           "P1 structure is present");
     check(strstr(buf, "\"id\":\"semantics\"") != NULL,
@@ -116,16 +116,20 @@ int main(void)
     check(strstr(buf, "resident heartbeat is stale") != NULL,
           "plane degradation carries its proving reason");
 
+    /* The compatibility half, and the reason it is asserted rather than
+       left to the reader: a host built before 2026-08-15 declares all
+       four retired fields REQUIRED, so a guest that sent only `enabled`
+       would fail that host's decode of the entire facts object. They
+       must all be present and they must all equal the master — a
+       majority, or a stale structure gate, would be a permission nobody
+       granted. */
     healthy(&facts);
-    facts.policy.structure = 1;
-    facts.policy.finder_complements = 0;
-    facts.policy.content = 1;
-    facts.policy.foreground_cycle = 0;
+    facts.policy.enabled = 1;
     now_mirror_json(&facts, 11, buf, (long)sizeof buf);
-    check(strstr(buf, "\"policy\":{\"structure\":true,"
-                      "\"finderComplements\":false,\"content\":true,"
-                      "\"foregroundCycle\":false}") != NULL,
-          "each policy domain travels independently");
+    check(strstr(buf, "\"policy\":{\"enabled\":true,\"structure\":true,"
+                      "\"finderComplements\":true,\"content\":true,"
+                      "\"foregroundCycle\":true}") != NULL,
+          "the retired gates all carry the master consent");
 
     healthy(&facts);
     {

@@ -484,10 +484,10 @@ void now_input_run_script(const char *request_json, long id,
     (void)now_json_find_string(request_json, "purpose", purpose,
                                (long)sizeof purpose);
     if (strcmp(purpose, "mirror-finder-complement") == 0
-        && !now_mirror_policy_enabled(kMirrorPolicyFinderComplements)) {
-        reply_error(out, cap, id, "finder-complements-disabled",
-                    "automatic Finder details are disabled in Mirror "
-                    "settings");
+        && !now_mirror_policy_enabled()) {
+        reply_error(out, cap, id, "mirror-consent-refused",
+                    "this Mac does not allow mirroring; the switch is on "
+                    "the Workshop's Mirror page");
         return;
     }
     /* find_TEXT for the same reason as aesend's path: an AppleScript

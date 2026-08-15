@@ -110,15 +110,15 @@ typedef struct {
        of this file follows. */
     Boolean sidebar_collapsed;
 
-    /* Mirror observation policy, owned by the Mirror page and enforced at
-       each operation's guest-side boundary. These are four independent
-       permissions rather than one broad switch because passive anchor
+    /* This Mac's consent to being mirrored at all, owned by the Mirror
+       page and enforced at every Mirror operation's guest-side boundary.
+       ONE switch since format 29, and the reason is not that anchor
        capture, Finder AppleScript, QuickDraw tracing and SetFrontProcess
-       have materially different risk. */
-    Boolean mirror_structure;
-    Boolean mirror_finder_complements;
-    Boolean mirror_content;
-    Boolean mirror_foreground_cycle;
+       stopped differing in risk — it is that the four gates which named
+       those risks never mapped onto the five planes the host offers, so
+       neither page could predict the other. The risks are still told
+       apart; they are told apart on the side that schedules the work. */
+    Boolean mirror_enabled;
 
     /* Development roots are chosen on this Mac. The display path is never
        resolved as authority; the volume/ref pair and directory ID are the
