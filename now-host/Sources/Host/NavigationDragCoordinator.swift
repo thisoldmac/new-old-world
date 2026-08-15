@@ -216,7 +216,21 @@ struct NavigationDragPreview: Equatable, Sendable {
         switch command {
         case .combine:
             previewLayout = baseline
-        case .move, .insert:
+        case .insert:
+            guard let changed = try? baseline.applying(command) else {
+                return nil
+            }
+            // Reordering a shelf's own tabs is worth showing live. Lifting a
+            // module OUT of the top-level stack is not: its row closes up,
+            // every row below rises, and the shelf the pointer is resting on
+            // moves out from under it — the "connections shelf gets out of
+            // the way" report, and a spring-load dwell that can never finish
+            // because the drag keeps leaving the row. Nothing is lost by
+            // waiting: a collapsed shelf shows no tabs to preview into, and
+            // the row's centre highlight already says where the module lands.
+            previewLayout = baseline.topLevelLocation(of: dragged) == nil
+                ? changed : baseline
+        case .move:
             guard let changed = try? baseline.applying(command) else {
                 return nil
             }
@@ -374,7 +388,7 @@ extension NavigationLayout {
         return nil
     }
 
-    private func topLevelLocation(of dragged: NavigationDraggedItem)
+    fileprivate func topLevelLocation(of dragged: NavigationDraggedItem)
         -> (zone: NavigationZone, index: Int)? {
         switch dragged {
         case .shelf(let shelfID): return shelfLocation(shelfID)

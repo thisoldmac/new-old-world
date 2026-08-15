@@ -144,6 +144,32 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                        ["settings", "networking", "mcp", "web"])
     }
 
+    /// Hovering a shelf must not lift the dragged row out of the stack.
+    ///
+    /// This is H7 at its root, and it is a mechanism no band width reaches:
+    /// the whole sidebar renders the preview layout, so an insert that takes
+    /// a module out of the top level closes its row up and raises every row
+    /// below — the shelf the pointer is resting on included. The drag then
+    /// leaves the row it was aimed at, which both reads as "the connections
+    /// shelf gets out of the way" and restarts the spring-load dwell.
+    /// `testPreviewReflowsShelfTabsBeforeDrop` is the other half: a module
+    /// already inside the shelf displaces nothing, and still previews live.
+    func testHoveringAShelfDoesNotLiftTheDraggedRowOutOfTheStack() throws {
+        let baseline = NavigationLayout.standard(for: .standard)
+        XCTAssertTrue(baseline.upper.contains(.module("chat")),
+                      "the fixture wants a module that is its own row")
+
+        let preview = try XCTUnwrap(NavigationDragPreview(
+            dragged: .module("chat"),
+            target: .shelf(.network, beforeModuleID: nil),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
+
+        XCTAssertEqual(preview.layout, baseline,
+                       "the stack must stand still until the drop")
+        XCTAssertEqual(preview.target, .shelf(.network, beforeModuleID: nil))
+    }
+
     func testCombiningModulesWaitsForDropInsteadOfCollapsingTheDragTarget() throws {
         let baseline = NavigationLayout.standard(for: .standard)
 

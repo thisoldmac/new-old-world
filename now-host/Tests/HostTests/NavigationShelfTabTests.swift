@@ -277,8 +277,11 @@ final class NavigationShelfTabTests: XCTestCase {
 
         XCTAssertTrue(sidebar.contains(
             "springLoad: { activate(shelfSelection) }"))
+        // The gate is still "a row with no spring-load handler never arms".
+        // It reads unwrapped now because the check moved inside
+        // `springLoadingTarget`, which binds the configuration first.
         XCTAssertTrue(dragSurface.contains(
-            "configuration?.springLoad != nil"))
+            "configuration.springLoad != nil"))
     }
 
     func testNativeDragOverlayPublishesReliableHoverChanges() throws {

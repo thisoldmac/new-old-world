@@ -45,11 +45,24 @@ gate — 0.28-alpha accent for 0.13s over `nowGlassShelf()` material may
 simply not read, and U3 sketched the brightening and the icon scale pulse
 that would answer that. Do not add a second animation before looking.
 
-The insertion bands also shrink from a third of the row each to 20%, and
-to 10% on first contact. That is H7's root: `previewDrop` applies an
-insertion's move live, so resolving one on the frame the pointer arrives
-reorders the stack out from under a pointer that has not moved. It is
-deliberately general rather than a network-shelf special case — the
+**H7 has two mechanisms and the sharper one is not about bands at all.**
+The whole sidebar renders `dragPreview.layout`, so any preview that
+changes the layout moves rows live. Dropping a module INTO a shelf is an
+`.insert`, and applying it takes that module out of the top-level stack:
+its row closes up and every row below rises — including the shelf the
+pointer is resting on. The drag then leaves the row it was aimed at,
+which is both "the connections shelf gets out of the way" and a
+spring-load dwell that can never finish. An insert now previews the
+baseline unchanged when the module is a top-level row, the way `.combine`
+already did; a module already inside the shelf still reflows its tabs
+live, because that displaces nothing and is the affordance
+`testPreviewReflowsShelfTabsBeforeDrop` was written for.
+
+The second mechanism is the bands, and it is the one that fires before
+the pointer has settled: they shrink from a third of the row each to 20%,
+and to 10% on first contact, so arriving on a row resolves the row rather
+than an insertion whose `.move` really does reorder the stack. Both fixes
+are deliberately general rather than a network-shelf special case — the
 connections shelf is only the row most likely to reproduce it, being the
 last one before the window edge.
 
@@ -59,10 +72,19 @@ inside it. The row's hover is now recomputed after `popUp` returns, from
 where the pointer actually is rather than forced to `false`, so
 dismissing with the pointer still on the row keeps it lit.
 
-Still open: none of the three has been watched on screen. The host gate
-passed. Eight claims here are pinned by a mutation somebody watched
-fail, each against the claim its own test names and each confirmed to
-have built and run first. The three that carry the arming argument
+One thing this work found about itself, and it is the reason the
+interrupted run's "the host gate passed" line is not repeated here: it
+had not. `NavigationShelfTabTests` gates the spring-load handler by
+reading this source, and the refactor moved the check inside
+`springLoadingTarget`, where it reads unwrapped — so the string the gate
+looked for was gone. The compile error in a later run masked it. A gate
+that reads source is worth its line, and it is also a second place to be
+wrong.
+
+Still open: none of the three has been watched on screen. Nine claims
+here are pinned by a mutation somebody watched fail, each against the
+claim its own test names and each confirmed to have built and run first.
+The three that carry the arming argument
 are driven through a stub `NSDraggingInfo` rather than read out of the
 source, so they fail on behaviour: arm from the band again and the row's
 edges stop arming; share one feedback state and a band round-trip springs
