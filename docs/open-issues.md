@@ -7,6 +7,45 @@ search:
 
 # Open issues
 
+## TESTED, NOTHING WATCHED ON A MACHINE: 034 wave 3 — every page can say what it drew, Copy exists, Connections reorg, saved chats, Settings window (2026-08-15, four lanes merged at `0bfdee71`)
+
+Wave 3 of plan 034; `scripts/test-all` green on the merged tree.
+
+- **Guest citizenship** (`034w3-citizenship`): all 17 Workshop pages
+  implement `describe_scene` — each page is ONE walk taken twice (draw on
+  a NULL writer, describe on a real one), so the description cannot
+  disagree with the pixels; a source gate fails any module that draws
+  text while the entry is NULL, and it looks the ops field up BY NAME
+  after its first version read "last element" and broke on the very next
+  appended field — one commit from reading green off the wrong member.
+  Edit▸Copy exists for the first time (`copy_text(out, cap)` ops entry,
+  the MODULE answers, no focus machinery): served on Console, Hardware,
+  Diagnostics, Connection, Networking; greyed elsewhere. Declared
+  partial: iCloud describes its card pane as a rect only — CloudViewOps
+  has no describe entry (four sibling files, follow-up owned by wave 4);
+  Files/Chat/Mirror/Projects/Processes/Software could serve copy_text
+  cheaply and do not yet.
+- **Connections reorg** (`034w3-conn`): the Files right-sidebar became a
+  shared `RightSidebarSplitView` with Files and Connections both
+  consuming it; the roster is a collapsible right sidebar (collapse
+  persisted); `ConnectionLinkSection`/`ConnectionListenerLog` moved out
+  of `SettingsModuleView.swift`; one guard was rewritten after PASSING
+  its own mutation (substring match accepted a forked alias — now
+  word-boundary).
+- **Saved chats** (`034w3-chat`): ChatStore persists chat metadata with
+  transcripts in per-chat files loaded only on selection; projects are
+  folders on disk with an optional `linkedProjectID`; first launch
+  adopts the live conversation as chat #1. Privacy surface a reader
+  must not rediscover: transcripts can contain guest-screen content and
+  now persist in Application Support, local-only.
+- **Settings window** (`034w3-settings`): the ⌘, window is a pill-tab
+  switcher (Appearance / Sidebar / MCP / Web / Logs / New Connections)
+  with deep-link routing; Continuity gained a global seeded-defaults
+  store for new connections; Mirror's slot is a deliberate placeholder
+  (its controls stay in-module while the feature is unsettled).
+
+None of it has been watched on a running host or guest.
+
 ## TESTED ACROSS THE BOARD, NOTHING WATCHED ON A MACHINE: 034 wave 2 — update-in-place, guest citizenship, module moves, Projects (2026-08-14, seven lanes merged at `c8b1d827`)
 
 Wave 2 of plan 034; `scripts/test-all` green on the merged tree, every

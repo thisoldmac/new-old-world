@@ -352,3 +352,12 @@ contradicted live and reclassified (Part 0).
   guest naming, drag manager (guest-module file ownership forces the
   split). Live checklist grows: About box, compact rail + plain drag,
   Test ping, Projects page, update-in-place on metal.
+- 2026-08-15 (wave 3 merged): four lanes at 0bfdee71, test-all green
+  centrally. I3+I2, G-3, G-4 (host half), G-5 complete — Tested, nothing
+  live. H1 closed on paper: plan 032's Direct receipt now records its own
+  supersession. Wave 4 = guest Files rebuild (owns files/* + its naming
+  + copy/describe), guest naming helper (rest of the sites), Drag
+  Manager drop-first (owns workshop_window/main/app.r), CloudViewOps
+  describe + cheap copy_text adds, H10 chevron. Remaining after wave 4:
+  G-7 (gated on the split-thread merge), guest chat sidebar (gated on
+  the guest-browsing contract decision), and the live/emulator pass.
