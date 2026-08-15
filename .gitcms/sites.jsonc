@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "sites": [
+    {
+      "key": "docs",
+      "display_name": "Docs",
+      "website_url": "https://docs.newoldworldmac.com",
+      "root_path": ""
+    }
+  ]
+}

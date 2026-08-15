@@ -1,0 +1,302 @@
+{
+  "version": "1.2",
+  "media": {
+    "default_library": "repo_media",
+    "libraries": [
+      {
+        "key": "repo_media",
+        "label": "Repository media",
+        "references": {
+          "write": {
+            "mode": "root_relative",
+            "base_path": "/"
+          },
+          "allow_default_library_fallback": true
+        },
+        "limits": {
+          "max_file_size_mb": 10
+        },
+        "driver": "git",
+        "storage": {
+          "root_path": "public"
+        }
+      }
+    ]
+  },
+  "ssg_framework": "mkdocs",
+  "default_branch": "main",
+  "frontmatter_format": "yaml",
+  "sitemap_url": "https://docs.newoldworldmac.com/sitemap.xml",
+  "publishing_mode": "editorial_workflow",
+  "collections": [
+    {
+      "name": "plans",
+      "git_path": "/docs/plans/",
+      "file_extension": ".md",
+      "filename_pattern": "",
+      "collection_type": "flat",
+      "frontmatter_schema": [
+        {
+          "name": "title",
+          "type": "title",
+          "label": "Title"
+        },
+        {
+          "name": "type",
+          "type": "text",
+          "label": "Type"
+        },
+        {
+          "name": "date",
+          "type": "datetime",
+          "label": "Date"
+        }
+      ]
+    },
+    {
+      "name": "user-guide",
+      "git_path": "/docs/user-guide/",
+      "file_extension": ".md",
+      "filename_pattern": "",
+      "collection_type": "grouped",
+      "frontmatter_schema": [
+        {
+          "name": "title",
+          "type": "title",
+          "label": "Title"
+        },
+        {
+          "name": "page_id",
+          "type": "text",
+          "label": "Page id"
+        },
+        {
+          "name": "description",
+          "type": "richtext",
+          "label": "Description"
+        },
+        {
+          "name": "doc_type",
+          "type": "text",
+          "label": "Doc type"
+        },
+        {
+          "name": "audience",
+          "type": "text",
+          "label": "Audience"
+        },
+        {
+          "name": "lifecycle",
+          "type": "text",
+          "label": "Lifecycle"
+        },
+        {
+          "name": "authority",
+          "type": "multiselect",
+          "label": "Authority",
+          "options": [
+            "README.md",
+            "SECURITY.md"
+          ],
+          "color": "blue"
+        },
+        {
+          "name": "source_dependencies",
+          "type": "multiselect",
+          "label": "Source dependencies",
+          "options": [
+            "README.md",
+            "SECURITY.md",
+            "docs/module-manifest.yaml"
+          ],
+          "color": "blue"
+        },
+        {
+          "name": "media_ids",
+          "type": "multiselect",
+          "label": "Media ids",
+          "color": "blue"
+        },
+        {
+          "name": "last_verified",
+          "type": "datetime",
+          "label": "Last verified"
+        }
+      ]
+    },
+    {
+      "name": "developer-guide",
+      "git_path": "/docs/developer-guide/",
+      "file_extension": ".md",
+      "filename_pattern": "",
+      "collection_type": "grouped",
+      "frontmatter_schema": [
+        {
+          "name": "title",
+          "type": "title",
+          "label": "Title"
+        },
+        {
+          "name": "page_id",
+          "type": "text",
+          "label": "Page id"
+        },
+        {
+          "name": "description",
+          "type": "richtext",
+          "label": "Description"
+        },
+        {
+          "name": "doc_type",
+          "type": "text",
+          "label": "Doc type"
+        },
+        {
+          "name": "audience",
+          "type": "text",
+          "label": "Audience"
+        },
+        {
+          "name": "lifecycle",
+          "type": "text",
+          "label": "Lifecycle"
+        },
+        {
+          "name": "authority",
+          "type": "multiselect",
+          "label": "Authority",
+          "options": [
+            "README.md",
+            "contract/asyncapi.yaml"
+          ],
+          "color": "blue"
+        },
+        {
+          "name": "source_dependencies",
+          "type": "multiselect",
+          "label": "Source dependencies",
+          "options": [
+            "README.md",
+            "contract/asyncapi.yaml",
+            "scripts/test-all",
+            "docs/developer-guide/orientation.md"
+          ],
+          "color": "blue"
+        },
+        {
+          "name": "media_ids",
+          "type": "multiselect",
+          "label": "Media ids",
+          "color": "blue"
+        },
+        {
+          "name": "last_verified",
+          "type": "datetime",
+          "label": "Last verified"
+        }
+      ]
+    },
+    {
+      "name": "agent-guide",
+      "git_path": "/docs/agent-guide/",
+      "file_extension": ".md",
+      "filename_pattern": "",
+      "collection_type": "flat",
+      "frontmatter_schema": [
+        {
+          "name": "title",
+          "type": "title",
+          "label": "Title"
+        },
+        {
+          "name": "page_id",
+          "type": "text",
+          "label": "Page id"
+        },
+        {
+          "name": "description",
+          "type": "richtext",
+          "label": "Description"
+        },
+        {
+          "name": "doc_type",
+          "type": "text",
+          "label": "Doc type"
+        },
+        {
+          "name": "audience",
+          "type": "text",
+          "label": "Audience"
+        },
+        {
+          "name": "lifecycle",
+          "type": "text",
+          "label": "Lifecycle"
+        },
+        {
+          "name": "authority",
+          "type": "multiselect",
+          "label": "Authority",
+          "options": [
+            "AGENTS.md",
+            "contract/asyncapi.yaml"
+          ],
+          "color": "blue"
+        },
+        {
+          "name": "source_dependencies",
+          "type": "multiselect",
+          "label": "Source dependencies",
+          "options": [
+            "AGENTS.md",
+            "contract/asyncapi.yaml",
+            "docs/developer-guide/index.md",
+            "docs/module-manifest.yaml",
+            "product/features.yaml",
+            "scripts/test-all"
+          ],
+          "color": "blue"
+        },
+        {
+          "name": "media_ids",
+          "type": "multiselect",
+          "label": "Media ids",
+          "color": "blue"
+        },
+        {
+          "name": "last_verified",
+          "type": "datetime",
+          "label": "Last verified"
+        }
+      ]
+    },
+    {
+      "name": "research",
+      "git_path": "/docs/research/",
+      "file_extension": ".md",
+      "filename_pattern": "",
+      "collection_type": "grouped"
+    },
+    {
+      "name": "generated",
+      "git_path": "/docs/generated/",
+      "file_extension": ".md",
+      "filename_pattern": "",
+      "collection_type": "flat"
+    },
+    {
+      "name": "upstream",
+      "git_path": "/scripts/probes/upstream/",
+      "file_extension": ".md",
+      "filename_pattern": "",
+      "collection_type": "flat"
+    },
+    {
+      "name": "web-bridge",
+      "git_path": "/web-bridge/",
+      "file_extension": ".md",
+      "filename_pattern": "",
+      "collection_type": "flat"
+    }
+  ]
+}
