@@ -123,6 +123,9 @@ Boolean diag_probe_served(DiagProbe probe)
         return 1;
     case kDiagPutStat:
         return 1;
+    case kDiagWireStat:
+        /* Always in this guest's command table - see commands.c. */
+        return 1;
     default:
         /* shotdiag is the 68K guest's capture diagnostic. Nothing in the
            Carbon guest answers it, and nothing should: this Mac's capture
@@ -138,6 +141,8 @@ const char *diag_probe_title(DiagProbe probe)
         return "Screen read speed";
     case kDiagShotDiag:
         return "Capture diagnosis";
+    case kDiagWireStat:
+        return "Wire wake timing";
     default:
         return "Last file received";
     }
@@ -150,6 +155,8 @@ const char *diag_probe_verb(DiagProbe probe)
         return "vprobe";
     case kDiagShotDiag:
         return "shotdiag";
+    case kDiagWireStat:
+        return "wirestat";
     default:
         return "putstat";
     }
@@ -162,6 +169,9 @@ const char *diag_probe_measures(DiagProbe probe)
         return "What reading this Mac's screen memory costs, by method.";
     case kDiagShotDiag:
         return "Where a 68K Mac's screen capture reads its pixels from.";
+    case kDiagWireStat:
+        return "How long this Mac sleeps between looking at the wire, and "
+               "how long a notification takes to reach the read that uses it.";
     default:
         return "Where the time went in the last file this Mac received.";
     }
@@ -177,6 +187,8 @@ const char *diag_probe_cost(DiagProbe probe)
         return "About three seconds. Leave the screen still while it runs.";
     case kDiagShotDiag:
         return "Instant, on the Mac that serves it.";
+    case kDiagWireStat:
+        return "Instant - it reads counters this Mac already keeps.";
     default:
         return "Instant - it reads counters this Mac already keeps.";
     }
@@ -190,7 +202,12 @@ const char *diag_button_title(DiagProbe probe, DiagCardState state)
     if (state == kDiagRunning) {
         return "Measuring";
     }
-    if (probe == kDiagPutStat) {
+    if (probe == kDiagPutStat || probe == kDiagWireStat) {
+        /* A read, not a run: both report counters this Mac already keeps
+           rather than spending time to make new ones. wirestat's card is
+           read-only in a stronger sense too - the console/wire verb can
+           also SET the wake and idle-sleep settings (wirestat_cmd.c), and
+           this button never does; it only asks what they are now. */
         return "Read";
     }
     return state == kDiagReady ? "Run" : "Run Again";
@@ -321,5 +338,83 @@ int diag_putstat_rows(const DiagPutStat *stats, DiagRow *rows, int max)
              stats->resumed_from);
     label_row(&rows[n], "CRC-32");
     snprintf(rows[n++].value, sizeof rows[0].value, "%08lx", stats->crc);
+    return n;
+}
+
+/* Five rows for one distribution: n, mean, min, max, then the median as a
+   single range - not the wire's ten buckets. `what` is the row prefix
+   ("Pass"/"Notice") so the two distributions do not read as one. */
+static int wirestat_loop_rows(const char *what, const DiagLoopStat *s,
+                              DiagRow *rows, int n, int max)
+{
+    char label[24];
+
+    if (n + 5 > max) {
+        return n;                     /* a ceiling, not a truncated table */
+    }
+    snprintf(label, sizeof label, "%s n", what);
+    label_row(&rows[n], label);
+    snprintf(rows[n++].value, sizeof rows[0].value, "%ld", s->n);
+
+    snprintf(label, sizeof label, "%s mean", what);
+    label_row(&rows[n], label);
+    snprintf(rows[n++].value, sizeof rows[0].value, "%lu us", s->mean_us);
+
+    snprintf(label, sizeof label, "%s min", what);
+    label_row(&rows[n], label);
+    snprintf(rows[n++].value, sizeof rows[0].value, "%lu us", s->min_us);
+
+    snprintf(label, sizeof label, "%s max", what);
+    label_row(&rows[n], label);
+    snprintf(rows[n++].value, sizeof rows[0].value, "%lu us", s->max_us);
+
+    snprintf(label, sizeof label, "%s median", what);
+    label_row(&rows[n], label);
+    if (s->median_bucket < 0) {
+        strncpy(rows[n].value, "no samples yet", sizeof rows[0].value - 1);
+        rows[n].value[sizeof rows[0].value - 1] = '\0';
+        ++n;
+    } else if (s->median_hi_us != 0) {
+        snprintf(rows[n++].value, sizeof rows[0].value, "%ld-%ld us",
+                 s->median_lo_us, s->median_hi_us);
+    } else {
+        snprintf(rows[n++].value, sizeof rows[0].value, "%ld+ us",
+                 s->median_lo_us);
+    }
+    return n;
+}
+
+enum { kDiagWireStatRows = 16 };  /* 6 counters + 5 rows x 2 distributions */
+
+int diag_wirestat_rows(const DiagWireStat *stats, DiagRow *rows, int max)
+{
+    int n = 0;
+
+    if (max < kDiagWireStatRows) {
+        return 0;
+    }
+    label_row(&rows[n], "Sleep now");
+    snprintf(rows[n++].value, sizeof rows[0].value, "%ld tick(s)",
+             stats->sleep_now_ticks);
+    label_row(&rows[n], "Idle sleep");
+    snprintf(rows[n++].value, sizeof rows[0].value, "%ld tick(s)",
+             stats->idle_sleep_ticks);
+    label_row(&rows[n], "Wake on data");
+    snprintf(rows[n++].value, sizeof rows[0].value, "%s",
+             stats->wake_on ? "on" : "off");
+    /* Whether the notifier is LIVE, separately from whether the wake is
+       on: a notifier that never installed reports no arrivals at all,
+       which reads exactly like a quiet wire - the same distinction the
+       wire's own report makes (commands.c :: run_wirestat). */
+    label_row(&rows[n], "Notifier");
+    snprintf(rows[n++].value, sizeof rows[0].value, "%s",
+             stats->notifier_live ? "installed" : "absent");
+    label_row(&rows[n], "Data notifications");
+    snprintf(rows[n++].value, sizeof rows[0].value, "%ld", stats->data_events);
+    label_row(&rows[n], "WakeUpProcess calls");
+    snprintf(rows[n++].value, sizeof rows[0].value, "%ld", stats->wake_calls);
+
+    n = wirestat_loop_rows("Pass", &stats->pass, rows, n, max);
+    n = wirestat_loop_rows("Notice", &stats->wake, rows, n, max);
     return n;
 }

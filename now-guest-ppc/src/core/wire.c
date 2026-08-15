@@ -7770,10 +7770,38 @@ static void service_connected_io(void)
     }
 }
 
+/* The ping itself - what both the scheduled cadence below and a person's
+   own "Test" button on the Connection page send, so a forced ping is not
+   a second implementation of what a scheduled one already does. */
+static void send_heartbeat_ping(unsigned long now)
+{
+    char ping[48];
+
+    ++g.ping_id;
+    snprintf(ping, sizeof ping, "{\"type\":\"ping\",\"id\":%ld}", g.ping_id);
+    g.ping_sent_tick = now;
+    if (!send_control(ping)) {
+        fail("Connection lost");
+        return;
+    }
+    ++g.pings_sent;
+    g.next_ping_tick = now + kPingIntervalTicks;
+}
+
+void conn_ping_now(void)
+{
+    /* Nothing to ping without a live session - a press before the
+       handshake finishes would otherwise queue a control frame the
+       protocol does not expect yet. */
+    if (g.phase != kConnConnected) {
+        return;
+    }
+    send_heartbeat_ping(TickCount());
+}
+
 static void service_heartbeat(void)
 {
     unsigned long now = TickCount();
-    char ping[48];
 
     /* **Time we were not scheduled is not time the host was silent, and
        this is the one place that used to assume it was.**
@@ -7832,16 +7860,7 @@ static void service_heartbeat(void)
         return;
     }
     if (now >= g.next_ping_tick) {
-        ++g.ping_id;
-        snprintf(ping, sizeof ping, "{\"type\":\"ping\",\"id\":%ld}",
-                 g.ping_id);
-        g.ping_sent_tick = now;
-        if (!send_control(ping)) {
-            fail("Connection lost");
-            return;
-        }
-        ++g.pings_sent;
-        g.next_ping_tick = now + kPingIntervalTicks;
+        send_heartbeat_ping(now);
     }
 }
 

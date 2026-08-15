@@ -37,7 +37,11 @@ const char *now_net_section_blurb(NetSection section)
     case kNetSectionPorts:
         return "The network hardware this Mac has, and where it sits.";
     case kNetSectionConnections:
-        return "What this Mac is talking to.";
+        /* Shrunk to a placard line (see now_net_layout_compute): the
+           card's body sits where this line would have gone, so a
+           non-empty blurb here would draw under the sentence that
+           replaces it rather than above it. */
+        return "";
     case kNetSectionCount:
         break;
     }
@@ -317,20 +321,47 @@ void now_net_layout_compute(const Rect *body, const NetFacts *facts,
     y = kNetMargin;
     for (i = 0; i < (int)kNetSectionCount; ++i) {
         NetSectionLayout *s = &out->sections[i];
-        short rows = now_net_section_rows((NetSection)i, facts);
+        NetSection sec = (NetSection)i;
+        short rows;
         short inner;
-        const char *btn = now_net_button_title((NetSection)i, facts);
+        const char *btn;
+        Boolean compact;
+
+        if (sec == kNetSectionLink) {
+            /* This Mac's own link is shown live on the Connection page
+               now - peer, uptime and (with a Test button) round trip -
+               so a second copy here was the same fact twice, one of them
+               going stale between this page's idle passes. Left at all
+               zero rather than given a card: the wire's `net` command
+               still reports it in full (now_net_section_rows/now_net_row
+               answer for kNetSectionLink exactly as before) for a caller
+               that wants the complete picture: only this page's card is
+               gone. */
+            continue;
+        }
+
+        rows = now_net_section_rows(sec, facts);
+        btn = now_net_button_title(sec, facts);
+        /* Connections never has rows and never will (see net_layout.h);
+           shrunk to its placard line, it gets no separate blurb gap and
+           just the one short sentence - title plus one line, not
+           title plus blurb plus sentence. */
+        compact = (Boolean)(sec == kNetSectionConnections);
 
         /* Title, blurb, then either rows or the one sentence a section
-           shows when it has none. Every section has a body: the
-           Connections card is nothing BUT a body, and a layout that gave
-           it zero height would silently delete the page's most important
-           statement. */
-        inner = (short)(kNetTitleHeight + kNetLineHeight);
-        if (rows > 0) {
-            inner = (short)(inner + rows * kNetRowHeight);
+           shows when it has none. Every section has a body: a row-less
+           card is nothing BUT a body, and a layout that gave it zero
+           height would silently delete whatever it has to say. */
+        inner = kNetTitleHeight;
+        if (compact) {
+            inner = (short)(inner + kNetLineHeight);
         } else {
-            inner = (short)(inner + kNetLineHeight * 2);
+            inner = (short)(inner + kNetLineHeight);
+            if (rows > 0) {
+                inner = (short)(inner + rows * kNetRowHeight);
+            } else {
+                inner = (short)(inner + kNetLineHeight * 2);
+            }
         }
 
         s->card.top = y;
@@ -356,7 +387,8 @@ void now_net_layout_compute(const Rect *body, const NetFacts *facts,
 
         s->body.left = s->title.left;
         s->body.right = (short)(s->card.right - kNetCardInset);
-        s->body.top = (short)(s->title.bottom + kNetLineHeight);
+        s->body.top = (short)(s->title.bottom
+                              + (compact ? 0 : kNetLineHeight));
         s->body.bottom = (short)(s->card.bottom - kNetCardInset);
 
         y = (short)(s->card.bottom + kNetSectionGap);
