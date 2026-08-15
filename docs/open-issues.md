@@ -287,6 +287,15 @@ promised, so the settled point never reaches the Cursor Device, and the
 record — which is UPSTREAM of low memory — keeps a stale point it is
 entitled to re-assert.
 
+**The correlation is two for two, and the passing edge is the control.** Both
+failing edges were served in the same second as a `state=exited,
+reason=disarmed` control report (epoch 15 at 17:19:06, epoch 16 at 17:19:52),
+while the one edge that settled in one tick — 17:19:04, gen 56 — belongs to
+an epoch that did not exit until two seconds later. The difference between
+the working release and the broken ones is not distance, speed or the
+machine's load: it is whether the epoch was still ACTIVE when the edge was
+served.
+
 Two changes, both guest-side, no contract and no host edit:
 
 - The edge reconciles the point it rides with **before** it is served, when
