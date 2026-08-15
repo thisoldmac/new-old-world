@@ -31,8 +31,21 @@ page can satisfy this gate and still under-report - `cloud_module.c` says
 so in its own comment - but a page CANNOT satisfy it while having no way
 to report anything, which is the state all sixteen were in.
 
-Mutation to watch it fail: set screenshots_module.c's last ops entry back
-to NULL and run this. It must name that file.
+HOW IT FINDS THE ENTRY, and why that is not a detail. C initializers are
+POSITIONAL, so a reader that assumes an index is a reader that starts
+agreeing with itself the moment the struct grows. This gate's first
+version took the LAST element - and the very next commit appended
+`copy_text` to `WorkshopModuleOps`, at which point it was reading the
+wrong field for all seventeen pages and said so, loudly, for every one of
+them. It was right to fail and wrong about why.
+
+So the field order is DERIVED from `workshop_module.h` on every run, and
+`describe_scene`'s index is looked up in it. If the member is renamed or
+removed the gate stops rather than guessing.
+
+Mutations to watch it fail: set screenshots_module.c's `describe_scene`
+entry to NULL (it must name that file), and rename the member in
+`workshop_module.h` (it must refuse to read anything rather than pass).
 """
 import pathlib
 import re
@@ -40,19 +53,68 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SRC = ROOT / "now-guest-ppc/src"
+OPS_HEADER = ROOT / "now-guest-ppc/src/workshop/workshop_module.h"
 
 # The Toolbox calls that put words on screen without telling anyone.
 TEXT_CALLS = ("DrawString", "DrawText", "TETextBox")
 
-# The ops table's last member. Found by name so a member added to
-# WorkshopModuleOps in the middle cannot silently shift which entry this
-# reads - the initializer is positional, and a positional reader that
-# guesses is how a gate starts agreeing with itself.
 OPS_TYPE = "WorkshopModuleOps"
+MEMBER = "describe_scene"
+
+
+def strip_comments(text):
+    return re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+
+
+def braced_body(text, start):
+    """The {...} body beginning at or after `start`, without its braces."""
+    i = text.index("{", start)
+    depth = 0
+    j = i
+    while j < len(text):
+        if text[j] == "{":
+            depth += 1
+        elif text[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[i + 1:j], j
+        j += 1
+    return None, len(text)
+
+
+def ops_field_order():
+    """The members of WorkshopModuleOps, in declaration order.
+
+    Derived, not remembered: a C initializer is positional, so knowing
+    WHICH element is describe_scene means knowing where the header puts
+    it. Function-pointer members declare their name inside parentheses -
+    `void (*draw)(void);` - and plain members do not, so both shapes are
+    read.
+    """
+    text = strip_comments(OPS_HEADER.read_text(errors="replace"))
+    m = re.search(r"typedef\s+struct\s+" + OPS_TYPE + r"\s*\{", text)
+    if m is None:
+        return []
+    body, _ = braced_body(text, m.start())
+    if body is None:
+        return []
+    names = []
+    for decl in body.split(";"):
+        decl = decl.strip()
+        if not decl:
+            continue
+        fn = re.search(r"\(\s*\*\s*(\w+)\s*\)", decl)
+        if fn is not None:
+            names.append(fn.group(1))
+            continue
+        plain = re.search(r"(\w+)\s*(?:\[[^\]]*\])?$", decl)
+        if plain is not None:
+            names.append(plain.group(1))
+    return names
 
 
 def text_call_lines(text):
-    """Line numbers of every raw text draw, ignoring comments crudely."""
+    """Line numbers of every raw text draw."""
     hits = []
     for name in TEXT_CALLS:
         for m in re.finditer(r"(?<![A-Za-z0-9_])" + name + r"\s*\(", text):
@@ -64,33 +126,51 @@ def ops_initializers(text):
     """Every `... WorkshopModuleOps <name> = { ... };` body in the file."""
     bodies = []
     for m in re.finditer(OPS_TYPE + r"\s+\w+\s*=\s*\{", text):
-        depth = 0
-        i = m.end() - 1
-        while i < len(text):
-            if text[i] == "{":
-                depth += 1
-            elif text[i] == "}":
-                depth -= 1
-                if depth == 0:
-                    bodies.append((text[:m.start()].count("\n") + 1,
-                                   text[m.end():i]))
-                    break
-            i += 1
+        body, _ = braced_body(text, m.end() - 1)
+        if body is not None:
+            bodies.append((text[:m.start()].count("\n") + 1, body))
     return bodies
 
 
-def last_entry(body):
-    """The final initializer element, comments and whitespace removed."""
-    body = re.sub(r"/\*.*?\*/", " ", body, flags=re.S)
-    parts = [p.strip() for p in body.split(",")]
-    parts = [p for p in parts if p != ""]
-    return parts[-1] if parts else ""
+def elements(body):
+    """Top-level initializer elements, in order.
+
+    Split on commas at nesting depth zero only: an element may be a call
+    or a braced sub-initializer, and splitting on every comma would
+    renumber every field after the first one that contains an argument.
+    """
+    body = strip_comments(body)
+    out = []
+    depth = 0
+    current = ""
+    for ch in body:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append(current.strip())
+            current = ""
+        else:
+            current += ch
+    if current.strip():
+        out.append(current.strip())
+    return out
 
 
 def main():
+    order = ops_field_order()
+    if MEMBER not in order:
+        print(f"{OPS_HEADER.relative_to(ROOT)}: no `{MEMBER}` member in "
+              f"{OPS_TYPE} - this gate cannot say which initializer "
+              "element it is reading, so it is refusing rather than "
+              "guessing one", file=sys.stderr)
+        return 1
+    index = order.index(MEMBER)
+
     module_sources = sorted(SRC.rglob("*_module.c"))
     offenders = []
-    tableless = []
+    unreadable = []
     described = 0
 
     for path in module_sources:
@@ -104,25 +184,30 @@ def main():
             # rename this gate has not been told about or a table built
             # some other way. Either way it is not something to pass in
             # silence.
-            tableless.append(rel)
+            unreadable.append(f"{rel}: no {OPS_TYPE} initializer found")
             continue
 
         for line, body in tables:
-            entry = last_entry(body)
-            if entry == "NULL":
+            parts = elements(body)
+            if len(parts) <= index:
+                unreadable.append(
+                    f"{rel}:{line}: {len(parts)} initializer elements, "
+                    f"but `{MEMBER}` is element {index + 1}")
+                continue
+            if parts[index] == "NULL":
                 if draws:
                     offenders.append(
                         f"{rel}:{line}: draws text at line "
-                        f"{draws[0]} but describe_scene is NULL")
+                        f"{draws[0]} but {MEMBER} is NULL")
             else:
                 described += 1
 
-    if offenders or tableless:
+    if offenders or unreadable:
         for o in offenders:
             print("  " + o, file=sys.stderr)
-        for t in tableless:
-            print(f"  {t}: no {OPS_TYPE} initializer found - this gate "
-                  "read nothing about that page", file=sys.stderr)
+        for u in unreadable:
+            print("  " + u + " - this gate read nothing about that page",
+                  file=sys.stderr)
         print("\nA page that draws with QuickDraw and has no "
               "describe_scene is invisible to the host's observation "
               "plane, and invisible looks exactly like empty. Emit the "
@@ -138,7 +223,8 @@ def main():
         return 1
 
     print(f"ok: {len(module_sources)} Workshop pages, {described} "
-          "describe what they draw")
+          f"describe what they draw ({MEMBER} is element {index + 1} of "
+          f"{len(order)})")
     return 0
 
 
