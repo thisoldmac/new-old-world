@@ -296,6 +296,15 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                     name: file.name, container: file.container,
                     fileType: file.fileType, staged: file.staged, to: url)
                 fetch.finish(.success(url))
+                /* Distinct from `resolveEagerDrag`'s "drag payload: eager"
+                   line: this one is the fetch's own fact (it finished, and
+                   when) and stands whether or not a drag ever asks for it —
+                   the resolve-time line is about what a SPECIFIC drag did
+                   with that fact, and the two can now legitimately disagree
+                   (finished but too late, finished but the drag chose the
+                   promise for some other reason). */
+                audit(.info, "eager fetch completed: name=\(file.name), "
+                    + "generation=\(stub.generation)")
                 /* The staged file is now what the pasteboard may point at —
                    best-effort cleanup, well after any drop had time to read
                    it, rather than deleted out from under one. A drag that
