@@ -7,6 +7,61 @@ search:
 
 # Open issues
 
+## THE DRAG STARTS AND NOTHING IS EVER DROPPED: TrackDrag runs on the guest and returns userCanceledErr at once (2026-08-15, `feat/hg-drag-dragmgr`)
+
+Slice 2 of the host→guest crossing is built: `offer --drag` starts a real
+Drag Manager drag of the published item, carrying `flavorTypePromiseHFS`,
+whose send-data callback pulls the bytes through the slice-1 lane into
+the folder the drop landed on and hands the Finder that file's FSSpec.
+
+**What a live emulator guest proved** (`spin-up-ppc`, lane block 210,
+build under test asserted by fingerprint `b74b992f87a2`; five cases in
+`LiveDragManagerAcceptanceTests`). The guest's own log:
+
+```
+mirror drag armed for now-slice2-ripen-C71AD#24C9.bin; waiting on the button
+mirror drag tracking now-slice2-ripen-C71AD#24C9.bin (4096 bytes)
+mirror drag now-slice2-ripen-C71AD#24C9.bin ended: cancelled (TrackDrag -128)
+```
+
+So the arm ripens on APPLIED button state and a real `TrackDrag` runs.
+The apply-race guard reads from the other side too: an arm with no button
+expires `button-never-came` rather than having quietly dragged, which is
+positive evidence that wire arrival did not start anything. The size cap,
+the folder refusal, `busy`, and the cancel path all answer by name on both
+faces.
+
+**What is BROKEN, or at least unfinished:** `TrackDrag` returns `-128`
+(`userCanceledErr`) immediately, so no drop ever happens, the promise
+callback has never fired on any machine, and **not one byte has been
+materialised at a drop location**. Everything downstream of the drop —
+the pump rule inside the Finder's drop handling, the FSSpec handback, the
+placement fidelity the whole feature is for — is code that has run
+nowhere. It is written and gated; it is not verified in any sense.
+
+**The leading hypothesis, and it is a hypothesis:** the applied button
+that ripens the arm is not the button `TrackDrag` tracks. The arm reads
+the resident's shared cell (`now_continuity_button_is_down`), which the
+Continuity plane sets; `TrackDrag` runs its own tracking loop against
+whatever the Toolbox believes the mouse is doing. Those are two different
+questions and this run is consistent with the first being true while the
+second is false. That is a slice-3 problem more than a slice-2 one — edge
+custody is precisely the lane that has to make a held button real — but
+it is recorded here because slice 2 is where it became visible, and
+because anyone reading "the drag works" off the green gates would be
+wrong.
+
+**Also unverified:** the deliberate slow-serve test the plan asks for
+(host delays bytes; the guest's Finder must not starve the wire) cannot
+run until a drop happens, so the pump rule — the named hazard of the
+whole slice — has no live evidence behind it at all. The nested loop
+pumps by construction and a source gate pins that it does; nobody has
+watched it survive a real drop.
+
+**Not attempted, on purpose:** background fill above the size cap. v1
+refuses `too-large` and the plan says a fork still filling is a lie
+shaped like a file until something marks it busy.
+
 ## DECLARED ONLY — NO MACHINE SERVES ANY OF IT: the host→guest crossing has a contract and nothing behind it (2026-08-15, `feat/hg-drag-contract`)
 
 `contract/asyncapi.yaml` now describes a person dragging a file from this
