@@ -501,6 +501,7 @@ static void gather_volumes(long cursor, CensusPage *page)
             char label[kCensusRowNameCap];
             char raw[kCensusRowRawCap];
             char meaning[kCensusRowMeaningCap];
+            char total_s[24], free_s[24];
             long n = name[0] < 31 ? name[0] : 31;
 
             memcpy(cname, name + 1, (size_t)n);
@@ -508,8 +509,10 @@ static void gather_volumes(long cursor, CensusPage *page)
             sanitize(cname, clean, sizeof clean);
             snprintf(label, sizeof label, "Volume %ld", index);
             snprintf(raw, sizeof raw, "%s", clean);
-            snprintf(meaning, sizeof meaning, "%lu MB, %lu MB free",
-                     total_mib, free_mib);
+            census_size_mib(total_mib, total_s, sizeof total_s);
+            census_size_mib(free_mib, free_s, sizeof free_s);
+            snprintf(meaning, sizeof meaning, "%s, %s free",
+                     total_s, free_s);
             set_row(&page->rows[page->count++], label, raw, meaning);
         }
         index++;
@@ -1085,6 +1088,7 @@ static void gather_ata(long cursor, CensusPage *page)
                     "present; drive returned no IDENTIFY data");
         } else {
             char model[42], serial[22], fw[10];
+            char size_s[24];
             unsigned long sectors =
                 (unsigned long)buf[120]
                 | ((unsigned long)buf[121] << 8)
@@ -1095,8 +1099,14 @@ static void gather_ata(long cursor, CensusPage *page)
             census_ata_string(buf, 10, 10, serial, sizeof serial);
             census_ata_string(buf, 23, 4, fw, sizeof fw);
             snprintf(raw, sizeof raw, "serial %.20s", serial);
-            snprintf(meaning, sizeof meaning, "%.28s, %lu MB, fw %.8s",
-                     model[0] ? model : "ATA drive", sectors / 2048UL, fw);
+            census_size_mib(sectors / 2048UL, size_s, sizeof size_s);
+            /* Explicit ".15s" bounds gcc's format-truncation estimate: the
+               unbounded %s otherwise assumes size_s's full 24-byte
+               capacity, and 28 (model) + 24 + 8 (fw) + literals overflows
+               the 64-byte meaning buffer by gcc's static reckoning even
+               though census_size_mib never emits more than ~9 chars. */
+            snprintf(meaning, sizeof meaning, "%.28s, %.15s, fw %.8s",
+                     model[0] ? model : "ATA drive", size_s, fw);
             set_row(&page->rows[page->count++], label, raw, meaning);
         }
     }

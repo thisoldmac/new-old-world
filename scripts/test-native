@@ -311,6 +311,7 @@ run_py_path tools/mirror-gate-tests/test_merge_census_gate.py
 
 echo "== now-guest-ppc (PowerPC Carbon) =="
 run_c now-guest-ppc census_decode_test.c     ""  src/census/census_decode.c
+run_py now-guest-ppc census_probes_size_scaling_source_test.py
 run_c now-guest-ppc census_report_test.c     ""  src/census/census_report.c src/core/json.c
 run_c now-guest-ppc hardware_sizes_test.c    ""  src/census/hardware_sizes.c
 run_c now-guest-ppc conn_fields_test.c       ""  src/connection/conn_fields.c

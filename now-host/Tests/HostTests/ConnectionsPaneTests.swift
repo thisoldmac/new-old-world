@@ -160,6 +160,55 @@ final class ConnectionsPaneTests: XCTestCase {
                       + "consumes the extracted component")
     }
 
+    /// **The toggle lives in the sidebar it collapses, not beside it.**
+    ///
+    /// It used to sit in the leading `detail` pane's header, next to the
+    /// "Connections" title — functional, but the roster it puts away had
+    /// no control of its own, unlike Files' "This Mac" sidebar, which owns
+    /// its `RightSidebarToggle` inside its own chrome
+    /// (`FilesWorkspaceShell.swift`'s `titleAccessory`). This pins the
+    /// toggle to `connectionList`'s own body, and pins it OUT of
+    /// `header`'s — a placement regression reads as green on the previous
+    /// test (which only checks the toggle exists somewhere) but fails
+    /// here.
+    func testTheRosterToggleLivesInTheRosterHeaderNotTheDetailHeader()
+        throws {
+        let connections = try GateSource.hostSwift(
+            "now-host/Sources/Host/ConnectionsModuleView.swift")
+
+        guard let listRange = connections.range(
+            of: "private var connectionList: some View {"),
+            let headerRange = connections.range(
+                of: "private var header: some View {")
+        else {
+            XCTFail("expected both connectionList and header properties")
+            return
+        }
+
+        // `connectionList` is declared before `header` in this file;
+        // the toggle must fall within connectionList's body, i.e.
+        // between the two declarations.
+        let listBody = connections[listRange.upperBound..<headerRange
+            .lowerBound]
+        XCTAssertTrue(Self.calls("RightSidebarToggle", in: String(listBody)),
+                      "the roster pane must own its own toggle")
+
+        // header's body runs from its declaration to the next `private var`
+        // (detailHeadline); the toggle must NOT be back in there.
+        guard let afterHeader = connections.range(
+            of: "private var detailHeadline",
+            range: headerRange.upperBound..<connections.endIndex)
+        else {
+            XCTFail("expected detailHeadline to follow header")
+            return
+        }
+        let headerBody = connections[headerRange.upperBound..<afterHeader
+            .lowerBound]
+        XCTAssertFalse(
+            Self.calls("RightSidebarToggle", in: String(headerBody)),
+            "the detail header must not duplicate the roster's toggle")
+    }
+
     /// Whether this source calls that type, as opposed to merely containing
     /// its name.
     ///

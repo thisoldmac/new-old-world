@@ -93,50 +93,94 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
 derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
-sources-sha1: e2adad1d8293e076387957c2c1a2f9d145f51584
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
+derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
+sources-sha1: 9da95c6cef8ca93451fc6c0358d41e47634093ff
 derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -290,4 +334,6 @@ rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 sources
 rederived: 2026-08-15T02:58:01-0400 5d767dce sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, mcp-catalog 3->3, sources, mcp-catalog 3->3
 rederived: 2026-08-15T03:19:46-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 rederived: 2026-08-15T05:39:26-0400 829013ee sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:30:50-0400 a327ba45 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T06:15:20-0400 3c7d14e4 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

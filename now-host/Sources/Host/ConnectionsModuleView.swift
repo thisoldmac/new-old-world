@@ -38,8 +38,8 @@ struct ConnectionsModuleView: View {
     @State private var detailFraction =
         RightSidebarSplitController.defaultLeadingFraction
 
-    /// The roster's one noun, read by its rail, its hover tag and the
-    /// toggle in the detail header.
+    /// The roster's one noun, read by its rail, its hover tag and its own
+    /// toggle.
     static let rosterTitle = "Machines"
 
     var body: some View {
@@ -88,6 +88,16 @@ struct ConnectionsModuleView: View {
                 Text(ConnectionsModuleView.rosterTitle)
                     .font(.headline)
                 Spacer(minLength: 8)
+                /* Mirrors `FilesRightSidebar`'s `titleAccessory`: the
+                   trailing pane owns the control that puts it away.
+                   `isCollapsed: false` is hardcoded for the same reason —
+                   this row only exists while the pane is expanded; the
+                   hover rail is the re-expand path. */
+                RightSidebarToggle(
+                    isCollapsed: false,
+                    title: ConnectionsModuleView.rosterTitle) {
+                        model.rosterCollapsed.toggle()
+                    }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -206,11 +216,6 @@ struct ConnectionsModuleView: View {
                 }
             }
             Spacer(minLength: 8)
-            RightSidebarToggle(
-                isCollapsed: model.rosterCollapsed,
-                title: ConnectionsModuleView.rosterTitle) {
-                    model.rosterCollapsed.toggle()
-                }
         }
         .padding(.horizontal, 28)
         .padding(.top, 24)

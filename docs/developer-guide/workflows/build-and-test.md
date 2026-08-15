@@ -75,15 +75,24 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: 50452dcd18ab3284e279f9edd047d676dfead7f4
-sources-sha1: 50452dcd18ab3284e279f9edd047d676dfead7f4
-sources-sha1: 50452dcd18ab3284e279f9edd047d676dfead7f4
-sources-sha1: 50452dcd18ab3284e279f9edd047d676dfead7f4
-sources-sha1: 50452dcd18ab3284e279f9edd047d676dfead7f4
-sources-sha1: 50452dcd18ab3284e279f9edd047d676dfead7f4
-sources-sha1: 50452dcd18ab3284e279f9edd047d676dfead7f4
-sources-sha1: 50452dcd18ab3284e279f9edd047d676dfead7f4
-sources-sha1: 50452dcd18ab3284e279f9edd047d676dfead7f4
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
+sources-sha1: 7aa61b9b80afb2b9f5729900189b531f1a169956
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -254,4 +263,6 @@ rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
 rederived: 2026-08-15T02:57:59-0400 5d767dce unchanged
 rederived: 2026-08-15T03:19:44-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources
 rederived: 2026-08-15T05:39:23-0400 829013ee sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:30:48-0400 a327ba45 sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T06:15:16-0400 3c7d14e4 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->
