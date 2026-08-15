@@ -100,9 +100,23 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     private var mouseDownEvent: NSEvent?
     private var beganDrag = false
     private var feedback = NavigationDragFeedbackState()
+    /// Spring loading is armed against the row, insertion feedback against
+    /// the band under the pointer. One state could not hold both: crossing a
+    /// band boundary has to reset the insertion line, and resetting the arm
+    /// with it is what re-fires the flash — or, more often, never lets the
+    /// dwell finish at all.
+    private var springFeedback = NavigationDragFeedbackState()
     private var hoverTrackingArea: NSTrackingArea?
     private let hoverDisclosurePresenter = SidebarHoverDisclosurePresenter()
     private var dropFeedback: NavigationRowDropTargets.Feedback?
+
+    /// AppKit's modal menu tracking cannot run inside a test, and the defect
+    /// this seam exists for is a state reset that must happen *after* it
+    /// returns. Presenting through a replaceable closure lets the ordering be
+    /// asserted rather than asserted about.
+    var presentMenu: (NSMenu, NSPoint, NSView) -> Void = { menu, point, view in
+        menu.popUp(positioning: nil, at: point, in: view)
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -253,6 +267,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     }
 
     override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        clearSpringLoadArming()
         clearDropFeedback()
     }
 
@@ -264,15 +279,18 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
         guard let (payload, target) = accepted(sender) else { return false }
         let performed = configuration?.performDrop(payload, target) ?? false
+        clearSpringLoadArming()
         clearDropFeedback()
         return performed
     }
 
     override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
+        clearSpringLoadArming()
         clearDropFeedback()
     }
 
     override func draggingEnded(_ sender: any NSDraggingInfo) {
+        clearSpringLoadArming()
         clearDropFeedback()
     }
 
@@ -280,11 +298,8 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
 
     func springLoadingEntered(_ draggingInfo: any NSDraggingInfo)
         -> NSSpringLoadingOptions {
-        guard let target = accepted(draggingInfo)?.1,
-              configuration?.springLoad != nil,
-              target.supportsSpringLoading else {
-            return []
-        }
+        guard let target = springLoadingTarget(draggingInfo) else { return [] }
+        if springFeedback.target != target { springFeedback.enter(target) }
         return .enabled
     }
 
@@ -295,12 +310,35 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
 
     func springLoadingActivated(_ activated: Bool,
                                 draggingInfo: any NSDraggingInfo) {
-        let target = accepted(draggingInfo)?.1
+        let target = springLoadingTarget(draggingInfo)
         guard NavigationSpringLoadActivation.shouldActivate(
             activated: activated, acceptedTarget: target,
-            feedback: &feedback) else { return }
+            feedback: &springFeedback) else { return }
         flashTwice()
         configuration?.springLoad?()
+    }
+
+    /// What this row would spring-load into, independent of which insertion
+    /// band the pointer happens to be over. `accepted(_:)` answers the band,
+    /// which is the right answer for the insertion line and the wrong one for
+    /// arming: two of the three bands are `.zone` targets that never support
+    /// spring loading.
+    private func springLoadingTarget(_ sender: any NSDraggingInfo)
+        -> NavigationDropTarget? {
+        guard let configuration, configuration.springLoad != nil,
+              let value = sender.draggingPasteboard.string(
+                forType: Self.pasteboardType),
+              let payload = NavigationDraggedItem(pasteboardValue: value)
+        else { return nil }
+        if let targets = configuration.rowDropTargets {
+            return targets.springLoadingTarget {
+                configuration.canDrop(payload, $0)
+            }
+        }
+        guard let fallback = configuration.target,
+              fallback.supportsSpringLoading,
+              configuration.canDrop(payload, fallback) else { return nil }
+        return fallback
     }
 
     func springLoadingHighlightChanged(_ draggingInfo: any NSDraggingInfo) {
@@ -310,7 +348,14 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
     }
 
     func springLoadingExited(_ draggingInfo: any NSDraggingInfo) {
+        clearSpringLoadArming()
         clearDropFeedback()
+    }
+
+    /// Only a drag that has left this row or finished disarms it. Crossing a
+    /// band boundary must not, or the dwell never completes.
+    private func clearSpringLoadArming() {
+        if let armed = springFeedback.target { springFeedback.exit(armed) }
     }
 
     private func accepted(_ sender: any NSDraggingInfo)
@@ -362,7 +407,7 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
         return snapshot
     }
 
-    private func showConfiguredMenu(with event: NSEvent) {
+    func showConfiguredMenu(with event: NSEvent) {
         guard let items = configuration?.menuItems, !items.isEmpty else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -374,9 +419,32 @@ final class NativeNavigationDragView: NSView, NSDraggingSource,
             menu.addItem(menuItem)
         }
         let point = convert(event.locationInWindow, from: nil)
-        menu.popUp(positioning: nil,
-                   at: NSPoint(x: point.x, y: bounds.maxY),
-                   in: self)
+        presentMenu(menu, NSPoint(x: point.x, y: bounds.maxY), self)
+        synchroniseHoverWithPointer()
+    }
+
+    /// The menu's modal tracking loop takes mouse dispatch for its lifetime,
+    /// so the `mouseExited` that would clear this row's highlight is spent
+    /// there and never reaches the tracking area. Where the enter/exit pair
+    /// cannot be trusted the pointer itself is the only honest source — and
+    /// it has to be asked, not assumed `false`, because the pointer is
+    /// commonly still resting on the row when the menu closes.
+    func synchroniseHoverWithPointer() {
+        let inside = pointerIsInsideRow
+        configuration?.hoverChanged?(inside)
+        // A disclosure card is a dwell affordance rather than a hover state:
+        // re-arming it as the menu dismisses would pop it over the dismissal.
+        if inside {
+            hoverDisclosurePresenter.cancel()
+        } else {
+            hoverDisclosurePresenter.pointerExited()
+        }
+    }
+
+    private var pointerIsInsideRow: Bool {
+        guard let window else { return false }
+        return bounds.contains(
+            convert(window.mouseLocationOutsideOfEventStream, from: nil))
     }
 
     override func draw(_ dirtyRect: NSRect) {
