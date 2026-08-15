@@ -869,7 +869,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                        what makes this the shortest branch in the switch. */
                     return .guestLogTail(
                         await agentIntegration.tailGuestLog(
-                            lines: request.logLineCount))
+                            lines: request.logLineCount,
+                            area: request.logArea))
                 case .census:
                     /* P1 #2. The probe is REQUIRED by the contract and by
                        the codec, so a request without one never reached a

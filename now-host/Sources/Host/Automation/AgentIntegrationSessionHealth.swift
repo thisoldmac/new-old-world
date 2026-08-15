@@ -630,12 +630,13 @@ final class AgentIntegrationHostAdapter {
         await actControl.observeElements(process: process)
     }
 
-    /// The end of the connected machine's own log for this launch. It names
-    /// no file and cannot be pointed at one; `AgentIntegrationGuestLogTail`
-    /// carries the whole of why, and what a log line can still disclose.
-    func tailGuestLog(lines: Int?) async
-        -> AgentIntegrationGuestRowReportResult {
-        await logTailControl.tail(lines: lines)
+    /// Lines of the connected machine's own log for this launch, paged off
+    /// its ring. It names no file and cannot be pointed at one;
+    /// `AgentIntegrationGuestLogTail` carries the whole of why, and what a
+    /// log line can still disclose.
+    func tailGuestLog(lines: Int?, area: String?) async
+        -> AgentIntegrationGuestLogRetrievalResult {
+        await logTailControl.tail(lines: lines, area: area)
     }
 
     func launchSoftware(_ selection: AgentIntegrationLaunchSelection,

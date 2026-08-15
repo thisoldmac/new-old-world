@@ -483,7 +483,16 @@ final class AgentIntegrationProjectedVerbCodecTests: XCTestCase {
                           note: "no transfer was in flight",
                           observedAt: now)))),
             ("log tail", .init(
-                requestID: id, guestLogTailResult: .completed(report))),
+                requestID: id, guestLogTailResult: .completed(.init(
+                    lines: ["21:04:11 wire   connected to 10.0.1.7"],
+                    requested: 200,
+                    matching: 1,
+                    shown: "1 of 1",
+                    area: nil,
+                    ringCapacity: 2000,
+                    guestFile: nil,
+                    pages: 1,
+                    observedAt: now)))),
             ("machine facts", .init(
                 requestID: id, machineFactsResult: .completed(report))),
             ("catalog search", .init(
