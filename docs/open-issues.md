@@ -7,6 +7,67 @@ search:
 
 # Open issues
 
+## FIXED, AND EVERY GATE WAS GREEN FOR ITS WHOLE LIFE: the MCP agent surface published schemas no conforming client would accept (2026-08-15, `fix/mcp-outputschema-root-type`)
+
+29 of the 46 tools rendered an `outputSchema` whose only root key was
+`oneOf` — a discriminated outcome union, every branch object-shaped, and
+no `type` at the root. The MCP specification restricts both `inputSchema`
+and `outputSchema` to `type: "object"` at the root ("Currently restricted
+to type: object at the root level"), and a client validates `tools/list`
+as **one document**: it rejected the whole response. Not 29 rows of 46 —
+**zero of 46**. Nothing about NOW was reachable from Claude Code for as
+long as this shipped.
+
+The fix is one edit, at `NOWMCPServer.tools`: the same seam that already
+injects each row's `name` and `guest` selector now supplies the root
+type, because it is a property of the MCP envelope rather than of any
+capability. It fills the type only where a row left it unstated; a row
+declaring a root type that is *not* object is stating something false
+about its own result and is failed rather than repaired.
+
+**The defect is not the interesting part — its invisibility is.** Three
+things read green or healthy throughout:
+
+- every gate in this tree, because none had ever validated the payload
+  the server publishes, only the transport that carries it;
+- the host's own MCP page, which reports "Running" whatever the payload
+  contains — reachability is not validity, and the page cannot tell them
+  apart;
+- the hand-rolled `curl` client used to check the transport by hand,
+  which does no schema validation at all and so agreed with the app.
+
+This is the observing-rig rule from AGENTS.md arriving one layer up: an
+instrument that reads a live machine must assert the plane armed, and a
+gate over a *published payload* must validate it the way its consumer
+does. A client that never got a tool and a host with no tools to give
+report identically to everything we had.
+
+`NOWMCPServerTests.testEveryRenderedToolSchemaSatisfiesTheMCPRootType-
+Requirement` closes it, deriving its tool list from
+`HostProjectionCatalog` through the rendered `tools/list` rather than a
+fixture, so a capability added tomorrow is covered by nobody. Its
+companion `testNoProjectionDeclaresANonObjectSchemaRoot` keeps the
+injection from becoming a repair.
+
+### What is proven, and what is not
+
+**Tested**, and beyond that verified against the real client on this Mac:
+the post-fix payload was served to Claude Code from a stub endpoint and
+accepted (`Status: Connected`), and the same stub serving the *pre-fix*
+payload reproduced the original verdict verbatim —
+`Invalid input: expected "object" (at tools.1.outputSchema.type) (+28
+more)`. That control is what makes the acceptance mean something.
+
+**Not done, and it is the last mile:** the NOW app running on this desk
+still serves the pre-fix payload. It was left alone deliberately rather
+than rebuilt and restarted underneath a person and two sibling lanes.
+Until someone rebuilds and restarts the host, `claude mcp get now` still
+reports the failure, and the fix is real only in the tree.
+
+The other 17 tools were clean, and no `inputSchema` was wrong at the
+root — checked against the live server before the change and against the
+rendered payload after.
+
 ## TWO METAL CAUSES FIXED, NEITHER RE-MEASURED ON METAL: the guest→host drag's anchor window and its consent lifetime (2026-08-14, `fix/continuity-drag-round3`)
 
 Round 2 of the guest→host cross-edge drag was attended and produced three
