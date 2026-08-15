@@ -243,12 +243,12 @@ final class RightSidebarRailView: NSVisualEffectView,
     }
 
     private func setHovered(_ hovered: Bool) {
+        let reduceMotion =
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let background = hovered
             ? NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
             : nil
-        let scale = hovered &&
-            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            ? Self.hoverScale : 1
+        let scale = hovered && !reduceMotion ? Self.hoverScale : 1
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.14)
         CATransaction.setAnimationTimingFunction(
@@ -256,6 +256,23 @@ final class RightSidebarRailView: NSVisualEffectView,
         layer?.backgroundColor = background
         layer?.transform = CATransform3DMakeScale(scale, scale, 1)
         CATransaction.commit()
+        /* H10: the chevron itself bounces on hover, layered over the
+           whole-rail scale + tint above rather than replacing either —
+           the rail says "hoverable," the chevron says "this is the
+           control that opens it." Reduce Motion turns off the rail's
+           own scale animation already; the symbol effect honours the
+           same signal rather than reading it a second, inconsistent
+           way. macOS 14 is the SymbolEffect floor and this package's is
+           13 (Package.swift `.v13`, MACOSX_DEPLOYMENT_TARGET 13.0), so
+           it is additive polish, not a requirement. */
+        if #available(macOS 14, *) {
+            if hovered && !reduceMotion {
+                iconView.addSymbolEffect(
+                    .bounce.up, options: .nonRepeating)
+            } else {
+                iconView.removeAllSymbolEffects()
+            }
+        }
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo)
