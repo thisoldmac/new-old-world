@@ -120,7 +120,7 @@ private enum FilesHostMode: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
-    var title: LocalizedStringResource {
+    var title: LocalizedStringKey {
         switch self {
         case .browser: "Browser"
         case .settings: "Settings"

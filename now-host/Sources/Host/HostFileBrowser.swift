@@ -729,7 +729,7 @@ struct FilesHostBrowserView: View {
 }
 
 private struct HostFilesBrowserUnavailable: View {
-    let title: LocalizedStringResource
+    let title: LocalizedStringKey
     let symbol: String
     var detail: String?
 
