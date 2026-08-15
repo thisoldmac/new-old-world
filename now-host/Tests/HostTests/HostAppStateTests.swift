@@ -73,6 +73,15 @@ final class HostAppStateTests: XCTestCase {
 final class HostLogTests: XCTestCase {
     func testTheLogFileIsWrittenAndTailable() throws {
         let log = HostLog.shared
+        /* Opens its own file rather than inheriting one.
+           It used to read `log.url` and find whatever an earlier suite had
+           left open — which passed only because the switch happened to be on
+           and `url` outlived a close. `HostLog` now clears the path when it
+           closes the file (an agent reading `persistsToDisk: false` beside a
+           path could not tell which was true), and this test asks for what it
+           needs instead of depending on test order. */
+        log.setPersistsToDisk(true)
+        defer { log.setPersistsToDisk(false) }
         let url = try XCTUnwrap(log.url, "a log file should have been opened")
         XCTAssertTrue(url.path.contains("now-logs"))
         XCTAssertTrue(url.lastPathComponent.hasSuffix(".log"))

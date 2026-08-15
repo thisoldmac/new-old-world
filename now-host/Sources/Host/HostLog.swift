@@ -103,6 +103,14 @@ final class HostLog: ObservableObject {
             write(.info, "app", "disk logging off")   // last line to the file
             try? handle?.close()
             handle = nil
+            /* And the path goes with it. It used to survive the close, so
+               `url` named a file nothing was writing — harmless for the Logs
+               subtitle, which asks `persistsToDisk` first, and NOT harmless
+               for `now_host_log_tail`, which reports both as fields: an
+               agent would read a path and a false switch and have to guess
+               which was true. Caught by that row's own test on a run where
+               another suite had turned the file on first. */
+            url = nil
         }
         persistsToDisk = handle != nil
     }

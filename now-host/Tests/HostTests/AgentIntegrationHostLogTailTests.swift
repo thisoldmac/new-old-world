@@ -70,16 +70,27 @@ final class AgentIntegrationHostLogTailTests: XCTestCase {
     /// This is the row's reason for existing, so it is asserted rather than
     /// assumed: with the switch off there is no file, `file` is null, and the
     /// lines are still there.
+    /// The file is switched ON and then OFF inside the test, deliberately:
+    /// the sharp case is not "there was never a file", it is "there WAS one
+    /// and there is not now". `HostLog` used to keep `url` past the close, so
+    /// this row would have reported a path beside `persistsToDisk: false` and
+    /// left an agent to guess which of the two was true. (Found by this test
+    /// on a full run, where another suite had opened a file first.)
     func testItServesTheRingWhileTheDiskSwitchIsOff() {
         let area = tag(#function)
-        HostLog.shared.write(.info, area, "evidence that survives the switch")
+        HostLog.shared.setPersistsToDisk(true)
+        XCTAssertNotNil(HostLog.shared.url,
+                        "The test needs a file to have existed, or it is not "
+                            + "exercising the stale-path case at all.")
+        HostLog.shared.setPersistsToDisk(false)
 
+        HostLog.shared.write(.info, area, "evidence that survives the switch")
         let tail = HostLogTailReader.read(lines: 5, area: area)
 
         XCTAssertFalse(tail.persistsToDisk)
         XCTAssertNil(
             tail.file,
-            "No file while the switch is off, and null is not a failure.")
+            "A path beside a false switch names a file nothing is writing.")
         XCTAssertEqual(tail.lines.count, 1,
                        "The ring answered with no file behind it.")
     }
