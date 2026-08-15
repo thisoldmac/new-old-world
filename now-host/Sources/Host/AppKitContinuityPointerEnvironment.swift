@@ -307,6 +307,18 @@ final class AppKitContinuityPointerEnvironment:
         (token as? ContinuityFileEdge)?.setCatching(catching)
     }
 
+    func catchSurfaceHitTest(_ token: AnyObject, at screenPoint: CGPoint)
+        -> ContinuityCatchHitTest {
+        guard let edge = token as? ContinuityFileEdge else {
+            /* Both zero, so `ownsPoint` is false: no surface is not the
+               same as a surface that lost, and the caller must not act as
+               though it had one. */
+            return ContinuityCatchHitTest(serverTopWindowNumber: 0,
+                                          panelWindowNumber: 0)
+        }
+        return edge.hitTest(at: screenPoint)
+    }
+
     func hideFileEdge(_ token: AnyObject) {
         let fileEdge = token as? ContinuityFileEdge
         fileEdge?.close()

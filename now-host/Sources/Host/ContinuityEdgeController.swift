@@ -92,6 +92,12 @@ protocol ContinuityPointerEnvironment: AnyObject {
     /// starts — so the rest of the time the boundary pixel pair is all this
     /// app takes from whatever is underneath.
     func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool)
+    /// Asks the WINDOW SERVER whether the catch surface is the window at
+    /// `screenPoint` — the question `setFileEdgeCatching` cannot answer,
+    /// because widening a panel and the server agreeing it was widened are
+    /// two events 15–25 ms apart. See `ContinuityCatchHitTest`.
+    func catchSurfaceHitTest(_ token: AnyObject, at screenPoint: CGPoint)
+        -> ContinuityCatchHitTest
     /// Starts the native drag from a REAL host mouse event. Non-optional on
     /// purpose: AppKit owns a gesture only when it can see the event that
     /// began it, and a synthesized stand-in is the shape that failed
@@ -251,7 +257,23 @@ final class ContinuityEdgeController: ObservableObject {
         let returnPoint: CGPoint
         var waitedForRealEvent = false
         var suspectEchoes = 0
+        /// The session's button state has been re-armed. Until it has, no
+        /// drag session may begin — and the re-arm itself waits on the
+        /// window server, so this is no longer something the crossing can
+        /// do and forget in the same breath.
+        var armed = false
+        /// A real host mouse event that arrived before the catch surface
+        /// was ready. Kept rather than dropped: on this path a real event
+        /// is the scarce thing, and what is late is the arm.
+        var heldEvent: NSEvent?
+        var armAttempts = 0
     }
+
+    /// After this many samples without the window server handing the seed
+    /// point to the catch surface, say so as an error. It keeps trying —
+    /// the release ends it either way — but a silence here reads exactly
+    /// like a drag that simply never happened.
+    private static let catchSurfaceArmAttemptLimit = 30
 
     /// The hardware's own answer to "is the primary button physically
     /// held", read at the HID level. Injectable because no test has a
@@ -742,38 +764,93 @@ final class ContinuityEdgeController: ObservableObject {
         pressOrigin = nil
         state = .ready
         pendingReturnDrag = PendingReturnDrag(item: item,
-                                              returnPoint: returnPoint)
-        /* Re-arm the SESSION's button state before AppKit is asked to own
-           the gesture, and only now — the tap is down, so nothing of ours
-           can swallow it, and the catch surface is wide and key, so our own
-           window receives it. The tap swallowed the physical
-           `leftMouseDown`, which leaves the window server believing no
-           button is held: it synthesizes `mouseMoved` instead of
-           `leftMouseDragged`, treats the physical release as a no-op, and a
-           drag session begun under that state completes instantly wherever
-           the cursor stands or tracks nothing at all (metal, 2026-08-15
-           04:18–04:20, both shapes in one log). Our own readers ask the HID
-           level; an NSDraggingSession cannot be taught to. */
-        if environment.postSyntheticPrimaryButton(down: true,
-                                                  at: returnPoint) {
-            audit(.info, "session button state re-armed: synthetic primary "
-                + "down posted at \(Int(returnPoint.x)),"
-                + "\(Int(returnPoint.y)) — the tap swallowed the physical "
-                + "one, and the drag session AppKit is about to own is "
-                + "driven by session state, not the HID's")
-        } else {
-            audit(.error, "could not re-arm the session button state; the "
-                + "host drag session will complete instantly or track "
-                + "nothing")
-        }
-        if let sourceEvent {
+                                              returnPoint: returnPoint,
+                                              heldEvent: sourceEvent)
+        /* The re-arm is ATTEMPTED here and will normally not happen yet:
+           the widen two statements up has not reached the window server,
+           and posting into that gap is what pressed a button on the Finder
+           desktop. See `armSessionButtonIfSurfaceIsReady`. */
+        if armSessionButtonIfSurfaceIsReady(), let sourceEvent {
             /* The observe-only monitor path already has one. Nothing waits. */
             startReturnDrag(with: sourceEvent)
             return
         }
         status = "Keep holding the button: finishing the file drag on this Mac"
-        audit(.info, "guest file crossed with no host mouse event yet; "
-            + "waiting for the first real one now the tap is down")
+        audit(.info, "guest file crossed; waiting for the catch surface and "
+            + "the first real host mouse event now the tap is down")
+    }
+
+    /// Re-arms the SESSION's button state — but only once the window server
+    /// agrees the catch surface is the window at the seed point.
+    ///
+    /// Two separate facts make that wait necessary, and the crossing used to
+    /// assume both.
+    ///
+    /// The tap swallowed the physical `leftMouseDown`, so the window server
+    /// believes no button is held: it synthesizes `mouseMoved` instead of
+    /// `leftMouseDragged`, treats the physical release as a no-op, and a drag
+    /// session begun under that state completes instantly wherever the cursor
+    /// stands or tracks nothing at all (metal, 2026-08-15 04:18–04:20, both
+    /// shapes in one log). Our own readers ask the HID level; an
+    /// `NSDraggingSession` cannot be taught to. Hence a synthetic down.
+    ///
+    /// But a posted down goes wherever the SERVER thinks the pointer is, and
+    /// the server had not yet been told the strip was widened — that takes
+    /// 15–25 ms and several runloop turns, and no synchronous flush brings it
+    /// forward (measured 2026-08-15). Worse, the strip was fully transparent
+    /// and so was never hit-tested at all. Posted anyway, the down landed on
+    /// the Finder desktop: a rubber-band selection under the whole handoff,
+    /// and the same event handed back through the global monitor as the
+    /// "real" one the drag was then seeded from.
+    ///
+    /// **This app does not press a button on another application.** So the
+    /// post waits, and it is retried off the sample stream rather than a
+    /// timer — the pointer is mid-crossing and moving, and this path already
+    /// depends on further samples arriving for its real event.
+    @discardableResult
+    private func armSessionButtonIfSurfaceIsReady() -> Bool {
+        guard var waiting = pendingReturnDrag else { return false }
+        guard !waiting.armed else { return true }
+        waiting.armAttempts += 1
+        let hit = fileEdge.map {
+            environment.catchSurfaceHitTest($0, at: waiting.returnPoint)
+        }
+        let where_ = hit?.summary ?? "there is no catch surface at all"
+        guard hit?.ownsPoint == true else {
+            if waiting.armAttempts == 1 {
+                audit(.info, "holding the synthetic primary down until the "
+                    + "window server puts the catch surface under the seed "
+                    + "point: \(where_) — posted now it would press the "
+                    + "button on whatever is underneath")
+            } else if waiting.armAttempts == Self.catchSurfaceArmAttemptLimit {
+                audit(.error, "the catch surface still does not own the seed "
+                    + "point after \(waiting.armAttempts) samples: \(where_) "
+                    + "— this Mac will not press a button into another "
+                    + "application, so this file drag will end without "
+                    + "starting")
+            }
+            pendingReturnDrag = waiting
+            return false
+        }
+        audit(.info, "the catch surface owns the seed point: \(where_), "
+            + "samples=\(waiting.armAttempts)")
+        if environment.postSyntheticPrimaryButton(down: true,
+                                                  at: waiting.returnPoint) {
+            audit(.info, "session button state re-armed: synthetic primary "
+                + "down posted at \(Int(waiting.returnPoint.x)),"
+                + "\(Int(waiting.returnPoint.y)) — the tap swallowed the "
+                + "physical one, and the drag session AppKit is about to own "
+                + "is driven by session state, not the HID's")
+        } else {
+            /* Armed anyway: a failed post is not a reason to spin, and the
+               drag is better attempted than abandoned silently. */
+            audit(.error, "could not re-arm the session button state; the "
+                + "host drag session will complete instantly or track "
+                + "nothing")
+        }
+        waiting.armed = true
+        pendingReturnDrag = waiting
+        return true
     }
 
     /// The second half of the crossing above, driven by whatever real event
@@ -822,18 +899,23 @@ final class ContinuityEdgeController: ObservableObject {
             status = "The file drag ended before this Mac could take it over"
             return true
         }
-        guard let sourceEvent else {
-            if !waiting.waitedForRealEvent {
-                waiting.waitedForRealEvent = true
-                pendingReturnDrag = waiting
-                /* Once, not per sample: the tap can deliver a burst, and a
-                   line per sample would bury the one that matters. */
-                audit(.info, "still waiting for a real host mouse event: the "
-                    + "held sample carried none")
-            }
-            return true
+        if let sourceEvent { waiting.heldEvent = sourceEvent }
+        if waiting.heldEvent == nil, !waiting.waitedForRealEvent {
+            waiting.waitedForRealEvent = true
+            /* Once, not per sample: the tap can deliver a burst, and a
+               line per sample would bury the one that matters. */
+            audit(.info, "still waiting for a real host mouse event: the "
+                + "held sample carried none")
         }
-        startReturnDrag(with: sourceEvent)
+        pendingReturnDrag = waiting
+        /* Two things must both be true, and they arrive in either order: a
+           real event AppKit can own a gesture from, and a catch surface the
+           window server has actually put under the seed point. Whichever is
+           late, this returns having consumed the sample and tries again on
+           the next one. */
+        guard armSessionButtonIfSurfaceIsReady(),
+              let event = pendingReturnDrag?.heldEvent else { return true }
+        startReturnDrag(with: event)
         return true
     }
 
@@ -857,12 +939,26 @@ final class ContinuityEdgeController: ObservableObject {
                has no other kind — so it is the SEED that has to be ours,
                and this says which it was rather than leaving both readings
                of `ourWindow=no` open. */
-            audit(seed.ownWindow ? .info : .error,
+            audit(seed.ownWindow && seed.serverOwnsPoint ? .info : .error,
                   "host drag session seed: \(seed.summary)")
             if !seed.ownWindow {
                 audit(.error, "the drag session was anchored to a window "
                     + "this app does not own; the drag image will freeze "
                     + "and nothing will accept the file")
+            }
+            /* Distinct from the line above, and this is the pair the next
+               metal round needs kept apart. `ownWindow` is about the seed
+               this app CONSTRUCTED — it can be ours while the window server
+               still hands every real event at that point to somebody else,
+               which is exactly the shape that shipped: seed ourWindow=yes,
+               a Finder marquee underneath it, and a drag image pinned at
+               the edge for the length of the session. */
+            if !seed.serverOwnsPoint {
+                audit(.error, "the window server does not put the catch "
+                    + "surface under the seed point, so the gesture at that "
+                    + "point belongs to another application; the drag image "
+                    + "will stick where it started even if the session "
+                    + "tracks")
             }
             /* Custody passes to AppKit here, which is the OTHER half of the
                held-button rule: nothing of ours may keep reacting to a

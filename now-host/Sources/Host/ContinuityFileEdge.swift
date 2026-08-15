@@ -14,6 +14,17 @@ import MirrorKitUI
 struct ContinuityDragSeed: Equatable, Sendable {
     /// `NSEvent.EventType` raw value of the constructed seed.
     var eventType: UInt
+    /// What the WINDOW SERVER says is the frontmost window at the seed
+    /// point. Reported beside `panelCoversPoint`, which is this process's
+    /// own frame arithmetic, because on metal the two disagreed and only
+    /// the server's answer routes a mouse event. See
+    /// `ContinuityCatchHitTest`.
+    var serverTopWindowNumber: Int = 0
+    /// Whether this app was active at the instant the seed was built. It is
+    /// the third leg of the same diagnosis: a background app's panel that
+    /// never went key, an event that never arrived, and an app that was
+    /// never front are three different failures that produced one symptom.
+    var appActive: Bool = false
     /// The window number the seed carries — the one AppKit anchors to.
     var windowNumber: Int
     /// The catch panel's own number, so the two can be compared in the log
@@ -40,6 +51,13 @@ struct ContinuityDragSeed: Equatable, Sendable {
         panelWindowNumber != 0 && windowNumber == panelWindowNumber
     }
 
+    /// The artifact-level companion to `panelCoversPoint`: not "our frame
+    /// contains this point" but "the window server would deliver a mouse
+    /// event here to us".
+    var serverOwnsPoint: Bool {
+        panelWindowNumber != 0 && serverTopWindowNumber == panelWindowNumber
+    }
+
     /// Logged verbatim beside the source event's provenance line, in the
     /// same grammar, so the two can be read against each other.
     var summary: String {
@@ -49,7 +67,47 @@ struct ContinuityDragSeed: Equatable, Sendable {
             + "resolved=\(resolvedToPanel ? "yes" : "no"), "
             + "clickCount=\(clickCount), "
             + "panelKey=\(panelKey ? "yes" : "no"), "
-            + "panelCoversPoint=\(panelCoversPoint ? "yes" : "no")"
+            + "panelCoversPoint=\(panelCoversPoint ? "yes" : "no"), "
+            + "serverTopWindow=\(serverTopWindowNumber), "
+            + "serverOwnsPoint=\(serverOwnsPoint ? "yes" : "no"), "
+            + "appActive=\(appActive ? "yes" : "no")"
+    }
+}
+
+/// The window server's answer to "whose window is at this point", beside
+/// the catch panel's own number.
+///
+/// It exists because `ContinuityDragSeed.panelCoversPoint` is
+/// `window.frame.contains(point)` — a fact about THIS process's idea of its
+/// own geometry, true the instant `setFrame` returns — while the routing of
+/// a posted `leftMouseDown` is decided by the window server, which is a
+/// different machine with a different clock. Measured on this Mac,
+/// 2026-08-15, the two disagree in two separate ways:
+///
+/// - for **15–25 ms and several runloop turns** after every widen, because
+///   a frame change reaches the server asynchronously and no synchronous
+///   flush (`CATransaction.flush`, `display`, `displayIfNeeded`, a zero-length
+///   runloop spin) brings it forward; and
+/// - **forever**, when the panel's surface is fully transparent — see
+///   `ContinuityFileEdge.hitTestableAlpha`.
+///
+/// This is the same rule as "the artifact carries it, not the intent": the
+/// old code asserted that it had widened the surface, which was true, and
+/// inferred that events would arrive there, which was not.
+struct ContinuityCatchHitTest: Equatable, Sendable {
+    /// `NSWindow.windowNumber(at:belowWindowWithWindowNumber:)` — the
+    /// server's frontmost window at the point.
+    var serverTopWindowNumber: Int
+    var panelWindowNumber: Int
+
+    var ownsPoint: Bool {
+        panelWindowNumber != 0 && serverTopWindowNumber == panelWindowNumber
+    }
+
+    var summary: String {
+        "serverTopWindow=\(serverTopWindowNumber), "
+            + "panelWindow=\(panelWindowNumber), "
+            + "ownsPoint=\(ownsPoint ? "yes" : "no")"
     }
 }
 
@@ -174,6 +232,13 @@ final class ContinuityFileEdge: NSObject {
             guard let event else { return nil }
             return (event, ContinuityDragSeed(
                 eventType: event.type.rawValue,
+                /* The server's own answer, taken at the same instant as the
+                   frame arithmetic beside it, so the log can be read for
+                   which of the two was wrong instead of assuming they
+                   agree. */
+                serverTopWindowNumber: NSWindow.windowNumber(
+                    at: screenPoint, belowWindowWithWindowNumber: 0),
+                appActive: NSApp?.isActive ?? false,
                 windowNumber: event.windowNumber,
                 panelWindowNumber: window.windowNumber,
                 resolvedToPanel: event.window === window,
@@ -250,7 +315,11 @@ final class ContinuityFileEdge: NSObject {
         super.init()
         panel.contentView = edgeView
         panel.isOpaque = false
-        panel.backgroundColor = .clear
+        panel.backgroundColor = Self.hitTestableBackground
+        /* Redundant with the default, and set anyway: this is the property
+           the window server's routing decision is named after, and leaving
+           it implicit is how it took a metal round to suspect. */
+        panel.ignoresMouseEvents = false
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -331,6 +400,50 @@ final class ContinuityFileEdge: NSObject {
     /// drag starts or the handoff is abandoned — a permanently wide surface
     /// would eat the edge of whatever app lives there.
     static let catchThickness: CGFloat = 160
+
+    /// **A window the window server cannot see is not a catch surface.**
+    ///
+    /// The strip was `backgroundColor = .clear` with a content view that
+    /// draws nothing, which leaves every pixel at alpha zero — and the
+    /// window server routes mouse events straight THROUGH such a window to
+    /// whatever is beneath it. `NSWindow.windowNumber(at:)` never returned
+    /// this panel, at any delay, deterministically over three rounds
+    /// (measured on this Mac, 2026-08-15). Frontness made no difference and
+    /// neither did key state; only the alpha did.
+    ///
+    /// That single fact is the whole of the marquee: the synthetic primary
+    /// down this app posts at the seed point fell through the panel onto the
+    /// Finder desktop, which took it for a rubber-band selection AND handed
+    /// the same event straight back through the global monitor as the "real"
+    /// one the drag was then seeded from — the metal log's `host drag seed
+    /// event: type=1, windowNumber=30, ourWindow=no`, a `leftMouseDown` we
+    /// posted ourselves.
+    ///
+    /// One part in 255 is enough for the server and is below the threshold
+    /// of a visible tint; a fully transparent strip is not a design goal, it
+    /// was an accident with teeth.
+    static let hitTestableAlpha: CGFloat = 1.0 / 255.0
+
+    static var hitTestableBackground: NSColor {
+        NSColor.black.withAlphaComponent(hitTestableAlpha)
+    }
+
+    /// Whether the panel is in a state the window server will hit-test at
+    /// all. Asserted by a test against a real AppKit panel, because the two
+    /// properties it reads are exactly the pair whose defaults look
+    /// harmless.
+    var catchSurfaceIsHitTestable: Bool {
+        (panel.backgroundColor.alphaComponent > 0) && !panel.ignoresMouseEvents
+    }
+
+    /// What the window server says is at `screenPoint` right now. See
+    /// `ContinuityCatchHitTest` for why this is asked rather than inferred.
+    func hitTest(at screenPoint: CGPoint) -> ContinuityCatchHitTest {
+        ContinuityCatchHitTest(
+            serverTopWindowNumber: NSWindow.windowNumber(
+                at: screenPoint, belowWindowWithWindowNumber: 0),
+            panelWindowNumber: panel.windowNumber)
+    }
 
     private static func frame(for edge: ContinuitySharedEdge,
                               catching: Bool) -> CGRect {
