@@ -111,8 +111,11 @@ profile, expired page token, and unavailable AI planner remain distinct.
   explicit optional dependencies and are never downloaded on a page request.
 - Forms, logins, uploads, session replay, synthetic JavaScript event links,
   video, and a complete image-transcoding pipeline are not yet served.
-- The PowerPC listener, wire relay, and host renderer build and have automated
-  parser/codec tests, but have not yet been runtime-verified from Classilla.
+- Until 2026-08-15 the PowerPC listener refused every browser connection, so
+  no page had ever been served on any guest. It has now served one end to end
+  on the emulator — an in-guest HTTP client fetched a page through
+  `127.0.0.1:5180` and the host's bytes arrived intact — but not yet from
+  Classilla, and not yet on real hardware.
 - The optional local layout model is not distributed until its model card,
   base-model and training-data provenance, license, version, and checksum are
   settled. An already-installed local model folder can be selected in the host
