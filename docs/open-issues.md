@@ -7,6 +7,7 @@ search:
 
 # Open issues
 
+
 ## EMULATOR-OBSERVED WHERE IT COUNTS: 035 fix wave — the Web proxy serves its first page ever, the footer joins the drop system, drags stop wedging (2026-08-15 overnight, four lanes merged, gate green)
 
 Round 2's fix wave, plan 035. `scripts/test-all` green on the merged
@@ -69,21 +70,52 @@ C3 closed earlier as stale-binary (install the current guest). S3
 (multi-root projects) intentionally waits on Michelle's prefs-shape
 call. Ideas N1–N6 are issues #29–#34.
 
+Post-wave addendum: a granted mirror get / continuity grab was cancelled
+by the host's own begin guard (sendMirrorFileGet/sendContinuityGrab never
+set activeFileGetID) — found by the files lane, confirmed end-to-end by
+the DMG-migration session, fixed @ c752cb99 with the success-path tests
+the API never had. Why nothing saw it: refusals route ungated
+(Session:657 → GuestListener:3347, fromActive() only) while successes
+were gated — so the API's only test asserted a refusal. The next API on
+this lane gets tested success-first for exactly that reason.
+
 ## TESTED, THE ONE DELIBERATE REGRESSION UNWATCHED: Mirror consent is one switch on the Mac, planes on the host (2026-08-15, `claude/034w5-mirror`, closes plan 034 G-7)
 
 Mirror consent (plan 034 G-7, 2026-08-15). The guest's half of the two-key consent is now ONE master switch; the four per-plane guest gates retired and the host's plane policy is the sole granularity. Both sides must still permit — the guest's veto is untouched, only its granularity moved. Field fates, all decided explicitly: `policy.enabled` is new and required; `structure`/`finderComplements`/`content`/`foregroundCycle` are retired but STILL SENT by a current guest, all four set to the master, because a host built before this change declares them required and would fail to decode the entire facts object without them. A host reading a guest that predates `enabled` collapses the four by the guest's own migration rule (consent only when ALL FOUR were on), stated once per side because two sides guessing differently would grant a permission that Mac's own preferences deny, silently, since every plane would simply work. Prefs reach V29; the V22 slots stay and are written from the master, so the rule is its own inverse and a file round-trips through a format-28 build unchanged. UNVERIFIED, and it is the interesting half: the migration is conservative by design, so almost every existing preferences file collapses to consent OFF — only structure was ever on by default — meaning a person who upgrades finds mirroring refused until they tick one box, and nobody has watched that happen on a real machine. Also unverified on metal: the host's `content` plane default flipped to OFF to inherit the guest's old default (P3 is metal-proven to crash the Finder on the PB1400c), so a fresh pair of machines should behave exactly as before; that equivalence is argued from code, not observed. Neither guest page nor host page has been seen rendered — no emulator or metal pass ran for this change.
 
-## WORKS TODAY, DEPRECATED UPSTREAM: `hdiutil create` in the DMG assembler (2026-08-15)
+## RESOLVED: the DMG assembler no longer uses the deprecated `hdiutil create` (2026-08-15, `build/dmg-diskutil-migration`)
 
-`scripts/assemble-release :: create_dmg` shells out to `hdiutil create
--srcfolder … -volname … -format UDZO`, and macOS now prints: "'hdiutil
-create -volname -format ...' is deprecated. Please use 'diskutil image
-create from/blank --volumeName --format ...' instead." The DMG still
-builds and mounts correctly (verified 2026-08-15 while adding the
-Applications alias). Migrate to `diskutil image create` on our schedule
-rather than an OS release's — the flags do not map 1:1, so it is a small
-deliberate change with a mount-and-inspect test, not a rename.
-`tools/release-tests` covers the assembler and is the gate for the swap.
+`scripts/assemble-release :: create_dmg` now shells out to `diskutil
+image create from --format UDZO --volumeName "New Old World" <source>
+<destination>`. The flags did map across after all: `UDZO` is one of
+`diskutil`'s own accepted format names, `-volname` becomes
+`--volumeName`, and the source folder and destination become positional.
+Both spellings were built from the same stub folder and compared on
+macOS 27 — UDIF read-only compressed (zlib), GUID partition scheme, APFS
+filesystem, symlinks carried across rather than dereferenced — so this
+is an equivalent image, not a similar one.
+
+The `tools/release-tests` mount-and-inspect case gained the assertion the
+swap actually needed: the drag-to-install `/Applications` alias is a
+symlink with that exact target. A builder that dereferenced it would
+still produce a DMG that mounts and passes every other assertion. Both
+halves were watched failing — a mutation that made the alias a real
+directory, and one that pointed it elsewhere.
+
+The gate clones `HEAD` rather than reading the worktree, which is worth
+knowing before trusting it: the first green run of this change tested
+the unmodified committed script and proved nothing. Commit, then run.
+
+Not closed by this: `tools/release/image.py` still calls `hdiutil
+create` for the generic classic-Mac setup image, and cannot move. It
+needs `-fs HFS+`, `-size` and `-layout NONE`; `diskutil image create
+from` has no equivalent of any of the three and produces APFS only.
+Worse, `diskutil listFilesystems` on macOS 27 no longer offers an HFS+
+personality at all, so the replacement tool has retired the capability
+the classic image depends on rather than merely not grown it yet. That
+is a different problem from this one, tracked as
+[issue #28](https://github.com/thisoldmac/new-old-world/issues/28), and
+it is unsolved rather than deferred.
 
 ## EMULATOR-OBSERVED AT BEST, METAL NOT AT ALL: 034 wave 4 — the Files cocktail, one name rule, files drop in from outside (2026-08-15, five lanes merged, gate green)
 

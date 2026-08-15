@@ -426,6 +426,14 @@ class ReleaseTests(unittest.TestCase):
                 extension.read_bytes())
             self.assertTrue((onboarding / "Dependencies/License Material"
                              / "Apple License.txt").is_file())
+            # The image builder must carry symlinks across verbatim, not
+            # dereference them: the drag-to-install alias is an absolute
+            # link out of the volume, and a copy of /Applications instead
+            # would be a silently broken DMG that still mounts.
+            alias = mount / "Applications"
+            self.assertTrue(alias.is_symlink(),
+                            "drag-to-install alias is not a symlink")
+            self.assertEqual(os.readlink(alias), "/Applications")
         finally:
             subprocess.run([
                 "/usr/bin/hdiutil", "detach", "-force", device,
