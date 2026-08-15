@@ -209,6 +209,13 @@ run_py now-guest-shared continuity_lease_admission_source_test.py
 # refusals are watched here where no Macintosh is needed to try them.
 run_c now-guest-shared now_continuity_selection_test.c "" \
       src/now_continuity_selection.c
+# continuity.offer inverted: the host publishes, this table just applies
+# it. No refusal vocabulary of its own to test - the host answers a
+# continuity.grab's refusals - so this covers the two local decisions:
+# what a report says with nothing better to go on, and when a grab may
+# be sent. Deliberately runs no clock (see the header on why).
+run_c now-guest-shared now_continuity_offer_test.c "" \
+      src/now_continuity_offer.c
 run_c now-guest-shared now_continuity_keyboard_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
 run_py now-guest-shared continuity_keyboard_safety_source_test.py
