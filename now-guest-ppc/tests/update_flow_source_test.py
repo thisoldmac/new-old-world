@@ -50,16 +50,22 @@ ordered(wire, "now_sha256_update(&g_put.update_sha, bytes, len)",
         "now_update_install(g_put.update_component")
 
 # Finder identity is checked before either component is installed. The old
-# item is renamed to a collision-free recovery name and moved to that volume's
-# Trash before the verified staged item takes the canonical name. There is no
-# exchange: the running app deliberately remains alive from the trashed file
-# long enough to report that a relaunch is required.
+# item moves to that volume's Trash under its OWN unchanged name before the
+# verified staged item takes the canonical name -- 2026-08-14 (034 H4): this
+# used to rename the old item to a collision-free recovery name first, which
+# is the exact fBsyErr operation fileshare.c's move_busy_named was already
+# hardened against (renaming a still-running spec does not succeed reliably
+# on every system Finder replacement does). There is no exchange: the
+# running app deliberately remains alive from the trashed file long enough
+# to report that a relaunch is required.
 ordered(install, "finder_identity(staged, 'APPL', 'NOWo')",
         'replace_to_trash(staged, &current, "application"')
 ordered(install, "finder_identity(staged, 'INIT', 'NOWx')",
         'replace_to_trash(staged, &current, "NOW Extension"')
 ordered(install, "FindFolder(spec->vRefNum, kTrashFolderType",
-        "FSpRename(spec, pname)", "move_to_directory(spec, trash_dir)")
+        "now_trash_move_busy(spec, trash_dir)")
+assert "FSpRename(spec," not in install, (
+    "the live spec must never be renamed -- that is what returns fBsyErr")
 ordered(install, "move_old_to_trash(&old", "FSpRename(&replacement",
         "restore_from_trash(&old")
 assert "FSpExchangeFiles" not in install
