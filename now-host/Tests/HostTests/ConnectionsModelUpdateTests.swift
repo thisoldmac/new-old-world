@@ -14,7 +14,6 @@ import XCTest
 /// update was applied, nobody relaunched, and the next round metal-tested
 /// the OLD build believing it new. These guards are the reconnect-fingerprint
 /// check that replaces the one-shot "Installed." text.
-@MainActor
 final class ConnectionsModelUpdateTests: XCTestCase {
     private var root: URL!
 
@@ -59,6 +58,7 @@ final class ConnectionsModelUpdateTests: XCTestCase {
         SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
     }
 
+    @MainActor
     private func waitUntil(_ what: String, timeout: TimeInterval = 5,
                            _ condition: @escaping () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
@@ -74,6 +74,7 @@ final class ConnectionsModelUpdateTests: XCTestCase {
     /// Sets up a listener with a newer application build published, a
     /// FakeGuest connected reporting the old one, and the model driving it —
     /// the shared prefix every test below needs before it can install.
+    @MainActor
     private func connectedRig() async throws
         -> (listener: GuestListener, guest: FakeGuest, model: ConnectionsModel) {
         let provider = try applicationProvider()
@@ -104,6 +105,7 @@ final class ConnectionsModelUpdateTests: XCTestCase {
     /// relaunches the app. This Mac must keep saying so — not once, but on
     /// every later refresh — because that is exactly the metal round that
     /// went undetected.
+    @MainActor
     func testAnUnrelaunchedApplicationKeepsSayingSoAcrossRefreshes()
         async throws {
         let (listener, guest, model) = try await connectedRig()
@@ -157,6 +159,7 @@ final class ConnectionsModelUpdateTests: XCTestCase {
     /// one opening — a new `GuestKey` — and this Mac's only proof is that
     /// new session reporting the installed build. If the tracking were
     /// keyed by the old session, this confirmation could never fire.
+    @MainActor
     func testAGenuineRelaunchOnANewSessionIsConfirmedOnTheNewRow()
         async throws {
         let (listener, oldGuest, model) = try await connectedRig()
