@@ -1,6 +1,58 @@
 import AppKit
 import MirrorKitUI
 
+/// What a drag session was actually seeded with, as opposed to what
+/// triggered it.
+///
+/// The round-2 metal audit had only the second fact — `host drag seed
+/// event: type=6, windowNumber=14932, ourWindow=no` — and that line is
+/// about the REAL mouse event a global monitor handed over, which belongs
+/// to whatever application the pointer is above. It could never say
+/// whether the session AppKit then started was anchored to a window this
+/// app owns, and the session that froze its drag image for 101 stand-down
+/// samples was the answer nobody had asked for.
+struct ContinuityDragSeed: Equatable, Sendable {
+    /// `NSEvent.EventType` raw value of the constructed seed.
+    var eventType: UInt
+    /// The window number the seed carries — the one AppKit anchors to.
+    var windowNumber: Int
+    /// The catch panel's own number, so the two can be compared in the log
+    /// rather than believed.
+    var panelWindowNumber: Int
+    /// Whether `NSEvent.window` resolved back to the panel. Reported beside
+    /// the numbers rather than instead of them: an event built from a
+    /// window number is legal whether or not AppKit chooses to resolve it,
+    /// and the number is the load-bearing half.
+    var resolvedToPanel: Bool
+    var clickCount: Int
+    /// Whether the panel was key at the instant the seed was built. The
+    /// gesture arrives with the button already held and no application
+    /// holding the press, so a panel that cannot be addressed is a session
+    /// with nowhere to live.
+    var panelKey: Bool
+    /// Whether the widened panel actually covers the point the drag starts
+    /// from. A seed anchored to our window at a point outside it is the
+    /// next shape of the same defect.
+    var panelCoversPoint: Bool
+
+    /// The one fact this seed exists to make true.
+    var ownWindow: Bool {
+        panelWindowNumber != 0 && windowNumber == panelWindowNumber
+    }
+
+    /// Logged verbatim beside the source event's provenance line, in the
+    /// same grammar, so the two can be read against each other.
+    var summary: String {
+        "type=\(eventType), windowNumber=\(windowNumber), "
+            + "ourWindow=\(ownWindow ? "yes" : "no"), "
+            + "panelWindow=\(panelWindowNumber), "
+            + "resolved=\(resolvedToPanel ? "yes" : "no"), "
+            + "clickCount=\(clickCount), "
+            + "panelKey=\(panelKey ? "yes" : "no"), "
+            + "panelCoversPoint=\(panelCoversPoint ? "yes" : "no")"
+    }
+}
+
 /// The AppKit half of Continuity file traversal. The controller owns gesture
 /// state and guest coordinates; this object owns the real macOS drag source
 /// and destination which must exist at the physical display boundary.
@@ -89,16 +141,27 @@ final class ContinuityFileEdge: NSObject {
             return callbacks.dropped(sender.draggingPasteboard)
         }
 
-        func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                           sourceEvent: NSEvent) -> Bool {
-            guard let window else { return false }
+        /// Builds the seed WITHOUT starting anything.
+        ///
+        /// Separate from `beginFileDrag` so the one property that had to be
+        /// measured on metal — whose window the session is anchored to —
+        /// can be asserted here, against a real AppKit panel, without a
+        /// live drag session in a test process.
+        func makeSeed(at screenPoint: CGPoint, from sourceEvent: NSEvent)
+            -> (event: NSEvent, seed: ContinuityDragSeed)? {
+            guard let window else { return nil }
             let windowPoint = window.convertPoint(fromScreen: screenPoint)
-            let viewPoint = convert(windowPoint, from: nil)
-            /* Every field here comes from the caller's real event. The
-               defaults this used to fall back to were reached whenever the
-               event was nil, and a drag seeded from invented timestamps and
-               click counts is exactly the fake session that failed. */
-            let seed = NSEvent.mouseEvent(
+            /* Location, timestamp, modifiers and pressure come from the
+               caller's real event; the WINDOW NUMBER deliberately does not.
+               The real event belongs to whatever application the returning
+               pointer is above — on metal, window 14932, which is not ours
+               — and an event carrying a foreign window is an event AppKit
+               anchors a session to a window this app cannot address. The
+               defaults this used to fall back to when the event was nil
+               are still gone: a drag seeded from invented timestamps and
+               click counts is a different failure, and both are avoided by
+               copying every field except the one that must be ours. */
+            let event = NSEvent.mouseEvent(
                 with: .leftMouseDragged,
                 location: windowPoint,
                 modifierFlags: sourceEvent.modifierFlags,
@@ -108,7 +171,25 @@ final class ContinuityFileEdge: NSObject {
                 eventNumber: sourceEvent.eventNumber,
                 clickCount: sourceEvent.clickCount,
                 pressure: sourceEvent.pressure)
-            guard let seed else { return false }
+            guard let event else { return nil }
+            return (event, ContinuityDragSeed(
+                eventType: event.type.rawValue,
+                windowNumber: event.windowNumber,
+                panelWindowNumber: window.windowNumber,
+                resolvedToPanel: event.window === window,
+                clickCount: event.clickCount,
+                panelKey: window.isKeyWindow,
+                panelCoversPoint: window.frame.contains(screenPoint)))
+        }
+
+        func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
+                           sourceEvent: NSEvent) -> ContinuityDragSeed? {
+            guard let window,
+                  let (seed, provenance) = makeSeed(at: screenPoint,
+                                                    from: sourceEvent)
+            else { return nil }
+            let windowPoint = window.convertPoint(fromScreen: screenPoint)
+            let viewPoint = convert(windowPoint, from: nil)
 
             let dragging = NSDraggingItem(pasteboardWriter: item.writer)
             let size = item.image.size
@@ -121,7 +202,7 @@ final class ContinuityFileEdge: NSObject {
                 with: [dragging], event: seed, source: self)
             session.draggingFormation = .none
             session.animatesToStartingPositionsOnCancelOrFail = true
-            return true
+            return provenance
         }
 
         func draggingSession(_ session: NSDraggingSession,
@@ -210,9 +291,31 @@ final class ContinuityFileEdge: NSObject {
     }
 
     func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                       sourceEvent: NSEvent) -> Bool {
-        edgeView.beginFileDrag(item, at: screenPoint,
-                               sourceEvent: sourceEvent)
+                       sourceEvent: NSEvent) -> ContinuityDragSeed? {
+        armForHandoff()
+        return edgeView.beginFileDrag(item, at: screenPoint,
+                                      sourceEvent: sourceEvent)
+    }
+
+    /// The seed's window is only worth having if the window is real at that
+    /// instant: wide enough to cover the point, in front, and key.
+    ///
+    /// The controller already widens on the way in, and this is the second
+    /// door onto the same rule rather than a duplicate of it — the ordering
+    /// is what failed on metal, and an ordering enforced only by the order
+    /// of two calls in a different file is enforced by nothing.
+    private func armForHandoff() {
+        setCatching(true)
+        panel.orderFrontRegardless()
+        if !panel.isKeyWindow { panel.makeKeyAndOrderFront(nil) }
+    }
+
+    /// What the seed WOULD be, without starting a session. Exists for the
+    /// test that asserts the anchor window, which cannot run a live drag.
+    func makeDragSeed(at screenPoint: CGPoint,
+                      from sourceEvent: NSEvent) -> ContinuityDragSeed? {
+        armForHandoff()
+        return edgeView.makeSeed(at: screenPoint, from: sourceEvent)?.seed
     }
 
     func close() { panel.close() }

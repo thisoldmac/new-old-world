@@ -81,8 +81,14 @@ protocol ContinuityPointerEnvironment: AnyObject {
     /// began it, and a synthesized stand-in is the shape that failed
     /// attended testing. A caller with no event must refuse out loud instead
     /// of calling this.
+    ///
+    /// Returns what the session was actually seeded with, or nil when
+    /// nothing was started. The seed is a RETURN VALUE rather than a line
+    /// written inside the implementation because the caller is the one that
+    /// audits, and round 2 shipped with provenance for the trigger event and
+    /// none at all for the seed.
     func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                       sourceEvent: NSEvent) -> Bool
+                       sourceEvent: NSEvent) -> ContinuityDragSeed?
 }
 
 
@@ -703,8 +709,20 @@ final class ContinuityEdgeController: ObservableObject {
             + ", windowNumber=\(sourceEvent.windowNumber), "
             + "ourWindow=\(sourceEvent.window == nil ? "no" : "yes"), "
             + "clickCount=\(sourceEvent.clickCount)")
-        if environment.beginFileDrag(waiting.item, at: point,
-                                     sourceEvent: sourceEvent) {
+        if let seed = environment.beginFileDrag(waiting.item, at: point,
+                                                sourceEvent: sourceEvent) {
+            /* The line the round-2 audit did not have. The trigger event is
+               a foreign application's by construction — a global monitor
+               has no other kind — so it is the SEED that has to be ours,
+               and this says which it was rather than leaving both readings
+               of `ourWindow=no` open. */
+            audit(seed.ownWindow ? .info : .error,
+                  "host drag session seed: \(seed.summary)")
+            if !seed.ownWindow {
+                audit(.error, "the drag session was anchored to a window "
+                    + "this app does not own; the drag image will freeze "
+                    + "and nothing will accept the file")
+            }
             /* Custody passes to AppKit here, which is the OTHER half of the
                held-button rule: nothing of ours may keep reacting to a
                pointer that now belongs to a drag session. */

@@ -323,6 +323,89 @@ final class ContinuityGuestDragTests: XCTestCase {
         }, "the log must say whose window the gesture came from")
     }
 
+    /// The line round 2 did not have. The trigger event is foreign by
+    /// construction, so `ourWindow=no` on it is ordinary; the question that
+    /// mattered — and went unasked while the drag image froze for 101
+    /// stand-down samples — is whose window the SESSION was anchored to.
+    func testTheConstructedSeedIsAuditedAsOurOwnWindow() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag session seed")
+                && $0.1.contains("ourWindow=yes")
+        }, "the seed's own provenance must be recorded, not inferred from "
+            + "the trigger event's")
+    }
+
+    /// And when it is not ours, it is an ERROR that names the consequence —
+    /// the exact metal symptom, so the next audit log reads as a diagnosis
+    /// rather than as three unexplained facts.
+    func testAForeignAnchoredSessionIsNamedAsAnError() {
+        let rig = Rig()
+        rig.environment.dragSeed = ContinuityDragSeed(
+            eventType: 6, windowNumber: 14932, panelWindowNumber: 77,
+            resolvedToPanel: false, clickCount: 1, panelKey: false,
+            panelCoversPoint: false)
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error && $0.1.contains("window this app does not own")
+        })
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag session seed")
+                && $0.1.contains("ourWindow=no")
+        })
+    }
+
+    /// FIX A against real AppKit rather than against a fake: the seed is
+    /// built from the real event's location, timestamp and flags but
+    /// carries the CATCH PANEL's window number. Measured on metal (round 2)
+    /// as `windowNumber=14932, ourWindow=no` — a window belonging to
+    /// whatever the returning pointer was above.
+    ///
+    /// It asserts the seed rather than a live session on purpose: starting
+    /// one in a test process would hand the run to a drag loop with no
+    /// mouse behind it.
+    func testTheSeedCarriesThePanelsWindowAndNotTheEventsOwn() throws {
+        let host = HostDisplayDescriptor(
+            id: 41, name: "Studio Display",
+            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
+        let fileEdge = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            callbacks: .init(entered: { _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { fileEdge.close() }
+        let foreign = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: CGPoint(x: 10, y: 10),
+            modifierFlags: [.shift], timestamp: 12, windowNumber: 14932,
+            context: nil, eventNumber: 4242, clickCount: 1, pressure: 1))
+
+        let seed = try XCTUnwrap(
+            fileEdge.makeDragSeed(at: CGPoint(x: 1380, y: 450),
+                                  from: foreign))
+
+        XCTAssertTrue(seed.ownWindow,
+                      "AppKit anchors the session to the seed's window; a "
+                        + "foreign one freezes the drag image where it stood")
+        XCTAssertNotEqual(seed.windowNumber, foreign.windowNumber)
+        XCTAssertEqual(seed.eventType,
+                       NSEvent.EventType.leftMouseDragged.rawValue)
+        XCTAssertTrue(seed.panelCoversPoint,
+                      "a seed anchored to our window at a point outside it "
+                        + "is the next shape of the same defect")
+        XCTAssertTrue(seed.summary.contains("ourWindow=yes"))
+    }
+
     func testReleasingBeforeARealEventAbandonsTheDragOutLoud() {
         let rig = Rig()
         rig.select(Self.file(name: "Read Me"))
@@ -744,11 +827,19 @@ private final class Rig {
             _ = token
             fileCallbacks = nil
         }
+        /// What the real environment would report about the session it
+        /// started. Own-window by default; a test that wants the metal
+        /// failure sets a foreign one.
+        var dragSeed: ContinuityDragSeed? = ContinuityDragSeed(
+            eventType: 6, windowNumber: 77, panelWindowNumber: 77,
+            resolvedToPanel: true, clickCount: 1, panelKey: true,
+            panelCoversPoint: true)
+
         func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                           sourceEvent: NSEvent) -> Bool {
+                           sourceEvent: NSEvent) -> ContinuityDragSeed? {
             ledger.steps.append(.hostDragBegan)
             fileDrags.append((item, screenPoint, sourceEvent))
-            return true
+            return dragSeed
         }
         func emit(_ sample: HostPointerSample, event: NSEvent? = nil) {
             handler?(sample, event)

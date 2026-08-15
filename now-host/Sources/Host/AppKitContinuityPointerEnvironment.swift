@@ -255,8 +255,8 @@ final class AppKitContinuityPointerEnvironment:
     }
 
     func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                       sourceEvent: NSEvent) -> Bool {
-        guard let edge = activeFileEdge else { return false }
+                       sourceEvent: NSEvent) -> ContinuityDragSeed? {
+        guard let edge = activeFileEdge else { return nil }
         return edge.beginFileDrag(item, at: screenPoint,
                                   sourceEvent: sourceEvent)
     }

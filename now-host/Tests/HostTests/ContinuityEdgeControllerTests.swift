@@ -1106,10 +1106,18 @@ private extension ContinuityEdgeControllerTests {
             _ = token
             fileCallbacks = nil
         }
+        /// What the real environment would report about the session it
+        /// started. Own-window by default, because that is what the fixed
+        /// implementation does; a test that wants the failure sets it.
+        var dragSeed: ContinuityDragSeed? = ContinuityDragSeed(
+            eventType: 6, windowNumber: 77, panelWindowNumber: 77,
+            resolvedToPanel: true, clickCount: 1, panelKey: true,
+            panelCoversPoint: true)
+
         func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
-                           sourceEvent: NSEvent) -> Bool {
+                           sourceEvent: NSEvent) -> ContinuityDragSeed? {
             fileDrags.append((item, screenPoint, sourceEvent))
-            return true
+            return dragSeed
         }
         func emit(_ sample: HostPointerSample, event: NSEvent? = nil) {
             handler?(sample, event)
