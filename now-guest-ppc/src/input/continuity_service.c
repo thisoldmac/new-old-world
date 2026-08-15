@@ -527,10 +527,14 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
                spin cost of each. */
             /* Re-read: the barrier's target is the edge's own point, and
                this side may only WAIT for it while it genuinely holds it.
-               A settle that was suppressed (the human's own hand) or that
-               the manager refused leaves the target unheld, and the honest
-               answer there is unaskable rather than half a second of
-               spinning against a point nothing is moving toward. */
+               A settle suppressed because the human's own hand ended the
+               epoch leaves the target unheld, and the honest answer there
+               is unaskable rather than half a second of spinning against a
+               point nothing is moving toward. A REFUSED manager move is
+               not distinguished here: `requested_*` has always meant what
+               this side asked for, the refusal logs its own error line, and
+               teaching this read to second-guess it would put two meanings
+               on one field. */
             now_continuity_cursor_diagnostics(&applied);
             barrier = now_continuity_cursor_await_exposure(&exposure,
                 event_down == 0,
