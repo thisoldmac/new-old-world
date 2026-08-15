@@ -15,6 +15,21 @@ typedef struct DevProjectRow {
     char name[kDevProjectsNameCap];
 } DevProjectRow;
 
+/* What the page shows about ONE project: the few manifest fields a
+   person reads, lifted out of DevProject so the page never holds a
+   16-kilobyte parse (its file list dominates that struct) for a
+   selection. */
+typedef struct DevProjectFacts {
+    char id[kDevProjectsIDCap];
+    char name[kDevProjectsNameCap];
+    char target[64];
+    char configuration[64];
+    char toolchain_id[40];
+    char toolchain_version[32];
+    char product[128];
+    int build_actions;
+} DevProjectFacts;
+
 /* One `Project` row's value: identity first so a name containing `|`
    stays parseable from the left, which is what the host already does. */
 int dev_projects_record(char *out, long cap, const DevProjectRow *row);

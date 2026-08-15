@@ -1070,6 +1070,18 @@ int now_development_runtime_active(void)
     return g_runtime.service.job.state == kDevJobRunning;
 }
 
+void now_development_runtime_product(char *out, long cap)
+{
+    /* The CACHED reference only. Whether it is still exact is a re-hash
+       of both forks, and the page asks this from idle - the run command
+       re-checks before it launches anything, which is where that cost
+       belongs. */
+    if (cap <= 0) return;
+    out[0] = '\0';
+    if (!g_runtime.product.ready) return;
+    snprintf(out, (size_t)cap, "%s", g_runtime.product.ref);
+}
+
 void now_development_runtime_status(char *out, long cap)
 {
     if (g_runtime.last_status[0]) snprintf(out, (size_t)cap, "%s", g_runtime.last_status);

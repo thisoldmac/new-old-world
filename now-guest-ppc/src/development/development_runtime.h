@@ -17,6 +17,10 @@ void now_development_runtime_cancel(void);
 int now_development_runtime_active(void);
 void now_development_runtime_status(char *out, long cap);
 
+/* The opaque reference the last successful build produced, or empty when
+   there is none or it is no longer exact. The page gates Run on it. */
+void now_development_runtime_product(char *out, long cap);
+
 /* The last few settled builds, newest first, for the page to draw.
    Deliberately not on the wire: the host watches each job settle as it
    drives it, so this is a renderer for something the wire already saw -

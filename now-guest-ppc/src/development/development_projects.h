@@ -35,4 +35,8 @@ DevProjectsLookup dev_projects_scan(long cursor, DevProjectRow *rows,
 DevProjectsLookup dev_projects_find(const char *project_id, FSSpec *folder,
                                     long *dir_id);
 
+/* One project's readable facts. A file read, so callers keep it off the
+   idle path: the page asks when the selection changes, never per pass. */
+int dev_projects_facts(const char *project_id, DevProjectFacts *facts);
+
 #endif

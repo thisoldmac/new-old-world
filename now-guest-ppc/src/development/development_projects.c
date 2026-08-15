@@ -27,15 +27,17 @@ OSErr dev_projects_folder_id(const FSSpec *spec, long *dir_id)
     return noErr;
 }
 
-int dev_projects_identity(const FSSpec *folder, long dir_id,
-                          char id[kDevProjectsIDCap],
-                          char name[kDevProjectsNameCap])
+/* One read of one Project.ckp, because two callers want different parts
+   of the same parse and two copies of the read is how the two drift. The
+   caller owns the DevProject: it is far too large for a stack frame on
+   this machine (its file list dominates it). */
+static int read_manifest(const FSSpec *folder, long dir_id,
+                         DevProject *project)
 {
     FSSpec manifest;
     short ref = -1;
     long eof, count;
     char *text;
-    DevProject *project;
     char reason[120];
     OSErr err = FSMakeFSSpec(folder->vRefNum, dir_id,
         (ConstStr255Param)"\pProject.ckp", &manifest);
@@ -46,12 +48,6 @@ int dev_projects_identity(const FSSpec *folder, long dir_id,
     }
     text = (char *)NewPtr(eof + 1);
     if (text == NULL) { FSClose(ref); return 0; }
-    /* DevProject is far too large for this stack frame on the guest, and
-       the walk allocates one per folder it inspects. */
-    project = (DevProject *)NewPtr(sizeof *project);
-    if (project == NULL) {
-        DisposePtr((Ptr)text); FSClose(ref); return 0;
-    }
     count = eof;
     err = FSRead(ref, &count, text);
     FSClose(ref);
@@ -59,16 +55,31 @@ int dev_projects_identity(const FSSpec *folder, long dir_id,
     text[eof] = '\0';
     if (err != noErr || !dev_project_parse(text, project,
                                            reason, sizeof reason)) {
-        DisposePtr((Ptr)project); DisposePtr((Ptr)text); return 0;
+        DisposePtr((Ptr)text); return 0;
     }
     DisposePtr((Ptr)text);
-    /* A manifest id is 32 hex characters and the parser's field is wider
-       than that; take exactly what fits rather than letting a malformed
-       manifest decide how much of this buffer to use. */
-    snprintf(id, kDevProjectsIDCap, "%.32s", project->id);
-    if (name != NULL) snprintf(name, kDevProjectsNameCap, "%s", project->name);
-    DisposePtr((Ptr)project);
     return 1;
+}
+
+int dev_projects_identity(const FSSpec *folder, long dir_id,
+                          char id[kDevProjectsIDCap],
+                          char name[kDevProjectsNameCap])
+{
+    DevProject *project = (DevProject *)NewPtr(sizeof *project);
+    int ok;
+    if (project == NULL) return 0;
+    ok = read_manifest(folder, dir_id, project);
+    if (ok) {
+        /* A manifest id is 32 hex characters and the parser's field is
+           wider than that; take exactly what fits rather than letting a
+           malformed manifest decide how much of this buffer to use. */
+        snprintf(id, kDevProjectsIDCap, "%.32s", project->id);
+        if (name != NULL) {
+            snprintf(name, kDevProjectsNameCap, "%.95s", project->name);
+        }
+    }
+    DisposePtr((Ptr)project);
+    return ok;
 }
 
 DevProjectsLookup dev_projects_scan(long cursor, DevProjectRow *rows,
@@ -151,4 +162,37 @@ DevProjectsLookup dev_projects_find(const char *project_id, FSSpec *folder,
             && strcmp(found, project_id) == 0) return kDevProjectsFound;
     }
     return kDevProjectsAbsent;
+}
+
+int dev_projects_facts(const char *project_id, DevProjectFacts *facts)
+{
+    FSSpec folder;
+    long dir_id;
+    DevProject *project;
+    int ok;
+    if (facts == NULL) return 0;
+    memset(facts, 0, sizeof *facts);
+    if (dev_projects_find(project_id, &folder, &dir_id) != kDevProjectsFound) {
+        return 0;
+    }
+    project = (DevProject *)NewPtr(sizeof *project);
+    if (project == NULL) return 0;
+    ok = read_manifest(&folder, dir_id, project);
+    if (ok) {
+        snprintf(facts->id, sizeof facts->id, "%.32s", project->id);
+        snprintf(facts->name, sizeof facts->name, "%.95s", project->name);
+        snprintf(facts->target, sizeof facts->target, "%.63s",
+                 project->target);
+        snprintf(facts->configuration, sizeof facts->configuration, "%.63s",
+                 project->configuration);
+        snprintf(facts->toolchain_id, sizeof facts->toolchain_id, "%.39s",
+                 project->toolchain_id);
+        snprintf(facts->toolchain_version, sizeof facts->toolchain_version,
+                 "%.31s", project->toolchain_version);
+        snprintf(facts->product, sizeof facts->product, "%.127s",
+                 project->product);
+        facts->build_actions = project->build.count;
+    }
+    DisposePtr((Ptr)project);
+    return ok;
 }
