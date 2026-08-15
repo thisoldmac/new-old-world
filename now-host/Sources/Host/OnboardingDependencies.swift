@@ -81,7 +81,7 @@ struct OnboardingDependencyAcquirer {
                 return "The download server did not return the package."
             case .couldNotEncode:
                 return "The downloaded package could not be prepared for "
-                    + "the classic Mac."
+                    + MachineNaming.simpleReference + "."
             case .checksumMismatch(let expected, let actual):
                 return "The downloaded file did not match its published "
                     + "checksum (expected \(expected), got \(actual))."

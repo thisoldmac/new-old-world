@@ -1775,7 +1775,7 @@ final class GuestListener: ObservableObject {
                                     Result<FileDelivery, FileFailure>) -> Void) {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
-                                      message: "No classic Mac is connected")))
+                                      message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         let id = nextCommandId
@@ -1825,7 +1825,7 @@ final class GuestListener: ObservableObject {
         guard let session, case .connected = state else {
             completion(.failure(.init(
                 code: "disconnected",
-                message: "No classic Mac is connected")))
+                message: "No \(MachineNaming.commonNoun) is connected")))
             return
         }
         guard session.mirrorTransfer == true else {

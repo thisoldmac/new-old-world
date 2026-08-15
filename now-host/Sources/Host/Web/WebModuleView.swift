@@ -21,7 +21,7 @@ struct WebModuleView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Modern web pages, translated for a classic browser")
                 .font(.title2.weight(.semibold))
-            Text("The browser connects to New Old World on the classic Mac. "
+            Text("The browser connects to New Old World on \(MachineNaming.simpleReference). "
                  + "Requests cross the existing NOW connection; this Mac "
                  + "owns TLS, JavaScript, policy, and page translation.")
                 .foregroundStyle(.secondary)
@@ -34,7 +34,7 @@ struct WebModuleView: View {
                 Label("Set the classic browser's HTTP proxy to 127.0.0.1:5180.",
                       systemImage: "arrow.left.arrow.right")
                 Text("The loopback listener belongs to the guest application. "
-                     + "It is not exposed to the classic Mac's LAN, and it uses "
+                     + "It is not exposed to \(MachineNaming.possessive(nil)) LAN, and it uses "
                      + "the same authenticated-by-presence NOW session as the "
                      + "rest of the app.")
                     .font(.callout)

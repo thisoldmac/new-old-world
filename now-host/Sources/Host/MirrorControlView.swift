@@ -48,7 +48,7 @@ struct MirrorToolbarView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .fixedSize()
-                .help("How much of the classic Mac's screen one point here "
+                .help("How much of \(MachineNaming.possessive(nil)) screen one point here "
                       + "is worth. Every numbered stop is a power of two, so "
                       + "the pixels stay exact.")
             }
@@ -57,9 +57,9 @@ struct MirrorToolbarView: View {
             }
             .disabled(!run.running && !model.connection.canCapture)
             .help(run.running
-                  ? "Stop asking the classic Mac for its screen. Every "
+                  ? "Stop asking \(MachineNaming.simpleReference) for its screen. Every "
                     + "Mirror request refuses until it is started again."
-                  : "Start asking the classic Mac for its screen.")
+                  : "Start asking \(MachineNaming.simpleReference) for its screen.")
             Button(presentation.isDetached ? "Attach" : "Detach") {
                 setDetached(!presentation.isDetached)
             }

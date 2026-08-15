@@ -29,14 +29,16 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
         var errorDescription: String? {
             switch self {
             case .noStub:
-                return "That dragged item is no longer available on the "
-                    + "classic Mac."
+                return "That dragged item is no longer available on "
+                    + MachineNaming.simpleReference + "."
             case .busy:
-                return "Another file is already crossing from the classic Mac."
+                return "Another file is already crossing from "
+                    + MachineNaming.simpleReference + "."
             case .wire(let code, let message):
                 return code == "stale-selection"
-                    ? "The selection on the classic Mac changed before the "
-                        + "file could be copied."
+                    ? MachineNaming.startingSentence(
+                        "the selection on \(MachineNaming.simpleReference) changed before the "
+                        + "file could be copied.")
                     : message
             }
         }

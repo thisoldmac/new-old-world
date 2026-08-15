@@ -170,13 +170,13 @@ final class ConnectionsPaneTests: XCTestCase {
 
         let waiting = snapshot(state: .listening(port: 5250), guests: [])
         XCTAssertEqual(waiting.headline,
-                       "Listening on 5250 — no old world mac connected",
+                       "Listening on 5250 — no guest connected",
                        "the port AND the emptiness, in one line")
         XCTAssertTrue(waiting.isIdle)
 
         let one = snapshot(state: .connected(guestName: "NOW 0.14"),
                            guests: [guest("pb1400c", active: true)])
-        XCTAssertEqual(one.headline, "1 old world mac connected")
+        XCTAssertEqual(one.headline, "1 guest connected")
         XCTAssertNil(one.headline.range(of: "driving"),
                      "one machine is not a choice, so naming the driven one "
                      + "would dress it up as one")
@@ -185,7 +185,7 @@ final class ConnectionsPaneTests: XCTestCase {
             state: .connected(guestName: "NOW 0.14"),
             guests: [guest("q950"), guest("pb1400c", active: true, at: 5)])
         XCTAssertEqual(several.headline,
-                       "2 old world macs connected — driving pb1400c",
+                       "2 guests connected — driving pb1400c",
                        "with a choice, the line says which way it went")
         XCTAssertEqual(several.driving?.machineID, "pb1400c")
     }
@@ -234,7 +234,7 @@ final class ConnectionsPaneTests: XCTestCase {
             state: .connected(guestName: "NOW 0.14"),
             guests: [guest("pb1400c", active: true), guest("q950", at: 5)])
         XCTAssertEqual(before.headline,
-                       "2 old world macs connected — driving pb1400c")
+                       "2 guests connected — driving pb1400c")
 
         let other = before.rows.first { $0.machineID == "q950" }!
         XCTAssertTrue(model.drive(other))
@@ -244,7 +244,7 @@ final class ConnectionsPaneTests: XCTestCase {
             state: .connected(guestName: "NOW 0.14"),
             guests: [guest("pb1400c", at: 5), guest("q950", active: true)])
         XCTAssertEqual(after.headline,
-                       "2 old world macs connected — driving q950")
+                       "2 guests connected — driving q950")
     }
 
     /// A machine arriving or leaving while the page is open moves it between
@@ -264,12 +264,12 @@ final class ConnectionsPaneTests: XCTestCase {
         XCTAssertFalse(arrived.isIdle)
         XCTAssertTrue(arrived.known.isEmpty,
                       "a remembered row never shadows the live machine")
-        XCTAssertEqual(arrived.headline, "1 old world mac connected")
+        XCTAssertEqual(arrived.headline, "1 guest connected")
 
         let left = snapshot(state: .listening(port: 5250), guests: [],
                             known: [record("pb1400c")])
         XCTAssertEqual(left.headline,
-                       "Listening on 5250 — no old world mac connected",
+                       "Listening on 5250 — no guest connected",
                        "a machine that left leaves the link up, not broken")
         XCTAssertEqual(try XCTUnwrap(left.known.first).presence, .known)
     }

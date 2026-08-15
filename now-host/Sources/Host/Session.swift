@@ -185,7 +185,7 @@ final class Session {
     /// What a guest that sent no name is called. One constant, because
     /// GuestKey folds by it too and a second spelling would let an
     /// unnamed guest be admitted twice under two different keys.
-    nonisolated static let unnamedGuest = "Classic Mac"
+    nonisolated static let unnamedGuest = "Guest"
     /// Set at the gate. Nil until then.
     private(set) var guestKey: GuestKey?
     /// Where this connection came from, known from accept.

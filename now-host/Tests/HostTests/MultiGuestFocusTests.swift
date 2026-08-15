@@ -550,7 +550,7 @@ final class MultiGuestFocusTests: XCTestCase {
         let menu = MainMenu.fillDriveMenu(holder, guests: [], target: self,
                                           action: #selector(noop))
         XCTAssertEqual(menu.items.map(\.title),
-                       ["No Old World Macs Connected"])
+                       ["No Guests Connected"])
         XCTAssertFalse(holder.isEnabled)
     }
 

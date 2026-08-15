@@ -138,7 +138,9 @@ struct GuestSelectionMenu: View {
         .accessibilityLabel(
             Text("Selected guest: \(activeLabel)",
                  comment:
-                    "Label for the toolbar menu that chooses the classic Mac controlled by this window."))
+                    // `comment:` is a StaticString — MachineNaming.commonNoun can't be
+                    // interpolated here, so this stays a literal in step with it.
+                    "Label for the toolbar menu that chooses the guest controlled by this window."))
         .accessibilityValue(Text(status.menuLine))
     }
 
