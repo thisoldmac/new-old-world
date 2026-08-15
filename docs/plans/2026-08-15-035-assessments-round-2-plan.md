@@ -138,3 +138,7 @@ must actually land on the guest before its fixes can show.
 
 L-web (C1, emulator re-verify), L-footer (C2 + T1–T6), L-files (S4,
 sibling-check first), L-smalls (S1 + volumes/ata units). S3 waits.
+- 2026-08-15 (overnight): idea tickets filed — N1 → #29, N2 → #30,
+  N4 → #31 (builds on the sibling's log work), N6 → #32, N5 → #33,
+  N3 → #34. The two arcs (#33, #34) carry their option sets and the
+  deciding questions; nothing implemented, per the overnight contract.
