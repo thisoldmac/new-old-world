@@ -49,6 +49,28 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(environment.moves.last?.point.y, 300)
     }
 
+    /// `reportFileGrabOutcome` is the seam `ContinuityFileDrag.configure`
+    /// wires a grab's terminal `notice` into — see
+    /// `ContinuityGuestDragTests.testAWrongFileRefusalReachesTheOutcomeSinkInPlainWords`
+    /// for the sink firing with the right words. This pins the other half:
+    /// that firing it actually reaches the same `status` the page draws.
+    func testFileGrabOutcomeReachesTheOrdinaryStatusLine() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.start()
+
+        controller.reportFileGrabOutcome(
+            "The selection on the classic Mac changed before the file "
+                + "could be copied.")
+
+        XCTAssertEqual(controller.status,
+                       "The selection on the classic Mac changed before "
+                        + "the file could be copied.")
+    }
+
     func testNativeHostClickIsSentWithoutRelinquishingGuestControl() {
         let layout = makeLayout()
         let driver = Driver()

@@ -354,23 +354,31 @@ final class ConnectionsModel: ObservableObject {
         let component: UpdateProvider.Component
     }
 
-    /// The build this Mac told the guest to install, kept per key from the
-    /// moment `installUpdate` sends the command until the guest's own
-    /// reconnect proves it is running it — or until the session that
-    /// installed it disconnects, at which point a fresh session's ordinary
-    /// `.current`/`.replacement` read is the honest answer.
+    /// A relaunch is proved by a RECONNECT, which is a NEW `GuestKey` — an
+    /// application install cannot be confirmed against the session that
+    /// requested it, because that session, by the contract's own design,
+    /// keeps running the old code and never reports a new build itself.
+    /// So this tracks per MACHINE, and survives the disconnect the proof
+    /// depends on.
+    private struct MachineUpdateKey: Hashable {
+        let machine: GuestID
+        let component: UpdateProvider.Component
+    }
+
+    /// The build this Mac told a machine to install, kept from the moment
+    /// `installUpdate` sends the command until some later connection from
+    /// the SAME machine reports it, or until a fresh install for the same
+    /// machine and component replaces the target.
     ///
     /// It exists because `update.result` carries `ok` and `action`
     /// (`relaunch-required`/`restart-required`) but no build — the contract
     /// is explicit that an application install "remains connected" running
     /// the OLD code "until the person quits and relaunches it", so this
-    /// side cannot infer completion from the result alone. The only proof
-    /// this Mac gets is the SAME session later reporting the new build at a
-    /// fresh `hello`, which for an unrelaunched guest never arrives — a
-    /// one-shot "Installed." notice would then sit there being read as
-    /// current forever, which is exactly the silent-stale-build defect this
-    /// tracks against.
-    private var pendingRelaunches: [UpdateKey: String] = [:]
+    /// side cannot infer completion from the result alone. Deliberately
+    /// NOT cleared on disconnect: the disconnect is what a real relaunch
+    /// looks like from here, and the only proof of one is the reconnect
+    /// this key is waiting to compare against.
+    private var pendingRelaunches: [MachineUpdateKey: String] = [:]
 
     private let listener: GuestListener
     private let resolve: (String) -> AgentIntegrationUnavailable?
@@ -550,10 +558,12 @@ final class ConnectionsModel: ObservableObject {
         updateNotices[key] = "Downloading and installing…"
         /* Recorded before the request leaves, from the offer this row is
            actually showing — the only place the target build is known,
-           since `update.result` never carries one. */
+           since `update.result` never carries one. Keyed by MACHINE: see
+           `pendingRelaunches`. */
         if case .replacement(let offer) = updateAvailability(
             for: row, component: component) {
-            pendingRelaunches[key] = offer.build
+            pendingRelaunches[MachineUpdateKey(
+                machine: guest.machine, component: component)] = offer.build
         }
         let installed = component == .application
             ? (row.version, row.build)
@@ -563,7 +573,8 @@ final class ConnectionsModel: ObservableObject {
             installedBuild: installed.1) { [weak self] result in
                 guard let self, !result.ok else { return }
                 self.pendingUpdates.remove(key)
-                self.pendingRelaunches.removeValue(forKey: key)
+                self.pendingRelaunches.removeValue(forKey: .init(
+                    machine: guest.machine, component: component))
                 self.updateNotices[key] = result.error?.message
                     ?? "The guest refused the update."
             }
@@ -582,15 +593,17 @@ final class ConnectionsModel: ObservableObject {
             UpdateKey(guest: guest, component: component))
     }
 
-    /// True while this row installed a component and this Mac has not yet
-    /// seen the reconnect proof that it is running it. Meant for a
-    /// lightweight badge that reads even when nobody has opened the update
-    /// section's own notice text.
+    /// True while this row's MACHINE has an install this Mac has not yet
+    /// seen a reconnect confirm. Meant for a lightweight badge that reads
+    /// even when nobody has opened the update section's own notice text,
+    /// and true across the disconnect a genuine relaunch causes — a
+    /// remembered row for the same machine still carries the warning.
     func isAwaitingRelaunch(for row: ConnectionRow,
                             component: UpdateProvider.Component) -> Bool {
-        guard let guest = row.key else { return false }
-        return pendingRelaunches[UpdateKey(guest: guest,
-                                           component: component)] != nil
+        guard let machine = row.key?.machine
+            ?? GuestID(row.machineID) else { return false }
+        return pendingRelaunches[MachineUpdateKey(
+            machine: machine, component: component)] != nil
     }
 
     private func finishUpdate(key guest: GuestKey, result: UpdateResult) {
@@ -599,51 +612,66 @@ final class ConnectionsModel: ObservableObject {
         let key = UpdateKey(guest: guest, component: component)
         pendingUpdates.remove(key)
         if result.ok {
-            updateNotices[key] = relaunchNotice(for: key)
+            updateNotices[key] = relaunchNotice(machine: guest.machine,
+                                                component: component)
         } else {
-            pendingRelaunches.removeValue(forKey: key)
+            pendingRelaunches.removeValue(forKey: .init(
+                machine: guest.machine, component: component))
             updateNotices[key] = result.reason ?? result.code
                 ?? "The guest could not install the update."
         }
     }
 
     /// Re-derives every outstanding relaunch notice against this Mac's
-    /// current view of the guest, on every refresh — never a value set once
-    /// and left to go stale while the guest sits unrelaunched underneath it.
+    /// current view of the roster, on every refresh — never a value set
+    /// once and left to go stale while the guest sits unrelaunched
+    /// underneath it. Written under whichever session key currently
+    /// represents the machine, which after a genuine relaunch is a NEW
+    /// session — so the confirmation lands on the row that is actually on
+    /// screen, not the one that disconnected to earn it.
     private func resolvePendingRelaunches() {
         guard !pendingRelaunches.isEmpty else { return }
-        for key in pendingRelaunches.keys {
-            updateNotices[key] = relaunchNotice(for: key)
+        for machineKey in pendingRelaunches.keys {
+            guard let guest = listener.guests.first(where: {
+                $0.id == machineKey.machine
+            }) else { continue }
+            updateNotices[UpdateKey(guest: guest.key,
+                                    component: machineKey.component)] =
+                relaunchNotice(machine: machineKey.machine,
+                              component: machineKey.component)
         }
     }
 
     /// The honest sentence for one pending install: confirmed by a matching
-    /// build on THIS session's latest report, or plainly not yet — never
+    /// build on the machine's CURRENT connection, or plainly not yet — never
     /// silence, and never a claim this Mac cannot back with the guest's own
     /// word. The contract is explicit that installing an application never
     /// relaunches it and installing an extension never restarts the Mac
     /// (`update.result.action` is `relaunch-required`/`restart-required`,
     /// not `relaunch`/`restarted`), so "installed" and "running the new
     /// build" are two different facts and this says which one is true.
-    private func relaunchNotice(for key: UpdateKey) -> String {
+    private func relaunchNotice(machine: GuestID,
+                                component: UpdateProvider.Component)
+        -> String {
+        let key = MachineUpdateKey(machine: machine, component: component)
         guard let targetBuild = pendingRelaunches[key] else {
-            return key.component == .application
+            return component == .application
                 ? "Installed. Quit NOW on the guest, then launch it again."
                 : "Installed. Restart the guest Mac to activate it."
         }
-        if let guest = listener.guests.first(where: { $0.key == key.guest }) {
-            let reported = key.component == .application
+        if let guest = listener.guests.first(where: { $0.id == machine }) {
+            let reported = component == .application
                 ? guest.build : guest.extensionBuild
             if let reported, reported == targetBuild {
                 pendingRelaunches.removeValue(forKey: key)
-                return key.component == .application
-                    ? "Relaunched — this session is now running the "
-                        + "installed build."
+                return component == .application
+                    ? "Relaunched — this Mac now sees the installed build "
+                        + "running."
                     : "Restarted — this Mac now reports the installed "
                         + "NOW Extension."
             }
         }
-        switch key.component {
+        switch component {
         case .application:
             return "Installed, but NOT relaunched: the guest app on the "
                 + "classic Mac is still running the OLD build. Quit it on "
@@ -659,12 +687,11 @@ final class ConnectionsModel: ObservableObject {
     private func abandonUpdates(for guest: GuestKey) {
         pendingUpdates = pendingUpdates.filter { $0.guest != guest }
         updateNotices = updateNotices.filter { $0.key.guest != guest }
-        /* The session that installed it is gone. A genuine relaunch opens a
-           NEW session, whose row reads `.current`/`.replacement` fresh from
-           its own reported build — there is nothing left for this key to
-           watch, and holding onto it would only let a stale warning outlive
-           the row it described. */
-        pendingRelaunches = pendingRelaunches.filter { $0.key.guest != guest }
+        /* `pendingRelaunches` is deliberately UNTOUCHED here: it is keyed
+           by machine, not session, and the disconnect this fires on is what
+           a real relaunch looks like from this Mac's side. Clearing it here
+           would throw away the very state `resolvePendingRelaunches` needs
+           to confirm — or refuse to assume — the reconnect that follows. */
     }
 
     /// The failure in the words of what to do about it. `taken` names the
