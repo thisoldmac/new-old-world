@@ -906,9 +906,17 @@ static void emit_transcript(const WorkshopSceneWriter *writer)
         y = (short)(y + kChatLineHeight);
     }
     if (lines == 0) {
-        const char *empty = g_model_count > 0
-                                ? "Ask the other Mac's model about this one."
-                                : "Waiting for the other Mac's models...";
+        char empty[80];
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        if (g_model_count > 0) {
+            snprintf(empty, sizeof empty, "Ask %.24s's model about this one.",
+                     peer);
+        } else {
+            snprintf(empty, sizeof empty, "Waiting for %.24s's models...",
+                     peer);
+        }
 
         if (writer != NULL) {
             band = inner;
@@ -1205,13 +1213,21 @@ static void chat_status_text(char *out, long cap)
         return;
     }
     if (g_provider_count > 0) {
-        snprintf(out, (size_t)cap, "%d provider%s on the other Mac",
-                 g_provider_count, g_provider_count == 1 ? "" : "s");
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(out, (size_t)cap, "%d provider%s on %.24s",
+                 g_provider_count, g_provider_count == 1 ? "" : "s", peer);
         return;
     }
-    snprintf(out, (size_t)cap,
-             g_asked_catalog ? "That Mac offers no chat"
-                             : "Asking about models...");
+    if (g_asked_catalog) {
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(out, (size_t)cap, "%.24s offers no chat", peer);
+        return;
+    }
+    snprintf(out, (size_t)cap, "Asking about models...");
 }
 
 const WorkshopModuleOps *chat_module_ops(void)

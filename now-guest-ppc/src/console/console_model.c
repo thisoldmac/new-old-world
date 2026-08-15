@@ -358,8 +358,12 @@ static void chat_verb_note(int kind, const char *reply)
         if (n < 0) {
             console_model_append("  chat: unreadable catalog");
         } else if (n == 0) {
-            console_model_append(
-                "  the other Mac serves chat but has nothing configured");
+            char peer[40];
+
+            conn_peer_label(peer, sizeof peer);
+            snprintf(line, sizeof line,
+                     "  %.30s serves chat but has nothing configured", peer);
+            console_model_append(line);
         }
         for (i = 0; i < n; ++i) {
             if (strcmp(rows[i].state, "serving") == 0) {

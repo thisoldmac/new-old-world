@@ -31,9 +31,9 @@ const char *now_net_section_blurb(NetSection section)
 {
     switch (section) {
     case kNetSectionLink:
-        return "The link to the other Mac. Measured here, not asked for.";
+        return "The link to Other Mac. Measured here, not asked for.";
     case kNetSectionInet:
-        return "How this Mac is addressed on its network.";
+        return "How This Mac is addressed on its network.";
     case kNetSectionPorts:
         return "The network hardware this Mac has, and where it sits.";
     case kNetSectionConnections:

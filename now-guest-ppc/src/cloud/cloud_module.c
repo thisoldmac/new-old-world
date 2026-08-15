@@ -669,7 +669,13 @@ static void note_report(const char *reply)
     g_service = first;
     rebuild_popup();
     if (g_store.service_count == 0) {
-        set_status("The other Mac offers no cloud services");
+        char status[64];
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(status, sizeof status, "%.24s offers no cloud services",
+                 peer);
+        set_status(status);
         return;
     }
     choose_service(first);

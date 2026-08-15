@@ -123,8 +123,9 @@ static void test_resting_state(void)
 
     check(mcp_answer_line(&answer, 3, line, (long)sizeof line) > 0,
           "the page says what it cannot know");
-    check(strstr(line, "other Mac") != NULL,
-          "and names who does know it");
+    check(strstr(line, "Other Mac") != NULL,
+          "and names who does know it (G-8: 'Other Mac', not the retired "
+          "'the other Mac')");
 }
 
 static void test_pending_change(void)
@@ -178,6 +179,16 @@ static void test_pending_change(void)
           "an untold link says so");
     check(strstr(line, "not been told") != NULL,
           "and does not pass silence off as agreement");
+
+    /* G-8: line 3 names the actual connected peer, not the generic
+       "Other Mac" fallback, once one is known - reusing `answer.peer`
+       ("Ada") this test already set above. */
+    check(mcp_answer_line(&answer, 3, line, (long)sizeof line) > 0,
+          "a connected page still explains the missing counter");
+    check(strstr(line, "Ada") != NULL,
+          "and names the connected peer instead of the generic fallback");
+    check(strstr(line, "Other Mac") == NULL,
+          "the generic fallback does not leak once a name is known");
 }
 
 static void test_status_text(void)
