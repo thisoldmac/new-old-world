@@ -342,6 +342,11 @@ run_c now-guest-ppc wire_sleep_test.c        ""  src/core/wire_sleep.c
 # every number in this arc was taken under, so a misparse does not fail -
 # it measures a condition nobody chose.
 run_c now-guest-ppc wirestat_cmd_test.c      ""  src/core/wirestat_cmd.c
+# The mirror debug gate: default OFF and a closed on/off grammar. Both
+# failure directions are quiet - a misparse floods every later log with
+# a condition nobody chose, a wrong default makes the gate a no-op.
+run_c now-guest-ppc mirror_debug_test.c      ""  src/mirror/mirror_debug.c
+run_py now-guest-ppc mirror_debug_gate_source_test.py
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c

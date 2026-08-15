@@ -517,22 +517,20 @@ and one bound worth knowing:
 composed rather than facts about the machine, so what it may be pointed at is
 worth stating here rather than only in its own source.
 
-**It may be pointed at nothing.** The `tail` verb's arguments are a count,
-an area tag and a paging cursor (`x-commands.tail`: `lines` — default 20,
-most 40 per answer; `area` — a 6-character tag, filtered on the guest;
-`before` — the sequence cursor the host follows page by page). What it
-reads is the guest application's own in-memory ring for the launch it is
-in — the same text the person at that machine has on its Logs page — and
-there is no path in the verb, none in the local operation, and none in the
-tool's input schema. The decision behind that:
+**It may be pointed at nothing.** The `tail` verb takes one argument and it
+is a count (`x-commands.tail`: `lines`, default 20, most 40). What it reads
+is the guest application's own in-memory ring for the launch it is in — the
+same text the person at that machine has on its Logs page — and there is no
+path in the verb, none in the local operation, and none in the tool's input
+schema. The decision behind that:
 
 | | |
 |---|---|
 | Why not a path | This row returns BYTES, which `file.list` and `reveal` do not. The Files family is confined to the host-owned `guestRoot`; `reveal` leaves that confinement only because it hands nothing back. "Tail any file on the volume" is a materially wider authority than anything on this surface has, and it is not the host's to grant in any case — the verb would have to grow an argument, which is a guest change, which means it was never a projection. |
 | What already covers the named case | `now_guest_files_download`, under `guestRoot`, with the authority that belongs there. |
 | What it can still disclose | A log line is prose, and some of that prose contains paths: the `get`, `put` and `files` areas log the items they handled by design ([logging.md](logging.md)). So a caller can learn the NAMES of items the machine touched, including outside `guestRoot`. The bound is the guest's own editorial judgement about its log, and it is the same text the person at the machine reads — but it is a widening over the Files family and is recorded rather than discovered later. |
-| Who chooses how much | The caller, between 1 and the ring's 2000. Above 2000 is refused rather than clamped: there are no such lines to have, and a silently smaller answer to a bigger question reads as a machine that went quiet. One wire answer still carries at most 40 lines — that bound belongs to the 4 KB control frame — so a deep ask is the HOST paging the guest's `before` cursors, and the answer's `pages` field reports what the walk cost. |
-| How the bound stays visible | The answer's own `shown` field says it — `"N of M (older ones did not fit)"` when the retrieval's byte budget, page cap or walk deadline stopped it before the count did, with `matching` beside it so a short log reads differently from a cut answer. The oldest lines are always the ones dropped. |
+| Who chooses how much | The caller, between 1 and 40. Above 40 is refused rather than clamped: the guest cannot fit more in one 4 KB control frame, and a silently smaller answer to a bigger question reads as a machine that went quiet. |
+| How the bound stays visible | The guest's own `log` group says it — `shown` reads `"12 of 20 (older ones did not fit)"` when its frame budget dropped the oldest lines. That row is carried through untouched, and it is also the cross-check on the host's rendering bounds, which are sized from the guest's own buffers so they cannot bite first. |
 | Encoding | Settled on the guest, not guessed here: it maps its MacRoman high range through its own table and emits `\uXXXX`, so nothing undecodable reaches this side. CR endings are gone before that — the ring holds lines without terminators. A control character *inside* a line is written `\xNN` so it is neither dropped nor passed through to corrupt a row. |
 
 **One host-side limit this row found, which is not about `tail`.**
@@ -680,6 +678,7 @@ to exist:
 | `development-open` | command | ppc | deliberate | The optional transition from headless work to a human editor. It locates and launches CodeKitten, opens only the active `Project.ckp`, and brings the IDE forward, but it is intentionally an explicit app action rather than agent authority: project sync, build, promote and run do not depend on an IDE. A distinct test operation is still open and is not being implied by build or run ([development.md](development.md)). This is the initial projection boundary in the [Projects and Development plan](plans/2026-08-09-029-feat-projects-and-development-plan.md) (projection-family table and U9). |
 | `mirror` | command | ppc | unnoticed | What this Mac can say about MIRROR - whether each of its three resident extensions is loaded, whether its agent is running, and which port the file beside the agent names. Landed 2026-08-02 as the guest half only, and the gap is honest rather than argued: nobody has decided whether an agent should be able to ask it. **What a row would have to settle first:** Mirror is a SEPARATE application that happens to run on the same Macintosh, so a tool here would be NOW reporting on a neighbour - which is defensible (the host's own Mirror page does exactly that, one step less truthfully, off a folder listing) but is a boundary question rather than a plumbing one. The capability itself is not in doubt: residency is a Gestalt answer and the guest is the only side that can give it, which is why the verb exists at all ([contract-coverage.md](contract-coverage.md)). The pane face is owed the same upgrade and has not had it either - the host page still lists the Extensions folder, so today NEITHER face reads this verb. |
 | `mouseloc` | command | ppc | deliberate | Where the pointer IS — an instrument, not a capability. It exists because an emulator's relative mouse is acceleration-distorted, so the host's own drag plane positions by reading this and correcting; every hop calibration closes its loop against it. A caller that is not driving a pointer has nothing to do with the answer, and a caller that IS driving one is the host, which calls it directly rather than through a tool. Projecting it would put a calibration read on a surface whose other rows are capabilities. The closed loop it is the far end of is described in [emu-readiness.md](emu-readiness.md), which is also where the probes that depend on it are listed. |
+| `mirrorlog` | command | ppc | deliberate | The `mirror` log area's debug tier, on a session-scoped switch — **an instrument's own knob, not a capability, and the same disposition as `wirestat` for the same reason** ([logging.md](logging.md) carries the tier's argument; [command-parity.md](command-parity.md) the two faces that already reach it). It changes what the guest's log RECORDS, so the only caller the answer serves is whoever is diagnosing the mirror plane, and they already reach it from both command faces (console and typed wire/exec). A row here would put a logging configuration on a surface whose other rows are things a Mac can DO, with `wirestat`'s exact hazard one step milder: a caller that turns it on and walks away buries the product's story in every later ring — which is precisely the failure the default-off, per-launch design exists to prevent, and a standing agent surface would reintroduce. Landed 2026-08-15 with the gate itself. Revisit only if an agent-driven mirror-plane diagnosis loop ever needs to arm diagnostics without holding a console. |
 | `net` | command | ppc | unnoticed | What a Mac says about its own networking: the link it holds to this host, its TCP/IP configuration, its network ports, and — last — why a list of that machine's connections is not among them. **Landed 2026-08-01 as a spike, guest page and host pane, with no projection deliberately.** Nobody has decided whether an agent should get it. What a row would have to settle first: nearly all of it is *read-only and harmless*, which argues for a plain row — but the fourth group is a statement about an API rather than about a machine, and a capability report that says "this Mac cannot list its connections" would be the wrong shape of true. A tool would have to carry that distinction into typed unavailability, or drop the group and answer three. There is also a real question of whether `now_hardware_census` already covers the hardware half, which would make a `net` row a second route to a capability already projected — the thing this column exists to refuse. PowerPC only: it is built on Open Transport, and the 68K guest speaks MacTCP ([ot-networking-surface.md](ot-networking-surface.md)). |
 | `wirestat` | command | ppc | deliberate | How long the guest takes to NOTICE a request — the interval between its own wire service passes, and the delay from Open Transport announcing data to its event loop reading it — and the two knobs that change them. **An instrument, not a capability, and the same disposition as `mouseloc` for the same reason.** It answers a question about the wire this host is holding, so the only caller that can use the answer is the one already on the other end of it; a tool would put a measurement of the instrument on a surface whose other rows are things a Mac can DO. The half that decides it is the setting half: `sleep N` changes the guest's event-loop sleep and `wake off` its Open Transport wake, which makes a row a **configuration** surface rather than a capability one — and the setting it would expose is the one that starves every other application on a cooperatively scheduled Macintosh if a caller sets it wrong. Landed 2026-08-06 with the wire-latency arc; the numbers it produced are in [open-issues.md](open-issues.md). Revisit if an agent ever needs to defend its own latency budget to a caller, which is the one case that would argue for the reading half alone. |
 | `update` | command | ppc | deliberate | Withheld from agent projection because today's artifacts are explicitly unsigned. The guest's Connections page requires a local modal confirmation before it may pass `allow_unsigned`; the shared console/wire command cannot spend that confirmation, and an MCP row would be a second remote route around the same boundary. Status remains visible to the person on the classic Mac. Revisit only after the release-signing design has a pinned trust root, rotation, revocation and recovery policy ([command-parity.md](command-parity.md), “`update` is the mutating example”; [host-owned updates](developer-guide/architecture/updating.md#trust-boundary)). |
@@ -1197,14 +1196,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 222dc2f48e7d989b86cf6b0a9d439c1d8f48692d
+sources-sha1: 42c1d0506942fd45360165ef5491b09c37a09a64
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=e9fa8ef19d3631871ba65a66d80db57d4538e43dec4a268cab2fe2d0764611cf lines=3
+derive disposition-census sha256=c798571be8d2b53f23893bc4de72677bb0b363d8a59c5e09edd4ec773f6b5775 lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1372,6 +1371,9 @@ rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
 rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:15-0400 f4dab407 sources
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
-rederived: 2026-08-15T03:30:03-0400 a0bc4442 sources
-rederived: 2026-08-15T03:33:29-0400 a0bc4442 unchanged
+rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources
+rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 disposition-census 3->3
+rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
+rederived: 2026-08-15T03:30:55-0400 083691c4 unchanged
+rederived: 2026-08-15T04:01:11-0400 b18a891c sources
 -->

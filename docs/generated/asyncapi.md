@@ -219,6 +219,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | `axsnap` | — | `axsnap` | The cheap one: who is front, whether the reference layer can see it, and how many references are live. |
 | `cycle` | — | `cycle` | Brings each application on the guest forward in turn, with the anchor plane armed, so that it executes its own event loop once and the resident captures its anchor — then restores the application that was frontmost. |
 | `mirror` | — | `mirror` | The guest's read-only lifecycle view of the ONE optional NOW Extension and its data planes. |
+| `mirrorlog` | `action` | `mirrorlog` | The `mirror` log area's DEBUG TIER, on one session-scoped switch that is OFF each launch. |
 
 ## Change discipline
 

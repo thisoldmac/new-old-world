@@ -29,6 +29,7 @@
 #include "wire.h"
 #include "wirestat_cmd.h"
 #include "anchor_cycle.h"
+#include "mirror_debug.h"
 #include "mirror_json.h"
 #include "mirror_probe.h"
 #include "net_layout.h"
@@ -896,6 +897,43 @@ static void run_mirror(long id, char *out, long cap)
     now_mirror_json(&facts, id, out, cap);
 }
 
+/* The mirror area's debug tier, on a session-scoped switch — the WHY,
+   the tier boundary and the no-prefs decision are mirror_debug.h's.
+   This is the one implementation behind both faces: a typed caller
+   sends args.action, a console's raw line reaches the same word through
+   now_cmd_arg_word, and the guest's own console arrives here through
+   console_model.c's fallback. The transition is logged HERE, once, so
+   the ring itself names who opened the firehose and when — the enable
+   line is the antidote to "a flood someone turned on and nobody
+   remembers". */
+static void run_mirrorlog(const char *request_json, long id,
+                          char *out, long cap)
+{
+    char action[16];
+    int req;
+    int was;
+
+    action[0] = '\0';
+    now_cmd_arg_word(request_json, "action", action, sizeof action);
+    req = now_mirror_debug_parse(action);
+    was = now_mirror_debug_on();
+    if (req == kNowMirrorDebugOn && !was) {
+        now_mirror_debug_set(1);
+        now_log(kLogInfo, "mirror", "debug logging on");
+    } else if (req == kNowMirrorDebugOff && was) {
+        now_mirror_debug_set(0);
+        now_log(kLogInfo, "mirror", "debug logging off");
+    }
+    snprintf(out, (size_t)cap,
+             "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+             "\"output\":{\"mirrorlog\":["
+             "[\"Mirror debug\",\"%s\"],"
+             "[\"Default\",\"off, each launch\"],"
+             "[\"Always kept\",\"lifecycle, warnings, errors\"]"
+             "]}}",
+             id, now_mirror_debug_on() ? "on" : "off");
+}
+
 static void run_net(long id, char *out, long cap)
 {
     NetFacts facts;
@@ -1745,6 +1783,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "mirror") == 0) {
         run_mirror(id, out, cap);
+        return;
+    }
+    if (strcmp(name, "mirrorlog") == 0) {
+        run_mirrorlog(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "cycle") == 0) {

@@ -7766,6 +7766,48 @@ components:
                     reason:
                       type: string
                       description: Present for refused or degraded states.
+    mirrorlog:
+      description: >
+        The `mirror` log area's DEBUG TIER, on one session-scoped switch
+        that is OFF each launch. Off — the default — the guest's ring
+        and launch file keep the product's story: arm/disarm requests
+        and outcomes, epoch begin, selection and grant lines, the writer
+        verdict, and every warning and error, which stay unconditional
+        whatever this switch says. On, the plane's own diagnostics
+        return: the ~25-line per-epoch counter dump each disarm writes,
+        per-press and per-move traces, idle-settle cadence, and the
+        per-report counter block.
+
+        It exists because the diagnostics ate the log: a three-minute
+        session cycling 18 Continuity epochs left the 2000-line ring
+        ~97% mirror counters, and `tail` — capped at 40 lines — could
+        answer "what happened" only with counters. Someone diagnosing
+        the MIRROR PLANE turns this on; someone diagnosing a FEATURE
+        needs the lines that were being buried.
+
+        DELIBERATELY NOT SAVED, same argument as wirestat's settings: a
+        diagnostic that survives a relaunch is a configuration nobody
+        chose, and this one quietly ruins every later log. The guest
+        logs each transition, so the log itself names who turned the
+        firehose on. A bare or unrecognised call reports without
+        changing anything.
+
+        PowerPC only: NOW-68K has no mirror plane and answers
+        unknown-command.
+      args:
+        type: object
+        properties:
+          action:
+            type: string
+            description: >
+              "on" or "off". Absent or anything else reports the current
+              state without changing it.
+      x-line: The action alone, e.g. "on", "off", or empty for status.
+      output:
+        type: object
+        properties:
+          mirrorlog:
+            $ref: "#/components/x-commands/gestalt/x-rowArray"
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a
