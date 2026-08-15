@@ -1100,7 +1100,12 @@ static void gather_ata(long cursor, CensusPage *page)
             census_ata_string(buf, 23, 4, fw, sizeof fw);
             snprintf(raw, sizeof raw, "serial %.20s", serial);
             census_size_mib(sectors / 2048UL, size_s, sizeof size_s);
-            snprintf(meaning, sizeof meaning, "%.28s, %s, fw %.8s",
+            /* Explicit ".15s" bounds gcc's format-truncation estimate: the
+               unbounded %s otherwise assumes size_s's full 24-byte
+               capacity, and 28 (model) + 24 + 8 (fw) + literals overflows
+               the 64-byte meaning buffer by gcc's static reckoning even
+               though census_size_mib never emits more than ~9 chars. */
+            snprintf(meaning, sizeof meaning, "%.28s, %.15s, fw %.8s",
                      model[0] ? model : "ATA drive", size_s, fw);
             set_row(&page->rows[page->count++], label, raw, meaning);
         }
