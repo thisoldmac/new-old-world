@@ -19,6 +19,7 @@
 #include "machine_names.h"
 #include "continuity_intake.h"       /* now_continuity_live_epoch */
 #include "continuity_offer_intake.h"
+#include "continuity_dragmgr.h"
 #include "capture.h"
 #include "census.h"
 #include "rom_dump.h"
@@ -966,7 +967,10 @@ static void run_offer(const char *request_json, long id, char *out, long cap)
         char err[96];
         char esc_err[192];
 
-        if (now_wire_get_offer(err, sizeof err) != 0) {
+        /* No id wanted: `--take` lands the file in the downloads folder
+           and says so in words. Only the promise drag has to hand the
+           FSSpec on to somebody. */
+        if (now_wire_get_offer((long *)0, err, sizeof err) != 0) {
             now_json_escape(err, esc_err, sizeof esc_err);
             snprintf(out, (size_t)cap,
                      "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
@@ -981,6 +985,61 @@ static void run_offer(const char *request_json, long id, char *out, long cap)
                  "[\"Status\",\"requested; see putstat or tail for "
                  "progress\"]]}}",
                  id, esc_name);
+        return;
+    }
+
+    /* `--drag` PICKS IT UP rather than filing it. Same offer, same
+       lane, same refusals; the difference is that the bytes are pulled
+       by a Drag Manager promise when the person drops it, so the file
+       lands where they pointed instead of in the downloads folder.
+
+       It reports ARMED and not "dragging", deliberately. The drag does
+       not begin here — it begins when the applied button says so, which
+       is a fact about the plane rather than about this call, and
+       reporting a drag that has not started would be the apply race
+       written into the console's own words. `offer` alone reports what
+       became of it. */
+    if (strcmp(action, "--drag") == 0) {
+        char err[128];
+        char esc_err[260];
+
+        if (now_continuity_dragmgr_request(err, sizeof err) != 0) {
+            now_json_escape(err, esc_err, sizeof esc_err);
+            snprintf(out, (size_t)cap,
+                     "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                     "\"error\":{\"code\":\"refused\",\"message\":\"%s\"}}",
+                     id, esc_err);
+            return;
+        }
+        now_json_escape(offer->item.name, esc_name, sizeof esc_name);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Picking up\",\"%s\"],"
+                 "[\"Status\",\"armed; the drag starts when the button "
+                 "is down\"]]}}",
+                 id, esc_name);
+        return;
+    }
+
+    /* The cancel path is a verb of its own and not an afterthought:
+       classic Finder is unforgiving of a drag that never ends, and a
+       person who armed one needs a way out that does not involve the
+       mouse. */
+    if (strcmp(action, "--stop") == 0) {
+        char err[96];
+        char esc_err[192];
+
+        if (now_continuity_dragmgr_cancel(err, sizeof err) != 0) {
+            now_json_escape(err, esc_err, sizeof esc_err);
+            snprintf(out, (size_t)cap,
+                     "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                     "\"error\":{\"code\":\"refused\",\"message\":\"%s\"}}",
+                     id, esc_err);
+            return;
+        }
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Drag\",\"stopping\"]]}}", id);
         return;
     }
 
@@ -1010,7 +1069,15 @@ static void run_offer(const char *request_json, long id, char *out, long cap)
     {
         char type_word[8], creator_word[8];
         char esc_type[16], esc_creator[16];
+        /* What became of the last `--drag`, reported beside the offer
+           itself rather than in a verb of its own: "armed" and "the
+           button never came" are facts ABOUT this offer, and a person
+           who has to ask a second question to learn the first one
+           failed will not ask it. */
+        const char *drag_state = "idle";
+        const char *drag_verdict = "ok";
 
+        now_continuity_dragmgr_status(&drag_state, &drag_verdict);
         now_json_escape(offer->item.name, esc_name, sizeof esc_name);
         type_word[0] = '\0';
         creator_word[0] = '\0';
@@ -1028,10 +1095,11 @@ static void run_offer(const char *request_json, long id, char *out, long cap)
                  "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
                  "\"output\":{\"offer\":[[\"Name\",\"%s\"],"
                  "[\"Kind\",\"%s\"],[\"Type\",\"%s\"],[\"Creator\",\"%s\"],"
-                 "[\"Size\",\"%ld bytes\"],[\"Generation\",\"%lu\"]]}}",
+                 "[\"Size\",\"%ld bytes\"],[\"Generation\",\"%lu\"],"
+                 "[\"Drag\",\"%s\"],[\"Last drag\",\"%s\"]]}}",
                  id, esc_name, offer->item.is_folder ? "folder" : "file",
                  esc_type, esc_creator, offer->item.data_size,
-                 offer->generation);
+                 offer->generation, drag_state, drag_verdict);
     }
 }
 

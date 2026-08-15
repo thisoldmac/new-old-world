@@ -6,6 +6,7 @@
 
 #include "confirm.h"
 #include "continuity_intake.h"
+#include "continuity_dragmgr.h"
 #include "carbon_warning.h"
 #include "nowlog.h"
 #include "fileshare.h"
@@ -521,6 +522,16 @@ int main(void)
            ordering. */
         now_scene_note_front_process();
         conn_service();
+        /* Ripen an armed promise drag. It is HERE, in the main loop,
+           and not at wire arrival on purpose: the Drag Manager tracks a
+           button, and the button on this side is the synthetic one the
+           resident applies. Starting the drag when the request landed
+           would race the apply and track nothing.
+
+           Free when nothing is armed - one integer compare - and after
+           conn_service so an arm placed by a wire verb this same pass
+           can ripen without waiting a whole loop. */
+        now_continuity_dragmgr_service();
         dispatch_pending_menu_choice();
         workshop_idle();
         /* The writer heartbeat, renewed because this loop is running -
@@ -614,6 +625,7 @@ int main(void)
     now_log_flush();
     conn_shutdown();
     now_continuity_shutdown();
+    now_continuity_dragmgr_shutdown();
 
     now_log(kLogInfo, "app", "quit: stopping pump");
     now_log_flush();

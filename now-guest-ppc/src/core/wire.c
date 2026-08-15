@@ -19,6 +19,7 @@
 #include "continuity_intake.h"
 #include "continuity_selection.h"
 #include "continuity_offer_intake.h"
+#include "continuity_dragmgr.h"
 #include "json.h"
 #include "loopstat.h"
 #include "mirror_policy.h"
@@ -533,6 +534,10 @@ static void link_drop_transfers(void)
        over ONE connection too, and a stale offer must not answer for a
        session that ended. */
     now_continuity_offer_forget();
+    /* And a drag OF that offer. Mid-drag this can only ask - the Drag
+       Manager owns the loop and TrackDrag's return will find the flag -
+       which is why it is a forget rather than a reset. */
+    now_continuity_dragmgr_forget();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -3839,6 +3844,38 @@ static void get_note(const char *line)
     }
 }
 
+/* WHERE THE LAST PULL LANDED, tied to the transfer it belongs to.
+
+   A pull already says in words that it finished and names the folder,
+   which is everything a person reading the Files pane needs. A caller
+   that has to HAND THE FILE ON needs the FSSpec itself — the promise
+   drag is the first: the Drag Manager's send-data callback must give
+   the Finder an FSSpec of the file it just materialised, and "it is in
+   Downloads" is not one.
+
+   THE ID IS NOT DECORATION. Without it, a caller whose own transfer
+   failed would read whatever the previous pull left here and hand the
+   Finder a stale file with total confidence — the worst shape of defect
+   this direction can produce, because it looks exactly like success.
+   Paired with the id, a caller compares against the transfer it started
+   and a mismatch is simply "mine did not land". */
+static struct {
+    Boolean valid;
+    long id;
+    FSSpec spec;
+} g_landed;
+
+Boolean now_wire_get_landed(long id, FSSpec *spec_out)
+{
+    if (!g_landed.valid || g_landed.id != id) {
+        return false;
+    }
+    if (spec_out != NULL) {
+        *spec_out = g_landed.spec;
+    }
+    return true;
+}
+
 static void get_cleanup(Boolean keep_file)
 {
     if (g_get.receiving && !keep_file) {
@@ -3940,7 +3977,7 @@ int now_wire_get_host(const char *path, const char *name, char *err, long cap)
 
    Names no path — only the offer's own epoch and generation, which is
    the whole of what a continuity.grab may ask for in this direction. */
-int now_wire_get_offer(char *err, long cap)
+int now_wire_get_offer(long *id_out, char *err, long cap)
 {
     const NowContinuityOfferTable *offer = now_continuity_offer_table();
     unsigned long ask_epoch, ask_generation;
@@ -3984,6 +4021,9 @@ int now_wire_get_offer(char *err, long cap)
     }
     g_get.pending = true;
     g_get.deadline = TickCount() + kGetTimeoutTicks;
+    if (id_out != NULL) {
+        *id_out = g_get.id;
+    }
     return 0;
 }
 
@@ -4131,6 +4171,13 @@ static void get_end(const char *reply)
         get_note("Could not finish writing the file");
         return;
     }
+    /* Taken here, after receive_finish has renamed the temp and made
+       rx.final authoritative, and BEFORE get_cleanup — the one moment
+       the landed file's own FSSpec is both true and still readable.
+       See g_landed on why the id travels with it. */
+    g_landed.valid = true;
+    g_landed.id = g_get.id;
+    g_landed.spec = g_get.rx.final;
     now_log(kLogInfo, "get", "#%ld %.31s complete, %ld bytes, into %s",
             g_get.id, g_get.name, g_get.rx.received, g_get.dest_name);
     /* dest_name was resolved once at get_begin against whatever the
