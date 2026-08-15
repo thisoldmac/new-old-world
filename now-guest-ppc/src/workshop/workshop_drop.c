@@ -61,6 +61,9 @@ static Boolean enqueue(const FSSpec *spec)
     slot = (short)((g_head + g_count) % kDropQueueCap);
     g_queue[slot] = *spec;
     ++g_count;
+    /* A fresh gesture retires the last one's refusal: the sentence in
+       the placard should be about the files in hand. */
+    g_note[0] = '\0';
     return true;
 }
 
@@ -121,12 +124,10 @@ void now_drop_idle(void)
         return;
     }
     /* HELD, NOT DISCARDED. A drop with no session is not a mistake the
-       person made - the files stay queued and the placard says exactly
-       why nothing is moving, which is the difference between waiting and
-       a drop that vanished. */
+       person made - the files stay queued, and now_drop_status says
+       exactly why nothing is moving, which is the difference between
+       waiting and a drop that vanished. */
     if (!conn_is_connected()) {
-        snprintf(g_note, sizeof g_note,
-                 "Not connected: %d file(s) waiting to send.", (int)g_count);
         return;
     }
     /* One offer at a time is the wire's shape, not a choice made here;
@@ -147,17 +148,41 @@ void now_drop_idle(void)
         snprintf(g_note, sizeof g_note, "%.110s", why);
         return;
     }
-    if (g_count > 0) {
-        snprintf(g_note, sizeof g_note, "Sending \"%.31s\" (%d more)",
-                 name, (int)g_count);
-    } else {
-        snprintf(g_note, sizeof g_note, "Sending \"%.31s\"", name);
-    }
+    /* HANDED OVER, so this line stops talking. Once the wire has the
+       file, the Files page's own status - which the wire narrates
+       through conn_set_file_note - is a better sentence than anything
+       this queue could write, and a "Sending X" left standing here would
+       cover it for the whole transfer and stay after it finished.
+       What remains is only what the page cannot know: how many are
+       still behind this one, and now_drop_status says that. */
+    g_note[0] = '\0';
 }
 
+/* Precedence, and it is deliberately narrow. A refusal or a wait is
+   something no page can explain, so it comes first; a queue still
+   holding files is a fact no page has; and anything else is the page's
+   own business, which this yields to by answering "". */
 void now_drop_status(char *out, long cap)
 {
-    snprintf(out, (size_t)cap, "%s", g_note);
+    if (cap <= 0) {
+        return;
+    }
+    if (g_note[0] != '\0') {
+        snprintf(out, (size_t)cap, "%s", g_note);
+        return;
+    }
+    if (g_count > 0) {
+        if (!conn_is_connected()) {
+            snprintf(out, (size_t)cap,
+                     "Not connected: %d file(s) waiting to send.",
+                     (int)g_count);
+        } else {
+            snprintf(out, (size_t)cap, "%d more file(s) to send.",
+                     (int)g_count);
+        }
+        return;
+    }
+    out[0] = '\0';
 }
 
 void now_drop_clear_note(void)
