@@ -4673,23 +4673,32 @@ components:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
     development-project:
       description: >
-        Measures and pages one active source tree beneath the human-selected
-        Projects root. Only opaque project identity and project-relative
-        manifest entries cross; the Projects root and HFS path remain private.
+        Lists the active projects beneath the human-selected Projects root,
+        or measures and pages one of them. Exactly one of `action: catalog`
+        and `projectID` is given; a catalog page carries at most eight
+        `Project` rows of `identity|name`, and a `Next` cursor of -1 at the
+        end of the root. Only opaque project identity, the project's own
+        name and project-relative manifest entries cross; the Projects root
+        and every HFS path remain private. Inactive staged candidates are
+        NOT in the catalog: they have their own identity space and their own
+        verb (development-stage). The cursor means different things to the
+        two actions - a catalog cursor indexes the root's folders, a
+        manifest cursor indexes one project's files - so each is bounded by
+        the guest at its own limit rather than at this shared maximum.
         NOW-68K does not register this command.
       args:
         type: object
-        required: [projectID]
         additionalProperties: false
         properties:
+          action: { enum: [catalog] }
           projectID:
             type: string
             pattern: "^[0-9a-f]{32}$"
           cursor:
             type: integer
             minimum: 0
-            maximum: 128
-      x-line: "One project ID; optional cursor is host paging state."
+            maximum: 256
+      x-line: "catalog, or one project ID; optional cursor is paging state."
       output:
         type: object
         properties:

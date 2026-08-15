@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "development_projects.h"
 #include "development_sha256.h"
 #include "development_project.h"
 #include "json.h"
@@ -44,22 +45,6 @@ static int candidate_id_valid(const char *value)
         && (long)strlen(value) == kCandidateIDLength;
 }
 
-static OSErr folder_id(const FSSpec *spec, long *dir_id)
-{
-    CInfoPBRec pb;
-    Str255 name;
-    memset(&pb, 0, sizeof pb);
-    memcpy(name, spec->name, spec->name[0] + 1);
-    pb.dirInfo.ioNamePtr = name;
-    pb.dirInfo.ioVRefNum = spec->vRefNum;
-    pb.dirInfo.ioDrDirID = spec->parID;
-    pb.dirInfo.ioFDirIndex = 0;
-    if (PBGetCatInfoSync(&pb) != noErr
-        || (pb.dirInfo.ioFlAttrib & ioDirMask) == 0) return dirNFErr;
-    *dir_id = pb.dirInfo.ioDrDirID;
-    return noErr;
-}
-
 static OSErr ensure_folder(short vref, long parent, const char *name,
                            FSSpec *spec, long *dir_id)
 {
@@ -68,7 +53,7 @@ static OSErr ensure_folder(short vref, long parent, const char *name,
     CopyCStringToPascal(name, p);
     err = FSMakeFSSpec(vref, parent, p, spec);
     if (err == fnfErr) err = FSpDirCreate(spec, smSystemScript, dir_id);
-    else if (err == noErr) err = folder_id(spec, dir_id);
+    else if (err == noErr) err = dev_projects_folder_id(spec, dir_id);
     return err;
 }
 
@@ -85,7 +70,7 @@ static int candidate_parent(int create, FSSpec *folder, long *dir_id)
     CopyCStringToPascal(".NOW Candidates", name);
     return FSMakeFSSpec(prefs.projects_vref, prefs.projects_dir,
                         name, folder) == noErr
-        && folder_id(folder, dir_id) == noErr;
+        && dev_projects_folder_id(folder, dir_id) == noErr;
 }
 
 int dev_candidate_folder(const char *candidate_id,
@@ -98,7 +83,7 @@ int dev_candidate_folder(const char *candidate_id,
         || !candidate_parent(0, &parent, &parent_id)) return 0;
     CopyCStringToPascal(candidate_id, name);
     if (FSMakeFSSpec(parent.vRefNum, parent_id, name, folder) != noErr) return 0;
-    return folder_id(folder, dir_id) == noErr;
+    return dev_projects_folder_id(folder, dir_id) == noErr;
 }
 
 static int marker_spec(const FSSpec *folder, long dir_id, FSSpec *marker)
@@ -144,7 +129,7 @@ static int candidate_accepting_folder_reason(const char *candidate_id,
                  "The prepared candidate folder is unavailable (%d).", err);
         return 0;
     }
-    err = folder_id(folder, dir_id);
+    err = dev_projects_folder_id(folder, dir_id);
     if (err != noErr) {
         *probe_err = err;
         snprintf(reason, (size_t)reason_cap,
@@ -499,68 +484,13 @@ static OSErr cat_move(const FSSpec *spec, long to_dir)
     return PBCatMoveSync(&pb);
 }
 
-static int project_info_in_folder(const FSSpec *folder, long dir_id,
-                                  char project_id[33], char project_name[96])
-{
-    FSSpec manifest;
-    short ref = -1;
-    long eof, count;
-    char *text;
-    DevProject *project;
-    char reason[120];
-    OSErr err = FSMakeFSSpec(folder->vRefNum, dir_id,
-        (ConstStr255Param)"\pProject.ckp", &manifest);
-    if (err != noErr || FSpOpenDF(&manifest, fsRdPerm, &ref) != noErr) return 0;
-    err = GetEOF(ref, &eof);
-    if (err != noErr || eof <= 0 || eof >= 131072) { FSClose(ref); return 0; }
-    text = (char *)NewPtr(eof + 1);
-    if (text == NULL) { FSClose(ref); return 0; }
-    project = (DevProject *)NewPtr(sizeof *project);
-    if (project == NULL) {
-        DisposePtr((Ptr)text); FSClose(ref); return 0;
-    }
-    count = eof;
-    err = FSRead(ref, &count, text);
-    FSClose(ref);
-    if (err == eofErr && count == eof) err = noErr;
-    text[eof] = '\0';
-    if (err != noErr || !dev_project_parse(text, project,
-                                            reason, sizeof reason)) {
-        DisposePtr((Ptr)project); DisposePtr((Ptr)text); return 0;
-    }
-    DisposePtr((Ptr)text);
-    strcpy(project_id, project->id);
-    if (project_name != NULL) strcpy(project_name, project->name);
-    DisposePtr((Ptr)project);
-    return 1;
-}
-
+/* The find-by-id walk moved to development_projects.c, which is now the
+   only place that knows what a project folder looks like. This wrapper
+   keeps this file's callers reading in booleans. */
 static int find_active_project(const char *project_id, FSSpec *folder,
                                long *dir_id)
 {
-    NowPrefs prefs;
-    short index;
-    now_prefs_load(&prefs);
-    for (index = 1; index <= 256; ++index) {
-        CInfoPBRec pb;
-        Str255 name;
-        char found[33];
-        memset(&pb, 0, sizeof pb);
-        name[0] = 0;
-        pb.dirInfo.ioNamePtr = name;
-        pb.dirInfo.ioVRefNum = prefs.projects_vref;
-        pb.dirInfo.ioDrDirID = prefs.projects_dir;
-        pb.dirInfo.ioFDirIndex = index;
-        if (PBGetCatInfoSync(&pb) != noErr) break;
-        if ((pb.dirInfo.ioFlAttrib & ioDirMask) == 0 || name[1] == '.') continue;
-        folder->vRefNum = prefs.projects_vref;
-        folder->parID = prefs.projects_dir;
-        memcpy(folder->name, name, name[0] + 1);
-        if (folder_id(folder, dir_id) == noErr
-            && project_info_in_folder(folder, *dir_id, found, NULL)
-            && strcmp(found, project_id) == 0) return 1;
-    }
-    return 0;
+    return dev_projects_find(project_id, folder, dir_id) == kDevProjectsFound;
 }
 
 int dev_active_project_file(const char *project_id, const char *path,
@@ -593,7 +523,7 @@ int dev_candidate_promote(const char *candidate_id, const char *base_digest,
         || !marker_spec(&candidate, candidate_dir, &verified)
         || FSMakeFSSpec(candidate.vRefNum, candidate_dir,
             (ConstStr255Param)"\p.NOW Built", &built) != noErr
-        || !project_info_in_folder(&candidate, candidate_dir, project_id, NULL)
+        || !dev_projects_identity(&candidate, candidate_dir, project_id, NULL)
         || !find_active_project(project_id, &active, &active_dir)) {
         snprintf(reason, (size_t)reason_cap,
                  "Promotion requires one built candidate and its active project.");
@@ -831,58 +761,15 @@ void now_development_project_command(const char *request_json, long id,
     int i;
     action[0] = '\0';
     now_json_find_string(request_json, "action", action, sizeof action);
-    if (strcmp(action, "catalog") == 0) {
-        NowPrefs prefs;
-        short index;
-        int emitted = 0;
-        now_prefs_load(&prefs);
-        if (cursor < 0 || cursor > 256 || prefs.projects_vref == 0
-            || prefs.projects_dir == 0) {
-            error_reply(out, cap, id, "projects-root-unavailable",
-                        "The registered Projects root is unavailable.");
-            return;
-        }
-        pos = snprintf(out, (size_t)cap,
-            "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
-            "\"output\":{\"development-project\":[", id);
-        for (index = (short)(cursor + 1); index <= 256 && emitted < 8; ++index) {
-            CInfoPBRec pb;
-            Str255 name;
-            FSSpec folder;
-            long dir_id;
-            char found[33];
-            char project_name[96];
-            char escaped_name[192];
-            char record[240];
-            memset(&pb, 0, sizeof pb);
-            name[0] = 0;
-            pb.dirInfo.ioNamePtr = name;
-            pb.dirInfo.ioVRefNum = prefs.projects_vref;
-            pb.dirInfo.ioDrDirID = prefs.projects_dir;
-            pb.dirInfo.ioFDirIndex = index;
-            if (PBGetCatInfoSync(&pb) != noErr) { index = 257; break; }
-            if ((pb.dirInfo.ioFlAttrib & ioDirMask) == 0 || name[1] == '.') continue;
-            folder.vRefNum = prefs.projects_vref;
-            folder.parID = prefs.projects_dir;
-            memcpy(folder.name, name, name[0] + 1);
-            if (folder_id(&folder, &dir_id) != noErr
-                || !project_info_in_folder(&folder, dir_id, found, project_name)) continue;
-            now_json_escape(project_name, escaped_name, sizeof escaped_name);
-            snprintf(record, sizeof record, "%s|%s", found, escaped_name);
-            pos += snprintf(out + pos, (size_t)(cap - pos),
-                            "%s[\"Project\",\"%s\"]",
-                            emitted ? "," : "", record);
-            emitted++;
-        }
-        pos += snprintf(out + pos, (size_t)(cap - pos),
-                        "%s[\"Next\",\"%d\"]]}}",
-                        emitted ? "," : "", index <= 256 ? index - 1 : -1);
-        return;
-    }
     project_id[0] = '\0';
     now_json_find_string(request_json, "projectID", project_id,
                          sizeof project_id);
-    if (project_id[0] == '\0') {
+    if (action[0] == '\0' && project_id[0] == '\0') {
+        /* The console face: "catalog [cursor]" or "<projectID> [cursor]".
+           That grammar is what `help development-project` has printed since
+           this verb landed and nothing implemented it - the first word was
+           always taken as a project id, so a person standing at the machine
+           could not list the projects at all while the host could. */
         char line[96];
         char *space;
         line[0] = '\0';
@@ -893,8 +780,41 @@ void now_development_project_command(const char *request_json, long id,
             while (*space == ' ') ++space;
             cursor = atol(space);
         }
-        strncpy(project_id, line, sizeof project_id - 1);
-        project_id[sizeof project_id - 1] = '\0';
+        if (strcmp(line, "catalog") == 0) {
+            strcpy(action, "catalog");
+        } else {
+            strncpy(project_id, line, sizeof project_id - 1);
+            project_id[sizeof project_id - 1] = '\0';
+        }
+    }
+    if (strcmp(action, "catalog") == 0) {
+        DevProjectRow *rows;
+        int emitted = 0;
+        long next = -1;
+        DevProjectsLookup found;
+        rows = (DevProjectRow *)NewPtr(sizeof(DevProjectRow)
+                                       * kDevProjectsListMax);
+        if (rows == NULL) {
+            error_reply(out, cap, id, "projects-root-unavailable",
+                        "There is not enough memory to list the projects.");
+            return;
+        }
+        found = dev_projects_scan(cursor, rows, kDevProjectsListMax,
+                                  &emitted, &next);
+        if (found == kDevProjectsRootUnavailable) {
+            DisposePtr((Ptr)rows);
+            error_reply(out, cap, id, "projects-root-unavailable",
+                        "The registered Projects root is unavailable.");
+            return;
+        }
+        /* An empty root is an answer, not a refusal: the page and the host
+           both need to tell "nothing there" from "no root chosen". */
+        if (dev_projects_reply(out, cap, id, rows, emitted, next, NULL) == 0) {
+            error_reply(out, cap, id, "projects-root-unavailable",
+                        "The projects page did not fit in one reply.");
+        }
+        DisposePtr((Ptr)rows);
+        return;
     }
     if (!lower_hex(project_id, 32)
         || cursor < 0 || cursor > kCandidateMaxFiles

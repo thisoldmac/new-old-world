@@ -9,6 +9,7 @@
 #include "development_candidate.h"
 #include "development_open.h"
 #include "development_project.h"
+#include "development_projects.h"
 #include "development_sha256.h"
 #include "development_toolchain_mac.h"
 #include "fileshare.h"
@@ -153,22 +154,6 @@ static void build_reply(long id, char *out, long cap)
     snprintf(out + pos, (size_t)(cap - pos), "]}}");
 }
 
-static OSErr folder_id(const FSSpec *spec, long *dir_id)
-{
-    CInfoPBRec pb;
-    Str255 name;
-    memset(&pb, 0, sizeof pb);
-    memcpy(name, spec->name, spec->name[0] + 1);
-    pb.dirInfo.ioNamePtr = name;
-    pb.dirInfo.ioVRefNum = spec->vRefNum;
-    pb.dirInfo.ioDrDirID = spec->parID;
-    pb.dirInfo.ioFDirIndex = 0;
-    if (PBGetCatInfoSync(&pb) != noErr
-        || (pb.dirInfo.ioFlAttrib & ioDirMask) == 0) return dirNFErr;
-    *dir_id = pb.dirInfo.ioDrDirID;
-    return noErr;
-}
-
 static OSErr read_data_fork(const FSSpec *spec, char **text)
 {
     short ref = -1;
@@ -221,41 +206,24 @@ static int read_project_folder(const FSSpec *folder, long dir_id,
     return ok;
 }
 
+/* The walk itself lives in development_projects.c - this file's job is
+   what a build needs on top of it: the PARSED manifest, and a reason a
+   person can read when it is not there. */
 static int find_project(const char *project_id, FSSpec *folder,
                         long *dir_id, DevProject *project, char *reason,
                         long reason_cap)
 {
-    NowPrefs prefs;
-    short index;
-    now_prefs_load(&prefs);
-    if (prefs.projects_vref == 0 || prefs.projects_dir == 0) {
+    switch (dev_projects_find(project_id, folder, dir_id)) {
+    case kDevProjectsRootUnavailable:
         snprintf(reason, (size_t)reason_cap,
                  "Choose a Projects folder in Development first.");
         return 0;
-    }
-    for (index = 1; index <= 256; ++index) {
-        CInfoPBRec pb;
-        Str255 name;
-        FSSpec candidate;
-        long candidate_dir;
-        memset(&pb, 0, sizeof pb);
-        name[0] = 0;
-        pb.dirInfo.ioNamePtr = name;
-        pb.dirInfo.ioVRefNum = prefs.projects_vref;
-        pb.dirInfo.ioDrDirID = prefs.projects_dir;
-        pb.dirInfo.ioFDirIndex = index;
-        if (PBGetCatInfoSync(&pb) != noErr) break;
-        if ((pb.dirInfo.ioFlAttrib & ioDirMask) == 0) continue;
-        candidate.vRefNum = prefs.projects_vref;
-        candidate.parID = prefs.projects_dir;
-        memcpy(candidate.name, name, name[0] + 1);
-        if (folder_id(&candidate, &candidate_dir) != noErr) continue;
-        if (read_project_folder(&candidate, candidate_dir, project_id,
-                                project, reason, reason_cap)) {
-            *folder = candidate;
-            *dir_id = candidate_dir;
-            return 1;
-        }
+    case kDevProjectsFound:
+        if (read_project_folder(folder, *dir_id, project_id, project,
+                                reason, reason_cap)) return 1;
+        return 0;
+    default:
+        break;
     }
     snprintf(reason, (size_t)reason_cap,
              "No Project.ckp under the chosen Projects folder has that ID.");
@@ -270,7 +238,7 @@ static OSErr ensure_folder(short vref, long parent, const char *name,
     CopyCStringToPascal(name, p);
     err = FSMakeFSSpec(vref, parent, p, spec);
     if (err == fnfErr) err = FSpDirCreate(spec, smSystemScript, dir_id);
-    else if (err == noErr) err = folder_id(spec, dir_id);
+    else if (err == noErr) err = dev_projects_folder_id(spec, dir_id);
     return err;
 }
 
