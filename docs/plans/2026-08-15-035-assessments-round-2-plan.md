@@ -151,3 +151,12 @@ sibling-check first), L-smalls (S1 + volumes/ata units). S3 waits.
   round-2 bake, rename, QA statuses). PR-ready branch staged as
   feat/034-host-guest-assessments; draft description in
   docs/local/pr-draft-034-035.md.
+- 2026-08-15 (Michelle, morning): (1) shelf heroes become MOVABLE — the
+  user decides tab order; delete fixedModuleHeroID/enforceSpecialHeroes,
+  hero = moduleIDs.first, and retire the overnight refuse-up-front guard
+  with it. (2) Footer drop feedback confirmed live: it lands then
+  immediately reverts — i.e. the footer IS hit-tested and the symptom is
+  the accept-then-sanitise revert the fix wave already removed; no
+  deeper hit-testing work needed. Her observation was against the
+  pre-fix bundle; top of the live checklist is re-testing drag on the
+  new build.
