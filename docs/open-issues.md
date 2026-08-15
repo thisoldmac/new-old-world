@@ -7,6 +7,68 @@ search:
 
 # Open issues
 
+## THE TRANSFER WORKED AND THE PRESENTATION DID NOT: this app posted a mouse-down into the Finder, and its own seed came back from it (2026-08-15 13:43 round, `fix/continuity-drag-image-frontness`)
+
+The first successful guest→host file drag on metal: the grab completed and
+the file landed on the desktop (`~/Library/Logs/now-logs/2026-08-15
+134015.log`, `operation=1` after a 240 px session). Two attended defects
+came with it — a **rubber-band selection dragged across the Finder desktop**
+for the length of the handoff, and a **drag image frozen at the screen
+edge** while the session itself tracked correctly.
+
+**The log already named the cause and nobody read it that way.** The seed
+provenance line says `type=1, windowNumber=30, ourWindow=no` — and `type=1`
+is `leftMouseDown`, not a drag. There is only one `leftMouseDown` anywhere
+on that path: **the synthetic one this app posts itself** to re-arm the
+session's button state. The window server delivered it to the Finder
+desktop, which took it for a marquee AND handed it straight back through
+the global monitor as the "real" event the drag was then seeded from.
+
+Two measured causes, both local to this Mac, deterministic over three rounds
+each (probes, 2026-08-15; frontness and key state changed neither):
+
+- **A fully transparent window is not a catch surface.** The strip was
+  `backgroundColor = .clear` over a view that draws nothing — every pixel at
+  alpha zero — and the window server routes mouse events straight *through*
+  such a window. `NSWindow.windowNumber(at:)` never returned the panel, at
+  any delay. One part in 255 of background alpha fixes it.
+- **A widen reaches the window server 15–25 ms and several runloop turns
+  later.** No synchronous flush brings it forward — not `CATransaction.flush`,
+  `display`, `displayIfNeeded`, nor a zero-length runloop spin. The crossing
+  widened the strip and posted the down in one synchronous block.
+
+Both are the same standing rule one layer down: **"I armed it" is not the
+assertion, "the artifact carries it" is.** `panelCoversPoint` was
+`window.frame.contains(point)` — this process's own arithmetic, true the
+instant `setFrame` returns — and was read as though it meant the server
+would deliver events there. The seed now carries `serverTopWindow`,
+`serverOwnsPoint` and `appActive` beside it, and the post waits for the
+server's own answer rather than for its own intent.
+
+**Why it hid for a whole round: the two lanes route differently.** Foreign
+host→guest drags entered the same transparent strip perfectly well, because
+AppKit tracks registered drag destinations by window frame rather than by
+the mouse-event hit test. So the drop half worked and the click half did
+not, through one window, for the same geometry.
+
+**What is fixed and tested here.** The synthetic down is refused until the
+window server itself puts the catch surface under the seed point — this app
+does not press a button in another application's window — and the real event
+that arrives while the server catches up is held rather than dropped. Seven
+mutations, each watched failing against the guard that names it.
+
+**What remains unproven.** The *marquee* half is established: the routing
+was measured directly and matches the log exactly. The **frozen drag image**
+is a hypothesis consistent with every fact — the window server's actual
+press at the seed point belonged to the Finder, so nothing advanced imagery
+anchored to our panel while the session still ended where the release
+happened — but it was not reproduced, because a live `NSDraggingSession`
+needs a physically held mouse and a test process has none. `serverOwnsPoint`
+exists to settle it on the next metal round rather than infer it: an
+`ourWindow=yes, serverOwnsPoint=no` seed is now its own named error.
+Ceiling: **Tested**, plus locally-measured window-server behaviour. Not
+metal-verified.
+
 ## REPRODUCED IN THE EMULATOR AND FIXED, NOT METAL-VERIFIED: a retained UDP endpoint goes permanently deaf, and every status still says "armed" (2026-08-15, `fix/continuity-udp-endpoint-wedge`)
 
 The host application was restarted at 12:15 on 2026-08-15 while the guest
