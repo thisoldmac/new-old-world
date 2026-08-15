@@ -7,6 +7,67 @@ search:
 
 # Open issues
 
+## FIXED, NOT RE-MEASURED ON METAL: the grant that survives an epoch was unreachable at the exact moment it exists for (2026-08-15, `fix/continuity-grab-grant-window`)
+
+Round 4 was attended and got further than any round before it: the press
+bound, the drag tracked, the seed read `ourWindow=yes, resolved=yes,
+panelKey=yes, panelCoversPoint=yes`, and AppKit completed the drop
+(`operation=1`). Then the guest refused to hand over the bytes —
+`code=bad-epoch`, three seconds into a thirty-second window.
+
+**The 30-second grant was implemented, correct, and unreachable.** Not
+reading 2 (never built) and not an arithmetic error: the guest's own ring
+shows the window working all evening (`grant held past epoch=N`, `grant
+honored after epoch=N gen=1 live=0`, `grab granted`). It shows the failure
+too, and the failure is an ORDERING, ten lines apart in the same second:
+
+    01:04:47 mirror ? grab refused #1 epoch=2/0 gen=1: bad-epoch
+    01:04:47 mirror grant held past epoch=2 gen=1 for 1800 ticks main.c
+
+The guest held the grant it had just refused. `hold_grant_for_gesture()`
+lived inside the Finder-selection poll, and `conn_service` runs that poll
+AFTER `service_connected_io()` has dispatched every frame it read in the
+same pass. A host that stands down for a drag it is still holding sends
+`continuity.disarm` and `continuity.grab` together — so the grab was the
+first code to notice the epoch had ended, and it noticed by answering
+`bad-epoch` against a hold nobody had filled yet. Note `epoch=2/0`: asked
+2, live 0, the disarm having landed microseconds earlier. The successful
+grabs at 22:30 differ only in that the grab lagged the disarm by a service
+pass.
+
+**The fix is where the transition is noticed, not where it is polled.**
+`now_continuity_selection_settle()` in `now-guest-shared` is called by the
+poll — still the backstop for the endings no frame announces, lease expiry
+and the rest — and by `now_continuity_grab_resolve()` itself, so there is
+no version of the decision a caller can make against a table nobody has
+moved. `bad-epoch` and `grant-expired` keep their own cases. One
+consequence stated plainly: the window now starts when the end is NOTICED
+rather than when it happened, which is at most one frame dispatch of
+generosity.
+
+**Why no test had it.** The unit test constructed the settled state it
+then asserted on — it called `now_continuity_grant_hold` itself and handed
+`resolve` a table somebody had already moved. That is the shape AGENTS.md
+names: a test that constructs the message it then parses. The new block
+settles nothing on purpose.
+
+**What is proven.** `scripts/test-native` green, `scripts/build-guests`
+cross-compiles both guests and the extension. Four mutations watched
+failing against the claim each names: the settle removed from
+`now_continuity_grab_resolve` (fails at the exact CHECK that says a grab
+must be served when nobody polled), removed from the glue's grab, removed
+from the poll, and `grant-expired` collapsed back into `bad-epoch`. The
+first attempt at mutation one did not BUILD, so it was redone until it
+ran — a green that never ran, caught in miniature for the second round
+running.
+
+**NOT proven.** Nobody has dragged a file with a hand on a mouse since
+the fix. Whether the content then arrives, whether MacBinary decoding on
+the host side is right, and whether thirty seconds is generous or tight
+remain UNMEASURED. The metal script is in the round's report; the line
+that would prove it is `grant held past epoch=N` BEFORE `grab granted`,
+where round 4 had them in the other order.
+
 ## TWO METAL CAUSES FIXED, NEITHER RE-MEASURED ON METAL: the guest→host drag's anchor window and its consent lifetime (2026-08-14, `fix/continuity-drag-round3`)
 
 Round 2 of the guest→host cross-edge drag was attended and produced three
