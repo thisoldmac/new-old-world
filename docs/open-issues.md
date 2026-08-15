@@ -96,6 +96,66 @@ exists, **every attended round on a new DMG must grant Accessibility to
 that binary before the first crossing**, or its input evidence is void —
 and the failure looks like a product defect, which is how it cost round 2.
 
+## TESTED, NOT METAL-VERIFIED, AND THE FIRST FIX FOR IT WAS INERT: a prompt is not an affordance, because macOS only prompts once ever (2026-08-15, `claude/continuity-ax-affordance`)
+
+Closes the "nothing asks" half of the entry above, and corrects it. That
+entry called for a prompt; `b244758e` added one; **the prompt changed
+nothing on metal and never could have.**
+
+`AXIsProcessTrustedWithOptions(prompt:)` is not deprecated and was called
+correctly. But its dialog is shown only while TCC holds **no decision
+record** for the bundle identifier. `dev.newoldworld.now` has been granted
+and reset repeatedly across eleven DMG builds in a day, so the record
+exists, the call returns in silence, and it will do so forever on that Mac.
+The measurement is unambiguous — the 2026-08-14 23:36:19 host log carries
+29 arm requests, 31 `could not capture host input (Accessibility
+permission)` lines, **zero** trusted-but-tap-failed lines and **zero**
+grant-arrived lines. `AXIsProcessTrusted()` was false the whole launch.
+
+**The generalisable half: a one-shot system prompt is a request, not a
+remedy.** Any macOS permission whose only affordance is a prompt is
+un-recoverable for exactly the population that needs it most — the people
+who have already answered it once, which on a development desk is
+everyone. A permission affordance must include a path with no TCC state
+behind it. Ours is now an explicit `Open Accessibility Settings…` control
+on the Continuity page (`x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`,
+the same scheme Connections already uses for Local Network), shown exactly
+while the tap is out for want of permission and never on the
+trusted-but-failing case, where the pane would show a checkbox already on.
+The prompt is kept as the cheap first attempt.
+
+**The second half, and the reason the metal round was unreadable.** The
+prompt shipped with no observability whatsoever, so "the prompt never
+fired" and "the prompt fired and macOS suppressed it" produced identical
+logs — the round could not distinguish them and neither could anyone
+reading it afterwards. Every branch of the decision now audits itself:
+already trusted, asking now, suppressed by the once-per-launch guard. The
+ask records that it **asked**, never that a dialog was **shown**, because
+the API does not tell us and a line claiming otherwise would be the same
+class of lie. *A change whose whole purpose is to trigger an external
+system's behaviour must log the decision, or the round that tests it
+cannot report anything.*
+
+**Evaluated and rejected: `CGRequestPostEventAccess`.** Both taps in this
+tree (`AppKitContinuityPointerEnvironment`, `ContinuityKeyboard`) are
+`.cgSessionEventTap` with `.defaultTap`, i.e. consuming, so Accessibility
+is the right permission and `AXIsProcessTrusted` a correct predicate —
+confirmed by direct call: on a trusted process `AXIsProcessTrusted`,
+`CGPreflightPostEventAccess` and a `.defaultTap` session tap all succeed
+together. But the CG path is backed by the same TCC service and its own
+header hedges identically (`potentially prompting`), so there is no
+grounded reason to believe it re-prompts where the AX call does not. It
+was not adopted: it would be churn on a correct predicate, sold on a
+property nobody has demonstrated.
+
+**Status.** Tested — 5 new tests, each watched failing against the exact
+mutation it names, with the mutation confirmed built and the test confirmed
+run. **Nothing here has run on the Mac where the permission failed**, and
+the claim "the permission problem is fixed" is not available to anyone
+until it has. The next attended round should confirm the log now names the
+prompt branch it took, and that the page offers the Settings button while
+capture is degraded.
+
 ## OPEN: the derived-doc gate re-runs a severed derivation, gets nothing, and records the nothing as current (2026-08-14, found healing `9676be3f`)
 
 A gap in the gate this repository built precisely so a derived table could
