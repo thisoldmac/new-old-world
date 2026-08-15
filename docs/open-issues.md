@@ -7,6 +7,57 @@ search:
 
 # Open issues
 
+## TESTED ACROSS THE BOARD, NOTHING WATCHED ON A MACHINE: 034 wave 2 — update-in-place, guest citizenship, module moves, Projects (2026-08-14, seven lanes merged at `c8b1d827`)
+
+Wave 2 of plan 034; `scripts/test-all` green on the merged tree, every
+stage run. Per lane, with the honest status:
+
+- **H4 update-in-place** (`034w2-b-update`): `now_trash_move_busy`
+  (files/trash_move.c) is the one shared "trash a possibly-running APPL
+  without renaming it" primitive; the rename WAS the bug. Two extra
+  defects fixed on the way: `put_abort()` left `g_update.pending` stuck
+  (one cancelled update wedged all later ones until relaunch), and the
+  host's update progress never correlated by `putId` (it rides
+  `onOutboundProgress`). Host adds a 3-minute watchdog, determinate
+  progress, Cancel, all converging through one `finishUpdate` seam that
+  also refuses a late answer resurrecting a settled notice. fBsyErr is
+  system-dependent: nothing here is metal-verified.
+- **About box + View keys** (`034w2-f-menu`): Apple menu with About
+  (movable modal, build stamp), ⌘1-0 removed. `OpenDeskAcc` is not
+  declared under Carbon, so Apple-Menu-Items selections deliberately
+  highlight and do nothing — honest degradation, commented in place.
+- **Rail** (`034w2-f-rail`): compact-only (all 14 rows fit at 640×480 —
+  arithmetic, not observation), description in the hover tag, tier marks
+  in the rail, plain-drag rearrange, curated default order in
+  `workshop_order.c` with the adjacency argument in prose. The page enum
+  moved to `workshop_module_ids.h` so the host cc can read it.
+- **Title gate** (`034w2-f-gate`): docs-gate compares `title` now; the
+  three known drifts proved deliberate and are recorded as gate-validated
+  `title_overrides` with reasons that go stale if titles converge.
+- **G-1** (`034w2-g1a-host` + `034w2-g1b-guest`): Networking on the
+  Machine shelf (layout v4 migration lifts only the default placement);
+  Diagnostics grew `wirestat` (read-only, shape-decoded so a guest can
+  grow a distribution without a host change) plus the link timing rows;
+  guest Connection page gained Test/round-trip via the same heartbeat
+  send the cadence uses; guest Networking dropped its link card from the
+  PAGE while `run_net`'s wire rows are unchanged (the host reads them).
+  The g1b lane died before reporting; its work was verified by
+  cross-compile + native tests afterward. No wirestat decode has ever
+  seen a real guest's answer.
+- **G-2** (`034w2-g2a-rename` + `034w2-g2b-projects`): the module is
+  Projects everywhere a person reads (ids/titles/docs; type and file
+  names deliberately kept; MCP tool names deliberately kept — decided
+  separately). The guest lists its projects (`development-project
+  catalog` — regularized, not a new verb: the contract now declares the
+  action the guest always served, and the console face `help` advertised
+  was implemented at last), remembers the active one (NowPrefs V28),
+  keeps a session ring of 8 settled jobs, and has Build/Run against the
+  selection. The Workshop Projects page has never been drawn on any
+  machine.
+
+Prefs formats V27 (workshop open-state) and V28 (active project) are
+taken; the next persisted field is V29.
+
 ## TESTED, THE CURE NOT YET WATCHED: the Connect button lied only to pages born after auto-connect (2026-08-14, `claude/034-inv-conn`)
 
 Assessment item G8 of plan 034. Michelle reported from a running guest

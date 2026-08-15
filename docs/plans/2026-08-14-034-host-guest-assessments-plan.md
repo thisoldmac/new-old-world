@@ -341,3 +341,14 @@ contradicted live and reclassified (Part 0).
   live checklist — spring-load flash + connections-shelf spring-load,
   Disconnect title on a page first opened after auto-connect, receive
   windoid incl. keystroke routing with no transfer running.
+- 2026-08-14 (wave 2 merged): seven lanes + one report-less lane (g1b,
+  verified post hoc) merged at c8b1d827; scripts/test-all green centrally,
+  all stages run. Slices B and F complete; G-1/G-2 complete
+  (Tested, nothing live). Notable deviations, all argued in the ledger:
+  no new projects verb (catalog regularized instead), title drifts kept
+  as gate-validated overrides, About box's DA items inert under Carbon.
+  Wave 3 = guest citizenship (I3+I2 as one lane), connections reorg,
+  chat persistence, settings window. Wave 4 = guest files rebuild,
+  guest naming, drag manager (guest-module file ownership forces the
+  split). Live checklist grows: About box, compact rail + plain drag,
+  Test ping, Projects page, update-in-place on metal.
