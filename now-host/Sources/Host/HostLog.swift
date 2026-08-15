@@ -1,4 +1,5 @@
 import Foundation
+import NOWAgentIntegration
 
 /// This side's log: an in-memory ring the Logs module dumps, plus, when
 /// disk is on, one file per launch in `~/Library/Logs/now-logs` — where
@@ -15,6 +16,15 @@ final class HostLog: ObservableObject {
     struct Line: Identifiable, Equatable {
         let id: Int
         let text: String
+        /// The area this line was written under, kept BESIDE the formatted
+        /// text rather than recovered from it.
+        ///
+        /// `now_host_log_tail` filters by area, and the alternative is to
+        /// slice the tag back out of `text` at an offset only `write` knows —
+        /// a second statement of this line's format, free to disagree with
+        /// the first the day the format moves. Padded and truncated exactly
+        /// as the tag is, so what a caller filters on is what a reader sees.
+        let area: String
     }
 
     /// The scrollback the Logs page reads, oldest first, capped so a busy
@@ -22,7 +32,12 @@ final class HostLog: ObservableObject {
     @Published private(set) var lines: [Line] = []
     /// Readable by tests, which otherwise have to assert the ring's
     /// behaviour against a number they have hardcoded a second time.
-    static let ringCapacity = 2000
+    ///
+    /// **Stated in `AgentIntegrationHostLogPolicy` and read here**, not the
+    /// other way round: `now_host_log_tail` publishes this number as its
+    /// maximum count and lives in a module the app depends on, so the policy
+    /// is the only place both sides can read one copy.
+    static let ringCapacity = AgentIntegrationHostLogPolicy.ringCapacity
 
     /// Whether a line also reaches the file. Reflects the ACTUAL state — a
     /// failed open leaves it false — so the Logs switch cannot claim a
@@ -56,10 +71,12 @@ final class HostLog: ObservableObject {
     func write(_ level: LogLevel = .info, _ area: String = "host",
                _ text: String) {
         let mark = level == .error ? "! " : (level == .warn ? "? " : "")
-        let tag = area.padding(toLength: 6, withPad: " ", startingAt: 0)
+        let tag = area.padding(
+            toLength: AgentIntegrationHostLogPolicy.areaTagScalars,
+            withPad: " ", startingAt: 0)
         let body = "\(Self.clock.string(from: Date())) \(tag) \(mark)\(text)"
 
-        lines.append(Line(id: nextID, text: body))
+        lines.append(Line(id: nextID, text: body, area: tag))
         nextID += 1
         if lines.count > Self.ringCapacity {
             lines.removeFirst(lines.count - Self.ringCapacity)

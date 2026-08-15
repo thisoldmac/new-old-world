@@ -342,6 +342,10 @@ public final class AgentIntegrationLocalServer: @unchecked Sendable {
                 response = .init(
                     requestID: request.requestID,
                     guestLogTailResult: result)
+            case .hostLogTail(let result):
+                response = .init(
+                    requestID: request.requestID,
+                    hostLogTailResult: result)
             case .machineFacts(let result):
                 response = .init(
                     requestID: request.requestID,

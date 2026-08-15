@@ -78,6 +78,14 @@ public enum HostProjectionCatalog {
            names no file — the nearest neighbour of a process listing, not
            of a directory one. */
         GuestLogTailProjection.self,
+        /* Immediately after the guest's log, because it is the same question
+           asked of the other machine and the two are meant to be read
+           together — a wire failure has a line on each side and neither half
+           is the story. Adjacent and not merged: this one reaches no guest,
+           takes no `guest` selector and is available with nothing connected,
+           so a caller who found them behind one tool would have to ask which
+           Mac an answer came from. */
+        HostLogTailProjection.self,
         CaptureScreenProjection.self,
         /* Immediately after capture, because it is the same observation
            held open: one picture now, or the bracket that produces them
