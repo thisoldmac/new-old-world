@@ -2475,6 +2475,43 @@ components:
             source was Mirror's decoded scene, which quietly coupled
             Continuity to Mirror having run first. Optional at the decoder
             for older guests; this build always sends both.
+        acceptsOffer:
+          enum: [none, stage, place]
+          description: >
+            WHAT THIS GUEST CAN DO WITH A continuity.offer, answered per
+            epoch because it is a fact about the machine and the build,
+            not a negotiation. The values are ORDERED (none < stage <
+            place) so a further tier can slot above `place` without
+            reshaping the field, as `agent` in hello does; there is no
+            such tier today.
+
+            `none` refuses out loud — the guest understands the field and
+            cannot take an offered file at all. `stage` says it will
+            grab an offered item and write it somewhere honest of its own
+            choosing, with no gesture and no placement: that is the whole
+            of the capability's first slice, and it is also the shape a
+            guest with no native drag can serve completely rather than
+            halfway. `place` adds the part a person actually asked for —
+            the item lands where they let go of it.
+
+            ABSENT means the sender predates this field, which is a fact
+            about the sender and NOT an answer. A host must not publish
+            an offer to a guest that has not said `stage` or `place`: an
+            offer nobody can take leaves a person holding a file over a
+            screen that will never accept it, with nothing on either
+            machine saying why. A value this host does not recognise is
+            likewise not a wider claim it may act on — an unrecognised
+            tier means a NEWER guest, and a host that cannot name the
+            ceiling cannot claim to be under it.
+
+            NOW-68K answers nothing here because it has no Continuity
+            plane at all, so the host degrades by the same absence rule
+            rather than by a 68K-specific field. When that guest's turn
+            comes (deferred until the Carbon guest reaches public alpha)
+            its honest first answer is `stage`: System 7.1 has no Drag
+            Manager unless the extension is installed, and a typed
+            `stage` is a complete answer where a silent half-drag is not
+            (docs/command-parity.md).
     ContinuityKey:
       type: object
       required: [type, version, id, epoch, generation, action, code,
@@ -2684,6 +2721,41 @@ components:
         file.end, and file.refuse for every failure. There is no second
         bulk path — reusing it is why a grabbed file resumes, cancels and
         reports progress the same way a Files pull does.
+
+        THE INVERTED USE: THE GUEST SENDS THIS TOO. When the item was
+        published by a continuity.offer rather than a
+        continuity.selection, the roles swap whole — the guest asks, the
+        host serves its own item, and the same answer lane carries it
+        back. This is the file family's symmetry rule ("whoever RECEIVES
+        a request serves its own share") applied to the one lane that
+        deliberately reaches outside a share, and it is why this
+        direction mints no sibling message: a second grab would be two
+        implementations of one bargain, drifting apart at the first
+        refusal somebody added to only one of them.
+
+        Every property above holds unchanged with the sender swapped —
+        one generation, one item, no path — and reads as a bound on the
+        HOST instead of on the guest. Three things differ, and they are
+        differences of fact rather than of rule:
+
+          - `epoch` and `generation` name a continuity.offer's numbers,
+            not a continuity.selection's. A responder that holds no offer
+            under them refuses `bad-epoch` or `stale-selection` by the
+            same test it would apply to its own cache; the words keep
+            their meanings, and `no-selection` is what an empty hand
+            answers whichever hand it is.
+          - The clock that can run out is the OFFER LIFETIME, stated once
+            on continuity.offer, and its refusal is `offer-expired`. A
+            grab that arrives late in this direction did not outlive a
+            Macintosh's grant; it outlived a Mac's, and the two are named
+            apart so a person is told the truth about which machine
+            stopped waiting.
+          - The promise callback that fires this grab runs inside the
+            guest Finder's own nested drop handling, so the requester is
+            answering a Toolbox loop while the bytes stream. That is a
+            guest implementation obligation (pump.h) rather than a wire
+            rule, and it is named here because it is the one hazard this
+            direction has that the other does not.
       properties:
         type: { const: continuity.grab }
         version: { const: 4 }
@@ -2703,6 +2775,150 @@ components:
           description: >
             The file lane's own knob, unchanged in meaning. auto (default)
             applies the container rule.
+    ContinuityOffer:
+      type: object
+      required: [type, version, epoch, generation]
+      additionalProperties: false
+      description: >
+        What the person at the Mac has picked up and is carrying toward
+        the Macintosh, pushed unsolicited while a Continuity epoch is
+        live. It is continuity.selection INVERTED — same stub, other
+        sender — and it is the only new vocabulary this direction needs.
+
+        WHY IDENTITY CROSSES FIRST. The guest must draw the drag before
+        any content byte moves: the right name under the pointer, the
+        right kind of icon, and a refusal it can give immediately if the
+        item is one it will not take. Everything after that is the
+        existing lane — a continuity.grab the guest sends, answered by
+        file.begin, the bulk stream and file.end — so this message is
+        where the feature's whole new surface lives, and it is
+        deliberately as small as the stub it mirrors.
+
+        IT CARRIES NO SOURCE IDENTITY, and that is the deliberate half of
+        the inversion. The selection stub carries volumeRef/dirID/name
+        because the GUEST must re-find its own item at grab time; the
+        host resolves an offer from its own generation table, so the
+        wire needs no host path — and must not have one, for the reason
+        continuity.grab names no path either. The reachable set is
+        exactly what a person put in their hand.
+
+        NOTHING HERE IS SHAPED BY THE DRAG MANAGER. The fields are file
+        facts — a name, a type and creator, two fork sizes, a date — and
+        a receiver that has no native drag at all can still serve the
+        whole message by staging the file (see `acceptsOffer`). That is
+        not politeness toward a future port: NOW-68K targets System 7.1,
+        where the Drag Manager is an extension that may not be
+        installed, and a message that assumed otherwise would have to be
+        replaced rather than implemented when that guest's turn comes.
+
+        v1 OFFERS ONE ITEM, the selection stub's narrowing in the other
+        direction and for the same reason: several items need a promise
+        group and an answer to "some of them arrived", which one item
+        does not. A host with several files in hand offers the first and
+        says so to its own person; it does not quietly send one of many.
+
+        THE OFFER OUTLIVES ITS EPOCH, BOUNDED. A person can drag back
+        across the edge — or the lease can expire, or Continuity can be
+        disarmed — while the guest's Finder still holds a promise whose
+        callback has not fired. The host therefore keeps the LAST
+        generation of an ending epoch serveable for a bounded window: 30
+        seconds, or until it publishes an offer under a new epoch,
+        whichever comes first. This is the ONE place that bound is
+        stated; a grab arriving after it is refused `offer-expired`.
+        Nothing else widens — same one generation, same item, no path.
+        The LINK dropping ends it immediately, because consent was given
+        to one Macintosh over one connection.
+      properties:
+        type: { const: continuity.offer }
+        version:
+          const: 4
+          description: The Continuity control-contract version, as elsewhere.
+        epoch: { type: integer, minimum: 1, maximum: 4294967295 }
+        generation:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            Monotonic per OFFER CHANGE within the epoch, not per send —
+            continuity.selection's rule, inverted. It is the name a
+            continuity.grab uses, so it must move whenever the item
+            behind it could differ, including to no offer at all, which
+            gets a generation of its own.
+        item:
+          type: object
+          additionalProperties: false
+          description: >
+            Absent when the host is carrying nothing. An absent item with
+            a fresh generation is the instruction to tear down whatever
+            drag the guest was drawing; it is not "the host had nothing
+            to say".
+          required: [name, dataSize, isFolder]
+          properties:
+            name:
+              type: string
+              maxLength: 31
+              description: >
+                The name the item will have ON THE GUEST — already
+                converted and already truncated by the host, HFS's own
+                31-byte limit. The guest displays this and stores under
+                it; it must not re-derive a name of its own, because a
+                person is entitled to see before the drop the name they
+                will find after it. The conversion rule is stated once,
+                beside the file family's other conversion rule, in the
+                guestServesFiles operation above.
+            nameAdjusted:
+              enum: [truncated, transliterated, both]
+              description: >
+                Present only when converting cost something, so the guest
+                can mark it and a person is not surprised by a name they
+                did not choose. ABSENT means the name crossed unchanged —
+                a fact, never a claim that the host did not look.
+            fileType:
+              type: string
+              maxLength: 4
+              description: >
+                Four-byte OSType the host MAPPED for this item; see the
+                mapping rule beside the conversion rule. Absent for a
+                folder, and absent when the host declined to guess —
+                which is a legitimate answer, not a gap for the guest to
+                fill from the name.
+            creator:
+              type: string
+              maxLength: 4
+              description: Four-byte creator, mapped and absent on the same terms.
+            dataSize:
+              type: integer
+              minimum: 0
+              description: >
+                Bytes the data fork will carry, known BEFORE the drag is
+                drawn so a guest can refuse an item it cannot take
+                (`too-big`) while the person can still change their mind,
+                rather than partway through a stream. What the ceiling is
+                remains the receiver's own policy and is not on this wire.
+            resourceSize:
+              type: integer
+              minimum: 0
+              description: >
+                Bytes the resource fork will carry. Absent means none —
+                the ordinary case for a file that has only ever lived on
+                the modern machine.
+            modifiedAt:
+              type: integer
+              minimum: 0
+              description: >
+                Classic seconds since 1904, converted host-side to the
+                File Manager's own clock, so the guest stamps what it
+                writes without arithmetic it has no timezone for.
+            isFolder: { type: boolean }
+            icon:
+              type: string
+              contentEncoding: base64
+              description: >
+                DECLARED, NOT IMPLEMENTED as of this slice, exactly as on
+                continuity.selection. A small icon payload so the guest's
+                drag image is honest before any wire round-trip; until it
+                is sent a guest draws from fileType/creator, and a host
+                must treat its absence as ordinary.
     MirrorInvalidate:
       type: object
       required: [type, generation, domains, quality]
@@ -4103,7 +4319,7 @@ components:
           enum: [busy, exists, bad-path, not-found, io-error, too-big,
                  changed, bad-source, project-file-unavailable,
                  bad-epoch, stale-selection, no-selection, folder-not-yet,
-                 grant-expired]
+                 grant-expired, offer-expired]
           description: >
             The first seven are the file lane's own answers. The rest name
             a REQUEST SHAPE the responder would not resolve, and they are
@@ -4127,6 +4343,18 @@ components:
             window closed. A person whose drag took too long and a host
             asking for something that was never granted are different
             sentences, and only one of them is worth trying again.
+
+            offer-expired is grant-expired's deliberate parallel on the
+            other side of the crossing: the HOST refusing a guest's
+            continuity.grab because the offer lifetime stated on
+            continuity.offer has closed. It is a separate word rather
+            than a reuse for the reason the whole family names its
+            refusals precisely — the two say which machine stopped
+            waiting, and a guest that reported "the Macintosh let the
+            grant lapse" when the Mac had let the offer lapse would send
+            a person to look at the wrong machine. Everything else about
+            it is grant-expired's rule read from the other end: the epoch
+            was right, the generation was right, the clock was not.
         reason: { type: string }
     FileBegin:
       type: object
