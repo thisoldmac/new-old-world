@@ -1286,15 +1286,21 @@ void workshop_sidebar_idle(void)
 }
 
 /* Runs every pass, so it costs one GetMouse and two comparisons unless
-   the answer actually changed. Only a COLLAPSED rail has anything to
-   explain - expanded rows carry their own names. */
+   the answer actually changed.
+
+   BOTH rail states have something to explain now. A collapsed row shows
+   only its icon, so the tag gives its name; an expanded row shows only
+   its name, so the tag gives the description - the line the retired rich
+   density used to draw underneath. This used to return early unless the
+   rail was collapsed, which after that retirement would have left the
+   description with nowhere to appear at all. */
 void workshop_sidebar_tag_idle(void)
 {
     Point where;
     WorkshopModuleID over = (WorkshopModuleID)0;
     short i;
 
-    if (g_owner == NULL || !g_collapsed) {
+    if (g_owner == NULL) {
         hide_tag();
         return;
     }

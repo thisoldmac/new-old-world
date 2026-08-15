@@ -66,4 +66,33 @@ assert "drag a row" in prefs_page.lower(), (
     "sentence is the discoverability"
 )
 
+# 5. The hover tag is where the retired rich density's description went,
+#    so it must explain an EXPANDED row and not only a collapsed one. The
+#    early return this guard names was really there: tag_idle predates the
+#    density retirement, and left as it was the description would have had
+#    nowhere at all to appear.
+def function_body(text: str, signature: str) -> str:
+    start = text.index(signature)
+    brace = text.index("{", start)
+    depth = 0
+    for index in range(brace, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[brace + 1:index]
+    raise SystemExit(f"unterminated function: {signature}")
+
+
+tag_idle = function_body(sidebar, "void workshop_sidebar_tag_idle(void)")
+assert "!g_collapsed" not in tag_idle, (
+    "the hover tag must explain an expanded row too - it carries the "
+    "description no row draws any more"
+)
+tag_text = function_body(sidebar, "static const char *tag_text(")
+assert "sidebar_subtitle" in tag_text and "title" in tag_text, (
+    "the tag says the name when collapsed and the description when not"
+)
+
 print("rail_gesture_source_test: ok")
