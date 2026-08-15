@@ -132,28 +132,40 @@ static void sync_scrollbar(void)
 
 /* ---------------------------------------------------------------- draw */
 
-static void draw_line(const Rect *where, const char *text)
+/* Every fact on this page is hand-drawn text inside a hand-drawn card,
+   so nothing here reaches the host except through this walk. A NULL
+   writer draws; a writer describes. Both faces take the same walk on
+   purpose - the alternative is a second traversal free to disagree with
+   the pixels about which section said what. */
+static void emit_line(const WorkshopSceneWriter *writer, const Rect *where,
+                      const char *text)
 {
     Str255 pas;
 
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, text, where,
+                           true);
+        return;
+    }
     MoveTo(where->left, (short)(where->top + 11));
     CopyCStringToPascal(text, pas);
     TruncString((short)(where->right - where->left), pas, truncEnd);
     DrawString(pas);
 }
 
-static void draw_row(const Rect *where, const char *label, const char *value)
+static void emit_row(const WorkshopSceneWriter *writer, const Rect *where,
+                     const char *label, const char *value)
 {
     Rect lab = *where;
     Rect val = *where;
 
     lab.right = (short)(where->left + kNetLabelWidth);
     val.left = lab.right;
-    draw_line(&lab, label);
-    draw_line(&val, value);
+    emit_line(writer, &lab, label);
+    emit_line(writer, &val, value);
 }
 
-static void draw_section(int index)
+static void emit_section(const WorkshopSceneWriter *writer, int index)
 {
     const NetSectionLayout *s = &g_r.sections[index];
     NetSection sec = (NetSection)index;
@@ -167,18 +179,27 @@ static void draw_section(int index)
         return;                       /* fully scrolled away */
     }
 
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    FrameRect(&card);
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopScenePanel,
+                           now_net_section_title(sec), &card, true);
+    } else {
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        FrameRect(&card);
+    }
 
     to_window(&s->title, &line);
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    draw_line(&line, now_net_section_title(sec));
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+    }
+    emit_line(writer, &line, now_net_section_title(sec));
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    }
 
     line.top = (short)(line.bottom);
     line.bottom = (short)(line.top + kNetLineHeight);
     line.right = (short)(card.right - kNetCardInset);
-    draw_line(&line, now_net_section_blurb(sec));
+    emit_line(writer, &line, now_net_section_blurb(sec));
 
     to_window(&s->body, &line);
     line.bottom = (short)(line.top + kNetRowHeight);
@@ -193,7 +214,7 @@ static void draw_section(int index)
                              value, sizeof value)) {
                 break;
             }
-            draw_row(&line, label, value);
+            emit_row(writer, &line, label, value);
             line.top = (short)(line.top + kNetRowHeight);
             line.bottom = (short)(line.top + kNetRowHeight);
         }
@@ -214,7 +235,20 @@ static void draw_section(int index)
         case kNetSectionCount:       break;
         }
         line.bottom = (short)(line.top + kNetLineHeight);
-        draw_line(&line, now_net_state_sentence(st));
+        emit_line(writer, &line, now_net_state_sentence(st));
+    }
+}
+
+static void network_describe_scene(const WorkshopSceneWriter *writer)
+{
+    int i;
+
+    workshop_scene_add(writer, kWorkshopScenePanel, "Networking",
+                       &g_r.canvas, true);
+    /* emit_section already declines the sections scrolled out of the
+       canvas, so the host sees the same cards a person does. */
+    for (i = 0; i < (int)kNetSectionCount; ++i) {
+        emit_section(writer, i);
     }
 }
 
@@ -232,7 +266,7 @@ static void draw_canvas(void)
 
     EraseRect(&clip);
     for (i = 0; i < (int)kNetSectionCount; ++i) {
-        draw_section(i);
+        emit_section(NULL, i);
     }
 
     if (save != NULL) {
@@ -493,7 +527,7 @@ const WorkshopModuleOps *network_module_ops(void)
            person presses Refresh. */
         NULL,
         network_status_text,
-        NULL
+        network_describe_scene
     };
 
     return &ops;

@@ -136,6 +136,15 @@ static void restore_colors(RGBColor *saved_back)
     RGBBackColor(saved_back);
 }
 
+/* The prompt as a string, once. Both the drawing and the describing pass
+   ask for it here, and so does Edit>Copy - three readers of one answer
+   rather than three that agree today. */
+static void prompt_text(char *out, long cap, Boolean with_caret)
+{
+    snprintf(out, (size_t)cap, "> %.120s%s", g_input,
+             (with_caret && g_active) ? "_" : "");
+}
+
 /* Only the prompt line: a keystroke must not repaint the scrollback. */
 static void draw_input_line(void)
 {
@@ -152,8 +161,7 @@ static void draw_input_line(void)
     EraseRect(&g_r.input_strip);
     TextFont(g_font);
     TextSize(9);
-    snprintf(prompt, sizeof prompt, "> %.120s%s", g_input,
-             g_active ? "_" : "");
+    prompt_text(prompt, (long)sizeof prompt, true);
     MoveTo((short)(g_r.scroll_text.left),
            (short)(g_r.input_strip.bottom - 5));
     CopyCStringToPascal(prompt, text);
@@ -162,15 +170,41 @@ static void draw_input_line(void)
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
 }
 
-static void draw_canvas(void)
+/* The scrollback lines that are actually on screen, walked once. A NULL
+   writer draws them at the baseline the canvas uses; a writer describes
+   each as static text in the rect that line occupies. The window into
+   the model (g_top, visible_lines()) is computed in exactly one place,
+   so the host cannot be told about a line the page has scrolled past. */
+static void emit_scrollback(const WorkshopSceneWriter *writer)
 {
-    RGBColor black = { 0, 0, 0 };
-    RGBColor saved_back;
     Str255 text;
     short vis = visible_lines();
     short count = (short)console_model_count();
     short i;
-    short y;
+    short y = (short)(g_r.scroll_text.top + kLineHeight - 2);
+
+    for (i = g_top; i < count && i < g_top + vis; ++i) {
+        if (writer != NULL) {
+            Rect line;
+
+            SetRect(&line, g_r.scroll_text.left,
+                    (short)(y - kLineHeight + 2), g_r.scroll_text.right,
+                    (short)(y + 2));
+            workshop_scene_add(writer, kWorkshopSceneStaticText,
+                               console_model_line(i), &line, true);
+        } else {
+            MoveTo(g_r.scroll_text.left, y);
+            CopyCStringToPascal(console_model_line(i), text);
+            DrawString(text);
+        }
+        y = (short)(y + kLineHeight);
+    }
+}
+
+static void draw_canvas(void)
+{
+    RGBColor black = { 0, 0, 0 };
+    RGBColor saved_back;
     Rect inner;
 
     if (g_owner == NULL || !g_visible) {
@@ -187,13 +221,7 @@ static void draw_canvas(void)
     EraseRect(&inner);
     TextFont(g_font);
     TextSize(9);
-    y = (short)(g_r.scroll_text.top + kLineHeight - 2);
-    for (i = g_top; i < count && i < g_top + vis; ++i) {
-        MoveTo(g_r.scroll_text.left, y);
-        CopyCStringToPascal(console_model_line(i), text);
-        DrawString(text);
-        y = (short)(y + kLineHeight);
-    }
+    emit_scrollback(NULL);
     restore_colors(&saved_back);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     draw_input_line();
@@ -542,6 +570,26 @@ static void console_status_text(char *out, long cap)
              "Commands run on this Mac only - type help for the list.");
 }
 
+static void console_describe_scene(const WorkshopSceneWriter *writer)
+{
+    Rect prompt_rect;
+    char prompt[kConsoleMaxCols + 4];
+
+    /* The canvas is hand-drawn, not a control, so nothing else would
+       mention it: the scroll bar is a Control Manager fact and the well
+       it scrolls is not. */
+    workshop_scene_add(writer, kWorkshopScenePanel, "Console", &g_r.box,
+                       true);
+    emit_scrollback(writer);
+    /* No caret: it is a blink, not a character anyone typed, and the
+       host reads this as text. */
+    prompt_text(prompt, (long)sizeof prompt, false);
+    prompt_rect = g_r.input_strip;
+    prompt_rect.left = g_r.scroll_text.left;
+    workshop_scene_add(writer, kWorkshopSceneStaticText, prompt,
+                       &prompt_rect, true);
+}
+
 static const WorkshopModuleOps k_ops = {
     console_create,
     console_dispose,
@@ -553,7 +601,7 @@ static const WorkshopModuleOps k_ops = {
     console_activate,
     console_idle,
     console_status_text,
-    NULL
+    console_describe_scene
 };
 
 const WorkshopModuleOps *console_module_ops(void)

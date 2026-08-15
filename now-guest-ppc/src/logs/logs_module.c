@@ -143,15 +143,40 @@ static void set_canvas_colors(void)
     RGBForeColor(g_inverted ? &white : &black);
 }
 
-static void draw_canvas(void)
+/* The log lines actually on screen, walked once. A NULL writer draws
+   them; a writer describes each in the rect it occupies. One walk means
+   the host is never told about a line this page has scrolled past. */
+static void emit_lines(const WorkshopSceneWriter *writer)
 {
-    RGBColor black = { 0, 0, 0 };
-    RGBColor saved_back;
     Str255 text;
     short vis = visible_lines();
     short count = (short)now_log_count();
     short i;
-    short y;
+    short y = (short)(g_r.scroll_text.top + kLineHeight - 2);
+
+    for (i = g_top; i < count && i < g_top + vis; ++i) {
+        if (writer != NULL) {
+            Rect line;
+
+            SetRect(&line, g_r.scroll_text.left,
+                    (short)(y - kLineHeight + 2), g_r.scroll_text.right,
+                    (short)(y + 2));
+            workshop_scene_add(writer, kWorkshopSceneStaticText,
+                               now_log_line(i), &line, true);
+        } else {
+            MoveTo(g_r.scroll_text.left, y);
+            CopyCStringToPascal(now_log_line(i), text);
+            DrawString(text);
+        }
+        y = (short)(y + kLineHeight);
+    }
+}
+
+static void draw_canvas(void)
+{
+    RGBColor black = { 0, 0, 0 };
+    RGBColor saved_back;
+    short count = (short)now_log_count();
     Rect inner;
 
     if (g_owner == NULL || !g_visible) {
@@ -167,13 +192,7 @@ static void draw_canvas(void)
     EraseRect(&inner);
     TextFont(g_font);
     TextSize(9);
-    y = (short)(g_r.scroll_text.top + kLineHeight - 2);
-    for (i = g_top; i < count && i < g_top + vis; ++i) {
-        MoveTo(g_r.scroll_text.left, y);
-        CopyCStringToPascal(now_log_line(i), text);
-        DrawString(text);
-        y = (short)(y + kLineHeight);
-    }
+    emit_lines(NULL);
     RGBForeColor(&black);
     RGBBackColor(&saved_back);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
@@ -561,6 +580,14 @@ static void logs_status_text(char *out, long cap)
     }
 }
 
+static void logs_describe_scene(const WorkshopSceneWriter *writer)
+{
+    /* The framed well is hand-drawn; the scroll bar beside it is already
+       a Control Manager fact and is not repeated here. */
+    workshop_scene_add(writer, kWorkshopScenePanel, "Log", &g_r.box, true);
+    emit_lines(writer);
+}
+
 static const WorkshopModuleOps k_ops = {
     logs_create,
     logs_dispose,
@@ -572,7 +599,7 @@ static const WorkshopModuleOps k_ops = {
     logs_activate,
     logs_idle,
     logs_status_text,
-    NULL
+    logs_describe_scene
 };
 
 const WorkshopModuleOps *logs_module_ops(void)
