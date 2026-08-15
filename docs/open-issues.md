@@ -29,6 +29,16 @@ from `springLoadingActivated`, so it had nothing to fire from. Arming now
 asks the row (`NavigationRowDropTargets.springLoadingTarget`) and keeps
 its own feedback state, disarmed only when the drag leaves or ends.
 
+Arming and activating had to be split apart to do that, and they answer
+different questions. The row arms wherever the pointer is, so AppKit's
+dwell survives a band crossing; the *activation* still asks the band,
+because a dwell spent aiming at the gap between two rows is aiming at an
+insertion, and springing a shelf open there would expand it under a
+pointer deliberately held still — H7 in another costume. The options
+gained `.continuousActivation` so that the single activation an entry
+would otherwise be given is not spent while the person was aiming at a
+gap.
+
 Nobody has watched the flash fire. If it still does not appear with the
 arming fixed, the next suspect is the flash itself rather than the
 gate — 0.28-alpha accent for 0.13s over `nowGlassShelf()` material may
@@ -50,8 +60,14 @@ where the pointer actually is rather than forced to `false`, so
 dismissing with the pointer still on the row keeps it lit.
 
 Still open: none of the three has been watched on screen. The host gate
-passed. Six mutations were watched failing, each against the claim its
-test names.
+passed. Eight claims here are pinned by a mutation somebody watched
+fail, each against the claim its own test names and each confirmed to
+have built and run first. The three that carry the arming argument
+are driven through a stub `NSDraggingInfo` rather than read out of the
+source, so they fail on behaviour: arm from the band again and the row's
+edges stop arming; share one feedback state and a band round-trip springs
+an already-sprung row a second time; drop the activation gate and a dwell
+over an insertion opens the shelf.
 
 ## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
 

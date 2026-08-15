@@ -253,6 +253,7 @@ final class StubDraggingInfo: NSObject, NSDraggingInfo {
     var draggingSourceOperationMask: NSDragOperation { .move }
     var draggingLocation: NSPoint { location }
     var draggedImageLocation: NSPoint { location }
+    var draggedImage: NSImage? { nil }
     var draggingPasteboard: NSPasteboard { pasteboard }
     var draggingSource: Any? { nil }
     var draggingSequenceNumber: Int { 1 }
