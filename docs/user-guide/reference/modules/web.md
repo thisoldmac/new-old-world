@@ -7,7 +7,7 @@ audience: user
 lifecycle: experimental
 authority: [web-bridge/README.md, docs/status.md, SECURITY.md]
 module_ids: [web]
-source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/Web/WebWireService.swift, now-host/Sources/Host/WebHostModule.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, now-guest-ppc/src/web/web_proxy_ot.c, now-guest-ppc/src/web/web_proxy_request.c, SECURITY.md]
+source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/Web/WebWireService.swift, now-host/Sources/Host/WebHostModule.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, now-guest-ppc/src/web/web_proxy_ot.c, now-guest-ppc/src/web/web_accept.c, now-guest-ppc/src/web/web_proxy_request.c, SECURITY.md]
 media_ids: [web-host, web-ppc]
 last_verified: 2026-08-15
 ---
@@ -33,7 +33,11 @@ The browser does not connect to the modern Mac's LAN address and no second
 browser-facing port is opened there.
 
 The PowerPC Workshop Web page saves only the guest-loopback port and reports
-relay status. The host module owns the internal renderer's lifecycle and
+relay status. The address it shows is the one Open Transport granted the
+listener, not the one that was requested, and its status area names a refused
+browser connection and what the modern Mac last said about a page — so
+"nothing has connected yet" and "every connection was refused" cannot read
+alike. The host module owns the internal renderer's lifecycle and
 relay status; the browser profile, rendering lens, fetch engine, handlers,
 and outbound policy live in the Web tab of the Settings window
 (**New Old World > Settings…**, or the module's own **Settings…** button),
@@ -76,8 +80,14 @@ CONNECT tunnel.
 
 ## Safety, consent, and privacy
 
-The browser-facing listener accepts loopback peers only. The host renderer is
-also loopback-only and ephemeral. The remaining network boundary is NOW's
+The browser-facing listener is bound to the classic Mac's own loopback
+address, so nothing outside that machine can reach it. That bind is the
+boundary. The listener does not additionally filter the peer address of an
+accepted connection: Open Transport reports a genuine loopback connection's
+peer as the machine's primary interface address, so a peer test on
+`127.0.0.1` refuses every real browser instead of protecting anything. The
+host renderer is also loopback-only and ephemeral. The remaining network
+boundary is NOW's
 existing plaintext guest-to-host connection, so use it only on a trusted
 network.
 
@@ -92,7 +102,7 @@ and page bodies. The bridge does not import browser cookies or credentials.
 ## Failure states
 
 Missing helper, stopped, starting, ready, incompatible helper protocol,
-renderer failure, blocked destination, refused peer, unsupported browser
+renderer failure, blocked destination, refused connection, unsupported browser
 profile, expired page token, and unavailable AI planner remain distinct.
 
 ## Current limitations
