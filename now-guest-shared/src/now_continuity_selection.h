@@ -116,6 +116,36 @@ void now_continuity_grant_hold(NowContinuityGrantHold *hold,
                                const NowContinuityStubTable *table,
                                unsigned long now_ticks);
 
+/* Move the table to `live_epoch`, taking the grant out of the epoch that
+   just ended. Returns 1 when the table actually moved.
+
+   EVERY READER OF THE LIVE EPOCH SETTLES, NOT JUST THE POLL, and that is
+   the whole point of this being a function rather than three lines inside
+   the Finder poll. It was three lines inside the poll, and the poll runs
+   AFTER the guest has dispatched the frames it read in the same pass — so
+   a host that sent continuity.disarm and continuity.grab together (which is
+   what a host does when it stands down for a drag it is still holding) had
+   its grab answered while the hold was still empty, and got bad-epoch for
+   the one gesture the hold exists to serve. Measured on metal 2026-08-15
+   01:04: the grab arrived three seconds into a thirty-second window and was
+   refused anyway.
+
+   So the transition is edge-triggered on OBSERVATION rather than on the
+   poll's cadence: whoever notices the epoch moved settles it, and the grab
+   path notices before it decides.
+
+   The window therefore starts when the epoch end is NOTICED, not when it
+   happened, which is worth saying because the two are not the same clock.
+   They are within a service pass of each other — the poll runs every pass
+   and only loses this race by the width of one frame dispatch — and the
+   error is in the generous direction, which for a bounded consent window a
+   person is holding in their hand is the right way to be wrong. */
+int now_continuity_selection_settle(NowContinuityStubTable *table,
+                                    NowContinuityGrantHold *hold,
+                                    unsigned long *table_epoch,
+                                    unsigned long live_epoch,
+                                    unsigned long now_ticks);
+
 /* Drop it: a new epoch published its own selection, the link went away, or
    the gesture was redeemed. */
 void now_continuity_grant_release(NowContinuityGrantHold *hold);
@@ -156,9 +186,17 @@ int now_continuity_grab_check(const NowContinuityStubTable *table,
    the caller cannot resolve the wrong one; `after_epoch_out` is set to 1
    when the answer came from the hold, which the caller must say out loud.
    Both are optional. The hold is consulted ONLY where the live check said
-   bad-epoch, so nothing about a running epoch changes shape. */
-int now_continuity_grab_resolve(const NowContinuityStubTable *table,
-                                const NowContinuityGrantHold *hold,
+   bad-epoch, so nothing about a running epoch changes shape.
+
+   IT SETTLES BEFORE IT DECIDES, which is why the table, the hold and the
+   table's epoch arrive by pointer rather than by const pointer. A grab is
+   the one request that can outrun the poll — see
+   now_continuity_selection_settle. Settling here rather than at the call
+   site is deliberate: there is then no version of this decision that can be
+   made against a table nobody has moved yet. */
+int now_continuity_grab_resolve(NowContinuityStubTable *table,
+                                NowContinuityGrantHold *hold,
+                                unsigned long *table_epoch,
                                 unsigned long live_epoch,
                                 unsigned long asked_epoch,
                                 unsigned long asked_generation,
