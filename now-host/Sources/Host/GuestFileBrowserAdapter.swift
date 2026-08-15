@@ -6,26 +6,78 @@ struct GuestFilePromiseDescriptor: Equatable {
     var type: UTType
     var requiresMacBinary: Bool
 
+    /// The tag class classic four-character Finder types live under. Not a
+    /// named member of `UTTagClass`, which declares only the filename
+    /// extension and MIME cases; the identifier is CoreServices'
+    /// `kUTTagClassOSType` and is what the system's own classic-type
+    /// lookups still use.
+    static var osTypeTagClass: UTTagClass {
+        UTTagClass(rawValue: "com.apple.ostype")
+    }
+
+    /// Deliberate answers that beat whatever the OSType tag lookup
+    /// synthesizes, kept because a person chose them: `TEXT` reads better
+    /// as `public.plain-text` than as the traditional-Mac text type, and
+    /// `APPL` as an application rather than an application *bundle*. These
+    /// are OVERRIDES on top of the derivation below, not a replacement for
+    /// it — every other classic type now gets a real answer instead of
+    /// falling to generic `public.data`.
+    static func curatedType(for osType: String?) -> UTType? {
+        switch osType {
+        case "APPL": return .application
+        case "TEXT", "ttro", "utxt": return .plainText
+        case "PICT": return .image
+        case "GIFf": return .gif
+        case "JPEG": return .jpeg
+        case "MooV": return .movie
+        case "ZIP ": return .zip
+        default: return nil
+        }
+    }
+
+    /// The type derived from the guest's own four-character Finder type.
+    ///
+    /// `conformingTo: .data` matters: for an OSType the system does not
+    /// know it synthesizes a dynamic type, and a dynamic type that
+    /// conforms to nothing is worse than `public.data` — every receiver
+    /// refuses it. Anchored to `public.data`, the dynamic type carries
+    /// more information than `public.data` while still being accepted
+    /// everywhere `public.data` is.
+    static func derivedType(for osType: String?) -> UTType? {
+        guard let osType, osType.count == 4, osType != "????" else {
+            return nil
+        }
+        return UTType(tag: osType, tagClass: osTypeTagClass,
+                      conformingTo: .data)
+    }
+
+    /// The type a modern extension in the guest's own name identifies.
+    ///
+    /// Only a DECLARED type counts. Classic names are full of dots that
+    /// are not extensions — "System 7.5.3", "Photoshop 3.0" — and
+    /// `UTType(filenameExtension:)` answers those with a dynamic type
+    /// conforming to nothing rather than with nil. That answer used to win
+    /// outright, so a great many classic files were advertised under a UTI
+    /// no application has ever heard of, which is exactly the shape of
+    /// "the Desktop takes it and nothing else will".
+    static func extensionType(for name: String) -> UTType? {
+        let ext = (name as NSString).pathExtension
+        guard !ext.isEmpty,
+              let type = UTType(filenameExtension: ext),
+              !type.isDynamic else { return nil }
+        return type
+    }
+
     static func describe(_ item: FileRow) -> Self {
         if item.isFolder {
             return Self(type: .folder, requiresMacBinary: false)
         }
-        let extensionType = UTType(filenameExtension:
-            (item.name as NSString).pathExtension)
-        let classicType: UTType?
-        switch item.entry.fileType {
-        case "APPL": classicType = .application
-        case "TEXT", "ttro", "utxt": classicType = .plainText
-        case "PICT": classicType = .image
-        case "GIFf": classicType = .gif
-        case "JPEG": classicType = .jpeg
-        case "MooV": classicType = .movie
-        case "ZIP ": classicType = .zip
-        default: classicType = nil
-        }
         /* Promise the destination file's type, not the MacBinary envelope
            used while a classic file crosses the wire. */
-        let type = extensionType ?? classicType ?? .data
+        let type = extensionType(for: item.name)
+            ?? curatedType(for: item.entry.fileType)
+            ?? derivedType(for: item.entry.fileType)
+            ?? .data
         let hasResourceFork = (item.entry.rsrcBytes ?? 0) > 0
         let hasFinderIdentity = [item.entry.fileType, item.entry.creator]
             .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
@@ -33,6 +85,32 @@ struct GuestFilePromiseDescriptor: Equatable {
         return Self(type: type,
                     requiresMacBinary: hasResourceFork
                         || hasFinderIdentity)
+    }
+
+    /// The name AppKit should materialize, carrying an extension that
+    /// agrees with the type the pasteboard already declared.
+    ///
+    /// `filePromiseProvider(_:fileNameForType:)` is handed the declared UTI
+    /// precisely so the delegate can do this; the old implementation
+    /// returned the bare guest name, so a classic extension-less file
+    /// landed as a file whose name contradicted its own advertised type.
+    /// The type is read back from what was declared rather than recomputed,
+    /// so the two cannot drift.
+    ///
+    /// A type with no preferred extension (`public.data`, `public.folder`,
+    /// an application, a synthesized dynamic type) leaves the name alone —
+    /// inventing one would be a guess, and a wrong extension is worse than
+    /// none. The name is put through the same HFS projection as promised
+    /// folder children, because a guest name may legally contain the one
+    /// character a POSIX path may not.
+    static func promisedName(_ name: String, declared identifier: String)
+        -> String {
+        let name = LocalFileName.sanitized(name)
+        guard let ext = UTType(identifier)?.preferredFilenameExtension,
+              !ext.isEmpty else { return name }
+        guard (name as NSString).pathExtension.caseInsensitiveCompare(ext)
+                != .orderedSame else { return name }
+        return name + "." + ext
     }
 }
 
@@ -205,7 +283,9 @@ final class GuestFileBrowserAdapter: FilesBrowserAdapter {
     }
 
     func promisedFileName(_ provider: NSFilePromiseProvider) -> String {
-        (provider.userInfo as? FileRow)?.name ?? "Untitled"
+        guard let row = provider.userInfo as? FileRow else { return "Untitled" }
+        return GuestFilePromiseDescriptor.promisedName(
+            row.name, declared: provider.fileType)
     }
 
     func writePromise(_ browserRow: FilesBrowserRow, to url: URL,
@@ -232,6 +312,14 @@ final class GuestFileBrowserAdapter: FilesBrowserAdapter {
                   !dragging.contains(where: { $0.id == proposedRow?.id })
             else { return [] }
             return .move
+        }
+        /* Claim only what `acceptDrop` below can actually redeem. This used
+           to return `.copy` for anything at all, so a promise-only source
+           — a photo dragged straight out of Photos, a Mail attachment with
+           no file on disk yet — showed the green plus for the whole drag
+           and then did nothing on release, with no error anywhere. */
+        guard Self.canReadExternalDrop(info.draggingPasteboard) else {
+            return []
         }
         if operation == .on, proposedRow?.isFolder == true { return .copy }
         tableView.setDropRow(-1, dropOperation: .on)
@@ -264,12 +352,107 @@ final class GuestFileBrowserAdapter: FilesBrowserAdapter {
             model.requestMove(rows, toFolder: target.path)
             return true
         }
-        let urls = (info.draggingPasteboard.readObjects(
+        let target = operation == .on ? proposedRow?.guestRow : nil
+        let folder = target?.isFolder == true ? target?.path : nil
+        switch Self.externalDrop(on: info.draggingPasteboard) {
+        case .urls(let urls):
+            model.enqueue(urls, into: folder)
+            return true
+        case .promises(let receivers):
+            receive(receivers, into: folder)
+            return true
+        case .unreadable:
+            return false
+        }
+    }
+
+    /// What an external drag is actually carrying.
+    ///
+    /// The table registers for file URLs **and** for every type
+    /// `NSFilePromiseReceiver` can read, so both must be redeemable here;
+    /// registering for a type nothing redeems is how a drag can look
+    /// accepted for its whole length and land nowhere.
+    enum ExternalDrop {
+        case urls([URL])
+        case promises([NSFilePromiseReceiver])
+        case unreadable
+    }
+
+    static func externalDrop(on pasteboard: NSPasteboard) -> ExternalDrop {
+        let urls = (pasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        guard !urls.isEmpty else { return false }
-        let target = operation == .on ? proposedRow?.guestRow : nil
-        model.enqueue(urls, into: target?.isFolder == true ? target?.path : nil)
-        return true
+        if !urls.isEmpty { return .urls(urls) }
+        let receivers = (pasteboard.readObjects(
+            forClasses: [NSFilePromiseReceiver.self],
+            options: nil) as? [NSFilePromiseReceiver]) ?? []
+        if !receivers.isEmpty { return .promises(receivers) }
+        return .unreadable
+    }
+
+    /// The same question `externalDrop` answers, asked without materialising
+    /// anything — `validateDrop` runs on every mouse move of a drag.
+    /// `GuestFileBrowserAdapterDropTests` pins the two to the same verdict,
+    /// because a cheap predicate that drifts from the expensive one is the
+    /// bug this pair exists to prevent.
+    static func canReadExternalDrop(_ pasteboard: NSPasteboard) -> Bool {
+        pasteboard.canReadObject(forClasses: [NSURL.self],
+                                 options: [.urlReadingFileURLsOnly: true])
+            || pasteboard.canReadObject(
+                forClasses: [NSFilePromiseReceiver.self], options: nil)
+    }
+
+    /// Stages a promise-only source into a private directory and hands each
+    /// file to the ordinary upload queue as it lands, rather than waiting
+    /// for the whole set: `enqueue` appends, so a slow promise does not hold
+    /// up the ones already written.
+    private func receive(_ receivers: [NSFilePromiseReceiver],
+                         into folder: String?) {
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-drop-\(UUID().uuidString)")
+        do {
+            try FileManager.default.createDirectory(
+                at: staging, withIntermediateDirectories: true)
+        } catch {
+            model.reportChangeFailure(error.localizedDescription)
+            return
+        }
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        let sink = GuestPromiseDropSink(model: model, folder: folder)
+        for receiver in receivers {
+            receiver.receivePromisedFiles(
+                atDestination: staging, options: [:],
+                operationQueue: queue) { url, error in
+                sink.received(url, failure: error?.localizedDescription)
+            }
+        }
+    }
+}
+
+/// AppKit calls a promise reader on the queue the destination supplied, with
+/// arguments it never marked `Sendable`. Same shape as
+/// `FilesPromiseCompletion`: take ownership once, and touch the model only
+/// from the main actor. The error is reduced to its message at the boundary
+/// so nothing non-`Sendable` crosses.
+private final class GuestPromiseDropSink: @unchecked Sendable {
+    private let model: FilesModuleModel
+    private let folder: String?
+
+    init(model: FilesModuleModel, folder: String?) {
+        self.model = model
+        self.folder = folder
+    }
+
+    func received(_ url: URL, failure: String?) {
+        let model = model
+        let folder = folder
+        Task { @MainActor in
+            if let failure {
+                model.reportChangeFailure(failure)
+                return
+            }
+            model.enqueue([url], into: folder)
+        }
     }
 }
