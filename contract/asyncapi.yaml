@@ -4966,9 +4966,11 @@ components:
         anything again; and the person most likely to need that is
         standing at a classic Mac whose host has stopped answering,
         which is precisely when the wire is not the face available.
-        NOW-68K answers it; the PowerPC guest reaches the same
-        capability from its own UI and from file.cancel, and declares
-        no verb.
+        NOW-68K answers it. The PowerPC guest declares no verb: a host
+        cancels it by sending file.cancel, and the person standing at
+        that guest reaches the same implementation from its receive
+        windoid and from `cancel` typed at its own console — the
+        console-only split docs/command-parity.md records for `put`.
 
         Answers ok:false with code "nothing-to-cancel" when no transfer
         is in flight. That is a refusal, not a protocol error: asking a

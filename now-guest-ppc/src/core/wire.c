@@ -4729,6 +4729,37 @@ static void put_abort(const char *code, const char *reason)
              retained ? "partial-retained" : "temp-discarded");
 }
 
+/* Stop the receive in flight, from this side. now_wire_get_cancel's two
+   halves in the same order, one lane over: tell the other Mac to stop
+   sending, then end it here. Wire-only would leave this side writing
+   into a temp nobody finishes; local-only would leave the host pushing
+   into a lane that is one transfer wide, which is the state that makes
+   a machine transfer nothing ever again.
+
+   send_control is best effort for get_cancel's reason — a stop pressed
+   on a dead wire still has to free this side — and put_abort is the
+   same teardown an inbound file.cancel already runs (serve of
+   file.cancel), so the host also hears file.done ok:false "cancelled"
+   and does not have to infer the end from silence. */
+int now_wire_put_cancel(char *err, long cap)
+{
+    char json[64];
+
+    if (!g_put.active) {
+        snprintf(err, (size_t)cap, "Nothing is being received");
+        return -1;
+    }
+    /* `transfer`, not `id`: contract/asyncapi.yaml FileCancel requires
+       {type, transfer} with additionalProperties false. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.cancel\",\"transfer\":%ld}", g_put.id);
+    (void)send_control(json);
+    now_log(kLogInfo, "put", "#%ld stopped at %ld bytes by the person",
+            g_put.id, g_put.rx.received);
+    put_abort("cancelled", "stopped at this Mac");
+    return 0;
+}
+
 /* Called for every inbound bulk frame. */
 static void take_bulk_in(const unsigned char *bytes, long len)
 {

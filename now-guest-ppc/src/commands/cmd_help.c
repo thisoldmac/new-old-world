@@ -570,6 +570,17 @@ static const char *const d_put[] = {
     NULL
 };
 
+static const char *const d_cancel[] = {
+    "  Stops whatever file is moving, in whichever",
+    "  direction — a file arriving from the other Mac or",
+    "  one this Mac asked for. It needs no name: the lane",
+    "  is one transfer wide, so there is only ever one",
+    "  thing to stop. A file this Mac is SENDING cannot be",
+    "  stopped from here yet, and says so rather than",
+    "  reporting a quiet machine.",
+    NULL
+};
+
 static const char *const d_mv[] = {
     "  Both paths are relative to the share root. The",
     "  second is the whole destination including the new",
@@ -656,6 +667,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "wirestat [reset | sleep N | wake on|off]", d_wirestat },
     { "desktop", 1, "what this Mac's desktop is actually drawn from",
       "desktop", d_desktop },
+    { "cancel", 0, "stop the file transfer in flight",
+      "cancel   (no arguments)", d_cancel },
     { "mv", 0, "move or rename something in the shared files",
       "mv <path> <new path>", d_mv },
     { "trash", 0, "move something to the Trash",
