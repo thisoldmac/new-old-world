@@ -7,6 +7,80 @@ search:
 
 # Open issues
 
+## FIXED, UNVERIFIED ON METAL — NOW MOVED A PERSON'S FILE: an unbound cross-edge press released wherever the pointer ended (2026-08-15, `fix/continuity-unbound-cross-release`)
+
+**This one is a safety defect, not a fidelity one.** On metal at
+2026-08-15 01:16 (`~/Library/Logs/now-logs/2026-08-15 011445.log`)
+Michelle dragged `main.c` across the shared edge and the guest Finder put
+up *"An item named 'main.c' already exists in this location. Do you want
+to replace it with the one you're moving?"* — an unrequested, potentially
+destructive file operation on her own machine, offered by NOW.
+
+The sequence, and it is all in one log: `no guest file is bound to this
+press: the Mac has published no Finder selection for this epoch`, then
+`primary down sent`, then `shared edge crossing`, then `returning pointer
+to host: … buttonsDown=1`, then six seconds of `held-button custody`
+before the release landed.
+
+**The protection already existed, was correct, and did not run.**
+`returnGuestFileToHost` settles the guest pointer back onto the press
+origin and releases it there before anything else, because the Finder
+completes a move to wherever the pointer is when the button comes up. Its
+own doc comment says the consequence in as many words — cosmetic from the
+desktop, a real relocation from inside a Finder window (metal,
+2026-08-14). It took a **bound** `HostFileDragItem`, so the ordinary
+held handback in `returnToHost` — the unbound path — did none of it.
+
+Not moving somebody's files is not a property of the file-transfer
+feature. `releaseGuestPressAtOrigin` is now the one implementation of
+"settle to origin, then release", called by both. Only those two packets
+are shared: the catch surface, the pending return drag and the AppKit
+session stay on the bound path, because there is no file to hand over on
+the other one. The unbound cross also **warns** now, naming the reason
+and whether anything was bound; it reached metal with a single info line.
+
+**Why nothing was bound, and it is not the timing race it looks like.**
+The epoch armed at 01:16:02 and the press landed at 01:16:04 with no
+`selection cached` in between — but no poll cadence would have helped.
+`now_continuity_selection_poll` publishes only on a CHANGE
+(`now_continuity_stub_observe`), an epoch's reset table starts empty, and
+an empty Finder selection at arm therefore publishes **nothing at all**;
+the poll is then gated off entirely for the length of the gesture
+(`now_continuity_button_is_down`). So a press that both SELECTS an icon
+and drags it — click on the icon, drag straight out — can never be bound
+on its first pass, because the click that creates the selection is the
+same button-down that suppresses the poll. The working run six minutes
+earlier (`2026-08-15 010146.log`) had `selection cached` before its press
+only because a previous epoch's click had already selected `main.c`.
+
+**That half is NOT fixed here.** Closing it needs a guest change — a
+selection poll at the down edge before the Finder enters its drag loop,
+or a grab resolved by point rather than by published stub — and
+`now-guest-ppc/src/core/wire.c` is another lane's file this week. What
+this change buys is that the degradation is now safe and loud instead of
+silent and destructive: the drag is refused, the press is released where
+it started, and the log says so at warn.
+
+A second, smaller thing this leaves open: with the stub lane configured
+it wins outright and there is no fallback to the scene hit test
+(`ContinuityEdgeController.driveGuest`), which is deliberate and
+documented — but it means an unpublished selection refuses the drag even
+when the Mirror could have resolved the item under the pointer.
+
+**What is proven.** Host suites green. The key guard —
+`testAnUnboundHeldCrossReleasesAtThePressOriginNotTheCrossPoint` — was
+written first and **watched failing against today's code** with the
+message it names. Seven mutations, each built and each run: skipping the
+release, releasing at the cross point instead of the origin, releasing
+before the settle, dropping the warn to info, inventing a release for a
+press the guest never took, arming the catch surface on the unbound path,
+and the bound path releasing at the cross point. **Metal-verified: no.**
+The metal script is a drag across the edge with no selection published —
+press immediately after arming — confirming the icon snaps back rather
+than relocating, and that the log carries `held press released without a
+file handoff … boundFile=none` and `guest press released before the
+cross`.
+
 ## TWO METAL CAUSES FIXED, NEITHER RE-MEASURED ON METAL: the guest→host drag's anchor window and its consent lifetime (2026-08-14, `fix/continuity-drag-round3`)
 
 Round 2 of the guest→host cross-edge drag was attended and produced three
