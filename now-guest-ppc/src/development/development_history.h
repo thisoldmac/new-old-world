@@ -7,8 +7,10 @@
    last few do?  Deliberately SESSION-scoped and in memory - a build log on
    disk is a second durable record beside the ToolServer transcript the
    build already writes into the project's Build folder, and two records of
-   the same run go out of step.  Eight is what the page can show without
-   scrolling; older jobs fall off the ring rather than being summarised. */
+   the same run go out of step.  Eight is a session's worth of context at
+   about half a kilobyte; the page draws the newest three in its jobs
+   strip, and older jobs fall off the ring rather than being summarised -
+   a count of builds nobody can name is not something anyone acts on. */
 enum {
     kDevJobHistoryMax = 8,
     kDevJobSummaryProjectCap = 40,
