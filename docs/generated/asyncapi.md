@@ -54,7 +54,7 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
 | `hostServesHostSurface` | `receive` | `control` | `hostShown` |
 | `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey`, `continuityGrab`, `continuityOffer` |
-| `guestReportsContinuity` | `receive` | `control` | `continuityReport`, `continuityKeyReport`, `continuitySelection` |
+| `guestReportsContinuity` | `receive` | `control` | `continuityReport`, `continuityKeyReport`, `continuitySelection`, `continuityGrab` |
 | `peerAnnouncesMirrorInvalidation` | `send` | `control` | `mirrorInvalidate` |
 | `peerReceivesMirrorInvalidation` | `receive` | `control` | `mirrorInvalidate` |
 
