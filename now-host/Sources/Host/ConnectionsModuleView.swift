@@ -38,8 +38,8 @@ struct ConnectionsModuleView: View {
     @State private var detailFraction =
         RightSidebarSplitController.defaultLeadingFraction
 
-    /// The roster's one noun, read by its rail, its hover tag and the
-    /// toggle in the detail header.
+    /// The roster's one noun, read by its rail, its hover tag and its own
+    /// toggle.
     static let rosterTitle = "Machines"
 
     var body: some View {
