@@ -789,6 +789,7 @@ void now_development_project_command(const char *request_json, long id,
     }
     if (strcmp(action, "catalog") == 0) {
         DevProjectRow *rows;
+        NowPrefs prefs;
         int emitted = 0;
         long next = -1;
         DevProjectsLookup found;
@@ -809,7 +810,9 @@ void now_development_project_command(const char *request_json, long id,
         }
         /* An empty root is an answer, not a refusal: the page and the host
            both need to tell "nothing there" from "no root chosen". */
-        if (dev_projects_reply(out, cap, id, rows, emitted, next, NULL) == 0) {
+        now_prefs_load(&prefs);
+        if (dev_projects_reply(out, cap, id, rows, emitted, next,
+                               prefs.active_project_id) == 0) {
             error_reply(out, cap, id, "projects-root-unavailable",
                         "The projects page did not fit in one reply.");
         }

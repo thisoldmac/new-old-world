@@ -62,7 +62,10 @@ int dev_projects_identity(const FSSpec *folder, long dir_id,
         DisposePtr((Ptr)project); DisposePtr((Ptr)text); return 0;
     }
     DisposePtr((Ptr)text);
-    snprintf(id, kDevProjectsIDCap, "%s", project->id);
+    /* A manifest id is 32 hex characters and the parser's field is wider
+       than that; take exactly what fits rather than letting a malformed
+       manifest decide how much of this buffer to use. */
+    snprintf(id, kDevProjectsIDCap, "%.32s", project->id);
     if (name != NULL) snprintf(name, kDevProjectsNameCap, "%s", project->name);
     DisposePtr((Ptr)project);
     return 1;
