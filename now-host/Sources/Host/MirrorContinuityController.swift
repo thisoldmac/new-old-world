@@ -205,16 +205,6 @@ final class MirrorContinuityController: ObservableObject,
         accessibility.openAccessibilitySettings()
     }
 
-    /// Whether the Continuity page should be offering the way out. Reads
-    /// the edge controller's own account of why its consuming tap is
-    /// missing rather than re-deriving trust here: the tap failing is the
-    /// symptom that matters, and a process can be trusted while the tap
-    /// still refuses to create (the relaunch case), which wants different
-    /// words and not this control.
-    var needsAccessibilityPermission: Bool {
-        edge.captureFailureReason == .missingPermission
-    }
-
     func setMirrorCursorActive(_ active: Bool) {
         guard mirrorCursorActive != active else { return }
         mirrorCursorActive = active

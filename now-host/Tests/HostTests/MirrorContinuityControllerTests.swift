@@ -1159,13 +1159,85 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(accessibility.promptCount, 0)
     }
 
+    /// The half the 2026-08-14 metal round did not have. That log carried
+    /// 31 lines naming the missing permission and NOT ONE naming what the
+    /// app did about it, so nothing could distinguish "the prompt never
+    /// fired" from "the prompt fired and macOS suppressed it". Each branch
+    /// of the decision must say which branch it took.
+    func testBeginEdgeModeAuditsThePromptDecision() {
+        let accessibility = AccessibilityFake()
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility,
+            audit: { audits.append(($0, $1)) })
+
+        controller.beginEdgeMode()
+        XCTAssertTrue(audits.contains { $0.1.contains("asking macOS for it") },
+                      "the untrusted first ask must be named: \(audits)")
+        XCTAssertTrue(audits.contains { $0.1.contains("asked macOS") },
+                      "the outcome of the ask must be named: \(audits)")
+
+        // Second turn-on this launch: suppressed by the once-per-launch
+        // guard, and that suppression is the reading a metal round needs.
+        audits.removeAll()
+        controller.endEdgeMode(reason: "test toggle off")
+        controller.beginEdgeMode()
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("already asked")
+        }, "the launch guard suppressing the prompt must be named: \(audits)")
+    }
+
+    /// The already-trusted branch is the one that looks identical to a
+    /// broken prompt in a log that says nothing: no dialog appears, and
+    /// without this line there is no way to tell that from a prompt macOS
+    /// swallowed.
+    func testBeginEdgeModeAuditsAlreadyTrusted() {
+        let accessibility = AccessibilityFake()
+        accessibility.trusted = true
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility,
+            audit: { audits.append(($0, $1)) })
+
+        controller.beginEdgeMode()
+
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("already granted")
+        }, "an already-trusted launch must say so: \(audits)")
+        XCTAssertFalse(audits.contains { $0.1.contains("asking macOS") })
+    }
+
+    /// The affordance that always works, unlike the one-shot prompt. It
+    /// goes through the seam so a test never opens System Settings for
+    /// real, and so the audit records that the person asked.
+    func testOpenAccessibilitySettingsGoesThroughTheSeamAndIsAudited() {
+        let accessibility = AccessibilityFake()
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = MirrorContinuityController(
+            listener: listener, defaults: defaults,
+            accessibility: accessibility,
+            audit: { audits.append(($0, $1)) })
+
+        controller.openAccessibilitySettings()
+
+        XCTAssertEqual(accessibility.openSettingsCount, 1)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("Accessibility pane")
+        }, "the person's escape hatch must be readable in the log: \(audits)")
+    }
+
     /// Fakes the two AX calls `beginEdgeMode` depends on, without ever
     /// touching the real system prompt.
     final class AccessibilityFake: AccessibilityAuthorization, @unchecked Sendable {
         var trusted = false
         var promptCount = 0
 
+        var openSettingsCount = 0
+
         func isProcessTrusted() -> Bool { trusted }
         func promptForTrust() { promptCount += 1 }
+        func openAccessibilitySettings() { openSettingsCount += 1 }
     }
 }

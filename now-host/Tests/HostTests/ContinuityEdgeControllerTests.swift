@@ -799,6 +799,81 @@ final class ContinuityEdgeControllerTests: XCTestCase {
                        "a trusted-but-failing retry must not loop")
     }
 
+    /// The Continuity page shows its Open Accessibility Settings control
+    /// off THIS value, so which reason a failure records is a UI decision
+    /// and not only a retry decision. An untrusted Mac gets the control;
+    /// a trusted Mac whose tap still refuses gets a relaunch message
+    /// instead, because sending that person to the Accessibility pane
+    /// shows them a checkbox that is already on.
+    func testCaptureFailureReasonDistinguishesPermissionFromRelaunch() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        environment.captureAvailable = false
+        let accessibility = AccessibilityFake()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            accessibility: accessibility, audit: { _, _ in })
+        XCTAssertNil(controller.captureFailureReason,
+                     "nothing has failed yet; the page must offer nothing")
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        XCTAssertEqual(controller.captureFailureReason, .missingPermission,
+                       "an untrusted Mac is the case the Settings control "
+                       + "exists for")
+
+        // The same failure on a process macOS DOES trust: not a permission
+        // problem, and the page must not offer the pane for it.
+        let trusted = AccessibilityFake()
+        trusted.trusted = true
+        let secondEnvironment = Environment()
+        secondEnvironment.captureAvailable = false
+        let relaunch = ContinuityEdgeController(
+            layout: makeLayout(), driver: Driver(),
+            environment: secondEnvironment,
+            accessibility: trusted, audit: { _, _ in })
+        relaunch.start()
+        secondEnvironment.emit(.init(kind: .moved,
+                                     location: CGPoint(x: 1439, y: 450),
+                                     delta: CGPoint(x: 2, y: 0),
+                                     buttonsDown: false))
+        relaunch.transportPhaseChanged(.active)
+
+        XCTAssertEqual(relaunch.captureFailureReason, .relaunchNeeded)
+    }
+
+    /// And it clears on recovery — a stale control offering a permission
+    /// the person has already granted is its own small lie.
+    func testCaptureFailureReasonClearsWhenTheTapRecovers() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        environment.captureAvailable = false
+        let accessibility = AccessibilityFake()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            accessibility: accessibility, audit: { _, _ in })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+        XCTAssertEqual(controller.captureFailureReason, .missingPermission)
+
+        accessibility.trusted = true
+        environment.captureAvailable = true
+        controller.retryInputCaptureAfterBecomingActive()
+
+        XCTAssertNil(controller.captureFailureReason,
+                     "a recovered tap must take the control away again")
+    }
+
     func testDisabledInputTapIsReportedAndOwnershipSurvivesIt() {
         let layout = makeLayout()
         let driver = Driver()
@@ -1285,7 +1360,10 @@ private extension ContinuityEdgeControllerTests {
         var trusted = false
         var promptCount = 0
 
+        var openSettingsCount = 0
+
         func isProcessTrusted() -> Bool { trusted }
         func promptForTrust() { promptCount += 1 }
+        func openAccessibilitySettings() { openSettingsCount += 1 }
     }
 }
