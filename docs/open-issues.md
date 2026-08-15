@@ -7,7 +7,7 @@ search:
 
 # Open issues
 
-## TESTED, NOT EXERCISED THROUGH A LIVE MCP CLIENT: an agent can read this side's log (2026-08-15, `claude/mcp-host-log-tail`)
+## TESTED, NOT EXERCISED THROUGH A LIVE MCP CLIENT: an agent can read this side's log (2026-08-15, `feat/mcp-host-log-tail`)
 
 `now_host_log_tail` is the host sibling of `now_guest_log_tail`. It serves
 `HostLog`'s in-memory ring — not the optional per-launch file — with an
