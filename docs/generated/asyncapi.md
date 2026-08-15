@@ -53,7 +53,7 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `hostServesWeb` | `receive` | `control` | `webResponseBegin`, `webResponseChunk`, `webResponseEnd` |
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
 | `hostServesHostSurface` | `receive` | `control` | `hostShown` |
-| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey`, `continuityGrab` |
+| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey`, `continuityGrab`, `continuityOffer` |
 | `guestReportsContinuity` | `receive` | `control` | `continuityReport`, `continuityKeyReport`, `continuitySelection` |
 | `peerAnnouncesMirrorInvalidation` | `send` | `control` | `mirrorInvalidate` |
 | `peerReceivesMirrorInvalidation` | `receive` | `control` | `mirrorInvalidate` |
@@ -128,6 +128,7 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `continuityKeyReport` | `continuity.keyReport` | `ContinuityKeyReport` |
 | `continuitySelection` | `continuity.selection` | `ContinuitySelection` |
 | `continuityGrab` | `continuity.grab` | `ContinuityGrab` |
+| `continuityOffer` | `continuity.offer` | `ContinuityOffer` |
 | `cloudServices` | `cloud.services` | `CloudServices` |
 | `cloudReport` | `cloud.report` | `CloudReport` |
 | `cloudList` | `cloud.list` | `CloudList` |
@@ -220,6 +221,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 | `cycle` | — | `cycle` | Brings each application on the guest forward in turn, with the anchor plane armed, so that it executes its own event loop once and the resident captures its anchor — then restores the application that was frontmost. |
 | `mirror` | — | `mirror` | The guest's read-only lifecycle view of the ONE optional NOW Extension and its data planes. |
 | `mirrorlog` | `action` | `mirrorlog` | The `mirror` log area's DEBUG TIER, on one session-scoped switch that is OFF each launch. |
+| `offer` | `action` | `offer` | The file the person at the Mac is holding out to this Macintosh, and the one thing somebody standing at this Macintosh can do about it. |
 
 ## Change discipline
 
