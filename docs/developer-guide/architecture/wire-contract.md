@@ -214,9 +214,7 @@ rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, contract-summary 6->0, sources, contract-summary 6->0
-=======
 rederived: 2026-08-14T15:56:43-0400 835e6acf sources
->>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:11-0400 e2c66126 sources, sources, sources, sources
@@ -224,4 +222,6 @@ rederived: 2026-08-14T18:30:52-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:25-0400 b248c9a1 contract-summary 0->6
 rederived: 2026-08-14T20:24:56-0400 6d3d74d7 sources
+rederived: 2026-08-14T20:18:49-0400 cccec57a unchanged
+rederived: 2026-08-14T21:50:42-0400 edcc526f unchanged
 -->

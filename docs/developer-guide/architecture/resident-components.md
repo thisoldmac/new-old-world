@@ -166,9 +166,7 @@ rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:38-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:50-0400 60bb3427 unchanged
-=======
 rederived: 2026-08-14T15:56:43-0400 835e6acf unchanged
->>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:41-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:06-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:11-0400 e2c66126 unchanged
@@ -176,4 +174,6 @@ rederived: 2026-08-14T18:30:52-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:25-0400 b248c9a1 unchanged
 rederived: 2026-08-14T20:24:56-0400 6d3d74d7 unchanged
+rederived: 2026-08-14T20:18:49-0400 cccec57a unchanged
+rederived: 2026-08-14T21:50:42-0400 edcc526f unchanged
 -->

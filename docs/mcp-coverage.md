@@ -1194,7 +1194,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 9377eb04485b3e6745f225a8bcb74f52b736019e
+sources-sha1: e3180476dbdc8b7dbe033127a55f2e780b534bb0
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1354,9 +1354,7 @@ rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, ppc-inbound-types 54->0, sources, ppc-inbound-types 54->0
-=======
 rederived: 2026-08-14T15:56:43-0400 835e6acf sources
->>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources, sources, disposition-census 3->0, disposition-census 3->0
@@ -1364,4 +1362,6 @@ rederived: 2026-08-14T18:30:53-0400 b248c9a1 disposition-census 0->3
 rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:25-0400 b248c9a1 ppc-inbound-types 0->57
 rederived: 2026-08-14T20:24:57-0400 6d3d74d7 sources
+rederived: 2026-08-14T20:18:49-0400 cccec57a unchanged
+rederived: 2026-08-14T21:50:42-0400 edcc526f sources
 -->

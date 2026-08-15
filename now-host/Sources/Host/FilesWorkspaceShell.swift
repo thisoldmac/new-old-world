@@ -596,7 +596,7 @@ private struct FilesGuestUnavailable: View {
         VStack(spacing: 10) {
             Image(systemName: "externaldrive.badge.questionmark")
                 .font(.system(size: 36, weight: .light))
-            Text("No Old World Mac Connected")
+            Text("No \(MachineNaming.properNoun) Connected")
                 .font(.headline)
             Text("Guest files will appear here when a Mac connects.")
                 .font(.callout)
@@ -817,7 +817,7 @@ private struct FilesSharingPane: View {
             }
             Section("How It Works") {
                 Text("The Browser panel shows this folder. Drag its files " +
-                     "into the Old World Mac pane to copy them to " +
+                     "into the \(MachineNaming.properNoun) pane to copy them to " +
                      model.connection.peerLabel + ".")
                     .foregroundStyle(.secondary)
             }

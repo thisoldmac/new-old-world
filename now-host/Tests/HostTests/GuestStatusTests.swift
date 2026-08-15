@@ -195,7 +195,7 @@ final class GuestStatusTests: XCTestCase {
             status: .waiting(port: 5252),
             readiness: .init(isEnabled: false, reason: "No Mac is connected"))
         XCTAssertEqual(line,
-                       "Listening on 5252 — no old world mac connected",
+                       "Listening on 5252 — no guest connected",
                        "read from the menu bar of the listening Mac, so "
                        + "\"no Mac connected\" named the wrong machine")
     }

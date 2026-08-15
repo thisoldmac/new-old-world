@@ -102,7 +102,7 @@ work; it does not mean NOW-68K ships in the alpha.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: 758046578535cc13811fcaaf1be0368fb306e0a8
+sources-sha1: 120329fa7a9712700f101f5682ae503b11ab5f79
 derive module-map sha256=3b57e881222000fab312e382a5aefc83bea65b0f54433d1133b145824fd27922 lines=17
     scripts/docs-inventory
 rederived: pending
@@ -229,9 +229,7 @@ rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
-=======
 rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
->>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:12-0400 e2c66126 unchanged
@@ -239,4 +237,6 @@ rederived: 2026-08-14T18:30:53-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:26-0400 b248c9a1 unchanged
 rederived: 2026-08-14T20:24:57-0400 6d3d74d7 unchanged
+rederived: 2026-08-14T20:18:50-0400 cccec57a sources
+rederived: 2026-08-14T21:50:42-0400 edcc526f unchanged
 -->

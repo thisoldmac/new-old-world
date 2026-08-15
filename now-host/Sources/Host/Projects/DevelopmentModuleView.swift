@@ -103,7 +103,7 @@ struct DevelopmentModuleView: View {
     private var environment: some View {
         section("Toolchains, Builds & Runs") {
             if model.environmentRows.isEmpty {
-                Text("No qualified guest toolchain has been reported. Toolchain roots are registered on the classic Mac and are never exposed as Files or agent paths.")
+                Text("No qualified guest toolchain has been reported. Toolchain roots are registered on \(MachineNaming.simpleReference) and are never exposed as Files or agent paths.")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
                 Grid(alignment: .leadingFirstTextBaseline,
@@ -186,7 +186,7 @@ struct DevelopmentModuleView: View {
             Text("Import Guest Project").font(.headline)
             TextField("32-character project ID", text: $guestProjectID)
                 .font(.system(.body, design: .monospaced))
-            Text("NOW reads a coherent snapshot beneath the Projects folder selected on the classic Mac, verifies it, and stores a private Git history mirror. The active guest source is not changed.")
+            Text("NOW reads a coherent snapshot beneath the Projects folder selected on \(MachineNaming.simpleReference), verifies it, and stores a private Git history mirror. The active guest source is not changed.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()

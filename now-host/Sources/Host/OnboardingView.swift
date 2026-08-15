@@ -13,7 +13,7 @@ struct OnboardingSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Set Up a New Mac")
                         .font(.title2.weight(.semibold))
-                    Text("A temporary download page for a classic Mac "
+                    Text("A temporary download page for a \(MachineNaming.commonNoun) "
                          + "on this LAN.")
                         .foregroundStyle(.secondary)
                 }
@@ -55,11 +55,11 @@ struct OnboardingSheet: View {
     @ViewBuilder
     private var statusCard: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text("On the classic Mac")
+            Text("On \(MachineNaming.simpleReference)")
                 .font(.headline)
             switch portal.state {
             case .stopped:
-                Text("Start onboarding, then connect the classic Mac to "
+                Text("Start onboarding, then connect \(MachineNaming.simpleReference) to "
                      + "the LAN and open the address shown here.")
                     .foregroundStyle(.secondary)
             case .starting:
@@ -68,7 +68,7 @@ struct OnboardingSheet: View {
                     Text("Finding this Mac's LAN address and a free port…")
                 }
             case .running(let endpoint):
-                Text("Connect your classic Mac to the LAN, open a browser, "
+                Text("Connect your \(MachineNaming.commonNoun) to the LAN, open a browser, "
                      + "and navigate to:")
                     .foregroundStyle(.secondary)
                 HStack {
