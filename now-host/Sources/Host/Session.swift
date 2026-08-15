@@ -665,6 +665,18 @@ final class Session {
                 break
             }
             guard activeFileGetID == begin.id else {
+                /* SAID OUT LOUD, because this is the shape of failure that
+                   reached metal once already: the guest serves the file,
+                   this side cancels it for naming a pull we are not
+                   awaiting, and the caller learns nothing until its
+                   watchdog fires twenty seconds later with `timeout` — a
+                   word that points at the wire rather than at us. */
+                onLog("\(guestName) began sending \(begin.name) for request "
+                      + "\(begin.id), which this Mac is not awaiting"
+                      + (activeFileGetID.map { " (awaiting \($0))" }
+                         ?? " (awaiting nothing)")
+                      + "; cancelling transfer \(begin.transfer)",
+                      "files", .error)
                 discardingTransfers.insert(begin.transfer)
                 send(.fileCancel(FileCancel(transfer: begin.transfer)))
                 break
@@ -812,24 +824,33 @@ final class Session {
     func sendFileRestore(_ m: FileRestore) { send(.fileRestore(m)) }
     func sendFileMkdir(_ m: FileMkdir) { send(.fileMkdir(m)) }
 
-    func sendFileGet(id: Int, path: String, container: String?,
-                     stagingDirectory: URL) {
+    /// Arms this side to RECEIVE the answer to one pull, whatever asked for
+    /// it. Every ask that expects bytes back goes through here, because the
+    /// arming is four facts that must move together and forgetting one of
+    /// them is silent: `file.begin` is matched against `activeFileGetID`,
+    /// and a begin that matches nothing is cancelled and discarded without
+    /// a word. Two of the four asks used to inline this and both dropped
+    /// the id, so `continuity.grab` and every Mirror pull answered into a
+    /// closed door — the guest served the file, this side cancelled it, and
+    /// the only symptom was the caller's 20-second watchdog.
+    private func beginFileGet(id: Int, stagingDirectory: URL) {
         activeFileGetID = id
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
         fileStagingDirectory = stagingDirectory
         fileStart = Date()
+    }
+
+    func sendFileGet(id: Int, path: String, container: String?,
+                     stagingDirectory: URL) {
+        beginFileGet(id: id, stagingDirectory: stagingDirectory)
         send(.fileGet(FileGet(id: id, path: path, container: container)))
     }
 
     func sendMirrorFileGet(id: Int, source: MirrorFileSource,
                            container: String?, stagingDirectory: URL) {
-        fileBegin = nil
-        fileSink?.abort()
-        fileSink = nil
-        fileStagingDirectory = stagingDirectory
-        fileStart = Date()
+        beginFileGet(id: id, stagingDirectory: stagingDirectory)
         send(.fileGet(FileGet(id: id, path: "", container: container,
                               mirrorSource: source)))
     }
@@ -840,11 +861,7 @@ final class Session {
     /// there is one bulk receiver on this side and a grab uses it.
     func sendContinuityGrab(id: Int, epoch: UInt32, generation: UInt32,
                             container: String?, stagingDirectory: URL) {
-        fileBegin = nil
-        fileSink?.abort()
-        fileSink = nil
-        fileStagingDirectory = stagingDirectory
-        fileStart = Date()
+        beginFileGet(id: id, stagingDirectory: stagingDirectory)
         send(.continuityGrab(.init(version: ContinuityContract.version,
                                    id: id, epoch: epoch,
                                    generation: generation,
@@ -854,12 +871,7 @@ final class Session {
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,
                                        path: String,
                                        stagingDirectory: URL) {
-        activeFileGetID = id
-        fileBegin = nil
-        fileSink?.abort()
-        fileSink = nil
-        fileStagingDirectory = stagingDirectory
-        fileStart = Date()
+        beginFileGet(id: id, stagingDirectory: stagingDirectory)
         send(.fileGet(FileGet(id: id, path: path, container: "macbinary",
                               developmentProject: projectID)))
     }
