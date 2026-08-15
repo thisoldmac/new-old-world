@@ -1442,9 +1442,18 @@ void workshop_sidebar_describe_scene(const WorkshopSceneWriter *writer)
     if (g_owner == NULL) {
         return;
     }
-    /* The rail's manually drawn structure is still structure.  Carry the
+    /* The rail's manually drawn structure is still structure. Carry the
        panel, selection and text as data; only the 16x16 resource art is an
-       explicit visual placeholder at this stage. */
+       explicit visual placeholder at this stage.
+
+       What is reported must be what is DRAWN. This used to add a subtitle
+       line to every row from the definition, which was true of the rich
+       density and is a fabrication now that every row is one line: an
+       observation plane that reports text nobody can see is worse than
+       one that reports nothing, because a reader cannot tell the two
+       apart. Same rule for the collapsed rail, which draws no words at
+       all. */
+    SetPortWindowPort(g_owner);
     workshop_scene_add(writer, kWorkshopScenePanel, "",
                        &g_lay.rail_list, true);
     workshop_scene_add(writer, kWorkshopSceneSeparator, "",
@@ -1455,16 +1464,23 @@ void workshop_sidebar_describe_scene(const WorkshopSceneWriter *writer)
         const Rect *row = row_rect(module);
         Rect icon;
         Rect title;
-        Rect subtitle;
-        const char *detail;
+        short text_right;
 
         if (row == NULL || definition == NULL) {
             continue;                /* an ordinary scrolled-out nav row */
         }
-        detail = definition->sidebar_subtitle;
         if (module == g_selected) {
             workshop_scene_add(writer, kWorkshopSceneSelectionBand, "",
                                row, true);
+        }
+        if (g_collapsed) {
+            SetRect(&icon, (short)((row->left + row->right - kIconSize) / 2),
+                    (short)((row->top + row->bottom - kIconSize) / 2),
+                    (short)((row->left + row->right + kIconSize) / 2),
+                    (short)((row->top + row->bottom + kIconSize) / 2));
+            workshop_scene_add(writer, kWorkshopSceneIcon,
+                               definition->title, &icon, true);
+            continue;
         }
         SetRect(&icon, (short)(row->left + kIconInset),
                 (short)((row->top + row->bottom - kIconSize) / 2),
@@ -1474,20 +1490,34 @@ void workshop_sidebar_describe_scene(const WorkshopSceneWriter *writer)
         workshop_scene_add(writer, kWorkshopSceneIcon,
                            definition->title, &icon, true);
 
-        SetRect(&title, (short)(icon.right + kTextGap),
-                (short)(row->top + 3), (short)(row->right - 4),
-                (short)(row->top + 16));
-        workshop_scene_add(writer, kWorkshopSceneStaticText,
-                           definition->title, &title, true);
+        text_right = (short)(row->right - 4);
+        if (module != kWorkshopConnection) {
+            const char *tier = tier_label(definition->tier);
 
-        if (module == kWorkshopConnection) {
-            detail = g_shown_detail[0] != '\0' ? g_shown_detail : "No link";
+            if (tier != NULL) {
+                Str255 mark;
+                Rect mark_rect;
+
+                UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+                CopyCStringToPascal(tier, mark);
+                SetRect(&mark_rect,
+                        (short)(text_right - StringWidth(mark)),
+                        (short)(row->top + 2), text_right,
+                        (short)(row->top + 16));
+                workshop_scene_add(writer, kWorkshopSceneStaticText, tier,
+                                   &mark_rect, true);
+                text_right = (short)(mark_rect.left - kTextGap);
+            }
         }
-        if (detail != NULL) {
-            SetRect(&subtitle, title.left, (short)(row->top + 15),
-                    title.right, (short)(row->top + 29));
-            workshop_scene_add(writer, kWorkshopSceneStaticText, detail,
-                               &subtitle, true);
-        }
+        SetRect(&title, (short)(icon.right + kTextGap),
+                (short)(row->top + 2), text_right, (short)(row->top + 16));
+        /* Connection's one line is its live state, not its name - which is
+           what the row draws, so it is what is reported. */
+        workshop_scene_add(writer, kWorkshopSceneStaticText,
+                           module == kWorkshopConnection
+                               ? (g_shown_detail[0] != '\0' ? g_shown_detail
+                                                            : "No link")
+                               : definition->title,
+                           &title, true);
     }
 }
