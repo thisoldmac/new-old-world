@@ -7,6 +7,52 @@ search:
 
 # Open issues
 
+## TESTED, THE SYMPTOM ITSELF NOT YET WATCHED: sidebar spring loading was armed against the wrong thing (2026-08-14, `claude/034-inv-drag`)
+
+Assessment items H6, H7 and H16. Michelle reported from a running build
+that the Finder-style double flash never appears, that the connections
+shelf cannot be spring-loaded into because it moves out of the way, and
+that a shelf's dropdown leaves its row lit after closing. All three had
+implementation and passing tests; the code read as correct.
+
+**H6's cause is best-supported, not confirmed.** The chain: her own H7
+report is live evidence that `draggingUpdated` reaches
+`NativeNavigationDragView` and that `previewDrop` applies moves on
+screen, so the drag plumbing is not the problem. What was gated is the
+arming. `springLoadingEntered` resolved the drop target from the *band*
+under the pointer and refused `.enabled` unless that band supported
+spring loading — and two of a row's three bands are `.zone` insertions,
+which never do. A drag entering a shelf row anywhere but its middle
+third told AppKit "no spring loading here", and every band crossing
+revoked the arm and restarted the dwell. `flashTwice()` is reached only
+from `springLoadingActivated`, so it had nothing to fire from. Arming now
+asks the row (`NavigationRowDropTargets.springLoadingTarget`) and keeps
+its own feedback state, disarmed only when the drag leaves or ends.
+
+Nobody has watched the flash fire. If it still does not appear with the
+arming fixed, the next suspect is the flash itself rather than the
+gate — 0.28-alpha accent for 0.13s over `nowGlassShelf()` material may
+simply not read, and U3 sketched the brightening and the icon scale pulse
+that would answer that. Do not add a second animation before looking.
+
+The insertion bands also shrink from a third of the row each to 20%, and
+to 10% on first contact. That is H7's root: `previewDrop` applies an
+insertion's move live, so resolving one on the frame the pointer arrives
+reorders the stack out from under a pointer that has not moved. It is
+deliberately general rather than a network-shelf special case — the
+connections shelf is only the row most likely to reproduce it, being the
+last one before the window edge.
+
+H16 is the ordinary AppKit trap: `NSMenu.popUp` runs its own tracking
+loop and the `mouseExited` that would clear the row highlight is spent
+inside it. The row's hover is now recomputed after `popUp` returns, from
+where the pointer actually is rather than forced to `false`, so
+dismissing with the pointer still on the row keeps it lit.
+
+Still open: none of the three has been watched on screen. The host gate
+passed. Six mutations were watched failing, each against the claim its
+test names.
+
 ## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
 
 Slice 4 of the cross-edge file drag plan, and the consumer the entry

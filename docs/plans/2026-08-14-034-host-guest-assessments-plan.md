@@ -1,3 +1,5 @@
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # 034 — Host & guest assessments: plan
 
 Status: **v2 — round-1 decisions folded in** (2026-08-14). Research by 14
