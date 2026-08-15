@@ -18,6 +18,35 @@ final class SidebarPreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.layout, .standard(for: .standard))
     }
 
+    /// Connections leaves the footer through the whole product path.
+    ///
+    /// A boundary marker, and expected green: "you cannot move the
+    /// Connections shelf out of the footer" is NOT a model or persistence
+    /// constraint. `canOccupy` allows every zone, `sanitised` keeps the
+    /// stored one, and `ensurePermanentShelf` no-ops once the shelf has been
+    /// seen elsewhere. So the command, the save and the relaunch all agree,
+    /// and a failure a person sees is provably interaction-level — nobody
+    /// needs to re-derive that from the source a third time.
+    func testConnectionsLeavesTheFooterThroughTheWholeProductPath() throws {
+        let (prefs, defaults) = try makePreferences()
+        XCTAssertEqual(prefs.layout.zone(of: .network), .lower,
+                       "the fixture wants it starting in the footer")
+
+        let moved = try prefs.layout.applying(try XCTUnwrap(
+            NavigationDragCoordinator.command(
+                for: .shelf(.network),
+                droppingOn: .zone(.upper, index: 0),
+                in: prefs.layout)))
+        prefs.replaceLayout(moved)
+
+        XCTAssertEqual(prefs.layout.zone(of: .network), .upper)
+
+        let reopened = SidebarPreferences(defaults: defaults,
+                                          registry: .standard)
+        XCTAssertEqual(reopened.layout.zone(of: .network), .upper,
+                       "and it stays out of the footer across a relaunch")
+    }
+
     func testCollapsedAndCompactAreIndependent() throws {
         let (prefs, _) = try makePreferences()
 

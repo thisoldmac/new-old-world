@@ -180,6 +180,49 @@ final class NavigationShelfTabTests: XCTestCase {
         XCTAssertTrue(detail.contains("ModuleTierBadge(tier: tab.tier"))
     }
 
+    /// Both stacks build their rows through one zone-agnostic builder.
+    ///
+    /// "Footer-pinned shelves are outside the drop system" was the standing
+    /// hypothesis for why Connections could not be dropped on or moved out
+    /// of the footer, and it is false: the pinned stack goes through the
+    /// same `SidebarNavigationItems` → `SidebarNavigationListRow` path the
+    /// list does, with `zone` as a parameter. This gate keeps it that way,
+    /// so a future refactor cannot quietly give the footer a second, thinner
+    /// path and reopen the question.
+    func testBothStacksBuildRowsThroughOneZoneAgnosticBuilder() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNavigationContent.swift")
+
+        let calls = Array(sidebar
+            .components(separatedBy: "SidebarNavigationItems(")
+            .dropFirst()
+            .map { $0.components(separatedBy: "select: select)")[0] })
+
+        XCTAssertEqual(calls.count, 2, "one call site per stack, no more")
+        XCTAssertEqual(calls.filter { $0.contains("zone: .upper") }.count, 1)
+        XCTAssertEqual(calls.filter { $0.contains("zone: .lower") }.count, 1)
+        for call in calls {
+            XCTAssertTrue(call.contains("dragActions: dragActions,"),
+                          "both stacks are handed the same drag actions")
+        }
+        XCTAssertFalse(sidebar.contains("zone =="),
+                       "no row builder may branch on which stack it is in")
+        XCTAssertFalse(sidebar.contains("zone !="))
+    }
+
+    /// The pill bar owns its uncovered points, the way the sidebar canvas
+    /// does. Without it a drop a few points high or low of a pill lands on
+    /// nothing and is discarded with no feedback at all.
+    func testPillBarCatchesDropsThatMissAPill() throws {
+        let detail = try GateSource.hostSwift(
+            "now-host/Sources/Host/ShelfDetailView.swift")
+
+        XCTAssertTrue(detail.contains(".background(SidebarNativeDragSurface("))
+        XCTAssertEqual(
+            detail.components(separatedBy: "SidebarNativeDragSurface(").count,
+            /* the pills, the trailing slot, and the bar's fallback */ 4)
+    }
+
     func testShelfMembersRenderAsDetailPillsInsteadOfSidebarRows() throws {
         let sidebar = try sidebarSource()
         let detail = try GateSource.hostSwift(
