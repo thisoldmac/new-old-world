@@ -825,6 +825,7 @@ final class Session {
 
     func sendMirrorFileGet(id: Int, source: MirrorFileSource,
                            container: String?, stagingDirectory: URL) {
+        activeFileGetID = id
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
@@ -840,6 +841,7 @@ final class Session {
     /// there is one bulk receiver on this side and a grab uses it.
     func sendContinuityGrab(id: Int, epoch: UInt32, generation: UInt32,
                             container: String?, stagingDirectory: URL) {
+        activeFileGetID = id
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil

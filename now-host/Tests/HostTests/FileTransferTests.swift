@@ -85,6 +85,113 @@ final class FileWireTests: XCTestCase {
         })
     }
 
+    /// The success path, which the refusal-shaped tests above are
+    /// structurally unable to see: a granted mirror get (and a granted
+    /// continuity grab, below) must reach delivery, not be cancelled by
+    /// this side's own begin guard. The two senders once skipped
+    /// activeFileGetID, so every granted answer was discarded and
+    /// cancelled — a timeout on a transfer the guest had granted.
+    func testMirrorFileGetReachesDeliveryInsteadOfCancellingItself()
+        async throws {
+        let guest = try await connectedGuest()
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: staging, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var delivered: GuestListener.FileDelivery?
+        var failure: GuestListener.FileFailure?
+
+        listener.getMirrorFile(
+            source: .init(kind: "desktop", name: "Read Me"),
+            stagingDirectory: staging) { result in
+                switch result {
+                case .success(let delivery): delivered = delivery
+                case .failure(let f): failure = f
+                }
+            }
+        var getId: Int?
+        try await waitUntil("file.get") {
+            for message in guest.received {
+                if case .fileGet(let get) = message,
+                   get.mirrorSource != nil {
+                    getId = get.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(getId)
+        let payload = Data("granted bytes".utf8)
+        try guest.send(.fileBegin(FileBegin(
+            id: id, transfer: 9, name: "Read Me", container: "data",
+            bytes: payload.count, dataBytes: payload.count, rsrcBytes: 0,
+            fileType: "TEXT", creator: "ttxt", modified: 3_500_000_000)))
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .bulk, flags: [.end], transfer: 9, payload: payload))
+        try guest.send(.fileEnd(FileEnd(
+            id: id, transfer: 9, ok: true, sendMs: 5,
+            crc32: TransferIdentity.crc32(payload))))
+
+        try await waitUntil("delivery") { delivered != nil || failure != nil }
+        XCTAssertNil(failure, "granted get must not fail: \(String(describing: failure))")
+        XCTAssertEqual(delivered?.name, "Read Me")
+        XCTAssertFalse(guest.received.contains { message in
+            if case .fileCancel = message { return true }
+            return false
+        }, "the host cancelled a transfer it asked for")
+    }
+
+    func testContinuityGrabReachesDeliveryInsteadOfCancellingItself()
+        async throws {
+        let guest = try await connectedGuest()
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: staging, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var delivered: GuestListener.FileDelivery?
+        var failure: GuestListener.FileFailure?
+
+        listener.grabContinuityFile(
+            epoch: 3, generation: 7,
+            stagingDirectory: staging) { result in
+                switch result {
+                case .success(let delivery): delivered = delivery
+                case .failure(let f): failure = f
+                }
+            }
+        var grabId: Int?
+        try await waitUntil("continuity.grab") {
+            for message in guest.received {
+                if case .continuityGrab(let grab) = message {
+                    grabId = grab.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(grabId)
+        let payload = Data("grabbed bytes".utf8)
+        try guest.send(.fileBegin(FileBegin(
+            id: id, transfer: 11, name: "Clipping", container: "data",
+            bytes: payload.count, dataBytes: payload.count, rsrcBytes: 0,
+            fileType: "TEXT", creator: "ttxt", modified: 3_500_000_000)))
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .bulk, flags: [.end], transfer: 11, payload: payload))
+        try guest.send(.fileEnd(FileEnd(
+            id: id, transfer: 11, ok: true, sendMs: 5,
+            crc32: TransferIdentity.crc32(payload))))
+
+        try await waitUntil("delivery") { delivered != nil || failure != nil }
+        XCTAssertNil(failure, "granted grab must not fail: \(String(describing: failure))")
+        XCTAssertEqual(delivered?.name, "Clipping")
+        XCTAssertFalse(guest.received.contains { message in
+            if case .fileCancel = message { return true }
+            return false
+        }, "the host cancelled a grab the guest granted")
+    }
+
     func testListingPagesThroughTheShare() async throws {
         let guest = try await connectedGuest()
         var pages: [FileListing] = []
