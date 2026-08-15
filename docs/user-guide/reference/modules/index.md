@@ -102,10 +102,10 @@ work; it does not mean NOW-68K ships in the alpha.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: fa2311665751bed7639f075f2baf21edb8675837
-sources-sha1: fa2311665751bed7639f075f2baf21edb8675837
+sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
+sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
 derive module-map sha256=03dd8a0eabf715800bf6f0c52d475342279647d27fef813faa4a4bb5f4b49062 lines=17
-sources-sha1: fa2311665751bed7639f075f2baf21edb8675837
+sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
 derive module-map sha256=03dd8a0eabf715800bf6f0c52d475342279647d27fef813faa4a4bb5f4b49062 lines=17
     scripts/docs-inventory
 rederived: pending
@@ -255,4 +255,5 @@ rederived: 2026-08-14T22:17:24-0400 4495cfb2 sources, module-map 17->17
 rederived: 2026-08-14T23:35:19-0400 61505862 sources, sources, module-map 17->17, sources, module-map 17->17
 rederived: 2026-08-14T22:33:00-0400 13bfe534 unchanged
 rederived: 2026-08-14T23:36:21-0400 b1fc9796 unchanged
+rederived: 2026-08-15T00:20:07-0400 e937faee sources, sources, sources
 -->
