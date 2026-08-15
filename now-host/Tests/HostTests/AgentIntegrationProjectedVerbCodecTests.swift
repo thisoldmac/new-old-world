@@ -317,18 +317,23 @@ final class AgentIntegrationProjectedVerbCodecTests: XCTestCase {
             "a path past the guest-files bound is refused")
     }
 
-    /// The guest serves at most 40 lines, so a request for more is refused
-    /// HERE — a round trip to a 68030 to be told the same thing is a cost
-    /// with no information in it.
+    /// The guest ring holds at most 2000 lines, so a request for more is
+    /// refused HERE — a walk of round trips to a 68030 to be told the same
+    /// thing is a cost with no information in it. The bound moved from one
+    /// page's 40 to the ring's size when `tail` learned to page (v13).
     func testAnOversizeLogTailIsRefused() throws {
+        let most = AgentIntegrationGuestLogPolicy.maximumLineCount
         let admitted = try AgentIntegrationLocalCodec.decodeRequest(
-            try requestObject("guest_log_tail", ["logLineCount": 40]))
-        XCTAssertEqual(admitted.logLineCount, 40)
+            try requestObject("guest_log_tail", ["logLineCount": most]))
+        XCTAssertEqual(admitted.logLineCount, most)
 
-        try assertRefused("guest_log_tail", ["logLineCount": 41],
-                          "41 lines is past the verb's own bound")
+        try assertRefused("guest_log_tail", ["logLineCount": most + 1],
+                          "\(most + 1) lines is past the ring's own size")
         try assertRefused("guest_log_tail", ["logLineCount": 0],
                           "zero lines is not a request")
+        try assertRefused("guest_log_tail", ["logArea": "continuity"],
+                          "a tag wider than the 6-character field can "
+                              + "never match a line")
     }
 
     func testANegativeCensusCursorIsRefused() throws {
