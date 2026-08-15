@@ -330,6 +330,19 @@ resource 'DITL' (302) {
 
 
 
+/* The Apple menu. Item 1 is the About box; item 2 is a separator, below
+   which AppendResMenu('DRVR') lists whatever the Apple Menu Items folder
+   holds - the standard OS 9 idiom, unchanged under CarbonLib. The title
+   is the `apple` keyword, which Rez encodes as the Apple-glyph character
+   the Menu Manager expects in slot zero. */
+resource 'MENU' (128) {
+    128, textMenuProc, allEnabled, enabled, apple,
+    {
+        "About New Old World\xC9", noIcon, noKey, noMark, plain;
+        "-", noIcon, noKey, noMark, plain
+    }
+};
+
 resource 'MENU' (130) {
     130, textMenuProc, allEnabled, enabled, "Depth",
     {
