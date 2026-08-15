@@ -307,17 +307,15 @@ static void handle_menu_choice(long choice)
     if (HiWord(choice) == kAppleMenuID) {
         if (LoWord(choice) == kAppleAboutItem) {
             now_about_box_show();
-        } else {
-            /* Everything past the separator is an Apple Menu Items
-               folder alias, enumerated by AppendResMenu above. OpenDeskAcc
-               is the classic call for it; unverified on metal (Slice F
-               ledger). */
-            Str255 name;
-
-            GetMenuItemText(GetMenuHandle(kAppleMenuID), LoWord(choice),
-                            name);
-            OpenDeskAcc(name);
         }
+        /* Everything past the separator is an Apple Menu Items folder
+           alias, enumerated by AppendResMenu('DRVR') so the menu looks
+           and populates like every other OS 9 application's. Opening one
+           is deliberately NOT wired: OpenDeskAcc is the classic call for
+           it and TARGET_API_MAC_CARBON does not declare it - CarbonLib
+           does not run 68K CODE-resource desk accessories. Selecting an
+           item here highlights and does nothing, which is honest: this
+           app cannot open it, so it does not pretend to. */
     } else if (HiWord(choice) == kFileMenuID) {
         if (LoWord(choice) == kFileCloseItem) {
             close_front_window();
