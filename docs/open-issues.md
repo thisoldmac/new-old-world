@@ -96,6 +96,48 @@ exists, **every attended round on a new DMG must grant Accessibility to
 that binary before the first crossing**, or its input evidence is void —
 and the failure looks like a product defect, which is how it cost round 2.
 
+## MEASURED ON METAL, CAUSE ESTABLISHED, REMEDY TESTED ONLY: the pane says granted, the app says missing, and both are right (2026-08-15, `fix/continuity-ax-affordance`)
+
+The third and sharpest turn of the entry below, found the same night. After
+the affordance landed, Michelle granted Accessibility and System Settings
+showed **New Old World.app switched ON** — and the app logged the untrusted
+branch on every arm of the 01:01:46 launch anyway.
+
+Not a defect in the check. **macOS attaches Accessibility trust to a copy on
+disk, not to a bundle identifier.** The running process was PID 82098 at
+`/Volumes/New Old World 10/New Old World.app`; `/Applications/New Old
+World.app` also existed and was not running. Both were the same build —
+identical `dev.newoldworld.now`, team `B93A9CG7F9`, signed
+`Aug 14, 2026 23:32:08`. Eleven DMG volumes were mounted, so every
+launch-from-DMG that day had run from a different path. The person did
+everything right and the app still said the permission was missing.
+
+**The general shape, which is worth more than the incident.** Two true
+statements can compose into a state that reads as a defect in both, and the
+only thing that resolves it is a fact neither side was reporting: *which
+copy is speaking*. Identity is not location, and any permission granted per
+copy will produce this exact confusion on any desk that runs builds from
+disk images — which is every desk here.
+
+**What now exists.** The untrusted audit line names
+`Bundle.main.bundleURL.path` and says the grant is per copy, so
+`/Volumes/...` in the log is a five-second read instead of a
+screenshot-and-`ps` exchange. The Continuity page adds the same fact, plus
+the one remedy the Accessibility pane cannot give, when the copy is
+untrusted **and** running outside `/Applications` — the case where "Open
+Accessibility Settings…" is not merely insufficient but misleading, because
+it opens onto a toggle that is already on.
+
+**Deliberately not built.** No App Translocation detection, no enumerating
+other copies on disk, no claim about where the grant actually went. Naming
+the path we are running from is a fact; the rest would be a guess dressed as
+a diagnosis, and a confident wrong diagnosis is worse here than none.
+
+**Status.** The CAUSE is metal-established. The REMEDY is tested only — 2
+new tests, each watched failing against the mutation it names. Nobody has
+yet watched the new log line or the new page row on the machine that
+produced the confusion.
+
 ## TESTED, NOT METAL-VERIFIED, AND THE FIRST FIX FOR IT WAS INERT: a prompt is not an affordance, because macOS only prompts once ever (2026-08-15, `claude/continuity-ax-affordance`)
 
 Closes the "nothing asks" half of the entry above, and corrects it. That
