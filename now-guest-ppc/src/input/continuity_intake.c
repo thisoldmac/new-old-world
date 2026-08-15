@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "continuity_report_logic.h"
+#include "continuity_deaf_logic.h"
 #include "continuity_cursor.h"
 #include "continuity_service.h"
 #include "arm_target.h"
@@ -22,6 +23,12 @@
 #include "peek.h"
 
 enum { kContinuityNotifierDrainMax = 8 };
+/* Five seconds of an armed epoch with not one datagram, on an endpoint that
+   has already delivered. The host arms because the person moved the pointer
+   into the guest, so the first position follows within a frame or two; five
+   seconds is far outside that and still short enough that the recovery
+   happens while the person is still trying, not after they gave up. */
+enum { kContinuityDeafSilenceTicks = 300 };
 
 static EndpointRef gEndpoint = kOTInvalidEndpointRef;
 static OTNotifyUPP gNotifier;
@@ -44,6 +51,19 @@ static volatile NowCU32 gAckRetries;
 static volatile NowCU32 gAckErrors;
 static volatile NowCU32 gAckGoData;
 static Boolean gAckRetrying;
+/* The endpoint's own health, kept separately from the epoch's counters
+   because the question "has this transport ever worked" outlives any one
+   arm. See continuity_deaf_logic.h for what they decide. */
+static volatile NowCU32 gUDErrsCleared;
+static volatile NowCU32 gLookOther;
+static volatile OTResult gLastLook;
+static volatile NowCU32 gDeliveredEndpoint;
+static volatile NowCU32 gDeliveredEpoch;
+static volatile Boolean gDrainOwed;
+static volatile Boolean gDraining;
+static NowCU32 gArmTicks;
+static int gRebuiltThisEpoch;
+static NowCU32 gRebuilds;
 static volatile long gPendingReplyID;
 static volatile NowCU32 gPendingControlSeq;
 static NowCU32 gLastReportedStatusSeq;
@@ -209,10 +229,52 @@ static void accept_datagram(const NowContinuityStatePacket *packet)
     shared->previous_button_flags = packet->previous_button_flags;
     shared->arrival_ticks = (NowPeekU32)TickCount();
     bump_nonzero(&shared->packet_seq);       /* publish last */
+    gDeliveredEndpoint++;
+    gDeliveredEpoch++;
     publish_ack_request();
 }
 
-static void drain_endpoint(void)
+/* An asynchronous event is queued ahead of the data. Clear it, or every
+   later OTRcvUData answers kOTLookErr and the datagrams behind it are never
+   delivered. Returns 1 when the caller may keep draining. */
+static int clear_pending_event(void)
+{
+    OTResult event = gNowOT.look(gEndpoint);
+
+    if (event == T_UDERR) {
+        /* The one this endpoint actually meets: the guest's own ACK to a
+           host process that has died draws an ICMP port-unreachable, and
+           OT reports it here. Discarding it is the whole point - nothing
+           in Continuity acts on a failed ACK, because state is absolute
+           and the next datagram carries a fresh one. */
+        gUDErrsCleared++;
+        return gNowOT.rcvUDErr(gEndpoint, NULL) == noErr;
+    }
+    if (event == T_DATA || event == T_GODATA)
+        return 1;                     /* the next pass takes it normally */
+    gLookOther++;
+    gLastLook = event;
+    return 0;      /* something this endpoint does not expect: do not spin */
+}
+
+/* DRAIN UNTIL OPEN TRANSPORT SAYS EMPTY, AND TELL THE CALLER IF YOU DID NOT.
+
+   T_DATA is edge-triggered. Open Transport delivers exactly one, when data
+   becomes readable, and delivers no further one until the client has read
+   the endpoint down to kOTNoDataErr. Any path that leaves data unread
+   therefore silences the endpoint permanently, while the epoch, both halves'
+   status and every ack counter still read "armed" - which is what the
+   PowerBook showed on 2026-08-15 after the host process was restarted under
+   a live guest.
+
+   Two such paths existed here and both returned quietly. The bounded cap
+   below is one. The other is kOTLookErr, which OTRcvUData returns while an
+   asynchronous event is queued ahead of the data, and which the old code
+   could not tell from "nothing to read" because it tested `err != noErr`.
+
+   Returns 1 when kOTNoDataErr was reached - the endpoint is quiet and the
+   latch is released - and 0 when work is still owed. */
+static int drain_endpoint(void)
 {
     int drained;
 
@@ -231,8 +293,15 @@ static void drain_endpoint(void)
         gReceive.udata.maxlen = sizeof gReceiveBytes;
         gReceive.udata.len = 0;
         err = gNowOT.rcvUData(gEndpoint, &gReceive, &flags);
+        if (err == kOTNoDataErr)
+            return 1;
+        if (err == kOTLookErr) {
+            if (!clear_pending_event())
+                return 0;
+            continue;
+        }
         if (err != noErr)
-            return;
+            return 0;
         if (now_continuity_decode_state(
                 gReceiveBytes, (NowCU32)gReceive.udata.len, &packet)
                 != kNowContinuityWireOK) {
@@ -241,6 +310,7 @@ static void drain_endpoint(void)
         }
         accept_datagram(&packet);
     }
+    return 0;                        /* cap reached: more may still be queued */
 }
 
 static pascal void continuity_notifier(void *context, OTEventCode code,
@@ -249,12 +319,47 @@ static pascal void continuity_notifier(void *context, OTEventCode code,
     (void)context;
     (void)result;
     (void)cookie;
-    if (code == T_DATA)
-        drain_endpoint();
-    else if (code == T_GODATA)
+    if (code == T_DATA) {
+        /* Task time owns the shared receive buffers while it is draining.
+           An OT notifier runs at deferred-task level and can preempt task
+           time, but not the reverse, so deferring here is safe and costs
+           nothing: that loop is still running and will read this datagram
+           itself before it stops. */
+        if (gDraining || !drain_endpoint())
+            gDrainOwed = true;
+    } else if (code == T_GODATA) {
         gAckGoData++;
-    else if (code == T_UDERR)
+    } else if (code == T_UDERR) {
+        gUDErrsCleared++;
         (void)gNowOT.rcvUDErr(gEndpoint, NULL);
+        /* A datagram queued behind the error was never delivered and no
+           second T_DATA is coming for it. Drain again, or this endpoint is
+           deaf from here on. */
+        if (gDraining || !drain_endpoint())
+            gDrainOwed = true;
+    }
+}
+
+/* THE NOTIFIER IS AN OPTIMISATION, NOT THE CONTRACT.
+
+   Because T_DATA is latched, every notifier path that returns without
+   reaching kOTNoDataErr is a permanent silence. A bounded poll from the
+   application's own cooperative context means no such path can be
+   permanent: whatever the notifier left, the next event-loop pass reads.
+   One OTRcvUData answering kOTNoDataErr is what an idle pass costs.
+
+   gDrainOwed is cleared BEFORE the drain, never after: a notifier firing
+   mid-drain must be able to leave the flag set, and clearing afterwards
+   would erase exactly the datagram that arrived in the window. */
+static void task_time_drain(void)
+{
+    if (gEndpoint == kOTInvalidEndpointRef || gDraining)
+        return;
+    gDraining = true;
+    gDrainOwed = false;
+    if (!drain_endpoint())
+        gDrainOwed = true;
+    gDraining = false;
 }
 
 static void close_udp(const char *reason)
@@ -283,6 +388,11 @@ static void close_udp(const char *reason)
     }
     gRequestedPort = 0;
     gBoundPort = 0;
+    /* This endpoint's health history dies with it. A fresh endpoint has not
+       proven it can hear, so it is not yet a candidate for the deaf
+       watchdog - which is what stops one rebuild becoming a loop of them. */
+    gDeliveredEndpoint = 0;
+    gDrainOwed = false;
 }
 
 static int open_udp(unsigned short port)
@@ -359,6 +469,72 @@ static int open_udp(unsigned short port)
     return 1;
 }
 
+/* THE LAST RESORT, AND WHY IT IS ALLOWED TO EXIST.
+
+   The retention rule above is not being softened: a rebuild here is not a
+   close/reopen at a user toggle, which is the churn that partially wedged
+   OS 9 twice. now_continuity_deaf_verdict() will only ask for one when an
+   endpoint that HAS delivered has then heard nothing for five seconds of an
+   armed epoch, and only once per epoch and once per proven-live endpoint.
+   In a healthy session it can never fire, because one accepted datagram
+   stands it down.
+
+   It is here because the task-time drain above covers the mechanism we
+   understand, and the only thing anyone has watched cure this on metal is
+   an endpoint that went away and came back. A wedge survived silently is
+   half a fix, so this one says so at warn level on both edges. */
+static void check_endpoint_deaf(void)
+{
+    NowContinuityDeafState state;
+    unsigned short port;
+
+    state.armed = gEpoch != 0;
+    state.endpoint_bound = gEndpoint != kOTInvalidEndpointRef
+        && gBoundPort != 0;
+    state.delivered_endpoint = (unsigned long)gDeliveredEndpoint;
+    state.delivered_epoch = (unsigned long)gDeliveredEpoch;
+    state.ticks_since_arm = (unsigned long)((NowCU32)TickCount() - gArmTicks);
+    state.rebuilt_this_epoch = gRebuiltThisEpoch;
+    if (now_continuity_deaf_verdict(&state, kContinuityDeafSilenceTicks)
+            != kNowContinuityDeafRebuild)
+        return;
+    gRebuiltThisEpoch = 1;
+    gRebuilds++;
+    port = gRequestedPort;             /* close_udp clears it */
+    now_log(kLogWarn, "mirror",
+            "UDP endpoint deaf: epoch=%lu armed %lu ticks with 0 datagrams "
+            "after %lu on this endpoint; uderr=%lu look-other=%lu/%ld "
+            "owed=%u acks=%lu err=%lu; rebuilding port %u once",
+            (unsigned long)gEpoch, state.ticks_since_arm,
+            state.delivered_endpoint, (unsigned long)gUDErrsCleared,
+            (unsigned long)gLookOther, (long)gLastLook, (unsigned)gDrainOwed,
+            (unsigned long)gAckSends, (unsigned long)gAckErrors,
+            (unsigned)port);
+    now_log_flush();
+    close_udp("endpoint deaf");
+    if (open_udp(port))
+        now_log(kLogWarn, "mirror",
+                "UDP endpoint rebuilt after deafness: requested %u bound %u "
+                "(rebuilds=%lu)",
+                (unsigned)gRequestedPort, (unsigned)gBoundPort,
+                (unsigned long)gRebuilds);
+    else
+        now_log(kLogError, "mirror",
+                "UDP endpoint rebuild failed on port %u; Continuity has no "
+                "transport until the next arm",
+                (unsigned)port);
+    now_log_flush();
+}
+
+/* Everything the transport owes task time, in the order it owes it: read
+   whatever the notifier could not, then decide whether reading found an
+   endpoint that has stopped answering at all. */
+static void service_transport(void)
+{
+    task_time_drain();
+    check_endpoint_deaf();
+}
+
 int now_continuity_arm(long id, unsigned short port,
                        unsigned long nonce_hi, unsigned long nonce_lo,
                        unsigned long epoch, unsigned long requested_hz,
@@ -377,6 +553,13 @@ int now_continuity_arm(long id, unsigned short port,
                 (unsigned)port);
         return kNowContinuityArmTransportUnavailable;
     }
+    /* A RETAINED ENDPOINT CAN ARRIVE HERE ALREADY CARRYING THE LAST HOST'S
+       DEATH: an unread T_UDERR from an ACK sent to a process that is gone,
+       behind which every later datagram queues invisibly. Clear it before
+       the new host's first position has to get past it - this is the arm
+       that the 2026-08-15 PowerBook session repeated five times, each one
+       reporting success into an endpoint that could not hear. */
+    task_time_drain();
     now_peek_claim(kNowPeekOwnerContinuity,
                    (unsigned long)kNowPeekCapAnchors);
     gNotifierCell = shared;
@@ -392,6 +575,8 @@ int now_continuity_arm(long id, unsigned short port,
     gAckErrors = 0;
     gAckGoData = 0;
     gAckRetrying = false;
+    gDeliveredEpoch = 0;
+    gRebuiltThisEpoch = 0;
     shared->apply_result_err = 0;
     shared->apply_result_seq = 0;
     now_continuity_service_begin_epoch(epoch);
@@ -431,6 +616,10 @@ int now_continuity_arm(long id, unsigned short port,
     /* Publish notifier authority only after the resident accepted the same
        epoch. A datagram can never outrun construction of its consumer. */
     gEpoch = (NowCU32)epoch;
+    /* Stamped with the epoch it measures silence for, and after it, so the
+       deaf watchdog can never read a window that opened before authority
+       existed. */
+    gArmTicks = (NowCU32)TickCount();
     gHostModifiers = 0;            /* a new epoch holds nothing */
     {
         NowPeekContinuityCell *shared = cell();
@@ -723,9 +912,24 @@ void now_continuity_disconnect(void)
     /* Authority is revoked before any transport work. Keep this process's
        asynchronous endpoint for its lifetime: both a VM and the first metal
        candidate showed that close/reopen churn can take the rest of OT down
-       with it, while an epoch of zero rejects every datagram. */
+       with it, while an epoch of zero rejects every datagram.
+
+       RETAINED IS NOT THE SAME AS LEFT ALONE, and that difference is the
+       2026-08-15 wedge. The peer has just died, so the ACKs already in
+       flight draw ICMP port-unreachable and Open Transport queues a
+       T_UDERR; an unread one makes every later OTRcvUData answer
+       kOTLookErr, and because T_DATA is latched no second one is coming to
+       prompt anybody to look. The endpoint kept its binding and stopped
+       hearing, and nothing said so. So the retention now hands back a
+       QUIET endpoint, and the line below is where a reader sees it
+       happen. */
+    task_time_drain();
     now_log(kLogWarn, "mirror",
-            "disconnect reset requested; UDP endpoint retained");
+            "disconnect reset requested; UDP endpoint retained and quiesced "
+            "(uderr-cleared=%lu look-other=%lu/%ld owed=%u delivered=%lu)",
+            (unsigned long)gUDErrsCleared, (unsigned long)gLookOther,
+            (long)gLastLook, (unsigned)gDrainOwed,
+            (unsigned long)gDeliveredEndpoint);
     now_log_flush();
 }
 
@@ -811,6 +1015,10 @@ void now_continuity_pump(void)
     if (gEpoch == 0) {
         return;                       /* no epoch: nothing owns the cursor */
     }
+    /* The nested pump reaches the transport too. A wedge that only the
+       ordinary pass could clear would be invisible for exactly as long as
+       this application was busy - which is when Continuity is being used. */
+    service_transport();
     shared = cell();
     if (shared == NULL) {
         return;
@@ -833,6 +1041,7 @@ int now_continuity_take_report(NowContinuityReport *out)
 
     if (shared == NULL || out == NULL)
         return 0;
+    service_transport();
     if (gEpoch != 0) {
         /* The owner lease is intentionally finite. Renew from the ordinary
            and nested wire pump while this input epoch is live, so a person
@@ -966,6 +1175,22 @@ int now_continuity_take_report(NowContinuityReport *out)
     if (now_mirror_debug_on()) {
         now_log(kLogInfo, "mirror", "UDP requested=%u bound=%u",
                 (unsigned)gRequestedPort, (unsigned)gBoundPort);
+    }
+    /* The endpoint's own health. Not debug tier once anything has had to be
+       cleared or rebuilt: those are the product's story, because they are
+       the difference between "Continuity did nothing" and "Continuity
+       noticed its transport had gone deaf and got it back". */
+    if (now_mirror_debug_on() || gUDErrsCleared != 0 || gLookOther != 0
+            || gRebuilds != 0) {
+        now_log(gUDErrsCleared == 0 && gLookOther == 0 && gRebuilds == 0
+                    ? kLogInfo : kLogWarn,
+                "mirror",
+                "UDP endpoint uderr-cleared=%lu look-other=%lu/%ld "
+                "rebuilds=%lu owed=%u delivered=%lu/%lu",
+                (unsigned long)gUDErrsCleared, (unsigned long)gLookOther,
+                (long)gLastLook, (unsigned long)gRebuilds,
+                (unsigned)gDrainOwed, (unsigned long)gDeliveredEpoch,
+                (unsigned long)gDeliveredEndpoint);
     }
     return 1;
 }

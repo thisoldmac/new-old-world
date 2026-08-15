@@ -392,6 +392,97 @@ if service_invoke.count("invoke_resident(cell)") < 2:
 if "if (!published_result)" not in service_invoke:
     failures.append("the bounded PPC drain no longer stops when the handshake is quiet")
 
+# --- The retained endpoint must not be allowed to go deaf (2026-08-15) ---
+#
+# The host application was restarted under a live guest. Every arm after it
+# succeeded, the host sent 107 positions per epoch and read zero valid acks,
+# and the resident's accepted counter did not move once across five arms.
+# Restarting the GUEST cured it, which is to say: closing and reopening the
+# endpoint. Open Transport's T_DATA is edge-triggered - one is delivered when
+# data becomes readable and no further one arrives until the client has read
+# down to kOTNoDataErr - so any path that returns from the notifier with data
+# still queued silences the endpoint for good while every status still reads
+# "armed". The guards below are the three halves of not doing that: drain to
+# empty, clear what queues ahead of the data, and poll from task time rather
+# than trusting a notifier that may never fire again.
+drain = body("static int drain_endpoint(")
+clear_pending = body("static int clear_pending_event(")
+task_drain = body("static void task_time_drain(")
+deaf_check = body("static void check_endpoint_deaf(")
+service_transport = body("static void service_transport(")
+pump = body("void now_continuity_pump(")
+
+if "static int drain_endpoint(" not in SOURCE:
+    failures.append("the endpoint drain no longer reports whether it emptied")
+if "kOTNoDataErr" not in drain:
+    failures.append(
+        "the drain no longer distinguishes an empty endpoint from an error, "
+        "so it cannot know it released Open Transport's T_DATA latch")
+if "kOTLookErr" not in drain or "clear_pending_event()" not in drain:
+    failures.append(
+        "the drain again strands datagrams behind a pending asynchronous "
+        "event; kOTLookErr is not 'nothing to read'")
+if not drain.rstrip().rstrip("}").rstrip().splitlines()[-1] \
+        .strip().startswith("return 0;"):
+    failures.append(
+        "the bounded drain no longer reports the cap as work still owed")
+if "gNowOT.look(" not in clear_pending or "gNowOT.rcvUDErr(" not in clear_pending:
+    failures.append(
+        "the pending-event path no longer identifies and consumes T_UDERR, "
+        "which is what an ACK to a dead host queues")
+if notifier.count("drain_endpoint()") < 2:
+    failures.append(
+        "T_UDERR no longer re-drains: the datagram queued behind the error "
+        "is delivered by no second T_DATA")
+if "gDrainOwed" not in notifier:
+    failures.append("a notifier drain that could not finish is no longer owed")
+if "gDraining" not in notifier:
+    failures.append(
+        "the notifier no longer defers to a task-time drain and can corrupt "
+        "the shared receive buffers")
+if "gDrainOwed = false" not in task_drain \
+        or task_drain.index("gDrainOwed = false") \
+        > task_drain.index("drain_endpoint()"):
+    failures.append(
+        "the task-time drain clears its debt after draining, which erases a "
+        "datagram that arrived inside the window")
+if "task_time_drain()" not in service_transport \
+        or "check_endpoint_deaf()" not in service_transport:
+    failures.append("task time no longer both drains and watches the endpoint")
+if "service_transport()" not in pump:
+    failures.append(
+        "the nested pump no longer reaches the transport, so a wedge is "
+        "invisible for exactly as long as the application is busy")
+if "service_transport()" not in take_report:
+    failures.append("the ordinary wire pump no longer services the transport")
+if "task_time_drain()" not in disconnect:
+    failures.append(
+        "disconnect retains the endpoint without quiescing it, which is the "
+        "exact moment the 2026-08-15 wedge began")
+if "task_time_drain()" not in arm \
+        or arm.index("task_time_drain()") > arm.index("gEpoch = (NowCU32)epoch"):
+    failures.append(
+        "arm no longer clears a retained endpoint's inherited error before "
+        "publishing authority over it")
+if "now_continuity_deaf_verdict(" not in deaf_check:
+    failures.append("the deaf watchdog no longer asks the tested predicate")
+if "gRebuiltThisEpoch = 1" not in deaf_check \
+        or deaf_check.index("gRebuiltThisEpoch = 1") \
+        > deaf_check.index("close_udp("):
+    failures.append(
+        "the endpoint rebuild is no longer one-shot before it acts, so a "
+        "failing rebuild can loop")
+if "kLogWarn" not in deaf_check or deaf_check.count("now_log(") < 3:
+    failures.append(
+        "the rebuild no longer names itself on both edges; a wedge survived "
+        "silently is half a fix")
+if "gRebuiltThisEpoch = 0" not in arm:
+    failures.append("a new epoch no longer re-earns its one endpoint rebuild")
+if "gDeliveredEndpoint = 0" not in body("static void close_udp("):
+    failures.append(
+        "a fresh endpoint inherits the old one's delivery history and so "
+        "qualifies for an immediate second rebuild")
+
 if failures:
     for failure in failures:
         print("FAIL:", failure)

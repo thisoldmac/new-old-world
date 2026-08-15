@@ -781,6 +781,12 @@ run_py now-guest-ppc ae_document_desc_source_test.py
 run_py now-guest-ppc apple_event_lifetime_source_test.py
 run_c now-guest-ppc continuity_report_logic_test.c "" \
       src/input/continuity_report_logic.c
+# When a retained UDP endpoint has gone deaf and may be rebuilt. The
+# retention rule it lives under is paid for - close/reopen churn wedged OS 9
+# twice - so the predicate is mostly a set of refusals, and those are what
+# this watches.
+run_c now-guest-ppc continuity_deaf_logic_test.c "" \
+      src/input/continuity_deaf_logic.c
 run_py now-guest-ppc continuity_intake_lifecycle_source_test.py
 # `key`'s ordering, which the C test above cannot see: PostEvent is Toolbox
 # and does not exist on a host cc, so nothing there can observe whether the
