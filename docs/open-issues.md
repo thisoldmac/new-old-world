@@ -28,6 +28,17 @@ pointer crossed BACK — before any drop could occur.
   audits it, as an ERROR when the anchor is not ours. The panel is
   widened, fronted and made key inside `ContinuityFileEdge` before the
   seed is built, so the ordering is enforced where it happens.
+
+  **Why the synthesized-but-ours seed rather than PointerCapture's
+  shape** (let the panel receive the real `mouseDragged` itself and begin
+  the session from its own override): the seed is assertable here and the
+  handoff is not. `makeSeed` runs against a real AppKit panel in the test
+  process and answers whose window the session would carry; a first-mouse
+  handoff can only be asserted against a fake, because whether a physical
+  event reaches a borderless non-activating panel at speed is precisely
+  the thing no test in this repository can know. If metal round 4 shows
+  an own-window seed still not tracking, that is the next shape to try
+  and the log line now distinguishes the two outcomes.
 - **The gesture's consent expired before the gesture did.** Crossing back
   ends the epoch by design, so a held drag ALWAYS names an epoch that is
   over; refusing it `bad-epoch` would refuse every guest→host drag there
