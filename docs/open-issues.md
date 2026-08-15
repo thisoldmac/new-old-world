@@ -7,6 +7,61 @@ search:
 
 # Open issues
 
+## THE SAME CAUSE, THIRD LAYER: AppKit's drag session is also a session-state reader, and it cannot be taught the HID (2026-08-15 04:17 round, `fix/continuity-unbound-cross-release`)
+
+The 04:17 round (658d77e9, signed, Accessibility granted,
+`~/Library/Logs/now-logs/2026-08-15 041754.log`) confirmed the HID fix —
+the abandon is gone, sessions start — and produced the next layer, in
+two shapes from one cause:
+
+- **Five sessions ended instantly** with `operation=1` wherever the
+  cursor stood, every one "ended with the button still held", ending
+  100+ px from the edge within the same second they began. Two of them
+  fired real grabs (a drop landed on whatever sat under the pointer near
+  the edge — host-side clutter, not guest damage).
+- **One session ran three seconds pinned at its seed point** (x=1→2
+  while y moved 36) and ended `operation=nobody`.
+
+**Cursor dissociation is exonerated by the log itself**: the instant
+sessions' end points moved 100+ px in under a second, which a
+dissociated cursor cannot do, and no "could not re-attach" line exists.
+
+The cause is the tap-poisoning defect one layer further. The consuming
+tap swallows the physical `leftMouseDown`; the window server's session
+state therefore believes no button is held for the entire handoff. The
+02:48 fix taught **our** readers to ask the HID level — but an
+`NSDraggingSession` is a session-state reader that cannot be taught: it
+is driven by session-level `leftMouseDragged`/`leftMouseUp`. Under a
+state that says "up", the server synthesizes `mouseMoved` instead of
+`leftMouseDragged` (nothing for the session to track: the pinned shape),
+treats the physical release as a no-op transition (no session ends on
+it: "ended with the button still held", six for six), and a session
+begun under that state can complete immediately at the cursor's position
+(the five instant `operation=1` endings).
+
+Fixed by correcting the session's belief rather than working around it:
+after the tap is down and the catch surface is wide and key, and before
+any session can begin, `returnGuestFileToHost` posts a synthetic primary
+down into the session stream at the return point (audited: `session
+button state re-armed`). From there session state matches the HID —
+motion arrives as `leftMouseDragged`, the session tracks, and the
+physical release is a real `leftMouseUp` ending it at the drop point.
+No balancing synthetic up is needed: once the states agree, the release
+itself keeps them agreeing. The unbound path posts nothing (no session
+to drive), and a failed post is an error naming the consequence.
+
+**What is proven.** Host suites green; four mutations, each built and
+run, watched failing against the guard that names them: the re-arm
+removed (the exact 04:17 shipped behavior), the re-arm posted after the
+session starts, the failed post degrading quietly, and the unbound path
+posting one too. **Metal-verified: no.** The line the next round should
+look for is `session button state re-armed: synthetic primary down
+posted at X,Y` between `host file drag started` and a session end that
+happens at the human's release — a completed drop, `operation` naming
+the acceptor, and no "ended with the button still held". If the drag
+still misbehaves, the absent or present `leftMouseDragged` tracking and
+that one line split the remaining hypotheses.
+
 ## PARTIALLY CONFIRMED ON METAL, THEN FIXED ONE LAYER DEEPER: the tap poisons every session-level button read (2026-08-15 02:48 round, `fix/continuity-unbound-cross-release`)
 
 The 02:48 metal round (merged build 7b7c3b82, Accessibility granted,
