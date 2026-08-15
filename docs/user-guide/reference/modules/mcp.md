@@ -93,50 +93,50 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
 derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
-sources-sha1: af1e542f1d4e186913fc62d89b9943b407dd234b
+sources-sha1: 12573597357c2c987c79e444284771fec6e5d6d2
 derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -288,4 +288,5 @@ rederived: 2026-08-14T23:07:32-0400 9d85a31d sources
 rederived: 2026-08-15T00:30:16-0400 f4dab407 sources, mcp-catalog 3->3
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 sources
 rederived: 2026-08-15T02:58:01-0400 5d767dce sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, mcp-catalog 3->3, sources, mcp-catalog 3->3
+rederived: 2026-08-15T03:19:46-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

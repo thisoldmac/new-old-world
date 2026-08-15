@@ -9,7 +9,7 @@ authority: [docs/mirror-knowledge.md, docs/mirror-drive-loop.md]
 module_ids: [mirror]
 source_dependencies: [docs/mirror-knowledge.md, docs/mirror-drive-loop.md, now-host/Packages/MirrorKit, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/MirrorStateProjectionService.swift, now-host/Sources/Host/MirrorFileTransferModel.swift, now-guest-ppc/src/mirror, now-guest-ppc/src/files/files_drop.c, contract/asyncapi.yaml, contract/peek_table.h]
 media_ids: [mirror-host, mirror-ppc, mirror-detail]
-last_verified: 2026-08-12
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -66,6 +66,14 @@ application.
 
 Mirror can expose window titles, text, file rosters, and screen content. Agent
 actions remain bounded by the machine's consent ceiling and visible host state.
+
+Two permissions are required, and they answer different questions. The classic
+Mac answers **whether** it may be mirrored at all: one switch, on the Mirror
+page of its own Workshop, which refuses everything while it is off. This host
+answers **which planes** are asked for, per machine, on the Planes card. A
+plane runs only when both permit it; the Mirror page states the machine's
+answer beside the resident's lifecycle rather than leaving it to be inferred
+from planes that all read the same refusal.
 
 ## Failure states
 

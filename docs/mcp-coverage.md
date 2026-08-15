@@ -1195,10 +1195,10 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: f970528dfbb06653278806331b75f7151b744ac4
-sources-sha1: f970528dfbb06653278806331b75f7151b744ac4
-sources-sha1: f970528dfbb06653278806331b75f7151b744ac4
-sources-sha1: f970528dfbb06653278806331b75f7151b744ac4
+sources-sha1: 681d7b83d03a9f42f24cd0075dda3b0785a48c92
+sources-sha1: 681d7b83d03a9f42f24cd0075dda3b0785a48c92
+sources-sha1: 681d7b83d03a9f42f24cd0075dda3b0785a48c92
+sources-sha1: 681d7b83d03a9f42f24cd0075dda3b0785a48c92
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1399,4 +1399,5 @@ rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:15-0400 f4dab407 sources
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
 rederived: 2026-08-15T02:57:59-0400 5d767dce sources, sources, sources, sources
+rederived: 2026-08-15T03:19:44-0400 098e7ecf sources, sources, sources, sources
 -->
