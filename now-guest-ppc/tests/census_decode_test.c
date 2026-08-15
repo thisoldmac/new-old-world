@@ -200,6 +200,28 @@ static void test_battery_flags(void)
     assert(strcmp(out, "no battery") == 0);
 }
 
+static void test_size_mib_tiers(void)
+{
+    char out[24];
+
+    census_size_mib(512UL, out, sizeof out);
+    assert(strcmp(out, "512 MB") == 0);            /* below 1 GiB stays MB */
+    census_size_mib(40960UL, out, sizeof out);      /* 40 GB disk */
+    assert(strcmp(out, "40.0 GB") == 0);
+    census_size_mib(10240UL, out, sizeof out);      /* 10 GB free */
+    assert(strcmp(out, "10.0 GB") == 0);
+    census_size_mib(2UL * 1024 * 1024, out, sizeof out);
+    assert(strcmp(out, "2.0 TB") == 0);
+}
+
+static void test_cpu_name_known_and_unknown(void)
+{
+    assert(strcmp(census_cpu_name(264), "PowerPC G3 (750)") == 0);
+    assert(strcmp(census_cpu_name(268), "PowerPC G4 (7400)") == 0);
+    assert(strcmp(census_cpu_name(257), "PowerPC 601") == 0);
+    assert(census_cpu_name(9999) == NULL);    /* caller keeps the raw code */
+}
+
 int main(void)
 {
     test_version_bcd();
@@ -216,6 +238,8 @@ int main(void)
     test_pram_meaning();
     test_ata_string();
     test_battery_flags();
+    test_size_mib_tiers();
+    test_cpu_name_known_and_unknown();
     printf("census_decode_test: ok\n");
     return 0;
 }
