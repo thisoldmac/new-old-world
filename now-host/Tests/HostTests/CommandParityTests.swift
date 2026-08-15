@@ -303,7 +303,7 @@ final class CommandParityTests: XCTestCase {
         "desktop": "no arguments; renders as rows through console_reply.c",
         "development-build": "closed status, cancel or start grammar is the raw line",
         "development-stage": "closed candidate action grammar is the raw line",
-        "development-project": "one opaque project ID is the raw line",
+        "development-project": "catalog, or one opaque project ID, is the raw line",
         "development-run": "one opaque product reference is the raw line",
         "development-test": "one opaque product reference is the raw line",
         "development-open": "one opaque project ID is the raw line",

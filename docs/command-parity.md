@@ -98,6 +98,17 @@ hyphens; before 2026-08-09 it silently omitted this entire command family from
 both its dispatch and registry derivations. The host Development module and
 agent projection are clients of that wire face, not a third guest face.
 
+**And "the same command function" is not the same as "the same grammar"**
+(2026-08-14). `development-project` reached the console through that
+fallback the whole time, and typing `development-project catalog` — the
+grammar its own `help` printed — answered `project-unavailable`, because the
+implementation took the first word as a project id and only the wire's
+`action` argument selected the catalog. The verb was present on both faces
+and broken on one, which is the shape this page says the parity gate cannot
+see. It is also why the contract now declares that `action`: the guest served
+it, `args` said `required: [projectID]` with `additionalProperties: false`,
+and the host's own request did not conform to the file both halves read.
+
 `mirror` is the one-extension example. Both faces call `now_mirror_probe()`;
 the wire serializes its schema-1 facts while the Console and Workshop render
 the same lifecycle and P1-P4 rows. All three are read-only. Host plane policy
