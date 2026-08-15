@@ -63,12 +63,60 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(
             NavigationSidebarDropResolver.target(
                 distanceFromTop: 40, height: 400,
-                upperItemCount: 5, lowerItemCount: 3),
+                upperItemCount: 5, lowerItemCount: 3,
+                pinnedStackHeight: 96),
             .zone(.upper, index: 5))
         XCTAssertEqual(
             NavigationSidebarDropResolver.target(
-                distanceFromTop: 360, height: 400,
-                upperItemCount: 5, lowerItemCount: 3),
+                distanceFromTop: 310, height: 400,
+                upperItemCount: 5, lowerItemCount: 3,
+                pinnedStackHeight: 96),
+            .zone(.lower, index: 0))
+    }
+
+    /// The footer's chrome must append below the stack, not prepend above it.
+    ///
+    /// The canvas fallback used to split the whole canvas in half: the top
+    /// appended to `upper`, the bottom prepended at `.zone(.lower, index: 0)`.
+    /// The footer is entirely inside that bottom half, and it is mostly
+    /// chrome — a divider, 8/5pt padding, the gaps around two rows — none of
+    /// which any row's own drop view covers. Connections is the LAST row of
+    /// that stack, so every one of those points pushed it down a full row
+    /// before the pointer had reached it. Widening the row's centre band
+    /// could not help: the displacement happens above the row.
+    func testFooterChromeAppendsBelowTheStackRatherThanPrependingAboveIt() {
+        func target(_ y: CGFloat) -> NavigationDropTarget {
+            NavigationSidebarDropResolver.target(
+                distanceFromTop: y, height: 400,
+                upperItemCount: 5, lowerItemCount: 2,
+                pinnedStackHeight: 96)          // stack occupies 304...400
+        }
+
+        XCTAssertEqual(target(300), .zone(.upper, index: 5),
+                       "above the pinned stack still appends to the list")
+        XCTAssertEqual(target(310), .zone(.lower, index: 0),
+                       "the stack's top padding means before its first row")
+        XCTAssertEqual(target(394), .zone(.lower, index: 2),
+                       "below the last footer row is an APPEND — the same "
+                         + "answer the upper half gives, mirrored")
+    }
+
+    func testFooterDropGeometryDegradesHonestlyBeforeItIsMeasured() {
+        // A stack of no height cannot own any point; nothing may resolve to
+        // a prepend that would displace the row a drag is aimed at.
+        XCTAssertEqual(
+            NavigationSidebarDropResolver.target(
+                distanceFromTop: 399, height: 400,
+                upperItemCount: 5, lowerItemCount: 2,
+                pinnedStackHeight: 0),
+            .zone(.upper, index: 5))
+        // An empty footer takes the whole drop, which is the one case the
+        // old prepend was right about.
+        XCTAssertEqual(
+            NavigationSidebarDropResolver.target(
+                distanceFromTop: 396, height: 400,
+                upperItemCount: 5, lowerItemCount: 0,
+                pinnedStackHeight: 20),
             .zone(.lower, index: 0))
     }
 
@@ -85,14 +133,64 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(extracted.shelf(id: .screen)?.moduleIDs,
                        ["screen", "continuity"])
 
+        // Not "before settings": that is the shelf's fixed hero, and the
+        // save path undoes it — see
+        // testDroppingBeforeAShelfHeroSurvivesTheSaveOrIsRefused.
         let reordered = try layout.applying(try XCTUnwrap(
             NavigationDragCoordinator.command(
-                for: .module("mcp"),
-                droppingOn: .shelf(.network, beforeModuleID: "settings"),
+                for: .module("web"),
+                droppingOn: .shelf(.network, beforeModuleID: "mcp"),
                 in: layout,
                 makeShelfID: { self.shelfUUID })))
         XCTAssertEqual(reordered.shelf(id: .network)?.moduleIDs,
+                       ["settings", "web", "mcp"])
+    }
+
+    /// A drop the save path would undo must be refused, not swallowed.
+    ///
+    /// `sanitised` runs `enforceSpecialHeroes`, which re-prepends each fixed
+    /// hero to its shelf, and `SidebarPreferences.replaceLayout` returns
+    /// early when the canonical result equals what was already stored. So a
+    /// drop in front of the Settings pill — the Connections shelf's hero,
+    /// its leftmost tab, and the natural aim point for "put it first" — was
+    /// accepted by `performDragOperation`, animated by AppKit, and then
+    /// reverted with no state change at all.
+    ///
+    /// The suite could not see it: every existing case asserted
+    /// `applying(command)` and stopped there. This one goes through the save.
+    func testDroppingBeforeAShelfHeroSurvivesTheSaveOrIsRefused() throws {
+        let layout = NavigationLayout.standard(for: .standard)
+
+        XCTAssertNil(NavigationDragCoordinator.command(
+            for: .module("mcp"),
+            droppingOn: .shelf(.network, beforeModuleID: "settings"),
+            in: layout,
+            makeShelfID: { self.shelfUUID }),
+                     "a drop the save path would undo must not be accepted")
+
+        // Why it is refused rather than allowed: the save really does undo
+        // it. This is the assertion that proves the refusal above is about
+        // the hero rule and not about some other guard.
+        let wouldBeUndone = try layout.applying(
+            .insert(moduleID: "mcp", into: .network,
+                    beforeModuleID: "settings"))
+        XCTAssertEqual(wouldBeUndone.shelf(id: .network)?.moduleIDs,
                        ["mcp", "settings", "web"])
+        XCTAssertEqual(wouldBeUndone.sanitised(for: .standard)
+                        .shelf(id: .network)?.moduleIDs,
+                       ["settings", "mcp", "web"],
+                       "enforceSpecialHeroes re-prepends the hero on save")
+
+        // And a drop that displaces nothing fixed is accepted AND survives.
+        let command = try XCTUnwrap(NavigationDragCoordinator.command(
+            for: .module("web"),
+            droppingOn: .shelf(.network, beforeModuleID: "mcp"),
+            in: layout,
+            makeShelfID: { self.shelfUUID }))
+        let saved = try layout.applying(command).sanitised(for: .standard)
+        XCTAssertEqual(saved.shelf(id: .network)?.moduleIDs,
+                       ["settings", "web", "mcp"],
+                       "a drop that is accepted must survive the save")
     }
 
     func testTwoMemberUserShelfCanReorderWithoutDecomposing() throws {
@@ -114,7 +212,16 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                        ["projects", "chat"])
     }
 
-    func testPreviewReflowsTopLevelItemsWithoutMutatingTheBaseline() throws {
+    /// A top-level move previews the baseline and still refuses a target the
+    /// layout cannot accept.
+    ///
+    /// This test used to assert the opposite — that the preview reflowed the
+    /// upper stack — which is the behaviour
+    /// `testHoveringAnInsertionBandDoesNotReflowTheStack` removed. What
+    /// survives from it is the half worth keeping: previewing never mutates
+    /// the baseline, and a preview is nil exactly when the drop would be.
+    func testPreviewOfATopLevelMoveShowsTheBaselineAndValidatesTheTarget()
+        throws {
         let baseline = NavigationLayout.standard(for: .standard)
 
         let preview = try XCTUnwrap(NavigationDragPreview(
@@ -123,25 +230,38 @@ final class NavigationDragCoordinatorTests: XCTestCase {
             baseline: baseline,
             makeShelfID: { self.shelfUUID }))
 
-        XCTAssertEqual(preview.layout.upper.first?.id,
-                       NavigationShelfID.screen.rawValue)
+        XCTAssertEqual(preview.layout, baseline)
         XCTAssertEqual(baseline.upper.first?.id,
                        NavigationShelfID.machine.rawValue)
+
+        XCTAssertNil(NavigationDragPreview(
+            dragged: .shelf(.machine),
+            target: .zone(.drawer, index: 0),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }),
+                     "a move the layout refuses must not preview either")
     }
 
     func testPreviewReflowsShelfTabsBeforeDrop() throws {
         let baseline = NavigationLayout.standard(for: .standard)
 
         let preview = try XCTUnwrap(NavigationDragPreview(
-            dragged: .module("mcp"),
-            target: .shelf(.network, beforeModuleID: "settings"),
+            dragged: .module("web"),
+            target: .shelf(.network, beforeModuleID: "mcp"),
             baseline: baseline,
             makeShelfID: { self.shelfUUID }))
 
         XCTAssertEqual(preview.layout.shelf(id: .network)?.moduleIDs,
-                       ["mcp", "settings", "web"])
+                       ["settings", "web", "mcp"])
         XCTAssertEqual(baseline.shelf(id: .network)?.moduleIDs,
                        ["settings", "mcp", "web"])
+
+        // The hero's own pill previews nothing, because its drop is refused.
+        XCTAssertNil(NavigationDragPreview(
+            dragged: .module("web"),
+            target: .shelf(.network, beforeModuleID: "settings"),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
     }
 
     /// Hovering a shelf must not lift the dragged row out of the stack.
@@ -168,6 +288,62 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(preview.layout, baseline,
                        "the stack must stand still until the drop")
         XCTAssertEqual(preview.target, .shelf(.network, beforeModuleID: nil))
+    }
+
+    /// Hovering an insertion band must not reflow the stack either.
+    ///
+    /// Wave 1 suppressed the eager preview for `.insert` only. Every
+    /// insertion band on every row resolves a `.zone` target, and every
+    /// `.zone` target is a `.move` — so the mechanism the `.insert` guard
+    /// exists to prevent stayed fully live through the top and bottom bands
+    /// of every row and through the whole canvas fallback. The insertion
+    /// line already says where the row lands; moving the rows as well takes
+    /// the destination out from under a pointer that has not moved, which is
+    /// a real `draggingExited` and restarts AppKit's spring-load dwell.
+    func testHoveringAnInsertionBandDoesNotReflowTheStack() throws {
+        let baseline = NavigationLayout.standard(for: .standard)
+
+        let preview = try XCTUnwrap(NavigationDragPreview(
+            dragged: .shelf(.network),
+            target: .zone(.upper, index: 1),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
+
+        XCTAssertEqual(preview.layout, baseline,
+                       "an insertion line says where it lands; "
+                         + "it does not move rows")
+        XCTAssertEqual(preview.target, .zone(.upper, index: 1))
+    }
+
+    /// The rows' targets and the commands' indices must name the same rows.
+    ///
+    /// `HostRootView` renders `dragPreview?.layout ?? sidebar.layout`, so
+    /// every `beforeTarget: .zone(zone, index: index)` a row builds is an
+    /// index into the PREVIEW — while `canDrop`, `previewDrop` and
+    /// `performDrop` all resolve against `sidebar.layout`, the baseline. Any
+    /// preview that reorders a stack makes those two index spaces differ,
+    /// and the resolved target then feeds the next preview. Freezing the
+    /// presentation at the baseline for the whole drag makes them one space
+    /// by construction, which is why the `.move` guard is not cosmetic.
+    func testFooterRowTargetsAndCommandsShareOneIndexSpace() throws {
+        let baseline = NavigationLayout.standard(for: .standard)
+        let preview = try XCTUnwrap(NavigationDragPreview(
+            dragged: .module("chat"),
+            target: .zone(.lower, index: 0),
+            baseline: baseline,
+            makeShelfID: { self.shelfUUID }))
+
+        let previewIndex = try XCTUnwrap(preview.layout.lower.firstIndex {
+            $0.id == NavigationShelfID.network.rawValue
+        })
+        let baselineIndex = try XCTUnwrap(baseline.lower.firstIndex {
+            $0.id == NavigationShelfID.network.rawValue
+        })
+
+        XCTAssertEqual(previewIndex, baselineIndex,
+                       "a target the pointer aimed at in the preview must "
+                         + "mean the same row in the layout the command is "
+                         + "applied to")
     }
 
     func testCombiningModulesWaitsForDropInsteadOfCollapsingTheDragTarget() throws {

@@ -186,6 +186,23 @@ struct NavigationDragCoordinator {
                   beforeModuleID.map(shelf.moduleIDs.contains) ?? true else {
                 return nil
             }
+            // A drop in front of a shelf's fixed hero cannot survive being
+            // saved: `sanitised` runs `enforceSpecialHeroes`, which
+            // re-prepends the hero, and `SidebarPreferences.replaceLayout`
+            // then returns early because the canonical result equals what
+            // was already stored. The gesture was accepted, animated, and
+            // silently undone — which is what "you can't drop into the
+            // Connections tabs" looks like from a chair, Settings being both
+            // that shelf's hero and its leftmost pill. Refuse it here so the
+            // cursor says no instead.
+            //
+            // This is the honest half of the fix. Whether a shelf's hero
+            // should be movable at all is a product question and is
+            // deliberately not answered here.
+            if let beforeModuleID,
+               shelfID.fixedModuleHeroID == beforeModuleID {
+                return nil
+            }
             return .insert(moduleID: moduleID, into: shelfID,
                            beforeModuleID: beforeModuleID)
         }
@@ -231,10 +248,26 @@ struct NavigationDragPreview: Equatable, Sendable {
             previewLayout = baseline.topLevelLocation(of: dragged) == nil
                 ? changed : baseline
         case .move:
-            guard let changed = try? baseline.applying(command) else {
+            // A move is still validated — a target the layout cannot accept
+            // must not preview at all — but it is not SHOWN. The insertion
+            // line already says where the row lands, and applying the move
+            // live is the same defect the `.insert` guard above refuses:
+            // every row between the removal point and the insertion point
+            // shifts, the row the pointer is resting on included. That is a
+            // real `draggingExited`, and AppKit restarts the spring-load
+            // dwell from zero each time — so the shelf a drag is aimed at
+            // can never be dwelled on. Finder shows a line and leaves its
+            // sidebar alone for the same reason.
+            //
+            // Freezing the presentation at the baseline also collapses two
+            // index spaces into one: the rows build their drop targets from
+            // the layout the sidebar RENDERS, while every command resolves
+            // against the baseline. See
+            // `testFooterRowTargetsAndCommandsShareOneIndexSpace`.
+            guard (try? baseline.applying(command)) != nil else {
                 return nil
             }
-            previewLayout = changed
+            previewLayout = baseline
         }
 
         self.dragged = dragged
@@ -453,14 +486,34 @@ extension NavigationLayout {
 }
 
 enum NavigationSidebarDropResolver {
+    /// Where a point no row's own view covers belongs.
+    ///
+    /// The pinned stack's height is asked for rather than inferred, because
+    /// the two stacks are not two halves of the canvas: the footer is only
+    /// as tall as its rows need and the list gets everything else. Splitting
+    /// the canvas down the middle put the footer's chrome — its divider, its
+    /// 8/5pt padding, the gaps around its rows — on `.zone(.lower, index: 0)`,
+    /// which PREPENDS. Connections is the last row of that stack, so
+    /// brushing the padding above it shoved it down a full row before the
+    /// pointer ever reached the row, and a spring-load dwell cannot survive
+    /// its destination moving. The upper half never had this problem because
+    /// its fallback appends; this is that same append, mirrored.
     static func target(distanceFromTop: CGFloat, height: CGFloat,
                        upperItemCount: Int,
-                       lowerItemCount: Int) -> NavigationDropTarget {
-        if distanceFromTop < height / 2 {
+                       lowerItemCount: Int,
+                       pinnedStackHeight: CGFloat) -> NavigationDropTarget {
+        let stackHeight = min(max(0, pinnedStackHeight), height)
+        let stackTop = height - stackHeight
+        guard stackHeight > 0, distanceFromTop >= stackTop else {
             return .zone(.upper, index: upperItemCount)
         }
-        // Lower items grow upward: new drops enter at the top of that stack.
-        return .zone(.lower, index: 0)
+        guard lowerItemCount > 0 else { return .zone(.lower, index: 0) }
+        // Inside the stack the rows carry their own drop views, so what is
+        // left over here is the chrome around them: above the first row
+        // means before it, below the last means after it.
+        let share = (distanceFromTop - stackTop) / stackHeight
+        let index = Int((share * CGFloat(lowerItemCount)).rounded())
+        return .zone(.lower, index: min(max(index, 0), lowerItemCount))
     }
 }
 
