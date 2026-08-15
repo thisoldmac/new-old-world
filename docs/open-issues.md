@@ -7,6 +7,55 @@ search:
 
 # Open issues
 
+## EMULATOR-OBSERVED AT BEST, METAL NOT AT ALL: 034 wave 4 — the Files cocktail, one name rule, files drop in from outside (2026-08-15, five lanes merged, gate green)
+
+Wave 4 of plan 034, the last implementation wave; `scripts/test-all`
+green on the merged tree.
+
+- **Files rebuild** (`034w4-files`): two named halves, no disclosure
+  triangle; the four-writer status placard became per-channel storage
+  with one priority rule (`files_status.c`), so a clearing channel
+  uncovers unread news instead of falling to "Ready." Emulator-observed
+  drawing (screenshot + rig table in that lane's `docs/local/`); nothing
+  with a file actually moving was exercised. Three corrections it forced:
+  the research claim "catsearch.c is dead" was WRONG (live console+wire
+  verb; kept); the share half's hand-drawn text had NEVER reached the
+  observation plane (helper files are invisible to the describe gate —
+  the gate's own stated limit, now having cost one real gap); and the
+  hidden send progress bar reports `visible:true` in the scene while the
+  pixels show none — an observation-plane fidelity nit, pre-existing,
+  unowned.
+- **Naming** (`034w4-naming` + merge-time consolidation): the hostname
+  was already on the wire (`Hello.name` → `g.peer_name`) — no contract
+  change. `core/peer_name.c` owns the one conversion (This Mac / trimmed
+  hostname / "Other Mac"); `conn_peer_label()` and the Files label both
+  delegate. The retired "the other Mac" phrasing is test-pinned against
+  return.
+- **Drag, drop-first** (`034w4-drag`): Drag Manager tracking/receive on
+  the Workshop window (real UPPs, runtime-gated on Gestalt; absence is a
+  supported state), `flavorTypeHFS` accepted, and `kAEOpenDocuments`
+  answered for the first time (the app had sent it in four places and
+  never served it). NEITHER handler sends: drops land in a ring drained
+  from the idle loop into the existing send path. Finder icon drops via
+  the new documents FREF/BNDL. **This slice's automated gates can be
+  green while the feature does nothing** — Drag Manager behavior is
+  invisible to all of them; Emulator QA and Metal QA statuses are
+  required by repository policy before the PR merges.
+- **Cloud describe + copy** (`034w4-cloud`): `CloudViewOps` gained a
+  describe entry across all four views; iCloud no longer reports its
+  card pane as a bare rect, and Chat/Mirror/Projects/Processes/Software
+  now serve `copy_text`. All 17 pages describe; 11 serve Copy.
+- **Chevron** (`034w4-chevron`): H10's symbol bounce on the shared
+  rail's icon, macOS 14-gated over a macOS 13 floor, Reduce-Motion
+  aware. Build-verified; the visual is unwatched.
+
+What remains of plan 034: G-7 (mirror consent contract change — gated on
+`refactor/mirror-continuity-split` landing), the guest chat sidebar
+(gated on the guest-browsing contract decision), and the verification
+debt this ledger keeps repeating: one structured emulator pass over the
+whole guest app, then the metal pass, then the Emulator/Metal QA
+statuses for the PR.
+
 ## TESTED, NOTHING WATCHED ON A MACHINE: 034 wave 3 — every page can say what it drew, Copy exists, Connections reorg, saved chats, Settings window (2026-08-15, four lanes merged at `0bfdee71`)
 
 Wave 3 of plan 034; `scripts/test-all` green on the merged tree.

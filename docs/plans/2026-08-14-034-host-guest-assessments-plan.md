@@ -361,3 +361,12 @@ contradicted live and reclassified (Part 0).
   describe + cheap copy_text adds, H10 chevron. Remaining after wave 4:
   G-7 (gated on the split-thread merge), guest chat sidebar (gated on
   the guest-browsing contract decision), and the live/emulator pass.
+- 2026-08-15 (wave 4 merged, arc implementation complete): five lanes +
+  the peer-name consolidation, test-all green centrally. G-6, G-8, G-9b,
+  H10, and the cloud describe/copy follow-ups complete. Corrections:
+  catsearch.c is alive (G-6's wire-or-delete bullet closes as "neither");
+  hostname was already on the wire, so G-8 needed no contract change.
+  Every implementable item in this plan is now landed and Tested; the
+  Files page is additionally emulator-observed. Open: G-7 (split-thread
+  gate), guest chat sidebar (contract decision), the full emulator +
+  metal QA passes, hooks-doctor, and the branch rename before the PR.
