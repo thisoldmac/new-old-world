@@ -7,6 +7,7 @@
 
 #include "development_build.h"
 #include "development_candidate.h"
+#include "development_history.h"
 #include "development_open.h"
 #include "development_project.h"
 #include "development_projects.h"
@@ -60,6 +61,42 @@ typedef struct DevRuntime {
 } DevRuntime;
 
 static DevRuntime g_runtime;
+
+/* Outside DevRuntime deliberately: a build START memsets the whole runtime
+   and dev_build_service_begin memsets the service, so a ring living in
+   either would remember exactly one job - the one that has not finished
+   yet. Session-scoped, so a relaunch starts empty. */
+static DevJobHistory g_history;
+
+/* Called wherever a job can settle, and often: the idle pass runs many
+   times a second and cancellation settles a job from three places. The
+   ring refuses a second push of the id already at its head, so "call it
+   whenever the state might have changed" is the whole protocol. */
+static void record_settled_job(void)
+{
+    DevJobSummary summary;
+    if (g_runtime.service.job.id[0] == '\0') return;
+    memset(&summary, 0, sizeof summary);
+    snprintf(summary.id, sizeof summary.id, "%.39s",
+             g_runtime.service.job.id);
+    snprintf(summary.project_id, sizeof summary.project_id, "%.32s",
+             g_runtime.candidate_id[0] ? g_runtime.candidate_id
+                                       : g_runtime.project.id);
+    snprintf(summary.project_name, sizeof summary.project_name, "%.64s",
+             g_runtime.project.name[0] ? g_runtime.project.name
+                                       : "Untitled project");
+    summary.state = g_runtime.service.job.state;
+    summary.exit_code = g_runtime.service.job.exit_code;
+    summary.actions_completed = g_runtime.service.next_action;
+    summary.actions_total = g_runtime.service.plan.count;
+    summary.finished_ticks = TickCount();
+    dev_job_history_push(&g_history, &summary);
+}
+
+const DevJobHistory *now_development_runtime_history(void)
+{
+    return &g_history;
+}
 
 static int console_words(const char *request_json, char *first, long first_cap,
                          char *second, long second_cap)
@@ -512,7 +549,7 @@ static int inspect_product(void)
     return 1;
 }
 
-void now_development_runtime_idle(void)
+static void runtime_idle_step(void)
 {
     DevJobState before = g_runtime.service.job.state;
     ProcessSerialNumber ignored;
@@ -571,6 +608,15 @@ void now_development_runtime_idle(void)
     }
 }
 
+/* One place records a settled job, and it is the pass that runs whatever
+   else happened - so no return path inside the step above has to remember
+   to. */
+void now_development_runtime_idle(void)
+{
+    runtime_idle_step();
+    record_settled_job();
+}
+
 void now_development_build_command(const char *request_json, long id,
                                    char *out, long cap)
 {
@@ -599,6 +645,7 @@ void now_development_build_command(const char *request_json, long id,
         }
         g_runtime.transport_blocked = g_runtime.service.awaiting_action >= 0;
         strcpy(g_runtime.last_status, "Build cancelled; late output is quarantined.");
+        record_settled_job();
         build_reply(id, out, cap); return;
     }
     if (project_id[0] == '\0') {
@@ -1014,6 +1061,7 @@ void now_development_runtime_cancel(void)
 {
     if (dev_build_service_cancel(&g_runtime.service)) {
         g_runtime.transport_blocked = g_runtime.service.awaiting_action >= 0;
+        record_settled_job();
     }
 }
 
