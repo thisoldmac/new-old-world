@@ -160,8 +160,13 @@ guest write phase stays indeterminate (no wire signal).
   renumbering — with the adjacency argument written in prose like the
   host registry. (Decided yes.)
 - **I4a — remove ⌘1-0 page shortcuts (S).** Decided: the View-menu
-  cmd-numbers go away (they ran out at ten pages anyway). The sidebar
-  density question is still open — Part 2.
+  cmd-numbers go away (they ran out at ten pages anyway).
+- **I4b — compact-only rail + tooltip (M).** Decided (round 2): retire
+  the rich two-line density; the rail is compact-only (all 14 rows fit
+  everywhere, incl. 640×480), and the module description moves to a
+  hand-drawn hover tooltip tag (`workshop_sidebar.h:56-59` pattern —
+  Carbon help tags don't render on OS 9). Density prefs simplify
+  accordingly.
 
 ### Slice G — decision-driven restructuring (from round 1)
 
@@ -191,7 +196,9 @@ guest write phase stays indeterminate (no wire signal).
   `SettingsModuleView.swift` into the Connections files.
 - **G-4 Chat (H11 + G3b, M then M).** Host: persisted multi-chat with
   **lazy-loaded transcripts** (decided — sympathetic to RAM); sidebar
-  List. Projects deferred until defined (Part 2). Guest: collapsible
+  List. Projects (round 2): a project is a **folder on disk**, optionally
+  associated with a build target/code — i.e. it can reference a
+  Projects-module project; chats-first, projects after. Guest: collapsible
   flat list (hierarchical DataBrowser is recorded not-viable on metal)
   once the host model exists; contract verbs for guest browsing decided
   then.
@@ -252,23 +259,20 @@ catalogued in U14 get recorded in `docs/guest-ui-start-here.md` as a
 
 ## Part 2 — Still open
 
-1. **I4b — guest sidebar density:** Michelle is considering killing the
-   expanded (rich two-line) rail entirely — single density + hover-tag
-   tooltip for the subtitle (hand-drawn tags, since Carbon help tags
-   don't render). Next step: a quick render-preview mock of
-   compact-only + tooltip vs. status quo to decide against pixels, not
-   prose.
-2. **G-4 projects:** what a chat "project" is (folder of chats vs chat
-   with inherited defaults) — deferred until chats land.
-3. **D8 fallback name:** "Other Mac" accepted as fine; better ideas
-   welcome before G-8 implements.
-4. **H10:** confirm deployment target tolerates the macOS 14+
-   `NSSymbolEffect` gate, and that the Files collapsed rail is the
-   control meant. Then it's locked (bounce on the chevron icon only,
-   layered over the existing scale+tint).
-5. **H7:** hypothesis (eager zone-move displaces the pinned shelf before
-   spring-load arms) needs live confirmation — likely investigated
-   together with H6, same coordinator.
+Nothing. Round 2 (2026-08-14, Michelle) closed the last five:
+
+1. **I4b locked:** no mock — the rail becomes **compact-only**, with the
+   module description shown as a hover tooltip (hand-drawn tag, since
+   Carbon help tags don't render on OS 9). Joins Slice F alongside I4a.
+2. **Chat project defined:** a project gets its **own folder on disk**
+   and can **optionally be associated with a build target/code** (i.e.
+   it can reference a Projects-module project). G-4 loses its deferral.
+3. **"Other Mac" fallback confirmed** for G-8.
+4. **H10 locked:** use cutting-edge Swift (`NSSymbolEffect` bounce on
+   the chevron icon, layered over the existing scale+tint) behind
+   `#available`, degrading gracefully to the deployment floor.
+5. **H6/H7/G8 investigations: best effort** — land the best-supported
+   root-cause fixes; Michelle live-tests once they land.
 
 ## Part 3 — Sequencing
 
@@ -315,3 +319,8 @@ contradicted live and reclassified (Part 0).
   copy in mind. I4: ⌘-numbers removed; density question open. I6
   deferred. I7 default order yes. Leverage the xcode/c/carbon skills
   during implementation.
+- 2026-08-14 (Michelle, round 2): I4b compact-only + tooltip, no mock.
+  Chat project = own folder on disk, optional build-target association.
+  "Other Mac" confirmed. H10: cutting-edge Swift, degrade gracefully to
+  the floor. Investigations best-effort; Michelle tests once landed.
+  → Plan fully locked; wave 1 implementation begins.
