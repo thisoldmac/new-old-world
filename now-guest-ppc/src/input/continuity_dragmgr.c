@@ -13,6 +13,14 @@
 #include "nowlog.h"
 #include "wire.h"
 
+/* EVERY LINE HERE LOGS UNDER "mirror", not under a word of its own.
+   docs/logging.md's area vocabulary is closed on purpose - an ad-hoc
+   word is one nobody knows to grep for - and this is not a new
+   subsystem: an armed drag is an arm on the Mirror plane, and the
+   offer it picks up already logs there (continuity_offer_intake.c).
+   Minting "drag" would split one crossing's story across two words.
+   The lines say "drag" in the MESSAGE so they still read as a group. */
+
 static NowContinuityDragState g_drag;
 static DragSendDataUPP g_send_upp;
 
@@ -118,7 +126,8 @@ static Boolean stream_promise(short vref, long dir, FSSpec *out)
 
     now_wire_get_destination(true, vref, dir);
     if (now_wire_get_offer(&id, err, sizeof err) != 0) {
-        now_log(kLogWarn, "drag", "promise refused before any byte: %s", err);
+        now_log(kLogWarn, "mirror", "drag promise refused before any byte: %s",
+                err);
         now_wire_get_destination(false, 0, 0);
         return false;
     }
@@ -137,7 +146,7 @@ static Boolean stream_promise(short vref, long dir, FSSpec *out)
                matters: local-only would leave the host pushing into a
                lane nobody is reading. */
             now_wire_get_cancel(err, sizeof err);
-            now_log(kLogInfo, "drag", "promise cancelled at %ld of %ld bytes",
+            now_log(kLogInfo, "mirror", "drag promise cancelled at %ld of %ld bytes",
                     received, expected);
             now_wire_get_destination(false, 0, 0);
             return false;
@@ -147,7 +156,7 @@ static Boolean stream_promise(short vref, long dir, FSSpec *out)
             stall_deadline = TickCount() + kPromiseStallTicks;
         } else if (TickCount() > stall_deadline) {
             now_wire_get_cancel(err, sizeof err);
-            now_log(kLogWarn, "drag", "promise stalled at %ld of %ld bytes",
+            now_log(kLogWarn, "mirror", "drag promise stalled at %ld of %ld bytes",
                     received, expected);
             now_wire_get_destination(false, 0, 0);
             return false;
@@ -160,7 +169,7 @@ static Boolean stream_promise(short vref, long dir, FSSpec *out)
        behind and hand the Finder a stale file with total confidence. */
     landed = now_wire_get_landed(id, out);
     if (!landed) {
-        now_log(kLogWarn, "drag", "promise #%ld did not land", id);
+        now_log(kLogWarn, "mirror", "drag promise #%ld did not land", id);
     }
     return landed;
 }
@@ -191,7 +200,7 @@ static pascal OSErr drag_send_data(FlavorType type, void *refcon,
         return cantGetFlavorErr;
     }
 
-    now_log(kLogInfo, "drag", "promise streaming %.31s into dir %ld",
+    now_log(kLogInfo, "mirror", "drag promise streaming %.31s into dir %ld",
             g_drag.item.name, dir);
     if (!stream_promise(vref, dir, &spec)) {
         now_continuity_drag_promise_end(&g_drag, 0);
@@ -331,12 +340,12 @@ static void start_drag(void)
     DragSendDataUPP upp = send_upp();
 
     if (upp == NULL) {
-        now_log(kLogError, "drag", "no send-data UPP; drag not started");
+        now_log(kLogError, "mirror", "drag: no send-data UPP; not started");
         now_continuity_drag_start_failed(&g_drag);
         return;
     }
     if (NewDrag(&drag) != noErr || drag == NULL) {
-        now_log(kLogError, "drag", "NewDrag refused");
+        now_log(kLogError, "mirror", "drag: NewDrag refused");
         now_continuity_drag_start_failed(&g_drag);
         return;
     }
@@ -405,7 +414,7 @@ static void start_drag(void)
     event.where = where;
     event.modifiers = (short)now_continuity_host_modifiers();
 
-    now_log(kLogInfo, "drag", "tracking %.31s (%ld bytes)",
+    now_log(kLogInfo, "mirror", "drag tracking %.31s (%ld bytes)",
             g_drag.item.name, g_drag.item.data_size);
 
     /* THE WIRE STOPS HERE, and that is documented rather than fixed:
@@ -419,7 +428,7 @@ static void start_drag(void)
 
         now_log(track == noErr && verdict == kNowDragOK
                     ? kLogInfo : kLogWarn,
-                "drag", "%.31s ended: %s (TrackDrag %d)",
+                "mirror", "drag %.31s ended: %s (TrackDrag %d)",
                 g_drag.item.name, now_continuity_drag_code(verdict),
                 (int)track);
     }
@@ -448,7 +457,7 @@ int now_continuity_dragmgr_request(char *err, long cap)
                                               TickCount());
 
     if (verdict == kNowDragOK) {
-        now_log(kLogInfo, "drag", "armed for %.31s; waiting on the button",
+        now_log(kLogInfo, "mirror", "drag armed for %.31s; waiting on the button",
                 g_drag.item.name);
         return 0;
     }
@@ -484,7 +493,7 @@ int now_continuity_dragmgr_cancel(char *err, long cap)
         snprintf(err, (size_t)cap, "No drag to stop");
         return -1;
     }
-    now_log(kLogInfo, "drag", "cancel asked (%s)",
+    now_log(kLogInfo, "mirror", "drag cancel asked (%s)",
             now_continuity_drag_state_name(g_drag.state));
     return 0;
 }
@@ -502,7 +511,7 @@ void now_continuity_dragmgr_service(void)
     if (action == kNowDragTickStart) {
         start_drag();
     } else if (action == kNowDragTickExpire) {
-        now_log(kLogWarn, "drag", "arm expired: %s",
+        now_log(kLogWarn, "mirror", "drag arm expired: %s",
                 now_continuity_drag_code(g_drag.last_verdict));
     }
 }
