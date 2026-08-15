@@ -139,6 +139,61 @@ What is proven and what is not:
   future row that reads this Mac's own state gets the exemption by declaring
   the domain; nothing else moved.
 
+## FIXED AND EMULATOR-VERIFIED, NOT RE-MEASURED ON METAL: the guest served the grab and this Mac cancelled it (2026-08-15 12:21 round, `fix/continuity-grab-answer`)
+
+The round after the grant window landed got the whole gesture through:
+the session tracked, the drop completed (`operation=1`), the promise lane
+fired `continuity.grab`, and the guest granted it inside the window —
+`grant honored after epoch=23 gen=1 live=0`, `grab granted #22`. Then
+nothing. The host timed out at 21 seconds with
+`code=timeout, reason=… did not answer in time`, twice, and its `files`
+area held not one transfer line all session.
+
+**The answer left the guest and this Mac shut the door on it.** A pull's
+receiver is armed by `activeFileGetID`, and `Session.fileBegin` cancels
+and discards any `file.begin` naming a request it is not awaiting —
+silently. `sendFileGet` set that id; `sendContinuityGrab` and
+`sendMirrorFileGet` reset the sink, the staging directory and the clock
+beside it and did not. So every grab, and every Mirror pull, answered
+into a closed door: the guest staged the file and sent `file.begin`, the
+host cancelled the transfer, and the caller learned only that its
+watchdog had fired — a word pointing at the wire rather than at us.
+
+**Fixed where the arming is, not at the two call sites.** One
+`beginFileGet(id:stagingDirectory:)` now holds the four facts that must
+move together, and all four asks call it. The silent discard also gained
+a voice: an unawaited `file.begin` is logged by name with what this Mac
+was awaiting instead. On the guest, `grab granted` no longer claims to be
+an answer — it is written AFTER `send_control` and names the transfer
+(`file.begin sent xfer=N`), with a warn when the frame cannot be queued.
+
+**What is proven.** `scripts/test-all` green. Two new
+`FileWireTests` hold the boundary against a fake guest, and both fail
+with `timed out waiting for delivery` when the two asks stop arming the
+id. `EmulatorContinuityGrabTests` (opt-in, `NOW_EMU`) drives the whole
+lane against a real guest on a mac99 clone — push, `reveal` so the Finder
+selects it, arm, **disarm**, then grab out of the grant window — and the
+bytes land byte-identical. Under the same mutation it fails with the
+exact metal sentence: `[timeout] Power Mac G4 did not answer in time`.
+Rig: `now-mirror-stage.qcow2` sha256 `72aeaaf5…`, this checkout's ext and
+app staged, resident `active`, capabilities 1023, buildFingerprint
+`b74b992f87a2`.
+
+**NOT proven.** No hand has dragged a file since the fix, and the
+emulator's network is not a Farallon card. The lines the next metal round
+should show, in this order, are the emulator's own:
+
+    mirror grant held past epoch=N gen=1 for 1800 ticks <name>
+    mirror grant honored after epoch=N gen=1 live=0 <name>
+    mirror grab granted #M epoch=N gen=1 <name>: file.begin sent xfer=X
+
+with the host answering `grab completed: name=<name>, …, integrity=crc32`
+rather than `grab refused by the Mac: code=timeout`.
+
+**A second lane was broken the whole time.** `getMirrorFile` — every
+guest→host Mirror pull — had the same hole and no test of its success
+path at all. It is fixed and covered by the same pair.
+
 ## FIXED, NOT RE-MEASURED ON METAL: the grant that survives an epoch was unreachable at the exact moment it exists for (2026-08-15, `fix/continuity-grab-grant-window`)
 
 Round 4 was attended and got further than any round before it: the press
