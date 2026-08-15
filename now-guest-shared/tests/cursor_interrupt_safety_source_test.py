@@ -49,7 +49,15 @@ ppc_ready = function_body(
     "void now_continuity_cursor_begin_epoch(")
 notifier_accept = function_body(
     INTAKE, "static void accept_datagram(",
-    "static void drain_endpoint(")
+    "/* An asynchronous event is queued ahead of the data.")
+# The rest of what runs in OT notifier context. drain_endpoint gained a
+# kOTLookErr arm on 2026-08-15 (the retained endpoint went deaf after the host
+# process died), and clear_pending_event is that arm - both are reached from
+# the notifier and are held to the same bounded, allocation-free, task-time-free
+# discipline as the accept above.
+notifier_drain = function_body(
+    INTAKE, "static int clear_pending_event(",
+    "static pascal void continuity_notifier(")
 failures = []
 
 
@@ -141,6 +149,8 @@ for token in ("cell()", "now_peek_table", "now_log", "GetCurrentProcess",
               "GetProcessInformation", "FlushVol", "NewPtr", "malloc"):
     check(token not in notifier_accept,
           f"OT notifier again reaches task-time/allocating work: {token}")
+    check(token not in notifier_drain,
+          f"OT notifier drain again reaches task-time/allocating work: {token}")
 check('close_udp("application shutdown")' in INTAKE,
       "application shutdown no longer revokes and closes the UDP notifier")
 

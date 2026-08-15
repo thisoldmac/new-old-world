@@ -418,6 +418,10 @@ if "kOTNoDataErr" not in drain:
     failures.append(
         "the drain no longer distinguishes an empty endpoint from an error, "
         "so it cannot know it released Open Transport's T_DATA latch")
+elif "if (err == kOTNoDataErr)\n            return 1;" not in drain:
+    failures.append(
+        "an empty endpoint is no longer the drain's one success, so every "
+        "quiet pass reads as work still owed and nothing ever settles")
 if "kOTLookErr" not in drain or "clear_pending_event()" not in drain:
     failures.append(
         "the drain again strands datagrams behind a pending asynchronous "
