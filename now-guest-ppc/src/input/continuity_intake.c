@@ -512,13 +512,23 @@ static void check_endpoint_deaf(void)
             (unsigned)port);
     now_log_flush();
     close_udp("endpoint deaf");
-    if (open_udp(port))
+    if (open_udp(port)) {
         now_log(kLogWarn, "mirror",
                 "UDP endpoint rebuilt after deafness: requested %u bound %u "
                 "(rebuilds=%lu)",
                 (unsigned)gRequestedPort, (unsigned)gBoundPort,
                 (unsigned long)gRebuilds);
-    else
+        /* XTI may bind somewhere else, and the host was told the old port
+           in its arm reply - so a rebuild onto a different port trades a
+           deaf endpoint for a listening one nobody is talking to. Same
+           silence, new cause, which is exactly the confusion the bind
+           check in open_udp was written to prevent. Say so. */
+        if (gBoundPort != port)
+            now_log(kLogError, "mirror",
+                    "UDP rebuild bound %u, not the %u the host was told; "
+                    "this epoch cannot hear until it re-arms",
+                    (unsigned)gBoundPort, (unsigned)port);
+    } else
         now_log(kLogError, "mirror",
                 "UDP endpoint rebuild failed on port %u; Continuity has no "
                 "transport until the next arm",

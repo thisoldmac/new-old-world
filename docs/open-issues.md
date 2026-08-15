@@ -7,6 +7,68 @@ search:
 
 # Open issues
 
+## REPRODUCED IN THE EMULATOR AND FIXED, NOT METAL-VERIFIED: a retained UDP endpoint goes permanently deaf, and every status still says "armed" (2026-08-15, `fix/continuity-udp-endpoint-wedge`)
+
+The host application was restarted at 12:15 on 2026-08-15 while the guest
+stayed up on the PowerBook 1400c. From then on Continuity could not cross.
+The host armed each epoch over TCP, opened its UDP lane, sent 107 positions
+and read `validAcks=0` — on every epoch, across five arms — while the
+resident's `accepted` counter stayed frozen at 4563. Restarting the GUEST
+application cured it at once.
+
+**The mechanism, and it is not what the metal timing suggests.** Open
+Transport's `T_DATA` is edge-triggered: one is delivered when data becomes
+readable, and no further one arrives until the client has read the endpoint
+down to `kOTNoDataErr`. Any notifier path that returns with data still
+queued therefore silences the endpoint permanently. `continuity_intake.c`
+had two: its bounded drain cap, and `kOTLookErr` — which `OTRcvUData`
+returns while an asynchronous event is queued ahead of the data, and which
+the old code could not tell from "nothing to read" because it tested only
+`err != noErr`. A dying host draws an ICMP port-unreachable for the guest's
+own ACK, which is what queues the `T_UDERR` behind which everything else
+then waits.
+
+**Reproduced, and the reproduction did not need the host to die.** On the
+pre-fix build (`79468368`), on a mac99 clone: four slow positions were
+acked 4/4, a burst of 24 was acked once, and every position after it —
+including one sent six seconds later — was never acked. A completely new
+host process on a new TCP connection then armed a new epoch successfully
+and got 0 of 4 acked. That is the PowerBook's signature exactly: arms
+succeed, both halves read "armed", the counter never moves, and only an
+application restart clears it.
+
+**Not reproduced: the ICMP route.** The host-death run was exercised on the
+fixed build and crossed cleanly, but its `uderr-cleared=0` says QEMU's
+user-mode networking never delivered the port-unreachable into the guest.
+So this emulator cannot test the `T_UDERR` arm of the drain at all. That
+arm is reasoned from Open Transport's documented behaviour and from the
+metal log line `disconnect reset requested; UDP endpoint retained`, and it
+is the part of this fix that is **Tested only**.
+
+**What was done.** Drain to `kOTNoDataErr` and report whether you got
+there; identify and consume what queues ahead of the data; poll from task
+time on every ordinary and nested pump, so the notifier is an optimisation
+rather than the contract; quiesce the retained endpoint at disconnect and
+again at arm; and, as a last resort, rebuild the endpoint once per epoch
+when one that HAS delivered has heard nothing for five seconds. The
+retention rule is unchanged and deliberately so — the churn that took OT
+down twice was a close/reopen at every user toggle, and
+`now_continuity_deaf_verdict()` refuses on every shape but that one.
+
+**What a reader looks for on metal.** The recovery is loud on both edges:
+
+    mirror ? UDP endpoint deaf: epoch=4 armed 301 ticks with 0 datagrams
+             after 1 on this endpoint; ... rebuilding port 14785 once
+    mirror ? UDP endpoint rebuilt after deafness: requested 14785 bound 14785
+
+and the per-report line `UDP endpoint uderr-cleared=… look-other=…
+rebuilds=… owed=… delivered=…`, which leaves debug tier the moment any of
+them is non-zero. Both were watched firing in the emulator.
+
+**Still unverified.** Nothing here has run on the PowerBook. The
+port-mismatch error line (a rebuild that binds somewhere else) is
+**Builds** only — no emulator run can force XTI to bind elsewhere.
+
 ## SHIPPED: the guest's log ring is retrievable over the wire, and what that leaves unverified (2026-08-15, `feat/guest-log-retrieval`)
 
 Diagnosing a guest defect used to mean saving the Logs page to a file on
