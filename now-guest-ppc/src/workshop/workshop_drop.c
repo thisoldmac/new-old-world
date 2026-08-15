@@ -148,14 +148,20 @@ void now_drop_idle(void)
         snprintf(g_note, sizeof g_note, "%.110s", why);
         return;
     }
-    /* HANDED OVER, so this line stops talking. Once the wire has the
-       file, the Files page's own status - which the wire narrates
-       through conn_set_file_note - is a better sentence than anything
-       this queue could write, and a "Sending X" left standing here would
-       cover it for the whole transfer and stay after it finished.
-       What remains is only what the page cannot know: how many are
-       still behind this one, and now_drop_status says that. */
-    g_note[0] = '\0';
+    /* HANDED OVER, AND DELIBERATELY SILENT. A success writes nothing:
+       once the wire has the file, the Files page's own status - which
+       the wire narrates through conn_set_file_note - is a better
+       sentence than anything this queue could write, and a "Sending X"
+       left standing here would cover it for the whole transfer and stay
+       after it finished. What remains is what the page cannot know: how
+       many are still behind this one, and now_drop_status says that.
+     *
+       It does not CLEAR the note either, which is the case worth
+       spelling out: drop three files where one is a folder, and the
+       refusal must outlive the two sends that follow it. Clearing here
+       would erase it one event-loop pass later and leave a person with
+       one item silently missing - the exact failure this file exists to
+       prevent. Only a fresh drop or a page switch retires it. */
 }
 
 /* Precedence, and it is deliberately narrow. A refusal or a wait is
