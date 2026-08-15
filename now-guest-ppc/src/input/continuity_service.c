@@ -464,6 +464,37 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
                     || event_down != cell->event_result_down)) {
             NowPeekU32 manager_begin;
             NowPeekU32 manager_end;
+            NowContinuityCursorExposure exposure;
+            int barrier;
+
+            /* THE EDGE WAITS FOR ITS OWN POSITION. A round applies the
+               position request above and then acts on it here, and until
+               2026-08-15 those were adjacent instructions - so a release
+               could be dispatched against the point the guest still
+               believed in rather than the one just requested. The host had
+               already done its half (settle to the press origin in its own
+               packet, release in the next); the wire is a latest-state
+               mailbox and both packets carried the SAME point, so nothing
+               about packet ordering was ever the missing guarantee. This
+               is. See now_continuity_button_barrier. */
+            barrier = now_continuity_cursor_await_exposure(&exposure);
+            /* One FILE-logged line per edge, naming applied against exposed:
+               a metal round can then read whether the barrier held, how
+               long, and whether it had to expire - which "the icon dropped
+               in the wrong place" cannot distinguish on its own. */
+            now_log(barrier == kNowContinuityBarrierExpired
+                        ? kLogWarn : kLogInfo,
+                    "mirror",
+                    "button edge gen=%lu down=%lu applied=%ld,%ld "
+                    "exposed=%ld,%ld waited=%lu %s",
+                    (unsigned long)event_generation,
+                    (unsigned long)event_down,
+                    exposure.request_h, exposure.request_v,
+                    exposure.observed_h, exposure.observed_v,
+                    exposure.waited_ticks,
+                    barrier == kNowContinuityBarrierExpired ? "expired"
+                        : (exposure.waited_ticks != 0 ? "settled"
+                                                      : "exposed"));
 
             /* The manager call runs BETWEEN resident invokes, where status_seq
                is even, so the resident's mid-invoke guard cannot see it at all.

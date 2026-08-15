@@ -84,6 +84,47 @@ int main(void)
     /* First event of a chain (no previous): no rewrite. */
     CHECK(now_continuity_when_rewrite(0, 1041, 60, 4) == 0);
 
+    /* The exposure barrier. The case it exists for is the 2026-08-15 metal
+       drop: the release rode a settled point of 274,311 while the guest's
+       mouse global still read the crossing point 0,362. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 0, 4)
+          == kNowContinuityBarrierWait);
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 3, 4)
+          == kNowContinuityBarrierWait);
+    /* Deadline reached: apply and say so, because an edge held forever is a
+       stuck drag - strictly worse than an edge at a stale point. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 4, 4)
+          == kNowContinuityBarrierExpired);
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 99, 4)
+          == kNowContinuityBarrierExpired);
+    /* Exposed: the global caught up, whatever the clock says. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 274, 311, 0, 4)
+          == kNowContinuityBarrierExposed);
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 274, 311, 99, 4)
+          == kNowContinuityBarrierExposed);
+    /* One axis is enough to be behind. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 274, 362, 0, 4)
+          == kNowContinuityBarrierWait);
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 311, 0, 4)
+          == kNowContinuityBarrierWait);
+    /* Negative coordinates compare as coordinates, not as magnitudes. */
+    CHECK(now_continuity_button_barrier(1, 1, -8, -8, -8, -8, 0, 4)
+          == kNowContinuityBarrierExposed);
+    CHECK(now_continuity_button_barrier(1, 1, -8, -8, 8, 8, 0, 4)
+          == kNowContinuityBarrierWait);
+    /* Nothing to wait FOR is not something to wait for: an unaskable
+       instrument must never become a hang. */
+    CHECK(now_continuity_button_barrier(0, 1, 274, 311, 0, 362, 0, 4)
+          == kNowContinuityBarrierExposed);
+    CHECK(now_continuity_button_barrier(1, 0, 274, 311, 0, 362, 0, 4)
+          == kNowContinuityBarrierExposed);
+    CHECK(now_continuity_button_barrier(0, 0, 274, 311, 0, 362, 0, 4)
+          == kNowContinuityBarrierExposed);
+    /* A zero deadline is a barrier that is switched off, and says so with
+       `expired` rather than pretending the point was exposed. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 0, 0)
+          == kNowContinuityBarrierExpired);
+
     CHECK(now_continuity_exit_due(
         100, 90, 90, 1, 1, 11, 20, 0, 10, 20, 0)
         == kNowPeekContinuityExitGuestInput);

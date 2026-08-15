@@ -101,6 +101,48 @@ NowPeekU32 now_continuity_release_due(NowPeekU32 applied_generation,
     return 0;
 }
 
+/* MAY THIS BUTTON EDGE BE APPLIED YET?
+ *
+ * APPLIED is not EXPOSED. The application moves the pointer through the
+ * Cursor Device Manager, whose record is upstream of the mouse global that
+ * every guest tracking loop actually samples; the manager call returns
+ * before that propagation happens (continuity_cursor.c already counts the
+ * lag as after_lag_pending/caught_up). A button transition applied inside
+ * that window is dispatched against the point the guest still believes in,
+ * not the one this side just requested.
+ *
+ * It cost a real file. On 2026-08-15 the host did the designed thing for a
+ * guest->host drag: settle the held pointer back to the press origin in its
+ * own packet, THEN release in the next one. The guest applied both in one
+ * service round, the release beat the propagation, and the Finder completed
+ * the move at the screen edge where the pointer had crossed rather than at
+ * the origin - cosmetic on the desktop, a real relocation out of a window.
+ * The host's ordering was never the missing guarantee; the wire is a
+ * latest-state mailbox and both packets carried the SAME settled point.
+ * What was missing was any barrier between applying that point and acting
+ * on it.
+ *
+ * Answers Exposed (apply now), Wait (poll again), or Expired (apply and say
+ * so). Expiry is deliberate: an edge held forever is a stuck drag, which is
+ * strictly worse than an edge at a stale point, so the deadline resolves the
+ * barrier rather than the barrier resolving the deadline. Unaskable is
+ * Exposed - a caller that cannot read the request or the pointer has nothing
+ * to wait FOR, and must not turn a missing instrument into a hang. */
+int now_continuity_button_barrier(int have_request, int have_observed,
+                                  NowPeekI32 request_h, NowPeekI32 request_v,
+                                  NowPeekI32 observed_h, NowPeekI32 observed_v,
+                                  NowPeekU32 waited_ticks,
+                                  NowPeekU32 deadline_ticks)
+{
+    if (!have_request || !have_observed)
+        return kNowContinuityBarrierExposed;
+    if (observed_h == request_h && observed_v == request_v)
+        return kNowContinuityBarrierExposed;
+    if (waited_ticks >= deadline_ticks)
+        return kNowContinuityBarrierExpired;
+    return kNowContinuityBarrierWait;
+}
+
 NowPeekU32 now_continuity_exit_due(
     NowPeekU32 ticks, NowPeekU32 last_arrival, NowPeekU32 lease,
     int have_physical, int expected_valid,

@@ -787,6 +787,14 @@ int now_continuity_disarm(long id, unsigned long epoch)
                 epoch, cursor.after_request_mismatches,
                 cursor.after_lag_caught_up, cursor.after_lag_persisted,
                 cursor.after_lag_pending);
+        /* The barrier's own tally. `waits=0` over a session that dragged
+           does not mean the race is gone - it means this epoch never caught
+           the manager behind, which is exactly the reading an emulator is
+           expected to produce and metal is not. */
+        now_log(kLogInfo, "mirror",
+                "CDM exposure epoch=%lu waits=%lu expired=%lu wait-ticks=%lu",
+                epoch, cursor.exposure_waits, cursor.exposure_expired,
+                cursor.exposure_wait_ticks);
         now_log(kLogInfo, "mirror",
                 "CDM points epoch=%lu press=%ld,%ld request=%ld,%ld valid=%d/%d",
                 epoch, cursor.press_h, cursor.press_v,

@@ -552,6 +552,56 @@ check("now_continuity_sequence_newer(" in
           result_up[:result_up.index("applied_button_generation = generation")],
       "a settled up can again regress an interrupt-delivered press")
 
+# THE EXPOSURE BARRIER. Applying a position is not exposing it: the Cursor
+# Device record is upstream of the mouse global that every guest tracking
+# loop samples, and until 2026-08-15 a round applied the position request
+# and then acted on it in adjacent instructions. On metal the release beat
+# the propagation and the Finder completed a move at the screen edge instead
+# of the settled press origin - a real relocation out of a Finder window.
+# The host's packet order was never the missing guarantee (the wire is a
+# latest-state mailbox and both packets carried the same point); the barrier
+# between applying a point and acting on it was.
+AWAIT = "now_continuity_cursor_await_exposure(&exposure)"
+check(AWAIT in invoke
+      and invoke.index(AWAIT) < invoke.index("now_continuity_cursor_button(")
+      and invoke.index(AWAIT) < invoke.index(BUSY_SET),
+      "a button edge is applied without waiting for its own position to be "
+      "exposed, or waits while holding the manager-busy flag up")
+# One FILE-logged line per edge naming applied against exposed. Without it a
+# metal round cannot tell a barrier that held from a barrier that never had
+# anything to hold, and "the icon landed in the wrong place" says neither.
+edge_log = invoke[invoke.index(AWAIT):invoke.index(BUSY_SET)]
+check("now_log(" in edge_log
+      and "now_log_memory" not in edge_log
+      and "applied=%ld,%ld" in edge_log
+      and "exposed=%ld,%ld" in edge_log
+      and "waited=%lu" in edge_log,
+      "the per-edge exposure line is gone, went to the never-uploaded memory "
+      "log, or stopped naming applied against exposed")
+check("kNowContinuityBarrierExpired" in edge_log,
+      "an edge applied on the deadline is no longer distinguishable from one "
+      "whose position was actually exposed")
+
+# The wait itself: Carbon's accessor, the guarded pure decision, and a spin
+# rather than a yield. The caller that needs this most is a release inside
+# the Finder's drag loop, which is exactly where further task time may never
+# come back - yielding there trades a wrong drop point for a stuck drag.
+await_body = body(PPC_CURSOR, "int now_continuity_cursor_await_exposure(",
+                  "void now_continuity_cursor_diagnostics(")
+check("GetGlobalMouse(&global)" in await_body
+      and "LMGetMouseLocation" not in await_body,
+      "the exposure test no longer asks the global the guest's tracking "
+      "loops sample, through the accessor Carbon promises")
+check("now_continuity_button_barrier(" in await_body,
+      "the exposure wait no longer uses the guarded pure barrier")
+check("kNowContinuityExposureDeadlineTicks" in await_body,
+      "the exposure spin lost its deadline and can now hold an edge forever")
+for yielder in ("WaitNextEvent", "SystemTask", "now_continuity_pump",
+                "now_wire_pump"):
+    check(yielder not in await_body,
+          "the exposure spin yields (%s), so a starved drag loop can strand "
+          "a held button" % yielder)
+
 if failures:
     for failure in failures:
         print("FAIL:", failure)
