@@ -538,9 +538,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                    asks nothing of any guest, and a line about a call that
                    was refused BECAUSE no machine answered is exactly the
                    line the person needs. */
+                /* And `hostLogTail` for the projects reason, one step
+                   further: it reads this Mac's own log ring and reaches no
+                   guest, so refusing it for naming a machine would deny the
+                   record that says WHY that machine could not be
+                   addressed. */
                 if request.operation != .sessionHealth,
                    request.operation != .audit,
                    request.operation != .projects,
+                   request.operation != .hostLogTail,
                    let refusal = agentIntegration.addressingRefusal(
                        request.guestSelector) {
                     return .notAddressed(refusal)
@@ -879,6 +885,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     return .census(
                         await agentIntegration.census(
                             probe: probe, cursor: request.censusCursor))
+                case .hostLogTail:
+                    /* The host sibling of the branch above, and the one
+                       read in this switch that asks no Macintosh anything:
+                       it renders THIS process's own log ring. The codec has
+                       already bounded both optional fields, and a request
+                       that named neither is complete. The hop to the main
+                       actor is here because that is where the ring lives. */
+                    return .hostLogTail(.completed(
+                        await MainActor.run {
+                            HostLogTailReader.read(
+                                lines: request.hostLogLineCount,
+                                area: request.hostLogArea)
+                        }))
                 case .machineFacts:
                     /* P1 #10. Takes nothing, by the contract: `gestalt` has
                        `args: {}` and a typed call with no line returns every

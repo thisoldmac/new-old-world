@@ -283,6 +283,16 @@ struct HostAgentIntegrationClient: AgentIntegrationClient {
         return await adapter.driveMirror(request)
     }
 
+    /// This Mac's own log. No addressing refusal in front of it, unlike
+    /// every guest lane above: there is no guest in this answer, and a
+    /// selector was already refused at the face for a row that takes none.
+    func hostLogTail(lines: Int?, area: String?) async
+        -> AgentIntegrationHostLogTailResult {
+        .completed(await MainActor.run {
+            HostLogTailReader.read(lines: lines, area: area)
+        })
+    }
+
     func mirrorOpen() async -> AgentIntegrationMirrorOpenResult {
         if let refusal = await refusal() {
             return .init(unavailable: refusal)

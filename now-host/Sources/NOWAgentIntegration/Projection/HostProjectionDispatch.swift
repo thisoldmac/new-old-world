@@ -122,7 +122,9 @@ public struct HostProjectionDispatch: Sendable {
         invoking projection: any HostProjection.Type,
         through client: AgentIntegrationClient
     ) async -> HostProjectionConsentDenial? {
-        if case .hostProjects = projection.authorityDomain {
+        guard projection.authorityDomain.isGuestConsentRelevant else {
+            /* Host-owned authority: project storage, or this Mac's own
+               application state. A guest's answer is about the guest. */
             return nil
         }
         guard case .available(let health) = await client.sessionHealth(),

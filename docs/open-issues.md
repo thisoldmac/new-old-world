@@ -68,6 +68,43 @@ The other 17 tools were clean, and no `inputSchema` was wrong at the
 root — checked against the live server before the change and against the
 rendered payload after.
 
+## TESTED, NOT EXERCISED THROUGH A LIVE MCP CLIENT: an agent can read this side's log (2026-08-15, `feat/mcp-host-log-tail`)
+
+`now_host_log_tail` is the host sibling of `now_guest_log_tail`. It serves
+`HostLog`'s in-memory ring — not the optional per-launch file — with an
+optional area filter and a count bounded by the ring's own capacity, and a
+cut answer says so in `shown`.
+
+**Why it exists.** On 2026-08-14 a Continuity Accessibility-permission defect
+was diagnosable only because an agent went looking for
+`~/Library/Logs/now-logs/*.log` on the filesystem by hand, and only because
+the disk switch happened to be on. With it off the evidence is in a ring the
+Logs page renders and nothing else could reach.
+
+What is proven and what is not:
+
+- **Tested.** 22 behaviour tests against the real `HostLog` ring, plus eleven
+  mutations each watched failing the test that names it — including one that
+  SURVIVED first: the boolean-count guard was asserted with a Swift `Bool`,
+  which never casts to `Int` anyway, so the test passed with the guard
+  deleted. It now goes through `JSONSerialization`, which is what the MCP
+  face actually hands a projection.
+- **Not exercised end to end.** No `MCPClientConformance` run has called it
+  through a live socket; its recipe is in the book and the totality gate
+  demands one, but that suite needs a running host. So the projection, the
+  codec and the reader are tested, and the `App.swift` branch that serves
+  `host_log_tail` over the socket — including its exemption from addressing —
+  is covered only by inspection.
+- **Untested by design, worth knowing.** The row reports
+  `persistsToDisk` from `HostLog`'s ACTUAL state, and `LogsModel` defaults
+  that switch to ON rather than off. So most launches do have a file; the row
+  does not depend on it either way.
+- **One shared type gained a case.** `HostProjectionAuthorityDomain` now has
+  `hostApplication`, and the dispatch's consent exemption reads a derived
+  `isGuestConsentRelevant` rather than matching `hostProjects` by hand. Any
+  future row that reads this Mac's own state gets the exemption by declaring
+  the domain; nothing else moved.
+
 ## TWO METAL CAUSES FIXED, NEITHER RE-MEASURED ON METAL: the guest→host drag's anchor window and its consent lifetime (2026-08-14, `fix/continuity-drag-round3`)
 
 Round 2 of the guest→host cross-edge drag was attended and produced three

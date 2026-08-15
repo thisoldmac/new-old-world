@@ -430,6 +430,23 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
+    /// This Mac's own log, forwarded rather than read locally — and that is
+    /// the whole point of the lane. The ring lives in the APP process; this
+    /// client runs in the MCP server. Reading `HostLog.shared` here would
+    /// answer out of a near-empty ring nobody has ever seen, while claiming
+    /// to be the log on the Logs page.
+    func hostLogTail(lines: Int?, area: String?) async
+        -> AgentIntegrationHostLogTailResult {
+        guard let client else {
+            return .unavailable(unavailable(for: startupError))
+        }
+        do {
+            return try await client.hostLogTail(lines: lines, area: area)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func catalogSearch() async -> AgentIntegrationGuestRowReportResult {
         guard let client else {
             return .unavailable(unavailable(for: startupError))

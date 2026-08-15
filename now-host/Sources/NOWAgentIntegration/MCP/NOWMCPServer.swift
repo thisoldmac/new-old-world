@@ -331,7 +331,7 @@ public actor NOWMCPServer {
             guard projection.acceptsGuestAddressing else {
                 return errorResponse(
                     id: id, code: -32602,
-                    message: "\(name) operates on host-owned project storage and does not accept guest addressing")
+                    message: "\(name) \(projection.authorityDomain.addressingRefusalSubject) and does not accept guest addressing")
             }
             guard let text = raw as? String, !text.isEmpty,
                   text.count <= 128 else {

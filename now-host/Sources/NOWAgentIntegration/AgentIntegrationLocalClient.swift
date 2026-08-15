@@ -298,6 +298,11 @@ public struct AgentIntegrationLocalClient: Sendable {
                bare operation IS a complete request: absent means the
                verb's own default of 20 lines. */
             return try await send(.guestLogTail())
+        case .hostLogTail:
+            /* Beside the guest tail above: every field optional, so a bare
+               operation IS a complete request — the row's default count,
+               every area. */
+            return try await send(.hostLogTail())
         case .revealItem:
             preconditionFailure("A reveal requires a target")
         case .diagnostics:
@@ -471,6 +476,19 @@ public struct AgentIntegrationLocalClient: Sendable {
         guard let result = response.guestLogTailResult else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Local response had no guest log result")
+        }
+        return result
+    }
+
+    /// This Mac's own log. Same lane, and deliberately so: the ring lives
+    /// in the app process, so a caller on this socket is the only one who can
+    /// read the log a person actually sees.
+    public func hostLogTail(lines: Int?, area: String?) async throws
+        -> AgentIntegrationHostLogTailResult {
+        let response = try await send(.hostLogTail(lines: lines, area: area))
+        guard let result = response.hostLogTailResult else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response had no host log result")
         }
         return result
     }
@@ -730,6 +748,13 @@ public struct AgentIntegrationLocalClient: Sendable {
                    and back inside its own watchdog: a `file.result` is one
                    reply, and a front is a couple of seconds of the guest
                    yielding. */
+                timeout = readOnlyReceiveTimeout
+            case .hostLogTail:
+                /* The read-only window, and for `mirrorOpen`'s reason rather
+                   than the branch above's: this one reaches NO guest. It
+                   reads memory in the app process on this Mac and answers
+                   immediately, so a longer bound could only hide a host that
+                   had stopped answering its own socket. */
                 timeout = readOnlyReceiveTimeout
             case .mirrorOpen:
                 /* The read-only window, but for the opposite reason to
