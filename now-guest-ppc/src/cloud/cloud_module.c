@@ -1253,13 +1253,29 @@ static void cloud_layout(const Rect *body)
     apply_layout();
 }
 
-static void draw_at(short x, short y, const char *s)
+/* This page positions by baseline; the describing face derives the rect
+   from the baseline and a right edge. A NULL writer draws as before. */
+static void emit_at(const WorkshopSceneWriter *writer, short x, short y,
+                    short right, const char *s)
 {
     Str255 t;
 
+    if (writer != NULL) {
+        Rect where;
+
+        SetRect(&where, x, (short)(y - 11), right, (short)(y + 3));
+        workshop_scene_add(writer, kWorkshopSceneStaticText, s, &where,
+                           true);
+        return;
+    }
     CopyCStringToPascal(s, t);
     MoveTo(x, y);
     DrawString(t);
+}
+
+static void draw_at(short x, short y, const char *s)
+{
+    emit_at(NULL, x, y, 0, s);
 }
 
 /* The search field: software_module.c's hand-drawn shape exactly — a
@@ -1267,12 +1283,22 @@ static void draw_at(short x, short y, const char *s)
    the placeholder word when it does not and is empty. Fore-painted
    only, never a background change (RGBBackColor is port state on the
    one shared Workshop window). */
-static void draw_search(void)
+static void emit_search(const WorkshopSceneWriter *writer)
 {
     Rect f = g_r.toolbar_search;
     RGBColor black = { 0, 0, 0 };
     RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
 
+    if (writer != NULL) {
+        Rect inner = f;
+
+        InsetRect(&inner, 3, 1);
+        workshop_scene_add(writer, kWorkshopScenePanel, "", &f, true);
+        workshop_scene_add(writer, kWorkshopSceneStaticText,
+                           g_search[0] != '\0' ? g_search : "search",
+                           &inner, true);
+        return;
+    }
     RGBForeColor(&black);
     FrameRect(&f);
     if (g_search_focus) {
@@ -1363,10 +1389,10 @@ static void cloud_draw(void)
         return;
     }
     /* The status line. */
-    draw_at((short)(g_r.status.left + 2),
-            (short)(g_r.status.bottom - 3), g_status);
+    emit_at(NULL, (short)(g_r.status.left + 2),
+            (short)(g_r.status.bottom - 3), 0, g_status);
 
-    draw_search();
+    emit_search(NULL);
 
     /* The card pane: whichever view is active draws it. */
     if (g_view != NULL && g_view->draw != NULL) {
@@ -1671,6 +1697,25 @@ static void cloud_status_text(char *out, long cap)
     }
 }
 
+/* What this FILE draws: the status line and the hand-drawn search field.
+   The listing is a DataBrowser and the toolbar is controls, so both
+   already reach the host through control_kind.
+
+   What is NOT described yet, said plainly: the card pane's interior. It
+   is drawn by whichever CloudViewOps is active (drive, photos, contacts,
+   list), those live in sibling files, and CloudViewOps has no describe
+   entry. The pane's RECT is reported so an observer knows the region
+   exists and is not empty chrome; its contents are a follow-up that adds
+   a describe op to that vtable. */
+static void cloud_describe_scene(const WorkshopSceneWriter *writer)
+{
+    emit_at(writer, (short)(g_r.status.left + 2),
+            (short)(g_r.status.bottom - 3), g_r.status.right, g_status);
+    emit_search(writer);
+    workshop_scene_add(writer, kWorkshopScenePanel, "", &g_r.detail_text,
+                       true);
+}
+
 static const WorkshopModuleOps k_ops = {
     cloud_create,
     cloud_dispose,
@@ -1682,7 +1727,7 @@ static const WorkshopModuleOps k_ops = {
     cloud_activate,
     cloud_idle,
     cloud_status_text,
-    NULL
+    cloud_describe_scene
 };
 
 const WorkshopModuleOps *cloud_module_ops(void)
