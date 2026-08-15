@@ -596,6 +596,13 @@ check("GetGlobalMouse(&global)" in await_body
       and "LMGetMouseLocation" not in await_body,
       "the exposure test no longer asks the global the guest's tracking "
       "loops sample, through the accessor Carbon promises")
+# Both stages, not just the nearer one. A QEMU round measured the record
+# lagging five times while the global was never behind at an edge, so a
+# barrier that asked the global alone was silent through all five.
+check("device_point(&record)" in await_body
+      and "state.observed_is_record = 1;" in await_body,
+      "the exposure test stopped asking the device record, which is upstream "
+      "of the global and can be behind while the global reads settled")
 check("now_continuity_button_barrier(" in await_body,
       "the exposure wait no longer uses the guarded pure barrier")
 check("kNowContinuityExposureDeadlineTicks" in await_body,

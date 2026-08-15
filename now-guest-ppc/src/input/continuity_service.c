@@ -486,11 +486,12 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
                         ? kLogWarn : kLogInfo,
                     "mirror",
                     "button edge gen=%lu down=%lu applied=%ld,%ld "
-                    "exposed=%ld,%ld waited=%lu %s",
+                    "exposed=%ld,%ld via=%s waited=%lu %s",
                     (unsigned long)event_generation,
                     (unsigned long)event_down,
                     exposure.request_h, exposure.request_v,
                     exposure.observed_h, exposure.observed_v,
+                    exposure.observed_is_record ? "record" : "global",
                     exposure.waited_ticks,
                     barrier == kNowContinuityBarrierExpired ? "expired"
                         : (exposure.waited_ticks != 0 ? "settled"

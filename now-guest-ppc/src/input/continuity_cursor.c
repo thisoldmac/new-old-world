@@ -242,6 +242,16 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
  * drag loop above all - samples the GLOBAL. So the question a button edge
  * must ask is not "did my move succeed" but "has it been exposed".
  *
+ * TWO STAGES, AND BOTH MUST HAVE IT. The manager takes the point into the
+ * device record and the record propagates to the global; the record is
+ * upstream, so it can be behind while the global is not yet even asked. A
+ * QEMU run on 2026-08-15 measured exactly that split - `CDM settle
+ * immediate-lag=5 caught-up=4` against `CDM exposure waits=0`, so the
+ * record lagged five times while the global was never behind at an edge.
+ * A barrier that asked only the global would have been silent through all
+ * five. The reported point is the FURTHER-BACK stage, because naming the
+ * nearer one hides the other.
+ *
  * GetGlobalMouse and not LMGetMouseLocation, for the reason input_cmds.c
  * states at `mouseloc`: this guest is Carbon and LowMem.h names this
  * accessor as the Carbon usage. Same number; only one of them is promised
@@ -258,6 +268,7 @@ int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out)
     NowContinuityCursorExposure state;
     unsigned long start;
     Point global;
+    Point record;
     int verdict;
 
     memset(&state, 0, sizeof state);
@@ -270,6 +281,14 @@ int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out)
         state.observed_valid = 1;
         state.observed_h = global.h;
         state.observed_v = global.v;
+        state.observed_is_record = 0;
+        if (device_point(&record)
+                && (record.h != (short)state.request_h
+                    || record.v != (short)state.request_v)) {
+            state.observed_h = record.h;
+            state.observed_v = record.v;
+            state.observed_is_record = 1;
+        }
         state.waited_ticks = (unsigned long)(TickCount() - start);
         verdict = now_continuity_button_barrier(
             state.request_valid, state.observed_valid,

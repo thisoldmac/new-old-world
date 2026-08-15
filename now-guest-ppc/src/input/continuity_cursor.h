@@ -39,6 +39,10 @@ typedef struct {
     int verdict;                  /* kNowContinuityBarrier* */
     int request_valid;
     int observed_valid;
+    /* Which of the two stages the reported point came from. The record is
+       upstream of the global, so a lag there is reported in preference:
+       naming the nearer stage would hide the further one. */
+    int observed_is_record;
 } NowContinuityCursorExposure;
 
 int now_continuity_cursor_ready(void);
