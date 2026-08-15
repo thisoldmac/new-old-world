@@ -100,8 +100,16 @@ enum ClassicName {
         let unencodable = nfc.unicodeScalars.contains {
             String($0).data(using: .macOSRoman) == nil
         }
-        let tooLong = (nfc.data(using: .macOSRoman)?.count ?? Int.max)
-            > maxBytes
+        /* The length test cannot ask `nfc.data(using: .macOSRoman)` when
+           the string is unencodable — that returns nil for the WHOLE
+           string over one bad scalar, which would make every
+           transliterated name read as too-long too. Measured the way
+           `fingerprinted` actually substitutes instead: one byte per
+           scalar MacRoman cannot spell, its own encoded length otherwise. */
+        let projectedBytes = nfc.unicodeScalars.reduce(0) { total, scalar in
+            total + (String(scalar).data(using: .macOSRoman)?.count ?? 1)
+        }
+        let tooLong = projectedBytes > maxBytes
         switch (tooLong, unencodable) {
         case (true, true): return "both"
         case (false, true): return "transliterated"
