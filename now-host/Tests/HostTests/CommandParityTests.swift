@@ -246,6 +246,12 @@ final class CommandParityTests: XCTestCase {
         "trash": "file.* family from the host side, not an x-command",
         "untrash": "file.* family from the host side, not an x-command",
         "mkdir": "file.* family from the host side, not an x-command",
+        // Stopping a transfer, the same way and for the same reason: the
+        // host originates file.cancel itself, so it has nothing to type
+        // at this Mac. The console face exists because the person who
+        // most needs to stop a transfer is standing at a machine whose
+        // host is the thing that stopped answering.
+        "cancel": "file.cancel from the host side, not an x-command",
         // NOW-68K's own console face on the file.* family. The host does
         // not reach it as a command — it pushes a file and reads the
         // file.progress / file.done it gets back — so this is a

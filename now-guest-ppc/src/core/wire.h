@@ -341,6 +341,18 @@ Boolean now_wire_receive_active(long *received, long *expected,
    the seam that lets a page replace "Receiving..." with how it went. */
 long now_wire_receive_outcome(char *out, long cap);
 
+/* Stop the receive in flight, from this side — now_wire_get_cancel one
+   lane over: that one stops a pull we asked for, this one stops a push
+   the host offered. file.cancel to the other Mac, then the same
+   put_abort teardown an inbound file.cancel already runs, so the host
+   hears the receive end in its own vocabulary (file.done ok:false
+   "cancelled") rather than by the bytes stopping.
+
+   0 when a receive was stopped, -1 with a reason in `err` when nothing
+   was landing. The lane is one transfer wide, so it needs no id: there
+   is only ever one receive this can mean. */
+int now_wire_put_cancel(char *err, long cap);
+
 /* --- one item as pixels (cloud.preview) ---------------------------------
    The photo preview: the host decodes, resizes and dithers; this side
    receives raw indexed rows over the bulk lane (preview.begin / bulk /

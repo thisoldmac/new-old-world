@@ -175,7 +175,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `file.offer` / `file.begin` / `file.end` | ✅ | ✅ | receiving a push |
 | `file.accept` / `file.refuse` / `file.done` | ✅ | ✅ | the reply half, both directions |
 | `file.progress` | ✅ | ❌ | 68K SENDS it and handles none inbound |
-| `file.cancel` | ✅ | ✅ | either direction; 68K also has it as a `cancel` verb |
+| `file.cancel` | ✅ | ✅ | either direction, and both guests ORIGINATE it as well as answer it (PPC: `now_wire_get_cancel` for a pull, `now_wire_put_cancel` for a receive); both also have `cancel` as a console verb, on 68K's wire too |
 | `file.list` | ✅ | ✅ | browse; 68K also has it as an `ls` verb |
 | `file.listing` | ✅ | ❌ | the reply half. 68K SENDS it and handles none inbound — it browses no one |
 | `file.get` | ✅ | ❌ | host-initiated pull |
@@ -280,7 +280,7 @@ number here has been found wrong by re-deriving it.
 | `key` | post one keystroke, with no modifiers | ✅ | ❌ |
 | `net` | this Mac's link, address and network hardware | ✅ | ❌ |
 | `put` | send a file from the guest | console only | ✅ |
-| `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
+| `cancel` | stop the transfer in flight, either way | console only; the host originates `file.cancel` itself | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
 | `desktop` | what the desktop is actually drawn from — the Appearance Manager's theme collection, not the `ppat` resource nobody updates | ✅ | ❌ — declared asymmetry, see below |
 | `wirestat` | how long this Mac takes to NOTICE a request — **and the only verb in the registry that CHANGES the machine's scheduling**; a subsystem, expanded below | ✅ | ❌ |
@@ -453,10 +453,12 @@ produced the first live sighting of the sampler's own stated limit — a
 backgrounded and its event passes never saw the change. See
 [open-issues.md](open-issues.md).
 
-**PPC serves 46 of 49.** `put` is console-only there and `cancel` is
-not a verb at all, both deliberately: the host reaches those
-capabilities through the `file.*` families and that guest's own
-Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
+**PPC serves 46 of 49.** `put` and `cancel` are console-only there,
+both deliberately: the host reaches those capabilities through the
+`file.*` families it originates itself, so it has no verb to type —
+while the person at the machine reaches sending from the Files page and
+stopping from its own Workshop, over the same implementations the two
+console verbs call. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
 **NOW-68K serves 13 of 49** — `help`, `ls`, `sw`, `census`, `put`,
@@ -1361,7 +1363,7 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 6e0f74078ea8daca187982278795000bcb720af7
+sources-sha1: 06c5eff6ff7f424e0a19fd2c7b5a1e1ae119ebb1
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1540,4 +1542,6 @@ rederived: 2026-08-14T18:23:11-0400 e2c66126 sources, sources, sources, sources
 rederived: 2026-08-14T18:30:52-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:11-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:25-0400 b248c9a1 ppc-inbound-types 0->57
+rederived: 2026-08-14T20:15:52-0400 eb5bd419 sources
+rederived: 2026-08-14T20:24:55-0400 6d3d74d7 unchanged
 -->

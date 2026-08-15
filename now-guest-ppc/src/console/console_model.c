@@ -1582,6 +1582,36 @@ static void console_model_dispatch(const char *input)
         console_model_append("  offered; the File Sharing panel reports the rest");
         return;
     }
+    /* The other end of a transfer, in whichever direction it is going —
+       the same two implementations the Workshop's Cancel buttons call,
+       not a third. Takes no argument for NOW-68K's reason (run_cancel,
+       commands68.c): the wire's file.cancel names an id, and a person
+       has neither a way to know one nor a second transfer to confuse it
+       with. Console-only on this guest, like `put`: a host cancels
+       through file.cancel itself. */
+    if (strcmp(name, "cancel") == 0) {
+        char why[128];
+
+        if (now_wire_put_cancel(why, sizeof why) == 0) {
+            console_model_append("  stopped receiving");
+            return;
+        }
+        if (now_wire_get_cancel(why, sizeof why) == 0) {
+            console_model_append("  stopped the transfer we asked for");
+            return;
+        }
+        /* Said plainly rather than folded into "nothing to cancel": an
+           outbound send has no guest-originated stop yet, and reporting
+           a machine as quiet while a file is leaving it would be the
+           one answer here worse than a refusal. */
+        if (now_wire_send_state(NULL, NULL, NULL, 0) != kSendNothing) {
+            console_model_append(
+                "cancel: a file being sent cannot be stopped from here yet");
+            return;
+        }
+        console_model_append("cancel: nothing is being transferred");
+        return;
+    }
     /* `development` takes no line and uses the generic row renderer below.
        Name that registration here: the generic fallback also renders a real
        unknown-command, so merely reaching it is not console capability. */
