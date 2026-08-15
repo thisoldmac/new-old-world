@@ -6165,6 +6165,13 @@ static void serve_file_get(const char *request)
                  esc_type, esc_creator, stage.modified);
     }
     if (!send_control(json)) {
+        /* The one exit from this function that tells the host nothing: a
+           refusal is a message and so is a transfer, but a file.begin that
+           cannot be queued leaves the asker with only its watchdog. Say so
+           here, where the ring can be read afterwards. */
+        now_log(kLogWarn, "files",
+                "get #%ld: file.begin for %.31s could not be queued",
+                id, stage.name);
         now_files_stage_dispose(&stage);
         return;
     }
@@ -6278,12 +6285,23 @@ static void serve_continuity_grab(const char *request)
                  stage.total_bytes, stage.data_bytes, stage.rsrc_bytes,
                  esc_type, esc_creator, stage.modified);
     }
-    now_log(kLogInfo, "mirror", "grab granted #%ld epoch=%lu gen=%lu %.31s",
-            id, epoch, generation, stage.name);
+    /* THE DECISION IS NOT THE ANSWER, so this line no longer claims to be
+       one. It said "granted" before anything was queued and stayed silent
+       when the send failed, which is how a grant whose file.begin never
+       left could read as a working guest for a whole metal round. The
+       transfer number is here so it can be followed to the file.end. */
     if (!send_control(json)) {
+        now_log(kLogWarn, "mirror",
+                "grab granted #%ld epoch=%lu gen=%lu %.31s but file.begin "
+                "could not be queued",
+                id, epoch, generation, stage.name);
         now_files_stage_dispose(&stage);
         return;
     }
+    now_log(kLogInfo, "mirror",
+            "grab granted #%ld epoch=%lu gen=%lu %.31s: file.begin sent "
+            "xfer=%u",
+            id, epoch, generation, stage.name, (unsigned)xfer);
     if (!arm_file_transfer(id, xfer, &stage, chunk, pace_ms)) {
         now_files_stage_dispose(&stage);
         file_start_failed(id, xfer);
