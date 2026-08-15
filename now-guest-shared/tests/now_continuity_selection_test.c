@@ -279,6 +279,53 @@ int main(void)
               == kNowGrabGrantExpired);
     }
 
+    /* --- the last check, and the wrong-file case itself -------------------
+
+       METAL, 2026-08-15 17:19. `hello.txt` was the published generation,
+       Michelle pressed on `main.c` and dragged it across the edge, and the
+       grab named the generation it had every right to name. Every check
+       above says yes to that grab. This is the one that says no.
+
+       Watched failing against today's code: with confirm_serve_against_finder
+       absent from now_continuity_selection_grab, the guest hands out
+       `hello.txt` and the person watches the wrong file arrive. */
+    {
+        NowContinuityStubItem serving = item_named("hello.txt", 42, 1000, 0);
+        NowContinuityStubItem dragged = item_named("main.c", 42, 3000, 0);
+        NowContinuityStubItem touched = item_named("hello.txt", 42, 9999, 0);
+
+        /* The Mac still holds what the grab names: serve it. */
+        CHECK(now_continuity_grab_confirm(&serving, 1, &serving)
+              == kNowGrabOK);
+        /* Identity, not freshness. A file saved between the publish and the
+           grab is still the file being dragged, and refusing it here would
+           be this guard inventing a defect of its own. */
+        CHECK(now_continuity_stub_same(&serving, &touched) == 0);
+        CHECK(now_continuity_grab_confirm(&serving, 1, &touched)
+              == kNowGrabOK);
+        /* THE WRONG FILE. */
+        CHECK(now_continuity_grab_confirm(&serving, 1, &dragged)
+              == kNowGrabStaleSelection);
+        /* Same name, different folder — the identity triple, not the name. */
+        CHECK(now_continuity_grab_confirm(&serving, 1, &elsewhere)
+              == kNowGrabStaleSelection);
+        /* Nothing selected any more. */
+        CHECK(now_continuity_grab_confirm(
+                  &serving, 1, (const NowContinuityStubItem *)0)
+              == kNowGrabNoSelection);
+        /* THE FINDER DID NOT ANSWER, and that refuses too: "we could not
+           check" is not a reason to send somebody's file. */
+        CHECK(now_continuity_grab_confirm(
+                  &serving, 0, (const NowContinuityStubItem *)0)
+              == kNowGrabStaleSelection);
+        /* Not even when a stale observation rides along with the failure. */
+        CHECK(now_continuity_grab_confirm(&serving, 0, &serving)
+              == kNowGrabStaleSelection);
+        CHECK(now_continuity_grab_confirm(
+                  (const NowContinuityStubItem *)0, 1, &serving)
+              == kNowGrabNoSelection);
+    }
+
     /* Every refusal has a contract code and success has none. */
     CHECK(now_continuity_grab_code(kNowGrabOK) == (const char *)0);
     CHECK(strcmp(now_continuity_grab_code(kNowGrabBadEpoch),

@@ -837,6 +837,14 @@ final class MirrorContinuityController: ObservableObject,
         selectionCache.bindable(activeEpoch: epoch)
     }
 
+    /// Which selection this Mac currently holds and when it learned of it,
+    /// for the cross-time bind decision. Deliberately NOT filtered by
+    /// bindability: a folder or an other-epoch stub still marks a change,
+    /// and hiding it here would make "the selection moved under this press"
+    /// unanswerable in exactly the cases where it moved to something
+    /// undraggable.
+    var selectionMark: ContinuitySelectionMark? { selectionCache.mark }
+
     private func openUDP(host: String, port: UInt16) {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             guestEnded(reason: "invalid UDP port", retryable: false)

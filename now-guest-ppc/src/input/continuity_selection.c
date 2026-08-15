@@ -124,7 +124,8 @@ static OSErr build_selection_specifier(AEDesc *out)
    later slice. Returns noErr with `found` false for an empty selection —
    which is an ANSWER, not a failure, and the difference matters because
    only one of the two should clear the host's cache. */
-static OSErr ask_finder_for_selection(FSSpec *spec, Boolean *found)
+static OSErr ask_finder_for_selection(FSSpec *spec, Boolean *found,
+                                      long timeout_ticks)
 {
     AEAddressDesc target = { typeNull, NULL };
     AppleEvent event = { typeNull, NULL };
@@ -162,9 +163,17 @@ static OSErr ask_finder_for_selection(FSSpec *spec, Boolean *found)
            served for the whole bounded wait (pump.h). Two seconds is
            generous for a live Finder and short enough that a wedged one
            costs a poll rather than the connection; the cadence means the
-           next attempt is along shortly either way. */
+           next attempt is along shortly either way.
+
+           THE TIMEOUT IS THE CALLER'S because the callers are not asking
+           the same question under the same conditions. The ordinary poll
+           runs with the Finder idle and can afford to wait. The press
+           probe runs with the Finder inside its own Drag Manager loop,
+           where the honest expectation is no answer at all — so it pays a
+           fraction of a second for the chance of one and gives up. */
         err = AESend(&event, &reply, kAEWaitReply | kAENeverInteract,
-                     kAENormalPriority, 120, now_pump_ae_idle(), NULL);
+                     kAENormalPriority, timeout_ticks, now_pump_ae_idle(),
+                     NULL);
     }
     if (err == noErr) {
         OSErr list_err = AEGetParamDesc(&reply, keyDirectObject,
@@ -274,6 +283,9 @@ static void release_grant_for_new_epoch(unsigned long live_epoch)
     now_continuity_grant_release(&g_hold);
 }
 
+
+
+
 int now_continuity_selection_poll(unsigned long live_epoch)
 {
     FSSpec spec;
@@ -295,7 +307,17 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     if (now_continuity_button_is_down()) {
         /* Mid-gesture. Do not touch the deadline: the next pass after the
            button comes up should poll immediately, because that is the
-           moment the selection is most likely to have just changed. */
+           moment the selection is most likely to have just changed.
+
+           AND THERE IS NO EXCEPTION TO PUT HERE, which cost an emulator
+           round to learn. A press that selects the file it drags cannot
+           publish its own selection — see the header — and the obvious
+           remedy, one probe per press, was written, armed at the down edge
+           and measured: not one probe ran in 21 seconds of held drag,
+           because THIS APPLICATION GETS NO TASK TIME AT ALL while the
+           Finder holds its Drag Manager loop. Nothing of ours runs, so
+           there is no gate to make an exception in. The whole gesture's
+           worth of log lines lands in the second the button comes up. */
         return 0;
     }
     now = (unsigned long)TickCount();
@@ -305,7 +327,8 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     g_poll_seeded = 1;
     g_next_poll = now + kNowSelectionPollTicks;
 
-    err = ask_finder_for_selection(&spec, &found);
+    err = ask_finder_for_selection(&spec, &found,
+                                   (long)kNowSelectionPollTimeoutTicks);
     if (err != noErr) {
         /* NOT SILENT, and not reported to the host either. A Finder that
            did not answer says nothing about what is selected, so the
@@ -336,6 +359,51 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     return 1;
 }
 
+/* Ask the Finder what is selected RIGHT NOW and hold the serve up against
+   it. See now_continuity_selection.h for why this exists at all; what
+   belongs here is why it can be asked at this moment when the poll cannot.
+
+   By the time a grab arrives the guest press has been released — the host
+   settles the pointer to the press origin and releases it before it hands
+   anything to its own drag session (docs/open-issues.md, the unbound
+   cross-release entry) — so the Finder is out of the Drag Manager's nested
+   loop and back in its event loop, which is precisely the condition the
+   poll's button gate is protecting against. The ordinary timeout is right
+   here for the same reason: nothing is being dragged while we wait, and
+   the person is watching a transfer they asked for. */
+static int confirm_serve_against_finder(const NowContinuityStubItem *serve)
+{
+    FSSpec spec;
+    Boolean found = false;
+    NowContinuityStubItem observed;
+    OSErr err;
+    int read_ok;
+    int verdict;
+
+    err = ask_finder_for_selection(&spec, &found,
+                                   (long)kNowSelectionPollTimeoutTicks);
+    read_ok = (err == noErr);
+    if (read_ok && found && stub_from_spec(&spec, &observed) != noErr) {
+        /* The Finder named something this side cannot describe. That is not
+           a confirmation, and treating it as one would be the guard reading
+           its own failure as a pass. */
+        found = false;
+    }
+    verdict = now_continuity_grab_confirm(
+        serve, read_ok,
+        (read_ok && found) ? &observed : (const NowContinuityStubItem *)0);
+    if (verdict == kNowGrabOK) {
+        return verdict;
+    }
+    now_log(kLogWarn, "mirror",
+            "grab refused: the Mac's selection is not what this grab "
+            "names - serving=%.31s selected=%.31s err=%d",
+            serve->name,
+            (read_ok && found) ? observed.name : "<unreadable>",
+            (int)err);
+    return verdict;
+}
+
 int now_continuity_selection_grab(unsigned long live_epoch,
                                   unsigned long epoch,
                                   unsigned long generation,
@@ -364,6 +432,14 @@ int now_continuity_selection_grab(unsigned long live_epoch,
                 (unsigned long)kNowContinuityGrantTicks);
         return verdict;
     }
+    if (verdict != kNowGrabOK) {
+        return verdict;
+    }
+    /* THE LAST CHECK, AND THE ONLY ONE THAT ASKS THE MACHINE. Everything
+       above proves consent was given for this generation; none of it can
+       notice the generation stopped describing what the person is holding.
+       Before the checks below turn a stub into a real FSSpec, ask. */
+    verdict = confirm_serve_against_finder(serve);
     if (verdict != kNowGrabOK) {
         return verdict;
     }

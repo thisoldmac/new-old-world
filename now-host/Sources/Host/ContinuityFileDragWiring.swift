@@ -35,6 +35,7 @@ enum ContinuityFileDrag {
         scene: @escaping () -> MirrorKit.Scene?,
         selection: (() -> Result<ContinuityDragStub,
                                  ContinuitySelectionCache.Unusable>)? = nil,
+        selectionMark: (() -> ContinuitySelectionMark?)? = nil,
         grab: ContinuityGrabTransfer? = nil,
         audit: @escaping Audit = {
             HostLog.shared.write($0, "continuity", $1)
@@ -46,6 +47,13 @@ enum ContinuityFileDrag {
                can never be fulfilled, which is worse than not claiming the
                press at all. */
             edge.configureSelectionDragging(
+                /* Two closures because the controller asks the two
+                   questions at two moments: the mark at the press, so the
+                   cross can tell a selection this press created from one it
+                   inherited, and the item only once that is settled. A lane
+                   wired without a mark reader would decide every cross
+                   against `nil` and refuse the ordinary two-step ritual. */
+                guestSelectionMark: { selectionMark?() },
                 guestSelectionItem: { [weak grab] in
                     guard let grab else {
                         audit(.error, "no guest file can be picked up: the "

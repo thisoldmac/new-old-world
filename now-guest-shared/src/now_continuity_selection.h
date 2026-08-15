@@ -204,6 +204,44 @@ int now_continuity_grab_resolve(NowContinuityStubTable *table,
                                 const NowContinuityStubItem **item_out,
                                 int *after_epoch_out);
 
+/* --- the last check before the bytes leave ---------------------------------
+
+   EVERY CHECK ABOVE IS ABOUT CONSENT AND NONE OF THEM ASKS THE MACHINE.
+   `grab_resolve` proves that some generation was published, that the host
+   asked for that generation, and that its window is open — all of it
+   reasoning over a table this side wrote earlier. It cannot notice that the
+   table is describing a file the person is no longer holding.
+
+   On metal at 2026-08-15 17:19 that gap transferred the wrong file.
+   Michelle dragged `main.c` and `hello.txt` arrived: the poll publishes only
+   on a CHANGE and is suppressed for the whole gesture, so the press that
+   selected `main.c` published nothing, and the host bound — legitimately,
+   by every rule above — the generation before it.
+
+   So the serve is confirmed against the Finder ITSELF, immediately before
+   the file is opened. By the time a grab arrives the guest press has already
+   been released at the cross, so the Finder is out of its drag loop and can
+   answer; whatever it says is the truth this whole table is a cache of.
+
+   `read_ok` is 0 when the Finder could not be asked. THAT REFUSES TOO, and
+   deliberately: an unanswered Finder says nothing about what is selected,
+   and "we could not check" is not a reason to send somebody's file. A
+   refusal costs a retry; the other way costs a wrong file.
+
+   Identity only — volume, directory, name, folderness. Not the modification
+   date `now_continuity_stub_same` compares: a file whose date moved between
+   the publish and the grab is still the file the person is dragging, and
+   refusing that would be this guard inventing a second defect. */
+int now_continuity_grab_confirm(const NowContinuityStubItem *serve,
+                                int read_ok,
+                                const NowContinuityStubItem *observed);
+
+/* Whether two stubs name the same item, ignoring anything that can change
+   without the item changing. See above for why the grab confirmation cannot
+   use now_continuity_stub_same. */
+int now_continuity_stub_same_item(const NowContinuityStubItem *a,
+                                  const NowContinuityStubItem *b);
+
 /* The refusal's contract code, for the wire. NULL for kNowGrabOK. */
 const char *now_continuity_grab_code(int verdict);
 

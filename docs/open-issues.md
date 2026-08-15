@@ -7,6 +7,91 @@ search:
 
 # Open issues
 
+## FIXED AND EMULATOR-VERIFIED, THE HALF THAT REMAINS IS NAMED: a grab served the file the person had STOPPED holding (2026-08-15 17:19 round, `fix/continuity-selection-bind-race`)
+
+**A person dragged `main.c` across the shared edge and `hello.txt` arrived.**
+Attended metal, 17:19:05, and every consent rule in the system was satisfied
+throughout — which is the point. The guest ring:
+
+```
+17:19:04  button edge gen=56 down=0 ... settled       (the previous gesture's release)
+17:19:04  selection epoch=15 gen=2 hello.txt          (the selection flips after it)
+17:19:05  grab granted #28 epoch=15 gen=2 hello.txt: file.begin sent xfer=27
+17:19:05  button edge gen=57 down=1 ...               (her press, after the bind)
+```
+
+Two lanes had already documented the mechanism without closing it: the
+guest publishes the Finder selection from a poll, the poll publishes only
+on a CHANGE, and it is gated off for the length of a held button — so the
+press that SELECTS the file it drags can never publish its own selection,
+and the host binds whatever the last gesture left cached. Three
+consequences were known: the two-step ritual works; a single-gesture
+select-and-drag binds nothing; and a press on file B with file A still
+cached transfers **A**.
+
+**The guarantee, and it is one sentence: the guest never serves a file
+that is not what the Finder currently holds.** `now_continuity_grab_confirm`
+asks the Finder immediately before the stub becomes an `FSSpec`, and every
+other answer refuses — including "the Finder did not answer", because "we
+could not check" is not a reason to send somebody's file. Every check that
+existed before reasons over a table this side wrote earlier; not one of
+them can notice the table stopped describing the person's hand. This one
+asks the machine. It can ask *because* the host releases the guest press at
+the cross before any handoff, so the Finder is out of its drag loop by the
+time a grab arrives.
+
+**Emulator-verified on that exact shape** (spin-up-ppc clone, build
+`eb6a31188e97`, rig table `/tmp/spin-selbind2/provenance.md`): a click
+selected `From Claude.txt` and the guest published generation 1; a desktop
+click then cleared the selection and a grab for generation 1 was fired
+inside the window before the poll republished. The table still held
+generation 1 under a live epoch — **every prior check would have served
+it** — and the guest answered `file.refuse code=no-selection`, logging
+`grab refused: the Mac's selection is not what this grab names -
+serving=From Claude.txt selected=`. The republished `cleared` arrives
+*after* the refusal in the same log, which is what makes it the new check
+rather than the old generation test.
+
+**The host now decides the binding at the CROSS, not at the press**
+(`ContinuitySelectionBind`). The press records what the cache held and when
+the down went out; the cross compares. A selection published while the
+button was held is `adopted` (nothing else could have caused it), an
+unchanged one is `bound`, a cleared cache is `unchallenged` (crossing back
+ends the epoch — the ordinary case, and reading it as a refusal would break
+every drag that works today), and a change this press cannot claim is
+`superseded`: refused, at warn, naming both generations and the arrival's
+age against the press. The wrong-file case is an XCTest that was watched
+failing against today's code with the metal symptom exactly —
+`("hello.txt") is not equal to ("main.c")`.
+
+**WHAT IS NOT FIXED, AND THE MEASUREMENT THAT SAYS WHY.** A single-gesture
+select-and-drag still binds nothing; it is now safe and loud rather than
+wrong. The obvious remedy — one bounded Apple Event per press, inside the
+gate, to publish the selection the press just made — was written, armed at
+the down edge, and **refuted on the emulator**: through 21 seconds of a
+held drag, not one probe ran. No poll, no wire service, no log line at all.
+**This application receives no task time whatsoever while the Finder holds
+its Drag Manager loop** — every line of the gesture is stamped in the
+second the button comes up, and the selection publishes ~200 ms after the
+release. So no guest-side probe can close it, and the gate has nothing to
+except; `continuity_selection_gates_source_test.py` now FAILS if an
+exception reappears there.
+
+That leaves one route, on the host: the cross releases the guest press and
+then decides the binding in the same sample handler, ~200 ms too early. A
+bounded wait for the selection the gesture created — between
+`releaseGuestPressAtOrigin` and the bind, or re-deciding when
+`pendingReturnDrag` finally starts — is what would make the single gesture
+bind its own file. Not attempted here: it needs the host app and a physical
+pointer to verify, and the safe degradation is already in place.
+
+**Status.** Tested (host suites, native suites, both guests compile) and
+emulator-verified for the refusal. The 17:19 scenario itself — drag
+`main.c` while `hello.txt` is cached, and watch `main.c` arrive or nothing
+arrive — is Michelle's metal round. Seven guest-side mutations and four
+host-side ones were each built and each run; one of them was rerun because
+the first attempt was a BUILD failure being read as no failures.
+
 ## OPEN, INSTRUMENTED, NOT DIAGNOSED — AND THE PREMISE WAS WRONG: every drag session in the 15:27 build ends before the human lets go (2026-08-15 15:38 round, `fix/continuity-fast-cross-session`)
 
 The round was opened as a **fast-versus-patient** flake: two crossings done

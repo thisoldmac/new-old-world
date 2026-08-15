@@ -99,7 +99,7 @@ poll = function_body(
 
 send = function_body(
     POLL_C,
-    "static OSErr ask_finder_for_selection(FSSpec *spec, Boolean *found)",
+    "static OSErr ask_finder_for_selection(FSSpec *spec, Boolean *found,",
     "continuity_selection.c",
 )
 
@@ -143,6 +143,22 @@ button = poll.index("now_continuity_button_is_down")
 if button > asked:
     raise SystemExit(
         "the selection poll asks the Finder before checking the button."
+    )
+
+# ...AND NOTHING MAY BE EXCEPTED FROM IT. One probe per press was written
+# for exactly the case the gate breaks — the press that selects the file it
+# drags — armed at the down edge, bounded, one-shot. The emulator refused it
+# on 2026-08-15: not one probe ran in 21 seconds of held drag, because this
+# application receives no task time at all while the Finder holds its Drag
+# Manager loop. A gate cannot have an exception in code that does not run.
+if "press_probe" in poll:
+    raise SystemExit(
+        "the selection poll has a held-button exception again. It cannot "
+        "work: nothing of ours runs mid-gesture (emulator, 2026-08-15, 21 "
+        "seconds held, no probe, every log line landing in the second the "
+        "button came up), so this is an Apple Event scheduled for a moment "
+        "this process does not exist in. What protects the person is the "
+        "grab confirmation below."
     )
 
 # --- 3. and it is bounded ------------------------------------------------
@@ -260,6 +276,50 @@ if "now_continuity_grab_resolve" not in grab:
         "the grab no longer consults the held grant, so a drag released "
         "after the crossing that ended its epoch is refused bad-epoch - "
         "the round-2 metal symptom this rule exists to answer."
+    )
+
+# --- 7. and the serve is confirmed against the machine ------------------
+#
+# THE ONLY CHECK THAT ASKS THE FINDER. Every other check in this file and in
+# now_continuity_selection.c reasons over a table this side wrote earlier;
+# none of them can notice it stopped describing what the person is holding.
+# Metal 2026-08-15 17:19: main.c was dragged, hello.txt was transferred, and
+# every consent rule was satisfied throughout.
+#
+# The arithmetic is watched in now_continuity_selection_test.c. What cannot
+# be watched there is that the grab actually CALLS it, and calls it before
+# the stub becomes a real FSSpec.
+if "confirm_serve_against_finder" not in grab:
+    raise SystemExit(
+        "the grab no longer confirms its serve against the Finder. Every "
+        "consent check it makes reads a table this side wrote earlier, so "
+        "a grab naming a generation the guest still holds can still name a "
+        "file the person stopped holding - which is how hello.txt crossed "
+        "the edge on 2026-08-15 while main.c was being dragged."
+    )
+
+if grab.index("confirm_serve_against_finder") > grab.index("FSMakeFSSpec"):
+    raise SystemExit(
+        "the grab resolves the FSSpec before confirming the serve. The "
+        "confirmation has to stand between the stub and the disk, not "
+        "beside it."
+    )
+
+confirm = function_body(
+    POLL_C,
+    "static int confirm_serve_against_finder(const NowContinuityStubItem *serve)",
+    "continuity_selection.c",
+)
+if "ask_finder_for_selection" not in confirm:
+    raise SystemExit(
+        "the grab confirmation no longer asks the Finder. Confirming a "
+        "cache against itself is not a confirmation."
+    )
+if "now_continuity_grab_confirm" not in confirm:
+    raise SystemExit(
+        "the grab confirmation no longer runs the shared verdict, so the "
+        "case the host cc watches - an unreadable Finder refuses too - is "
+        "not the case this path takes."
     )
 
 if "grant honored after epoch" not in POLL_C or "grant expired" not in POLL_C:
