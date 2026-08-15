@@ -7,6 +7,55 @@ search:
 
 # Open issues
 
+## TWO METAL CAUSES FIXED, NEITHER RE-MEASURED ON METAL: the guest→host drag's anchor window and its consent lifetime (2026-08-14, `fix/continuity-drag-round3`)
+
+Round 2 of the guest→host cross-edge drag was attended and produced three
+facts that had been missing: the session now starts from a real type-6
+event, its seed line read `windowNumber=14932, ourWindow=no`, the drag
+image froze for 101 stand-down samples, and it ended `operation=nobody`.
+Separately, `selection dropped: the Continuity epoch ended` fired as the
+pointer crossed BACK — before any drop could occur.
+
+**Two causes, and both were invisible rather than subtle.**
+
+- **The seed's provenance was never recorded.** The seed already carried
+  the catch panel's window number; the only line in the log described the
+  TRIGGER event, which belongs to a foreign application by construction —
+  a global monitor has no other kind — so `ourWindow=no` was both true and
+  uninformative. `beginFileDrag` now returns a `ContinuityDragSeed` naming
+  the anchor window, the panel's own, whether AppKit resolved it, whether
+  the panel was key and whether it covered the point; the controller
+  audits it, as an ERROR when the anchor is not ours. The panel is
+  widened, fronted and made key inside `ContinuityFileEdge` before the
+  seed is built, so the ordering is enforced where it happens.
+- **The gesture's consent expired before the gesture did.** Crossing back
+  ends the epoch by design, so a held drag ALWAYS names an epoch that is
+  over; refusing it `bad-epoch` would refuse every guest→host drag there
+  is. The guest now keeps the last generation of an ending epoch grantable
+  for 30 seconds or until the next epoch publishes its own selection,
+  whichever comes first, and refuses a late one `grant-expired` — a new
+  contract code, kept apart from `bad-epoch` because only one of them is
+  worth retrying. The host side needed nothing: the stub is bound into the
+  promise at press time and outlives the cache, which is now asserted
+  rather than assumed.
+
+**What is proven.** `now-host` green, `scripts/test-native` 202/202,
+`scripts/build-guests` cross-compiles both guests and the extension. Five
+mutations watched failing against the guard that names them: seeding from
+`sourceEvent.windowNumber` (reproduces `windowNumber=14932`), deleting the
+seed audit line, dropping `provider.userInfo = stub`, closing the
+post-epoch door in `now_continuity_grab_resolve`, and a grant window that
+never expires. One mutation was rejected for failing to BUILD rather than
+to fail — a green that never ran, in miniature.
+
+**NOT proven, and it is the whole point of the round.** Nobody has done
+this with a hand on a mouse since the fix. Whether an own-window seed
+actually makes AppKit track the drag image, whether anything then accepts
+the file, and whether the 30-second window is generous or tight are all
+UNMEASURED. The Accessibility-permission tap failure seen in round 2 is
+operational and untouched here; the session-start path works either way,
+which is also unmeasured on metal.
+
 ## HOST DONE, GUEST HALF UNIMPLEMENTED: a bare modifier change now crosses the edge (2026-08-14, `fix/continuity-modifier-passthrough`)
 
 Reported from metal: during Continuity, Command-Backspace does not move a
