@@ -142,10 +142,22 @@ final class ContinuityEdgeController: ObservableObject {
     @Published private(set) var state: State = .disabled
     @Published private(set) var status = "off"
 
+    /// Why the consuming tap most recently failed to start, kept only long
+    /// enough to answer one question: is a later retry worth attempting.
+    /// `missingPermission` is retried automatically the next time the app
+    /// becomes active and the process is now trusted; `relaunchNeeded`
+    /// never is, because macOS did not accept the grant this launch and
+    /// asking again would just fail the same way.
+    private enum CaptureFailureReason: Equatable {
+        case missingPermission
+        case relaunchNeeded
+    }
+
     private let layout: ContinuityDisplayLayout
     private weak var driver: ContinuityEdgeDriving?
     private let environment: ContinuityPointerEnvironment
     private let keyboardEnvironment: ContinuityKeyboardEnvironment
+    private let accessibility: AccessibilityAuthorization
     private let audit: Audit
     private let uptime: () -> TimeInterval
     private var monitor: AnyObject?
@@ -155,6 +167,7 @@ final class ContinuityEdgeController: ObservableObject {
     private var ownership: Ownership?
     private var cursorHiddenOn: UInt32?
     private var inputCapture: AnyObject?
+    private var captureFailureReason: CaptureFailureReason?
     private var cursorDissociated = false
     private var keyboardMonitor: AnyObject?
     private var pendingCursorWarp: PendingCursorWarp?
@@ -219,6 +232,7 @@ final class ContinuityEdgeController: ObservableObject {
          driver: ContinuityEdgeDriving,
          environment: ContinuityPointerEnvironment? = nil,
          keyboardEnvironment: ContinuityKeyboardEnvironment? = nil,
+         accessibility: AccessibilityAuthorization? = nil,
          audit: Audit? = nil,
          uptime: @escaping () -> TimeInterval = {
              ProcessInfo.processInfo.systemUptime
@@ -229,6 +243,7 @@ final class ContinuityEdgeController: ObservableObject {
             ?? AppKitContinuityPointerEnvironment()
         self.keyboardEnvironment = keyboardEnvironment
             ?? AppKitContinuityKeyboardEnvironment()
+        self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
         self.audit = audit ?? { HostLog.shared.write($0, "continuity", $1) }
         self.uptime = uptime
         layoutSubscription = layout.objectWillChange.sink { [weak self] _ in
@@ -853,15 +868,57 @@ final class ContinuityEdgeController: ObservableObject {
                 self?.audit(.warn, "pointer event tap was disabled by "
                     + "\(reason); re-enabled immediately")
             })
-        if inputCapture == nil {
-            /* Degraded, not broken: the observe-only monitor still drives the
-               guest. Name the consequence, because a leak nobody can see is
-               how this one survived to be measured on metal. */
+        if inputCapture != nil {
+            if captureFailureReason != nil, !hostFileDrag {
+                /* Only touched on RECOVERY, not on every ordinary successful
+                   start: a plain first-time success has nothing degraded to
+                   clear, and clobbering the status here would race whatever
+                   else set it for the same crossing. */
+                status = "Pointer is on the guest display"
+            }
+            captureFailureReason = nil
+            return
+        }
+        /* Degraded, not broken: the observe-only monitor still drives the
+           guest. Name the consequence, because a leak nobody can see is how
+           this one survived to be measured on metal. Which message applies
+           depends on whether the process is trusted RIGHT NOW: a still-untrusted
+           process can be fixed by granting permission and coming back to
+           this app, but a trusted process whose tap still failed to create
+           needs a relaunch — macOS reads Accessibility trust at process
+           start for this API, and no amount of retrying in place changes
+           that. */
+        if accessibility.isProcessTrusted() {
+            captureFailureReason = .relaunchNeeded
+            audit(.error, "could not capture host input even though this "
+                + "app is trusted for Accessibility; macOS did not pick up "
+                + "the grant for this process and a relaunch is needed")
+            status = "Pointer is on the guest display; host input capture "
+                + "needs this app relaunched before it can take effect"
+        } else {
+            captureFailureReason = .missingPermission
             audit(.error, "could not capture host input (Accessibility "
                 + "permission); host clicks will also reach host apps")
-            status = "Pointer is on the guest display; host clicks also "
-                + "reach this Mac without Accessibility permission"
+            status = "host input capture needs Accessibility permission; "
+                + "the pointer still crosses, but host clicks also reach "
+                + "host apps and window-drag protection is off"
         }
+    }
+
+    /// See `MirrorContinuityController.applicationDidBecomeActive`. Retries
+    /// exactly once per activation, only while a tap is both currently
+    /// wanted (the cursor is hidden for an active pass, or a button is held
+    /// in custody) and absent, and only when the reason it is absent is one
+    /// a later attempt can actually fix.
+    func retryInputCaptureAfterBecomingActive() {
+        guard captureFailureReason == .missingPermission else { return }
+        guard inputCapture == nil else { return }
+        guard cursorHiddenOn != nil || heldGesture != nil else { return }
+        guard accessibility.isProcessTrusted() else { return }
+        audit(.info, "Accessibility permission is now granted; picking up "
+            + "host input capture without waiting for the next edge "
+            + "crossing")
+        startConsumingTap()
     }
 
     private func endHostInputCapture() {

@@ -132,6 +132,19 @@ final class MirrorContinuityController: ObservableObject,
 
     func beginEdgeMode() {
         guard !edgeModeActive else { return }
+        /* Asked here, not at launch or construction: the system dialog is
+           the loud, one-shot kind, and firing it before the person has
+           asked for the feature that needs it is the defect this change
+           exists to fix in the other direction — a prompt nobody asked for
+           is as unhelpful as no prompt at all. Guarded so a second
+           `beginEdgeMode` this launch (after a manual toggle off and on)
+           does not re-show a dialog macOS already answered by putting the
+           app in the Accessibility pane. */
+        if !hasPromptedForAccessibilityThisLaunch,
+           !accessibility.isProcessTrusted() {
+            hasPromptedForAccessibilityThisLaunch = true
+            accessibility.promptForTrust()
+        }
         edgeModeActive = true
         maintainsOptInAfterGuestExit = true
         isEnabled = true
@@ -144,6 +157,16 @@ final class MirrorContinuityController: ObservableObject,
         edge.stop(reason: reason)
         maintainsOptInAfterGuestExit = false
         isEnabled = mirrorCursorActive
+    }
+
+    /// The app came back to the foreground. If host input capture is
+    /// currently sitting out because it lacked Accessibility permission,
+    /// and that permission has since been granted in System Settings, pick
+    /// the tap back up without waiting for the next edge crossing — the
+    /// person should not have to toggle Continuity off and on to collect
+    /// what they just granted.
+    func applicationDidBecomeActive() {
+        edge.retryInputCaptureAfterBecomingActive()
     }
 
     func setMirrorCursorActive(_ active: Bool) {
@@ -299,7 +322,8 @@ final class MirrorContinuityController: ObservableObject,
 
     private(set) lazy var edge: ContinuityEdgeController = {
         let edge = ContinuityEdgeController(
-            layout: layout, driver: self, audit: audit)
+            layout: layout, driver: self, accessibility: accessibility,
+            audit: audit)
         onPhaseChanged = { [weak edge] phase in
             edge?.transportPhaseChanged(phase)
         }
@@ -322,6 +346,12 @@ final class MirrorContinuityController: ObservableObject,
     /// churn ownership, but a dead receive path cannot leave the UI active.
     private let acknowledgementTimeout: TimeInterval
     private weak var localNetworkAccess: LocalNetworkAccessController?
+    private let accessibility: AccessibilityAuthorization
+    /// Whether `beginEdgeMode` has already asked macOS's Accessibility
+    /// dialog this launch. Instance-scoped rather than a global: this
+    /// controller is constructed once per app launch by `HostAppState`, and
+    /// a test that wants a second "launch" constructs a second controller.
+    private var hasPromptedForAccessibilityThisLaunch = false
     private var target: GuestListener.ContinuityTarget?
     private var armID: Int?
     private var nonceHi: UInt32 = 0
@@ -380,12 +410,14 @@ final class MirrorContinuityController: ObservableObject,
     init(listener: GuestListener,
          defaults: UserDefaults = ProductIdentity.defaults,
          localNetworkAccess: LocalNetworkAccessController? = nil,
+         accessibility: AccessibilityAuthorization? = nil,
          acknowledgementTimeout: TimeInterval = 3,
          audit: Audit? = nil) {
         self.listener = listener
         self.defaults = defaults
         self.layout = ContinuityDisplayLayout(defaults: defaults)
         self.localNetworkAccess = localNetworkAccess
+        self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
         self.acknowledgementTimeout = acknowledgementTimeout
         self.audit = audit ?? {
             HostLog.shared.write($0, "continuity", $1)

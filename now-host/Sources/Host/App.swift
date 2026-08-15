@@ -84,6 +84,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         if preferences.httpStartsAutomatically { startMCPHTTP() }
     }
 
+    /// A person granting Accessibility in System Settings brings THIS app
+    /// back to the foreground to do it — Settings is a separate app, so
+    /// returning here always fires activation. Continuity's edge controller
+    /// uses the moment to pick its consuming tap back up without the person
+    /// needing to toggle Continuity off and on to collect what they just
+    /// granted.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        state.continuity.applicationDidBecomeActive()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         state.localNetworkAccess.cancel()
         state.shutDownModules()
