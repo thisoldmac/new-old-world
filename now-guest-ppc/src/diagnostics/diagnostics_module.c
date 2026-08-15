@@ -1,5 +1,6 @@
 #include "diagnostics_module.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "diag_layout.h"
@@ -139,17 +140,27 @@ static void sync_scrollbar(void)
     HiliteControl(g_scroll, (max > 0 && g_visible) ? 0 : 255);
 }
 
-static void draw_line(const Rect *where, const char *text)
+/* One walk over a card, taken twice: a NULL writer draws it, a writer
+   describes it to the host's observation plane. A probe's refusal
+   sentence in particular must reach the host verbatim and identical to
+   the pixels, which is what sharing the walk buys. */
+static void emit_line(const WorkshopSceneWriter *writer, const Rect *where,
+                      const char *text)
 {
     Str255 pas;
 
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, text, where,
+                           true);
+        return;
+    }
     MoveTo(where->left, (short)(where->top + 11));
     CopyCStringToPascal(text, pas);
     TruncString((short)(where->right - where->left), pas, truncEnd);
     DrawString(pas);
 }
 
-static void draw_card(int index)
+static void emit_card(const WorkshopSceneWriter *writer, int index)
 {
     const DiagCardLayout *card = &g_r.cards[index];
     const DiagCard *state = &g_cards[index];
@@ -166,26 +177,45 @@ static void draw_card(int index)
     if (frame.bottom < g_r.canvas.top || frame.top > g_r.canvas.bottom) {
         return;                       /* wholly scrolled away */
     }
-    RGBForeColor(&gray);
-    FrameRect(&frame);
-    RGBForeColor(&black);
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopScenePanel,
+                           diag_probe_title((DiagProbe)index), &frame, true);
+    } else {
+        RGBForeColor(&gray);
+        FrameRect(&frame);
+        RGBForeColor(&black);
+    }
 
     to_window(&card->title, &where);
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    MoveTo(where.left, (short)(where.top + 12));
-    CopyCStringToPascal(diag_probe_title((DiagProbe)index), pas);
-    DrawString(pas);
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    /* The verb, quietly, after the name: it is what a person types in the
-       Console and what the other Mac's page calls the same measurement. */
-    DrawString((ConstStr255Param)"\p  ");
-    CopyCStringToPascal(diag_probe_verb((DiagProbe)index), pas);
-    DrawString(pas);
+    if (writer != NULL) {
+        /* Name and verb are drawn as one run of text on one baseline, so
+           they are described as one string in that rect rather than as
+           two overlapping ones. */
+        char heading[96];
+
+        snprintf(heading, sizeof heading, "%s  %s",
+                 diag_probe_title((DiagProbe)index),
+                 diag_probe_verb((DiagProbe)index));
+        workshop_scene_add(writer, kWorkshopSceneStaticText, heading,
+                           &where, true);
+    } else {
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+        MoveTo(where.left, (short)(where.top + 12));
+        CopyCStringToPascal(diag_probe_title((DiagProbe)index), pas);
+        DrawString(pas);
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        /* The verb, quietly, after the name: it is what a person types in
+           the Console and what the other Mac's page calls the same
+           measurement. */
+        DrawString((ConstStr255Param)"\p  ");
+        CopyCStringToPascal(diag_probe_verb((DiagProbe)index), pas);
+        DrawString(pas);
+    }
 
     to_window(&card->measures, &where);
-    draw_line(&where, diag_probe_measures((DiagProbe)index));
+    emit_line(writer, &where, diag_probe_measures((DiagProbe)index));
     to_window(&card->cost, &where);
-    draw_line(&where, diag_probe_cost((DiagProbe)index));
+    emit_line(writer, &where, diag_probe_cost((DiagProbe)index));
 
     to_window(&card->body, &where);
     y = where.top;
@@ -196,7 +226,7 @@ static void draw_card(int index)
         Rect line_rect = where;
 
         line_rect.bottom = (short)(y + kDiagLineHeight);
-        draw_line(&line_rect, state->refusal);
+        emit_line(writer, &line_rect, state->refusal);
         return;
     }
     if (state->state == kDiagRows) {
@@ -208,12 +238,12 @@ static void draw_card(int index)
             label_rect.top = y;
             label_rect.bottom = (short)(y + kDiagRowHeight);
             label_rect.right = (short)(where.left + kDiagRowLabelWidth);
-            draw_line(&label_rect, state->rows[i].label);
+            emit_line(writer, &label_rect, state->rows[i].label);
             value_rect = where;
             value_rect.top = y;
             value_rect.bottom = label_rect.bottom;
             value_rect.left = (short)(where.left + kDiagRowLabelWidth);
-            draw_line(&value_rect, state->rows[i].value);
+            emit_line(writer, &value_rect, state->rows[i].value);
             y = (short)(y + kDiagRowHeight);
         }
         return;
@@ -228,7 +258,7 @@ static void draw_card(int index)
         line_rect = where;
         line_rect.top = y;
         line_rect.bottom = (short)(y + kDiagLineHeight);
-        draw_line(&line_rect, line);
+        emit_line(writer, &line_rect, line);
         y = (short)(y + kDiagLineHeight);
     }
 }
@@ -261,7 +291,7 @@ static void draw_canvas(void)
         ClipRect(&inner);
     }
     for (i = 0; i < kDiagProbeCount; ++i) {
-        draw_card(i);
+        emit_card(NULL, i);
     }
     if (saved_clip != NULL) {
         SetClip(saved_clip);
@@ -574,6 +604,19 @@ static void diagnostics_draw(void)
     draw_canvas();
 }
 
+static void diagnostics_describe_scene(const WorkshopSceneWriter *writer)
+{
+    int i;
+
+    workshop_scene_add(writer, kWorkshopScenePanel, "Diagnostics",
+                       &g_r.canvas, true);
+    /* emit_card declines the cards scrolled wholly out of the canvas, so
+       the host is told about the same instruments a person can see. */
+    for (i = 0; i < kDiagProbeCount; ++i) {
+        emit_card(writer, i);
+    }
+}
+
 static Boolean diagnostics_click(const EventRecord *event, Point local)
 {
     ControlRef control = NULL;
@@ -701,7 +744,7 @@ static const WorkshopModuleOps k_ops = {
        press - so the page costs the event loop nothing between clicks. */
     NULL,
     diagnostics_status_text,
-    NULL
+    diagnostics_describe_scene
 };
 
 const WorkshopModuleOps *diagnostics_module_ops(void)

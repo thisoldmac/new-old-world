@@ -209,84 +209,136 @@ static void files_layout(const Rect *body)
     relayout();
 }
 
+/* One run of text on this page, drawn or described. A NULL writer draws
+   it at exactly the baseline and alignment it always used; a writer
+   reports the rect the run occupies. Both faces take one walk, so the
+   host cannot be told a different path, count or progress line than the
+   one on screen. `room <= 0` means the run was never truncated. */
+static void emit_run(const WorkshopSceneWriter *writer, const Rect *where,
+                     short baseline, Boolean right_align, short room,
+                     TruncCode trunc, const char *line)
+{
+    Str255 text;
+
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line, where,
+                           true);
+        return;
+    }
+    CopyCStringToPascal(line, text);
+    if (room > 0) {
+        TruncString(room, text, trunc);
+    }
+    MoveTo(right_align ? (short)(where->right - StringWidth(text))
+                       : where->left,
+           baseline);
+    DrawString(text);
+}
+
 /* The progress line, right-aligned into the slot beside Stop. Drawn on
    its own rather than only through the status placard: the placard is at
    the far bottom of the window, and a person deciding whether to press
    Stop should not have to look somewhere else to find out what pressing
-   it would abandon. */
+   it would abandon. The live repaint path calls this directly; the page
+   walk below reaches the same run through emit_run. */
 static void draw_transfer_text(const PullView *pull)
 {
-    Str255 text;
     char line[160];
-    short room = (short)(g_r.xfer_text.right - g_r.xfer_text.left);
 
     now_pull_note(pull, line, sizeof line);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    CopyCStringToPascal(line, text);
-    /* truncMiddle, not truncEnd: the name is at the front and the
-       percentage at the back, and losing either end would leave the
-       half of the sentence that says nothing. */
-    TruncString(room, text, truncMiddle);
-    MoveTo((short)(g_r.xfer_text.right - StringWidth(text)),
-           (short)(g_r.path_row.top + 16));
-    DrawString(text);
+    emit_run(NULL, &g_r.xfer_text, (short)(g_r.path_row.top + 16), true,
+             (short)(g_r.xfer_text.right - g_r.xfer_text.left), truncMiddle,
+             line);
 }
 
-static void files_draw(void)
+static void files_content(const WorkshopSceneWriter *writer)
 {
-    Str255 text;
+    Rect where;
     char line[160];
     PullView pull;
     Boolean pulling = files_browser_pull(&pull);
     short path_right = pulling ? (short)(g_r.xfer_text.left - 6)
                                : (short)(g_r.path_row.right - 100);
 
-    if (g_owner == NULL || !g_visible) {
-        return;
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
     }
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
     files_browser_path_text(line, sizeof line);
-    MoveTo((short)(g_r.up_btn.right + 10), (short)(g_r.path_row.top + 16));
-    CopyCStringToPascal(line, text);
-    TruncString((short)(path_right - g_r.up_btn.right - 10), text,
-                truncMiddle);
-    DrawString(text);
+    SetRect(&where, (short)(g_r.up_btn.right + 10), g_r.path_row.top,
+            path_right, g_r.path_row.bottom);
+    emit_run(writer, &where, (short)(g_r.path_row.top + 16), false,
+             (short)(path_right - g_r.up_btn.right - 10), truncMiddle, line);
 
     if (pulling) {
         /* The count and the progress line share the slot; only one of
-           them is the thing a person needs right now. */
-        draw_transfer_text(&pull);
+           them is the thing a person needs right now.
+           truncMiddle, not truncEnd: the name is at the front and the
+           percentage at the back, and losing either end would leave the
+           half of the sentence that says nothing. */
+        if (writer == NULL) {
+            draw_transfer_text(&pull);
+        } else {
+            now_pull_note(&pull, line, sizeof line);
+            workshop_scene_add(writer, kWorkshopSceneStaticText, line,
+                               &g_r.xfer_text, true);
+        }
     } else {
-        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        if (writer == NULL) {
+            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        }
         files_browser_count_text(line, sizeof line);
-        CopyCStringToPascal(line, text);
-        TruncString(96, text, truncEnd);
-        MoveTo((short)(g_r.path_row.right - StringWidth(text)),
-               (short)(g_r.path_row.top + 16));
-        DrawString(text);
+        SetRect(&where, (short)(g_r.path_row.right - 96), g_r.path_row.top,
+                g_r.path_row.right, g_r.path_row.bottom);
+        emit_run(writer, &where, (short)(g_r.path_row.top + 16), true, 96,
+                 truncEnd, line);
     }
 
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    MoveTo(g_r.tri_label.left, (short)(g_r.tri_label.top + 12));
-    CopyCStringToPascal("Shared from this Mac", text);
-    DrawString(text);
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+    }
+    emit_run(writer, &g_r.tri_label, (short)(g_r.tri_label.top + 12), false,
+             0, truncEnd, "Shared from this Mac");
 
     if (!g_browser_ok) {
-        RGBColor black = { 0, 0, 0 };
+        if (writer == NULL) {
+            RGBColor black = { 0, 0, 0 };
 
-        RGBForeColor(&black);
-        FrameRect(&g_r.browser);
-        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-        MoveTo((short)(g_r.browser.left + 16),
-               (short)((g_r.browser.top + g_r.browser.bottom) / 2));
-        CopyCStringToPascal("Browsing is not available on this Mac.",
-                            text);
-        DrawString(text);
+            RGBForeColor(&black);
+            FrameRect(&g_r.browser);
+            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        } else {
+            workshop_scene_add(writer, kWorkshopScenePanel, "",
+                               &g_r.browser, true);
+        }
+        SetRect(&where, (short)(g_r.browser.left + 16),
+                (short)((g_r.browser.top + g_r.browser.bottom) / 2 - 12),
+                g_r.browser.right,
+                (short)((g_r.browser.top + g_r.browser.bottom) / 2));
+        emit_run(writer, &where,
+                 (short)((g_r.browser.top + g_r.browser.bottom) / 2), false,
+                 0, truncEnd, "Browsing is not available on this Mac.");
     }
+}
+
+static void files_draw(void)
+{
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    files_content(NULL);
     files_browser_draw();
     if (g_expanded) {
         files_share_draw();
     }
+}
+
+static void files_describe_scene(const WorkshopSceneWriter *writer)
+{
+    /* Only this file's own hand-drawing. The listing is a DataBrowser and
+       the share view's controls are controls; both are already Control
+       Manager facts and repeating them here would double them. */
+    files_content(writer);
 }
 
 /* Show or hide Stop and repaint the progress line, NOW rather than on
@@ -519,7 +571,7 @@ static const WorkshopModuleOps k_ops = {
     files_activate,
     files_idle,
     files_status_text,
-    NULL
+    files_describe_scene
 };
 
 const WorkshopModuleOps *files_module_ops(void)
