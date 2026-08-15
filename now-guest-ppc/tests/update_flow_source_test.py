@@ -86,9 +86,12 @@ ordered(activation, "now_update_current_identity(kNowUpdateExtension",
         "now_prefs_save(prefs)")
 # The continuity branch already owns V25 for bounded launch-log retention.
 # Activation receipts must extend that record instead of reusing the same
-# format number with a different binary layout.
+# format number with a different binary layout. A later slice (Workshop
+# open/closed persistence) owns V27 on top of this one, so the pin here
+# checks the V26 layer nests unchanged rather than pinning the top-level
+# format number, which the later slice legitimately moved on.
 assert "PrefsRecordV25 v25;               /* format = 26 */" in prefs
-assert "record.format = 26;" in prefs
+assert "PrefsRecordV26 v26;               /* format = 27 */" in prefs
 assert "pending_extension_build" in prefs
 ordered(wire, "now_prefs_load(&prefs);",
         "g_update.restart_required = now_update_activation_reconcile(&prefs);")
