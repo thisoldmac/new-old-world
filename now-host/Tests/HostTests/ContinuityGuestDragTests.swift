@@ -183,7 +183,8 @@ final class ContinuityGuestDragTests: XCTestCase {
                             + "the guest at all")
         XCTAssertTrue(rig.recorder.lines.contains {
             $0.0 == .warn
-                && $0.1.contains("held press crossed with no guest file bound")
+                && $0.1.contains("held press released without a file handoff")
+                && $0.1.contains("boundFile=none")
         }, "the degradation must be loud: an unbound cross carries no file, "
             + "and an info line is how this shipped destructive")
     }
