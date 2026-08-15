@@ -548,16 +548,18 @@ final class ContinuityEdgeController: ObservableObject {
                person picked, rather than what is under a point in a scene
                this lane may not have.
 
-               THE TWO LANES ANSWER AT DIFFERENT MOMENTS, and each at the
-               only one it can. A scene hit test is a question about the
-               pointer and has to be asked while the pointer is here. The
-               selection is a question about the person's hand, and the
-               press itself can CHANGE the answer — so asking now would be
-               asking before the machine has been told, which is exactly
-               what shipped the wrong file on 2026-08-15. */
+               THE ANSWER IS STILL TAKEN HERE, AND IT IS NO LONGER FINAL.
+               Taken here because the press is the last moment the cache is
+               guaranteed to hold anything at all — crossing back ends the
+               epoch, and the epoch ending drops the cache — and because the
+               promise fetch this starts wants the head start. Not final
+               because the press itself can CHANGE what is selected, and the
+               guest cannot have been told yet: that gap is what shipped
+               the wrong file on 2026-08-15. The cross re-decides against
+               what arrived in between; see resolveSelectionBindingAtCross. */
             pressedSelection = nil
             guestFileCandidate = guestSelectionItem != nil
-                ? nil
+                ? guestSelectionItem?()
                 : guestFileAtPoint?(point)
             let selectionMark = guestSelectionMark?()
             let consumed = driver?.primaryDown(at: point,
@@ -646,10 +648,15 @@ final class ContinuityEdgeController: ObservableObject {
         }
         switch verdict {
         case .bound(let mark):
-            audit(.info, "binding this press to the selection it was made "
-                + "under: epoch=\(mark.epoch), generation=\(mark.generation), "
-                + "published \(age(mark))")
-            guestFileCandidate = guestSelectionItem()
+            audit(.info, "this cross carries the selection its press was "
+                + "made under: epoch=\(mark.epoch), "
+                + "generation=\(mark.generation), published \(age(mark))")
+        case .unchallenged(let mark):
+            audit(.info, "this cross carries the selection its press was "
+                + "made under: epoch=\(mark.epoch), "
+                + "generation=\(mark.generation), published \(age(mark)) — "
+                + "the Mac has published nothing since, which is the "
+                + "ordinary shape of a cross that ended its own epoch")
         case .adopted(let mark):
             /* The selection this press itself created. Nothing else could
                have published while the button was held, and binding the

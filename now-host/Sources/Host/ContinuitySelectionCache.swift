@@ -112,6 +112,15 @@ enum ContinuitySelectionBind: Equatable {
     /// they did not ask for arriving on their desktop.
     case superseded(pressed: ContinuitySelectionMark,
                     current: ContinuitySelectionMark)
+    /// The cache no longer says anything, and the press stands.
+    ///
+    /// This is the ORDINARY cross, not a corner: crossing back is what ends
+    /// the epoch, and the epoch ending drops the cache — measured on metal
+    /// 2026-08-14, where `selection dropped: the Continuity epoch ended`
+    /// fired as the pointer crossed. A cleared cache contradicts nothing, so
+    /// treating it as a refusal would refuse every drag that works today.
+    /// The guest's own grant hold is what redeems this one.
+    case unchallenged(ContinuitySelectionMark)
     /// Nothing bindable at the cross.
     case nothing
 
@@ -125,7 +134,10 @@ enum ContinuitySelectionBind: Equatable {
     static func decide(pressed: ContinuitySelectionMark?,
                        current: ContinuitySelectionMark?,
                        downSentAt: TimeInterval) -> ContinuitySelectionBind {
-        guard let current else { return .nothing }
+        guard let current else {
+            return pressed.map(ContinuitySelectionBind.unchallenged)
+                ?? .nothing
+        }
         if let pressed, pressed.isSameSelection(as: current) {
             return .bound(current)
         }

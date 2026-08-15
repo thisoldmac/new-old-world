@@ -65,7 +65,7 @@ enum ContinuityFileDrag {
                         audit(.info, unusable.message)
                         return nil
                     case .success(let stub):
-                        audit(.info, "cross bound to the guest selection: "
+                        audit(.info, "press bound to the guest selection: "
                             + "epoch=\(stub.epoch), "
                             + "generation=\(stub.generation), "
                             + "name=\(stub.item.name), "

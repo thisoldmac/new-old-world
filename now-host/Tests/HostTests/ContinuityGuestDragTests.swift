@@ -145,6 +145,161 @@ final class ContinuityGuestDragTests: XCTestCase {
         })
     }
 
+    // MARK: - The selection that changed under the press
+
+    /// **THE WRONG FILE, AS IT HAPPENED.** Metal, 2026-08-15 17:19:
+    /// `hello.txt` was the published generation, Michelle pressed on
+    /// `main.c` and dragged it across the edge, and this Mac transferred
+    /// `hello.txt`. Every rule the binding had was satisfied throughout —
+    /// the press bound the only generation that existed.
+    ///
+    /// Here the guest's press probe publishes `main.c` while the button is
+    /// held, which is the only thing that can have caused it, and the cross
+    /// binds THAT.
+    func testACrossBindsTheSelectionThePressItselfCreated() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        // The guest's press probe, mid-gesture: this press selected main.c.
+        rig.select(Self.file(name: "main.c"), generation: 3)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c",
+                       "the file the person dragged is the file that crosses")
+        XCTAssertEqual(stub.generation, 3)
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("binding this press to the selection it made")
+                && $0.1.contains("generation=3")
+                && $0.1.contains("replacing generation 2")
+        }, "the bind must name both generations: the 17:19 report could not "
+            + "be diagnosed from any single line")
+    }
+
+    /// The same shape with nothing cached at all — the press that selects
+    /// AND drags, which bound `boundFile=none` on metal at 15:37.
+    func testACrossBindsASelectionThatDidNotExistAtThePress() throws {
+        let rig = Rig()
+        rig.enterGuest()
+        rig.press()
+        rig.select(Self.file(name: "main.c"), generation: 1)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("replacing nothing")
+        })
+    }
+
+    /// A change this press cannot claim REFUSES, and says so at warn.
+    ///
+    /// The distinguishing fact is the clock: this generation was applied
+    /// before the press went out, so it is not this press's own doing and
+    /// nothing on this Mac knows which of the two the hand chose. A
+    /// snap-back is not the same kind of failure as a wrong file arriving.
+    func testASelectionThatMovedBeforeThePressRefusesRatherThanGuesses()
+    throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        /* Applied a second before the press went out, which is the shape of
+           a publish that crossed the press on the wire: real, arriving
+           late, and not attributable to this gesture. */
+        rig.selectAsOf(rig.now() - 1, Self.file(name: "main.c"),
+                       generation: 3)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.environment.fileDrags.isEmpty,
+                      "nothing may cross when this Mac cannot say which "
+                        + "file is in the person's hand")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn
+                && $0.1.contains("the selection changed under this press")
+                && $0.1.contains("not binding generation 2")
+                && $0.1.contains("publishes generation 3")
+        })
+    }
+
+    /// And the ritual that works today keeps working: select, release,
+    /// press again, drag. Nothing changes under that press, so nothing
+    /// here may interfere with it.
+    func testTheTwoStepRitualIsUntouched() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"), generation: 3)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "Read Me")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("this cross carries the selection its press was "
+                + "made under")
+        })
+    }
+
+    /// The pure decision, including the two cases the rig cannot stage
+    /// without a real epoch ending underneath it.
+    func testTheBindDecisionInEveryShape() {
+        let press: TimeInterval = 1_000
+        let before = ContinuitySelectionMark(epoch: 7, generation: 2,
+                                             appliedAt: press - 1)
+        let same = ContinuitySelectionMark(epoch: 7, generation: 2,
+                                           appliedAt: press - 1)
+        let after = ContinuitySelectionMark(epoch: 7, generation: 3,
+                                            appliedAt: press + 0.4)
+        let crossed = ContinuitySelectionMark(epoch: 7, generation: 3,
+                                              appliedAt: press - 0.001)
+
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: same, downSentAt: press), .bound(same))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: after, downSentAt: press),
+            .adopted(after))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: nil, current: after, downSentAt: press),
+            .adopted(after))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: crossed, downSentAt: press),
+            .superseded(pressed: before, current: crossed))
+        /* An arrival exactly ON the press instant is not this press's own
+           doing either: the guest cannot have applied a down this Mac has
+           only just sent. */
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before,
+            current: .init(epoch: 7, generation: 3, appliedAt: press),
+            downSentAt: press),
+            .superseded(pressed: before,
+                        current: .init(epoch: 7, generation: 3,
+                                       appliedAt: press)))
+        /* The epoch ended with the cross, which is the ordinary case and
+           must not read as a refusal. */
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: nil, downSentAt: press),
+            .unchallenged(before))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: nil, current: nil, downSentAt: press), .nothing)
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: nil, current: crossed, downSentAt: press), .nothing)
+    }
+
     // MARK: - The cross
 
     /// **An UNBOUND held cross releases at the press origin too.**
@@ -1495,7 +1650,10 @@ private final class Rig {
             defaults: nil, observeScreens: false)
         driver = Driver(ledger: ledger)
         environment = Environment(ledger: ledger)
-        cache = ContinuitySelectionCache(audit: audit)
+        let clock = self.cacheClock
+        cache = ContinuitySelectionCache(
+            audit: audit,
+            now: { clock.value ?? ProcessInfo.processInfo.systemUptime })
         listener = GuestListener(identity: .init(version: "test",
                                                  name: "Host"))
         fileTransfer = MirrorFileTransferModel(listener: listener)
@@ -1517,6 +1675,7 @@ private final class Rig {
                 return nil
             },
             selection: { cache.bindable(activeEpoch: epoch) },
+            selectionMark: { cache.mark },
             grab: grab,
             audit: audit)
         controller.start()
@@ -1533,9 +1692,24 @@ private final class Rig {
         cache.clear(reason: "the Continuity epoch ended")
     }
 
-    func select(_ item: ContinuitySelection.Item) {
+    /// Lets a test place a cache application on the same clock the
+    /// controller reads — the only way to stage a publish that crossed the
+    /// press on the wire, which is the case that must refuse.
+    final class Clock { var value: TimeInterval? }
+    let cacheClock = Clock()
+
+    /// Apply the next selection as though it had landed at `at`.
+    func selectAsOf(_ at: TimeInterval, _ item: ContinuitySelection.Item,
+                    generation: UInt32) {
+        cacheClock.value = at
+        select(item, generation: generation)
+        cacheClock.value = nil
+    }
+
+    func select(_ item: ContinuitySelection.Item,
+                generation: UInt32 = 3) {
         cache.apply(.init(version: ContinuityContract.version, epoch: epoch,
-                          generation: 3, item: item),
+                          generation: generation, item: item),
                     activeEpoch: epoch)
     }
 
