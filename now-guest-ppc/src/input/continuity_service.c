@@ -16,6 +16,7 @@
 #include <MixedMode.h>
 
 #include "continuity_cursor.h"
+#include "mirror_debug.h"
 #include "now_continuity_logic.h"
 #include "nowlog.h"
 
@@ -82,8 +83,15 @@ static void log_front_process_at_down(NowPeekU32 generation)
         length = 31;
     BlockMoveData(&name[1], text, (Size)length);
     text[length] = '\0';
-    now_log(kLogInfo, "mirror", "front at down generation=%lu psn=%lu name=%s",
-            (unsigned long)generation, (unsigned long)psn.lowLongOfPSN, text);
+    /* The success line is a per-press trace, so it is debug tier; the two
+       warn exits above stay unconditional because a press whose front
+       process cannot be read is the failure this helper exists to name. */
+    if (now_mirror_debug_on()) {
+        now_log(kLogInfo, "mirror",
+                "front at down generation=%lu psn=%lu name=%s",
+                (unsigned long)generation, (unsigned long)psn.lowLongOfPSN,
+                text);
+    }
 }
 
 static void record_button_timing(NowPeekContinuityCell *cell,
@@ -239,44 +247,55 @@ static void drain_trace(const NowPeekContinuityCell *cell)
             } else if (entry->event
                         == kNowPeekContinuityTraceKeyboardResult) {
                 NowPeekU32 packed = (NowPeekU32)entry->arg1;
-                now_log_memory(
-                    (packed & 0xFFFFu) == kNowPeekContinuityKeyErrorNone
-                        ? kLogInfo : kLogError,
-                    "mirror",
-                    "keyboard apply generation=%lu action=%lu error=%lu",
-                    (unsigned long)(NowPeekU32)entry->arg0,
-                    (unsigned long)((packed >> 16) & 0xFFFFu),
-                    (unsigned long)(packed & 0xFFFFu));
+                /* A key that FAILED to apply is the product's story and
+                   logs whatever the debug flag says; a key that worked is
+                   a per-event trace. */
+                if (now_mirror_debug_on()
+                        || (packed & 0xFFFFu)
+                            != (NowPeekU32)kNowPeekContinuityKeyErrorNone) {
+                    now_log_memory(
+                        (packed & 0xFFFFu) == kNowPeekContinuityKeyErrorNone
+                            ? kLogInfo : kLogError,
+                        "mirror",
+                        "keyboard apply generation=%lu action=%lu error=%lu",
+                        (unsigned long)(NowPeekU32)entry->arg0,
+                        (unsigned long)((packed >> 16) & 0xFFFFu),
+                        (unsigned long)(packed & 0xFFFFu));
+                }
             } else if (entry->event
                         == kNowPeekContinuityTraceIdleSettle) {
-                now_log(kLogInfo, "mirror",
-                        "idle settle count=%lu max-gap=%lu ticks=%lu",
-                               (unsigned long)(NowPeekU32)entry->arg0,
-                               (unsigned long)(NowPeekU32)entry->arg1,
-                               (unsigned long)entry->ticks);
+                if (now_mirror_debug_on()) {
+                    now_log(kLogInfo, "mirror",
+                            "idle settle count=%lu max-gap=%lu ticks=%lu",
+                                   (unsigned long)(NowPeekU32)entry->arg0,
+                                   (unsigned long)(NowPeekU32)entry->arg1,
+                                   (unsigned long)entry->ticks);
+                }
             } else if (entry->event
                         == kNowPeekContinuityTraceEventObserved) {
-                NowPeekU32 packed = (NowPeekU32)entry->arg0;
-                NowPeekU32 name = (NowPeekU32)entry->arg1;
-                char app[5];
-                int c;
+                if (now_mirror_debug_on()) {
+                    NowPeekU32 packed = (NowPeekU32)entry->arg0;
+                    NowPeekU32 name = (NowPeekU32)entry->arg1;
+                    char app[5];
+                    int c;
 
-                app[0] = (char)((name >> 24) & 0xFFu);
-                app[1] = (char)((name >> 16) & 0xFFu);
-                app[2] = (char)((name >> 8) & 0xFFu);
-                app[3] = (char)(name & 0xFFu);
-                app[4] = '\0';
-                for (c = 0; c < 4; c++) {
-                    if (app[c] < 0x20 || app[c] > 0x7E)
-                        app[c] = '.';
+                    app[0] = (char)((name >> 24) & 0xFFu);
+                    app[1] = (char)((name >> 16) & 0xFFu);
+                    app[2] = (char)((name >> 8) & 0xFFu);
+                    app[3] = (char)(name & 0xFFu);
+                    app[4] = '\0';
+                    for (c = 0; c < 4; c++) {
+                        if (app[c] < 0x20 || app[c] > 0x7E)
+                            app[c] = '.';
+                    }
+                    now_log(kLogInfo, "mirror",
+                            "synthetic event observed down=%lu "
+                            "when-low=%lu ticks=%lu app=%s",
+                                   (unsigned long)((packed >> 16) & 0xFFFFu),
+                                   (unsigned long)(packed & 0xFFFFu),
+                                   (unsigned long)entry->ticks, app);
                 }
-                now_log(kLogInfo, "mirror",
-                        "synthetic event observed down=%lu "
-                        "when-low=%lu ticks=%lu app=%s",
-                               (unsigned long)((packed >> 16) & 0xFFFFu),
-                               (unsigned long)(packed & 0xFFFFu),
-                               (unsigned long)entry->ticks, app);
-            } else {
+            } else if (now_mirror_debug_on()) {
                 now_log_memory(kLogInfo, "mirror",
                                "resident trace seq=%lu event=%lu ticks=%lu arg=%ld,%ld",
                                (unsigned long)entry->seq,
