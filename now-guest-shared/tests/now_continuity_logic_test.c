@@ -151,6 +151,55 @@ int main(void)
               kNowContinuityExposureDeadlineTicksPress)
           == kNowContinuityBarrierExpired);
 
+    /* Settling the edge's own point before the edge. The 2026-08-15 17:19:06
+       metal line is the case: the epoch had already EXITED (disarmed) when
+       the release was served, so the ordinary active-only apply declined and
+       this side's last applied point was 501,446 - an early drag point the
+       target's own drag loop starved us at - while the edge rode the host's
+       settled origin 504,451. Without this the barrier holds against 501,446
+       and burns its whole 30-tick bound. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitDisarmed, 1, 1, 1,
+              504, 451, 501, 446) == 1);
+    /* Already there: no manager traffic for a point the pointer holds. This
+       is the ordinary active round, where the apply above ran first. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 1, 1,
+              504, 451, 504, 451) == 0);
+    /* One axis is enough to be elsewhere. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 1, 1,
+              504, 451, 504, 446) == 1);
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 1, 1,
+              504, 451, 501, 451) == 1);
+    /* Nothing applied yet: the edge's point is the only one there is. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 1, 0,
+              504, 451, 0, 0) == 1);
+    /* No edge pending, or no position this epoch ever carried: the cell's
+       point is then a previous epoch's and moving to it is a teleport. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 0, 1, 1,
+              504, 451, 501, 446) == 0);
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 0, 1,
+              504, 451, 501, 446) == 0);
+    /* Never against the human's own hand: a guest-input exit means somebody
+       touched the trackpad, and tidying the release would take the machine
+       off them. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitGuestInput, 1, 1, 1,
+              504, 451, 501, 446) == 0);
+    /* A lease death or host-left still settles: nobody else has the pointer,
+       and the edge is about to be dispatched wherever it sits. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitLeaseExpired, 1, 1, 1,
+              504, 451, 501, 446) == 1);
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitHostLeft, 1, 1, 1,
+              504, 451, 501, 446) == 1);
+
     CHECK(now_continuity_exit_due(
         100, 90, 90, 1, 1, 11, 20, 0, 10, 20, 0)
         == kNowPeekContinuityExitGuestInput);

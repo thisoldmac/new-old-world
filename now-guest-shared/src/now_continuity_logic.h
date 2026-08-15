@@ -77,6 +77,22 @@ int now_continuity_button_barrier(int have_request, int have_observed,
                                   NowPeekU32 waited_ticks,
                                   NowPeekU32 deadline_ticks);
 
+/* The barrier can only be satisfied if what this side applied IS the point
+   the edge rides with. See now_continuity_settle_before_edge - and note that
+   NO exposure tolerance is the answer to the 2026-08-15 near-miss deltas:
+   the exposed point there equalled the host's settled origin to the pixel,
+   so a few pixels of slack would have hidden a stale point rather than
+   measured a lagging one, and could not have covered the same round's
+   12,-11 miss without swallowing the 60px genuine miss the barrier exists
+   to catch. */
+int now_continuity_settle_before_edge(NowPeekU32 exit_reason,
+                                      int have_edge, int position_valid,
+                                      int applied_valid,
+                                      NowPeekI32 request_h,
+                                      NowPeekI32 request_v,
+                                      NowPeekI32 applied_h,
+                                      NowPeekI32 applied_v);
+
 NowPeekU32 now_continuity_exit_due(
     NowPeekU32 ticks, NowPeekU32 last_arrival, NowPeekU32 lease,
     int have_physical, int expected_valid,

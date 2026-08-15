@@ -143,6 +143,51 @@ int now_continuity_button_barrier(int have_request, int have_observed,
     return kNowContinuityBarrierWait;
 }
 
+/* MUST THE EDGE'S OWN POSITION BE APPLIED FIRST?
+ *
+ * The barrier above asks whether the point this side applied has been
+ * exposed. It is only ever answerable if the point this side applied is the
+ * point the EDGE RIDES WITH, and on the one path that matters it is not.
+ *
+ * The resident drives the pointer through low memory at interrupt time while
+ * the application is starved inside the target's own drag loop, and says so
+ * in its own words: "the final point remains requested below so task time can
+ * reconcile the drawn Cursor Device once the release unwinds it". The
+ * application's reconcile is gated on the epoch still being ACTIVE - and a
+ * cross-edge handoff ends the epoch in the same breath as the release, so the
+ * gate declines exactly when the reconcile was promised. The application's
+ * last Cursor Device point then stays where the drag loop starved it, early
+ * and near the press, while the settled point the host sent lives only in low
+ * memory. The Cursor Device record is upstream of low memory, so that stale
+ * point is not merely a wrong reading: it is the point the machine will
+ * re-assert.
+ *
+ * Metal, PowerBook 1400c, 2026-08-15 17:19:06: applied=501,446 against
+ * exposed=504,451, where 504,451 is EXACTLY the point the host logged as
+ * settled. Nothing was rounding and nothing was lagging - the barrier was
+ * holding an edge against a point no longer on the wire, and spent its whole
+ * half-second deadline doing it.
+ *
+ * Never against the human's own hand: a guest-input exit means somebody
+ * touched the trackpad, and moving the pointer back for the sake of a tidy
+ * release would take the machine off them. */
+int now_continuity_settle_before_edge(NowPeekU32 exit_reason,
+                                      int have_edge, int position_valid,
+                                      int applied_valid,
+                                      NowPeekI32 request_h,
+                                      NowPeekI32 request_v,
+                                      NowPeekI32 applied_h,
+                                      NowPeekI32 applied_v)
+{
+    if (!have_edge || !position_valid)
+        return 0;
+    if (exit_reason == (NowPeekU32)kNowPeekContinuityExitGuestInput)
+        return 0;
+    if (!applied_valid)
+        return 1;
+    return applied_h != request_h || applied_v != request_v;
+}
+
 NowPeekU32 now_continuity_exit_due(
     NowPeekU32 ticks, NowPeekU32 last_arrival, NowPeekU32 lease,
     int have_physical, int expected_valid,
