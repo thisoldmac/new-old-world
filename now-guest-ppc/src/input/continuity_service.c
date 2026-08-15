@@ -452,15 +452,6 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
             err = now_continuity_cursor_move((unsigned long)cell->epoch,
                                              (unsigned long)request_seq,
                                              (long)h, (long)v);
-            /* A position applied under a held button is this side's first
-               evidence that the press is a DRAG rather than a click, and it
-               is the moment the press probe becomes due. The Finder has by
-               now processed the down and selected whatever was under it —
-               which is the selection the button gate would otherwise make
-               unpublishable for the whole gesture. See the press probe
-               block in continuity_selection.c. */
-            if (err == noErr && cell->button_down != 0)
-                now_continuity_selection_note_press_drag();
             cell->apply_result_err = (NowPeekI32)err;
             cell->apply_result_seq = request_seq; /* publish result last */
             published_result = 1;

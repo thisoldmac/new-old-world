@@ -24,7 +24,7 @@
        mid-gesture waits out the whole gesture. That is precisely the
        starvation the selection stub exists to avoid, arriving by the
        back door. The exception is the press probe — one bounded ask per
-       press, once the pointer has actually moved — because the gate is
+       press, a few ticks after the down — because the gate is
        otherwise a guarantee that the one selection a drag creates is
        the one selection that can never be published. See the press
        probe block in continuity_selection.c.
@@ -60,13 +60,10 @@ int now_continuity_selection_poll(unsigned long live_epoch);
 /* What the last change published. Never NULL. */
 const NowContinuityStubTable *now_continuity_selection_table(void);
 
-/* The press probe's three moments, called from the button and position
-   applies in continuity_service.c because that is where this side learns
-   what the person's hand did. Arming at the press and firing at the first
-   drag are separate on purpose: a click that never moves is not a drag and
-   must not pay for one. */
+/* The press probe's two moments, called from the button applies in
+   continuity_service.c because that is where this side learns what the
+   person's hand did. */
 void now_continuity_selection_note_press(void);
-void now_continuity_selection_note_press_drag(void);
 void now_continuity_selection_note_release(void);
 
 /* Resolve a grab to a file. Returns a kNowGrab* verdict; `out` is filled

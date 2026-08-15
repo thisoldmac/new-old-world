@@ -29,19 +29,22 @@ static int g_poll_seeded;
    So one probe is allowed per press, and the three fields below are what
    keep "one" honest across a gesture that can last a minute.
 
-   ARMED AT THE DOWN, DUE AT THE FIRST DRAG. Not due at the down: a plain
-   click is not a drag, and making every click across the edge pay a
-   bounded Apple Event wait would be a feel regression charged to the whole
-   feature for a case that only arises when the pointer moves. The first
-   position applied under a held button is the earliest instant this can be
-   distinguished, and it is still seconds before any cross.
+   AT THE DOWN, A COUPLE OF TICKS LATER. The delay is for the Finder: the
+   click that selects has to have been PROCESSED before there is anything
+   new to read, and the manager call only posts it. The first version
+   waited instead for a position applied under a held button — a drag, so
+   that a plain click paid nothing — and the emulator refuted that outright
+   (2026-08-15, epoch 3: 21 seconds of held motion, not one probe). A held
+   gesture's positions are settled by the resident's own tracking, so the
+   task-time apply that arming hung off does not run during a drag at all.
 
-   Whether the Finder answers at all from inside its drag loop is not
-   assumed here — the probe logs its own outcome, which is how that
+   WHETHER THE FINDER ANSWERS FROM INSIDE ITS DRAG LOOP IS NOT ASSUMED
+   HERE. The probe logs its own outcome — err and all — which is how that
    question gets an answer rather than an argument. It is the improvement;
-   the guarantee is confirm_serve_against_finder. */
+   the guarantee, which needs no answer from a busy Finder, is
+   confirm_serve_against_finder. */
 #define kNowSelectionPressProbeTimeout 20L   /* ticks; ~1/3 second */
-#define kNowSelectionPressProbeDelay 2UL     /* ticks after the drag begins */
+#define kNowSelectionPressProbeDelay 3UL     /* ticks after the down */
 static int g_press_probe_armed;
 static int g_press_probe_due;
 static unsigned long g_press_probe_at;
@@ -315,14 +318,13 @@ static void release_grant_for_new_epoch(unsigned long live_epoch)
 void now_continuity_selection_note_press(void)
 {
     g_press_probe_armed = 1;
-    g_press_probe_due = 0;
-}
-
-void now_continuity_selection_note_press_drag(void)
-{
-    if (!g_press_probe_armed || g_press_probe_due) {
-        return;
-    }
+    /* DUE FROM THE DOWN ITSELF, not from the first drag. The first version
+       waited for a position applied under a held button, and on the
+       emulator (2026-08-15, epoch 3, 21 seconds of held motion) it never
+       came: a held gesture's positions are settled by the resident's own
+       tracking, so the task-time position apply this hung off does not run
+       during a drag at all. Waiting for a drag therefore meant waiting for
+       something that cannot arrive. */
     g_press_probe_due = 1;
     g_press_probe_at = (unsigned long)TickCount()
         + kNowSelectionPressProbeDelay;
