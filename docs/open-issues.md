@@ -7,6 +7,18 @@ search:
 
 # Open issues
 
+## WORKS TODAY, DEPRECATED UPSTREAM: `hdiutil create` in the DMG assembler (2026-08-15)
+
+`scripts/assemble-release :: create_dmg` shells out to `hdiutil create
+-srcfolder … -volname … -format UDZO`, and macOS now prints: "'hdiutil
+create -volname -format ...' is deprecated. Please use 'diskutil image
+create from/blank --volumeName --format ...' instead." The DMG still
+builds and mounts correctly (verified 2026-08-15 while adding the
+Applications alias). Migrate to `diskutil image create` on our schedule
+rather than an OS release's — the flags do not map 1:1, so it is a small
+deliberate change with a mount-and-inspect test, not a rename.
+`tools/release-tests` covers the assembler and is the gate for the swap.
+
 ## EMULATOR-OBSERVED AT BEST, METAL NOT AT ALL: 034 wave 4 — the Files cocktail, one name rule, files drop in from outside (2026-08-15, five lanes merged, gate green)
 
 Wave 4 of plan 034, the last implementation wave; `scripts/test-all`
