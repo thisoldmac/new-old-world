@@ -667,6 +667,25 @@ final class ContinuityGuestDragTests: XCTestCase {
         }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
     }
 
+    /// Beside whose WINDOW the seed arrived at, whose PROCESS put it in the
+    /// stream. Without it the log cannot distinguish a real host event from
+    /// this app's own synthetic re-arm, which is the candidate the current
+    /// build hands to `beginDraggingSession` every single time.
+    func testTheSeedEventSaysWhetherThisAppPostedIt() {
+        let rig = Rig()
+        rig.controller.hostProcessIdentifier = { 90210 }
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag seed event")
+                && $0.1.contains("postedByThisApp=no")
+        }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
+    }
+
     private static func witnessed(type: UInt32, at uptime: TimeInterval,
                                   pid: Int64 = 0)
         -> ContinuityWitnessedEvent {

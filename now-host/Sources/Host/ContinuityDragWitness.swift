@@ -119,6 +119,22 @@ struct ContinuityDragWitnessReport: Equatable, Sendable {
     var catchSurface: ContinuityCatchHitTest?
     var ownPID: Int64
 
+    /// Whether the event a drag session was SEEDED from is one this app
+    /// posted, in the same grammar as the end-of-session verdict below.
+    ///
+    /// The two are the same question at opposite ends of one session, and
+    /// both were unanswerable in the 2026-08-15 rounds: the synthetic primary
+    /// down this app posts to re-arm the session state is indistinguishable,
+    /// in every field the seed line carried, from a real event the hardware
+    /// produced. Since the catch surface began winning the hit test that down
+    /// is delivered to our OWN panel and returns through the local monitor as
+    /// the first held event this path sees — so it is a candidate to become
+    /// the seed, and nothing said whether it had.
+    static func seedProvenance(sourcePID: Int64, ownPID: Int64) -> String {
+        "sourcePID=\(sourcePID), postedByThisApp="
+            + (sourcePID == ownPID ? "yes" : "no")
+    }
+
     /// A release this close to the end is the ender; anything older is
     /// history. Deliberately generous — the tap and the session-end callback
     /// reach the main thread by different routes — and stated once here

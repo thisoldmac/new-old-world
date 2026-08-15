@@ -974,10 +974,26 @@ final class ContinuityEdgeController: ObservableObject {
            window this gesture came from is the first thing to know when a
            session starts and then does nothing — and the first metal round
            had no line saying which it was. */
+        /* `postedByThisApp` is the field the 2026-08-15 15:27 log needed and
+           did not have. Since the catch surface started winning the hit test,
+           the synthetic primary down this app posts to re-arm the session no
+           longer falls through to the Finder: it is delivered to our own
+           panel and comes straight back through the LOCAL monitor as a
+           `leftMouseDown` on our window — the first held event this path
+           sees, and so the seed. Every session in that build was seeded that
+           way (8 of 8, `type=1, ourWindow=yes`) and every one ended before
+           the physical release; the build before it seeded from foreign real
+           events and its sessions lasted to the release. Whether that is
+           cause or coincidence is one metal round away, and only if the line
+           says which kind of event it was. */
+        let seedPID = sourceEvent.cgEvent?
+            .getIntegerValueField(.eventSourceUnixProcessID) ?? -1
         audit(.info, "host drag seed event: type=\(sourceEvent.type.rawValue)"
             + ", windowNumber=\(sourceEvent.windowNumber), "
             + "ourWindow=\(sourceEvent.window == nil ? "no" : "yes"), "
-            + "clickCount=\(sourceEvent.clickCount)")
+            + "clickCount=\(sourceEvent.clickCount), "
+            + ContinuityDragWitnessReport.seedProvenance(
+                sourcePID: seedPID, ownPID: hostProcessIdentifier()))
         if let seed = environment.beginFileDrag(waiting.item, at: point,
                                                 sourceEvent: sourceEvent) {
             /* The line the round-2 audit did not have. The trigger event is

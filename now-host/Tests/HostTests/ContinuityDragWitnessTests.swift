@@ -105,6 +105,24 @@ final class ContinuityDragWitnessTests: XCTestCase {
                       "a session nobody watched cannot be reported as fine")
     }
 
+    /// The seed end of the same question. Every session in the 2026-08-15
+    /// 15:27 build was seeded from a `leftMouseDown` on our own catch panel,
+    /// which is the shape this app's own synthetic re-arm produces — and the
+    /// seed line could not say whether that is what it was.
+    func testASeedThisAppPostedIsNamedAsSuch() {
+        XCTAssertEqual(
+            ContinuityDragWitnessReport.seedProvenance(sourcePID: 501,
+                                                       ownPID: 501),
+            "sourcePID=501, postedByThisApp=yes")
+    }
+
+    func testASeedFromAnotherProcessIsNotBlamedOnThisApp() {
+        XCTAssertEqual(
+            ContinuityDragWitnessReport.seedProvenance(sourcePID: 30,
+                                                       ownPID: 501),
+            "sourcePID=30, postedByThisApp=no")
+    }
+
     func testTheTallyCountsEachEventTypeUnderItsOwnName() {
         var witness = ContinuityDragWitness(installed: true)
         witness.record(Self.event(type: 1, at: 100))
