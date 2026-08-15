@@ -46,11 +46,22 @@ ToolServer and the compiler before qualifying the toolchain. Projects pin that
 measured identity; neither a project nor an agent can register an arbitrary
 guest path.
 
+The page lists the projects under that folder and shows the selected one's
+target, configuration, pinned toolchain and declared product. Build and Run act
+on that selection through the same commands the modern Mac drives, so both
+machines get the same answers and the same refusals. The chosen project is
+remembered across relaunches, and choosing a different Projects folder clears
+it. The last few settled build jobs are listed for the session only; the
+durable record of a build is the transcript it writes into the project's own
+Build folder.
+
 ![The PowerPC Development page showing the selected projects folder and MPW toolchain](../../../assets/screenshots/modules/development/ppc.svg){ .now-placeholder }
 
 ## Common tasks
 
 - Create or revise a host-owned classic project.
+- List the projects on the PowerPC Mac, from either machine or from its own
+  console (`development-project catalog`).
 - Register and inspect an MPW installation on the PowerPC Mac.
 - Stage and verify an inactive candidate before building it.
 - Build through the closed compile, link, Rez, copy, stage, and metadata action

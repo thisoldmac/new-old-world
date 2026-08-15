@@ -164,7 +164,7 @@ Commands are a NOW extension under `components.x-commands`. The receiver owns th
 |---|---|---|---|
 | `development` | — | `development` | The PPC guest's human-registered Projects and MPW environment. |
 | `development-build` | `action` (required), `projectID`, `candidateID` | `development-build` | Starts, observes or cancels the PPC guest's page-neutral MPW ToolServer service. |
-| `development-project` | `projectID` (required), `cursor` | `development-project` | Measures and pages one active source tree beneath the human-selected Projects root. |
+| `development-project` | `action`, `projectID`, `cursor` | `development-project` | Lists the active projects beneath the human-selected Projects root, or measures and pages one of them. |
 | `development-stage` | `action` (required), `candidateID` (required), `projectID`, `expectedDigest`, `expectedFiles`, `baseGuestDigest` | `development-stage` | Prepares, observes or discards one inactive guest project candidate. |
 | `development-run` | `productRef` (required) | `development-run` | Launches only the unchanged opaque product measured by the last successful Development build. |
 | `development-test` | `productRef` (required) | `development-test` | Executes the closed test plan declared by the Project.ckp that produced the unchanged opaque product. |
