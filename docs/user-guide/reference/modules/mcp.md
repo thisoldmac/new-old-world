@@ -7,9 +7,9 @@ audience: operator
 lifecycle: experimental
 authority: [docs/agent-integration.md, docs/mcp-coverage.md]
 module_ids: [mcp]
-source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/Host/MCP, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
+source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/Host/MCP, now-host/Sources/Host/MCPModuleView.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
 media_ids: [mcp-host, mcp-ppc]
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -42,9 +42,11 @@ The host exposes independent controls for:
   shows and copies the derived URL, and copies the bearer token without
   rendering the secret in the module or logs.
 
-Each card has independent **Start**, **Stop**, and **Start Automatically**
-controls. Start and Stop affect the current app session; Start Automatically
-is the persisted launch policy for that transport.
+Each card has independent **Start** and **Stop** controls for the current app
+session. Whether a transport starts automatically at launch is the MCP tab of
+the Settings window (**New Old World > Settings…**, or the module's own
+**Settings…** button) — a persisted launch policy the running card no longer
+holds.
 
 The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
@@ -61,7 +63,8 @@ credentials or prove that an MCP client can reach the host.
 
 - Confirm the selected machine and requested capability before granting.
 - Start only the transport required by the client, or enable **Start
-  Automatically** for a transport that should be restored whenever NOW opens.
+  Standard Input automatically** / **Start HTTP automatically** in Settings
+  for a transport that should be restored whenever NOW opens.
 - Copy connection details from the relevant transport card rather than
   locating a helper executable.
 - Read the recent call record after an agent action.

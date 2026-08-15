@@ -15,6 +15,11 @@ private enum LogsHostModuleError: Error, CustomStringConvertible {
 final class LogsHostModuleRuntime: HostModuleRuntime {
     let model: LogsModel
     let continuity: MirrorContinuityController
+    /// `{ context.showSettings(.logs) }`, captured once at construction —
+    /// the page's "Settings…" button for "Log to disk", which moved out
+    /// of the header switches (`Invert` stays: display state, not a
+    /// disk-writing preference).
+    let openSettings: () -> Void
 
     init(context: HostModuleContext) throws {
         guard let logs = context.logs, let continuity = context.continuity else {
@@ -22,6 +27,7 @@ final class LogsHostModuleRuntime: HostModuleRuntime {
         }
         model = logs
         self.continuity = continuity
+        openSettings = { context.showSettings(.logs) }
     }
 }
 
@@ -43,6 +49,7 @@ enum LogsHostModule {
             }
             return AnyView(LogsModuleView(
                 model: runtime.model, log: runtime.model.log,
-                continuity: runtime.continuity))
+                continuity: runtime.continuity,
+                openSettings: runtime.openSettings))
         })
 }

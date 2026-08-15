@@ -28,6 +28,12 @@ struct HostModuleContext {
     let mirrorEngines: MirrorStateEngineRegistry?
     let selectedModuleID: () -> String
     let selectModule: (String) -> Void
+    /// The deep-link seam beside `selectModule`: a module builds
+    /// `{ context.showSettings(.someTab) }` once at construction and hands
+    /// it to its view as a "Settings…" button, the same shape `selectModule`
+    /// already is. Settings itself is not a shelf module — it is a separate
+    /// `NSWindow` — so this cannot simply BE `selectModule` with a tab id.
+    let showSettings: (HostSettingsTab?) -> Void
     let selectGuest: (GuestKey) -> Bool
     let startListening: () -> Void
     let stopListening: () -> Void
@@ -52,6 +58,7 @@ struct HostModuleContext {
          mirrorEngines: MirrorStateEngineRegistry? = nil,
          selectedModuleID: @escaping () -> String = { "" },
          selectModule: @escaping (String) -> Void = { _ in },
+         showSettings: @escaping (HostSettingsTab?) -> Void = { _ in },
          selectGuest: @escaping (GuestKey) -> Bool = { _ in false },
          startListening: @escaping () -> Void = {},
          stopListening: @escaping () -> Void = {},
@@ -78,6 +85,7 @@ struct HostModuleContext {
         self.mirrorEngines = mirrorEngines
         self.selectedModuleID = selectedModuleID
         self.selectModule = selectModule
+        self.showSettings = showSettings
         self.selectGuest = selectGuest
         self.startListening = startListening
         self.stopListening = stopListening

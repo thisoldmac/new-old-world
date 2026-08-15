@@ -3,6 +3,10 @@ import SwiftUI
 @MainActor
 final class WebHostModuleRuntime: HostModuleRuntime {
     let model: WebBridgeModel
+    /// `{ context.showSettings(.web) }`, captured once at construction —
+    /// the page's "Settings…" button for compatibility, safety and
+    /// start-automatically, all moved to Settings.
+    let openSettings: () -> Void
     private let service: WebWireService
     private weak var listener: GuestListener?
 
@@ -11,6 +15,7 @@ final class WebHostModuleRuntime: HostModuleRuntime {
         service = WebWireService(model: model)
         listener = context.listener
         context.listener.webService = service
+        openSettings = { context.showSettings(.web) }
     }
 
     func shutDown() {
@@ -39,6 +44,7 @@ enum WebHostModule {
                 return AnyView(ModuleUnavailableView(
                     reason: "The Web runtime has the wrong type."))
             }
-            return AnyView(WebModuleView(model: runtime.model))
+            return AnyView(WebModuleView(model: runtime.model,
+                                         openSettings: runtime.openSettings))
         })
 }

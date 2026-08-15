@@ -54,14 +54,33 @@ final class MCPTransportOwnershipTests: XCTestCase {
         }
 
         for required in [
-            "startsAutomatically: $settings.stdioStartsAutomatically",
-            "startsAutomatically: $settings.httpStartsAutomatically",
-            "Toggle(\"Start automatically\"",
             "TextField(\"Port\", value: $settings.httpPort",
             ".disabled(isRunning)",
         ] {
             XCTAssertTrue(view.contains(required),
                           "MCP page lost transport configuration: "
+                              + required)
+        }
+    }
+
+    /// Start-automatically for both transports lives in Settings now (G-5 /
+    /// H17), not on the transport card — it is launch-time policy, checked
+    /// once a launch, unlike the port field and lifecycle buttons above.
+    func testStartAutomaticallyMovedToSettingsNotTheMCPPage() throws {
+        let view = try GateSource.hostSwift(
+            "now-host/Sources/Host/MCPModuleView.swift")
+        let settings = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostSettingsView.swift")
+
+        XCTAssertFalse(view.contains("Toggle(\"Start"),
+                       "the MCP page must not carry its own copy of "
+                           + "start-automatically once Settings owns it")
+        for required in [
+            "$model.stdioStartsAutomatically",
+            "$model.httpStartsAutomatically",
+        ] {
+            XCTAssertTrue(settings.contains(required),
+                          "Settings lost MCP's start-automatically control: "
                               + required)
         }
     }

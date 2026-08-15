@@ -7,9 +7,9 @@ audience: user
 lifecycle: experimental
 authority: [web-bridge/README.md, docs/status.md, SECURITY.md]
 module_ids: [web]
-source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/Web/WebWireService.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, now-guest-ppc/src/web/web_proxy_ot.c, now-guest-ppc/src/web/web_proxy_request.c, SECURITY.md]
+source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/Web/WebWireService.swift, now-host/Sources/Host/WebHostModule.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, now-guest-ppc/src/web/web_proxy_ot.c, now-guest-ppc/src/web/web_proxy_request.c, SECURITY.md]
 media_ids: [web-host, web-ppc]
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -33,17 +33,21 @@ The browser does not connect to the modern Mac's LAN address and no second
 browser-facing port is opened there.
 
 The PowerPC Workshop Web page saves only the guest-loopback port and reports
-relay status. The host module owns the browser profile, rendering lens,
-handlers, outbound policy, and internal renderer lifecycle.
+relay status. The host module owns the internal renderer's lifecycle and
+relay status; the browser profile, rendering lens, fetch engine, handlers,
+and outbound policy live in the Web tab of the Settings window
+(**New Old World > Settings…**, or the module's own **Settings…** button),
+alongside whether the renderer starts automatically.
 
 NOW-68K does not yet ship a Web page or MacTCP relay.
 
 ## On the modern Mac
 
-1. Choose a browser profile, rendering lens, and fetch engine.
-2. Optionally choose an installed AI planner or model.
-3. Start the renderer. Its private ephemeral loopback address is managed by
-   New Old World and is not browser configuration.
+1. In Settings' Web tab, choose a browser profile, rendering lens, and fetch
+   engine.
+2. Optionally choose an installed AI planner or model, also in Settings.
+3. Start the renderer from the Web page. Its private ephemeral loopback
+   address is managed by New Old World and is not browser configuration.
 
 Compatible Page is the deterministic default. Reader is a reduced view of the
 same semantic block tree. AI Layout is optional and falls back to Compatible
@@ -78,7 +82,8 @@ existing plaintext guest-to-host connection, so use it only on a trusted
 network.
 
 Private, link-local, loopback, and special-use destinations are blocked by
-default. The unsafe development switch broadens the host's outbound reach and
+default. The unsafe development switch — Settings' Web tab, "Allow private
+and local web destinations (unsafe)" — broadens the host's outbound reach and
 must not be enabled casually.
 
 Ordinary helper logs omit request paths, URL queries, cookies, authorization,
