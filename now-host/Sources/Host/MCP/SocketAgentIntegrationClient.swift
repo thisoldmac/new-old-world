@@ -418,13 +418,13 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
     /// above: `now_guest_log_tail` answered `.hostUnavailable` — "New Old
     /// World host is unavailable" — while the host was up and the
     /// `guest_log_tail` operation was being served.
-    func tailGuestLog(lines: Int?) async
-        -> AgentIntegrationGuestRowReportResult {
+    func tailGuestLog(lines: Int?, area: String?) async
+        -> AgentIntegrationGuestLogRetrievalResult {
         guard let client else {
             return .unavailable(unavailable(for: startupError))
         }
         do {
-            return try await client.tailGuestLog(lines: lines)
+            return try await client.tailGuestLog(lines: lines, area: area)
         } catch {
             return .unavailable(unavailable(for: error))
         }

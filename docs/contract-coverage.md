@@ -267,7 +267,7 @@ number here has been found wrong by re-deriving it.
 | `catsearch` | catalog search across a volume | ✅ | ❌ |
 | `sw` | installed software | ✅ | ✅ |
 | `ls` | list a folder | ✅ | ✅ |
-| `tail` | the end of a file | ✅ | ❌ |
+| `tail` | lines of the guest's own 2000-line log ring — pageable since 2026-08-15 (`area` exact-tag filter applied guest-side, `before` sequence cursor), 40 lines per 4 KB answer | ✅ | ❌ — no `tail` at all: NOW-68K keeps no in-memory ring (its launch log is a disk file only, `src/core/log.c`), so the whole subsystem is absent there, not merely the new paging. `now_guest_log_tail` reports `unavailable` in typed form against it |
 | `reveal` | show an item in the Finder | ✅ | ❌ |
 | `screenshot` | capture the screen | ✅ | ✅ |
 | `vprobe` | framebuffer read cost | ✅ | ✅ |
@@ -1361,7 +1361,7 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 011b668887b39981a0b5a29d76fe3a6732964c0a
+sources-sha1: 96613fbc3f531aad98ab68352a28329ba2c99102
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1546,4 +1546,6 @@ rederived: 2026-08-14T21:15:08-0400 5316a23e unchanged
 rederived: 2026-08-14T23:07:31-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:14-0400 f4dab407 unchanged
 rederived: 2026-08-15T01:11:35-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T03:30:03-0400 a0bc4442 sources
+rederived: 2026-08-15T03:33:28-0400 a0bc4442 unchanged
 -->

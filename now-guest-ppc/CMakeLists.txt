@@ -138,6 +138,7 @@ add_application(now-guest-ppc
     src/core/wire_sleep.c
     src/core/wirestat_cmd.c
     src/core/nowlog.c
+    src/core/logquery.c
     ../now-guest-shared/src/log_retention.c
     ../now-guest-shared/src/log_retention_classic.c
     src/core/wire.c

@@ -12,6 +12,7 @@ static char g_path[64];
 static char g_lines[kLogKept][kLogLineMax];
 static int g_count;                   /* lines held, up to kLogKept */
 static int g_next;                    /* where the next one goes */
+static unsigned long g_seq;           /* lines ever written this launch */
 static short g_folder_vref;
 static long g_folder_dir;
 static Str31 g_current_name;
@@ -169,6 +170,11 @@ int now_log_count(void)
     return g_count;
 }
 
+unsigned long now_log_seq(void)
+{
+    return g_seq;
+}
+
 const char *now_log_line(int index)
 {
     int slot;
@@ -201,6 +207,7 @@ static void log_line(LogLevel level, const char *area, const char *fmt,
     strncpy(g_lines[g_next], line, kLogLineMax - 1);
     g_lines[g_next][kLogLineMax - 1] = '\0';
     g_next = (g_next + 1) % kLogKept;
+    ++g_seq;
     if (g_count < kLogKept) {
         ++g_count;
     }
@@ -255,31 +262,3 @@ void now_log_flush(void)
     }
 }
 
-int now_log_tail(int count, char *out, long cap)
-{
-    int written = 0;
-    int i;
-    long used = 0;
-
-    if (out == NULL || cap < 1) {
-        return 0;
-    }
-    out[0] = '\0';
-    if (count > g_count) {
-        count = g_count;
-    }
-    for (i = count; i > 0; --i) {
-        int slot = (g_next - i + kLogKept * 2) % kLogKept;
-        long len = (long)strlen(g_lines[slot]) + 1;
-
-        if (used + len + 1 > cap) {
-            break;
-        }
-        strcpy(out + used, g_lines[slot]);
-        used += len - 1;
-        out[used++] = '\n';
-        out[used] = '\0';
-        ++written;
-    }
-    return written;
-}

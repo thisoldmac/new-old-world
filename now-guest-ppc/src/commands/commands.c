@@ -2,6 +2,7 @@
 
 #include "act_cmds.h"
 #include "desktop.h"
+#include "logquery.h"
 #include "input_cmds.h"
 #include "mach_verbs.h"
 #include "nowlog.h"
@@ -971,63 +972,51 @@ static void run_net(long id, char *out, long cap)
     }
 }
 
-/* The last lines of this launch's log, one ROW per line so either
-   console renders them aligned rather than as one long string. A row is
+/* Lines of this launch's log, one ROW per line so either console
+   renders them aligned rather than as one long string. A row is
    [time, the rest] — the shape every other command returns, which is
    why a new command needs no host code.
 
-   Bounded by BYTES, not just line count: a control frame caps at 4 KB
-   and forty long lines do not fit. When they do not, the OLDEST go and
-   the answer says so; a tail that silently shortens is a tail that lies
-   about what happened most recently. */
+   The selection — how many, which area, older than what — is
+   logquery.c, shared with the guest's own console (parity rule 2); this
+   face only renders one page and its edges. Bounded by BYTES on top of
+   the page's 40 lines: a control frame caps at 4 KB and forty long
+   lines do not fit. Lines that do not fit are not dropped any more —
+   they are the NEXT page's, and the "next" row carries the cursor that
+   reaches them, so nothing shortens silently in either direction. */
 static void run_tail(const char *request_json, long id, char *out, long cap)
 {
-    char lines[2600];
-    /* tail never returns more than 40 lines (the cap below); size the
-       index to that, not to the whole ring, which is now thousands. */
-    const char *starts[kLogTailMax];
-    char line[128];
-    long want = now_json_find_int(request_json, "lines", 20);
+    LogQuery q;
+    LogPage page;
+    char line[160];
+    char area_arg[16];
     long pos;
     long budget;
-    int got, first, i;
-    char *p;
+    int first, i;
 
-    /* "tail 40": the count is the first integer on the line. The typed
+    now_logquery_defaults(&q);
+    /* The human line form fills whatever the typed args leave; a typed
        arg wins, so a module asking for 20 still gets 20. */
-    if (now_json_value(request_json, "lines") == NULL
-        && now_cmd_line(request_json, line, sizeof line)) {
-        long typed;
+    if (now_cmd_line(request_json, line, sizeof line)) {
+        now_logquery_parse_line(line, &q);
+    }
+    q.lines = now_json_find_int(request_json, "lines", q.lines);
+    q.before = now_json_find_u32(request_json, "before", q.before);
+    if (now_json_find_string(request_json, "area",
+                             area_arg, sizeof area_arg)) {
+        strncpy(q.area, area_arg, kLogQueryAreaMax);
+        q.area[kLogQueryAreaMax] = '\0';
+    }
 
-        if (now_cmd_line_int(line, &typed)) {
-            want = typed;
-        }
-    }
-    if (want < 1) {
-        want = 1;
-    }
-    if (want > 40) {
-        want = 40;
-    }
-    got = now_log_tail((int)want, lines, sizeof lines);
+    now_logquery_select(&q, &page);
 
-    /* now_log_tail writes oldest first; index them in place. */
-    p = lines;
-    for (i = 0; i < got && p != NULL && *p != '\0'; ++i) {
-        starts[i] = p;
-        p = strchr(p, '\n');
-        if (p != NULL) {
-            *p++ = '\0';
-        }
-    }
-    got = i;
-
-    /* Walk backwards from the newest to find how many fit, so that the
-       lines dropped are the ones furthest from what just happened. */
-    budget = cap - 160;               /* the JSON around the rows */
-    first = got;
-    for (i = got - 1; i >= 0; --i) {
-        long len = (long)strlen(starts[i]) * 6 + 8;   /* worst-case escape */
+    /* Walk backwards from the newest to find how many fit the frame, so
+       the lines deferred to the next page are the ones furthest from
+       what just happened. */
+    budget = cap - 320;               /* the JSON and log group around the rows */
+    first = page.returned;
+    for (i = page.returned - 1; i >= 0; --i) {
+        long len = (long)strlen(now_log_line(page.idx[i])) * 6 + 8;
 
         if (budget - len < 0) {
             break;
@@ -1039,16 +1028,17 @@ static void run_tail(const char *request_json, long id, char *out, long cap)
     pos = snprintf(out, (size_t)cap,
                    "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
                    "\"output\":{\"tail\":[", id);
-    for (i = first; i < got; ++i) {
+    for (i = first; i < page.returned; ++i) {
         char stamp[16];
         char esc_time[40];
         char esc_rest[320];
-        const char *rest = starts[i];
-        const char *space = strchr(starts[i], ' ');
+        const char *stored = now_log_line(page.idx[i]);
+        const char *rest = stored;
+        const char *space = strchr(stored, ' ');
 
-        if (space != NULL && space - starts[i] < (long)sizeof stamp) {
-            memcpy(stamp, starts[i], (size_t)(space - starts[i]));
-            stamp[space - starts[i]] = '\0';
+        if (space != NULL && space - stored < (long)sizeof stamp) {
+            memcpy(stamp, stored, (size_t)(space - stored));
+            stamp[space - stored] = '\0';
             rest = space + 1;
         } else {
             stamp[0] = '\0';
@@ -1059,10 +1049,31 @@ static void run_tail(const char *request_json, long id, char *out, long cap)
                         "%s[\"%s\",\"%s\"]", i > first ? "," : "",
                         esc_time, esc_rest);
     }
-    snprintf(out + pos, (size_t)cap - (size_t)pos,
-             "],\"log\":[[\"file\",\"%s\"],[\"shown\",\"%d of %d%s\"]]}}",
-             now_log_path(), got - first, got,
-             first > 0 ? " (older ones did not fit)" : "");
+
+    /* The answer's own edges, as rows (contract, x-commands tail).
+       "next" appears exactly when older matching lines exist — the ones
+       the byte budget deferred plus the ones beyond the page — and is
+       the oldest RENDERED line's sequence, so `before` it is the whole
+       remainder and nothing is skipped between pages. */
+    pos += snprintf(out + pos, (size_t)cap - (size_t)pos,
+                    "],\"log\":[[\"file\",\"%s\"],"
+                    "[\"shown\",\"%d of %ld\"],"
+                    "[\"matching\",\"%ld\"],"
+                    "[\"held\",\"%d of %d\"]",
+                    now_log_path(), page.returned - first, page.matching,
+                    page.matching, now_log_count(), kLogKept);
+    if (q.area[0] != '\0') {
+        char esc_area[24];
+
+        now_json_escape(q.area, esc_area, sizeof esc_area);
+        pos += snprintf(out + pos, (size_t)cap - (size_t)pos,
+                        ",[\"area\",\"%s\"]", esc_area);
+    }
+    if (first < page.returned && (first > 0 || page.older > 0)) {
+        pos += snprintf(out + pos, (size_t)cap - (size_t)pos,
+                        ",[\"next\",\"%lu\"]", page.seq[first]);
+    }
+    snprintf(out + pos, (size_t)cap - (size_t)pos, "]}}");
 }
 
 /* ps: the running processes as flat [name, detail] rows. The Processes

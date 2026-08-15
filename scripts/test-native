@@ -311,6 +311,10 @@ run_c now-guest-ppc conn_fields_test.c       ""  src/connection/conn_fields.c
 run_c now-guest-ppc diag_layout_test.c       ""  src/diagnostics/diag_layout.c
 run_c now-guest-ppc mcp_layout_test.c        ""  src/mcp/mcp_layout.c
 run_c now-guest-ppc json_native_test.c       ""  src/core/json.c
+# `tail`'s shared selection: the grammar both faces parse, the exact area
+# match, and the sequence cursor that pages a LIVE ring without skipping
+# or repeating a line. The harness stands in for nowlog.c's ring.
+run_c now-guest-ppc logquery_native_test.c   ""  src/core/logquery.c
 run_c now-guest-ppc product_feature_policy_test.c "" \
       src/core/product_features.generated.c src/core/product_feature_policy.c
 run_c now-guest-ppc sha256_test.c            ""  src/update/sha256.c

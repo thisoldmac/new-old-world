@@ -96,6 +96,10 @@ static const char *const d_tail[] = {
     "  folder beside this application, so what happened",
     "  survives a crash that takes everything else. The",
     "  same command works from the other Mac's console.",
+    "  An area narrows to one subsystem's tag (\"files\",",
+    "  \"wire\"); \"before N\" continues an answer at the",
+    "  cursor its last line offered, back through all",
+    "  2000 held lines.",
     NULL
 };
 
@@ -646,8 +650,9 @@ const NowCommandDoc kNowCommandDocs[] = {
       "ls [path]", d_ls },
     { "put", 0, "send a file to the other Mac",
       "put <full path>", d_put },
-    { "tail", 1, "the last lines of this launch's log",
-      "tail [lines]   (default 20, most 40)", d_tail },
+    { "tail", 1, "lines of this launch's log, pageable",
+      "tail [lines] [area] [before N]   (default 20, most 40 a page)",
+      d_tail },
     { "net", 1, "this Mac's link, address and network hardware",
       "net", d_net },
     { "putstat", 1, "where the last file received spent its time",

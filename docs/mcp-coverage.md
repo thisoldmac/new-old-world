@@ -517,20 +517,22 @@ and one bound worth knowing:
 composed rather than facts about the machine, so what it may be pointed at is
 worth stating here rather than only in its own source.
 
-**It may be pointed at nothing.** The `tail` verb takes one argument and it
-is a count (`x-commands.tail`: `lines`, default 20, most 40). What it reads
-is the guest application's own in-memory ring for the launch it is in — the
-same text the person at that machine has on its Logs page — and there is no
-path in the verb, none in the local operation, and none in the tool's input
-schema. The decision behind that:
+**It may be pointed at nothing.** The `tail` verb's arguments are a count,
+an area tag and a paging cursor (`x-commands.tail`: `lines` — default 20,
+most 40 per answer; `area` — a 6-character tag, filtered on the guest;
+`before` — the sequence cursor the host follows page by page). What it
+reads is the guest application's own in-memory ring for the launch it is
+in — the same text the person at that machine has on its Logs page — and
+there is no path in the verb, none in the local operation, and none in the
+tool's input schema. The decision behind that:
 
 | | |
 |---|---|
 | Why not a path | This row returns BYTES, which `file.list` and `reveal` do not. The Files family is confined to the host-owned `guestRoot`; `reveal` leaves that confinement only because it hands nothing back. "Tail any file on the volume" is a materially wider authority than anything on this surface has, and it is not the host's to grant in any case — the verb would have to grow an argument, which is a guest change, which means it was never a projection. |
 | What already covers the named case | `now_guest_files_download`, under `guestRoot`, with the authority that belongs there. |
 | What it can still disclose | A log line is prose, and some of that prose contains paths: the `get`, `put` and `files` areas log the items they handled by design ([logging.md](logging.md)). So a caller can learn the NAMES of items the machine touched, including outside `guestRoot`. The bound is the guest's own editorial judgement about its log, and it is the same text the person at the machine reads — but it is a widening over the Files family and is recorded rather than discovered later. |
-| Who chooses how much | The caller, between 1 and 40. Above 40 is refused rather than clamped: the guest cannot fit more in one 4 KB control frame, and a silently smaller answer to a bigger question reads as a machine that went quiet. |
-| How the bound stays visible | The guest's own `log` group says it — `shown` reads `"12 of 20 (older ones did not fit)"` when its frame budget dropped the oldest lines. That row is carried through untouched, and it is also the cross-check on the host's rendering bounds, which are sized from the guest's own buffers so they cannot bite first. |
+| Who chooses how much | The caller, between 1 and the ring's 2000. Above 2000 is refused rather than clamped: there are no such lines to have, and a silently smaller answer to a bigger question reads as a machine that went quiet. One wire answer still carries at most 40 lines — that bound belongs to the 4 KB control frame — so a deep ask is the HOST paging the guest's `before` cursors, and the answer's `pages` field reports what the walk cost. |
+| How the bound stays visible | The answer's own `shown` field says it — `"N of M (older ones did not fit)"` when the retrieval's byte budget, page cap or walk deadline stopped it before the count did, with `matching` beside it so a short log reads differently from a cut answer. The oldest lines are always the ones dropped. |
 | Encoding | Settled on the guest, not guessed here: it maps its MacRoman high range through its own table and emits `\uXXXX`, so nothing undecodable reaches this side. CR endings are gone before that — the ring holds lines without terminators. A control character *inside* a line is written `\xNN` so it is neither dropped nor passed through to corrupt a row. |
 
 **One host-side limit this row found, which is not about `tail`.**
@@ -1195,7 +1197,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 445c8e9f6b1e110cf03f84782004d77580c91ed2
+sources-sha1: 222dc2f48e7d989b86cf6b0a9d439c1d8f48692d
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1370,4 +1372,6 @@ rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
 rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:15-0400 f4dab407 sources
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T03:30:03-0400 a0bc4442 sources
+rederived: 2026-08-15T03:33:29-0400 a0bc4442 unchanged
 -->

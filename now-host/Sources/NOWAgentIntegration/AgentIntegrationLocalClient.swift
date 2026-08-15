@@ -23,6 +23,7 @@ public struct AgentIntegrationLocalClient: Sendable {
     private let transferReceiveTimeout: TimeInterval
     private let capabilitiesReceiveTimeout: TimeInterval
     private let captureReceiveTimeout: TimeInterval
+    private let guestLogReceiveTimeout: TimeInterval
 
     public init(endpoint: AgentIntegrationEndpoint? = nil,
                 expectedUID: uid_t = geteuid()) throws {
@@ -52,7 +53,13 @@ public struct AgentIntegrationLocalClient: Sendable {
          // transfer does; a deep full screen off a 68030 spends seconds
          // more on the wire after that. This is that sum plus slack, not a
          // read-only window.
-         captureReceiveTimeout: TimeInterval = 45) throws {
+         captureReceiveTimeout: TimeInterval = 45,
+         // Read-only, but a RETRIEVAL: the app side pages the guest's
+         // `tail` verb for as long as the ask is deep, and it bounds its
+         // own walk at 90 s before answering with what it has. This is
+         // that bound plus slack, so the socket never gives up on an
+         // answer the app was still honestly assembling.
+         guestLogReceiveTimeout: TimeInterval = 100) throws {
         self.endpoint = try endpoint ?? .currentUser(uid: expectedUID)
         self.expectedUID = expectedUID
         self.readOnlyReceiveTimeout = readOnlyReceiveTimeout
@@ -60,6 +67,7 @@ public struct AgentIntegrationLocalClient: Sendable {
         self.transferReceiveTimeout = transferReceiveTimeout
         self.capabilitiesReceiveTimeout = capabilitiesReceiveTimeout
         self.captureReceiveTimeout = captureReceiveTimeout
+        self.guestLogReceiveTimeout = guestLogReceiveTimeout
     }
 
     public func sessionCapabilities(probeCostly: Bool) async throws
@@ -470,9 +478,10 @@ public struct AgentIntegrationLocalClient: Sendable {
         return result
     }
 
-    public func tailGuestLog(lines: Int?) async throws
-        -> AgentIntegrationGuestRowReportResult {
-        let response = try await send(.guestLogTail(lines: lines))
+    public func tailGuestLog(lines: Int?, area: String?) async throws
+        -> AgentIntegrationGuestLogRetrievalResult {
+        let response = try await send(.guestLogTail(lines: lines,
+                                                    area: area))
         guard let result = response.guestLogTailResult else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Local response had no guest log result")
@@ -741,8 +750,13 @@ public struct AgentIntegrationLocalClient: Sendable {
                    guest working exactly as intended, and the two-second
                    idle bound would report it as a broken socket. */
                 timeout = launchReceiveTimeout
+            case .guestLogTail:
+                /* Read-only but a retrieval — the app side pages the
+                   guest's `tail` for as long as the ask is deep, inside
+                   its own 90 s walk bound. */
+                timeout = guestLogReceiveTimeout
             case .bringToFront, .guestFileMutation,
-                 .transferCancel, .guestLogTail, .machineFacts,
+                 .transferCancel, .machineFacts,
                  .revealItem:
                 /* Bounded reads and small mutations. Each reaches the guest
                    and back inside its own watchdog: a `file.result` is one

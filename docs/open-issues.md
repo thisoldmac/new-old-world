@@ -7,6 +7,40 @@ search:
 
 # Open issues
 
+## SHIPPED: the guest's log ring is retrievable over the wire, and what that leaves unverified (2026-08-15, `feat/guest-log-retrieval`)
+
+Diagnosing a guest defect used to mean saving the Logs page to a file on
+the PowerBook, FTPing it off, and pasting it to an agent — five times in
+one night on 2026-08-14. Now `tail` pages its 2000-line ring
+(`area` exact-tag filter applied guest-side, `before` sequence cursor,
+still 40 lines per 4 KB answer), the selection is one implementation
+under both guest faces (`logquery.c`), and `now_guest_log_tail` walks
+the cursors so an agent asks for 200 lines in one call —
+`{"lines": 200}`, optionally `{"area": "files"}` — and gets whole lines
+in the host log's shape (`shown`, `matching`, `ringCapacity`, `pages`).
+Local protocol v13.
+
+Verified: native tests (grammar, exact-match padding, once-and-only-once
+paging, cursor-over-roll) and host tests mutation-checked; end-to-end on
+an OS 9.1 emulator clone — 186 of 186 ring lines over 19 pages, a
+150-line `proc` filter over 14, content and ordering checked against the
+traffic that generated them (rig: the run's `provenance.md`).
+
+Still unverified:
+
+- **Nothing here is metal-verified.** The walk's cost on a real
+  PowerBook link — a full-ring retrieval is tens of `tail` round trips,
+  and metal RTTs are larger than the emulator's — and the behaviour of a
+  deep walk while a transfer holds the lane have not been watched on
+  hardware. The walk was not timed on the emulator either; nobody
+  should quote a duration for it yet.
+- The guest's own console face of the new grammar (`tail 40 files
+  before N` typed at the machine) is proven by the shared parser's
+  native test, not by a hand on the real keyboard.
+- A guest older than this build answers one page with no cursor; the
+  host serves it as a complete single-page answer. Exercised in tests,
+  never against an actually-old binary.
+
 ## FIXED, AND EVERY GATE WAS GREEN FOR ITS WHOLE LIFE: the MCP agent surface published schemas no conforming client would accept (2026-08-15, `fix/mcp-outputschema-root-type`)
 
 29 of the 46 tools rendered an `outputSchema` whose only root key was

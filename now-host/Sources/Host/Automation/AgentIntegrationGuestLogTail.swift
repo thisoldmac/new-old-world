@@ -1,32 +1,40 @@
 import Foundation
 import NOWAgentIntegration
 
-/// Drives the guest's `tail` verb for an agent face.
+/// Drives the guest's `tail` verb for an agent face — as many pages of it
+/// as the ask is deep.
 ///
-/// Thin, like `AgentIntegrationRevealItem` and for the same reason: `tail`
-/// needs no composition. The guest reads its own ring, applies its own
-/// bounds and answers in one command result, so this layer bounds, forwards
-/// and renders — and decides nothing about the machine (rule 2,
-/// docs/agent-integration.md).
+/// One `tail` answer is at most 40 lines, because it must fit a 4 KB
+/// control frame; the ring holds 2000. This layer closes that gap the way
+/// the contract says to (`x-commands` tail): every answer's `log` group
+/// offers a `next` row — the sequence cursor for the next-older page — and
+/// this loop follows it until the ask is served, the ring is exhausted, or
+/// a bound below stops it out loud. The guest decides what matches and what
+/// a page holds; this side only asks again, which is rule 2 of
+/// docs/agent-integration.md doing its work on a paged verb.
 ///
 /// **Three things it does not do.**
 ///
-/// It does not ask for a file, and there is nowhere it could: the verb has
-/// one argument and it is a count. `GuestLogTailProjection` carries the
-/// whole of why that stays true.
+/// It does not ask for a file, and there is nowhere it could: the verb's
+/// arguments are a count, an area tag and a cursor.
+/// `GuestLogTailProjection` carries the whole of why that stays true.
 ///
-/// It does not fill in the default. An absent count is sent as an absent
+/// It does not fill in the default. An absent count crosses as an absent
 /// `lines`, so the number 20 is the guest's own and not a copy of it living
-/// on this side — the failure mode being avoided is the one the AGENTS.md
-/// preamble names, a limit stated in three places until a message grows past
-/// the smallest.
+/// on this side.
 ///
-/// It does not summarise, sort or re-time the lines. They arrive oldest
-/// first with the guest's own clock on them, which is not this machine's
-/// clock and is not comparable to it (docs/logging.md, *Reading both at
-/// once*); rewriting them into host time would be this side answering a
-/// question about when something happened on a Mac whose clock it cannot
-/// see.
+/// It does not summarise, sort or re-time the lines. They are reassembled
+/// oldest-first with the guest's own clock on them, which is not this
+/// machine's clock and is not comparable to it (docs/logging.md).
+///
+/// **The bounds, all of which report themselves.** A retrieval stops at the
+/// byte budget (`maximumTotalBytes`), the page cap
+/// (`maximumPageRequests`), or the walk deadline (`walkDeadline`) — and
+/// every early stop drops OLDEST lines only and says so in `shown`, because
+/// a tail that silently shortens is a tail that lies about what happened
+/// most recently. A cursor that fails to decrease stops the walk too:
+/// a loop that trusts a guest's cursor unboundedly is a loop a defective
+/// guest drives forever.
 @MainActor
 final class AgentIntegrationGuestLogTail {
     private enum CommandOutcome {
@@ -34,15 +42,21 @@ final class AgentIntegrationGuestLogTail {
         case timedOut
     }
 
-    /// A ring read and a `snprintf`. Nothing here touches the disk, so this
-    /// is a wire-and-yield budget rather than a work budget — generous
-    /// against a guest that is mid-transfer and slow to come back round the
-    /// event loop, and far under the launch settle it does not share.
+    /// One page is a ring read and a `snprintf` — a wire-and-yield budget
+    /// rather than a work budget, generous against a guest that is
+    /// mid-transfer and slow to come back round the event loop.
     static let commandTimeout: TimeInterval = 15
+
+    /// The whole walk's budget. Under the local socket's own window (100 s
+    /// in `AgentIntegrationLocalClient`), so the app answers with what it
+    /// has rather than the socket giving up on an answer that was still
+    /// being assembled.
+    static let walkDeadline: TimeInterval = 90
 
     private let listener: GuestListener
     private let currentSessionID: @MainActor () -> UUID?
     private let commandTimeout: TimeInterval
+    private let walkDeadline: TimeInterval
     private let clock: @MainActor () -> Date
     private let audit: (HostLog.LogLevel, String) -> Void
 
@@ -50,100 +64,183 @@ final class AgentIntegrationGuestLogTail {
          currentSessionID: @escaping @MainActor () -> UUID?,
          commandTimeout: TimeInterval = AgentIntegrationGuestLogTail
              .commandTimeout,
+         walkDeadline: TimeInterval = AgentIntegrationGuestLogTail
+             .walkDeadline,
          clock: @escaping @MainActor () -> Date = { Date() },
          audit: ((HostLog.LogLevel, String) -> Void)? = nil) {
         self.listener = listener
         self.currentSessionID = currentSessionID
         self.commandTimeout = commandTimeout
+        self.walkDeadline = walkDeadline
         self.clock = clock
         /* `app`, not a new area: this is the application's own log being
-           read, and docs/logging.md asks for an existing tag before a coined
-           one. The `agent` line naming the caller is written by the
+           read, and docs/logging.md asks for an existing tag before a
+           coined one. The `agent` line naming the caller is written by the
            dispatch, which is where "who asked" belongs. */
         self.audit = audit ?? { HostLog.shared.write($0, "app", $1) }
     }
 
-    func tail(lines: Int?) async -> AgentIntegrationGuestRowReportResult {
-        if let lines,
-           !AgentIntegrationGuestLogPolicy.isValidLineCount(lines) {
+    func tail(lines: Int?, area: String?) async
+        -> AgentIntegrationGuestLogRetrievalResult {
+        typealias Policy = AgentIntegrationGuestLogPolicy
+        if let lines, !Policy.isValidLineCount(lines) {
             /* The projection refuses this first and the local codec refuses
                it again on arrival; this is the third reading, for a caller
                that reached the adapter directly. */
             return refused(
                 "now-log-tail-lines-invalid",
-                "A log tail is 1 to "
-                    + "\(AgentIntegrationGuestLogPolicy.maximumLineCount) "
-                    + "lines",
+                "A log retrieval is 1 to \(Policy.maximumLineCount) lines",
+                asked: lines)
+        }
+        if let area, !Policy.isValidArea(area) {
+            return refused(
+                "now-log-tail-area-invalid",
+                "A log area is a tag of 1 to \(Policy.areaTagScalars) "
+                    + "characters, as the guest's log writes it",
                 asked: lines)
         }
         guard let sessionID = currentSessionID() else {
             return .unavailable(.guest)
         }
 
-        let outcome = await run(lines: lines)
-        guard currentSessionID() == sessionID else {
-            /* Unavailable rather than refused: the machine that was asked is
-               no longer the machine on the other end, so whatever came back
-               is a different Mac's log or nothing at all, and this side
-               cannot tell which. */
-            return .unavailable(.init(
-                code: "now-log-tail-outcome-unknown",
-                message: "The paired guest changed while its log was being "
-                    + "read"))
+        let requested = lines ?? Policy.defaultLineCount
+        let started = clock()
+        /* Pages in FETCH order: each page is oldest-first inside, and each
+           page is older than the one before it, so the final answer is the
+           pages reversed and concatenated. */
+        var pages: [[String]] = []
+        var collected = 0
+        var collectedBytes = 0
+        var matching: Int?
+        var guestFile: String?
+        var ringCapacity: Int?
+        var before: UInt32?
+        var exhausted = false
+
+        while collected < requested,
+              pages.count < Policy.maximumPageRequests,
+              collectedBytes < Policy.maximumTotalBytes,
+              clock().timeIntervalSince(started) < walkDeadline {
+            let want = min(requested - collected, Policy.pageLineCount)
+            /* The FIRST page carries an absent count only when the caller
+               chose nothing at all, so the default stays the guest's. */
+            let askDefault = lines == nil && pages.isEmpty
+            let outcome = await run(lines: askDefault ? nil : want,
+                                    area: area, before: before)
+            guard currentSessionID() == sessionID else {
+                /* Unavailable rather than refused: the machine that was
+                   asked is no longer the machine on the other end, so
+                   whatever came back is a different Mac's log or nothing
+                   at all, and this side cannot tell which. */
+                return .unavailable(.init(
+                    code: "now-log-tail-outcome-unknown",
+                    message: "The paired guest changed while its log was "
+                        + "being read"))
+            }
+            switch outcome {
+            case .timedOut:
+                return refused(
+                    "now-log-tail-outcome-unknown",
+                    "The paired guest did not answer the log request in "
+                        + "time",
+                    asked: lines)
+            case .result(let result) where !result.ok:
+                /* The guest's own sentence, forwarded rather than replaced
+                   — and safe to forward because everything a caller
+                   supplied has been bounded above, so there is no
+                   caller-chosen text for the guest to quote back at any
+                   length. */
+                return refused(
+                    "now-log-tail-refused",
+                    Self.bounded(
+                        result.error?.message
+                            ?? "The paired guest refused the log request",
+                        scalars: Policy.maximumRefusalScalars),
+                    asked: lines)
+            case .result(let result):
+                let page = Page(from: result)
+                pages.append(page.lines)
+                collected += page.lines.count
+                collectedBytes += page.lines.reduce(0) {
+                    $0 + $1.utf8.count + Policy.perLineEnvelopeBytes
+                }
+                if let m = page.matching { matching = m }
+                if let f = page.file { guestFile = f }
+                if let r = page.ringCapacity { ringCapacity = r }
+                /* No next row, or an empty page, is the ring's end. The
+                   cursor must also strictly DESCEND, or the walk is being
+                   led in a circle by a defective guest; stopping reports
+                   what was gathered rather than looping. */
+                if let next = page.next, !page.lines.isEmpty,
+                   before == nil || next < before! {
+                    before = next
+                } else {
+                    exhausted = true
+                }
+            }
+            if exhausted { break }
         }
-        switch outcome {
-        case .timedOut:
-            return refused(
-                "now-log-tail-outcome-unknown",
-                "The paired guest did not answer the log request in time",
-                asked: lines)
-        case .result(let result) where !result.ok:
-            /* The guest's own sentence, forwarded rather than replaced —
-               and safe to forward because the only thing a caller supplied
-               is a small integer this side has already bounded, so there is
-               no caller-chosen text for the guest to quote back. */
-            return refused(
-                "now-log-tail-refused",
-                result.error?.message
-                    ?? "The paired guest refused the log request",
-                asked: lines)
-        case .result(let result):
-            let report = Self.report(from: result, observedAt: clock())
-            audit(.info, "tail read \(Self.lineCount(of: report)) log lines "
-                      + "for a non-user face")
-            return .completed(report)
+
+        /* Oldest-first, then the byte budget trims from the FRONT — the
+           oldest end — so what survives is always the newest of what was
+           gathered, and the trim reports itself below. */
+        var all = pages.reversed().flatMap { $0 }
+        var bytes = all.reduce(0) {
+            $0 + $1.utf8.count + Policy.perLineEnvelopeBytes
         }
+        var trimmed = false
+        while bytes > Policy.maximumTotalBytes, !all.isEmpty {
+            bytes -= all[0].utf8.count + Policy.perLineEnvelopeBytes
+            all.removeFirst()
+            trimmed = true
+        }
+
+        /* The suffix appears when a BOUND bit before the count did —
+           the byte budget's trim, or a walk stopped by the deadline, the
+           page cap or the budget while older matching lines remained. A
+           caller served every line they asked for reads no suffix; the
+           `matching` beside `shown` already says how much more exists. */
+        let reportedMatching = matching ?? all.count
+        let cut = trimmed || all.count < min(requested, reportedMatching)
+        let shown = "\(all.count) of \(reportedMatching)"
+            + (cut ? " (older ones did not fit)" : "")
+        let retrieval = AgentIntegrationGuestLogRetrieval(
+            lines: all,
+            requested: requested,
+            matching: reportedMatching,
+            shown: shown,
+            area: area,
+            ringCapacity: ringCapacity
+                ?? AgentIntegrationGuestLogPolicy.ringCapacity,
+            guestFile: guestFile,
+            pages: pages.count,
+            observedAt: clock())
+        audit(.info, "tail read \(all.count) log lines over "
+                  + "\(pages.count) page\(pages.count == 1 ? "" : "s") "
+                  + "for a non-user face")
+        return .completed(retrieval)
     }
 
-    // MARK: - The wire
+    // MARK: - One page on the wire
 
-    private func run(lines: Int?) async -> CommandOutcome {
+    private func run(lines: Int?, area: String?, before: UInt32?) async
+        -> CommandOutcome {
         await withCheckedContinuation { continuation in
             var settled = false
             var timeoutTask: Task<Void, Never>?
-            /* The count goes on the LINE, not in `args`, and that is a
-               correctness matter rather than a style one.
-
-               `CommandRequest.args` is `[String: String]` on this side, so
-               every typed argument reaches the wire quoted. The guest reads
-               this one with `now_json_find_int`, which is `strtol` on the
-               byte after the colon — and `strtol("\"40\"")` is 0, which
-               `run_tail` clamps to 1. Sending the caller's 40 as a typed arg
-               would therefore answer with ONE line and no error anywhere:
-               the exact silent shortfall this row's schema promises does not
-               happen. `tail` is the first verb whose typed argument is an
-               integer, so nothing had met that edge before; widening the
-               args map is a shared-file, both-guests change and is reported
-               rather than made from inside one capability.
-
-               The line form is not a workaround: the contract declares it
-               for this verb (`x-commands.tail.x-line`, "the first integer on
-               the line is the count"), the guest's own console uses it, and
-               `run_tail` reaches it precisely when no typed `lines` is
-               present. Absent when the caller did not choose, so the default
-               of 20 stays the guest's number and not a copy of it here. */
+            /* Typed args, and typed NUMBERS. The first landing of this
+               lane put the count on the LINE because `args` was
+               [String: String] then, and a quoted "40" read as 0 by the
+               guest's strtol — the silent shortfall its test still pins.
+               `CommandArg.number` crosses as a bare JSON integer, which
+               `now_json_find_int` and `now_json_find_u32` read exactly;
+               the line form stays what it is for: humans. */
+            var args: [String: CommandArg] = [:]
+            if let lines { args["lines"] = .number(lines) }
+            if let area { args["area"] = .text(area) }
+            if let before { args["before"] = .number(Int(before)) }
             listener.runScheduledCommand(
-                "tail", line: lines.map(String.init),
+                "tail", typed: args.isEmpty ? nil : args,
                 purpose: .command("tail"), workClass: .foreground) {
                 guard !settled else { return }
                 settled = true
@@ -160,127 +257,98 @@ final class AgentIntegrationGuestLogTail {
         }
     }
 
-    // MARK: - Rendering
+    // MARK: - Reading one page
 
-    /// One command result as the shared row report, bounded.
-    ///
-    /// **The shared type is the honest shape here rather than a squeeze into
-    /// somebody else's.** `tail`'s declared output is `x-rowArray` like its
-    /// four siblings, and the guest itself splits every line into a
-    /// timestamp and a remainder before it reaches the wire
-    /// (`run_tail` — `stamp` and `rest`), so a label/value pair is the
-    /// guest's own decision about its answer, not this side flattening text
-    /// into a table. Nothing was needed from `AgentIntegrationGuestRowReport`
-    /// that it does not already have.
-    ///
-    /// The mapping duplicates `AgentIntegrationRevealItem.report` because
-    /// that one is `verb: "reveal"` with reveal's bounds; consolidating the
-    /// five siblings is named in the handoff, not done from inside one of
-    /// them while four other agents are in the same wave.
-    ///
-    /// Groups are sorted by name for determinism — `CommandResult.output` is
-    /// a dictionary, so the wire's order is already gone — which puts `log`
-    /// before `tail`. Row order INSIDE a group is the guest's and is
-    /// preserved: for this verb it is chronological, and reversing it would
-    /// be the one transformation that changes what the answer says.
-    static func report(from result: CommandResult,
-                       observedAt: Date) -> AgentIntegrationGuestRowReport {
-        let bounds = AgentIntegrationGuestLogTailBounds.self
-        let groups = (result.output ?? [:])
-            .sorted { $0.key < $1.key }
-            .prefix(bounds.maximumGroups)
-            .map { group in
-                AgentIntegrationGuestRowGroup(
-                    name: bounded(group.key,
-                                  scalars: bounds.maximumLabelScalars),
-                    rows: group.value
-                        .prefix(bounds.maximumRowsPerGroup)
-                        .map { cells in
-                            AgentIntegrationGuestRow(
-                                label: escaped(
-                                    cells.first ?? "",
-                                    scalars: bounds.maximumLabelScalars),
-                                /* `last`, not `[1]`: the contract's row is a
-                                   label/value pair, and a guest that sent
-                                   one cell has said the same thing twice
-                                   rather than crashed this side. */
-                                value: escaped(
-                                    cells.count > 1 ? (cells.last ?? "") : "",
-                                    scalars: bounds.maximumValueScalars))
-                        })
+    /// One command result, read as the page the contract declares: the
+    /// `tail` group's rows are the lines, the `log` group's rows are the
+    /// answer's edges. Unknown rows are ignored rather than refused — a
+    /// guest that grew a row is newer, not wrong.
+    struct Page {
+        var lines: [String] = []
+        var matching: Int?
+        var file: String?
+        var ringCapacity: Int?
+        var next: UInt32?
+
+        init(from result: CommandResult) {
+            typealias Policy = AgentIntegrationGuestLogPolicy
+            for cells in result.rows("tail") ?? [] {
+                let stamp = cells.first ?? ""
+                let rest = cells.count > 1 ? (cells.last ?? "") : ""
+                /* The guest split its own line into [time, rest] for the
+                   row shape; rejoining them is rendering, not invention —
+                   and both halves are control-escaped, because a raw
+                   control byte corrupts whatever renders the answer. */
+                let joined = stamp.isEmpty ? rest : stamp + " " + rest
+                lines.append(Self.escaped(
+                    joined, scalars: Policy.maximumLineScalars))
             }
-        /* `note` stays absent, and that is a decision rather than an
-           omission. The type reserves it for a sentence the guest offered
-           about the edges of its answer, and `tail` offers exactly such a
-           sentence — as a ROW, `shown: "12 of 20 (older ones did not fit)"`.
-           Lifting one row out of the guest's own group into a different
-           field would be this side deciding which of its rows was the
-           important one, and would then say it twice. */
-        return .init(verb: "tail", groups: Array(groups),
-                     observedAt: observedAt)
+            for cells in result.rows("log") ?? [] {
+                guard let label = cells.first else { continue }
+                let value = cells.count > 1 ? (cells.last ?? "") : ""
+                switch label {
+                case "file":
+                    file = Self.escaped(value, scalars: 255)
+                case "matching":
+                    matching = Int(value)
+                case "held":
+                    /* "H of 2000" — the ring's size is the second number,
+                       and a guest that says a different one is believed
+                       over this side's constant. */
+                    if let of = value.range(of: " of ") {
+                        ringCapacity = Int(value[of.upperBound...])
+                    }
+                case "next":
+                    next = UInt32(value)
+                default:
+                    break
+                }
+            }
+        }
+
+        /// Bound, then write any control character as `\xNN` — the same
+        /// discipline the host log's own lines cross under. The bytes
+        /// arrive already transcoded (the guest maps its MacRoman itself,
+        /// `now_json_escape`), so what reaches here is Unicode; what can
+        /// still arrive is a control character inside a line, made visible
+        /// rather than dropped or passed through.
+        static func escaped(_ value: String, scalars: Int) -> String {
+            var out = ""
+            let bounded = AgentIntegrationBoundedText.prefix(
+                value, scalars: scalars)
+            for scalar in bounded.unicodeScalars {
+                let isControl = scalar.value < 0x20 || scalar.value == 0x7F
+                    || (0x80...0x9F).contains(scalar.value)
+                if isControl {
+                    out += String(format: "\\x%02X", scalar.value)
+                } else {
+                    out.unicodeScalars.append(scalar)
+                }
+            }
+            return out
+        }
     }
 
     private func refused(_ code: String, _ message: String, asked: Int?)
-        -> AgentIntegrationGuestRowReportResult {
+        -> AgentIntegrationGuestLogRetrievalResult {
         audit(.warn, "tail of \(asked.map(String.init) ?? "the default")"
                   + " log lines refused: " + Self.sanitized(message))
         return .refused(.init(
             code: code,
             message: Self.bounded(
                 message,
-                scalars: AgentIntegrationGuestLogTailBounds
+                scalars: AgentIntegrationGuestLogPolicy
                     .maximumRefusalScalars)))
-    }
-
-    /// How many lines came back, for the log line — which is a count and
-    /// never the lines themselves. A log that quoted the log it had just
-    /// read would double every line on the next read, and the point of the
-    /// entry is that a person can see their machine's log was read at all.
-    private static func lineCount(
-        of report: AgentIntegrationGuestRowReport
-    ) -> Int {
-        report.groups.first { $0.name == "tail" }?.rows.count ?? 0
     }
 
     private static func bounded(_ value: String, scalars: Int) -> String {
         AgentIntegrationBoundedText.prefix(value, scalars: scalars)
     }
 
-    /// Bound, then write any control character as `\xNN`.
-    ///
-    /// **Encoding, said once.** The bytes arrive already transcoded: the
-    /// guest maps its MacRoman high range through its own table and emits
-    /// `\uXXXX` (`now-guest-ppc/src/core/json.c :: now_json_escape`), so
-    /// what reaches here is Unicode and no byte is ever undecodable. A
-    /// line's CR endings are gone before that — the ring stores lines
-    /// without terminators and `now_log_tail` joins them with `\n`, which
-    /// `run_tail` splits back out — so a terminator inside a value would
-    /// mean the guest's own line discipline had broken.
-    ///
-    /// What can still arrive is a control character *inside* a line, because
-    /// the guest escapes those into the JSON faithfully rather than dropping
-    /// them. They are made visible rather than passed through: a raw one
-    /// corrupts whatever renders the row, and dropping it would be the
-    /// silent mangling this whole paragraph exists to avoid. Escaped, the
-    /// byte is still there and still readable, and the schema says so.
-    private static func escaped(_ value: String, scalars: Int) -> String {
-        var out = ""
-        for scalar in bounded(value, scalars: scalars).unicodeScalars {
-            let isControl = scalar.value < 0x20 || scalar.value == 0x7F
-                || (0x80...0x9F).contains(scalar.value)
-            if isControl {
-                out += String(format: "\\x%02X", scalar.value)
-            } else {
-                out.unicodeScalars.append(scalar)
-            }
-        }
-        return out
-    }
-
-    /// A log line's own bound and escape, for text this side is writing into
-    /// the host's log rather than returning.
+    /// A log line's own bound and escape, for text this side is writing
+    /// into the host's log rather than returning.
     private static func sanitized(_ value: String) -> String {
-        escaped(value, scalars: maximumLoggedMessageScalars)
+        Page.escaped(value, scalars: maximumLoggedMessageScalars)
     }
 
     private static let maximumLoggedMessageScalars = 255
