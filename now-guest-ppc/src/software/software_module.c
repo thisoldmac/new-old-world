@@ -10,6 +10,7 @@
 #include "pump.h"
 #include "wire.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* Rung 3, the Data Browser cut - rebuilt from the first metal round.
    What that round taught:
@@ -1709,6 +1710,24 @@ static void software_describe_scene(const WorkshopSceneWriter *writer)
     emit_detail(writer);
 }
 
+/* Edit>Copy: the search field and the detail column, exactly what
+   software_describe_scene already reports — one walk, so nothing here
+   can drift from either. The listing and the domain popup are already
+   reachable through control_kind.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long software_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    software_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     software_create,
     software_dispose,
@@ -1721,7 +1740,7 @@ static const WorkshopModuleOps k_ops = {
     software_idle,
     software_status_text,
     software_describe_scene,
-    NULL   /* copy_text: the detail column would copy well; not wired yet */
+    software_copy_text
 };
 
 const WorkshopModuleOps *software_module_ops(void)

@@ -13,6 +13,7 @@
 #include "json.h"
 #include "prefs.h"
 #include "pump.h"
+#include "workshop_scene_text.h"
 
 /* The Development page: the projects this Mac holds on the left, the
    selected one's facts on the right, and the two actions that belong to
@@ -591,6 +592,22 @@ static void development_describe_scene(const WorkshopSceneWriter *writer)
     development_content(writer);
 }
 
+/* Edit>Copy: the project detail, exactly what development_content already
+   draws and describes — one walk, so nothing here can drift from either.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long development_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    development_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static int choose_root(Boolean toolchain)
 {
     short vref;
@@ -759,7 +776,7 @@ static const WorkshopModuleOps k_ops = {
     development_layout, development_draw, development_click, NULL,
     development_activate, development_idle, development_status,
     development_describe_scene,
-    NULL   /* copy_text: the project detail would copy well; not wired yet */
+    development_copy_text
 };
 
 const WorkshopModuleOps *development_module_ops(void) { return &k_ops; }

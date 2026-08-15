@@ -13,6 +13,7 @@
 #include "peek.h"
 #include "pump.h"
 #include "qdtrace.h"
+#include "workshop_scene_text.h"
 
 static WindowRef g_owner;
 static Rect g_body;
@@ -264,6 +265,22 @@ static void mirror_describe_scene(const WorkshopSceneWriter *writer)
     mirror_content(writer);
 }
 
+/* Edit>Copy: the plane facts, exactly what mirror_content already draws
+   and describes — one walk, so nothing here can drift from either.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long mirror_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    mirror_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static Boolean mirror_click(const EventRecord *event, Point local)
 {
     ControlRef control = NULL;
@@ -404,7 +421,7 @@ static const WorkshopModuleOps k_ops = {
     mirror_idle,
     mirror_status,
     mirror_describe_scene,
-    NULL   /* copy_text: the plane facts would copy well; not wired yet */
+    mirror_copy_text
 };
 
 const WorkshopModuleOps *mirror_module_ops(void)
