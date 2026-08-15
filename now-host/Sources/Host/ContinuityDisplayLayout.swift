@@ -396,6 +396,16 @@ final class ContinuityDisplayLayout: ObservableObject {
     /// real coordinate scale rather than a drawing trick.
     @Published private(set) var guestScale: CGFloat
     @Published private(set) var guestOrigin: CGPoint
+    /// True once a placement has been WRITTEN to defaults — by a drag, a
+    /// resize, a scale change, or a display-change recovery. False only for
+    /// a fresh install (or a fresh prefs domain that has never run), which
+    /// is the one case `attachToDefaultEdgeIfNeverPlaced` exists for. This
+    /// is deliberately about what was PERSISTED, not what the constructor
+    /// computed in memory: the constructor's own default is only as good as
+    /// the `displayProvider()` read it was built from, and nothing wrote it
+    /// down, so a `hostDisplays` snapshot taken before the window server was
+    /// ready would otherwise stay uncorrected for the life of the process.
+    private(set) var hasPersistedPlacement: Bool
 
     private let defaults: UserDefaults?
     private let displayProvider: @MainActor () -> [HostDisplayDescriptor]
@@ -438,7 +448,9 @@ final class ContinuityDisplayLayout: ObservableObject {
            below, once there is a resolved placement to read an edge from. */
         let resolvedScale: CGFloat = 1
         guestScale = resolvedScale
-        if defaults?.bool(forKey: Self.hasOriginKey) == true {
+        let storedPlacement = defaults?.bool(forKey: Self.hasOriginKey) == true
+        hasPersistedPlacement = storedPlacement
+        if storedPlacement {
             guestOrigin = CGPoint(
                 x: defaults?.double(forKey: Self.originXKey) ?? 0,
                 y: defaults?.double(forKey: Self.originYKey) ?? 0)
@@ -493,6 +505,33 @@ final class ContinuityDisplayLayout: ObservableObject {
         // A display can change size without the guest moving, and Fit is a
         // function of the host edge it is attached to.
         applyFitScaleIfNeeded()
+    }
+
+    /// Call once, when the arrangement page first appears. A fresh install
+    /// (or a fresh prefs domain) has never had a placement WRITTEN, so the
+    /// constructor's own default — attached to the widest host's own right
+    /// edge — is only ever held in memory until something persists it. If
+    /// nothing ever does, the guest is an island that looked attached in
+    /// the geometry the instant the constructor ran but is one stale
+    /// `displayProvider()` read away from staying that way for the rest of
+    /// the process — the constructor can run before the window server has
+    /// settled, well before a person ever sees the page. This re-reads the
+    /// CURRENT display list, re-derives the attach against it, and makes it
+    /// durable, so a first appearance always shows an attached guest and
+    /// every appearance after is a no-op.
+    ///
+    /// A placement that was ever written — including one that deliberately
+    /// floated the guest away from every edge — is left exactly alone.
+    func attachToDefaultEdgeIfNeverPlaced() {
+        guard !hasPersistedPlacement else { return }
+        let refreshed = displayProvider()
+        if !refreshed.isEmpty {
+            hostDisplays = refreshed
+        }
+        guestOrigin = ContinuityDisplayGeometry.defaultGuestOrigin(
+            hosts: hostDisplays, guestSize: guestSize, scale: guestScale)
+        applyFitScaleIfNeeded()
+        persistOrigin()
     }
 
     func updateGuestSize(_ proposed: CGSize) {
@@ -595,6 +634,7 @@ final class ContinuityDisplayLayout: ObservableObject {
         defaults?.set(guestOrigin.x, forKey: Self.originXKey)
         defaults?.set(guestOrigin.y, forKey: Self.originYKey)
         defaults?.set(true, forKey: Self.hasOriginKey)
+        hasPersistedPlacement = true
     }
 
     private static func validGuestSize(_ size: CGSize) -> CGSize {
