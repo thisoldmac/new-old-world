@@ -749,6 +749,11 @@ run_c now-guest-ppc workshop_construct_test.c "" \
 run_py now-guest-ppc workshop_registry_source_test.py
 run_py now-guest-ppc sidebar_scene_source_test.py
 run_py now-guest-ppc rail_gesture_source_test.py
+# Files arriving from outside the application. Every route into it is
+# Toolbox - a Drag Manager callback, an Apple Event handler, a Finder
+# reading a resource fork - so nothing here can be compiled and run, and
+# each defect it pins is silent on the machine rather than loud.
+run_py now-guest-ppc drop_seam_source_test.py
 run_c now-guest-ppc development_contract_test.c "" \
       src/development/development_contract.c
 run_c now-guest-ppc development_build_test.c "" \
