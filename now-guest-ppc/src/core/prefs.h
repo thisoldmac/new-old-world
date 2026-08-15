@@ -141,6 +141,14 @@ typedef struct {
     /* CarbonLib warnings are advisory and may be dismissed permanently on a
        machine whose owner has deliberately chosen an older runtime. */
     Boolean carbon_warning_suppressed;
+
+    /* Whether the Workshop was open the last time this session ended,
+       user-close and quit teardown both write it (workshop_close's
+       'quitting' argument tells them apart) so a deliberate close stays
+       closed across relaunch and an open window comes back. Default true:
+       every existing machine already sees it open at launch, and a file
+       that predates the field must not change that. */
+    Boolean workshop_open_at_quit;
 } NowPrefs;
 
 /* Loads saved settings, or the defaults (10.0.2.2:5250 — the QEMU host
@@ -156,8 +164,9 @@ typedef struct {
    renumbering), v22 (the four Mirror policy domains), and v23
    (Development roots plus its module-id renumbering), and v24 (Web's port,
    browser profile and lens plus its module-id renumbering), and v25
-   (shared guest-log retention count), and v26 (pending Extension activation
-   identity and the CarbonLib warning choice). */
+   (shared guest-log retention count), v26 (pending Extension activation
+   identity and the CarbonLib warning choice), and v27 (whether the
+   Workshop was open when the session last ended). */
 void now_prefs_load(NowPrefs *prefs);
 OSErr now_prefs_save(const NowPrefs *prefs);
 

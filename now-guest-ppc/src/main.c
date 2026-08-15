@@ -151,7 +151,7 @@ static const unsigned char k_view_connection_item[] = {
     10, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n'
 };
 static const unsigned char k_workshop_menu_item[] = {
-    8, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p'
+    10, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p', '/', 'O'
 };
 
 static void create_menu_bar(void)
@@ -267,7 +267,7 @@ static void set_window_active(WindowRef window, Boolean active)
 static void close_front_window(void)
 {
     if (workshop_is(FrontWindow())) {
-        workshop_close();
+        workshop_close(false);        /* user-initiated: records closed */
     }
 }
 
@@ -365,7 +365,7 @@ static void handle_mouse_down(const EventRecord *event)
             DragWindow(window, event->where, &g_screen_bounds);
         } else if (part == inGoAway) {
             if (TrackGoAway(window, event->where)) {
-                workshop_close();
+                workshop_close(false);    /* user-initiated: records closed */
             }
         } else if (part == inGrow) {
             Rect limits;
@@ -458,15 +458,25 @@ int main(void)
     /* The Workshop is the primary window; the remaining old module
        windows stay reachable from the menus until each one moves in. If
        the shell cannot build its navigation, say so once - the rest of
-       the app still works the old way. */
-    if (!workshop_open()) {
-        static const unsigned char k_empty[] = { 0 };
-        Str255 message;
+       the app still works the old way.
 
-        CopyCStringToPascal("The Workshop window could not be created. "
-                            "The Windows menu still works.", message);
-        ParamText(message, k_empty, k_empty, k_empty);
-        StopAlert(200, now_pump_modal_filter());
+       Opening it is gated on whether the last session left it open:
+       workshop_close records a deliberate user-close, and a file that
+       predates the field defaults to open, the behavior every existing
+       machine already has. */
+    {
+        NowPrefs launch_prefs;
+
+        now_prefs_load(&launch_prefs);
+        if (launch_prefs.workshop_open_at_quit && !workshop_open()) {
+            static const unsigned char k_empty[] = { 0 };
+            Str255 message;
+
+            CopyCStringToPascal("The Workshop window could not be created. "
+                                "The Windows menu still works.", message);
+            ParamText(message, k_empty, k_empty, k_empty);
+            StopAlert(200, now_pump_modal_filter());
+        }
     }
     /* Log first: a hang during connection setup is precisely the case
        the log exists for, and the old order left none. The in-memory ring
@@ -633,7 +643,7 @@ int main(void)
 
     now_log(kLogInfo, "app", "quit: disposing window");
     now_log_flush();
-    workshop_close();
+    workshop_close(true);   /* quit teardown: records open iff it existed */
 
     now_log(kLogInfo, "app", "quit: clean");
     now_log_close();
