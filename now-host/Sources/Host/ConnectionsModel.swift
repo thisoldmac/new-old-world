@@ -400,7 +400,7 @@ final class ConnectionsModel: ObservableObject {
          select: ((GuestKey) -> Bool)? = nil,
          disconnect: ((GuestKey) -> Bool)? = nil,
          forget: ((GuestRegistry.Record.Key) -> Bool)? = nil,
-         defaults: UserDefaults = .standard) {
+         defaults: UserDefaults = ProductIdentity.defaults) {
         self.defaults = defaults
         self.rosterCollapsed = defaults.object(
             forKey: Keys.rosterCollapsed) as? Bool ?? false
@@ -446,7 +446,7 @@ final class ConnectionsModel: ObservableObject {
     convenience init(listener: GuestListener,
                      addressing: AgentIntegrationHostAdapter,
                      select: ((GuestKey) -> Bool)? = nil,
-                     defaults: UserDefaults = .standard) {
+                     defaults: UserDefaults = ProductIdentity.defaults) {
         self.init(listener: listener,
                   resolve: { [addressing] selector in
                       addressing.addressingRefusal(selector)
