@@ -1290,6 +1290,13 @@ private extension ContinuityEdgeControllerTests {
         var catchChanges: [Bool] = []
         var captureStarts = 0
         var captureStops = 0
+        var syntheticButtonPosts: [(down: Bool, point: CGPoint)] = []
+
+        func postSyntheticPrimaryButton(down: Bool,
+                                        at screenPoint: CGPoint) -> Bool {
+            syntheticButtonPosts.append((down, screenPoint))
+            return true
+        }
         /// Every call in, whether or not it succeeded — `captureStarts`
         /// only counts the ones that did, so a test proving a RETRY was
         /// attempted (and refused again) needs this instead.
