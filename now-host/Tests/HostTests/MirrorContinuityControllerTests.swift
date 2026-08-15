@@ -946,6 +946,124 @@ final class MirrorContinuityControllerTests: XCTestCase {
         })
     }
 
+    /// **A settled release is the last thing the guest can possibly see.**
+    ///
+    /// The wire is a latest-state mailbox and a guest starved inside the
+    /// Finder's drag-tracking loop reads ONE snapshot of it per pass. The
+    /// cross-edge handback used to put three datagrams on it inside a
+    /// millisecond — settle to the press origin, release carrying that same
+    /// origin, then the epoch teardown with `inside` cleared — and both the
+    /// resident's timer task and the guest application honour a cleared
+    /// `inside` BEFORE they take the snapshot's position. The settled origin
+    /// went with it and the release landed on whatever mid-drag point the
+    /// guest had last ingested.
+    ///
+    /// Metal, 2026-08-15: this side commanded and logged origin=522,199 and
+    /// 524,203; the guest settled at 792,231 and 799,232, one drag sample
+    /// short of the 802,231 and 800,232 crosses. Slow drags only, because a
+    /// slow drag is the one where the guest is starved deeply enough for the
+    /// three to collapse into one.
+    ///
+    /// The epoch still ends — over the RELIABLE control stream, asserted
+    /// here — so the withheld datagram costs nothing and buys the shape the
+    /// fast path already had by accident.
+    func testASettledReleaseIsNotFollowedByTheEpochTeardownDatagram()
+        async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig { audit.append(($0, $1)) }
+        defer { rig.udp.stop() }
+        let origin = MirrorKit.Point(x: 522, y: 199)
+
+        XCTAssertTrue(rig.controller.primaryDown(at: origin))
+        try await waitUntil("the press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        let down = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        /* Acknowledged, then dragged: this is the SLOW path, the one where
+           the settle becomes a datagram of its own. An unacknowledged press
+           defers instead and never had the defect. */
+        rig.udp.acknowledge(down)
+        XCTAssertTrue(rig.controller.primaryDragged(to: .init(x: 794, y: 231)))
+        try await waitUntil("the held drag") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration == down.buttonGeneration
+                    && $0.h == 794 && $0.v == 231
+            }
+        }
+
+        XCTAssertTrue(rig.controller.settleHeldPosition(to: origin))
+        XCTAssertTrue(rig.controller.primaryUp(at: origin))
+        try await waitUntil("the settled release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != down.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+                    && $0.h == origin.x && $0.v == origin.y
+            }
+        }
+        rig.controller.pointerLeft()
+        try await waitUntil("the reliable disarm") {
+            rig.guest.received.contains {
+                guard case .continuityDisarm(let disarm) = $0 else {
+                    return false
+                }
+                return disarm.epoch == rig.arm.epoch
+            }
+        }
+        /* Sampled AFTER a wait long enough for a teardown datagram to have
+           landed. Asserting the absence at the instant of the call would pass
+           while the packet was still on the wire — the shape that let a
+           sibling test in this file pass against its own mutation. */
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertFalse(rig.udp.packets.contains {
+            !$0.flags.contains(.inside)
+        }, "the epoch-ending datagram followed the settled release onto the "
+            + "wire; a starved guest reads only the last one and drops the "
+            + "settled origin with it")
+        let last = try XCTUnwrap(rig.udp.packets.last)
+        XCTAssertEqual(MirrorKit.Point(x: Int(last.h), y: Int(last.v)), origin,
+                       "the last datagram must carry the press origin")
+        XCTAssertFalse(last.flags.contains(.primaryDown),
+                       "and the release edge beside it")
+        XCTAssertTrue(audit.contains {
+            $0.1.contains("epoch-ending datagram withheld")
+                && $0.1.contains("\(origin.x),\(origin.y)")
+        }, "a withheld packet is a decision and must name itself")
+    }
+
+    /// The withholding is scoped to a settled release, not to leaving.
+    func testAnOrdinaryReleaseStillEndsTheEpochOnTheWire() async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 45, y: 55)))
+        try await waitUntil("the press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        let down = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        rig.udp.acknowledge(down)
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 46, y: 56)))
+        try await waitUntil("the release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != down.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+            }
+        }
+
+        rig.controller.pointerLeft()
+        try await waitUntil("the epoch-ending datagram") {
+            rig.udp.packets.contains { !$0.flags.contains(.inside) }
+        }
+    }
+
     func testLeavingV0DisarmsImmediately() async throws {
         var audit: [(HostLog.LogLevel, String)] = []
         let rig = try await makeActiveRig {

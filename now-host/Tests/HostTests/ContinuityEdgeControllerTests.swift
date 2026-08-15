@@ -77,6 +77,60 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(environment.moves.last?.displayID, host.id)
     }
 
+    /// **Losing the press origin is said out loud, at error.**
+    ///
+    /// A held return with no origin sends no release at all, so the Mac
+    /// keeps the press — and the old code reached that outcome through a
+    /// `if held, let origin = pressOrigin` whose else-branch was silence.
+    /// The sibling on the file path was worse: `pressOrigin ??
+    /// ownership.guestPoint` makes the fallback the CROSS point, so a lost
+    /// origin becomes "the origin was the screen edge" and the Finder
+    /// completes a real move there.
+    ///
+    /// Both read, from outside, exactly like the guest ignoring a correct
+    /// settle — which is what a metal round on 2026-08-15 spent its evidence
+    /// distinguishing. This side must name which one it is.
+    func testALostPressOriginIsNamedAtErrorRatherThanSilentlyDefaulted() {
+        var lines: [(HostLog.LogLevel, String)] = []
+        let layout = makeLayout()
+        let driver = Driver()
+        driver.consumesPrimaryDown = false
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            audit: { lines.append(($0, $1)) })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        environment.emit(.init(kind: .primaryDown,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: .zero, buttonsDown: true))
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 300, y: 0),
+                               buttonsDown: true))
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: -400, y: 0),
+                               buttonsDown: true))
+
+        XCTAssertEqual(controller.state, .ready, "the pointer crossed back")
+        XCTAssertTrue(driver.upPoints.isEmpty,
+                      "with no origin there is nothing safe to release at, "
+                        + "and releasing at the cross point moves the file")
+        XCTAssertTrue(lines.contains {
+            $0.0 == .error
+                && $0.1.contains("the press origin was lost before this held "
+                                    + "return")
+                && $0.1.contains("the Mac keeps the press")
+        }, "origin loss must be loud: silence here is indistinguishable from "
+            + "a guest that ignored a correct settle")
+    }
+
     func testContinuityEdgeClassifiesGuestMenuBar() {
         let layout = makeLayout()
         let driver = Driver()
@@ -1249,6 +1303,10 @@ private extension ContinuityEdgeControllerTests {
         var settledPoints: [MirrorKit.Point] = []
         var upPoints: [MirrorKit.Point] = []
         var keys: [HostKeySample] = []
+        /// The guest can decline a press — a dead epoch, a cycle already
+        /// held. The controller then remembers no origin at all, which is
+        /// the state the loudness guard exists for.
+        var consumesPrimaryDown = true
 
         func pointerMoved(to point: MirrorKit.Point) { points.append(point) }
         func pointerLeft() { leftCount += 1 }
@@ -1258,7 +1316,7 @@ private extension ContinuityEdgeControllerTests {
             _ = sourceUptime
             downPoints.append(point)
             menuBarDowns.append(inMenuBar)
-            return true
+            return consumesPrimaryDown
         }
         func primaryDragged(to point: MirrorKit.Point) -> Bool {
             draggedPoints.append(point)
