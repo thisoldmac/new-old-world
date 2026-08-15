@@ -48,10 +48,13 @@ enum HostLogTailReader {
         /* The budget drops the OLDEST first: a diagnosis reads backwards
            from what just happened, and an answer cut from the recent end
            would remove the half that was asked for. */
-        var total = kept.reduce(0) { $0 + $1.unicodeScalars.count }
+        func cost(_ line: String) -> Int {
+            line.utf8.count + policy.perLineEnvelopeBytes
+        }
+        var total = kept.reduce(0) { $0 + cost($1) }
         var dropped = false
-        while total > policy.maximumTotalScalars, !kept.isEmpty {
-            total -= kept.removeFirst().unicodeScalars.count
+        while total > policy.maximumTotalBytes, !kept.isEmpty {
+            total -= cost(kept.removeFirst())
             dropped = true
         }
 

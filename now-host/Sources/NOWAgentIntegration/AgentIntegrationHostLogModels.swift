@@ -59,13 +59,22 @@ public enum AgentIntegrationHostLogPolicy {
     /// be allowed to consume the whole budget below.
     public static let maximumLineScalars = 512
 
-    /// The whole answer's scalar budget, derived from the local frame cap
-    /// rather than guessed beside it. A quarter of the cap leaves room for
-    /// JSON escaping (a control scalar costs six bytes written as `\xNN`),
-    /// the envelope, and the declared fields.
-    public static var maximumTotalScalars: Int {
-        AgentIntegrationLocalProtocol.maximumMessageBytes / 4
+    /// The whole answer's budget, **in BYTES**, derived from the local frame
+    /// cap rather than guessed beside it.
+    ///
+    /// Bytes and not scalars, which is the unit the cap is actually in: a
+    /// scalar budget looks equivalent for ASCII and is not, because one
+    /// non-ASCII scalar is up to four bytes on the wire — so a log full of
+    /// them could pass a scalar budget and still overflow the frame. Half the
+    /// cap leaves the envelope, the declared fields and JSON escaping the
+    /// other half.
+    public static var maximumTotalBytes: Int {
+        AgentIntegrationLocalProtocol.maximumMessageBytes / 2
     }
+
+    /// What one line costs beyond its own bytes once it is a JSON array
+    /// member: two quotes, a comma, and a byte of slack.
+    public static let perLineEnvelopeBytes = 4
 
     public static func isValidLineCount(_ value: Int) -> Bool {
         value >= 1 && value <= maximumLineCount

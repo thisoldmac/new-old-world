@@ -258,7 +258,7 @@ final class AgentIntegrationHostLogTailTests: XCTestCase {
     func testATruncatedAnswerSaysSoAndKeepsTheNewestLines() {
         let area = tag(#function)
         let filler = String(repeating: "x", count: 480)
-        let count = 40
+        let count = 100
         for index in 0..<count {
             HostLog.shared.write(.info, area, "\(index) \(filler)")
         }
@@ -267,8 +267,8 @@ final class AgentIntegrationHostLogTailTests: XCTestCase {
 
         XCTAssertLessThan(
             tail.lines.count, count,
-            "40 lines of ~500 scalars exceed the budget of "
-                + "\(policy.maximumTotalScalars); if this stops being true "
+            "\(count) lines of ~500 bytes exceed the budget of "
+                + "\(policy.maximumTotalBytes); if this stops being true "
                 + "the test is no longer exercising truncation.")
         XCTAssertEqual(tail.shown,
                        "\(tail.lines.count) of \(count) (older ones did not fit)")
@@ -457,6 +457,47 @@ final class AgentIntegrationHostLogTailTests: XCTestCase {
                 "The socket is reachable by anything that speaks it, so the "
                     + "bound is kept here too.")
         }
+    }
+
+    /// **The largest answer this row can produce still fits the frame.**
+    ///
+    /// The budget is the reason it does, and this is the assertion that makes
+    /// the budget mean something: a whole ring of MULTI-BYTE lines is the
+    /// case a scalar-counted budget passed and the wire did not. It encodes
+    /// the real response and checks the real size, and then checks the tail
+    /// is still IN it — a codec that substituted a "too large" error frame
+    /// would otherwise satisfy the size assertion perfectly.
+    func testAFullRingOfMultiByteLinesStillFitsTheLocalFrame() throws {
+        let area = tag(#function)
+        /* Three bytes per scalar, which is where a scalar budget goes wrong. */
+        let filler = String(repeating: "字", count: 150)
+        for index in 0..<HostLog.ringCapacity {
+            HostLog.shared.write(.info, area, "\(index) \(filler)")
+        }
+
+        let tail = HostLogTailReader.read(
+            lines: policy.maximumLineCount, area: area,
+            now: Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertTrue(tail.shown.contains("did not fit"),
+                      "The budget did not bind, so this proves nothing: "
+                          + tail.shown)
+
+        let encoded = try AgentIntegrationLocalCodec.encode(
+            AgentIntegrationLocalResponse(requestID: UUID(),
+                                          hostLogTailResult: .completed(tail)))
+        XCTAssertLessThanOrEqual(
+            encoded.count, AgentIntegrationLocalProtocol.maximumMessageBytes,
+            "The largest answer this row can build does not fit the socket's "
+                + "own cap, so a caller asking for the whole ring gets a "
+                + "transport failure instead of a log.")
+
+        let decoded = try AgentIntegrationLocalCodec.decodeResponse(encoded)
+        guard case .completed(let round) = decoded.hostLogTailResult else {
+            return XCTFail(
+                "The response that fitted was not the tail: a substituted "
+                    + "error frame fits every budget.")
+        }
+        XCTAssertEqual(round.lines.count, tail.lines.count)
     }
 
     func testABareHostLogRequestIsAComplete() throws {
