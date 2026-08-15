@@ -42,8 +42,9 @@ enum HostSettingsTab: String, CaseIterable, Identifiable, Sendable {
 /// delegate alongside `AppearancePreferences` so it survives across
 /// `showWindow` calls the same way the window controller itself does — see
 /// `SettingsWindowController`'s own comment on why Cmd-, always reopens the
-/// same object. A module's "Settings…" button and `showSettings(selecting:)`
-/// both write `selectedTab`; the pill reads it.
+/// same object. A module's "Settings…" button and
+/// `AppDelegate.openSettings(selecting:)` both write `selectedTab`; the
+/// pill reads it.
 @MainActor
 final class HostSettingsNavigation: ObservableObject {
     @Published var selectedTab: HostSettingsTab = .appearance

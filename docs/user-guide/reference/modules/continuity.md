@@ -7,9 +7,9 @@ audience: user
 lifecycle: experimental
 authority: [docs/continuity-mode.md]
 module_ids: [continuity]
-source_dependencies: [docs/continuity-mode.md, now-host/Sources/Host/ContinuityHostModule.swift, now-host/Sources/Host/MirrorContinuityController.swift, now-host/Sources/Host/ContinuityEdgeController.swift, now-host/Sources/Host/ContinuityDisplayLayout.swift, now-guest-ppc/src/input, contract/asyncapi.yaml, contract/peek_table.h]
+source_dependencies: [docs/continuity-mode.md, now-host/Sources/Host/ContinuityHostModule.swift, now-host/Sources/Host/MirrorContinuityController.swift, now-host/Sources/Host/ContinuityConnectionDefaults.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/ContinuityEdgeController.swift, now-host/Sources/Host/ContinuityDisplayLayout.swift, now-guest-ppc/src/input, contract/asyncapi.yaml, contract/peek_table.h]
 media_ids: [continuity-host, continuity-ppc]
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -39,8 +39,15 @@ Drag the classic display to the edge where the pointer should pass, then
 turn Continuity on. Crossing that edge hands the pointer to the classic
 Mac; a configurable return shortcut, always handled on this Mac, brings
 every control home at once. The update rate, reconnection behavior, and
-the product input options live beside the arrangement. Diagnostic probes
-record into Logs.
+the product input options live beside the arrangement, saved per machine.
+Diagnostic probes record into Logs.
+
+A classic Mac that has never connected before starts from a separate seed:
+the "Defaults for New Connections" tab of the Settings window
+(**New Old World > Settings…**) holds the update rate, reconnection
+behavior, and option catalog a never-before-seen machine gets on first
+connect. Editing it never touches a machine that already has its own saved
+settings here.
 
 Continuity is independent of the Mirror module: neither needs the other
 running. The Mirror's own in-picture cursor borrows the same pointer

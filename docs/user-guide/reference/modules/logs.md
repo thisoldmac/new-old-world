@@ -7,9 +7,9 @@ audience: operator
 lifecycle: current
 authority: [docs/architecture.md, docs/status.md]
 module_ids: [logs]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/LogsHostModule.swift, now-host/Sources/Host/HostLog.swift, now-host/Sources/Host/LogsModuleView.swift, now-host/Sources/Host/MirrorContinuityController.swift, now-guest-ppc/src/logs, now-guest-68k/src/core/log.c, docs/architecture.md]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/LogsHostModule.swift, now-host/Sources/Host/HostLog.swift, now-host/Sources/Host/LogsModuleView.swift, now-host/Sources/Host/LogsModel.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/MirrorContinuityController.swift, now-guest-ppc/src/logs, now-guest-68k/src/core/log.c, docs/architecture.md]
 media_ids: [logs-host, logs-ppc]
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -31,8 +31,10 @@ important evidence through its console rather than a matching page.
 ## On the modern Mac
 
 The host shows its bounded 2,000-line in-memory scrollback and follows the
-newest line. Invert changes the reading canvas; Log to disk adds a per-launch
-file without turning off the in-memory ring. Lines carry a short subsystem tag,
+newest line. Invert changes the reading canvas here, beside the output it
+repaints; whether the same lines also reach a per-launch file on disk is a
+**Settings…** button away, in the Logs tab of the Settings window, and does
+not turn off the in-memory ring either way. Lines carry a short subsystem tag,
 but this page does not currently provide filtering.
 
 An **Advanced Continuity diagnostics** disclosure owns the retained input

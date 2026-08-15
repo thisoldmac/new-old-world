@@ -6,9 +6,9 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/module-manifest.yaml, docs/contract-coverage.md, now-host/Sources/Host/NavigationLayout.swift]
-source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
+source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/HostSettingsView.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
 media_ids: []
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -71,11 +71,18 @@ tools remain usable, cached machine information is marked offline where it can
 be shown honestly, and live-only pages offer **Start Listening** or a route to
 Connections. Reconnecting restores live behavior in place.
 
-Application appearance is separate from Connections. Choose **New Old World >
-Settings…** or press **Command-,** for System, Light, or Dark theme and the
-Off, Clear, or Regular Liquid Glass setting. macOS 13–25 and macOS accessibility
-settings that reduce transparency or increase contrast use the native material
-fallback instead of glass.
+Application appearance, and a set of preferences pulled out of individual
+modules, are separate from Connections. Choose **New Old World >
+Settings…** or press **Command-,** for a pill-tabbed window: appearance
+(System, Light, or Dark theme and the Off, Clear, or Regular Liquid Glass
+setting — macOS 13–25 and macOS accessibility settings that reduce
+transparency or increase contrast use the native material fallback instead of
+glass), the sidebar's row density and layout, MCP's and Web's
+start-automatically switches, Web's compatibility and safety settings, Logs'
+disk-write switch, and defaults for a Continuity pairing that has never
+connected before. See [Connections](connections-and-preferences.md) for the
+full tab list. Several modules also carry their own **Settings…** button that
+opens this window on their tab.
 
 | Module | PowerPC Workshop | Pre-Carbon source (excluded from alpha) |
 |---|---|---|
