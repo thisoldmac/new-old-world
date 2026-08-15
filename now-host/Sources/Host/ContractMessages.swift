@@ -103,6 +103,7 @@ enum ControlMessage: Equatable, Sendable {
     case continuityKeyReport(ContinuityKeyReport)
     case continuitySelection(ContinuitySelection)
     case continuityGrab(ContinuityGrab)
+    case continuityOffer(ContinuityOffer)
     case mirrorInvalidate(MirrorInvalidate)
     case updateOffer(UpdateOffer)
     case updateRequest(UpdateRequest)
@@ -320,18 +321,54 @@ struct ContinuitySelection: Codable, Equatable, Sendable {
     var item: Item?
 }
 
-/// Serve the item one `ContinuitySelection` generation named.
+/// Serve the item one `ContinuitySelection` generation named — or, sent
+/// the other way, the item one `ContinuityOffer` generation named.
 ///
-/// It carries no path on purpose. The host can only ask for what the guest
-/// already told it about, so the reachable set is exactly what a person
-/// selected by hand during a live epoch — which is what makes a read
-/// outside the Files share honest here and nowhere else.
+/// The same message serves both directions of Continuity file crossing:
+/// this host sends it to redeem the guest's selection stub
+/// (`Session.sendContinuityGrab`), and the guest sends it back inverted
+/// to redeem THIS host's offer (`GuestListener.serveContinuityGrab`). It
+/// carries no path on purpose, either way — the receiver can only serve
+/// what it already told the other side about, so the reachable set is
+/// exactly what a person put in view during a live epoch.
 struct ContinuityGrab: Codable, Equatable, Sendable {
     var version: Int
     var id: Int
     var epoch: UInt32
     var generation: UInt32
     var container: String?
+}
+
+/// What the person at THIS Mac has picked up and is carrying toward the
+/// classic Mac, pushed unsolicited while a Continuity epoch is live.
+///
+/// `continuity.selection` inverted — same stub shape, opposite sender —
+/// and the only new wire vocabulary the host→guest drag direction needs.
+/// See `ContinuityOffer` in `contract/asyncapi.yaml` (schema, L2840) for
+/// the full argument; this struct mirrors it field for field.
+struct ContinuityOffer: Codable, Equatable, Sendable {
+    struct Item: Codable, Equatable, Sendable {
+        var name: String
+        /// Present only when converting the name cost something —
+        /// absence means it crossed unchanged.
+        var nameAdjusted: String?
+        var fileType: String?
+        var creator: String?
+        var dataSize: Int
+        var resourceSize: Int?
+        /// Classic seconds since 1904.
+        var modifiedAt: UInt32?
+        var isFolder: Bool
+        /// Declared by the contract, not sent by this host yet.
+        var icon: String?
+    }
+
+    var version: Int
+    var epoch: UInt32
+    var generation: UInt32
+    /// Absent when this Mac is carrying nothing — an instruction to tear
+    /// down whatever drag the guest was drawing, not "nothing to say".
+    var item: Item?
 }
 
 /// An arm/disarm answer when `id` is present; an unsolicited local-takeover
@@ -1886,6 +1923,13 @@ enum ControlMessageCodec {
         case "continuity.grab":
             return .continuityGrab(
                 try decoder.decode(ContinuityGrab.self, from: data))
+        case "continuity.offer":
+            /* Never sent by a real guest — this host is the only sender
+               — but decoded anyway so a test's FakeGuest can read back
+               what was published, the same reason every other host-to-
+               guest message decodes here. */
+            return .continuityOffer(
+                try decoder.decode(ContinuityOffer.self, from: data))
         case "mirror.invalidate":
             return .mirrorInvalidate(
                 try decoder.decode(MirrorInvalidate.self, from: data))
@@ -2055,6 +2099,8 @@ enum ControlMessageCodec {
             return try tagged("continuity.selection", m)
         case .continuityGrab(let m):
             return try tagged("continuity.grab", m)
+        case .continuityOffer(let m):
+            return try tagged("continuity.offer", m)
         case .mirrorInvalidate(let m):
             return try tagged("mirror.invalidate", m)
         case .streamRequest(let m): return try tagged("stream.request", m)
