@@ -36,7 +36,7 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
                 self.model.requestedPlaneIDs(for: key)
             },
             finderComplementPolicy: { [unowned self] key in
-                self.model.finderComplementsAllowed(for: key)
+                self.model.mirroringAllowed(for: key)
             },
             lifecycleDidChange: { [weak self] in
                 self?.model.refreshLifecycle()

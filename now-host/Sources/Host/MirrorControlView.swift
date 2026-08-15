@@ -135,6 +135,16 @@ struct MirrorToolbarView: View {
 /// `docs/mirror-measurement-method.md`). Two different questions about
 /// one record.
 ///
+/// **Two keys, and they stopped being the same key.** Both sides still
+/// have to permit an operation before it is scheduled, but since
+/// 2026-08-15 they answer different questions: the classic Mac answers
+/// whether it may be mirrored at all — one switch, on its own Mirror page
+/// — and everything on this screen answers which planes. Before that the
+/// guest carried four gates of its own whose names (structure, Finder
+/// details, drawing trace, foreground discovery) never lined up with the
+/// five planes here, so a person reading either page could not predict
+/// the other. The guest's granularity retired; its refusal did not.
+///
 /// **The plane switches stayed too, and that is the deliberate half.** A
 /// plane's state is a diagnostic and the host's policy over it is a
 /// setting, so they could have been split — a sheet for the switches, a
