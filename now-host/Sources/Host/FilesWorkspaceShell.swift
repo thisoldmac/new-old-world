@@ -680,6 +680,7 @@ private struct FilesPlacesSidebar: View {
                 .onMove { model.moveLocations(from: $0, to: $1) }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
             .overlay {
                 if model.locations.isEmpty && !compact {
                     Text(model.isDiscoveringLocations
@@ -693,7 +694,7 @@ private struct FilesPlacesSidebar: View {
         }
         .frame(width: compact ? 52 : 176)
         .animation(.easeInOut(duration: 0.18), value: compact)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(FilesSidebarVibrancyBackground())
         .onDrop(of: [.folder], isTargeted: nil) { _ in
             guard let path = model.draggedFolderPath else { return false }
             return model.pinLocation(path: path)

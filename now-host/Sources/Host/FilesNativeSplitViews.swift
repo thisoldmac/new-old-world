@@ -1,6 +1,25 @@
 import AppKit
 import SwiftUI
 
+/// The `.sidebar` vibrancy material `FilesRightSidebarRailView` already uses
+/// for the collapsed rail, made reusable as a plain SwiftUI background.
+///
+/// H2: the leading Places sidebars (`FilesPlacesSidebar`, `HostFilesSidebar`)
+/// painted flat `controlBackgroundColor` behind a `.sidebar`-style `List`,
+/// so they never matched the real vibrancy the collapsed rail already had —
+/// same material, two different implementations, only one of them correct.
+struct FilesSidebarVibrancyBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .withinWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
 /// The host surface is a complete right sidebar. One AppKit split controller
 /// owns its divider, full content, collapsed rail, and every transition between
 /// them so collapse state cannot drift between two layout systems.

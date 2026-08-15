@@ -697,10 +697,11 @@ struct HostFilesSidebar: View {
                 .frame(height: compact ? 30 : 28)
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
         }
         .frame(width: compact ? 52 : 176)
         .animation(.easeInOut(duration: 0.18), value: compact)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(FilesSidebarVibrancyBackground())
     }
 }
 

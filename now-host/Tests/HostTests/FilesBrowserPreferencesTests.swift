@@ -1078,4 +1078,33 @@ final class FilesBrowserPreferencesTests: XCTestCase {
         return (model.path, model.lastError, model.lastNotice)
     }
 
+    // H2: both leading Places sidebars used to paint a flat
+    // controlBackgroundColor behind a .sidebar-style List, while the
+    // collapsed right rail (FilesRightSidebarRailView) already used real
+    // .sidebar vibrancy — one material, two implementations. This is a
+    // source check because NSVisualEffectView material is not observable
+    // from a hosted, unrendered SwiftUI tree in a unit test.
+    func testFilesAndHostSidebarsShareRealSidebarVibrancyNotFlatColor() throws {
+        let shell = try GateSource.hostSwift(
+            "now-host/Sources/Host/FilesWorkspaceShell.swift")
+        let hostBrowser = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostFileBrowser.swift")
+        let splitViews = try GateSource.hostSwift(
+            "now-host/Sources/Host/FilesNativeSplitViews.swift")
+
+        XCTAssertTrue(splitViews.contains(
+            "struct FilesSidebarVibrancyBackground: NSViewRepresentable"),
+            "the collapsed rail's .sidebar material must be reusable")
+        XCTAssertTrue(splitViews.contains("material = .sidebar"))
+
+        for (label, source) in [("Files places sidebar", shell),
+                                 ("Host files sidebar", hostBrowser)] {
+            XCTAssertTrue(source.contains(
+                ".background(FilesSidebarVibrancyBackground())"),
+                "\(label) must sit on real sidebar vibrancy, not a flat color")
+            XCTAssertTrue(source.contains(".scrollContentBackground(.hidden)"),
+                          "\(label)'s List must not paint over the vibrancy")
+        }
+    }
+
 }
