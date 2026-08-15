@@ -16,7 +16,9 @@ green on the merged tree.
   triangle; the four-writer status placard became per-channel storage
   with one priority rule (`files_status.c`), so a clearing channel
   uncovers unread news instead of falling to "Ready." Emulator-observed
-  drawing (screenshot + rig table in that lane's `docs/local/`); nothing
+  drawing — the observation is recorded in commit 85340049's message;
+  the screenshot itself was a gitignored artifact in the lane's worktree
+  and was lost when the merged worktrees were removed. Nothing
   with a file actually moving was exercised. Three corrections it forced:
   the research claim "catsearch.c is dead" was WRONG (live console+wire
   verb; kept); the share half's hand-drawn text had NEVER reached the
