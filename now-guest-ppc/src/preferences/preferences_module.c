@@ -170,14 +170,30 @@ static void prefs_layout(const Rect *body)
     move_control(g_reset, &g_r.reset_button);
 }
 
-static void draw_line(const Rect *r, const char *line)
+/* Drawn with a NULL writer, described with one. Two faces, one walk. */
+static void emit_line(const WorkshopSceneWriter *writer, const Rect *r,
+                      const char *line)
 {
     Str255 text;
 
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line, r, true);
+        return;
+    }
     MoveTo(r->left, (short)(r->top + 11));
     CopyCStringToPascal(line, text);
     TruncString((short)(r->right - r->left), text, truncEnd);
     DrawString(text);
+}
+
+static void prefs_content(const WorkshopSceneWriter *writer)
+{
+    emit_line(writer, &g_r.collapse_note,
+              "Icons only. Rest the pointer on one to read its name.");
+    /* Plain hyphen and plain quotes: a drawable string here is MacRoman,
+       and a UTF-8 dash renders as mojibake through DrawString. */
+    emit_line(writer, &g_r.arrange_note,
+              "To rearrange the sidebar, drag a row up or down.");
 }
 
 static void prefs_draw(void)
@@ -187,12 +203,12 @@ static void prefs_draw(void)
     }
     SetPortWindowPort(g_owner);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    draw_line(&g_r.collapse_note,
-              "Icons only. Rest the pointer on one to read its name.");
-    /* Plain hyphen and plain quotes: a drawable string here is MacRoman,
-       and a UTF-8 dash renders as mojibake through DrawString. */
-    draw_line(&g_r.arrange_note,
-              "To rearrange the sidebar, drag a row up or down.");
+    prefs_content(NULL);
+}
+
+static void prefs_describe_scene(const WorkshopSceneWriter *writer)
+{
+    prefs_content(writer);
 }
 
 static Boolean prefs_click(const EventRecord *event, Point local)
@@ -271,7 +287,7 @@ static const WorkshopModuleOps k_ops = {
     prefs_activate,
     NULL,
     prefs_status_line,
-    NULL   /* describe_scene: this page does not self-describe yet */
+    prefs_describe_scene
 };
 
 const WorkshopModuleOps *preferences_module_ops(void)

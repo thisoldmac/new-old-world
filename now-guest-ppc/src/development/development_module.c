@@ -466,55 +466,71 @@ static void development_layout(const Rect *body)
     }
 }
 
-static void draw_line(const Rect *r, const char *text)
+/* Every hand-drawn line on this page - the detail beside the browser, the
+   toolchain and jobs status, the history rows - goes through one walk,
+   drawn with a NULL writer and described with one. The browser itself is
+   a Control Manager fact and is not repeated here. */
+static void emit_line(const WorkshopSceneWriter *writer, const Rect *r,
+                      const char *text)
 {
     Str255 ptext;
+
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, text, r, true);
+        return;
+    }
     MoveTo(r->left, (short)(r->top + 11));
     CopyCStringToPascal(text, ptext);
     TruncString((short)(r->right - r->left), ptext, truncMiddle);
     DrawString(ptext);
 }
 
-static void draw_detail(void)
+static void emit_detail(const WorkshopSceneWriter *writer)
 {
     char line[200];
 
     if (g_selected < 0 || g_selected >= g_count) {
-        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-        draw_line(&g_r.title_line, g_count > 0
+        if (writer == NULL) {
+            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        }
+        emit_line(writer, &g_r.title_line, g_count > 0
             ? "Select a project."
             : (g_projects_root[0]
                    ? "No projects under the chosen folder."
                    : "Choose a Projects folder to begin."));
         return;
     }
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    draw_line(&g_r.title_line, g_rows[g_selected].name[0]
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+    }
+    emit_line(writer, &g_r.title_line, g_rows[g_selected].name[0]
                                    ? g_rows[g_selected].name
                                    : "Untitled project");
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    }
     snprintf(line, sizeof line, "Identity: %s", g_rows[g_selected].id);
-    draw_line(&g_r.id_line, line);
+    emit_line(writer, &g_r.id_line, line);
     if (!g_have_facts) {
-        draw_line(&g_r.target_line, "Project.ckp could not be read.");
+        emit_line(writer, &g_r.target_line, "Project.ckp could not be read.");
         return;
     }
     snprintf(line, sizeof line, "Target: %s", g_facts.target[0]
                                                   ? g_facts.target : "none");
-    draw_line(&g_r.target_line, line);
+    emit_line(writer, &g_r.target_line, line);
     snprintf(line, sizeof line, "Configuration: %s",
              g_facts.configuration[0] ? g_facts.configuration : "none");
-    draw_line(&g_r.configuration_line, line);
+    emit_line(writer, &g_r.configuration_line, line);
     snprintf(line, sizeof line, "Pins: %s@%s", g_facts.toolchain_id,
              g_facts.toolchain_version);
-    draw_line(&g_r.toolchain_pin_line, line);
+    emit_line(writer, &g_r.toolchain_pin_line, line);
     snprintf(line, sizeof line, "Product: %s (%d actions)",
              g_facts.product[0] ? g_facts.product : "none",
              g_facts.build_actions);
-    draw_line(&g_r.product_line, line);
+    emit_line(writer, &g_r.product_line, line);
 }
 
-static void draw_history(void)
+static void emit_history(const WorkshopSceneWriter *writer)
 {
     const DevJobHistory *history = now_development_runtime_history();
     int shown = dev_job_history_count(history);
@@ -534,14 +550,32 @@ static void draw_history(void)
                      job->project_name, dev_job_state_name(job->state),
                      job->actions_completed, job->actions_total);
         }
-        draw_line(&g_r.job_rows[i], line);
+        emit_line(writer, &g_r.job_rows[i], line);
     }
+}
+
+static void development_content(const WorkshopSceneWriter *writer)
+{
+    char line[200];
+
+    emit_detail(writer);
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    }
+    if (g_toolchain_root[0]) {
+        snprintf(line, sizeof line, "MPW: %s (%s)", g_toolchain_root,
+                 g_toolchain_qualified ? "qualified" : "not qualified");
+    } else {
+        strcpy(line, "No MPW toolchain is registered.");
+    }
+    emit_line(writer, &g_r.toolchain_status, line);
+    now_development_runtime_status(line, sizeof line);
+    emit_line(writer, &g_r.jobs_status, line);
+    emit_history(writer);
 }
 
 static void development_draw(void)
 {
-    char line[200];
-
     if (g_owner == NULL || !g_visible) return;
     SetPortWindowPort(g_owner);
     if (!g_browser_ok) {
@@ -549,18 +583,12 @@ static void development_draw(void)
         RGBForeColor(&black);
         FrameRect(&g_r.list);
     }
-    draw_detail();
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    if (g_toolchain_root[0]) {
-        snprintf(line, sizeof line, "MPW: %s (%s)", g_toolchain_root,
-                 g_toolchain_qualified ? "qualified" : "not qualified");
-    } else {
-        strcpy(line, "No MPW toolchain is registered.");
-    }
-    draw_line(&g_r.toolchain_status, line);
-    now_development_runtime_status(line, sizeof line);
-    draw_line(&g_r.jobs_status, line);
-    draw_history();
+    development_content(NULL);
+}
+
+static void development_describe_scene(const WorkshopSceneWriter *writer)
+{
+    development_content(writer);
 }
 
 static int choose_root(Boolean toolchain)
@@ -729,7 +757,8 @@ static void development_idle(void)
 static const WorkshopModuleOps k_ops = {
     development_create, development_dispose, development_show,
     development_layout, development_draw, development_click, NULL,
-    development_activate, development_idle, development_status, NULL
+    development_activate, development_idle, development_status,
+    development_describe_scene
 };
 
 const WorkshopModuleOps *development_module_ops(void) { return &k_ops; }
