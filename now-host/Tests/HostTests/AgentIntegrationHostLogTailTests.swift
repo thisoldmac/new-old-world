@@ -365,6 +365,77 @@ final class AgentIntegrationHostLogTailTests: XCTestCase {
             "And the projects wording is unchanged by that split.")
     }
 
+    // MARK: - The areas the description offers
+
+    /// **Every area the tool description names is one this host writes.**
+    ///
+    /// The description is built from `areaExamples`, so there is one list
+    /// rather than a sentence and a set; this is what keeps that list honest.
+    /// An agent that filters on a tag nothing produces gets an empty tail and
+    /// reads it as a silent subsystem — the same failure the over-wide area
+    /// refusal exists to prevent, arriving by the other route.
+    ///
+    /// It reads the app's own source for the evidence, the way
+    /// `HostFaceParityTests` does, rather than keeping a second list here.
+    func testEveryAreaTheDescriptionOffersIsOneTheHostWrites() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // HostTests
+            .deletingLastPathComponent()   // Tests
+            .deletingLastPathComponent()   // now-host
+            .deletingLastPathComponent()   // repo
+            .appendingPathComponent("now-host/Sources/Host")
+
+        /* Any first argument that is not itself a string, then the area:
+           the level is sometimes a literal `.warn`, sometimes a forwarded
+           `$0` (the continuity controller's audit closure is the latter, and
+           a narrower pattern missed all four of its files — which this test
+           caught on its first run). */
+        let pattern = try NSRegularExpression(
+            pattern: #"\.write\(\s*(?:[^,()"]{0,40},\s*)?"([A-Za-z]+)""#)
+        var written = Set<String>()
+        guard let files = FileManager.default.enumerator(
+            at: root, includingPropertiesForKeys: nil) else {
+            return XCTFail("Could not read \(root.path)")
+        }
+        for case let url as URL in files where url.pathExtension == "swift" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            let whole = NSRange(text.startIndex..., in: text)
+            for match in pattern.matches(in: text, range: whole) {
+                guard let range = Range(match.range(at: 1), in: text) else {
+                    continue
+                }
+                written.insert(String(
+                    String(text[range]).prefix(
+                        AgentIntegrationHostLogPolicy.areaTagScalars)))
+            }
+        }
+
+        XCTAssertTrue(
+            written.contains("contin"),
+            "The scan found no continuity lines, so it is not reading the "
+                + "app's log calls and this gate proves nothing. Found: "
+                + "\(written.sorted().joined(separator: ", "))")
+
+        for area in HostLogTailProjection.areaExamples {
+            XCTAssertTrue(
+                written.contains(area),
+                "The description offers \"\(area)\" as an area and no "
+                    + "HostLog.write under now-host/Sources/Host produces it. "
+                    + "An agent that filters on it gets an empty tail and "
+                    + "reads it as a silent subsystem. This host writes: "
+                    + "\(written.sorted().joined(separator: ", "))")
+        }
+
+        let description = HostLogTailProjection
+            .mcpDescriptor["description"] as? String ?? ""
+        for area in HostLogTailProjection.areaExamples {
+            XCTAssertTrue(
+                description.contains("\"\(area)\""),
+                "The description is supposed to be built from the list; "
+                    + "\(area) is in the list and not in the sentence.")
+        }
+    }
+
     // MARK: - The local codec
 
     func testTheLocalCodecCarriesBothFieldsAndRefusesEitherOutOfRange()

@@ -141,7 +141,7 @@ public enum HostLogTailProjection: HostProjection {
         return [
             "title": "Read This Mac's Own New Old World Log",
             "description":
-                "Returns the last lines of the NEW OLD WORLD HOST's own log for the launch it is in — this Mac's side of the pairing, not the classic Mac's (that is now_guest_log_tail). It reads the application's live in-memory ring, the same text a person sees on the Logs page, so it answers whether or not disk logging is switched on and whether or not a Macintosh is connected; \"persistsToDisk\" and \"file\" report the optional per-launch file beside the lines rather than in place of them. Optional \"area\" narrows to one subsystem tag as the log itself writes it — for example \"contin\" (continuity), \"wire\", \"cloud\", \"files\", \"mirror\". At most \(policy.maximumLineCount) lines (\(policy.defaultLineCount) by default), newest last; a long answer is cut to a size budget from the OLDEST end and says so in \"shown\".",
+                "Returns the last lines of the NEW OLD WORLD HOST's own log for the launch it is in — this Mac's side of the pairing, not the classic Mac's (that is now_guest_log_tail). It reads the application's live in-memory ring, the same text a person sees on the Logs page, so it answers whether or not disk logging is switched on and whether or not a Macintosh is connected; \"persistsToDisk\" and \"file\" report the optional per-launch file beside the lines rather than in place of them. Optional \"area\" narrows to one subsystem tag AS THE LOG WROTE IT, which is at most six characters: \(areaExamples.map { "\"\($0)\"" }.joined(separator: ", ")). Note the truncation: continuity is \"contin\" and network is \"networ\". At most \(policy.maximumLineCount) lines (\(policy.defaultLineCount) by default), newest last; a long answer is cut to a size budget from the OLDEST end and says so in \"shown\".",
             "inputSchema": [
                 "type": "object",
                 "properties": [
@@ -188,6 +188,25 @@ public enum HostLogTailProjection: HostProjection {
             ],
         ]
     }
+
+    /// **The area tags the description offers, spelled once.**
+    ///
+    /// The description is prose about a set the app's `HostLog.write` calls
+    /// own, and prose restating a set is the second place to be wrong: an
+    /// agent that filters on a tag this host never writes gets an empty tail
+    /// and reads it as a silent subsystem. So the sentence is BUILT from this
+    /// array, and `AgentIntegrationHostLogTailTests` checks every member
+    /// against the app's own source. Already truncated to the tag field's
+    /// width, which is why continuity appears as `contin`.
+    /// Continuity first, because it is the lane that made this row
+    /// necessary; the rest alphabetically. Derived from the app's own
+    /// `HostLog.write` calls rather than remembered — the first version of
+    /// this list was written from memory and offered `config`, which nothing
+    /// writes, and omitted `mirror`, which does.
+    public static let areaExamples = [
+        "contin", "act", "agent", "app", "chat", "dev", "files", "mcp",
+        "mirror", "networ", "sw",
+    ]
 
     /// The two arguments, spelled once.
     enum Argument {
