@@ -179,6 +179,23 @@ against the last one before anything is written, an arm request that asks
 for what is already asked for is not an event, and identical consecutive
 settle failures collapse into a count.
 
+**The area's diagnostics are a DEBUG TIER, off by default.** Being
+edge-triggered was not enough: a 2026-08-15 session cycling 18
+Continuity epochs in three minutes left the 2000-line ring ~97% mirror
+counters — each disarm legitimately wrote its ~25-line epoch dump — and
+the lines a person diagnosing a *feature* needs (arm/disarm, selection,
+grants, errors) were buried past what a 40-line `tail` can serve. The
+tier boundary is drawn by one question: does this line serve someone
+diagnosing a FEATURE, or someone diagnosing the MIRROR PLANE? Lifecycle
+facts and every warn/error stay unconditional; per-epoch counter dumps
+and per-event traces sit behind `now_mirror_debug_on()`
+(`now-guest-ppc/src/mirror/mirror_debug.h`), flipped by the `mirrorlog`
+command from either face. The switch is session-scoped and never saved
+— a diagnostic that survives a relaunch is a configuration nobody chose
+— and the toggle logs its own transitions so the ring names who opened
+the firehose. `now-guest-ppc/tests/mirror_debug_gate_source_test.py`
+holds the boundary in both directions.
+
 Advanced Continuity controls are surfaced from the Logs module rather than
 from Mirror's primary controls. Fast Pump changes cooperative scheduling for a
 bounded comparison. The default-off deep-click probe is deliberately dense,
