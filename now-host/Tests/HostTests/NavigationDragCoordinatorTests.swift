@@ -63,12 +63,60 @@ final class NavigationDragCoordinatorTests: XCTestCase {
         XCTAssertEqual(
             NavigationSidebarDropResolver.target(
                 distanceFromTop: 40, height: 400,
-                upperItemCount: 5, lowerItemCount: 3),
+                upperItemCount: 5, lowerItemCount: 3,
+                pinnedStackHeight: 96),
             .zone(.upper, index: 5))
         XCTAssertEqual(
             NavigationSidebarDropResolver.target(
-                distanceFromTop: 360, height: 400,
-                upperItemCount: 5, lowerItemCount: 3),
+                distanceFromTop: 310, height: 400,
+                upperItemCount: 5, lowerItemCount: 3,
+                pinnedStackHeight: 96),
+            .zone(.lower, index: 0))
+    }
+
+    /// The footer's chrome must append below the stack, not prepend above it.
+    ///
+    /// The canvas fallback used to split the whole canvas in half: the top
+    /// appended to `upper`, the bottom prepended at `.zone(.lower, index: 0)`.
+    /// The footer is entirely inside that bottom half, and it is mostly
+    /// chrome — a divider, 8/5pt padding, the gaps around two rows — none of
+    /// which any row's own drop view covers. Connections is the LAST row of
+    /// that stack, so every one of those points pushed it down a full row
+    /// before the pointer had reached it. Widening the row's centre band
+    /// could not help: the displacement happens above the row.
+    func testFooterChromeAppendsBelowTheStackRatherThanPrependingAboveIt() {
+        func target(_ y: CGFloat) -> NavigationDropTarget {
+            NavigationSidebarDropResolver.target(
+                distanceFromTop: y, height: 400,
+                upperItemCount: 5, lowerItemCount: 2,
+                pinnedStackHeight: 96)          // stack occupies 304...400
+        }
+
+        XCTAssertEqual(target(300), .zone(.upper, index: 5),
+                       "above the pinned stack still appends to the list")
+        XCTAssertEqual(target(310), .zone(.lower, index: 0),
+                       "the stack's top padding means before its first row")
+        XCTAssertEqual(target(394), .zone(.lower, index: 2),
+                       "below the last footer row is an APPEND — the same "
+                         + "answer the upper half gives, mirrored")
+    }
+
+    func testFooterDropGeometryDegradesHonestlyBeforeItIsMeasured() {
+        // A stack of no height cannot own any point; nothing may resolve to
+        // a prepend that would displace the row a drag is aimed at.
+        XCTAssertEqual(
+            NavigationSidebarDropResolver.target(
+                distanceFromTop: 399, height: 400,
+                upperItemCount: 5, lowerItemCount: 2,
+                pinnedStackHeight: 0),
+            .zone(.upper, index: 5))
+        // An empty footer takes the whole drop, which is the one case the
+        // old prepend was right about.
+        XCTAssertEqual(
+            NavigationSidebarDropResolver.target(
+                distanceFromTop: 396, height: 400,
+                upperItemCount: 5, lowerItemCount: 0,
+                pinnedStackHeight: 20),
             .zone(.lower, index: 0))
     }
 

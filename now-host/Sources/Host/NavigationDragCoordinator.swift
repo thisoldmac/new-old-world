@@ -469,14 +469,34 @@ extension NavigationLayout {
 }
 
 enum NavigationSidebarDropResolver {
+    /// Where a point no row's own view covers belongs.
+    ///
+    /// The pinned stack's height is asked for rather than inferred, because
+    /// the two stacks are not two halves of the canvas: the footer is only
+    /// as tall as its rows need and the list gets everything else. Splitting
+    /// the canvas down the middle put the footer's chrome — its divider, its
+    /// 8/5pt padding, the gaps around its rows — on `.zone(.lower, index: 0)`,
+    /// which PREPENDS. Connections is the last row of that stack, so
+    /// brushing the padding above it shoved it down a full row before the
+    /// pointer ever reached the row, and a spring-load dwell cannot survive
+    /// its destination moving. The upper half never had this problem because
+    /// its fallback appends; this is that same append, mirrored.
     static func target(distanceFromTop: CGFloat, height: CGFloat,
                        upperItemCount: Int,
-                       lowerItemCount: Int) -> NavigationDropTarget {
-        if distanceFromTop < height / 2 {
+                       lowerItemCount: Int,
+                       pinnedStackHeight: CGFloat) -> NavigationDropTarget {
+        let stackHeight = min(max(0, pinnedStackHeight), height)
+        let stackTop = height - stackHeight
+        guard stackHeight > 0, distanceFromTop >= stackTop else {
             return .zone(.upper, index: upperItemCount)
         }
-        // Lower items grow upward: new drops enter at the top of that stack.
-        return .zone(.lower, index: 0)
+        guard lowerItemCount > 0 else { return .zone(.lower, index: 0) }
+        // Inside the stack the rows carry their own drop views, so what is
+        // left over here is the chrome around them: above the first row
+        // means before it, below the last means after it.
+        let share = (distanceFromTop - stackTop) / stackHeight
+        let index = Int((share * CGFloat(lowerItemCount)).rounded())
+        return .zone(.lower, index: min(max(index, 0), lowerItemCount))
     }
 }
 
