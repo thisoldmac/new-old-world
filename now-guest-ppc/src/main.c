@@ -149,8 +149,8 @@ static const unsigned char k_view_chat_item[] = {
 static const unsigned char k_view_mirror_item[] = {
     6, 'M', 'i', 'r', 'r', 'o', 'r'
 };
-static const unsigned char k_view_development_item[] = {
-    11, 'D', 'e', 'v', 'e', 'l', 'o', 'p', 'm', 'e', 'n', 't'
+static const unsigned char k_view_projects_item[] = {
+    8, 'P', 'r', 'o', 'j', 'e', 'c', 't', 's'
 };
 static const unsigned char k_view_web_item[] = {
     3, 'W', 'e', 'b'
@@ -214,7 +214,7 @@ static void create_menu_bar(void)
     AppendMenu(view_menu, k_view_icloud_item);
     AppendMenu(view_menu, k_view_chat_item);
     AppendMenu(view_menu, k_view_mirror_item);
-    AppendMenu(view_menu, k_view_development_item);
+    AppendMenu(view_menu, k_view_projects_item);
     AppendMenu(view_menu, k_view_web_item);
     AppendMenu(view_menu, k_view_preferences_item);
     AppendMenu(view_menu, k_view_logs_item);

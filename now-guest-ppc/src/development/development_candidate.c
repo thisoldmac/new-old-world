@@ -774,6 +774,13 @@ void now_development_project_command(const char *request_json, long id,
         char *space;
         line[0] = '\0';
         now_json_find_string(request_json, "line", line, sizeof line);
+        /* The console hands the raw rest-of-line, which BEGINS with the
+           separator space the tokenizer stopped at - so "catalog" arrives
+           as " catalog", and splitting at the first space would leave an
+           empty verb. The emulator QA sweep caught exactly that. */
+        while (line[0] == ' ') {
+            memmove(line, line + 1, strlen(line));
+        }
         space = strchr(line, ' ');
         if (space != NULL) {
             *space++ = '\0';

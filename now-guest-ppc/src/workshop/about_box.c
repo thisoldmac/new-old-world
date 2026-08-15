@@ -65,7 +65,10 @@ void now_about_box_show(void)
 
     snprintf(g_detail, sizeof g_detail, "Version %s",
               PRODUCT_DISPLAY_VERSION);
-    snprintf(g_stamp, sizeof g_stamp, "Build %s", now_build_stamp());
+    /* The short fingerprint, the way every ledger quotes it: the full
+       stamp wraps past the box and the window edge clips the second
+       line mid-glyph (emulator QA, 2026-08-15). */
+    snprintf(g_stamp, sizeof g_stamp, "Build %.12s", now_build_stamp());
 
     SetRect(&bounds, 120, 130, 120 + kWidth, 130 + kHeight);
     /* NO kWindowStandardHandlerAttribute - see confirm.c for why: it
