@@ -1,5 +1,7 @@
 # 034 — Host & guest assessments: plan
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 Status: **v2 — round-1 decisions folded in** (2026-08-14). Research by 14
 swarm units; full per-unit evidence in `docs/local/assessments-034/U*.md`
 (gitignored scratch). Michelle resolved the discussion agenda same day;
