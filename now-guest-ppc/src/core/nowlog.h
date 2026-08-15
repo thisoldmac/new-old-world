@@ -79,6 +79,12 @@ int now_log_tail(int count, char *out, long cap);
 int now_log_count(void);
 const char *now_log_line(int index);
 
+/* Lines ever written this launch, which is also the NEWEST held line's
+   1-based sequence number. `tail` pages the ring by these: a sequence
+   names one line forever, however far the ring has rolled since, which
+   is what makes a cursor over a live ring honest (logquery.h). */
+unsigned long now_log_seq(void);
+
 /* Where this launch is writing, for the console to name. */
 const char *now_log_path(void);
 

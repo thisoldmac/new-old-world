@@ -5221,23 +5221,55 @@ components:
           wirestat: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     tail:
       description: >
-        The last lines of the guest's log for this launch. The log is a
-        file per launch in a "now-logs" folder beside the application, so
-        what happened survives a crash that takes the window, the status
-        line and every in-memory buffer with it. The same command answers
-        on that Mac's own console; this is the copy read from here, which
-        matters because that machine is the harder one to look at.
+        Lines of the guest's log for this launch, read from the in-memory
+        ring — 2000 lines (the guest's kLogKept, restated here so both
+        sides read one number), live even when disk logging is off. A
+        copy also lands in a file per launch in a "now-logs" folder
+        beside the application, so what happened survives a crash that
+        takes the window, the status line and every in-memory buffer with
+        it. The same command answers on that Mac's own console; this is
+        the copy read from here, which matters because that machine is
+        the harder one to look at.
+
+        One answer carries at most 40 lines because it must fit a 4 KB
+        control frame; the REST of the ring is reached by paging, not by
+        a bigger answer. Every line has a sequence number, counted from 1
+        at launch, and every answer's "log" group names — as its "next"
+        row — the cursor to pass back as `before` for the next-older
+        page, until no row is offered because nothing older matches.
+        Paging by sequence is stable against a live ring: new lines
+        change nothing already numbered, and lines that roll off are
+        simply no longer served. The "log" group also reports "matching"
+        (how many held lines match the filter), "held" ("H of 2000"),
+        "shown" ("N of M"), the applied "area" when one was, and "file".
       args:
         lines:
           type: integer
-          description: How many, newest last. Default 20, most 40.
+          description: How many, newest last. Default 20, most 40 per answer.
+        area:
+          type: string
+          description: >
+            One area tag, at most 6 characters, matched exactly against
+            the tag the guest wrote (a line is "HH:MM:SS area message";
+            the tag field is 6 wide, so "contin" and never "continuity").
+            Filtering happens on the guest, before the wire — worth far
+            more than after it on this link. Absent means every area.
+        before:
+          type: integer
+          description: >
+            The paging cursor: return only lines with a sequence number
+            BELOW this one. Use the previous answer's "next" row. Absent
+            or 0 starts at the newest line.
       x-line: >
-        The first integer on the line is the count; anything else is
-        ignored. Empty means the default.
+        "tail [lines] [area] [before N]" — the first bare integer is the
+        count, a bare word is an area tag, and the integer after the word
+        "before" is the cursor. Empty means the default. Anything else is
+        ignored.
       output:
         type: object
         properties:
           tail: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
+          log: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
     vprobe:
       description: >
         Measure the guest's VRAM read cost by access method: raw
