@@ -8212,9 +8212,15 @@ components:
         It reports honestly when there is nothing to report: no live
         Continuity epoch, no offer under it, or an offer whose lifetime
         has closed are three different sentences, not one empty answer.
-        A guest whose continuity.report says `acceptsOffer: none` does
-        not register this verb at all and answers unknown-command, which
-        is what a closed registry is for.
+        THE VERB AND THE CAPABILITY SHIP TOGETHER. A guest that registers
+        `offer` answers at least `stage` in continuity.report's
+        `acceptsOffer`, and a guest that cannot take an offered file at
+        all does not register it and answers unknown-command — which is
+        what a closed registry is for. They are one decision made in a
+        build, not two, and the parity gate compares the build under test
+        against its own `help` table, so a build that moved one without
+        the other fails naming the verb rather than shipping a word it
+        cannot honour.
 
         NOW-68K answers unknown-command: it has no Continuity plane.
       args:
