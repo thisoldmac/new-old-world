@@ -370,6 +370,7 @@ final class HostAppState: ObservableObject {
             selection: { [weak self] in
                 self?.continuity.bindableSelection() ?? .failure(.noSelection)
             },
+            selectionMark: { [weak self] in self?.continuity.selectionMark },
             grab: continuityGrab)
         if settings.listenAtLaunch {
             startListening()

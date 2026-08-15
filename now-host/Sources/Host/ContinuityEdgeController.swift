@@ -230,6 +230,14 @@ final class ContinuityEdgeController: ObservableObject {
     private var pressOrigin: CGPoint?
     private var guestFileAtPoint: ((MirrorKit.Point) -> HostFileDragItem?)?
     private var guestSelectionItem: (() -> HostFileDragItem?)?
+    private var guestSelectionMark: (() -> ContinuitySelectionMark?)?
+    /// What the selection lane knew when the press went out, kept until the
+    /// cross decides what to bind. See `ContinuitySelectionBind`.
+    private struct PressedSelection {
+        let mark: ContinuitySelectionMark?
+        let downSentAt: TimeInterval
+    }
+    private var pressedSelection: PressedSelection?
     private var hostFilesDropped:
         ((NSPasteboard, MirrorKit.Point) -> Bool)?
     private var pendingReturnDrag: PendingReturnDrag?
@@ -375,20 +383,30 @@ final class ContinuityEdgeController: ObservableObject {
         refreshFileEdge()
     }
 
-    /// Binds a press to the guest's PUBLISHED SELECTION rather than to a
-    /// scene hit test.
+    /// Binds a cross-edge drag to the guest's PUBLISHED SELECTION rather
+    /// than to a scene hit test.
     ///
     /// The stub is the truth for this lane, and the reason is not
     /// preference: during a drag the guest cannot be asked anything, so what
-    /// the press binds to has to have arrived before the press. A scene
-    /// lookup would also make edge-mode file drags depend on the Mirror
-    /// running, which is the dependency slice 1 spent its whole existence
-    /// removing. The closure returns nil for an unusable selection and is
+    /// the drag binds to has to have arrived over the wire. A scene lookup
+    /// would also make edge-mode file drags depend on the Mirror running,
+    /// which is the dependency slice 1 spent its whole existence removing.
+    /// `guestSelectionItem` returns nil for an unusable selection and is
     /// responsible for saying WHY out loud — a silent nil here is the v1
     /// failure mode.
+    ///
+    /// THE BINDING IS TAKEN AT THE CROSS, NOT AT THE PRESS, and the mark
+    /// closure is what makes that safe. "Arrived over the wire" was read as
+    /// "arrived before the press" until 2026-08-15, when a press that
+    /// selected its own file bound the generation before it and this Mac
+    /// transferred `hello.txt` while `main.c` was being dragged. The press
+    /// records what the cache held; the cross compares and decides. See
+    /// `ContinuitySelectionBind`.
     func configureSelectionDragging(
+        guestSelectionMark: @escaping () -> ContinuitySelectionMark?,
         guestSelectionItem: @escaping () -> HostFileDragItem?
     ) {
+        self.guestSelectionMark = guestSelectionMark
         self.guestSelectionItem = guestSelectionItem
     }
 
@@ -527,16 +545,37 @@ final class ContinuityEdgeController: ObservableObject {
             let point = mirrorPoint(ownership.guestPoint)
             /* The selection stub wins outright where it is configured. It is
                not a better hit test, it is a different question: what the
-               person picked, asked before the press, rather than what is
-               under a point in a scene this lane may not have. */
+               person picked, rather than what is under a point in a scene
+               this lane may not have.
+
+               THE TWO LANES ANSWER AT DIFFERENT MOMENTS, and each at the
+               only one it can. A scene hit test is a question about the
+               pointer and has to be asked while the pointer is here. The
+               selection is a question about the person's hand, and the
+               press itself can CHANGE the answer — so asking now would be
+               asking before the machine has been told, which is exactly
+               what shipped the wrong file on 2026-08-15. */
+            pressedSelection = nil
             guestFileCandidate = guestSelectionItem != nil
-                ? guestSelectionItem?()
+                ? nil
                 : guestFileAtPoint?(point)
+            let selectionMark = guestSelectionMark?()
             let consumed = driver?.primaryDown(at: point,
                 inMenuBar: point.y < HitTester.menubarHeight,
                 sourceUptime: sample.eventUptime > 0
                     ? sample.eventUptime : nil) ?? false
-            if !consumed { guestFileCandidate = nil }
+            if !consumed {
+                guestFileCandidate = nil
+            } else if guestSelectionItem != nil {
+                /* Stamped AFTER the down went out, so the window in which
+                   an arriving selection counts as this press's own starts
+                   no earlier than the press did. An in-flight publish that
+                   crosses the press is then refused rather than adopted,
+                   which is the safe way for this clock to be wrong. */
+                pressedSelection = .init(
+                    mark: selectionMark,
+                    downSentAt: ProcessInfo.processInfo.systemUptime)
+            }
             pressOrigin = consumed ? ownership.guestPoint : nil
             pinHostCursor(for: ownership)
             return
@@ -544,6 +583,7 @@ final class ContinuityEdgeController: ObservableObject {
         if sample.kind == .primaryUp {
             _ = driver?.primaryUp(at: mirrorPoint(ownership.guestPoint))
             guestFileCandidate = nil
+            pressedSelection = nil
             pressOrigin = nil
             pinHostCursor(for: ownership)
             return
@@ -561,6 +601,7 @@ final class ContinuityEdgeController: ObservableObject {
                 + "\(Int(sample.delta.x)),\(Int(sample.delta.y)), host="
                 + "\(Int(sample.location.x)),\(Int(sample.location.y)), "
                 + "suppressedWarps=\(suppressedCursorWarps)")
+            if sample.buttonsDown { resolveSelectionBindingAtCross() }
             if sample.buttonsDown, let item = guestFileCandidate {
                 returnGuestFileToHost(item, from: ownership,
                                       sourceEvent: sourceEvent)
@@ -582,6 +623,61 @@ final class ContinuityEdgeController: ObservableObject {
             driver?.pointerMoved(to: point)
         }
         if !hostFileDrag { pinHostCursor(for: ownership) }
+    }
+
+    /// Decide, at the cross, what this held press is carrying.
+    ///
+    /// Only the selection lane reaches this: the scene lane bound at the
+    /// press because a hit test cannot be asked later. Every outcome is one
+    /// audited line naming both generations and the age of the arrival —
+    /// the next wrong-file report should be answerable from it alone,
+    /// which the 17:19 one was not.
+    private func resolveSelectionBindingAtCross() {
+        guard let guestSelectionItem, let pressed = pressedSelection else {
+            return
+        }
+        let current = guestSelectionMark?()
+        let verdict = ContinuitySelectionBind.decide(
+            pressed: pressed.mark, current: current,
+            downSentAt: pressed.downSentAt)
+        let age = { (mark: ContinuitySelectionMark) -> String in
+            String(format: "%+.0f ms from the press",
+                   (mark.appliedAt - pressed.downSentAt) * 1_000)
+        }
+        switch verdict {
+        case .bound(let mark):
+            audit(.info, "binding this press to the selection it was made "
+                + "under: epoch=\(mark.epoch), generation=\(mark.generation), "
+                + "published \(age(mark))")
+            guestFileCandidate = guestSelectionItem()
+        case .adopted(let mark):
+            /* The selection this press itself created. Nothing else could
+               have published while the button was held, and binding the
+               press's own selection is the whole point of the guest's
+               press probe. */
+            audit(.info, "binding this press to the selection it made: "
+                + "epoch=\(mark.epoch), generation=\(mark.generation), "
+                + "published \(age(mark)), replacing "
+                + "\(pressed.mark.map { "generation \($0.generation)" } ?? "nothing")")
+            guestFileCandidate = guestSelectionItem()
+        case .superseded(let pressedMark, let currentMark):
+            /* LOUD, AND NOTHING CROSSES. This Mac holds two candidates and
+               no way to tell which the hand chose; a file arriving under
+               the wrong name is not a smaller failure than a drag that
+               refused. The press still releases at its origin, so the
+               Finder completes no move — see returnToHost. */
+            audit(.warn, "the selection changed under this press; not "
+                + "binding generation \(pressedMark.generation): the Mac now "
+                + "publishes generation \(currentMark.generation), applied "
+                + "\(age(currentMark)) — too early to be this press's own "
+                + "doing, so which file is being dragged is not knowable "
+                + "from here")
+            guestFileCandidate = nil
+        case .nothing:
+            audit(.info, "no guest file is bound to this cross: the Mac "
+                + "published no usable Finder selection under this press")
+            guestFileCandidate = nil
+        }
     }
 
     private func mirrorPoint(_ point: CGPoint) -> MirrorKit.Point {
@@ -666,6 +762,7 @@ final class ContinuityEdgeController: ObservableObject {
         ownership = nil
         hostFileDrag = false
         guestFileCandidate = nil
+        pressedSelection = nil
         pressOrigin = nil
         state = nextState
         if let nextStatus {
@@ -807,6 +904,7 @@ final class ContinuityEdgeController: ObservableObject {
         self.ownership = nil
         pending = nil
         guestFileCandidate = nil
+        pressedSelection = nil
         pressOrigin = nil
         state = .ready
         pendingReturnDrag = PendingReturnDrag(item: item,
