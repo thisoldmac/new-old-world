@@ -7504,22 +7504,32 @@ components:
         facts: installation/load state, exact resident build, capability and
         format words, application request bits, resident active bits,
         generation/freshness, and any refusal or degradation it can prove.
-        It also owns four local safety gates: passive structure observation,
-        automatic Finder complements, drawing-content tracing, and explicit
-        foreground discovery. These are application preferences, not resident
-        facts and not host policy.
+        It also owns ONE local safety gate: a master consent that either
+        permits mirroring of this Mac or refuses all of it. That is an
+        application preference, not a resident fact and not host policy.
 
-        The host joins these facts and guest gates with its per-machine policy;
-        both sides must permit an operation before it is scheduled. Unsupported
-        planes remain unsupported even when an old preference says enabled;
-        an unanchored machine identity gets session-only safe defaults. The
-        unified shape deliberately replaces the old AXPeek/QDPeek/Portal and
-        mirror-agent inventory. A valid NOW Extension reply can never be
-        diagnosed as missing those retired components.
+        Two keys, and they are not the same key. Both sides must still
+        permit an operation before it is scheduled — the guest's veto is
+        untouched — but the two keys now differ in SHAPE rather than
+        overlapping: the guest answers whether this Mac may be mirrored at
+        all, and the host's per-machine plane policy answers which planes.
+        Until 2026-08-15 the guest carried four gates of its own (passive
+        structure observation, automatic Finder complements, drawing-content
+        tracing, explicit foreground discovery) whose vocabulary never
+        mapped one-to-one onto the host's five planes, so a person reading
+        one side could not predict the other. It is the guest's
+        GRANULARITY that retired here, never its refusal.
+
+        Unsupported planes remain unsupported even when an old preference
+        says enabled; an unanchored machine identity gets session-only safe
+        defaults. The unified shape deliberately replaces the old
+        AXPeek/QDPeek/Portal and mirror-agent inventory. A valid NOW
+        Extension reply can never be diagnosed as missing those retired
+        components.
       args: {}
       x-line: >
-        Takes nothing. Every field is either an observed guest fact or one of
-        the four guest-owned policy gates shown on the Workshop's Mirror page.
+        Takes nothing. Every field is either an observed guest fact or the
+        one guest-owned consent switch shown on the Workshop's Mirror page.
       output:
         type: object
         properties:
@@ -7686,16 +7696,46 @@ components:
               policy:
                 type: object
                 description: >
-                  Guest-owned safety gates. A current guest always reports
-                  these; hosts accept absence for guests built before the
-                  fields existed. False means the guest refuses that class of
-                  work even when host policy enables it.
-                required: [structure, finderComplements, content, foregroundCycle]
+                  The guest-owned safety gate — one master consent, since
+                  2026-08-15. A current guest always reports `enabled`;
+                  hosts accept its absence for guests built before it
+                  existed. False means this Mac refuses to be mirrored at
+                  all, whatever host policy says; true means the guest
+                  permits mirroring and the host's per-machine plane policy
+                  decides which planes are actually asked for.
+
+                  The four retired fields are the guest's old per-plane
+                  gates. A CURRENT GUEST STILL SENDS THEM, all four set to
+                  the master consent, so a host that predates this change
+                  reads exactly the permission the master grants rather
+                  than a missing object; they are output-only compatibility
+                  and no current guest reads them back. A host reading a
+                  guest that predates `enabled` collapses the four by the
+                  same rule the guest used to migrate its own preferences —
+                  consent only when ALL FOUR were on. That rule is stated
+                  once and applied in both places on purpose: it is its own
+                  inverse, so a record written by either build and read by
+                  the other means the same thing. Widening a consent
+                  silently is the failure this shape exists to avoid.
+                required: [enabled]
                 properties:
-                  structure: { type: boolean }
-                  finderComplements: { type: boolean }
-                  content: { type: boolean }
-                  foregroundCycle: { type: boolean }
+                  enabled: { type: boolean }
+                  structure:
+                    type: boolean
+                    deprecated: true
+                    description: Retired gate; equals `enabled`.
+                  finderComplements:
+                    type: boolean
+                    deprecated: true
+                    description: Retired gate; equals `enabled`.
+                  content:
+                    type: boolean
+                    deprecated: true
+                    description: Retired gate; equals `enabled`.
+                  foregroundCycle:
+                    type: boolean
+                    deprecated: true
+                    description: Retired gate; equals `enabled`.
               planes:
                 type: array
                 description: >
