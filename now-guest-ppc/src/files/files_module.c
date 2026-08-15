@@ -42,7 +42,18 @@
    through files_peer_label.c. The listing is what grows with the window
    (files_layout.c measures the bottom half upward from the bottom edge),
    which is the same pixels the triangle was buying, without taking a
-   capability away to buy them. */
+   capability away to buy them.
+
+   WATCHED DRAWING, 2026-08-15, on the OS 9.1 emulator (QEMU mac99, this
+   tree's build staged into a session clone; the shot is in the run
+   directory's own rig table). What that proves: both headings, the
+   separator, the two radios with Choose Folder enabled beside them, the
+   Sharing line, the downloads row and its two buttons all land where
+   files_layout.c puts them and read as Platinum controls; Up dims at the
+   root, Send File dims with no connection, and the placard says "Not
+   connected - askguest is unreachable" with the peer's own name in it.
+   What it does not prove: anything with a file actually moving - no
+   listing, no pull, no send - and nothing at all about the PowerBook. */
 
 static WindowRef g_owner;
 static Rect g_body;
