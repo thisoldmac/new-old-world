@@ -267,6 +267,15 @@ public actor NOWMCPServer {
     /// payload it published (`NOWMCPServerTests.testEveryRenderedTool-
     /// SchemaSatisfiesTheMCPRootTypeRequirement`).
     ///
+    /// The chat face had already learned this and nobody carried it across:
+    /// `ChatToolRendering.apiSafeSchema` supplies the same missing root type
+    /// — one line, same defaulting — because the Anthropic API rejected these
+    /// schemas on metal in August. Two faces render the same descriptors to
+    /// two validators, one was taught and the other was not, and the row
+    /// authors could not have known because the lesson lived in the other
+    /// face's file. Whatever a third face needs, it needs it HERE-shaped:
+    /// at its own rendering seam, not in 46 rows.
+    ///
     /// Injected rather than required of each row on purpose: a row states
     /// what VARIES about its shape, and the envelope states the invariant.
     /// It is not a repair of a wrong answer, and it must not become one —
