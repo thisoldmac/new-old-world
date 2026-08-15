@@ -1114,6 +1114,92 @@ final class GuestListener: ObservableObject {
     /// without anyone here doing anything.
     let share = HostShare()
 
+    // MARK: - continuity.offer / the inverted continuity.grab
+
+    /// What this Mac is carrying toward the guest, and the lifetime bound
+    /// on serving it after Continuity ends. See ContinuityOfferService.swift.
+    let continuityOfferService = ContinuityOfferService()
+
+    /// Publishes ONE local file as this Mac's offer for `epoch`/`generation`,
+    /// converting it exactly as `serveGet` converts a Files pull — same
+    /// `OutboundFile.plan`, so the bytes a later grab serves are the bytes
+    /// whose facts were already announced on the wire, never re-derived.
+    ///
+    /// Driven from a testable seam (an agent command or a debug console
+    /// verb), never from the drag gesture itself: this function does not
+    /// know or care whether a person's hand is on a mouse.
+    @discardableResult
+    func publishContinuityOffer(guestKey: GuestKey, epoch: UInt32,
+                                generation: UInt32, fileAt url: URL)
+        throws -> ContinuityOffer.Item {
+        guard let session = sessions[guestKey] else {
+            throw HostShare.ShareError.notFound
+        }
+        let data = try Data(contentsOf: url)
+        let plan = OutboundFile.plan(url: url, data: data,
+                                     convertText: convertServedText)
+        let original = url.lastPathComponent
+        let item = ContinuityOffer.Item(
+            name: plan.name, nameAdjusted: ClassicName.adjustment(for: original),
+            fileType: plan.fileType, creator: plan.creator,
+            dataSize: plan.bytes.count, resourceSize: nil,
+            modifiedAt: plan.modified.map(UInt32.init), isFolder: false,
+            icon: nil)
+        continuityOfferService.publish(guestKey: guestKey, epoch: epoch,
+                                       generation: generation, url: url,
+                                       plan: plan, item: item)
+        note("offer #\(epoch)/\(generation) published: \(item.name), "
+             + "\(item.dataSize) bytes", area: "continuity",
+             session: guestKey)
+        session.sendContinuityOffer(epoch: epoch, generation: generation,
+                                    item: item)
+        return item
+    }
+
+    /// Tells the guest the drag is over — an absent item under a fresh
+    /// generation, the contract's own instruction to tear down whatever
+    /// the guest was drawing. Does not itself end the offer's lifetime
+    /// window; a separate epoch end does that (`endContinuityOfferEpoch`).
+    func clearContinuityOffer(guestKey: GuestKey, epoch: UInt32,
+                              generation: UInt32) {
+        guard let session = sessions[guestKey] else { return }
+        session.sendContinuityOffer(epoch: epoch, generation: generation,
+                                    item: nil)
+    }
+
+    /// Continuity ended while an item was still carried: starts the
+    /// bounded serveable window rather than dropping the offer outright.
+    func endContinuityOfferEpoch() {
+        continuityOfferService.endEpoch()
+    }
+
+    /// Answers a `continuity.grab` the ASKING guest sent — the inverted
+    /// use, serving this host's own published offer down the ordinary
+    /// file lane, same as `serveGet` serves a Files pull.
+    fileprivate func serveContinuityGrab(_ grab: ContinuityGrab,
+                                         on session: Session) {
+        guard let key = session.guestKey else {
+            session.refuseFile(id: grab.id, code: "no-selection",
+                               reason: "This Mac does not recognise that "
+                                   + "connection.")
+            return
+        }
+        switch continuityOfferService.grab(guestKey: key, epoch: grab.epoch,
+                                           generation: grab.generation) {
+        case .refuse(let code, let reason):
+            note("#\(grab.id) offer grab refused: \(code) (\(reason))",
+                 area: "continuity", level: .warn, session: key)
+            session.refuseFile(id: grab.id, code: code, reason: reason)
+        case .serve(let plan):
+            note("#\(grab.id) serving offered \(plan.name), "
+                 + "\(plan.bytes.count) bytes", area: "continuity",
+                 session: key)
+            session.serveFile(id: grab.id, plan: plan,
+                              container: grab.container,
+                              modified: plan.modified)
+        }
+    }
+
     /// The cloud services this Mac may offer a guest. Lazy and a var so
     /// a test can hand it a registry of fakes; the real providers cost
     /// nothing until a guest asks or the iCloud page looks.
@@ -3409,6 +3495,10 @@ final class GuestListener: ObservableObject {
                 guard let self, let asker = origin.session else { return }
                 self.serveGet(request, on: asker)
             },
+            onServeContinuityGrab: { [weak self] grab in
+                guard let self, let asker = origin.session else { return }
+                self.serveContinuityGrab(grab, on: asker)
+            },
             onAcceptOffer: { [weak self] offer in
                 guard let self, let asker = origin.session else { return }
                 self.acceptOffer(offer, on: asker)
@@ -3517,6 +3607,11 @@ final class GuestListener: ObservableObject {
                 }
                 guard let key = closedSession.guestKey,
                       self.sessions[key] === closedSession else { return }
+                /* "The LINK dropping ends it immediately" — the offer's
+                   own contract clause, distinct from the epoch-end window
+                   above: consent was given to one Macintosh over one
+                   connection, and this connection is gone. */
+                self.continuityOfferService.linkDropped(guestKey: key)
                 // A conversation is per connection; a turn still
                 // streaming to a dead socket is cancelled, not leaked.
                 self.chatService?.sessionClosed(key: key)
