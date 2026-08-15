@@ -442,7 +442,18 @@ private struct SidebarShelfRow: View {
     }
 
     private func activate(_ fallback: NavigationSelection) {
-        if let openShelf { openShelf(shelf) } else { select(fallback) }
+        switch NavigationShelfTab.activationAction(
+            for: shelf,
+            isAlreadySelected: selection.containingShelfID == shelf.id,
+            registry: registry,
+            canReopen: openShelf != nil) {
+        case .goHome(let home):
+            select(home)
+        case .reopen:
+            openShelf?(shelf)
+        case .select:
+            select(fallback)
+        }
     }
 
     private var title: String {

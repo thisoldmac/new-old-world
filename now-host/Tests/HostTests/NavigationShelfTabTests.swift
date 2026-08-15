@@ -33,6 +33,53 @@ final class NavigationShelfTabTests: XCTestCase {
                                            containingShelfID: .network))
     }
 
+    func testReactivationSelectionIsAlwaysTheShelfsFirstTab() throws {
+        // H5: re-clicking a shelf you're already on returns to its first
+        // tab, regardless of what this window session last opened there —
+        // that's NavigationShelfSessionState's job for *reopening*, not this.
+        let network = try XCTUnwrap(
+            NavigationLayout.standard(for: .standard).shelf(id: .network))
+        let machine = try XCTUnwrap(
+            NavigationLayout.standard(for: .standard).shelf(id: .machine))
+
+        XCTAssertEqual(
+            NavigationShelfTab.reactivationSelection(
+                for: network, registry: .standard),
+            NavigationSelection(destination: .module("settings"),
+                                containingShelfID: .network))
+        XCTAssertEqual(
+            NavigationShelfTab.reactivationSelection(
+                for: machine, registry: .standard),
+            NavigationSelection(destination: .shelfHero(.machine),
+                                containingShelfID: .machine))
+    }
+
+    func testActivatingAnAlreadyOpenShelfGoesHomeInsteadOfReopening() throws {
+        // The click handler must prefer "go home" over "restore the
+        // session's remembered tab" once the shelf is already the one
+        // showing — this is the exact decision `SidebarShelfRow.activate()`
+        // dispatches on, so a regression there fails here too.
+        let network = try XCTUnwrap(
+            NavigationLayout.standard(for: .standard).shelf(id: .network))
+
+        XCTAssertEqual(
+            NavigationShelfTab.activationAction(
+                for: network, isAlreadySelected: true,
+                registry: .standard, canReopen: true),
+            .goHome(NavigationSelection(destination: .module("settings"),
+                                        containingShelfID: .network)))
+        XCTAssertEqual(
+            NavigationShelfTab.activationAction(
+                for: network, isAlreadySelected: false,
+                registry: .standard, canReopen: true),
+            .reopen)
+        XCTAssertEqual(
+            NavigationShelfTab.activationAction(
+                for: network, isAlreadySelected: false,
+                registry: .standard, canReopen: false),
+            .select)
+    }
+
     func testDebugShelfUsesConsoleThenLogs() throws {
         let shelf = try XCTUnwrap(
             NavigationLayout.standard(for: .standard).shelf(id: .debug))
