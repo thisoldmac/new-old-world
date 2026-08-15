@@ -5,7 +5,7 @@ struct ContinuityDisplayLayoutView: View {
     @ObservedObject var edge: ContinuityEdgeController
     @ObservedObject var previews: ContinuityDisplayPreviewStore
     let guestName: String
-    let mirrorRunning: Bool
+    let continuityRunning: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -49,32 +49,49 @@ struct ContinuityDisplayLayoutView: View {
                     }
                 }
 
-            HStack(alignment: .center, spacing: 16) {
-                Text("Guest size")
-                    .font(.headline)
-                Text("\(Int(layout.guestSize.width)) × "
-                     + "\(Int(layout.guestSize.height))")
-                    .foregroundStyle(.secondary)
-                Divider().frame(height: 24)
-                Text("Layout scale")
-                    .font(.headline)
-                HStack(spacing: 4) {
-                    ForEach(GuestDisplayScaleMode.allCases) { mode in
-                        Button(mode.label) { layout.selectScaleMode(mode) }
-                            .buttonStyle(ContinuityChoiceButtonStyle(
-                                selected: layout.scaleMode == mode))
+            /* This row squished to a one-letter-per-line sliver on a narrow
+               window: an HStack has no compression resistance of its own,
+               so a parent narrower than the row's ideal width shrank every
+               Text and Button down with it, and SwiftUI's last resort for
+               text that has nowhere left to go is wrapping mid-word rather
+               than clipping. `.fixedSize` tells the row to lay out at its
+               IDEAL width regardless of what the parent offers; the
+               ScrollView around it is what makes that safe — an oversized
+               row scrolls horizontally instead of overflowing the pane, so
+               the controls stay one line and clickable at any window
+               width the app permits. */
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .center, spacing: 16) {
+                    Text("Guest size")
+                        .font(.headline)
+                    Text("\(Int(layout.guestSize.width)) × "
+                         + "\(Int(layout.guestSize.height))")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Divider().frame(height: 24)
+                    Text("Layout scale")
+                        .font(.headline)
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        ForEach(GuestDisplayScaleMode.allCases) { mode in
+                            Button(mode.label) { layout.selectScaleMode(mode) }
+                                .buttonStyle(ContinuityChoiceButtonStyle(
+                                    selected: layout.scaleMode == mode))
+                        }
                     }
+                    Divider().frame(height: 24)
+                    Toggle("Screen previews", isOn: Binding(
+                        get: { previews.enabled },
+                        set: { previews.setEnabled($0) }))
+                        .toggleStyle(.switch)
+                        .help("Show live stills of each screen in the "
+                              + "arrangement. The host side needs Screen "
+                              + "Recording permission to capture its own "
+                              + "displays.")
+                        .lineLimit(1)
+                        .fixedSize()
                 }
-                Divider().frame(height: 24)
-                Toggle("Screen previews", isOn: Binding(
-                    get: { previews.enabled },
-                    set: { previews.setEnabled($0) }))
-                    .toggleStyle(.switch)
-                    .help("Show live stills of each screen in the "
-                          + "arrangement. The host side needs Screen "
-                          + "Recording permission to capture its own "
-                          + "displays.")
-                Spacer()
+                .fixedSize(horizontal: true, vertical: false)
             }
 
             VStack(alignment: .leading, spacing: 5) {
@@ -83,8 +100,9 @@ struct ContinuityDisplayLayoutView: View {
                         ? "rectangle.on.rectangle.slash"
                         : "rectangle.connected.to.line.below")
                     .font(.callout.weight(.medium))
-                Text(mirrorRunning ? edge.status
-                     : "Start Mirror before crossing into the guest display.")
+                Text(continuityRunning ? edge.status
+                     : "Turn on Continuity before crossing into the guest "
+                       + "display.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Text("Cursor traversal is copy-free in this version. Files "
@@ -97,6 +115,10 @@ struct ContinuityDisplayLayoutView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
+        // First appearance only, in effect: a placement already on disk —
+        // including one a person deliberately dragged away from every edge
+        // — makes this a no-op. See `attachToDefaultEdgeIfNeverPlaced`.
+        .onAppear { layout.attachToDefaultEdgeIfNeverPlaced() }
     }
 
     private var layoutLine: String {
@@ -122,6 +144,8 @@ struct ContinuityChoiceButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .lineLimit(1)
+            .fixedSize()
             .font(.callout.weight(selected ? .semibold : .regular))
             .foregroundStyle(selected ? Color.white : Color.primary)
             .padding(.horizontal, 10)

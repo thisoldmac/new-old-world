@@ -333,6 +333,90 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertEqual(returned.y, 600)
     }
 
+    /* Defect: a fresh install computes an attached default in memory at
+       construction, but nothing WRITES it down unless the person drags,
+       resizes, or a display genuinely reconfigures. If the constructor's
+       own `displayProvider()` read ran before the window server had a
+       display list — plausible at cold launch, well before anyone sees
+       the page — the guest can be stuck at whatever that early read
+       produced for the rest of the process. `attachToDefaultEdgeIfNeverPlaced`
+       is the fix: called once on the page's first appearance, it re-reads
+       the CURRENT display list and makes the attach durable. */
+    func testFirstAppearanceAttachesAnUnplacedGuestAndPersistsIt() {
+        let suite = "ContinuityDisplayLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // Simulate the constructor having run before the real display list
+        // was ready: it is handed no hosts at all, so its own in-memory
+        // default collapses to `.zero` — a genuine island.
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false,
+            displayProvider: { [self.host] })
+
+        XCTAssertNil(layout.sharedEdge, "constructed with no hosts at all")
+        XCTAssertFalse(layout.hasPersistedPlacement)
+
+        layout.attachToDefaultEdgeIfNeverPlaced()
+
+        XCTAssertEqual(layout.hostDisplays, [host],
+                       "re-read the display list, not the stale empty one")
+        XCTAssertNotNil(layout.sharedEdge, "now attached, not an island")
+        XCTAssertEqual(layout.sharedEdge?.host.id, host.id)
+        XCTAssertTrue(layout.hasPersistedPlacement)
+        XCTAssertTrue(defaults.bool(forKey:
+            "mirror.continuity.hasGuestDisplayOrigin"),
+            "durable now, not just in memory")
+    }
+
+    /* The complement: a placement that was ever written — including one a
+       person deliberately dragged away from every edge, which is a legal
+       state (`testFitLeavesAnUnattachedGuestWhereItWasPut`) — must never be
+       silently overwritten just because the page happened to appear again. */
+    func testFirstAppearanceLeavesAnExistingPlacementAlone() {
+        let suite = "ContinuityDisplayLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "mirror.continuity.hasGuestDisplayOrigin")
+        defaults.set(3000.0, forKey: "mirror.continuity.guestDisplayOriginX")
+        defaults.set(1800.0, forKey: "mirror.continuity.guestDisplayOriginY")
+
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [host], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false)
+
+        XCTAssertNil(layout.sharedEdge, "deliberately floated, not an island")
+        let floatedOrigin = layout.guestOrigin
+
+        layout.attachToDefaultEdgeIfNeverPlaced()
+
+        XCTAssertEqual(layout.guestOrigin, floatedOrigin,
+                       "an existing placement is never clobbered")
+        XCTAssertNil(layout.sharedEdge)
+    }
+
+    /* A second appearance after the first already attached and persisted
+       must also be a no-op — otherwise every reopen of the page could
+       silently re-snap a guest the person has since moved. */
+    func testSecondAppearanceDoesNotReattachAfterTheFirstAlreadyDid() {
+        let layout = makeLayout()
+        layout.attachToDefaultEdgeIfNeverPlaced()
+        XCTAssertTrue(layout.hasPersistedPlacement)
+
+        // Move it somewhere that shares no edge, as a person would by hand.
+        layout.setGuestOrigin(CGPoint(x: 3000, y: 1800))
+        layout.finishGuestMove()
+        XCTAssertNil(layout.sharedEdge)
+        let moved = layout.guestOrigin
+
+        layout.attachToDefaultEdgeIfNeverPlaced()
+
+        XCTAssertEqual(layout.guestOrigin, moved,
+                       "already persisted once; a second appearance must "
+                       + "not re-snap a placement the person chose")
+    }
+
     private func makeLayout() -> ContinuityDisplayLayout {
         ContinuityDisplayLayout(hostDisplays: [host],
                                 guestSize: CGSize(width: 800, height: 600),
