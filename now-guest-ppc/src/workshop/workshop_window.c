@@ -282,14 +282,19 @@ Boolean workshop_open(void)
     return true;
 }
 
-void workshop_close(void)
+void workshop_close(Boolean quitting)
 {
     int i;
 
     if (g_window == NULL) {
         return;
     }
-    /* The session rides in the prefs file, like the old windows'. */
+    /* The session rides in the prefs file, like the old windows'. A
+       user-close (quitting false) and quit teardown (quitting true, and
+       we are only here because the window still existed) both write
+       workshop_open_at_quit directly from the argument: the field means
+       exactly "was the Workshop open when this session last ended", and
+       that is precisely what each caller knows at its own call site. */
     {
         NowPrefs prefs;
         Rect bounds;
@@ -298,6 +303,7 @@ void workshop_close(void)
         GetWindowBounds(g_window, kWindowContentRgn, &bounds);
         prefs.workshop_rect = bounds;
         prefs.workshop_module = (short)g_selected;
+        prefs.workshop_open_at_quit = quitting;
         now_prefs_save(&prefs);
     }
     for (i = 1; i <= kWorkshopModuleCount; ++i) {

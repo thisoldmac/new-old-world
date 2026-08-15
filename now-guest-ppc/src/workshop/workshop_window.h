@@ -10,7 +10,11 @@
    usual document-window events here. */
 
 Boolean workshop_open(void);
-void workshop_close(void);
+/* quitting distinguishes a user-initiated close (records the Workshop
+   closed, so relaunch honors it) from app teardown (records it open,
+   since the window still existed when the app quit); see prefs.h's
+   workshop_open_at_quit. */
+void workshop_close(Boolean quitting);
 Boolean workshop_is(WindowRef window);
 WindowRef workshop_ref(void);
 

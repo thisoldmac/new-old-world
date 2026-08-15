@@ -151,6 +151,11 @@ typedef struct {
     short carbon_warning_suppressed;
 } PrefsRecordV26;
 
+typedef struct {
+    PrefsRecordV26 v26;               /* format = 27 */
+    short workshop_open_at_quit;
+} PrefsRecordV27;
+
 /* Format 16 reuses the V15 layout, bumping only the number to mark that
    Networking joined as nav id 9 (Logs and Connection shifted down
    again). It adds no persisted field, like formats 10, 11 and 14 before
@@ -261,6 +266,10 @@ static void set_defaults(NowPrefs *prefs)
     prefs->web_proxy_port = 5180;
     prefs->web_profile = 1;            /* Classilla */
     prefs->web_lens = 1;               /* Compatible Page */
+    /* Every existing machine already launches with the window open; a
+       file that predates the field must keep seeing that, not a closed
+       Workshop it never asked for. */
+    prefs->workshop_open_at_quit = true;
 }
 
 static Boolean valid_depth(short depth)
@@ -273,7 +282,8 @@ void now_prefs_load(NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV26);
+    long count = sizeof(PrefsRecordV27);
+    PrefsRecordV27 v27;
     PrefsRecordV26 v26;
     PrefsRecordV25 v25;
     PrefsRecordV24 v24;
@@ -296,9 +306,10 @@ void now_prefs_load(NowPrefs *prefs)
     if (FSpOpenDF(&spec, fsRdPerm, &ref) != noErr) {
         return;
     }
-    memset(&v26, 0, sizeof v26);
-    err = FSRead(ref, &count, &v26);
+    memset(&v27, 0, sizeof v27);
+    err = FSRead(ref, &count, &v27);
     FSClose(ref);
+    v26 = v27.v26;
     v25 = v26.v25;
     v24 = v25.v24;
     v23 = v24.v23;
@@ -550,6 +561,9 @@ void now_prefs_load(NowPrefs *prefs)
             prefs->carbon_warning_suppressed =
                 v26.carbon_warning_suppressed != 0;
         }
+        if (record.format >= 27 && count >= (long)sizeof(PrefsRecordV27)) {
+            prefs->workshop_open_at_quit = v27.workshop_open_at_quit != 0;
+        }
     } else if (record.console_open != 0) {
         /* Seed from the old window session: someone who kept the
            Console window open wants the Console page, not Screenshots.
@@ -562,7 +576,8 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 {
     FSSpec spec;
     short ref;
-    long count = sizeof(PrefsRecordV26);
+    long count = sizeof(PrefsRecordV27);
+    PrefsRecordV27 v27;
     PrefsRecordV26 v26;
     PrefsRecordV25 v25;
     PrefsRecordV24 v24;
@@ -579,7 +594,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
 
     memset(&record, 0, sizeof record);
     record.magic = kPrefsMagic;
-    record.format = 26;               /* launch logs + activation receipt */
+    record.format = 27;               /* Workshop open/closed at quit */
     record.port = prefs->port;
     strncpy(record.host, prefs->host, sizeof record.host - 1);
     record.shot_depth = prefs->shot_depth;
@@ -667,7 +682,10 @@ OSErr now_prefs_save(const NowPrefs *prefs)
             sizeof v26.pending_extension_build - 1);
     v26.carbon_warning_suppressed =
         prefs->carbon_warning_suppressed ? 1 : 0;
-    err = FSWrite(ref, &count, &v26);
+    memset(&v27, 0, sizeof v27);
+    v27.v26 = v26;
+    v27.workshop_open_at_quit = prefs->workshop_open_at_quit ? 1 : 0;
+    err = FSWrite(ref, &count, &v27);
     if (err == noErr) {
         SetEOF(ref, count);           /* what we wrote, not an older record */
     }
