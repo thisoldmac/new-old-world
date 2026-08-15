@@ -340,6 +340,10 @@ run_c now-guest-ppc loopstat_test.c          ""  src/core/loopstat.c
 # notification - so the rule is a function with a test rather than a
 # ternary in an event loop.
 run_c now-guest-ppc wire_sleep_test.c        ""  src/core/wire_sleep.c
+# G-8's naming seam: "This Mac" always, the peer's own reported name or
+# "Other Mac" - never the retired "the other Mac" - when none is known.
+# Pure so the fallback rule is a fact-in-fact-out test, not a live wire.
+run_c now-guest-ppc peer_name_test.c         ""  src/core/peer_name.c
 # `wirestat`'s grammar, shared by its two faces. It SETS the conditions
 # every number in this arc was taken under, so a misparse does not fail -
 # it measures a condition nobody chose.

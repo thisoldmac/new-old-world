@@ -91,10 +91,15 @@ void conn_snapshot(ConnSnapshot *out);
 
 /* What to call the machine on the other end, for anything a human
    reads. It is the name that machine sent in its hello; before a
-   connection there is no name to use, so it degrades to a plain
-   description rather than protocol vocabulary. Never "the host" —
-   guest and host are words for the code, not for the person using it.
-   Truncates to cap, so button titles can ask for a short one. */
+   connection there is no name to use (g.peer_name is cleared on every
+   disconnect - see enter_backoff/conn_disconnect - not just overwritten
+   by the next hello), so it degrades to "Other Mac" rather than
+   protocol vocabulary. Never "the host" or "the other Mac" — guest and
+   host are words for the code, and "Other Mac" is this application's
+   naming seam's fallback (peer_name.h), not a sentence fragment.
+   Truncates to cap, so button titles can ask for a short one. Thin
+   wrapper over peer_name.h's now_peer_name(); every OTHER file should
+   call this rather than reading g.peer_name directly. */
 void conn_peer_label(char *out, long cap);
 
 /* The TCP receive window Open Transport granted, or 0 if it kept its

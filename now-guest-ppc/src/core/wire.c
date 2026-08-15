@@ -37,6 +37,7 @@
 #include "software.h"
 #include "transitions_cmd.h"
 #include "development_candidate.h"
+#include "peer_name.h"
 #include "wire_sleep.h"
 #include "sha256.h"
 #include "update_install.h"
@@ -537,6 +538,11 @@ static void enter_backoff(void)
             g.host, g.port, g.last_fail);
     link_drop_transfers();
     close_endpoint();
+    /* The name a peer answered belongs to THAT connection; a stale one
+       carried into backoff would have conn_peer_label report a machine
+       that is not there, right when G-8's "Other Mac" fallback is
+       supposed to take over. */
+    g.peer_name[0] = '\0';
     if (!g.want_connection) {
         g.phase = kConnIdle;
         return;
@@ -2916,7 +2922,10 @@ static Boolean browse_refused(const char *reply)
     }
     g_browse.pending = false;
     if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
-        strcpy(reason, "the other Mac refused");
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(reason, sizeof reason, "%.30s refused", peer);
     }
     if (g_listing_hook != NULL) {
         g_listing_hook(g_browse.path, NULL, 0, false, 1, NULL, reason);
@@ -3317,7 +3326,11 @@ static Boolean cloud_refused(const char *reply)
             strcpy(reason, "Preview after the download");
         } else if (!now_json_find_text(reply, "reason", reason,
                                        sizeof reason)) {
-            strcpy(reason, "the other Mac refused the preview");
+            char peer[40];
+
+            conn_peer_label(peer, sizeof peer);
+            snprintf(reason, sizeof reason, "%.30s refused the preview",
+                     peer);
         }
         preview_fail(reason);
         return true;
@@ -3325,7 +3338,10 @@ static Boolean cloud_refused(const char *reply)
         return false;
     }
     if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
-        strcpy(reason, "the other Mac refused");
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(reason, sizeof reason, "%.30s refused", peer);
     }
     cloud_note(kCloudAnswerError, reason);
     return true;
@@ -3757,7 +3773,13 @@ static void host_shown_answer(const char *reply)
 static void service_host_show(void)
 {
     if (g_hostshow.pending && TickCount() > g_hostshow.deadline) {
-        host_show_settle(false, "No answer - that Mac may be too old.");
+        char peer[40];
+        char reason[64];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(reason, sizeof reason, "No answer - %.30s may be too old.",
+                 peer);
+        host_show_settle(false, reason);
     }
 }
 
@@ -4036,10 +4058,14 @@ static void get_end(const char *reply)
         return;
     }
     if (!now_json_find_bool(reply, "ok", 0)) {
+        char peer[40];
+
         now_log(kLogWarn, "get", "#%ld ended early at %ld of %ld bytes",
                 g_get.id, g_get.rx.received, g_get.expected);
         get_cleanup(false);
-        get_note("The other Mac stopped sending");
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "%s stopped sending", peer);
+        get_note(line);
         return;
     }
     if (now_files_receive_finish(&g_get.rx) != kFilesOK) {
@@ -4063,8 +4089,13 @@ static void service_get(void)
 {
     if ((g_get.pending || g_get.receiving)
         && TickCount() > g_get.deadline) {
+        char peer[40];
+        char line[64];
+
         get_cleanup(false);
-        get_note("The other Mac stopped answering");
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "%s stopped answering", peer);
+        get_note(line);
     }
 }
 
@@ -4500,13 +4531,16 @@ int now_wire_update_request(NowUpdateComponent component,
 {
     NowUpdateOffer offer;
     char json[256];
+    char peer[40];
 
     if (g.phase != kConnConnected) {
-        snprintf(err, (size_t)cap, "Connect to the other Mac first");
+        conn_peer_label(peer, sizeof peer);
+        snprintf(err, (size_t)cap, "Connect to %s first", peer);
         return -1;
     }
     if (!now_update_offer_get(component, &offer)) {
-        snprintf(err, (size_t)cap, "The other Mac has no %s update",
+        conn_peer_label(peer, sizeof peer);
+        snprintf(err, (size_t)cap, "%s has no %s update", peer,
                  now_update_component_name(component));
         return -1;
     }
@@ -7595,7 +7629,10 @@ static int handle_frame(const char *reply)
 
             get_cleanup(false);
             if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
-                strcpy(reason, "the other Mac refused");
+                char peer[40];
+
+                conn_peer_label(peer, sizeof peer);
+                snprintf(reason, sizeof reason, "%.30s refused", peer);
             }
             get_note(reason);
         } else if (!browse_refused(reply)) {
@@ -8127,6 +8164,7 @@ void conn_disconnect(void)
     now_update_model_reset();
     g.phase = kConnIdle;
     strcpy(g.status, "Not connected");
+    g.peer_name[0] = '\0';             /* G-8: a person asked; no peer now */
 }
 
 void conn_connect_now(void)
@@ -8187,11 +8225,7 @@ void conn_reset_wake_stats(void)
 
 void conn_peer_label(char *out, long cap)
 {
-    if (g.peer_name[0] != '\0') {
-        snprintf(out, (size_t)cap, "%s", g.peer_name);
-    } else {
-        snprintf(out, (size_t)cap, "the other Mac");
-    }
+    now_peer_name(g.peer_name, out, cap);
 }
 
 ConnPhase conn_phase(void)

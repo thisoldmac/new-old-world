@@ -134,10 +134,20 @@ long mcp_answer_line(const McpAnswer *answer, int index, char *out,
     case 3:
         /* The counter that is not here, explained. An agent's comings and
            goings are the host's to know; a row of zeroes in their place
-           would be the shape of something that failed to load. */
-        strncpy(out, "Whether an agent is attached, and what it has done, "
-                     "is the other Mac's to show.", (size_t)cap - 1);
-        out[cap - 1] = '\0';
+           would be the shape of something that failed to load.
+           `answer->peer` (already resolved by the caller through
+           conn_peer_label - see mcp_module.c :: current_answer) rather
+           than reaching for the wire directly: this file is
+           Toolbox-free and natively tested, and must stay that way. */
+        if (answer->connected && answer->peer[0] != '\0') {
+            snprintf(out, (size_t)cap,
+                     "Whether an agent is attached, and what it has done, "
+                     "is %.39s's to show.", answer->peer);
+        } else {
+            strncpy(out, "Whether an agent is attached, and what it has done, "
+                         "is Other Mac's to show.", (size_t)cap - 1);
+            out[cap - 1] = '\0';
+        }
         break;
     default:
         break;

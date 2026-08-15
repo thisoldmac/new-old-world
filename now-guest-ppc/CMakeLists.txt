@@ -142,6 +142,7 @@ add_application(now-guest-ppc
     src/core/screen_bounds.c
     src/core/loopstat.c
     src/core/wire_sleep.c
+    src/core/peer_name.c
     src/core/wirestat_cmd.c
     src/core/nowlog.c
     ../now-guest-shared/src/log_retention.c

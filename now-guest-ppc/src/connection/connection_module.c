@@ -440,7 +440,7 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("At a glance", text);
     g_group_glance = now_control_new(owner, &g_r.glance_group, text, false, 0,
                                 0, 0, kControlGroupBoxTextTitleProc, 0);
-    CopyCStringToPascal("Updates from the other Mac", text);
+    CopyCStringToPascal("Updates from Other Mac", text);
     g_group_update = now_control_new(owner, &g_r.update_group, text, false, 0,
                                 0, 0, kControlGroupBoxTextTitleProc, 0);
     g_edit = make_button(&g_r.edit_btn, "Edit\xC9");   /* MacRoman ellipsis */

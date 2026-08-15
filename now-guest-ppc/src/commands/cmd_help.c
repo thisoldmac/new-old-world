@@ -31,7 +31,7 @@ static const char *const d_gestalt[] = {
 
 static const char *const d_romdump[] = {
     "  Writes this Mac's complete ROM to New Old World ROM.bin",
-    "  in the configured Files share. The other Mac retrieves it",
+    "  in the configured Files share. Other Mac retrieves it",
     "  through the ordinary file stream. On a PowerBook 1400 this",
     "  includes both the 3 MB Toolbox and 1 MB boot sections.",
     NULL
@@ -40,7 +40,7 @@ static const char *const d_romdump[] = {
 static const char *const d_development[] = {
     "  Reports only opaque registration and measured capability facts.",
     "  Toolchain and Projects paths remain on this Mac and are never",
-    "  returned to the other machine.",
+    "  returned to Other Mac.",
     NULL
 };
 
@@ -97,7 +97,7 @@ static const char *const d_tail[] = {
     "  The log is a file per launch in a \"now-logs\"",
     "  folder beside this application, so what happened",
     "  survives a crash that takes everything else. The",
-    "  same command works from the other Mac's console.",
+    "  same command works from Other Mac's console.",
     NULL
 };
 
@@ -574,7 +574,7 @@ static const char *const d_put[] = {
 
 static const char *const d_cancel[] = {
     "  Stops whatever file is moving, in whichever",
-    "  direction — a file arriving from the other Mac or",
+    "  direction — a file arriving from Other Mac or",
     "  one this Mac asked for. It needs no name: the lane",
     "  is one transfer wide, so there is only ever one",
     "  thing to stop. A file this Mac is SENDING cannot be",
@@ -614,10 +614,10 @@ static const char *const d_mkdir[] = {
 };
 
 static const char *const d_chat[] = {
-    "  Talks to a model through the other Mac's harness.",
+    "  Talks to a model through Other Mac's harness.",
     "  The conversation lives over there, one turn at a",
     "  time. Two steps to pick a model, by name not id:",
-    "    --models     list the other Mac's providers",
+    "    --models     list Other Mac's providers",
     "    --models P   list provider P's models, numbered",
     "    --model N    choose number N from that listing",
     "    --new        start a fresh conversation",
@@ -657,7 +657,7 @@ const NowCommandDoc kNowCommandDocs[] = {
       d_screenshot },
     { "ls", 1, "list a folder in the shared files",
       "ls [path]", d_ls },
-    { "put", 0, "send a file to the other Mac",
+    { "put", 0, "send a file to Other Mac",
       "put <full path>", d_put },
     { "tail", 1, "the last lines of this launch's log",
       "tail [lines]   (default 20, most 40)", d_tail },
@@ -687,7 +687,7 @@ const NowCommandDoc kNowCommandDocs[] = {
       "census [probe]   (no probe = overview)", d_census },
     { "catsearch", 1, "time a whole-disk application search",
       "catsearch", d_catsearch },
-    { "chat", 0, "talk to a model through the other Mac",
+    { "chat", 0, "talk to a model through Other Mac",
       "chat <text> | chat --models [provider] | --model <n> | --new | --stop",
       d_chat },
     { "sw", 1, "what is installed on this Mac",
