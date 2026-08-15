@@ -570,7 +570,11 @@ check(AWAIT in invoke
 # One FILE-logged line per edge naming applied against exposed. Without it a
 # metal round cannot tell a barrier that held from a barrier that never had
 # anything to hold, and "the icon landed in the wrong place" says neither.
-edge_log = invoke[invoke.index(AWAIT):invoke.index(BUSY_SET)]
+# Sliced defensively: a missing or misplaced wait is the check above's
+# sentence to say, and this one must not pre-empt it with a traceback.
+edge_log = invoke[invoke.index(AWAIT):] if AWAIT in invoke else ""
+if BUSY_SET in edge_log:
+    edge_log = edge_log[:edge_log.index(BUSY_SET)]
 check("now_log(" in edge_log
       and "now_log_memory" not in edge_log
       and "applied=%ld,%ld" in edge_log
