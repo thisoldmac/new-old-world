@@ -761,7 +761,8 @@ static int deliver_deferred_press_interrupt(NowPeekContinuityCell *cell,
        MBState is already up; btnState in the queue element agrees. */
     err = PPostEvent(mouseUp, 0, &element);
     if (err == noErr && element != NULL)
-        element->evtQModifiers = (short)0x0080;
+        element->evtQModifiers =
+            (short)(0x0080 | (cell->host_modifiers & 0xFF00u));
     cell->event_request_generation = 0;
     cell->pending_mouseup = 0;
     /* The press: state first, then the event, the order the real driver
@@ -777,7 +778,8 @@ static int deliver_deferred_press_interrupt(NowPeekContinuityCell *cell,
     now_ext_cursor_remember_continuity_button(1u);
     err = PPostEvent(mouseDown, 0, &element);
     if (err == noErr && element != NULL)
-        element->evtQModifiers = 0;
+        element->evtQModifiers =
+            (short)(cell->host_modifiers & 0xFF00u);
     cell->button_down = 1;
     cell->applied_button_generation = generation;
     gNativeInputSeq = native_input_sequence();

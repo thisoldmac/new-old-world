@@ -37,6 +37,42 @@ void now_ext_continuity_keyboard_flush(NowPeekContinuityCell *cell)
     now_continuity_keyboard_resident_flush(cell);
 }
 
+/* V13 KeyMap co-write. The Finder chooses move/copy/alias inside the
+   Drag Manager loop from LIVE key state (GetKeys reads low-memory
+   KeyMap), not from the press event's modifiers - so the forwarded host
+   modifier word must be visible there too. This is a CO-WRITE, never
+   ownership: only the four modifier bits are touched, only the bits WE
+   set are ever cleared (a remembered previous word scopes the clear),
+   the ADB driver rewrites the map on every real key transition and wins
+   between passes, and an epoch end or takeover clears our bits through
+   the same remembered word. Virtual keycodes 55-59 live in KeyMap bytes
+   6 and 7. */
+static volatile unsigned char *volatile gKeyMapLM =
+    (volatile unsigned char *)0x0174UL;
+static NowPeekU32 gStampedModifiers;
+
+static void keymap_bits(NowPeekU32 word, unsigned char *b6,
+                        unsigned char *b7)
+{
+    *b6 = (unsigned char)((word & 0x0100u) ? 0x80 : 0);  /* command, key 55 */
+    *b7 = (unsigned char)(((word & 0x0200u) ? 0x01 : 0)   /* shift, 56 */
+                          | ((word & 0x0800u) ? 0x04 : 0) /* option, 58 */
+                          | ((word & 0x1000u) ? 0x08 : 0)); /* control, 59 */
+}
+
+static void keymap_costamp(NowPeekU32 word)
+{
+    unsigned char prev6, prev7, now6, now7;
+
+    if (word == gStampedModifiers)
+        return;
+    keymap_bits(gStampedModifiers, &prev6, &prev7);
+    keymap_bits(word, &now6, &now7);
+    gKeyMapLM[6] = (unsigned char)((gKeyMapLM[6] & ~prev6) | now6);
+    gKeyMapLM[7] = (unsigned char)((gKeyMapLM[7] & ~prev7) | now7);
+    gStampedModifiers = word;
+}
+
 void now_ext_continuity_keyboard_gne(NowPeekTable *table)
 {
     NowPeekContinuityCell *cell = keyboard_cell(table);
@@ -50,8 +86,10 @@ void now_ext_continuity_keyboard_gne(NowPeekTable *table)
                 && cell->state
                     != (NowPeekU32)kNowPeekContinuityStateActive)) {
         now_continuity_keyboard_resident_flush(cell);
+        keymap_costamp(0);
         return;
     }
+    keymap_costamp(cell->host_modifiers);
     current_a5 = (NowPeekU32)LMGetCurrentA5();
     for (drained = 0; drained < kNowContinuityKeyDrainPerPass; ++drained) {
         NowContinuityKeySnapshot event;

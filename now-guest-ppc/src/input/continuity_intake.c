@@ -431,6 +431,16 @@ int now_continuity_arm(long id, unsigned short port,
        epoch. A datagram can never outrun construction of its consumer. */
     gEpoch = (NowCU32)epoch;
     gHostModifiers = 0;            /* a new epoch holds nothing */
+    {
+        NowPeekContinuityCell *shared = cell();
+    
+        if (shared != NULL) {
+            shared->host_modifiers = 0;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
     gFastPump = fast_pump != 0;
     /* double-active is GetDblTime() AFTER the resident armed: with the wide
        window bit set it must read the widened value, so this line is the
@@ -459,6 +469,16 @@ int now_continuity_disarm(long id, unsigned long epoch)
     }
     gEpoch = 0;                    /* datagrams lose authority first */
     gHostModifiers = 0;
+    {
+        NowPeekContinuityCell *shared = cell();
+    
+        if (shared != NULL) {
+            shared->host_modifiers = 0;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
     gFastPump = 0;
     now_continuity_keyboard_flush(shared);
     now_peek_release(kNowPeekOwnerContinuity,
@@ -641,6 +661,18 @@ int now_continuity_modifiers(unsigned long epoch, unsigned long generation,
             " held only, not visible to GetKeys",
             modifiers, (unsigned long)gHostModifiers, generation);
     gHostModifiers = (NowCU32)modifiers;
+    {
+        NowPeekContinuityCell *shared = cell();
+
+        if (shared != NULL) {
+            /* The resident reads word-then-seq; publish the seq LAST so a
+               torn pair reads as the previous word, never half a new one. */
+            shared->host_modifiers = (NowPeekU32)modifiers;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
     return kNowContinuityKeyQueued;
 }
 
@@ -655,6 +687,16 @@ void now_continuity_disconnect(void)
 
     gEpoch = 0;                    /* revoke before table or transport work */
     gHostModifiers = 0;
+    {
+        NowPeekContinuityCell *shared = cell();
+    
+        if (shared != NULL) {
+            shared->host_modifiers = 0;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
     gFastPump = 0;
     now_peek_release(kNowPeekOwnerContinuity,
                      (unsigned long)kNowPeekCapAnchors);
@@ -682,6 +724,16 @@ void now_continuity_shutdown(void)
 {
     gEpoch = 0;
     gHostModifiers = 0;
+    {
+        NowPeekContinuityCell *shared = cell();
+    
+        if (shared != NULL) {
+            shared->host_modifiers = 0;
+            shared->host_modifiers_seq++;
+            if (shared->host_modifiers_seq == 0)
+                shared->host_modifiers_seq = 1;
+        }
+    }
     gFastPump = 0;
     gNotifierCell = NULL;
     now_peek_release(kNowPeekOwnerContinuity,

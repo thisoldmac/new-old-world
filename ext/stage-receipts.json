@@ -968,6 +968,18 @@
         "contract/peek_table.h"
       ],
       "reason": "No Metal access overnight; private emulator clone verified the staged resident and a shared bake remains due before main"
+    },
+    {
+      "at": "2026-08-14T20:01:46-0400",
+      "branch": "refactor/mirror-continuity-split",
+      "extDigest": "2b8fd5ec4b924d183e1a95363d27a3c5ae446735",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_continuity.c",
+        "ext/src/now_ext_continuity_keyboard.c"
+      ],
+      "reason": "V13 host-modifier word + KeyMap co-write; bake with the round-2 bundle"
     }
   ]
 }

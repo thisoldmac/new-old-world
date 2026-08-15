@@ -47,4 +47,21 @@ check("slot->queue_seq = next" in LOGIC
 check("cell->key_floor_seq = cell->key_write_seq" in LOGIC,
       "process switch and control release must abandon older entries")
 
+# V13 KeyMap co-write: a co-write, never ownership. Only the four modifier
+# bits move, only bits WE set are cleared (the remembered word scopes the
+# clear), and the flush path clears through the same word so no epoch can
+# leak a held modifier into the machine's real keyboard state.
+check(KEYBOARD.count("gKeyMapLM") == 5
+      and "gKeyMapLM" not in SERVICE,
+      "the KeyMap co-write escaped its unit or grew writers")
+check("(gKeyMapLM[6] & ~prev6) | now6" in KEYBOARD
+      and "(gKeyMapLM[7] & ~prev7) | now7" in KEYBOARD,
+      "the co-write clears bits it did not set")
+check("keymap_costamp(0);" in KEYBOARD
+      and KEYBOARD.index("now_continuity_keyboard_resident_flush(cell);")
+          < KEYBOARD.index("keymap_costamp(0);"),
+      "an epoch end no longer clears the stamped modifier bits")
+check("0x0080 | (cell->host_modifiers" in SERVICE,
+      "the synthetic mouse-up lost live modifiers or its btnState bit")
+
 print("continuity_keyboard_safety_source_test: ok")
