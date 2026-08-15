@@ -847,6 +847,63 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(relaunch.captureFailureReason, .relaunchNeeded)
     }
 
+    /// The 2026-08-15 metal round, turned into a guard. Michelle granted
+    /// Accessibility, System Settings showed the app switched ON, and the
+    /// running process still logged the untrusted branch every arm —
+    /// because the grant was on `/Applications/New Old World.app` while
+    /// PID 82098 was `/Volumes/New Old World 10/New Old World.app`. Same
+    /// identifier, same team, same signing time, different copy. Nothing
+    /// in the log said which executable was speaking, so the round could
+    /// only be resolved by screenshots and `ps`.
+    ///
+    /// One fact ends that exchange, and this asserts the log carries it.
+    func testUntrustedCaptureFailureNamesTheCopyItIsRunningFrom() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        environment.captureAvailable = false
+        var audits: [(HostLog.LogLevel, String)] = []
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment,
+            accessibility: AccessibilityFake(),
+            runningCopy: RunningCopy(
+                path: "/Volumes/New Old World 10/New Old World.app"),
+            audit: { audits.append(($0, $1)) })
+        controller.start()
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 450),
+                               delta: CGPoint(x: 2, y: 0),
+                               buttonsDown: false))
+        controller.transportPhaseChanged(.active)
+
+        let permission = audits.filter {
+            $0.1.contains("could not capture host input (Accessibility")
+        }
+        XCTAssertFalse(permission.isEmpty, "the leak must still be named")
+        XCTAssertTrue(permission.allSatisfy {
+            $0.1.contains("/Volumes/New Old World 10/New Old World.app")
+        }, "every permission failure must name the running copy: \(audits)")
+        XCTAssertTrue(permission.allSatisfy { $0.1.contains("per copy") },
+                      "the path alone does not explain itself; the line "
+                      + "must say the grant is per copy")
+    }
+
+    /// The bounded test the page's extra remedy hangs off. Blunt on
+    /// purpose: it asks only whether this copy is somewhere a person would
+    /// plausibly have granted, never where the grant actually went.
+    func testRunningCopyRecognisesWhereAGrantedCopyLives() {
+        XCTAssertTrue(RunningCopy(path: "/Applications/New Old World.app")
+            .isInApplicationsFolder)
+        XCTAssertFalse(RunningCopy(
+            path: "/Volumes/New Old World 10/New Old World.app")
+            .isInApplicationsFolder,
+            "a copy running from a mounted disk image is the case that "
+            + "cost the 2026-08-15 round")
+        XCTAssertFalse(RunningCopy(
+            path: "/Users/michelle/Downloads/New Old World.app")
+            .isInApplicationsFolder)
+    }
+
     /// And it clears on recovery — a stale control offering a permission
     /// the person has already granted is its own small lie.
     func testCaptureFailureReasonClearsWhenTheTapRecovers() {

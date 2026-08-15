@@ -235,10 +235,42 @@ private struct ContinuityPointerCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            if !edge.runningCopy.isInApplicationsFolder {
+                runningCopyNote
+            }
             Button("Open Accessibility Settings…") {
                 controller.openAccessibilitySettings()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The case where the button above is not merely insufficient but
+    /// actively misleading: the person opens the pane, sees this app's
+    /// toggle already ON, and concludes the app is broken. Both halves are
+    /// telling the truth — macOS grants Accessibility to a COPY, and the
+    /// granted copy is not the one running.
+    ///
+    /// So this names the path we are actually running from and nothing
+    /// else. It does not go looking for the other copy, does not detect
+    /// App Translocation, and does not claim to know where the grant went;
+    /// each of those would be a guess dressed as a diagnosis. The path is
+    /// a fact, and it is the fact that ends the confusion.
+    private var runningCopyNote: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("This copy is running from \(edge.runningCopy.path)")
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("macOS grants Accessibility to a particular copy of an "
+                 + "app, not to the app in general. If the Accessibility "
+                 + "list already shows \(ProductIdentity.displayName) "
+                 + "switched on, that grant belongs to a different copy. "
+                 + "Move this one into your Applications folder and open "
+                 + "it from there, then grant it once.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

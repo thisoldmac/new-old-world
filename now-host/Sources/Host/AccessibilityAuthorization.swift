@@ -35,6 +35,42 @@ protocol AccessibilityAuthorization: Sendable {
     func openAccessibilitySettings()
 }
 
+/// Where this executable is running FROM, which is a different question
+/// from which app it claims to be — and on 2026-08-15 that difference cost
+/// an attended metal round.
+///
+/// macOS attaches Accessibility trust to a **copy on disk**, not to a
+/// bundle identifier. Michelle granted the permission, System Settings
+/// showed "New Old World.app" switched on, and the running process logged
+/// the untrusted branch on every arm anyway: the grant was on
+/// `/Applications/New Old World.app` while PID 82098 was
+/// `/Volumes/New Old World 10/New Old World.app` — same identifier, same
+/// team, same signing time, different copy. Eleven DMG volumes were
+/// mounted, so every launch that day had been from a different path.
+///
+/// That is the most confusing state this feature can reach: the pane says
+/// granted, the app says missing, and both are telling the truth. Nothing
+/// in the log said which executable was speaking. This type exists so
+/// something does.
+struct RunningCopy: Sendable, Equatable {
+    let path: String
+
+    /// Whether this copy lives where a granted copy normally lives. A
+    /// deliberately blunt test, and the bound on how clever this gets: it
+    /// does NOT detect App Translocation, does NOT enumerate other copies
+    /// on disk, and does NOT claim to know where the grant actually went.
+    /// It answers only "am I running from somewhere a person would not
+    /// have granted", which is enough to offer a remedy the Accessibility
+    /// pane cannot.
+    var isInApplicationsFolder: Bool {
+        path.hasPrefix("/Applications/")
+    }
+
+    static var current: RunningCopy {
+        RunningCopy(path: Bundle.main.bundleURL.path)
+    }
+}
+
 struct SystemAccessibilityAuthorization: AccessibilityAuthorization {
     /// The Accessibility pane of Privacy & Security. Same scheme the
     /// Connections module already uses for Local Network, which is the

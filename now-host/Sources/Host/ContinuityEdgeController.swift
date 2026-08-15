@@ -162,6 +162,10 @@ final class ContinuityEdgeController: ObservableObject {
     private let environment: ContinuityPointerEnvironment
     private let keyboardEnvironment: ContinuityKeyboardEnvironment
     private let accessibility: AccessibilityAuthorization
+    /// Read by the page as well as the log: which copy is speaking is
+    /// the one fact that separates "never granted" from "granted, but
+    /// to a different copy of this app".
+    let runningCopy: RunningCopy
     private let audit: Audit
     private let uptime: () -> TimeInterval
     private var monitor: AnyObject?
@@ -237,6 +241,7 @@ final class ContinuityEdgeController: ObservableObject {
          environment: ContinuityPointerEnvironment? = nil,
          keyboardEnvironment: ContinuityKeyboardEnvironment? = nil,
          accessibility: AccessibilityAuthorization? = nil,
+         runningCopy: RunningCopy = .current,
          audit: Audit? = nil,
          uptime: @escaping () -> TimeInterval = {
              ProcessInfo.processInfo.systemUptime
@@ -248,6 +253,7 @@ final class ContinuityEdgeController: ObservableObject {
         self.keyboardEnvironment = keyboardEnvironment
             ?? AppKitContinuityKeyboardEnvironment()
         self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
+        self.runningCopy = runningCopy
         self.audit = audit ?? { HostLog.shared.write($0, "continuity", $1) }
         self.uptime = uptime
         layoutSubscription = layout.objectWillChange.sink { [weak self] _ in
@@ -901,8 +907,17 @@ final class ContinuityEdgeController: ObservableObject {
                 + "needs this app relaunched before it can take effect"
         } else {
             captureFailureReason = .missingPermission
+            /* The path is the whole point of this line. Accessibility is
+               granted to a COPY, so a person looking at a switched-on
+               toggle in System Settings and an app insisting the
+               permission is missing needs exactly one fact to resolve it:
+               which executable is speaking. Without it this exchange is a
+               screenshot-and-guess; with it, seeing /Volumes/... is a
+               five-second read. */
             audit(.error, "could not capture host input (Accessibility "
-                + "permission); host clicks will also reach host apps")
+                + "permission); host clicks will also reach host apps. "
+                + "Accessibility is granted per copy of an app and this "
+                + "one is running from \(runningCopy.path)")
             status = "host input capture needs Accessibility permission; "
                 + "the pointer still crosses, but host clicks also reach "
                 + "host apps and window-drag protection is off"

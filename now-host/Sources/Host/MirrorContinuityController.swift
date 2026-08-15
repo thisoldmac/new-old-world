@@ -359,7 +359,7 @@ final class MirrorContinuityController: ObservableObject,
     private(set) lazy var edge: ContinuityEdgeController = {
         let edge = ContinuityEdgeController(
             layout: layout, driver: self, accessibility: accessibility,
-            audit: audit)
+            runningCopy: runningCopy, audit: audit)
         onPhaseChanged = { [weak edge] phase in
             edge?.transportPhaseChanged(phase)
         }
@@ -383,6 +383,7 @@ final class MirrorContinuityController: ObservableObject,
     private let acknowledgementTimeout: TimeInterval
     private weak var localNetworkAccess: LocalNetworkAccessController?
     private let accessibility: AccessibilityAuthorization
+    private let runningCopy: RunningCopy
     /// Whether `beginEdgeMode` has already asked macOS's Accessibility
     /// dialog this launch. Instance-scoped rather than a global: this
     /// controller is constructed once per app launch by `HostAppState`, and
@@ -447,6 +448,7 @@ final class MirrorContinuityController: ObservableObject,
          defaults: UserDefaults = ProductIdentity.defaults,
          localNetworkAccess: LocalNetworkAccessController? = nil,
          accessibility: AccessibilityAuthorization? = nil,
+         runningCopy: RunningCopy = .current,
          acknowledgementTimeout: TimeInterval = 3,
          audit: Audit? = nil) {
         self.listener = listener
@@ -454,6 +456,7 @@ final class MirrorContinuityController: ObservableObject,
         self.layout = ContinuityDisplayLayout(defaults: defaults)
         self.localNetworkAccess = localNetworkAccess
         self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
+        self.runningCopy = runningCopy
         self.acknowledgementTimeout = acknowledgementTimeout
         self.audit = audit ?? {
             HostLog.shared.write($0, "continuity", $1)
