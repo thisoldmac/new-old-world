@@ -289,6 +289,93 @@ final class AppKitContinuityPointerEnvironment:
             eventUptime: ProcessInfo.processInfo.systemUptime)
     }
 
+    /// The tally lives in a class the tap callback mutates directly, on the
+    /// main runloop thread the source is attached to. **No main-actor hop**:
+    /// the callback fires inside AppKit's own drag-tracking loop, and a
+    /// `Task { @MainActor }` scheduled from there is not guaranteed to run
+    /// until the loop exits — which is after the very session-end callback
+    /// that wants to read it.
+    private final class WitnessBox: NSObject, @unchecked Sendable {
+        var witness = ContinuityDragWitness(installed: true)
+        var port: CFMachPort?
+        var source: CFRunLoopSource?
+    }
+
+    func startDragWitness() -> AnyObject? {
+        let box = WitnessBox()
+        let types: [CGEventType] = [
+            .mouseMoved, .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+        ]
+        let mask = types.reduce(UInt64(0)) { $0 | (1 << $1.rawValue) }
+        guard let port = CGEvent.tapCreate(
+            /* Tail-append and listen-only: the question is what the session
+               ACTUALLY saw, after every other tap on this Mac has had its
+               say, and answering it must not change the answer. */
+            tap: .cgSessionEventTap, place: .tailAppendEventTap,
+            options: .listenOnly, eventsOfInterest: CGEventMask(mask),
+            callback: { _, type, event, refcon in
+                guard let refcon else {
+                    return Unmanaged.passUnretained(event)
+                }
+                let box = Unmanaged<WitnessBox>.fromOpaque(refcon)
+                    .takeUnretainedValue()
+                if type == .tapDisabledByTimeout
+                    || type == .tapDisabledByUserInput {
+                    if let port = box.port {
+                        CGEvent.tapEnable(tap: port, enable: true)
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
+                box.witness.record(ContinuityWitnessedEvent(
+                    type: type.rawValue,
+                    location: event.location,
+                    sourcePID: event.getIntegerValueField(
+                        .eventSourceUnixProcessID),
+                    sourceStateID: event.getIntegerValueField(
+                        .eventSourceStateID),
+                    uptime: ProcessInfo.processInfo.systemUptime,
+                    hidPrimaryHeld: CGEventSource.buttonState(
+                        .hidSystemState, button: .left),
+                    sessionPrimaryHeld: CGEventSource.buttonState(
+                        .combinedSessionState, button: .left)))
+                return Unmanaged.passUnretained(event)
+            }, userInfo: Unmanaged.passUnretained(box).toOpaque()) else {
+            return nil
+        }
+        box.port = port
+        guard let source = CFMachPortCreateRunLoopSource(nil, port, 0) else {
+            CFMachPortInvalidate(port)
+            return nil
+        }
+        box.source = source
+        /* `.commonModes` covers the event-tracking mode AppKit's drag loop
+           runs in. Attached anywhere narrower this would go quiet for exactly
+           the interval it exists to observe. */
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: port, enable: true)
+        return box
+    }
+
+    func readDragWitness(_ token: AnyObject) -> ContinuityDragWitness {
+        guard let box = token as? WitnessBox else {
+            return ContinuityDragWitness(installed: false)
+        }
+        return box.witness
+    }
+
+    func stopDragWitness(_ token: AnyObject) {
+        guard let box = token as? WitnessBox, let port = box.port else {
+            return
+        }
+        CGEvent.tapEnable(tap: port, enable: false)
+        if let source = box.source {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        CFMachPortInvalidate(port)
+        box.port = nil
+        box.source = nil
+    }
+
     func showFileEdge(_ edge: ContinuitySharedEdge,
                       callbacks: ContinuityFileEdge.Callbacks) -> AnyObject {
         let fileEdge = ContinuityFileEdge(edge: edge, callbacks: callbacks)

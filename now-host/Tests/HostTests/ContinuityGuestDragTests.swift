@@ -1295,6 +1295,27 @@ private final class Rig {
             return Token()
         }
         func stop(_ token: AnyObject) { _ = token }
+        /// The witness lane. Available by default, so ordinary tests
+        /// describe a Mac where the listen-only tap was granted; a test for
+        /// the refusal sets `dragWitnessAvailable = false`.
+        var dragWitnessAvailable = true
+        var dragWitness = ContinuityDragWitness(installed: true)
+        var dragWitnessStarts = 0
+        var dragWitnessStops = 0
+
+        func startDragWitness() -> AnyObject? {
+            guard dragWitnessAvailable else { return nil }
+            dragWitnessStarts += 1
+            return Token()
+        }
+        func readDragWitness(_ token: AnyObject) -> ContinuityDragWitness {
+            _ = token
+            return dragWitness
+        }
+        func stopDragWitness(_ token: AnyObject) {
+            _ = token
+            dragWitnessStops += 1
+        }
         func hideCursor(on displayID: UInt32) { _ = displayID }
         func showCursor(on displayID: UInt32) { _ = displayID }
         func moveCursor(on displayID: UInt32, to point: CGPoint) {
