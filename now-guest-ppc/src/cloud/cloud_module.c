@@ -19,6 +19,7 @@
 #include "pump.h"
 #include "wire.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* The iCloud page: the modern machine's cloud, browsed from this one.
    One dropdown of services (cloud.report), and a render tailored to
@@ -1701,19 +1702,43 @@ static void cloud_status_text(char *out, long cap)
    The listing is a DataBrowser and the toolbar is controls, so both
    already reach the host through control_kind.
 
-   What is NOT described yet, said plainly: the card pane's interior. It
-   is drawn by whichever CloudViewOps is active (drive, photos, contacts,
-   list), those live in sibling files, and CloudViewOps has no describe
-   entry. The pane's RECT is reported so an observer knows the region
-   exists and is not empty chrome; its contents are a follow-up that adds
-   a describe op to that vtable. */
+   The card pane's interior is drawn by whichever CloudViewOps is active
+   (drive, photos, contacts, list), those live in sibling files, and each
+   now carries its own describe entry (cloud_view.h) — this shell just
+   delegates to it, the same delegation cloud_draw already does for
+   pixels. A future fifth view that leaves describe NULL still reports
+   the pane's own RECT below, so an observer never sees LESS than "this
+   region exists and is not empty chrome" even when a view has nothing
+   further to say. */
 static void cloud_describe_scene(const WorkshopSceneWriter *writer)
 {
+    const CloudService *service = current_service();
+
     emit_at(writer, (short)(g_r.status.left + 2),
             (short)(g_r.status.bottom - 3), g_r.status.right, g_status);
     emit_search(writer);
     workshop_scene_add(writer, kWorkshopScenePanel, "", &g_r.detail_text,
                        true);
+    if (g_view != NULL && g_view->describe != NULL) {
+        g_view->describe(writer, &g_r, &g_store, service, g_selected);
+    }
+}
+
+/* Edit>Copy: the status line, the search field and whichever view's
+   card is on stage — exactly what cloud_describe_scene reports, one
+   walk, so nothing here can drift from either.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long cloud_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    cloud_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
 }
 
 static const WorkshopModuleOps k_ops = {
@@ -1728,10 +1753,7 @@ static const WorkshopModuleOps k_ops = {
     cloud_idle,
     cloud_status_text,
     cloud_describe_scene,
-    /* copy_text: the card pane is not even DESCRIBED yet (see the
-       comment at cloud_describe_scene), so there is nothing honest to
-       copy off it. */
-    NULL
+    cloud_copy_text
 };
 
 const WorkshopModuleOps *cloud_module_ops(void)

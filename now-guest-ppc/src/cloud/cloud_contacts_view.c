@@ -226,44 +226,59 @@ void cloud_contacts_view_dispose(void)
 
 /* --- the card's furniture: well, name, rows ---------------------------- */
 
-static void draw_left(short x, short y, const char *s)
-{
-    Str255 t;
-
-    CopyCStringToPascal(s, t);
-    MoveTo(x, y);
-    DrawString(t);
-}
-
 /* Left-aligned, clipped to a column width: inside a group box a value
    that runs past the frame reads as a drawing bug, not as a long
    address. truncEnd rather than truncMiddle -- the front of a street
-   address or an email local part is the half worth keeping. */
-static void draw_fitted(short x, short y, short width, const char *s)
-{
-    Str255 t;
+   address or an email local part is the half worth keeping.
 
-    if (width <= 0) {
+   One walk, taken twice: a NULL writer draws with QuickDraw, a real
+   writer reports the UNTRUNCATED string in a rect derived from the
+   baseline and the same column width — a person reading a card off
+   the clipboard should get the whole address a narrow box could not
+   show, the same rule cloud_photos_view.c's emit_small_line states. */
+static void emit_fitted(const WorkshopSceneWriter *writer, short x, short y,
+                        short width, const char *s)
+{
+    if (writer != NULL) {
+        Rect where;
+
+        if (width <= 0) {
+            return;
+        }
+        SetRect(&where, x, (short)(y - 11), (short)(x + width),
+               (short)(y + 3));
+        workshop_scene_add(writer, kWorkshopSceneStaticText, s, &where,
+                           true);
         return;
     }
-    CopyCStringToPascal(s, t);
-    TruncString(width, t, truncEnd);
-    MoveTo(x, y);
-    DrawString(t);
+    {
+        Str255 t;
+
+        if (width <= 0) {
+            return;
+        }
+        CopyCStringToPascal(s, t);
+        TruncString(width, t, truncEnd);
+        MoveTo(x, y);
+        DrawString(t);
+    }
 }
 
 /* today's value if it parses as a recognisable long date, rendered
    through LongDateString in the reader's own machine's date format --
    the whole reason cloud_contacts_card.h hands back components rather
    than this file trying to reformat English text itself. False (line
-   left undrawn by the caller) if it is not a date this can read. */
-static Boolean draw_date_value(short x, short y, short width,
-                               const char *value)
+   left undrawn/undescribed by the caller) if it is not a date this can
+   read. */
+static Boolean emit_date_value(const WorkshopSceneWriter *writer, short x,
+                               short y, short width, const char *value)
 {
     int year, month, day;
     LongDateRec rec;
     LongDateTime ldt;
     Str255 when;
+    char text[64];
+    int n;
 
     if (!cloud_contacts_parse_long_date(value, &year, &month, &day)) {
         return false;
@@ -281,6 +296,14 @@ static Boolean draw_date_value(short x, short y, short width,
     LongDateString(&ldt, longDate, when, NULL);
     if (width <= 0) {
         return true;                   /* recognised, no room to draw */
+    }
+    if (writer != NULL) {
+        n = when[0] < (int)(sizeof text - 1) ? when[0]
+                                              : (int)(sizeof text - 1);
+        memcpy(text, when + 1, (size_t)n);
+        text[n] = '\0';
+        emit_fitted(writer, x, y, width, text);
+        return true;
     }
     TruncString(width, when, truncEnd);
     MoveTo(x, y);
@@ -455,33 +478,48 @@ static void sync_boxes(void)
     }
 }
 
-static void view_draw(const CloudLayout *r, const CloudStore *store,
-                      const CloudService *service, int selected)
+/* One walk, taken twice: a NULL writer draws with QuickDraw and the
+   pane/well bookkeeping the rest of this file reads (g_pane,
+   g_well_rect); a real writer only reports text runs and touches no
+   state, the same split cloud_photos_view.c's view_content keeps. The
+   well's photo is a PICTURE (cloud_view.h's describe comment says
+   why) and reports nothing here; the group boxes around the sections
+   are Control Manager controls already reachable through control_kind,
+   so only the label:value text inside them is this walk's to report. */
+static void view_content(const WorkshopSceneWriter *writer,
+                         const CloudLayout *r, const CloudStore *store,
+                         const CloudService *service, int selected)
 {
     CloudContactsCardLayout cl;
 
-    g_pane = r->detail_text;
-    g_have_pane = true;
+    if (writer == NULL) {
+        g_pane = r->detail_text;
+        g_have_pane = true;
+    }
     cloud_contacts_card_layout(&r->detail_text, store->card,
                                store->card_count, &cl);
-    g_well_rect = cl.well;
-    g_have_well = true;
+    if (writer == NULL) {
+        g_well_rect = cl.well;
+        g_have_well = true;
+    }
 
     if (service != NULL && strcmp(service->state, "serving") != 0) {
         short y = (short)(r->detail_text.top + 12);
+        short width = (short)(r->detail_text.right - r->detail_text.left);
 
-        draw_left(r->detail_text.left, y, service->label);
+        emit_fitted(writer, r->detail_text.left, y, width, service->label);
         if (service->detail[0] != '\0') {
-            draw_left(r->detail_text.left, (short)(y + 16),
-                      service->detail);
+            emit_fitted(writer, r->detail_text.left, (short)(y + 16),
+                        width, service->detail);
         }
         return;
     }
     if (selected < 0 || selected >= store->row_count) {
         if (store->row_count > 0) {
-            draw_left(r->detail_text.left,
-                      (short)(r->detail_text.top + 12),
-                      "Select a name to see its card.");
+            emit_fitted(writer, r->detail_text.left,
+                        (short)(r->detail_text.top + 12),
+                        (short)(r->detail_text.right - r->detail_text.left),
+                        "Select a name to see its card.");
         }
         return;
     }
@@ -490,19 +528,25 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
        cloud.preview and cloud.card are two independent asks (the
        shell's ask_card and this view's own select op, below), so the
        photo need not wait for the card rows to arrive or vice versa. */
-    draw_well(&cl.well, store->rows[selected].item);
+    if (writer == NULL) {
+        draw_well(&cl.well, store->rows[selected].item);
+    }
     {
         short name_width = (short)(r->detail_text.right - cl.name_left);
 
-        UseThemeFont(kThemeSystemFont, smSystemScript);
-        draw_fitted(cl.name_left, cl.name_baseline, name_width,
+        if (writer == NULL) {
+            UseThemeFont(kThemeSystemFont, smSystemScript);
+        }
+        emit_fitted(writer, cl.name_left, cl.name_baseline, name_width,
                     store->rows[selected].title);
         if (store->rows[selected].subtitle[0] != '\0') {
             /* The organization, one small row under the name -- the
                same field the list's Company column shows, because the
                card and the list must not disagree about it. */
-            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-            draw_fitted(cl.name_left, cl.org_baseline, name_width,
+            if (writer == NULL) {
+                UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+            }
+            emit_fitted(writer, cl.name_left, cl.org_baseline, name_width,
                         store->rows[selected].subtitle);
         }
     }
@@ -513,7 +557,9 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
     if (cl.section_count > 0) {
         int s, i;
 
-        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        if (writer == NULL) {
+            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        }
         for (s = 0; s < cl.section_count; ++s) {
             const CloudContactsSection *sec = &cl.sections[s];
             short label_x = cloud_contacts_section_label_x(sec);
@@ -528,14 +574,28 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
                 short y = cloud_contacts_section_baseline(sec, i);
                 char value[136];
 
-                draw_fitted(label_x, y, label_w, row->label);
-                if (!draw_date_value(value_x, y, value_w, row->value)) {
+                emit_fitted(writer, label_x, y, label_w, row->label);
+                if (!emit_date_value(writer, value_x, y, value_w,
+                                     row->value)) {
                     snprintf(value, sizeof value, "%.128s", row->value);
-                    draw_fitted(value_x, y, value_w, value);
+                    emit_fitted(writer, value_x, y, value_w, value);
                 }
             }
         }
     }
+}
+
+static void view_draw(const CloudLayout *r, const CloudStore *store,
+                      const CloudService *service, int selected)
+{
+    view_content(NULL, r, store, service, selected);
+}
+
+static void view_describe(const WorkshopSceneWriter *writer,
+                          const CloudLayout *r, const CloudStore *store,
+                          const CloudService *service, int selected)
+{
+    view_content(writer, r, store, service, selected);
 }
 
 /* --- selection: the shell's ask_card runs off row_selected, above;
@@ -713,6 +773,7 @@ static const CloudViewOps k_ops = {
                                           boxes are this view's own */
     view_layout,
     view_draw,
+    view_describe,
     NULL,                              /* click: no button is ever shown */
     NULL,                              /* key: generic HandleControlKey */
     view_idle,                         /* the section boxes, change-gated */
