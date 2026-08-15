@@ -2,10 +2,23 @@ import AppKit
 import SwiftUI
 import NOWAgentIntegration
 
-/// Connections are an inventory on the left and the selected machine on the
-/// right. Selection inspects; the explicit drive control and sidebar guest
-/// menu move the host's active request plane. Remembered rows remain
-/// inspectable and removable but cannot be driven.
+/// The selected machine is the page; the roster of machines is a collapsible
+/// right sidebar beside it. Selection inspects; the explicit drive control
+/// and sidebar guest menu move the host's active request plane. Remembered
+/// rows remain inspectable and removable but cannot be driven.
+///
+/// **The roster is management, not navigation.** Collapsing it hides the
+/// machines this host knows about and offers no switching affordance while
+/// collapsed, deliberately: switching which machine the host drives belongs
+/// to the app-level guest picker, which is reachable from every page. What
+/// the roster owns is the machines that are *disconnected* — adding one that
+/// has not dialled in yet, forgetting one for good — and that is work a
+/// person does occasionally rather than while reading a machine's facts.
+///
+/// The split itself is `RightSidebarSplitView`, the same AppKit component
+/// Files uses for This Mac: one implementation of a collapsible right
+/// sidebar in this app, with the hover-peek rail and the native divider,
+/// rather than a second one that behaves nearly the same.
 struct ConnectionsModuleView: View {
     @ObservedObject var model: ConnectionsModel
     @ObservedObject var settings: SettingsModel
@@ -19,15 +32,24 @@ struct ConnectionsModuleView: View {
     @State private var connectedBeforeAdding: Set<String> = []
     @State private var pendingRemoval: ConnectionRow?
     @State private var renamingRow: ConnectionRow?
+    /* Persisted like Files' collapse and NOT like its divider: which of
+       the two panes a person wants to see survives a launch, where the
+       exact pixel the divider sat at does not. */
+    @State private var detailFraction =
+        RightSidebarSplitController.defaultLeadingFraction
+
+    /// The roster's one noun, read by its rail, its hover tag and the
+    /// toggle in the detail header.
+    static let rosterTitle = "Machines"
 
     var body: some View {
-        HSplitView {
-            connectionList
-                .frame(minWidth: 210, idealWidth: 240, maxWidth: 300)
-            detail
-                .frame(minWidth: 460, maxWidth: .infinity,
-                       maxHeight: .infinity)
-        }
+        RightSidebarSplitView(
+            isTrailingCollapsed: model.rosterCollapsed,
+            onTrailingCollapseChanged: { model.rosterCollapsed = $0 },
+            leadingFraction: $detailFraction,
+            trailingTitle: ConnectionsModuleView.rosterTitle,
+            leading: detail,
+            trailing: connectionList)
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -62,6 +84,14 @@ struct ConnectionsModuleView: View {
 
     private var connectionList: some View {
         VStack(spacing: 0) {
+            HStack {
+                Text(ConnectionsModuleView.rosterTitle)
+                    .font(.headline)
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            Divider()
             List(selection: selection) {
                 Section("Active") {
                     if model.snapshot.connected.isEmpty {
@@ -86,6 +116,7 @@ struct ConnectionsModuleView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
             Divider()
             HStack(spacing: 4) {
                 Button(action: beginAdding) {
@@ -104,39 +135,47 @@ struct ConnectionsModuleView: View {
             .padding(.vertical, 7)
             .background(.bar)
         }
+        /* The same `.sidebar` material the collapsed rail is made of, so
+           collapsing the roster changes its width rather than its
+           substance. */
+        .background(SidebarVibrancyBackground())
     }
 
+    /// One machine, top to bottom: what it is, what it can be given, the
+    /// link it arrived over, this Mac's permission to reach it, and last
+    /// the record of what the listener did.
+    ///
+    /// The machine leads because the roster now sits beside this pane
+    /// rather than above it — a person clicks a row and looks here. The
+    /// link card follows rather than opens, and the listener log has one
+    /// call site: it was written twice, filtered and unfiltered, and the
+    /// two copies were one edit apart from drifting.
     private var detail: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    ConnectionLinkSection(
-                        settings: settings, listener: listener,
-                        onboarding: onboarding,
-                        onStart: onStart, onStop: onStop,
-                        focusPort: adding,
-                        selectedGuest: selectedRow?.key)
-                    trustedLANNotice
-                    LocalNetworkAccessSection(
-                        controller: localNetworkAccess,
-                        targetHost: listener.activeContinuityTarget?.host)
                     if let row = selectedRow {
                         ConnectionCard(row: row, model: model) {
                             beginRenaming(row)
                         }
                         .contextMenu { connectionMenu(for: row) }
                         GuestUpdateSection(row: row, model: model)
-                        ConnectionListenerLog(
-                            listener: listener,
-                            sessionIDs: Set([
-                                row.liveSessionID, row.lastSessionID
-                            ].compactMap { $0 }))
                     } else {
                         addInstructions
-                        ConnectionListenerLog(listener: listener)
                     }
+                    ConnectionLinkSection(
+                        settings: settings, listener: listener,
+                        onboarding: onboarding,
+                        onStart: onStart, onStop: onStop,
+                        focusPort: adding,
+                        selectedGuest: selectedRow?.key)
+                    LocalNetworkAccessSection(
+                        controller: localNetworkAccess,
+                        targetHost: listener.activeContinuityTarget?.host)
+                    ConnectionListenerLog(listener: listener,
+                                          sessionIDs: selectedSessionIDs)
                 }
                 .padding(.horizontal, 28)
                 .padding(.vertical, 20)
@@ -145,30 +184,33 @@ struct ConnectionsModuleView: View {
         }
     }
 
-    private var trustedLANNotice: some View {
-        Label {
-            Text("Trusted LAN only. Connections are plaintext and have no peer authentication; do not expose this port to the internet or an untrusted network.")
-                .fixedSize(horizontal: false, vertical: true)
-        } icon: {
-            Image(systemName: "exclamationmark.shield")
-        }
-        .font(.callout)
-        .foregroundStyle(.orange)
-        .accessibilityElement(children: .combine)
+    /// Nil is "every session", which is what the page shows when no machine
+    /// is selected — the distinction the log's own filter is built on.
+    private var selectedSessionIDs: Set<String>? {
+        guard let row = selectedRow else { return nil }
+        return Set([row.liveSessionID, row.lastSessionID].compactMap { $0 })
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("Connections")
-                .font(.largeTitle.weight(.semibold))
-            Label(detailHeadline, systemImage: indicator.symbol)
-                .foregroundStyle(indicator.tint)
-                .font(.callout)
-            if let problem = model.renameProblem {
-                Text(problem)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Connections")
+                    .font(.largeTitle.weight(.semibold))
+                Label(detailHeadline, systemImage: indicator.symbol)
+                    .foregroundStyle(indicator.tint)
                     .font(.callout)
-                    .foregroundStyle(.red)
+                if let problem = model.renameProblem {
+                    Text(problem)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                }
             }
+            Spacer(minLength: 8)
+            RightSidebarToggle(
+                isCollapsed: model.rosterCollapsed,
+                title: ConnectionsModuleView.rosterTitle) {
+                    model.rosterCollapsed.toggle()
+                }
         }
         .padding(.horizontal, 28)
         .padding(.top, 24)

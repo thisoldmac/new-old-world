@@ -252,8 +252,17 @@ final class FilesBrowserPreferencesTests: XCTestCase {
         XCTAssertTrue(splitSource.contains(
             "preferredThicknessFraction = 0.5"))
         XCTAssertTrue(splitSource.contains("canCollapse = false"))
-        XCTAssertTrue(splitSource.contains("Show This Mac"))
-        XCTAssertTrue(splitSource.contains("Hide This Mac"))
+        /* The noun moved to the consumer when Connections became the
+           second one: the component composes Show/Hide around whatever it
+           is given, and Files is what still gives it "This Mac". Asserting
+           the literal in the shared file would now be asserting that the
+           extraction did not happen. */
+        XCTAssertTrue(source.contains("hostSidebarTitle = \"This Mac\""),
+                      "Files must still name its right sidebar")
+        XCTAssertTrue(splitSource.contains("(isCollapsed ? \"Show \" : \"Hide \") + title"),
+                      "the toggle composes its label from the consumer's noun")
+        XCTAssertTrue(splitSource.contains("let label = \"Show \\(title)\""),
+                      "so does the collapsed rail")
         XCTAssertFalse(source.contains("TabView"))
         XCTAssertFalse(splitSource.contains("override func mouseDragged"),
                        "AppKit must own divider dragging")

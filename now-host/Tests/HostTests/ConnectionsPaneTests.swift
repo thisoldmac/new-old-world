@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 import NOWAgentIntegration
 @testable import Host
@@ -64,7 +65,7 @@ final class ConnectionsPaneTests: XCTestCase {
     func testSubmittingThePortStartsListeningThroughTheButtonAction()
         throws {
         let source = try GateSource.hostSwift(
-            "now-host/Sources/Host/SettingsModuleView.swift")
+            "now-host/Sources/Host/ConnectionLinkSection.swift")
         XCTAssertTrue(source.contains(".onSubmit(startListening)"))
         XCTAssertTrue(source.contains(
             "Button(\"Start Listening\", action: startListening)"))
@@ -101,9 +102,12 @@ final class ConnectionsPaneTests: XCTestCase {
         XCTAssertTrue(source.contains("Button(\"Stop Listening\""))
     }
 
+    /// The boundary moved into the link card with the port it is about; it
+    /// is still the app's statement of what this listener is safe for, so
+    /// it is checked where it now lives rather than dropped.
     func testTheListenerStatesItsTrustedLANBoundaryInTheApp() throws {
         let source = try GateSource.hostSwift(
-            "now-host/Sources/Host/ConnectionsModuleView.swift")
+            "now-host/Sources/Host/ConnectionLinkSection.swift")
         XCTAssertTrue(source.contains("Trusted LAN only"))
         XCTAssertTrue(source.contains("plaintext"))
         XCTAssertTrue(source.contains("no peer authentication"))
@@ -123,6 +127,102 @@ final class ConnectionsPaneTests: XCTestCase {
         XCTAssertTrue(source.contains("app-owned macOS request"))
         XCTAssertTrue(source.contains("connected Mac directly"))
         XCTAssertTrue(source.contains("denied earlier"))
+    }
+
+    // MARK: - The roster is a collapsible right sidebar, shared with Files
+
+    /// **One collapsible right sidebar in this app, with two consumers.**
+    ///
+    /// The roster moved from a left `HSplitView` column to the trailing
+    /// side of the same AppKit component Files uses for This Mac. The
+    /// failure this guards is not the move but the copy: a
+    /// Connections-local reimplementation would look identical in a
+    /// screenshot and behave differently at every edge (hover peek, the
+    /// native divider's hit slop, the rail winning over hosted minimum
+    /// widths). So both call sites are asserted, in one test — if either
+    /// stops consuming the shared component, this names it.
+    func testTheRosterUsesTheSharedRightSidebarAndSoDoesFiles() throws {
+        let connections = try GateSource.hostSwift(
+            "now-host/Sources/Host/ConnectionsModuleView.swift")
+        let files = try GateSource.hostSwift(
+            "now-host/Sources/Host/FilesWorkspaceShell.swift")
+
+        XCTAssertTrue(connections.contains("RightSidebarSplitView("),
+                      "the roster must sit in the shared split component")
+        XCTAssertTrue(connections.contains("leading: detail"),
+                      "the selected machine is the page")
+        XCTAssertTrue(connections.contains("trailing: connectionList"),
+                      "the roster is the collapsible trailing side")
+        XCTAssertTrue(connections.contains("RightSidebarToggle("),
+                      "the expanded page owns a control to put it away")
+        XCTAssertTrue(files.contains("RightSidebarSplitView("),
+                      "extraction is only worth it while Files still "
+                      + "consumes the extracted component")
+    }
+
+    /// The collapsed rail and both toggles must name the surface the
+    /// consumer named, not the one the component was written for.
+    func testTheRailAndToggleCarryTheConsumersOwnNoun() {
+        let rail = RightSidebarRailView(
+            frame: NSRect(x: 0, y: 0, width: 54, height: 400))
+        rail.title = ConnectionsModuleView.rosterTitle
+
+        XCTAssertEqual(rail.accessibilityLabel(), "Show Machines")
+        XCTAssertEqual(rail.toolTip, "Show Machines")
+        XCTAssertNotEqual(rail.toolTip, "Show This Mac",
+                          "a second consumer must not inherit Files' noun")
+
+        let controller = RightSidebarSplitController()
+        _ = controller.install(leading: NSViewController(),
+                               trailing: NSViewController(),
+                               trailingCollapsed: true,
+                               trailingTitle: "Machines")
+        controller.view.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+        controller.view.layoutSubtreeIfNeeded()
+        let installed = controller.splitViewItems[1].viewController.view
+            .subviews.compactMap { $0 as? RightSidebarRailView }.first
+        XCTAssertEqual(installed?.toolTip, "Show Machines",
+                       "install must hand the rail the consumer's noun")
+    }
+
+    /// **Collapsed stays collapsed across launches — and only that.**
+    ///
+    /// Files persists the collapse and leaves the divider position to the
+    /// session; this follows it rather than inventing a second policy. A
+    /// second model reading the same defaults is the launch.
+    func testCollapsingTheRosterSurvivesRelaunchAndDefaultsToShown() throws {
+        let suite = "ConnectionsPaneTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"))
+
+        let first = ConnectionsModel(listener: listener, resolve: { _ in nil },
+                                     defaults: defaults)
+        XCTAssertFalse(first.rosterCollapsed,
+                       "a page nobody has put away shows its roster")
+        first.rosterCollapsed = true
+
+        let relaunched = ConnectionsModel(listener: listener,
+                                          resolve: { _ in nil },
+                                          defaults: defaults)
+        XCTAssertTrue(relaunched.rosterCollapsed,
+                      "a person who put the roster away meant it")
+        XCTAssertNil(defaults.object(forKey: "connections.leadingFraction"),
+                     "the divider position is a session, not a decision")
+    }
+
+    /// The listener log was written twice on this page — once filtered to
+    /// the selected machine's sessions and once unfiltered — in two
+    /// branches of the same `if`. One call site with a nil-able filter is
+    /// the same behaviour and one place to be wrong.
+    func testTheListenerLogHasExactlyOneCallSite() throws {
+        let source = try GateSource.hostSwift(
+            "now-host/Sources/Host/ConnectionsModuleView.swift")
+        let sites = source.components(
+            separatedBy: "ConnectionListenerLog(").count - 1
+        XCTAssertEqual(sites, 1,
+                       "two copies of the log are one edit from drifting")
     }
 
     // MARK: - The retired id still resolves
