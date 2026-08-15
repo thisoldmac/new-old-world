@@ -274,7 +274,8 @@ def main() -> int:
             "does not match host tier 'debug'",
         )
         expect_mutation(
-            test_root, "PPC page without mapping", test_root / "now-guest-ppc/src/workshop/workshop_module.h",
+            test_root, "PPC page without mapping",
+            test_root / "now-guest-ppc/src/workshop/workshop_module_ids.h",
             "    kWorkshopPreferences = 15,",
             "    kWorkshopUnmapped = 18,\n    kWorkshopPreferences = 15,",
             "do not match live enum",

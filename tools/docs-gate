@@ -354,7 +354,11 @@ def extract_host_catalog(root: Path) -> dict[str, dict[str, object]]:
 
 
 def extract_ppc_pages(root: Path) -> list[str]:
-    text = (root / "now-guest-ppc/src/workshop/workshop_module.h").read_text()
+    # The page ids live in their own Toolbox-free header, so the rail's
+    # order table and its native test can read them; workshop_module.h
+    # includes it and adds the Carbon-dependent half.
+    text = (root
+            / "now-guest-ppc/src/workshop/workshop_module_ids.h").read_text()
     block = text[text.index("typedef enum {"):text.index("} WorkshopModuleID")]
     return re.findall(r"\b(kWorkshop[A-Za-z0-9]+)\b", block)
 
