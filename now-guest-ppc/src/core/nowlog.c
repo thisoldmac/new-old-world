@@ -262,31 +262,3 @@ void now_log_flush(void)
     }
 }
 
-int now_log_tail(int count, char *out, long cap)
-{
-    int written = 0;
-    int i;
-    long used = 0;
-
-    if (out == NULL || cap < 1) {
-        return 0;
-    }
-    out[0] = '\0';
-    if (count > g_count) {
-        count = g_count;
-    }
-    for (i = count; i > 0; --i) {
-        int slot = (g_next - i + kLogKept * 2) % kLogKept;
-        long len = (long)strlen(g_lines[slot]) + 1;
-
-        if (used + len + 1 > cap) {
-            break;
-        }
-        strcpy(out + used, g_lines[slot]);
-        used += len - 1;
-        out[used++] = '\n';
-        out[used] = '\0';
-        ++written;
-    }
-    return written;
-}

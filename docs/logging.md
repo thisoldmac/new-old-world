@@ -275,7 +275,16 @@ timestamps as within-machine ordering only.
 
 ## `tail`
 
-`tail [lines]` — default 20, most 40 (a control frame caps at 4 KB).
+`tail [lines] [area] [before N]` — default 20, most 40 per answer (a
+control frame caps at 4 KB). `area` narrows to one subsystem's tag as the
+log wrote it, filtered on the guest before the wire; `before N` continues
+an answer at the sequence cursor its `log` group offered as `next`, back
+through the whole 2000-line ring. Sequences count from 1 at launch and
+never renumber, which is what makes a cursor over a live ring honest.
+The selection is one implementation for both faces
+(`now-guest-ppc/src/core/logquery.c`); `now_guest_log_tail` follows the
+cursors itself, so an agent asks for 200 lines and the paging is the
+host's problem, not the caller's.
 
 It is one command in the **shared table** that serves both consoles, so
 the same words work on the guest's own console and from the host's. That
@@ -319,7 +328,8 @@ break rule 1 and churn even a bounded set of files.
 | Host: file per launch, in the line format above | Built, **unverified on a real run** |
 | Host: `tail` of the guest's log | Built; needs `fork/logging` landed and a rebuild |
 | Guest log readable by a non-user host face | Built + tested 2026-07-30 as the `now_guest_log_tail` projection: a line count and never a path, the guest's `shown` row carried through as the bound, and one `app` line per read so the person at the machine can see their log was read. **Unverified on metal.** Scope and encoding: [mcp-coverage.md](mcp-coverage.md) |
-| `tail` output as one row per line | Built — byte-bounded, oldest dropped first, and it says so |
+| `tail` output as one row per line | Built — byte-bounded, oldest deferred to the next page first, and it says so |
+| Guest log retrieved in BULK over the wire | Built + tested 2026-08-15: `tail` pages the ring by sequence cursor with a guest-side `area` filter, and `now_guest_log_tail` walks the cursors to serve up to the whole 2000-line ring in one call, answers in the host log's shape. Emulator-verified this thread; **unverified on metal** |
 | Correlation ids in both logs | Built for the file family; **capture and stream still have none** |
 | Per-chunk rule enforced by a test | Built (`LoggingSpecTests`), mutation-checked |
 | Guest launch-log retention | Built + native-tested + mutation-proven: default 10, configurable 1–100, current/unrelated files protected. Both guest adapters cross-build; constrained-HFS and metal deletion are unverified |

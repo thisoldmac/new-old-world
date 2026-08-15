@@ -66,12 +66,12 @@ void now_log_memory(LogLevel level, const char *area, const char *fmt, ...);
    now_log already does this for kLogError. */
 void now_log_flush(void);
 
-/* The last `count` lines, newest last, for `tail`. Returns how many
-   were written into `out`, which must hold count * kLogLineMax.
-   kLogKept is the in-memory scrollback the Logs module dumps; it is large
-   because that page is the reason to keep more than a `tail` of history. */
-enum { kLogLineMax = 120, kLogKept = 2000, kLogTailMax = 48 };
-int now_log_tail(int count, char *out, long cap);
+/* kLogKept is the in-memory scrollback the Logs module dumps; it is large
+   because that page is the reason to keep more than a `tail` of history.
+   Both faces of `tail` read the ring through logquery.c's selection over
+   the accessors below — there is no bulk copy-out any more, because a
+   second reader with its own bounds is a second place to be wrong. */
+enum { kLogLineMax = 120, kLogKept = 2000 };
 
 /* The ring as a scrollback for the Logs page: how many lines are held,
    and the i-th line OLDEST-first (i in [0, now_log_count)). The returned
