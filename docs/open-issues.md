@@ -7,6 +7,61 @@ search:
 
 # Open issues
 
+## FIXED, UNVERIFIED ON METAL — the permission that made things worse: the event tap read a cursor warp as a button release (2026-08-15, `fix/continuity-unbound-cross-release`)
+
+Accessibility was granted on this Mac for the first time on 2026-08-15
+(`~/Library/Logs/now-logs/2026-08-15 012911.log` — zero `could not
+capture host input` lines). **Three guest→host file drags in a row then
+failed**, identically, and in a way no earlier round had produced: the
+bound path ran perfectly — press bound, origin settled, released before
+the cross — and then
+
+    guest file crossed with no host mouse event yet; waiting for the
+      first real one now the tap is down
+    ? the guest file drag was abandoned: the button was released before
+      this Mac saw a real mouse event to start the drag from
+
+in the same second, with no `host drag seed event` line at all, while
+Michelle was still holding the button. The round before it (01:04)
+completed a drop — **with Accessibility broken**, so no tap existed.
+
+**One `HostPointerSample`, two producers, and they disagreed about
+`buttonsDown`.** The CGEvent tap derived it from the event TYPE, so
+`.mouseMoved` meant button-up; the NSEvent adapter has always read
+`NSEvent.pressedMouseButtons`. A cursor warp synthesizes a `.mouseMoved`
+whatever the button is doing, and a guest pass issues one warp per sample
+— `suppressedWarps` read 130, 151 and 222 in single crossings that night.
+So with the tap live, a held drag delivers a stream of samples claiming
+the human let go, and `resumeReturnDrag` believes the first one.
+
+The fix is in the adapter, not in the consumer: the type still wins where
+the type knows (a `leftMouseUp` is a release even if the session's button
+state has not caught up; a `leftMouseDragged` needs no second opinion),
+and only `.mouseMoved` and the secondary drags — the types that say
+nothing about the primary button — ask
+`CGEventSource.buttonState`.
+
+**The generalisable half, and it is the more useful one.** Two producers
+of one struct disagreed about its most load-bearing field, and the
+disagreement was undetectable because **only one of them had ever run** —
+the tap requires a permission this Mac had not granted. That is
+`two-halves-never-met-in-a-test` with a permission gate standing in for
+the wire. It also means the 01:04 success, and every guest→host drag
+result recorded before 2026-08-15, was measured on a code path that is
+not the one a permitted Mac uses. **Re-measure rather than compare.**
+
+The same bad field ended held-button custody on any warp echo, so
+`held-button custody ended: reason=the button was released` was
+untrustworthy on a capturing Mac.
+
+**What is proven.** Host suites green. Four mutations, each built and
+each run, watched failing against the guard that names it: `.mouseMoved`
+back to a hard false (reproduces the metal abandon), `leftMouseUp`
+honouring a stale held read, a secondary drag hiding a held primary, and
+`leftMouseDragged` asking instead of knowing. **Metal-verified: no**, and
+this one can only be verified on a Mac with Accessibility granted — which
+is now this one.
+
 ## FIXED, UNVERIFIED ON METAL — NOW MOVED A PERSON'S FILE: an unbound cross-edge press released wherever the pointer ended (2026-08-15, `fix/continuity-unbound-cross-release`)
 
 **This one is a safety defect, not a fidelity one.** On metal at
