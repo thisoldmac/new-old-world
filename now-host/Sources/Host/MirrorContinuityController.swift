@@ -410,6 +410,14 @@ final class MirrorContinuityController: ObservableObject,
     private var wireButtonDown = false
     private var pressAcknowledged = false
     private var deferredButtonPoint: MirrorKit.Point?
+    /// The point the last `settleHeldPosition` asked for, held only until the
+    /// release that follows it consumes it. See `settledReleasePoint`.
+    private var heldSettlePoint: MirrorKit.Point?
+    /// Set when a release went out carrying the point a settle had just
+    /// asked for — i.e. the cross-edge handback's settle-then-release pair
+    /// completed on the wire. Consumed by the epoch teardown, which must not
+    /// step on it. See `pointerLeft`.
+    private var settledReleasePoint: MirrorKit.Point?
     private var primaryDownInMenuBar = false
     private var primaryCycleDragged = false
     private var menuLatched = false
@@ -488,10 +496,46 @@ final class MirrorContinuityController: ObservableObject,
         }
     }
 
+    /// THE EPOCH-ENDING DATAGRAM IS WITHHELD AFTER A SETTLED RELEASE, AND
+    /// THAT IS THE WHOLE OF IT.
+    ///
+    /// The wire is a latest-state mailbox and the guest reads ONE snapshot of
+    /// it per pass, so three datagrams sent inside a millisecond are one
+    /// snapshot to an application starved inside the Finder's drag-tracking
+    /// loop. On the cross-edge handback the host sends exactly three: the
+    /// settle to the press origin, the release carrying that same origin, and
+    /// then this one — and this one clears `inside`, which both the resident's
+    /// timer task and the application's service honour BEFORE they take the
+    /// snapshot's position. The settled origin is thrown away with it, the
+    /// release is applied against whatever mid-drag point the guest last
+    /// ingested, and the Finder completes a real move to the screen edge.
+    ///
+    /// Metal, 2026-08-15: origin=522,199 was commanded and logged by this
+    /// side; the guest settled at 792,231 — one drag sample short of the
+    /// 802,231 cross — and again 524,203 against 799,232. Slow drags only,
+    /// because a slow drag is exactly the one where the guest application is
+    /// deep enough in the Finder's loop to collapse the three into one.
+    ///
+    /// Withholding it costs nothing: `relinquish` ends the epoch over the
+    /// RELIABLE control stream in the next statement, and the resident's own
+    /// lease bounds the gap. What it buys is that the last datagram the guest
+    /// can possibly see carries the settled origin beside the release edge —
+    /// which is precisely the shape the fast path already had, by accident,
+    /// because an unacknowledged press sends no separate settle at all.
     func pointerLeft() {
         pointerInside = false
         guard phase != .idle else { return }
-        if phase == .active { sendState(inside: false, keepalive: false) }
+        if phase == .active {
+            if let settled = settledReleasePoint {
+                settledReleasePoint = nil
+                audit(.info, "epoch-ending datagram withheld: the release "
+                    + "settled at \(settled.x),\(settled.y) and clearing "
+                    + "`inside` in the next packet would let a starved guest "
+                    + "drop that point; the reliable disarm ends the epoch")
+            } else {
+                sendState(inside: false, keepalive: false)
+            }
+        }
         relinquish(reason: "pointer left Mirror", keepEnabled: true)
     }
 
@@ -580,6 +624,8 @@ final class MirrorContinuityController: ObservableObject,
         buttonCycleActive = true
         pressAcknowledged = false
         deferredButtonPoint = releasedAt
+        heldSettlePoint = nil
+        settledReleasePoint = nil
         primaryDownInMenuBar = inMenuBar
         primaryCycleDragged = false
         menuLatched = false
@@ -631,6 +677,11 @@ final class MirrorContinuityController: ObservableObject,
     func settleHeldPosition(to point: MirrorKit.Point) -> Bool {
         guard phase == .active, buttonCycleActive else { return false }
         primaryDragged(to: point)
+        /* Armed on BOTH returns: the deferred path below is the one that
+           already worked on metal, and the teardown must treat the two
+           identically or the guard only covers the case it was written
+           against. See `pointerLeft`. */
+        heldSettlePoint = point
         guard pressAcknowledged else {
             /* The press point is deliberately stable until the guest
                confirms its down; `primaryDragged` has parked the origin in
@@ -1189,6 +1240,11 @@ final class MirrorContinuityController: ObservableObject,
             point = deferredButtonPoint
         }
         deferredButtonPoint = nil
+        /* Only a release that carries the settled point earns the teardown's
+           silence — an ordinary click's release, or one that wandered off the
+           settled point, leaves the epoch ending exactly as it always did. */
+        settledReleasePoint = heldSettlePoint == point ? point : nil
+        heldSettlePoint = nil
         positionDirty = true
         advancePositionIfNeeded()
         advanceButton(to: false)
@@ -1418,6 +1474,8 @@ final class MirrorContinuityController: ObservableObject,
         acknowledgementStarvedSince = nil
         lastAuditedButtonGeneration = 0
         lastPrimaryDownUptime = nil
+        heldSettlePoint = nil
+        settledReleasePoint = nil
         buttonTransitionSentUptime = nil
         buttonTransitionSourceUptime = nil
         previousButtonGeneration = 0

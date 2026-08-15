@@ -691,6 +691,26 @@ final class ContinuityEdgeController: ObservableObject {
         .init(x: Int(point.x), y: Int(point.y))
     }
 
+    /// The point a held release must land on — and a LOUD line when there
+    /// isn't one.
+    ///
+    /// `pressOrigin ?? ownership.guestPoint` reads as a harmless default and
+    /// is not one: the fallback IS the cross point, so losing the origin
+    /// silently becomes "the origin was the screen edge" and the Mac
+    /// completes a real Finder move there. That is indistinguishable, from
+    /// the outside, from the guest ignoring a correct settle — and on
+    /// 2026-08-15 a metal round spent its evidence deciding which of the two
+    /// it was looking at. Whatever else is true, this side says which.
+    private func heldReleaseOrigin(_ ownership: Ownership) -> MirrorKit.Point {
+        if let pressOrigin { return mirrorPoint(pressOrigin) }
+        audit(.error, "the press origin was lost before the cross: this "
+            + "release lands at the cross point "
+            + "\(Int(ownership.guestPoint.x)),\(Int(ownership.guestPoint.y)) "
+            + "and the Mac will complete a real Finder move to the screen "
+            + "edge — the snap-back cannot happen and this is not the guest")
+        return mirrorPoint(ownership.guestPoint)
+    }
+
     private func returnToHost(_ ownership: Ownership, reason: String) {
         audit(.info, "returning pointer to host: reason=\(reason), guest="
             + "\(Int(ownership.guestPoint.x)),\(Int(ownership.guestPoint.y)), "
@@ -700,6 +720,14 @@ final class ContinuityEdgeController: ObservableObject {
            is excluded because there the held gesture is a foreign app's drag
            session which this app never captured and must not interrupt. */
         let held = hostButtonsDown && !hostFileDrag
+        if held, pressOrigin == nil {
+            /* Silence here reads as "there was nothing to do". There was: the
+               button is still down on the guest and this return sends no
+               release at all, so the Mac keeps the press. Say so. */
+            audit(.error, "the press origin was lost before this held return: "
+                + "no release is sent, so the Mac keeps the press at "
+                + "\(Int(ownership.guestPoint.x)),\(Int(ownership.guestPoint.y))")
+        }
         if held, let origin = pressOrigin {
             /* Metal, 2026-08-15: this was reached with NOTHING bound and so
                did none of it, and the guest Finder put up "an item named
@@ -895,9 +923,8 @@ final class ContinuityEdgeController: ObservableObject {
         let returnPoint = ContinuityDisplayGeometry.hostReturnPoint(
             for: ownership.guestPoint, edge: ownership.edge,
             guestFrame: layout.guestFrame, scale: layout.guestScale)
-        releaseGuestPressAtOrigin(
-            mirrorPoint(pressOrigin ?? ownership.guestPoint),
-            cross: ownership.guestPoint)
+        releaseGuestPressAtOrigin(heldReleaseOrigin(ownership),
+                                  cross: ownership.guestPoint)
         driver?.pointerLeft()
         /* The catch surface is armed BEFORE the tap comes down, not after.
            Between those two instants the physical button is held and no
