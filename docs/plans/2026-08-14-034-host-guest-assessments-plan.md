@@ -370,3 +370,13 @@ contradicted live and reclassified (Part 0).
   Files page is additionally emulator-observed. Open: G-7 (split-thread
   gate), guest chat sidebar (contract decision), the full emulator +
   metal QA passes, hooks-doctor, and the branch rename before the PR.
+- 2026-08-15 (arc complete): refactor/mirror-continuity-split merged in
+  (parked-done per Michelle; its bake deferral inherited and recorded —
+  due at main with the round-2 bundle). G-7 implemented and merged, final
+  test-all green. Also landed: DMG Applications alias; hdiutil
+  deprecation tracked (ledger + task chip). Every item this plan can
+  close without Michelle is closed. Remaining, all hers or gated on her:
+  guest chat sidebar (contract decision), tools/hooks-doctor --fix,
+  branch rename (claude/* refused by git-policy), the round-2 bundle
+  shared bake, Emulator QA + Metal QA statuses via tools/code-qa, and
+  the live checklist consolidated at the top of docs/open-issues.md.
