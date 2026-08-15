@@ -75,15 +75,15 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: ae16603bc1c2341700f7c76fbfe20ae42eaaad39
-sources-sha1: ae16603bc1c2341700f7c76fbfe20ae42eaaad39
-sources-sha1: ae16603bc1c2341700f7c76fbfe20ae42eaaad39
-sources-sha1: ae16603bc1c2341700f7c76fbfe20ae42eaaad39
-sources-sha1: ae16603bc1c2341700f7c76fbfe20ae42eaaad39
-sources-sha1: ae16603bc1c2341700f7c76fbfe20ae42eaaad39
-sources-sha1: ae16603bc1c2341700f7c76fbfe20ae42eaaad39
-sources-sha1: ae16603bc1c2341700f7c76fbfe20ae42eaaad39
-sources-sha1: ae16603bc1c2341700f7c76fbfe20ae42eaaad39
+sources-sha1: a13173cae8f6ad1fa35cfe6d5fa2219ca1204cf3
+sources-sha1: a13173cae8f6ad1fa35cfe6d5fa2219ca1204cf3
+sources-sha1: a13173cae8f6ad1fa35cfe6d5fa2219ca1204cf3
+sources-sha1: a13173cae8f6ad1fa35cfe6d5fa2219ca1204cf3
+sources-sha1: a13173cae8f6ad1fa35cfe6d5fa2219ca1204cf3
+sources-sha1: a13173cae8f6ad1fa35cfe6d5fa2219ca1204cf3
+sources-sha1: a13173cae8f6ad1fa35cfe6d5fa2219ca1204cf3
+sources-sha1: a13173cae8f6ad1fa35cfe6d5fa2219ca1204cf3
+sources-sha1: a13173cae8f6ad1fa35cfe6d5fa2219ca1204cf3
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -252,4 +252,5 @@ rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:15-0400 f4dab407 unchanged
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
 rederived: 2026-08-15T02:57:59-0400 5d767dce unchanged
+rederived: 2026-08-15T03:19:44-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

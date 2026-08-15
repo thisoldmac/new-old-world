@@ -1363,10 +1363,10 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 88748aaf6fb5db23866512a2bb6eef1ede5006d5
-sources-sha1: 88748aaf6fb5db23866512a2bb6eef1ede5006d5
-sources-sha1: 88748aaf6fb5db23866512a2bb6eef1ede5006d5
-sources-sha1: 88748aaf6fb5db23866512a2bb6eef1ede5006d5
+sources-sha1: f040e0d003d165814c44c1e4c6fbe66784caf891
+sources-sha1: f040e0d003d165814c44c1e4c6fbe66784caf891
+sources-sha1: f040e0d003d165814c44c1e4c6fbe66784caf891
+sources-sha1: f040e0d003d165814c44c1e4c6fbe66784caf891
 derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1578,4 +1578,5 @@ rederived: 2026-08-14T23:07:31-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:14-0400 f4dab407 unchanged
 rederived: 2026-08-15T01:11:35-0400 c9a1a8a4 unchanged
 rederived: 2026-08-15T02:57:57-0400 5d767dce sources, sources, sources, sources
+rederived: 2026-08-15T03:19:42-0400 098e7ecf sources, sources, sources, sources
 -->

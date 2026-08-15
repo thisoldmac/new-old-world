@@ -480,7 +480,7 @@ static unsigned long g_scene_plane_caps;
 
 static void renew_scene_planes(void)
 {
-    if (!now_mirror_policy_enabled(kMirrorPolicyStructure)) {
+    if (!now_mirror_policy_enabled()) {
         now_peek_release(kNowPeekOwnerScene,
                          (unsigned long)(kNowPeekCapAnchors
                                          | kNowPeekCapTree
@@ -2096,7 +2096,7 @@ static void serve_scene(const char *request)
        Held across requests, every application that pumps between two
        scenes gets one, which is what makes a mirror show the machine
        rather than this application. */
-    if (now_mirror_policy_enabled(kMirrorPolicyStructure)) {
+    if (now_mirror_policy_enabled()) {
         unsigned long requested = (unsigned long)kNowPeekCapAnchors;
         unsigned long optional = (unsigned long)(kNowPeekCapTree
                                                   | kNowPeekTableCapAct);
@@ -2110,7 +2110,7 @@ static void serve_scene(const char *request)
            renew_scene_planes(). */
         g_scene_plane_caps = requested;
     } else {
-        /* Structure-off is not a thin structural request. It is no
+        /* Consent withheld is not a thin structural request. It is no
            foreign-memory observation at all: withdraw every scene-owned
            claim and let scene_collect report only what Process Manager and
            this application's own context can prove. */

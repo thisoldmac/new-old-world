@@ -117,6 +117,15 @@ struct MirrorLifecycleCard: View {
                          + "requested \(facts.resident.requested ?? 0), "
                          + "active \(facts.resident.active ?? 0)")
                 }
+                /* Stated as a fact beside the resident's, not left to be
+                   inferred from five planes all reading the same refusal.
+                   It is the one line on this page that answers "is the
+                   problem at the other end", and it costs a row. */
+                LabeledContent("Consent") {
+                    Text(facts.policy.enabled
+                         ? "That Mac allows mirroring"
+                         : "That Mac is not allowing mirroring")
+                }
                 if let build = facts.resident.buildFingerprint {
                     LabeledContent("Build") {
                         Text(build).font(.system(.caption, design: .monospaced))
@@ -166,9 +175,16 @@ struct MirrorPlanesCard: View {
     var body: some View {
         MirrorCard {
             Text("Planes").font(.headline)
+            /* Both keys named in one paragraph, in the order a person
+               hits them: the Mac has to allow mirroring at all before any
+               switch here means anything. They used to be told apart only
+               by a per-row state word, which said WHICH plane was refused
+               and never said the Mac had refused all of them. */
             Text("Structure is required while the Mirror is running. The other "
                  + "planes are independent host policy switches; turning one "
-                 + "off cannot change another owner's claim.")
+                 + "off cannot change another owner's claim. These switches "
+                 + "are this Mac's half: the classic Mac decides separately "
+                 + "whether it may be mirrored at all.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -176,6 +192,12 @@ struct MirrorPlanesCard: View {
             if model.planeFacts.isEmpty {
                 Text("No Mac has reported its planes yet.")
                     .font(.callout).foregroundStyle(.secondary)
+            } else if !model.guestAllowsMirroring {
+                Text("That Mac is not allowing mirroring right now, so "
+                     + "nothing below is being captured whatever it says.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(model.planeFacts) { plane in
                 Divider()

@@ -662,6 +662,13 @@ run_c now-guest-ppc net_layout_test.c        ""  src/network/net_layout.c \
 # not a process SERVING, and the port it was told to serve is a separate
 # reading.
 run_c now-guest-ppc mirror_layout_test.c     ""  src/mirror/mirror_layout.c
+# One rule, three readers that cannot see each other: the preferences
+# migration on the guest, the compatibility fields on the wire, and the
+# host's decode of a guest that predates the master consent. It is here
+# because the failure it prevents is a consent that widens, and that is
+# not a failure any of the three would report - each would simply be
+# generous.
+run_c now-guest-ppc mirror_consent_test.c    ""  src/mirror/mirror_consent.c
 # What a person is told, and what a CALLER is told, are two renderings of
 # one probe and they fail separately: a page can say the right sentence
 # while the wire ships `"state": 2` and makes every reader carry a copy
@@ -669,12 +676,13 @@ run_c now-guest-ppc mirror_layout_test.c     ""  src/mirror/mirror_layout.c
 # quietly invent - a version for an extension that published nothing, and
 # a port number for a listener that does not exist.
 run_c now-guest-ppc mirror_json_test.c       ""  src/mirror/mirror_json.c \
-      src/mirror/mirror_anchor.c src/mirror/mirror_layout.c src/core/json.c
+      src/mirror/mirror_anchor.c src/mirror/mirror_layout.c src/core/json.c \
+      src/mirror/mirror_consent.c
 # The instrument the 2026-08-07 anchor investigation had to build before it
 # could tell three defects apart. Toolbox-free on purpose, so the decision
 # it encodes is tested here rather than only on a Macintosh.
 run_c now-guest-ppc mirror_anchor_test.c     ""  src/mirror/mirror_anchor.c \
-      src/mirror/mirror_json.c src/core/json.c
+      src/mirror/mirror_json.c src/core/json.c src/mirror/mirror_consent.c
 # The other end of that same fact, and the end that lives off the guest.
 # A staged Mirror agent learns its port from a file beside it; a guest
 # that inherited the base image's copy ran an agent nothing could reach

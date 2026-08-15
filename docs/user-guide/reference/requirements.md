@@ -38,21 +38,21 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
-sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
+sources-sha1: 299f8d15b21e2842af155664b4d0250a68c4bc82
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -213,4 +213,5 @@ rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:16-0400 f4dab407 unchanged
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
 rederived: 2026-08-15T02:58:02-0400 5d767dce unchanged
+rederived: 2026-08-15T03:19:47-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->
