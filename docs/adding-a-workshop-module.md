@@ -46,6 +46,31 @@ Every op may be NULL except `create`. What the Workshop guarantees:
 | `activate(active)` | window activate/suspend | Activate/DeactivateControl |
 | `idle()` | **every event-loop pass** | be nearly free (see below) |
 | `status_text(out, cap)` | placard repaint | one line, or leave empty |
+| `describe_scene(writer)` | host observation | **required if `draw()` draws text** — emit the same strings and rects it does |
+
+`describe_scene` is the only route by which anything a page draws by hand
+reaches the host's observation plane. Controls do not need it: every one
+of them is already a Control Manager fact that `control_kind.c` hands
+over. Raw QuickDraw is different — it tells nobody anything, so a page
+that draws a heading, a fact row or a scrollback line and leaves this
+entry NULL is reported to the host as an **empty body**, which is
+indistinguishable from a page with nothing on it.
+
+That is not hypothetical: for most of this project's life exactly one
+page implemented it and sixteen did not, so most of the Workshop looked
+blank to the plane. `now-guest-shared/tests/module_describe_scene_source_test.py`
+now fails any module whose source draws text while this entry is NULL.
+
+The shape to copy is **one walk taken twice**, not a second function that
+re-derives the same strings: write `<page>_content(writer)` (or per-piece
+`emit_*` helpers) that draws when the writer is NULL and describes when it
+is not, and have both `draw()` and `describe_scene()` call it. Two walks
+are two chances to disagree, and a page that describes something other
+than what it drew is worse than one that describes nothing. Keep
+draw-only side effects — repaint caches, "this string is now shown"
+bookkeeping — behind `if (writer == NULL)`: describing changes no pixels,
+so marking a string shown would swallow an invalidation `idle` still owes
+it.
 
 Modules are created **lazily** and then hidden, never disposed, so a
 page keeps its state — scrollback, listing, settings — for the whole
@@ -85,7 +110,9 @@ behavior:
 
 A genuinely new page additionally needs an explicit `WorkshopModuleID`, its
 View-menu command, rail geometry or pinned-row behavior, public module page,
-manifest row, media slots, and 68K posture. Existing numeric IDs are persisted
+manifest row, media slots, 68K posture, and — if it draws any text of its
+own — a `describe_scene` (the gate above) and, where "the whole page as
+text" is a sensible thing to hand someone, a `copy_text` for Edit▸Copy. Existing numeric IDs are persisted
 and **must never be renumbered**. The current rail stores the non-pinned pages
 as a contiguous prefix and pins Preferences, Logs, and Connection at 15–17;
 adding another page therefore requires an intentional rail/prefs migration,

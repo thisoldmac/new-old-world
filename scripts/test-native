@@ -251,6 +251,12 @@ run_py now-guest-shared act_correlation_source_test.py
 run_py now-guest-shared act_install_reentrant_source_test.py
 run_py now-guest-shared arg_shadow_source_test.py
 run_py now-guest-shared control_kind_source_test.py
+# The other half of the same argument. control_kind hands the scene every
+# CONTROL a page owns; this one says a page that draws its own text with
+# QuickDraw can also say what it drew. Sixteen of seventeen pages could
+# not, so a host reading them saw chrome and an empty body - and an empty
+# body is exactly what a page with nothing on it looks like.
+run_py now-guest-shared module_describe_scene_source_test.py
 # Replacing an in-use APPL is File Manager behavior that a host cc cannot
 # execute. This cross-guest source guard pins the ordering and the shared
 # relaunch receipt instead of pretending the Toolbox half ran here.
