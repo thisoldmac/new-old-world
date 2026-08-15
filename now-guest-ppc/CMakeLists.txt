@@ -107,6 +107,7 @@ add_application(now-guest-ppc
     src/development/development_contract.c
     src/development/development_build.c
     src/development/development_project.c
+    src/development/development_history.c
     src/development/development_candidate.c
     src/development/development_sha256.c
     src/development/development_open.c
