@@ -166,6 +166,55 @@ remain UNMEASURED. The metal script is in the round's report; the line
 that would prove it is `grant held past epoch=N` BEFORE `grab granted`,
 where round 4 had them in the other order.
 
+## PARTIALLY CONFIRMED ON METAL, THEN FIXED ONE LAYER DEEPER: the tap poisons every session-level button read (2026-08-15 02:48 round, `fix/continuity-unbound-cross-release`)
+
+The 02:48 metal round (merged build 7b7c3b82, Accessibility granted,
+`~/Library/Logs/now-logs/2026-08-15 024813.log`) split this branch's two
+fixes:
+
+- **The unbound safety fix is METAL-CONFIRMED** — 02:49:42 shows `held
+  press released without a file handoff … boundFile=none` then the
+  origin-return pair, and no Finder dialog. The origin-return also ran
+  on every bound attempt.
+- **The warp-as-release fix did not clear the drag abandonment.** All
+  four bound attempts abandoned in the SAME SECOND as their crossing,
+  button held throughout.
+
+**The mechanism is one layer deeper than the constructor, and it is
+this app's own tap.** The consuming tap swallows the physical
+`leftMouseDown` — its job — and a swallowed down never reaches the
+session's event state. So for the whole captured gesture,
+`NSEvent.pressedMouseButtons` reads 0 and
+`CGEventSource.buttonState(.combinedSessionState)` — which the previous
+fix asked — reads up. Three metal facts fall out of that one cause: the
+window server synthesizes plain `mouseMoved` instead of
+`leftMouseDragged` while it believes the button is up, so "the first
+real mouseDragged after the tap dies" structurally never arrives; the
+first post-teardown monitor sample carries `buttonsDown=false`, so the
+abandon fires in the same second as the cross; and pre-Accessibility
+runs never saw any of it, because with no tap nothing was swallowed.
+Only `.hidSystemState` sits beneath our own session tap.
+
+Fixed three ways: `primaryButtonIsHeld` reads `.hidSystemState`; the
+NSEvent monitor constructor derives `buttonsDown` type-first with a
+hardware read for plain `mouseMoved`; and the abandon decision requires
+corroboration — a motion sample claiming released while the HID says
+held is treated as an echo of our own tap and audited once with
+everything the decision read, while a real `primaryUp` still abandons
+outright. The abandon line itself now carries `kind`,
+`sampleButtonsDown`, `sourceEvent` type and `hidPrimaryHeld`, so the
+next metal round is decisive whichever way it goes.
+
+**What is proven.** Host suites green; six mutations (corroboration
+removed — the exact shipped behavior, watched failing with the metal
+signature; suspect echo silent; `primaryUp` vetoed by a lagging HID
+read; monitor `mouseMoved` back to session-state-only; monitor
+`leftMouseUp` asking the hardware; monitor dragged asking instead of
+knowing), each confirmed built and run. **Metal-verified: no.** The one
+line no test can reach is the `.hidSystemState` default itself — a unit
+test machine has no held button — which is exactly what the provenance
+on the abandon line exists to prove or refute on the next round.
+
 ## FIXED, UNVERIFIED ON METAL — the permission that made things worse: the event tap read a cursor warp as a button release (2026-08-15, `fix/continuity-unbound-cross-release`)
 
 Accessibility was granted on this Mac for the first time on 2026-08-15

@@ -485,6 +485,7 @@ final class ContinuityGuestDragTests: XCTestCase {
         rig.enterGuest()
         rig.press()
         rig.crossBackHolding()
+        rig.controller.physicalPrimaryButtonHeld = { false }
         rig.environment.emit(.init(kind: .primaryUp,
                                    location: CGPoint(x: 1300, y: 450),
                                    delta: .zero, buttonsDown: false))
@@ -494,6 +495,74 @@ final class ContinuityGuestDragTests: XCTestCase {
             $0.1.contains("abandoned") && $0.1.contains("released before")
         })
         XCTAssertEqual(rig.environment.catchChanges, [true, false])
+    }
+
+    /// **A sample claiming "released" while the hardware says held is an
+    /// echo, not a release.**
+    ///
+    /// Metal, 2026-08-15 02:48: four bound crossings in a row abandoned in
+    /// the SAME SECOND as the cross — `the button was released before this
+    /// Mac saw a real mouse event` while Michelle was still holding the
+    /// button. The waiting path read `buttonsDown` off the first
+    /// monitor-delivered sample after the tap came down, and that field is
+    /// derived from the window server's event state — which this app's own
+    /// consuming tap has been poisoning all pass long, because a swallowed
+    /// `leftMouseDown` never updates it. Only the HID level sits beneath
+    /// our own tap.
+    func testAMovedSampleClaimingReleaseWhileTheButtonIsHeldDoesNotAbandon()
+        throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.controller.physicalPrimaryButtonHeld = { true }
+        /* The first monitor echo after teardown: a warp-synthesized
+           mouseMoved, buttonsDown read from the poisoned session state. */
+        rig.environment.emit(.init(kind: .moved,
+                                   location: CGPoint(x: 1300, y: 450),
+                                   delta: CGPoint(x: -8, y: 0),
+                                   buttonsDown: false))
+
+        XCTAssertEqual(rig.environment.catchChanges, [true],
+                       "the handoff was abandoned on an echo while the "
+                        + "human was still holding the button")
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("abandoned")
+        })
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("claims the button is up")
+                && $0.1.contains("physically held")
+        }, "the suspect echo must be audited with what was read, or the "
+            + "next metal round is undiagnosable again")
+
+        /* The real release, corroborated by the hardware, still ends it. */
+        rig.controller.physicalPrimaryButtonHeld = { false }
+        rig.environment.emit(.init(kind: .moved,
+                                   location: CGPoint(x: 1300, y: 450),
+                                   delta: .zero, buttonsDown: false))
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("abandoned")
+        })
+    }
+
+    /// A real `primaryUp` outranks the hardware read: taken as the release
+    /// goes by, the HID state can still say held, and honouring it would
+    /// keep a press alive past its own end.
+    func testARealPrimaryUpAbandonsEvenIfTheHardwareReadLags() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.controller.physicalPrimaryButtonHeld = { true }
+        rig.environment.emit(.init(kind: .primaryUp,
+                                   location: CGPoint(x: 1300, y: 450),
+                                   delta: .zero, buttonsDown: false))
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("abandoned") && $0.1.contains("released before")
+        })
     }
 
     // MARK: - The gesture's consent outlives the epoch
