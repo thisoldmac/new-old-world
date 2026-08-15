@@ -639,6 +639,7 @@ to exist:
 | `cloud.listing` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.list` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
 | `cloud.refuse` | message | ppc | deliberate | The refusal half of the same family, same reason ([command-parity.md](command-parity.md)). |
 | `cloud.report` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.services` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
+| `continuity.grab` | message | ppc | deliberate | **New to this table on 2026-08-15, and the reason is worth reading before the disposition.** The grab did not change; the operations section did. Until the host→guest crossing was declared, `continuity.grab` was a message only the host SENT, so nothing derived it as host-askable. The inverted crossing gives it a second sender — a guest asking for the item a `continuity.offer` published — so the contract now declares it in both directions and it lands here. Excluded from projection for the reason `continuity.report` and `continuity.selection` are, one step sharper: this is the message that MOVES A FILE, and the consent behind it is a person's own drag across the shared edge. A tool would let a caller redeem a grant nobody gestured for — the general read outside the share that the whole gesture boundary refuses ([continuity-mode.md](continuity-mode.md), [command-parity.md](command-parity.md)). Served `ppc` because the PowerPC guest dispatches the forward one today; the inverted half is served by no machine yet. |
 | `continuity.report` | message | none | deliberate | The bounded status and negotiation answer to the host Mirror module's internal `continuity.arm` request. The host consumes it to settle one optional human pointer-control epoch; exposing the raw report would make that transport handshake a second public control surface even though Continuity explicitly excludes MCP and agent integration. The ownership and surface boundary are stated in [continuity-mode.md](continuity-mode.md). Both guests emit a report, but neither dispatches one as an incoming request, which is why the mechanically derived Served column says `none`. |
 | `continuity.selection` | message | none | deliberate | The Finder-selection stub the guest pushes while a Continuity epoch is live, so a cross-the-edge drag has something to name before the press. Excluded for the same reason `continuity.report` is: Continuity is one human's pointer epoch and has no MCP or agent surface ([continuity-mode.md](continuity-mode.md)). The exclusion is sharper here than for the report - the stub says what a person has selected on their own machine, and exposing it would make an agent able to watch that, which is a capability nobody asked for and the drag does not need. The guest emits it and dispatches nothing, which is why the derived Served column says `none`. |
 | `exec.cancel` | message | both | deliberate | Ends an exec, and is excluded with the rest of the console plane — [agent-integration.md](agent-integration.md). |
@@ -1204,7 +1205,7 @@ derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd30
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=b30ffa4773e3f7618a178ef490260543c690438603cb3e88c10e82eff36a9372 lines=3
+derive disposition-census sha256=e1fd0d92d72112c446182fdeb1d74c27d57ada04e127f238d560e84b4dc4a2b4 lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1381,4 +1382,5 @@ rederived: 2026-08-15T12:33:03-0400 eadb1784 sources
 rederived: 2026-08-15T13:22:25-0400 4e897bc6 unchanged
 rederived: 2026-08-15T14:24:09-0400 599da71e sources, disposition-census 3->3
 rederived: 2026-08-15T14:56:50-0400 4caf46ef sources
+rederived: 2026-08-15T15:01:59-0400 a06d9396 disposition-census 3->3
 -->
