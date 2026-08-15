@@ -147,17 +147,41 @@ final class ConnectionsPaneTests: XCTestCase {
         let files = try GateSource.hostSwift(
             "now-host/Sources/Host/FilesWorkspaceShell.swift")
 
-        XCTAssertTrue(connections.contains("RightSidebarSplitView("),
+        XCTAssertTrue(Self.calls("RightSidebarSplitView", in: connections),
                       "the roster must sit in the shared split component")
         XCTAssertTrue(connections.contains("leading: detail"),
                       "the selected machine is the page")
         XCTAssertTrue(connections.contains("trailing: connectionList"),
                       "the roster is the collapsible trailing side")
-        XCTAssertTrue(connections.contains("RightSidebarToggle("),
+        XCTAssertTrue(Self.calls("RightSidebarToggle", in: connections),
                       "the expanded page owns a control to put it away")
-        XCTAssertTrue(files.contains("RightSidebarSplitView("),
+        XCTAssertTrue(Self.calls("RightSidebarSplitView", in: files),
                       "extraction is only worth it while Files still "
                       + "consumes the extracted component")
+    }
+
+    /// Whether this source calls that type, as opposed to merely containing
+    /// its name.
+    ///
+    /// A plain `contains` was the first version and it passed the mutation
+    /// it was written for: `FilesLocalRightSidebarSplitView(` — a forked
+    /// alias, which is precisely the drift this guard exists to catch —
+    /// contains `RightSidebarSplitView(` as a substring. The boundary is
+    /// the whole assertion.
+    private static func calls(_ type: String, in source: String) -> Bool {
+        let token = type + "("
+        var searched = source[...]
+        while let found = searched.range(of: token) {
+            let precededByName = found.lowerBound > source.startIndex
+                && (source[source.index(before: found.lowerBound)]
+                    .isLetter
+                    || source[source.index(before: found.lowerBound)]
+                        .isNumber
+                    || source[source.index(before: found.lowerBound)] == "_")
+            if !precededByName { return true }
+            searched = source[found.upperBound...]
+        }
+        return false
     }
 
     /// The collapsed rail and both toggles must name the surface the
