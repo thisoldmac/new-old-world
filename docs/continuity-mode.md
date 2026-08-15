@@ -52,10 +52,15 @@ guest still believes in, which on 2026-08-15 dropped a dragged file at
 the screen edge instead of the settled press origin. The barrier is
 `now_continuity_button_barrier` (the pure decision) and
 `now_continuity_cursor_await_exposure` (the bounded spin); it asks the
-record and the global, reports the further-back one, and expires at four
-ticks rather than holding an edge forever. Every edge writes one
-uploadable `button edge … applied=… exposed=… via=… waited=…` line, which
-is what a metal round reads. The full account is in
+record and the global, reports the further-back one, and expires rather
+than holding an edge forever. The deadline is asymmetric: four ticks for
+an ordinary press, where latency is feel, and thirty ticks (0.5s) for a
+release that follows a settle, where the caller is inside the guest's own
+drag loop and correctness is a real file's location — the 2026-08-15
+metal round (PowerBook 1400c) found the shared four-tick bound expiring
+on exactly that case. Every edge writes one uploadable `button edge …
+applied=… exposed=… via=… waited=… deadline=…` line, which is what a
+metal round reads. The full account is in
 [open-issues.md](open-issues.md).
 
 The following experimental mechanisms are retired from the implementation and

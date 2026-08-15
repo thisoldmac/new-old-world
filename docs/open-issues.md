@@ -221,12 +221,39 @@ that same `button edge` line. Three readings and what each means:
 - `waited=N settled` — the race was real on that machine and this fix is
   what stopped it. `via=record` or `via=global` names which stage was
   behind.
-- `waited=4 expired` (a warn) — the point never arrived inside the
-  deadline. The edge was applied anyway, the icon may still land wrong,
-  and the deadline or the stage being asked is the next thing to look at.
+- `waited=N deadline=D expired` (a warn) — the point never arrived inside
+  the deadline. The edge was applied anyway, the icon may still land
+  wrong, and the deadline or the stage being asked is the next thing to
+  look at.
 
 The per-epoch `CDM exposure … waits= expired=` summary is the same
 account in totals, and needs `mirrorlog on`.
+
+**UPDATE, 16:3x metal round the same day (`fix/continuity-barrier-deadline`):
+the shared four-tick deadline was too short for real hardware.** The
+emulator round above measured `waited=0` on every edge and never
+exercised the deadline at all — the honest gap this section already
+named. On the 1400c the same day, `waited=4 expired` fired repeatedly on
+ordinary release edges (gens 245, 247, 253, 267, 279, 281, 285, 289, 293,
+295, 307, 309, 310, 311), including one drop with the point 60px from the
+settled origin — Michelle's symptom of "snap-back worked once, now
+failing." The barrier itself was not wrong; the single 4-tick bound was
+sized from the emulator's `waited≤1` distribution and never saw the
+1400c's slower propagation.
+
+The deadline is now two bounds, not one, stated once in
+`now_continuity_logic.h`: `kNowContinuityExposureDeadlineTicksPress = 4`
+(unchanged — latency there is feel) and
+`kNowContinuityExposureDeadlineTicksRelease = 30` (0.5s — the release
+that follows a settle is inside the guest's own drag loop, where
+correctness is a real file's location). The per-edge line now carries
+`deadline=%lu` so a reading of `expired` names the bound it was measured
+against without cross-referencing `down=`. Still NOT metal-verified after
+the retune — the emulator cannot exercise this deadline either, so the
+honest experiment is the next metal round's `waited=` distribution: presses
+should stay `waited=0..4`, and releases that used to `expire` at 4 should
+now either `settle` under 30 or, if still failing, expire at a much rarer
+and more informative point.
 
 ## REPRODUCED IN THE EMULATOR AND FIXED, NOT METAL-VERIFIED: a retained UDP endpoint goes permanently deaf, and every status still says "armed" (2026-08-15, `fix/continuity-udp-endpoint-wedge`)
 
