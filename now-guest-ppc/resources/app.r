@@ -8,16 +8,71 @@ resource 'NOWo' (0, purgeable) {
     "New Old World"
 };
 
+/* The Finder decides whether an application may be DROPPED ON by reading
+   its FREFs, so a second one - local id 1, file type '****', "any
+   document" - is what turns NOW's icon into a target. It arrives in the
+   same change as main.c's kAEOpenDocuments handler on purpose: an FREF
+   without a handler is an icon that accepts a drop and then does nothing
+   with it, which is the more expensive half of the two to diagnose.
+ *
+   The local ids in the two lists below are how a BNDL pairs an FREF with
+   an icon family: FREF local 0 -> 'ICN#' local 0 -> ICN# 128 (the
+   application's own icon), FREF local 1 -> 'ICN#' local 1 -> ICN# 200.
+   200 rather than 129 because 129 and up are already the Workshop
+   sidebar's ics# resources - an ICN# 129 declared here would join the
+   Screenshots camera into one icon family, and the Finder would show
+   every dropped document as a camera. */
 resource 'BNDL' (128) {
     'NOWo', 0,
     {
-        'ICN#', { 0, 128 },
-        'FREF', { 0, 128 }
+        'ICN#', { 0, 128, 1, 200 },
+        'FREF', { 0, 128, 1, 129 }
     }
 };
 
 resource 'FREF' (128) {
     'APPL', 0, ""
+};
+
+resource 'FREF' (129) {
+    '****', 1, ""
+};
+
+/* The drop-target document icon: a page with its corner turned, and a
+   downward arrow through it - "this goes to the other Mac". One-pixel
+   1-bit art at both sizes, drawn at each size rather than decimated,
+   with solid-silhouette masks (the same rules the sidebar icons above
+   follow). It is a plain 'ICN#'/'ics#' pair with no colour siblings:
+   the Finder synthesises the colour depths from the 1-bit family, and a
+   badly hand-authored icl8 looks worse than a synthesised one. */
+resource 'ICN#' (200) {
+    {
+        $"00000000 00000000 03FFF000 02001800"
+        $"02001400 02001200 02001100 02001080"
+        $"02001FC0 02000040 02000040 02000040"
+        $"0203C040 0203C040 0203C040 0203C040"
+        $"0203C040 0203C040 0203C040 021FF840"
+        $"020FF040 0207E040 0203C040 02018040"
+        $"02000040 02000040 02000040 02000040"
+        $"02000040 03FFFFC0 00000000 00000000",
+        $"00000000 00000000 03FFF000 03FFF800"
+        $"03FFFC00 03FFFE00 03FFFF00 03FFFF80"
+        $"03FFFFC0 03FFFFC0 03FFFFC0 03FFFFC0"
+        $"03FFFFC0 03FFFFC0 03FFFFC0 03FFFFC0"
+        $"03FFFFC0 03FFFFC0 03FFFFC0 03FFFFC0"
+        $"03FFFFC0 03FFFFC0 03FFFFC0 03FFFFC0"
+        $"03FFFFC0 03FFFFC0 03FFFFC0 03FFFFC0"
+        $"03FFFFC0 03FFFFC0 00000000 00000000"
+    }
+};
+
+resource 'ics#' (200) {
+    {
+        $"0000 1FC0 1060 1050 1078 1008 1188 1188"
+        $"1188 1188 17E8 13C8 1188 1008 1FF8 0000",
+        $"0000 1FC0 1FE0 1FF0 1FF8 1FF8 1FF8 1FF8"
+        $"1FF8 1FF8 1FF8 1FF8 1FF8 1FF8 1FF8 0000"
+    }
 };
 
 /* Finder's Get Info version, and what a version-checking installer or

@@ -187,6 +187,7 @@ add_application(now-guest-ppc
     src/workshop/workshop_order.c
     src/workshop/workshop_sidebar.c
     src/workshop/workshop_scene_text.c
+    src/workshop/workshop_drop.c
     src/workshop/workshop_window.c
     src/scene/scene_build.c
     src/scene/scene_digest.c

@@ -25,6 +25,7 @@
 #include "peek.h"
 #include "scene_collect.h"
 #include "act_cmds.h"
+#include "workshop_drop.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
 #include "receive_progress.h"
@@ -517,6 +518,25 @@ static pascal OSErr handle_quit_apple_event(const AppleEvent *event,
     return noErr;
 }
 
+/* The Finder dropping files on NOW's icon, and the launch that carries
+   the same event when someone opens a document with this application.
+ *
+   This application SENT kAEOpenDocuments in four places and had never
+   answered one, which is why app.r's FREF said 'APPL' and nothing else:
+   an application that advertises documents it cannot open is worse than
+   one that advertises none. Both halves change together — the document
+   FREF and this handler — or the Finder offers a drop that goes nowhere.
+ *
+   It queues and returns. Sending from inside AEProcessAppleEvent would
+   start a transfer underneath the event loop that has to pump it. */
+static pascal OSErr handle_open_documents_apple_event(const AppleEvent *event,
+                                                       AppleEvent *reply,
+                                                       long refcon)
+{
+    (void)refcon;
+    return now_drop_open_documents(event, reply);
+}
+
 /* The wire holds a send that the other machine says would replace
    something, and raises a flag rather than asking — a modal opened from
    a network callback nests inside whatever loop is running (pump.h).
@@ -543,6 +563,7 @@ int main(void)
 {
     EventRecord event;
     AEEventHandlerUPP quit_handler;
+    AEEventHandlerUPP open_documents_handler;
 
     InitCursor();
     FlushEvents(everyEvent, 0);
@@ -616,6 +637,18 @@ int main(void)
         AEInstallEventHandler(kCoreEventClass, kAEQuitApplication,
                               quit_handler, 0, false);
     }
+    /* Same construction rule, same failure posture: without the handler
+       the Finder's drop simply is not answered, which is the state this
+       application was in before it had one. */
+    open_documents_handler =
+        NewAEEventHandlerUPP(handle_open_documents_apple_event);
+    if (open_documents_handler != NULL) {
+        AEInstallEventHandler(kCoreEventClass, kAEOpenDocuments,
+                              open_documents_handler, 0, false);
+    } else {
+        now_log(kLogWarn, "app",
+                "odoc: no handler UPP; Finder icon drops will not answer");
+    }
 
     while (g_running) {
         /* WATCHED, NOT READ. Cross-application stacking order exists
@@ -635,6 +668,11 @@ int main(void)
            arrives without anyone here having asked for it, so its
            progress cannot live on a page. */
         now_receive_progress_idle();
+        /* Also whether or not the Workshop is open: a file dropped on
+           NOW's icon in the Finder arrives with no window involved. This
+           is the ONLY place a dropped file is sent - both handlers only
+           ever queued (workshop_drop.h). */
+        now_drop_idle();
         /* The writer heartbeat, renewed because this loop is running -
            which is the fact it exists to prove. Renewed anywhere else it
            measures something else; see now_peek_idle's header comment
@@ -746,6 +784,17 @@ int main(void)
         DisposeAEEventHandlerUPP(quit_handler);
         quit_handler = NULL;
     }
+    if (open_documents_handler != NULL) {
+        AERemoveEventHandler(kCoreEventClass, kAEOpenDocuments,
+                             open_documents_handler, false);
+        DisposeAEEventHandlerUPP(open_documents_handler);
+        open_documents_handler = NULL;
+    }
+    /* Deliberately before workshop_close, which is the next step but
+       one: RemoveTrackingHandler takes the WindowRef the handler was
+       installed on, so the window must still exist when it runs.
+       workshop_close calls the same remove and finds nothing left. */
+    now_drop_shutdown();
 
     now_log(kLogInfo, "app", "quit: disposing window");
     now_log_flush();
