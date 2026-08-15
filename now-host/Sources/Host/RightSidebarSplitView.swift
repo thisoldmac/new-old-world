@@ -1,14 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// The `.sidebar` vibrancy material `FilesRightSidebarRailView` already uses
+/// The `.sidebar` vibrancy material `RightSidebarRailView` already uses
 /// for the collapsed rail, made reusable as a plain SwiftUI background.
 ///
 /// H2: the leading Places sidebars (`FilesPlacesSidebar`, `HostFilesSidebar`)
 /// painted flat `controlBackgroundColor` behind a `.sidebar`-style `List`,
 /// so they never matched the real vibrancy the collapsed rail already had —
 /// same material, two different implementations, only one of them correct.
-struct FilesSidebarVibrancyBackground: NSViewRepresentable {
+struct SidebarVibrancyBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = .sidebar
@@ -20,49 +20,74 @@ struct FilesSidebarVibrancyBackground: NSViewRepresentable {
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
-/// The host surface is a complete right sidebar. One AppKit split controller
-/// owns its divider, full content, collapsed rail, and every transition between
-/// them so collapse state cannot drift between two layout systems.
-struct FilesRightSidebarSplitView<Leading: View, Trailing: View>: View {
+/// A secondary surface as a complete right sidebar. One AppKit split
+/// controller owns its divider, full content, collapsed rail, and every
+/// transition between them so collapse state cannot drift between two layout
+/// systems.
+///
+/// **Two consumers, one implementation.** Files built this for "This Mac"
+/// beside the guest browser; Connections uses the same component for its
+/// machines roster beside the selected machine. The only thing that differs
+/// is `trailingTitle`, which names the surface in the rail's tooltip, its
+/// hover tag, the toggle's help, and both accessibility labels — so a second
+/// consumer cannot arrive wearing the first one's words.
+struct RightSidebarSplitView<Leading: View, Trailing: View>: View {
     let isTrailingCollapsed: Bool
     let onTrailingCollapseChanged: (Bool) -> Void
     @Binding var leadingFraction: CGFloat
+    let trailingTitle: String
     let leading: Leading
     let trailing: Trailing
 
     var body: some View {
-        FilesRightSidebarNativeSplitView(
+        RightSidebarNativeSplitView(
             isTrailingCollapsed: isTrailingCollapsed,
             onTrailingCollapseChanged: onTrailingCollapseChanged,
             leadingFraction: $leadingFraction,
+            trailingTitle: trailingTitle,
             leading: leading,
             trailing: trailing)
     }
 }
 
-struct FilesRightSidebarToggle: View {
+struct RightSidebarToggle: View {
     let isCollapsed: Bool
+    let title: String
     let action: () -> Void
+
+    private var label: String {
+        (isCollapsed ? "Show " : "Hide ") + title
+    }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "sidebar.trailing")
+                /* The host's containment metrics happen to live in
+                   `FilesStyle`; this control is the same silhouette as
+                   every other chrome control, so it reads them rather
+                   than restating the numbers. */
                 .frame(width: FilesStyle.controlHeight,
                        height: FilesStyle.controlHeight)
         }
         .nowGlassButton()
-        .accessibilityLabel(isCollapsed ? "Show This Mac" : "Hide This Mac")
-        .help(isCollapsed ? "Show This Mac" : "Hide This Mac")
+        .accessibilityLabel(label)
+        .help(label)
     }
 }
 
 @MainActor
-final class FilesRightSidebarRailView: NSVisualEffectView,
+final class RightSidebarRailView: NSVisualEffectView,
     NSSpringLoadingDestination {
     static let hoverDelay: TimeInterval = 0.45
     static let hoverScale: CGFloat = 1.015
 
     var onExpand: () -> Void = {}
+    /// What this rail reopens, in the person's words. Set by whoever
+    /// installs the sidebar; every label the rail draws is derived from it,
+    /// so a consumer cannot leave another consumer's noun behind.
+    var title: String = "" {
+        didSet { applyTitle() }
+    }
     private let iconView = NSImageView()
     private let grip = NSBox()
     private var hoverWorkItem: DispatchWorkItem?
@@ -80,12 +105,11 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
             })
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.image = NSImage(systemSymbolName: "chevron.left",
-                                 accessibilityDescription: "Show This Mac")
+                                 accessibilityDescription: nil)
         iconView.symbolConfiguration = NSImage.SymbolConfiguration(
             pointSize: 16, weight: .regular)
         iconView.contentTintColor = .secondaryLabelColor
         iconView.imageScaling = .scaleProportionallyDown
-        toolTip = "Show This Mac"
         grip.translatesAutoresizingMaskIntoConstraints = false
         grip.boxType = .separator
         addSubview(iconView)
@@ -102,7 +126,7 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
         ])
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel("Show This Mac")
+        applyTitle()
         wantsLayer = true
         layer?.cornerRadius = FilesStyle.outerSurfaceCornerRadius
         layer?.cornerCurve = .continuous
@@ -110,6 +134,13 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
     }
 
     required init?(coder: NSCoder) { nil }
+
+    private func applyTitle() {
+        let label = "Show \(title)"
+        toolTip = label
+        iconView.image?.accessibilityDescription = label
+        setAccessibilityLabel(label)
+    }
 
     override func updateTrackingAreas() {
         if let trackingArea { removeTrackingArea(trackingArea) }
@@ -172,7 +203,7 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
 
     private func showDisclosure() {
         guard disclosurePopover == nil, window != nil else { return }
-        let label = NSTextField(labelWithString: String(localized: "This Mac"))
+        let label = NSTextField(labelWithString: title)
         label.alignment = .center
         label.font = .systemFont(ofSize: NSFont.smallSystemFontSize,
                                  weight: .medium)
@@ -194,7 +225,11 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
         let popover = NSPopover()
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 92, height: 38)
+        /* Sized from the label rather than pinned at one width: the tag
+           carries whatever the consumer named its sidebar, and a fixed box
+           truncated the second consumer's noun. */
+        popover.contentSize = NSSize(
+            width: max(92, label.intrinsicContentSize.width + 24), height: 38)
         popover.contentViewController = controller
         let anchor = NSRect(x: bounds.minX, y: bounds.midY,
                             width: 1, height: 1)
@@ -268,11 +303,12 @@ final class FilesRightSidebarRailView: NSVisualEffectView,
 
 /// AppKit owns sizing, cursor feedback, and the effective drag region. This
 /// avoids synthesizing a second splitter interaction.
-private struct FilesRightSidebarNativeSplitView<Leading: View, Trailing: View>:
+private struct RightSidebarNativeSplitView<Leading: View, Trailing: View>:
     NSViewControllerRepresentable {
     let isTrailingCollapsed: Bool
     let onTrailingCollapseChanged: (Bool) -> Void
     @Binding var leadingFraction: CGFloat
+    let trailingTitle: String
     let leading: Leading
     let trailing: Trailing
 
@@ -281,8 +317,8 @@ private struct FilesRightSidebarNativeSplitView<Leading: View, Trailing: View>:
     }
 
     func makeNSViewController(context: Context)
-        -> FilesRightSidebarSplitController {
-        let controller = FilesRightSidebarSplitController()
+        -> RightSidebarSplitController {
+        let controller = RightSidebarSplitController()
         controller.leadingFractionChanged = {
             [weak coordinator = context.coordinator] fraction in
             coordinator?.setLeadingFraction(fraction)
@@ -297,13 +333,14 @@ private struct FilesRightSidebarNativeSplitView<Leading: View, Trailing: View>:
             leading: leadingHost,
             trailing: trailingHost,
             trailingCollapsed: isTrailingCollapsed,
+            trailingTitle: trailingTitle,
             leadingFraction: leadingFraction)
         context.coordinator.leadingHost = leadingHost
         context.coordinator.trailingHost = trailingHost
         return controller
     }
 
-    func updateNSViewController(_ controller: FilesRightSidebarSplitController,
+    func updateNSViewController(_ controller: RightSidebarSplitController,
                                 context: Context) {
         context.coordinator.parent = self
         context.coordinator.leadingHost?.rootView = leading
@@ -316,11 +353,11 @@ private struct FilesRightSidebarNativeSplitView<Leading: View, Trailing: View>:
 
     @MainActor
     final class Coordinator: NSObject {
-        var parent: FilesRightSidebarNativeSplitView
+        var parent: RightSidebarNativeSplitView
         var leadingHost: NSHostingController<Leading>?
         var trailingHost: NSHostingController<Trailing>?
 
-        init(parent: FilesRightSidebarNativeSplitView) {
+        init(parent: RightSidebarNativeSplitView) {
             self.parent = parent
         }
 
@@ -339,8 +376,8 @@ private struct FilesRightSidebarNativeSplitView<Leading: View, Trailing: View>:
 /// browser for the narrow reopen rail while the split item itself stays in the
 /// native hierarchy, avoiding a second divider or a stale collapsed item.
 @MainActor
-private final class FilesRightSidebarContainerController: NSViewController {
-    let railView = FilesRightSidebarRailView()
+private final class RightSidebarContainerController: NSViewController {
+    let railView = RightSidebarRailView()
     private let contentController: NSViewController
     private var collapsed = false
     private weak var displayedView: NSView?
@@ -386,7 +423,7 @@ private final class FilesRightSidebarContainerController: NSViewController {
     }
 }
 
-final class FilesSplitView: NSSplitView {
+final class SidebarSplitView: NSSplitView {
     static let dividerHitSlop: CGFloat = 6
     static let sidebarDividerThickness: CGFloat = 8
 
@@ -445,15 +482,15 @@ final class FilesSplitView: NSSplitView {
     }
 }
 
-class FilesSplitViewController: NSSplitViewController {
+class SidebarSplitViewController: NSSplitViewController {
     init() {
         super.init(nibName: nil, bundle: nil)
-        splitView = FilesSplitView()
+        splitView = SidebarSplitView()
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        splitView = FilesSplitView()
+        splitView = SidebarSplitView()
     }
 
     override func splitView(_ splitView: NSSplitView,
@@ -463,7 +500,7 @@ class FilesSplitViewController: NSSplitViewController {
         let inherited = super.splitView(
             splitView, effectiveRect: proposedEffectiveRect,
             forDrawnRect: drawnRect, ofDividerAt: dividerIndex)
-        let slop = FilesSplitView.dividerHitSlop
+        let slop = SidebarSplitView.dividerHitSlop
         let nativeHandle = splitView.isVertical
             ? drawnRect.insetBy(dx: -slop, dy: 0)
             : drawnRect.insetBy(dx: 0, dy: -slop)
@@ -471,7 +508,7 @@ class FilesSplitViewController: NSSplitViewController {
     }
 }
 
-final class FilesRightSidebarSplitController: FilesSplitViewController {
+final class RightSidebarSplitController: SidebarSplitViewController {
     static let defaultLeadingFraction: CGFloat = 0.5
     static let collapsedRailWidth: CGFloat = 54
 
@@ -480,25 +517,26 @@ final class FilesRightSidebarSplitController: FilesSplitViewController {
     var trailingCollapseRequested: ((Bool) -> Void)?
     private var hasPlacedInitialDivider = false
     private var isChangingDivider = false
-    private weak var trailingContainer: FilesRightSidebarContainerController?
+    private weak var trailingContainer: RightSidebarContainerController?
     private(set) var isTrailingCollapsed = false
     private(set) var expandedLeadingFraction =
-        FilesRightSidebarSplitController.defaultLeadingFraction
+        RightSidebarSplitController.defaultLeadingFraction
 
     @discardableResult
     func install(leading: NSViewController,
                  trailing: NSViewController,
                  trailingCollapsed: Bool,
+                 trailingTitle: String = "",
                  leadingFraction: CGFloat =
-                    FilesRightSidebarSplitController.defaultLeadingFraction)
+                    RightSidebarSplitController.defaultLeadingFraction)
         -> NSSplitViewItem {
         expandedLeadingFraction = min(1, max(0, leadingFraction))
-        let nativeSplit = splitView as? FilesSplitView
+        let nativeSplit = splitView as? SidebarSplitView
         nativeSplit?.usesSidebarHandle = true
         splitView.dividerStyle = .thin
         splitView.isVertical = true
         let leadingItem = NSSplitViewItem(viewController: leading)
-        let trailingContainer = FilesRightSidebarContainerController(
+        let trailingContainer = RightSidebarContainerController(
             content: trailing)
         let trailingItem = NSSplitViewItem(viewController: trailingContainer)
         leadingItem.minimumThickness = 260
@@ -517,6 +555,7 @@ final class FilesRightSidebarSplitController: FilesSplitViewController {
         self.trailingContainer = trailingContainer
         isTrailingCollapsed = trailingCollapsed
         trailingContainer.setCollapsed(trailingCollapsed)
+        trailingContainer.railView.title = trailingTitle
         trailingContainer.railView.onExpand = { [weak self] in
             guard let self else { return }
             self.setTrailingCollapsed(false)
@@ -617,7 +656,7 @@ final class FilesRightSidebarSplitController: FilesSplitViewController {
                 .unspecifiedDimension
             trailingItem.minimumThickness = 260
         }
-        (splitView as? FilesSplitView)?.allowsSidebarDividerResize = !collapsed
+        (splitView as? SidebarSplitView)?.allowsSidebarDividerResize = !collapsed
         splitView.window?.invalidateCursorRects(for: splitView)
     }
 
