@@ -7,6 +7,91 @@ search:
 
 # Open issues
 
+## FIXED AND INSTRUMENTED, NOT REPRODUCED IN THE EMULATOR AND NOT METAL-VERIFIED: a button edge was applied before its own position was exposed (2026-08-15 13:43 round, `fix/continuity-snapback-race`)
+
+The first successful guest→host file drag ever recorded got the whole
+chain through — grab completed, file landed — and left one guest-side
+defect. The host did the designed thing: settle the held pointer back to
+the press origin in its own packet, then release in the next.
+
+    13:43:25  held position settled before release: 274,311
+    13:43:25  guest press released before the cross: guest=274,311
+
+**On metal the icon did not snap back. It dropped at the edge of the
+guest's screen** (attended). So the Finder completed its move against the
+crossing point, not the settled origin — cosmetic on the desktop, a real
+relocation out of a Finder window.
+
+**Packet ordering was never the missing guarantee, and looking for one
+there would have found nothing.** The UDP lane is a latest-state mailbox:
+`accept_datagram` writes position and button generation from the *same*
+packet and commits `packet_seq` last, and both the settle packet and the
+release packet carried the SAME point (274,311) — `sendPrimaryRelease`
+re-sends the settled position beside the up. Whichever of the two the
+resident consumed, the position it exposed was correct.
+
+**What was missing is a barrier between applying a point and acting on
+it.** APPLIED IS NOT EXPOSED. `now_cdm_move_to` returns when the Cursor
+Device record takes the point; the record then propagates to the mouse
+global that every guest tracking loop actually samples. A service round
+applied the position request and then acted on it in adjacent
+instructions, with nothing in between. `continuity_cursor.c` had been
+counting that very window as `after_lag_pending` for two days without
+anything consuming the count.
+
+`now_continuity_button_barrier` is now the guarded pure decision —
+exposed / wait / expired — and `now_continuity_cursor_await_exposure`
+spins on it before every edge. It asks BOTH stages, record then global,
+and reports the further-back one. It expires at four ticks and applies
+anyway, deliberately: an edge held forever is a stuck drag, strictly
+worse than an edge at a stale point. It spins rather than yields, because
+the caller it exists for is a release inside the Finder's drag loop,
+which is exactly where further task time may never come back.
+
+**What is proven.** `scripts/test-all` green (206 native, host, MirrorKit,
+both guest cross-builds, docs). Twelve mutations were each watched failing
+against the guard that names it — including one that had to be redone
+because the first form failed to BUILD, which is a green that never ran.
+
+**NOT proven: the emulator does not reproduce the race, and this is the
+honest ceiling.** Eight button edges across eight epochs on a mac99 clone,
+driving the exact settle-then-release shape at 274,311 → 0,362 → 274,311,
+every one of them:
+
+    mirror button edge gen=2 down=0 applied=274,311 exposed=274,311 via=global waited=0 exposed
+    mirror CDM exposure epoch=404 waits=0 expired=0 wait-ticks=0
+
+The barrier ran and had nothing to hold. The lag class is real there —
+the same epochs report `CDM settle immediate-lag=5 caught-up=4` — but on
+QEMU the record has caught up again before the next service round brings
+a button edge. That measurement is also why the barrier asks two stages
+rather than one: a first version asking only the global would have been
+silent through all five of those record lags. QEMU's input timing is not
+a Farallon card's, and no emulator round can settle this.
+
+Rig: `now-mirror-stage.qcow2` sha256 `72aeaaf5…`, this checkout's ext and
+app staged and cold-booted, resident `active`, capabilities 1023,
+sourceManifest `d400b6ce0237`, buildFingerprint `b74b992f87a2`, guest app
+build `4a715327…` — which differs from the pre-fix `c74d7462…` and whose
+`via=` field the old build cannot emit, so the log itself proves which
+build answered. Guest-clean shutdown through Finder Special > Shut Down;
+volume cleanly unmounted.
+
+**The line the next metal round should read**, one per button edge, is
+that same `button edge` line. Three readings and what each means:
+
+- `waited=0 exposed` — the barrier had nothing to hold, and the drop
+  point is not its story.
+- `waited=N settled` — the race was real on that machine and this fix is
+  what stopped it. `via=record` or `via=global` names which stage was
+  behind.
+- `waited=4 expired` (a warn) — the point never arrived inside the
+  deadline. The edge was applied anyway, the icon may still land wrong,
+  and the deadline or the stage being asked is the next thing to look at.
+
+The per-epoch `CDM exposure … waits= expired=` summary is the same
+account in totals, and needs `mirrorlog on`.
+
 ## REPRODUCED IN THE EMULATOR AND FIXED, NOT METAL-VERIFIED: a retained UDP endpoint goes permanently deaf, and every status still says "armed" (2026-08-15, `fix/continuity-udp-endpoint-wedge`)
 
 The host application was restarted at 12:15 on 2026-08-15 while the guest
