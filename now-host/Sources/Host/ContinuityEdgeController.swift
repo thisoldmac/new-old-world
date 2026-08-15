@@ -932,7 +932,12 @@ final class ContinuityEdgeController: ObservableObject {
             + ", windowNumber=\(sourceEvent.windowNumber), "
             + "ourWindow=\(sourceEvent.window == nil ? "no" : "yes"), "
             + "clickCount=\(sourceEvent.clickCount)")
-        if let seed = environment.beginFileDrag(waiting.item, at: point,
+        /* The one call site. The pasteboard cannot change once
+           `beginDraggingSession` exists, so whatever an eager fetch decided
+           has to be pinned here — the last instant before that call — and
+           nowhere else. See `HostFileDragItem.finalized()`. */
+        let item = waiting.item.finalized()
+        if let seed = environment.beginFileDrag(item, at: point,
                                                 sourceEvent: sourceEvent) {
             /* The line the round-2 audit did not have. The trigger event is
                a foreign application's by construction — a global monitor

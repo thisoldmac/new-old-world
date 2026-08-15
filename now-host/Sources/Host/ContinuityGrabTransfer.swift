@@ -118,9 +118,202 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     /// database is declared by the contract and deliberately unsent, so this
     /// is the generic icon for the type the OSType named — honest about
     /// being generic rather than a picture of the wrong file.
+    ///
+    /// The promise is always built — it is the fallback for a large stub,
+    /// a busy grab lane, or an eager fetch that does not finish in time —
+    /// but a small-enough stub also gets an eager fetch started RIGHT NOW,
+    /// racing the crossing rather than waiting for a drop that may never
+    /// come at a Finder window. See `ContinuityFileDragPolicy` for the cap
+    /// and `EagerFetch` for how the two outcomes are reconciled at drag
+    /// start.
     func dragItem(for stub: ContinuityDragStub) -> HostFileDragItem {
-        HostFileDragItem(writer: promise(for: stub),
-                         image: NSWorkspace.shared.icon(for: stub.utType))
+        let bytes = ContinuityFileDragPolicy.totalBytes(
+            dataSize: stub.item.dataSize, resourceSize: stub.item.resourceSize)
+        let promiseWriter = promise(for: stub)
+        let image = NSWorkspace.shared.icon(for: stub.utType)
+        guard let fetch = beginEagerFetch(for: stub, bytes: bytes) else {
+            audit(.info, "drag payload: " + ContinuityFileDragPolicy.summary(
+                bytes: bytes, eager: false))
+            return HostFileDragItem(writer: promiseWriter, image: image)
+        }
+        audit(.info, "drag payload: " + ContinuityFileDragPolicy.summary(
+            bytes: bytes, eager: true) + " — fetching during the crossing")
+        return HostFileDragItem(writer: promiseWriter, image: image) {
+            [weak self] in
+            self?.resolveEagerDrag(fetch, stub: stub, bytes: bytes,
+                                   fallback: promiseWriter) ?? promiseWriter
+        }
+    }
+
+    /// The last-instant decision `HostFileDragItem.finalized()` runs, once,
+    /// right before AppKit owns the gesture.
+    ///
+    /// **This must never block.** Everything in this app — the wire
+    /// listener included — runs on the main actor, so a synchronous wait
+    /// here for a completion that can itself only run on the main actor
+    /// would deadlock the process solid rather than merely stall it: the
+    /// wait and the thing it is waiting for would be competing for the same
+    /// one thread. So this is a plain, instantaneous read of whatever
+    /// `EagerFetch` already knows — true "during the crossing" overlap
+    /// rather than a pause at the end of it, because every sample the
+    /// crossing delivers already runs a full turn of this same run loop,
+    /// and the fetch's own completion is queued on it exactly like they are.
+    private func resolveEagerDrag(_ fetch: EagerFetch,
+                                  stub: ContinuityDragStub, bytes: Int,
+                                  fallback: NSPasteboardWriting)
+        -> NSPasteboardWriting {
+        guard let outcome = fetch.currentOutcome() else {
+            let overBudget = fetch.isPastDeadline
+            audit(.warn, "drag payload: eager fetch had not finished when "
+                + "the drag started; falling back to the promise: "
+                + "name=\(stub.item.name), budget="
+                + "\(Int(fetch.budgetSeconds * 1000)) ms"
+                + (overBudget ? " (past its own budget)" : " (still running)"))
+            return fallback
+        }
+        switch outcome {
+        case .success(let url):
+            audit(.info, "drag payload: " + ContinuityFileDragPolicy.summary(
+                bytes: bytes, eager: true,
+                elapsedMs: Int(fetch.elapsedMs ?? 0))
+                + " — using a real file URL, not a promise")
+            return url as NSURL
+        case .failure(let error):
+            audit(.warn, "drag payload: eager fetch failed; falling back to "
+                + "the promise: name=\(stub.item.name), "
+                + "reason=\(error.localizedDescription)")
+            return fallback
+        }
+    }
+
+    /// One eager fetch, started at press time and raced against the
+    /// crossing — never waited on, only ever polled. `budgetSeconds` is
+    /// carried for the log line alone; nothing here blocks on it. Kept as
+    /// its own small thread-safe box, not a property on the `@MainActor`
+    /// transfer, on the same reasoning as `GrabCompletion`: AppKit hands
+    /// some of this app's own completions in from queues that are not the
+    /// main actor, and a value read from two places wants its own lock
+    /// rather than an assumption about which one arrives first.
+    final class EagerFetch {
+        enum Outcome { case success(URL); case failure(Error) }
+
+        let budgetSeconds: TimeInterval
+        private let deadline: DispatchTime
+        private let startedAt = DispatchTime.now()
+        private let lock = NSLock()
+        private var outcome: Outcome?
+        private(set) var elapsedMs: Double?
+
+        init(budgetSeconds: TimeInterval) {
+            self.budgetSeconds = budgetSeconds
+            deadline = .now() + max(0, budgetSeconds)
+        }
+
+        func finish(_ outcome: Outcome) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard self.outcome == nil else { return }
+            self.outcome = outcome
+            elapsedMs = Double(DispatchTime.now().uptimeNanoseconds
+                - startedAt.uptimeNanoseconds) / 1_000_000
+        }
+
+        /// Whatever is known RIGHT NOW — nil while the fetch is still in
+        /// flight. Never blocks; see `resolveEagerDrag` for why that is
+        /// load-bearing rather than an optimization.
+        func currentOutcome() -> Outcome? {
+            lock.lock()
+            defer { lock.unlock() }
+            return outcome
+        }
+
+        var isPastDeadline: Bool { DispatchTime.now() >= deadline }
+    }
+
+    /// Starts fetching a stub's bytes into a private staging area right
+    /// away, ahead of any drop, when it is small enough and the grab lane is
+    /// free. Returns nil when neither is true — the caller's promise is then
+    /// the only lane, exactly as before this existed.
+    private func beginEagerFetch(for stub: ContinuityDragStub, bytes: Int)
+        -> EagerFetch? {
+        guard ContinuityFileDragPolicy.eligibleForEagerFetch(
+            dataSize: stub.item.dataSize, resourceSize: stub.item.resourceSize)
+        else { return nil }
+        guard !grabInFlight else {
+            audit(.info, "eager fetch skipped: another grab is already in "
+                + "flight (epoch=\(stub.epoch), generation=\(stub.generation))")
+            return nil
+        }
+        let fetch = EagerFetch(
+            budgetSeconds: ContinuityFileDragPolicy.budget(forBytes: bytes))
+        let staging = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-eager-\(UUID().uuidString)",
+                                    isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: staging, withIntermediateDirectories: true)
+        } catch {
+            audit(.warn, "eager fetch could not stage a directory; the drag "
+                + "falls back to the promise: \(error.localizedDescription)")
+            fetch.finish(.failure(error))
+            return fetch
+        }
+        grabInFlight = true
+        notice = nil
+        audit(.info, "eager fetch started: epoch=\(stub.epoch), "
+            + "generation=\(stub.generation), name=\(stub.item.name), "
+            + "bytes=\(bytes), budget=\(Int(fetch.budgetSeconds * 1000)) ms")
+        grab(stub.epoch, stub.generation, stub.wireContainer, staging) {
+            [weak self] result in
+            guard let self else { return }
+            Task { @MainActor in
+                self.finishEagerFetch(result, stub: stub, staging: staging,
+                                      fetch: fetch)
+            }
+        }
+        return fetch
+    }
+
+    private func finishEagerFetch(
+        _ result: Result<GuestListener.FileDelivery, GuestListener.FileFailure>,
+        stub: ContinuityDragStub, staging: URL, fetch: EagerFetch
+    ) {
+        grabInFlight = false
+        switch result {
+        case .failure(let failure):
+            audit(.info, "eager fetch refused by the Mac: code="
+                + "\(failure.code), reason=\(failure.message), "
+                + "name=\(stub.item.name) — the drag still has its promise")
+            fetch.finish(.failure(GrabError.wire(code: failure.code,
+                                                 message: failure.message)))
+            /* Nothing will ever read this directory: the promise, not this
+               fetch, owns the drag from here. */
+            try? FileManager.default.removeItem(at: staging)
+        case .success(let file):
+            let url = staging.appendingPathComponent(stub.localName)
+            do {
+                try FileConverter.materialize(
+                    name: file.name, container: file.container,
+                    fileType: file.fileType, staged: file.staged, to: url)
+                fetch.finish(.success(url))
+                /* The staged file is now what the pasteboard may point at —
+                   best-effort cleanup, well after any drop had time to read
+                   it, rather than deleted out from under one. A drag that
+                   never happens at all leaves this behind for the OS's
+                   ordinary temp-directory sweep, same as an unfulfilled
+                   promise leaves nothing at all: an acceptable asymmetry
+                   for a file already proven small. */
+                DispatchQueue.main.asyncAfter(deadline: .now() + 300) {
+                    try? FileManager.default.removeItem(at: staging)
+                }
+            } catch {
+                audit(.warn, "eager fetch arrived but could not be written; "
+                    + "the drag still has its promise: name=\(stub.item.name), "
+                    + "reason=\(error.localizedDescription)")
+                fetch.finish(.failure(error))
+                try? FileManager.default.removeItem(at: staging)
+            }
+        }
     }
 
     func filePromiseProvider(_ provider: NSFilePromiseProvider,
