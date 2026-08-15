@@ -79,12 +79,12 @@ modules:
     page: user-guide/reference/modules/web.md
     ppc_pages: [kWorkshopWeb]
     guest_68k: unavailable
-  - id: development
-    title: Development
+  - id: projects
+    title: Projects
     tier: experimental
     domains: []
     feature_id: null
-    page: user-guide/reference/modules/development.md
+    page: user-guide/reference/modules/projects.md
     ppc_pages: [kWorkshopDevelopment]
     guest_68k: unavailable
   - id: census

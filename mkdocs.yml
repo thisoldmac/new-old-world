@@ -132,7 +132,7 @@ nav:
               - Console: user-guide/reference/modules/console.md
               - Chat: user-guide/reference/modules/chat.md
               - Web Proxy: user-guide/reference/modules/web.md
-              - Development: user-guide/reference/modules/development.md
+              - Projects: user-guide/reference/modules/projects.md
               - Hardware: user-guide/reference/modules/hardware.md
               - Diagnostics: user-guide/reference/modules/diagnostics.md
               - Networking: user-guide/reference/modules/networking.md

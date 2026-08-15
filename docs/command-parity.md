@@ -95,7 +95,7 @@ Development is the argument-carrying fallback example. The five
 console hands the typed remainder through `now_console_line_request` to the
 same command functions the wire calls. The parity gate's source regex includes
 hyphens; before 2026-08-09 it silently omitted this entire command family from
-both its dispatch and registry derivations. The host Development module and
+both its dispatch and registry derivations. The host Projects module and
 agent projection are clients of that wire face, not a third guest face.
 
 `mirror` is the one-extension example. Both faces call `now_mirror_probe()`;

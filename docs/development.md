@@ -14,7 +14,7 @@ CodeKitten a build dependency. The two project homes remain distinct:
 - A **host-home** project is authoritative beneath the host app's Application
   Support `New Old World/Projects` directory.
 - A **guest-home** project is authoritative beneath the Projects folder a
-  person selected in the PPC guest's Development page. NOW imports a verified
+  person selected in the PPC guest's Projects page. NOW imports a verified
   snapshot into its private history mirror and gives an agent a persistent host
   workspace. Editing and committing that workspace does not edit the active
   guest project.
@@ -66,7 +66,7 @@ generic Files, Chat and MCP schemas.
 ## Toolchains and jobs
 
 Toolchains belong to the PPC guest. A person chooses one root in the guest
-Development page; NOW resolves it by volume and directory identity and
+Projects page; NOW resolves it by volume and directory identity and
 qualifies an MPW installation by measuring ToolServer and its version. The
 selected project must pin the exact measured ID and version. Neither an agent
 nor a project file can register an arbitrary guest path.
@@ -91,7 +91,7 @@ or CPU.
 
 ## Human and agent surfaces
 
-The host Development module and agent adapter call the same project,
+The host Projects module and agent adapter call the same project,
 workspace, candidate, build, promotion and run services. The compact agent
 surface is split into:
 
