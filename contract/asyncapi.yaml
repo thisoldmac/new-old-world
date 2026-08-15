@@ -1397,6 +1397,7 @@ operations:
       - $ref: "#/channels/control/messages/continuityReport"
       - $ref: "#/channels/control/messages/continuityKeyReport"
       - $ref: "#/channels/control/messages/continuitySelection"
+      - $ref: "#/channels/control/messages/continuityGrab"
     description: >
       The PowerPC guest answers every arm and disarm and may also report an
       asynchronous guest-input or lease-expiry exit. The `state` and `reason`
@@ -1406,6 +1407,17 @@ operations:
       continuity.selection is unsolicited and rides the same epoch. The
       guest sends one whenever the Finder selection it can see changes,
       and never outside a live epoch.
+
+      continuity.grab is LISTED HERE AS WELL AS IN
+      hostAsksGuestContinuity, and the duplication is the point: it is
+      one message with two senders, so the host must be able to RECEIVE
+      the word it also sends. A guest sends it for an item a
+      continuity.offer published, and this side then serves its own item
+      down the ordinary file lane — file.begin, the bulk stream,
+      file.end, or file.refuse. The receiving side of that exchange is
+      the host's to serve, exactly as the guest serves the forward one;
+      a message declared in only the direction somebody implemented
+      first is the defect class this file exists to prevent.
 
       DECLARED ASYMMETRY. Neither continuity.selection nor a GUEST-SERVED
       continuity.grab has a console verb, for the same reason
