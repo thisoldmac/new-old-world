@@ -49,6 +49,18 @@ ordered(wire, "now_sha256_update(&g_put.update_sha, bytes, len)",
         "now_files_receive_finish(&g_put.rx)",
         "now_update_install(g_put.update_component")
 
+# 034 H4: cancelling an update mid-download -- whether the person presses
+# Cancel at the host (file.end ok:false) or at the guest console
+# (now_wire_put_cancel) -- must free g_update.pending the same way every
+# OTHER way an update transfer ends already does. Left uncleared,
+# run_update's own "already pending" guard (above) refuses every later
+# attempt until the app relaunches: the guest half of what a sane
+# post-cancel state means.
+put_abort_start = wire.index("static void put_abort(const char *code")
+put_abort_end = wire.index("\n}\n", put_abort_start)
+put_abort_body = wire[put_abort_start:put_abort_end]
+ordered(put_abort_body, "if (g_put.update)", "g_update.pending = false;")
+
 # Finder identity is checked before either component is installed. The old
 # item moves to that volume's Trash under its OWN unchanged name before the
 # verified staged item takes the canonical name -- 2026-08-14 (034 H4): this

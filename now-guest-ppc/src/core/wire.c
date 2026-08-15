@@ -4716,6 +4716,15 @@ static void put_done(Boolean ok, const char *code, const char *reason,
     g_put.active = false;
 }
 
+/* 034 H4: every OTHER way finish_put ends an update transfer clears
+   g_update.pending (checksum mismatch, SHA-256 mismatch, receive-finish
+   failure, install failure); this shared abort path -- the one both
+   now_wire_put_cancel (guest console, G11b) and a host Cancel button
+   (file.end ok:false) route through -- was the one exception. Left
+   uncleared, the guest refuses every later update attempt with
+   "already pending" (run_update's own guard, wire.c:4518) until the
+   app relaunches, which is exactly the state a person cancelling an
+   update should never be left in. */
 static void put_abort(const char *code, const char *reason)
 {
     Boolean retained;
@@ -4724,6 +4733,9 @@ static void put_abort(const char *code, const char *reason)
         return;
     }
     retained = g_put.rx.keep_partial && g_put.rx.received > 0;
+    if (g_put.update) {
+        g_update.pending = false;
+    }
     now_files_receive_abort(&g_put.rx);
     put_done(false, code, reason,
              retained ? "partial-retained" : "temp-discarded");
