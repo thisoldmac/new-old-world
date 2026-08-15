@@ -38,16 +38,21 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
-sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
+sources-sha1: fb4d0d59f8d5aa461c841626ce28be238c50e9a7
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -195,4 +200,6 @@ rederived: 2026-08-15T00:20:08-0400 e937faee sources, sources, sources, sources,
 rederived: 2026-08-15T01:40:31-0400 139dff1a sources, sources, sources, sources, sources
 rederived: 2026-08-15T01:32:41-0400 108db464 sources, sources, sources, sources, sources
 rederived: 2026-08-15T02:20:06-0400 de5812ab sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:36:42-0400 34192244 sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:21:04-0400 c87b3288 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

@@ -734,6 +734,14 @@ run_c now-guest-ppc cloud_card_cache_test.c "" \
 # "Shared folder" only left for hosts predating the field, and one colon
 # at the root/path join whichever spelling of root arrived.
 run_c now-guest-ppc files_path_label_test.c  ""  src/files/files_path_label.c
+# The rebuilt Files page, in the three parts a host cc can decide:
+# where the two named halves sit (and that the listing is what grows
+# with the window), which of four kinds of news the one status line
+# shows without any of them destroying another, and what the page calls
+# the machine at the other end when that machine has not said.
+run_c now-guest-ppc files_layout_test.c      ""  src/files/files_layout.c
+run_c now-guest-ppc files_status_test.c      ""  src/files/files_status.c
+run_c now-guest-ppc files_peer_label_test.c  ""  src/files/files_peer_label.c
 run_c now-guest-ppc proc_quit_args_test.c    ""  src/processes/proc_quit_args.c
 run_c now-guest-ppc proc_hide_args_test.c    ""  src/processes/proc_hide_args.c
 run_c now-guest-ppc processes_layout_test.c  ""  src/processes/processes_layout.c

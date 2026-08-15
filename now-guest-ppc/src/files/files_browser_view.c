@@ -36,14 +36,32 @@ static Boolean g_loading;
 static PullView g_pull;
 static Boolean g_pull_began;
 
+/* Raised whenever the path, the count or this view's note changed. The
+   path row is the MODULE's pixels - this view owns only the list - so
+   the module's idle pass collects the flag and invalidates the row.
+
+   It used to be a bounded poke at this view's own rectangle plus a
+   comment saying the module repaints the row "off its idle caches". It
+   has no cache of the count: the module's idle watches the TRANSFER, so
+   a listing that arrived and changed "Reading..." to "12 items" left
+   the old words on screen until something else happened to damage the
+   row. A view that changes another view's facts has to say so. */
+static Boolean g_chrome_dirty;
+
 static void invalidate_chrome(void)
 {
-    /* The path row and status placard both read this view's state; the
-       module repaints them off its idle caches, so a bounded poke at
-       the whole pane is enough here. */
+    g_chrome_dirty = true;
     if (g_owner != NULL && g_visible) {
         InvalWindowRect(g_owner, &g_area);
     }
+}
+
+Boolean files_browser_chrome_changed(void)
+{
+    Boolean dirty = g_chrome_dirty;
+
+    g_chrome_dirty = false;
+    return dirty;
 }
 
 /* --- asking ------------------------------------------------------------- */
@@ -562,13 +580,13 @@ void files_browser_count_text(char *out, long cap)
 
 void files_browser_note_text(char *out, long cap)
 {
-    /* A live transfer outranks the last one's news: "Got Report.cwk"
-       left standing while the next file comes down is the pane telling
-       a person the wrong thing about right now. */
-    if (g_pull.phase != kPullIdle && g_pull_note[0] != '\0') {
-        snprintf(out, (size_t)cap, "%s", g_pull_note);
-        return;
-    }
+    /* THIS VIEW'S OWN NEWS AND NOTHING ELSE. It used to answer with the
+       live transfer line when there was one - "a live transfer outranks
+       the last one's news" - which is true and is not this function's
+       business: the page has four kinds of news and one line, and
+       deciding between them here meant the transfer could only ever be
+       seen by shadowing a browse error that nobody had read.
+       files_status.c holds that rule now, for all four. */
     snprintf(out, (size_t)cap, "%s", g_note);
 }
 
