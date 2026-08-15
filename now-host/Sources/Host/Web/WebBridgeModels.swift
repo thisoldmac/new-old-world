@@ -113,6 +113,16 @@ final class WebBridgeModel: ObservableObject {
     @Published var aiPlannerExecutable: String {
         didSet { save(aiPlannerExecutable, key: .aiPlanner) }
     }
+    /// Cloned from MCP's `stdioStartsAutomatically` pattern
+    /// (`MCPTransportPreferences.swift`), but defaulted OFF: the bundled
+    /// Python helper is heavier to have running unasked than a same-process
+    /// MCP transport, and a person who wants the relay every launch can
+    /// say so once.
+    @Published var startsAutomatically: Bool {
+        didSet {
+            defaults.set(startsAutomatically, forKey: Key.startsAutomatically.rawValue)
+        }
+    }
 
     private let defaults: UserDefaults
     private var outputRemainder = ""
@@ -142,7 +152,14 @@ final class WebBridgeModel: ObservableObject {
         case handlers = "web.handlers"
         case allowPrivate = "web.allowPrivateDestinations"
         case aiPlanner = "web.aiPlannerExecutable"
+        case startsAutomatically = "web.startsAutomatically"
     }
+
+    /// Read by `App.swift`'s launch hook, mirroring how the MCP transports'
+    /// autostart is checked before their runtime exists — this lets launch
+    /// consult the preference without forcing the module's runtime (and its
+    /// listener registration) into existence when the answer is "no".
+    static let startsAutomaticallyDefaultsKey = Key.startsAutomatically.rawValue
 
     init(
         defaults: UserDefaults = UserDefaults(
@@ -165,6 +182,12 @@ final class WebBridgeModel: ObservableObject {
             forKey: Key.allowPrivate.rawValue)
         aiPlannerExecutable = defaults.string(
             forKey: Key.aiPlanner.rawValue) ?? ""
+        // Default off: unlike MCP stdio, absence of the key must mean
+        // "do not start", not "start" — UserDefaults.bool already reads
+        // false for an unset key, so no unset-vs-false disambiguation is
+        // needed here.
+        startsAutomatically = defaults.bool(
+            forKey: Key.startsAutomatically.rawValue)
         lifecycle = Self.helperExists(at: initialRoot)
             ? .stopped
             : .unavailable("Choose the folder containing the NOW Web helper.")

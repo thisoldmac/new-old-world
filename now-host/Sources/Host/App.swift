@@ -82,6 +82,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let preferences = MCPTransportPreferences(defaults: defaults)
         if preferences.stdioStartsAutomatically { startMCPStdio() }
         if preferences.httpStartsAutomatically { startMCPHTTP() }
+        // Web's own model owns its UserDefaults key, unlike MCP's separate
+        // preferences struct — reading the key directly here (rather than
+        // forcing the "web" runtime into existence just to ask it) keeps the
+        // off-by-default case free of the runtime's listener registration.
+        if defaults.bool(forKey: WebBridgeModel.startsAutomaticallyDefaultsKey) {
+            state.moduleRuntime(for: "web", as: WebHostModuleRuntime.self)?
+                .model.start()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

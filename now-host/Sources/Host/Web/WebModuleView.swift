@@ -91,6 +91,7 @@ struct WebModuleView: View {
                         .keyboardShortcut(.defaultAction)
                         .disabled(!model.canStart)
                 }
+                Toggle("Start automatically", isOn: $model.startsAutomatically)
                 switch model.lifecycle {
                 case .ready:
                     Text("Renderer ready. A connected guest relay can browse now.")

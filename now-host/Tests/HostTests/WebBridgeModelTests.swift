@@ -37,6 +37,26 @@ final class WebBridgeModelTests: XCTestCase {
         XCTAssertEqual(object["handlers_enabled"] as? Bool, false)
     }
 
+    func testStartsAutomaticallyDefaultsOffAndRoundTripsThroughDefaults() {
+        // H1b: unlike MCP stdio (default on), the web relay is a heavier
+        // bundled process, so an unset preference must read false — and the
+        // key App.swift's launch hook reads directly must be the same one
+        // this model persists to.
+        let (defaults, name) = defaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+
+        XCTAssertFalse(WebBridgeModel(defaults: defaults, environment: [:])
+            .startsAutomatically)
+
+        let model = WebBridgeModel(defaults: defaults, environment: [:])
+        model.startsAutomatically = true
+        XCTAssertTrue(defaults.bool(
+            forKey: WebBridgeModel.startsAutomaticallyDefaultsKey))
+
+        let reloaded = WebBridgeModel(defaults: defaults, environment: [:])
+        XCTAssertTrue(reloaded.startsAutomatically)
+    }
+
     func testRendererIsInternalAndUsesReadinessEndpoint() {
         let (defaults, name) = defaults()
         defer { defaults.removePersistentDomain(forName: name) }
