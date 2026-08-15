@@ -160,15 +160,13 @@ rederived: 2026-08-14T12:47:23-0400 804be291 unchanged
 rederived: 2026-08-14T12:49:05-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:42-0400 90cfd8fa unchanged
 rederived: 2026-08-14T14:27:57-0400 6d037a57 unchanged
+rederived: 2026-08-14T15:56:43-0400 835e6acf unchanged
 rederived: 2026-08-14T16:58:27-0400 cf962dbb unchanged
 rederived: 2026-08-14T17:12:27-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:38-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:50-0400 60bb3427 unchanged
-=======
-rederived: 2026-08-14T15:56:43-0400 835e6acf unchanged
->>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:41-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:06-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:11-0400 e2c66126 unchanged
@@ -180,4 +178,5 @@ rederived: 2026-08-14T19:50:53-0400 d20eee81 unchanged
 rederived: 2026-08-14T20:02:53-0400 068ca7fd sources
 rederived: 2026-08-14T21:00:58-0400 ab304cb2 unchanged
 rederived: 2026-08-14T21:15:08-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:31-0400 9d85a31d unchanged
 -->
