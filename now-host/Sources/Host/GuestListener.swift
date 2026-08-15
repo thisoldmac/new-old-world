@@ -1689,6 +1689,22 @@ final class GuestListener: ObservableObject {
     }
 
     /// Pulls a file. `container` nil = the guest's fork rule decides.
+    ///
+    /// One waiter, like `getMirrorFile` and `grabContinuityFile`: there is
+    /// one bulk receiver below this (`Session.activeFileGetID`, one
+    /// `fileBegin`, one sink), so a second overlapping ask cannot be served
+    /// even if this layer accepted it. Without the guard it did accept it —
+    /// `pendingFile` is a single slot with no request-id key, so the second
+    /// ask overwrote the first waiter, `deliverFile` handed the SECOND
+    /// caller the FIRST caller's bytes, and the loser's completion was
+    /// never called at all. For a drag-out that means
+    /// `GuestFilePromiseExporter.active` never clears and every later
+    /// drag-out in the session is refused by its own idle guard, while
+    /// Finder keeps the unresolved promise's placeholder on screen. Four
+    /// callers reach here (Files download, Files drag-out promises, the
+    /// Census ROM dump and Mirror asset ingestion) and only the first two
+    /// share `FilesModuleModel.transfer` as a mutex, so the overlap was
+    /// reachable from ordinary use.
     func getFile(path: String, container: String? = nil,
                  stagingDirectory: URL? = nil,
                  completion: @escaping (Result<FileDelivery,
@@ -1696,6 +1712,12 @@ final class GuestListener: ObservableObject {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
                                       message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        guard pendingFile == nil else {
+            completion(.failure(.init(
+                code: "busy",
+                message: "Another file transfer is already in progress")))
             return
         }
         let id = nextCommandId
@@ -1788,6 +1810,8 @@ final class GuestListener: ObservableObject {
             container: container, stagingDirectory: stagingDirectory)
     }
 
+    /// Same one-waiter rule as `getFile` above, for the same reason: this is
+    /// the same lane and the same single `pendingFile` slot.
     func getDevelopmentProjectFile(projectID: String, path: String,
                                    stagingDirectory: URL,
                                    completion: @escaping (
@@ -1795,6 +1819,12 @@ final class GuestListener: ObservableObject {
         guard let session, case .connected = state else {
             completion(.failure(.init(code: "disconnected",
                                       message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        guard pendingFile == nil else {
+            completion(.failure(.init(
+                code: "busy",
+                message: "Another file transfer is already in progress")))
             return
         }
         let id = nextCommandId
