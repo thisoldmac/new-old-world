@@ -832,6 +832,8 @@ static void draw_transcript(void)
     Rect inner = f;
     Rect band;
     RgnHandle saved = NewRgn();
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RGBColor saved_back;
     int fit = visible_lines();
     int lines = chat_transcript_count(&g_transcript);
     int i;
@@ -849,6 +851,11 @@ static void draw_transcript(void)
         GetClip(saved);
         ClipRect(&inner);
     }
+    /* EraseRect erases to the port's CURRENT back color, not white - a
+       themed back color (workshop_sidebar.c's pattern) left it tinted
+       here, so transcript rows painted whatever the port last set. */
+    GetBackColor(&saved_back);
+    RGBBackColor(&white);
     band = inner;
     band.bottom = (short)(f.top + 4);
     EraseRect(&band);
@@ -888,6 +895,7 @@ static void draw_transcript(void)
                     ? "Ask the other Mac's model about this one."
                     : "Waiting for the other Mac's models...");
     }
+    RGBBackColor(&saved_back);
     if (saved != NULL) {
         SetClip(saved);
         DisposeRgn(saved);
@@ -911,10 +919,15 @@ static void draw_status_line(void)
 static void draw_input(void)
 {
     Rect f = g_r.input;
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RGBColor saved_back;
 
     /* Runs on page show and resize only: keystrokes never invalidate
        here, because TEKey draws its own insertion incrementally. */
+    GetBackColor(&saved_back);
+    RGBBackColor(&white);
     EraseRect(&f);
+    RGBBackColor(&saved_back);
     FrameRect(&f);
     if (g_te != NULL) {
         TextFont(g_font);

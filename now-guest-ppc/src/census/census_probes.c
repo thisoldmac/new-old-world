@@ -177,8 +177,14 @@ static void gather_identity(long cursor, CensusPage *page)
     {
         char raw[24];
         char meaning[kCensusRowMeaningCap];
+        const char *name = census_cpu_name(ct);
         snprintf(raw, sizeof raw, "$%08lX", (unsigned long)ct);
-        snprintf(meaning, sizeof meaning, "CPU type %ld", ct);
+        if (name != NULL) {
+            snprintf(meaning, sizeof meaning, "%s", name);
+        } else {
+            snprintf(meaning, sizeof meaning, "CPU type $%08lX",
+                     (unsigned long)ct);
+        }
         set_row(&page->rows[page->count++], "Processor", raw, meaning);
     }
 
@@ -294,10 +300,23 @@ static void gather_overview(long cursor, CensusPage *page)
     sanitize(model, clean, sizeof clean);
     fact(page, "   Model", clean);
     v = gestalt_or(gestaltProcClkSpeed, 0);
-    if (v > 0) {
-        snprintf(buf, sizeof buf, "%ld MHz", (v + 500000L) / 1000000L);
-    } else {
-        strcpy(buf, "unknown speed");
+    {
+        long ct = gestalt_or(gestaltNativeCPUtype,
+                             gestalt_or(gestaltProcessorType, 0));
+        const char *name = census_cpu_name(ct);
+        char speed[24];
+
+        if (v > 0) {
+            snprintf(speed, sizeof speed, "%ld MHz", (v + 500000L) / 1000000L);
+        } else {
+            strcpy(speed, "unknown speed");
+        }
+        if (name != NULL) {
+            snprintf(buf, sizeof buf, "%s @ %s", name, speed);
+        } else {
+            snprintf(buf, sizeof buf, "CPU type $%08lX, %s",
+                     (unsigned long)ct, speed);
+        }
     }
     fact(page, "   Processor", buf);
     v = gestalt_or(gestaltROMSize, 0);
@@ -381,14 +400,16 @@ static void gather_overview(long cursor, CensusPage *page)
             }
             {
                 char vname[32], vlabel[kCensusRowNameCap];
+                char total_s[24], free_s[24];
                 long n = name[0] < 31 ? name[0] : 31;
 
                 memcpy(vname, name + 1, (size_t)n);
                 vname[n] = '\0';
                 sanitize(vname, clean, sizeof clean);
                 snprintf(vlabel, sizeof vlabel, "   %.28s", clean);
-                snprintf(buf, sizeof buf, "%lu MB, %lu MB free",
-                         total_mib, free_mib);
+                census_size_mib(total_mib, total_s, sizeof total_s);
+                census_size_mib(free_mib, free_s, sizeof free_s);
+                snprintf(buf, sizeof buf, "%s, %s free", total_s, free_s);
                 fact(page, vlabel, buf);
             }
             index++;
