@@ -190,6 +190,10 @@ def create_dmg(bundle: Path, output: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="now-dmg-contents-") as raw_source:
         source = Path(raw_source)
         shutil.copytree(bundle, source / bundle.name, symlinks=True)
+        # A symlink to /Applications beside the app is the drag-to-install
+        # affordance; without it the DMG opens onto an app with nowhere to
+        # drag it.
+        (source / "Applications").symlink_to("/Applications")
         run([
             "/usr/bin/hdiutil", "create", "-srcfolder", str(source),
             "-volname", "New Old World", "-format", "UDZO", str(output),
