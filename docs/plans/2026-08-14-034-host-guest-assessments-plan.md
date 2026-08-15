@@ -326,3 +326,18 @@ contradicted live and reclassified (Part 0).
   "Other Mac" confirmed. H10: cutting-edge Swift, degrade gracefully to
   the floor. Investigations best-effort; Michelle tests once landed.
   → Plan fully locked; wave 1 implementation begins.
+- 2026-08-14 (wave 1 merged): all 8 lanes landed on
+  `claude/host-guest-assessments-7b254f`; `scripts/test-all` green on the
+  merged tree, all stages run (native 203, MirrorKit, both guest
+  cross-builds, host Debug+Release; live-guest SKIP by design — nothing
+  metal-verified yet). Slices A/C/D/E complete; F and G remain (waves
+  2-3). G8's mechanism was lazy page creation seeding the title cache —
+  ledger entry in open-issues. H6/H7 shared a root (band-scoped arming +
+  eager insert preview). Pre-existing defects found at the fork point and
+  fixed here: plan-doc provenance marker, half-resolved conflict markers
+  baked into 8 derived docs. Outstanding for Michelle: hooks unarmed
+  across the shared clone (`tools/hooks-doctor --fix` is hers to run);
+  `claude/*` branch names need renaming before landing (git-policy);
+  live checklist — spring-load flash + connections-shelf spring-load,
+  Disconnect title on a page first opened after auto-connect, receive
+  windoid incl. keystroke routing with no transfer running.

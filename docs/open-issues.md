@@ -7,6 +7,33 @@ search:
 
 # Open issues
 
+## TESTED, THE CURE NOT YET WATCHED: the Connect button lied only to pages born after auto-connect (2026-08-14, `claude/034-inv-conn`)
+
+Assessment item G8 of plan 034. Michelle reported from a running guest
+that the Connection page's button read "Connect" while the link was
+active and healthy — while `conn_idle()` visibly polls the wire and
+flips the title every tick, and the disconnect action already worked.
+
+The mechanism was neither of the briefed hypotheses (idle not running;
+module state diverging from the wire). `conn_is_connected()` IS wire
+truth. The defect was **seeding**: Workshop pages are created lazily,
+and the page cached the wire STATE while creating the button with a
+hardcoded "Connect" — so a Connection page first opened *after* prefs
+auto-connect was born with cache and title already in agreement about
+the wrong thing, and a restamp-on-change idle never saw a change to
+stamp. The fix caches the TITLE rather than the state, synced through
+one helper at create, at show, and on tick, with the decision extracted
+to a Toolbox-free seam (`conn_fields.c`) whose test was watched failing
+against both mutations it names. Connect-on-edit landed in the same
+commit: committing a new address/port now calls the same force-connect
+path the button uses instead of staging behind "Save to keep it."
+
+**Not proven:** nobody has yet opened the page for the first time after
+an auto-connect on a running guest and read "Disconnect". That single
+observation is the remaining verification, and it is exactly the
+scenario the bug lived in. The connect-on-edit path is unverified by
+test (pure Toolbox click handling, no seam).
+
 ## BUILDS AND TESTED, NEVER RUN ON ANY MACINTOSH: a receive on the PowerPC guest can be seen and stopped (2026-08-14, `claude/034-slice-e3`)
 
 Slice E of plan 034, items G11b and G11a. The receive plumbing in
