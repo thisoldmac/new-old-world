@@ -57,24 +57,41 @@ static void current_answer(McpAnswer *out)
     }
 }
 
-static void draw_account(void)
+/* The account, walked once and rendered twice: a NULL writer draws it,
+   a writer describes it to the host's observation plane. This page above
+   all others must not describe a permission tier other than the one it
+   drew, so the two faces share the walk rather than each computing it. */
+static void emit_account(const WorkshopSceneWriter *writer)
 {
     McpAnswer answer;
     Str255 text;
     char line[160];
     int i;
 
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    MoveTo(g_r.answer_heading.left,
-           (short)(g_r.answer_heading.top + 12));
-    CopyCStringToPascal("What this Mac has said", text);
-    DrawString(text);
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText,
+                           "What this Mac has said", &g_r.answer_heading,
+                           true);
+    } else {
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+        MoveTo(g_r.answer_heading.left,
+               (short)(g_r.answer_heading.top + 12));
+        CopyCStringToPascal("What this Mac has said", text);
+        DrawString(text);
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    }
 
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     current_answer(&answer);
     for (i = 0; i < kMcpAnswerLines; ++i) {
         if (mcp_answer_line(&answer, i, line, (long)sizeof line) == 0) {
-            g_shown_lines[i][0] = '\0';   /* no line, not a blank one */
+            if (writer == NULL) {
+                g_shown_lines[i][0] = '\0';   /* no line, not a blank one */
+            }
+            continue;
+        }
+        if (writer != NULL) {
+            workshop_scene_add(writer, kWorkshopSceneStaticText, line,
+                               &g_r.answer_lines[i], true);
             continue;
         }
         MoveTo(g_r.answer_lines[i].left,
@@ -204,7 +221,12 @@ static void mcp_draw(void)
         return;
     }
     SetPortWindowPort(g_owner);
-    draw_account();
+    emit_account(NULL);
+}
+
+static void mcp_describe_scene(const WorkshopSceneWriter *writer)
+{
+    emit_account(writer);
 }
 
 static Boolean mcp_click(const EventRecord *event, Point local)
@@ -314,7 +336,7 @@ static const WorkshopModuleOps k_ops = {
     mcp_activate,
     mcp_idle,
     mcp_status_line,
-    NULL
+    mcp_describe_scene
 };
 
 const WorkshopModuleOps *mcp_module_ops(void)

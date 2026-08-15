@@ -34,31 +34,48 @@ static char g_shown_status[128];
 
 enum { kMirrorPollTicks = 60 };
 
-static void draw_line(const Rect *where, const char *text)
+/* Every hand-drawn line on this page goes through one walk, taken twice:
+   with a NULL writer it draws, with a writer it describes itself to the
+   host's observation plane. Two walks would be two chances to disagree,
+   and a page that describes something other than what it drew is worse
+   than one that describes nothing. */
+static void emit_line(const WorkshopSceneWriter *writer, const Rect *where,
+                      const char *text)
 {
     Str255 ptext;
 
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, text, where,
+                           true);
+        return;
+    }
     MoveTo(where->left, (short)(where->top + 11));
     CopyCStringToPascal(text, ptext);
     TruncString((short)(where->right - where->left), ptext, truncEnd);
     DrawString(ptext);
 }
 
-static void draw_row(const Rect *where, const char *label, const char *value)
+static void emit_row(const WorkshopSceneWriter *writer, const Rect *where,
+                     const char *label, const char *value)
 {
     Rect left = *where;
     Rect right = *where;
 
     left.right = (short)(where->left + kMirrorLabelWidth);
     right.left = left.right;
-    draw_line(&left, label);
-    draw_line(&right, value);
+    emit_line(writer, &left, label);
+    emit_line(writer, &right, value);
 }
 
-static void draw_heading(const Rect *where, const char *text)
+static void emit_heading(const WorkshopSceneWriter *writer, const Rect *where,
+                         const char *text)
 {
+    if (writer != NULL) {
+        emit_line(writer, where, text);
+        return;
+    }
     UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    draw_line(where, text);
+    emit_line(NULL, where, text);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
 }
 
@@ -182,19 +199,14 @@ static void mirror_layout(const Rect *body)
     }
 }
 
-static void mirror_draw(void)
+static void mirror_content(const WorkshopSceneWriter *writer)
 {
     char value[180];
     int i;
 
-    if (g_owner == NULL || !g_visible) {
-        return;
-    }
-    SetPortWindowPort(g_owner);
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    draw_heading(&g_layout.heading, "NOW Extension");
+    emit_heading(writer, &g_layout.heading, "NOW Extension");
     now_mirror_lifecycle_text(&g_facts, value, (long)sizeof value);
-    draw_row(&g_layout.lifecycle_rows[0], "Lifecycle", value);
+    emit_row(writer, &g_layout.lifecycle_rows[0], "Lifecycle", value);
     if (g_facts.lifecycle == kMirrorLifecycleActive
         || g_facts.lifecycle == kMirrorLifecycleDegraded
         || g_facts.lifecycle == kMirrorLifecycleWrongVersion) {
@@ -203,33 +215,53 @@ static void mirror_draw(void)
     } else {
         strcpy(value, "-");
     }
-    draw_row(&g_layout.lifecycle_rows[1], "Resident version", value);
+    emit_row(writer, &g_layout.lifecycle_rows[1], "Resident version", value);
     snprintf(value, sizeof value, "cap %lu, requested %lu, active %lu",
              g_facts.capabilities, g_facts.requested_bits,
              g_facts.active_bits);
-    draw_row(&g_layout.lifecycle_rows[2], "Plane bits", value);
+    emit_row(writer, &g_layout.lifecycle_rows[2], "Plane bits", value);
     snprintf(value, sizeof value, "%s",
              g_facts.has_build_identity ? "Exact build identity available"
                                         : "Build identity unavailable");
-    draw_row(&g_layout.lifecycle_rows[3], "Build", value);
+    emit_row(writer, &g_layout.lifecycle_rows[3], "Build", value);
     now_mirror_rest_text(&g_facts, value, (long)sizeof value);
-    draw_row(&g_layout.lifecycle_rows[4], "Installed", value);
+    emit_row(writer, &g_layout.lifecycle_rows[4], "Installed", value);
 
-    draw_heading(&g_layout.plane_heading, "Mirror planes");
+    emit_heading(writer, &g_layout.plane_heading, "Mirror planes");
     for (i = 0; i < kMirrorPlaneCount; ++i) {
         now_mirror_plane_value(&g_facts, (MirrorPlane)i, value,
                                (long)sizeof value);
-        draw_row(&g_layout.plane_rows[i],
+        emit_row(writer, &g_layout.plane_rows[i],
                  now_mirror_plane_name((MirrorPlane)i), value);
     }
-    draw_heading(&g_layout.policy_heading, "Observation policy");
-    draw_line(&g_layout.policy_status, g_policy_status);
-    strcpy(g_shown_policy_status, g_policy_status);
-    draw_line(&g_layout.show_status, g_show_status);
-    strcpy(g_shown_status, g_show_status);
-    for (i = 0; i < kMirrorNoteLines; ++i) {
-        draw_line(&g_layout.note[i], now_mirror_note(i));
+    emit_heading(writer, &g_layout.policy_heading, "Observation policy");
+    emit_line(writer, &g_layout.policy_status, g_policy_status);
+    emit_line(writer, &g_layout.show_status, g_show_status);
+    if (writer == NULL) {
+        /* Only the drawing pass may claim the strings are now on screen;
+           describing them changes no pixels, and marking them shown would
+           lose the invalidation `idle` owes them. */
+        strcpy(g_shown_policy_status, g_policy_status);
+        strcpy(g_shown_status, g_show_status);
     }
+    for (i = 0; i < kMirrorNoteLines; ++i) {
+        emit_line(writer, &g_layout.note[i], now_mirror_note(i));
+    }
+}
+
+static void mirror_draw(void)
+{
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    SetPortWindowPort(g_owner);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    mirror_content(NULL);
+}
+
+static void mirror_describe_scene(const WorkshopSceneWriter *writer)
+{
+    mirror_content(writer);
 }
 
 static Boolean mirror_click(const EventRecord *event, Point local)
@@ -371,7 +403,7 @@ static const WorkshopModuleOps k_ops = {
     mirror_activate,
     mirror_idle,
     mirror_status,
-    NULL
+    mirror_describe_scene
 };
 
 const WorkshopModuleOps *mirror_module_ops(void)

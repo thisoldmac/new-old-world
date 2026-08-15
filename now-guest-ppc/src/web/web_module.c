@@ -103,34 +103,54 @@ static void web_layout(const Rect *body)
     move_control(g_port, &g_r.port_button);
 }
 
-static void draw_line(const Rect *r, const char *line, TruncCode trunc)
+/* One line of the page, drawn or described. A NULL writer means "draw";
+   a writer means "describe". Both faces walk the same code so the
+   observation plane cannot drift away from the pixels - the drift is
+   what made sixteen pages look empty to the host. */
+static void web_line(const WorkshopSceneWriter *writer, const Rect *r,
+                     const char *line, TruncCode trunc)
 {
     Str255 text;
+
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line, r, true);
+        return;
+    }
     MoveTo(r->left, (short)(r->top + 12));
     CopyCStringToPascal(line, text);
     TruncString((short)(r->right - r->left), text, trunc);
     DrawString(text);
 }
 
-static void web_draw(void)
+static void web_content(const WorkshopSceneWriter *writer)
 {
     NowPrefs prefs;
     char line[220];
     char value[180];
 
-    if (g_owner == NULL || !g_visible) return;
     now_prefs_load(&prefs);
-    SetPortWindowPort(g_owner);
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     now_web_endpoint("127.0.0.1", prefs.web_proxy_port, value, sizeof value);
     snprintf(line, sizeof line, "HTTP proxy: %s", value);
-    draw_line(&g_r.endpoint, line, truncEnd);
-    draw_line(&g_r.direct_note,
-              "Set the browser's HTTP proxy to this loopback address. It is not exposed on the LAN.",
-              truncEnd);
-    draw_line(&g_r.relay_note,
-              "Pages travel over New Old World's existing connection. Choose browser and page compatibility on this Mac.",
-              truncEnd);
+    web_line(writer, &g_r.endpoint, line, truncEnd);
+    web_line(writer, &g_r.direct_note,
+             "Set the browser's HTTP proxy to this loopback address. It is not exposed on the LAN.",
+             truncEnd);
+    web_line(writer, &g_r.relay_note,
+             "Pages travel over New Old World's existing connection. Choose browser and page compatibility on this Mac.",
+             truncEnd);
+}
+
+static void web_draw(void)
+{
+    if (g_owner == NULL || !g_visible) return;
+    SetPortWindowPort(g_owner);
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    web_content(NULL);
+}
+
+static void web_describe_scene(const WorkshopSceneWriter *writer)
+{
+    web_content(writer);
 }
 
 static Boolean web_click(const EventRecord *event, Point local)
@@ -184,7 +204,7 @@ static void web_status(char *out, long cap)
 
 static const WorkshopModuleOps k_ops = {
     web_create, web_dispose, web_show, web_layout, web_draw, web_click,
-    NULL, web_activate, NULL, web_status, NULL
+    NULL, web_activate, NULL, web_status, web_describe_scene
 };
 
 const WorkshopModuleOps *web_module_ops(void) { return &k_ops; }
