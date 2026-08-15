@@ -32,6 +32,7 @@
 #include "net_probe.h"
 #include "nowlog.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 static WindowRef g_owner;
 static Rect g_body;
@@ -510,9 +511,26 @@ static void network_status_text(char *out, long cap)
     now_net_status_text(&g_facts, out, cap);
 }
 
+/* Edit>Copy: the TCP/IP and Ports cards - facts this Mac states about
+   itself and cannot otherwise get off it.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long network_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    network_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 const WorkshopModuleOps *network_module_ops(void)
 {
-    static const WorkshopModuleOps ops = {
+
+static const WorkshopModuleOps ops = {
         network_create,
         network_dispose,
         network_show,
@@ -527,7 +545,8 @@ const WorkshopModuleOps *network_module_ops(void)
            person presses Refresh. */
         NULL,
         network_status_text,
-        network_describe_scene
+        network_describe_scene,
+        network_copy_text
     };
 
     return &ops;

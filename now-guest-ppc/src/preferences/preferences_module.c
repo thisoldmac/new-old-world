@@ -287,7 +287,8 @@ static const WorkshopModuleOps k_ops = {
     prefs_activate,
     NULL,
     prefs_status_line,
-    prefs_describe_scene
+    prefs_describe_scene,
+    NULL   /* copy_text: two sentences about how to use the rail */
 };
 
 const WorkshopModuleOps *preferences_module_ops(void)

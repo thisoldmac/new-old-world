@@ -571,7 +571,8 @@ static const WorkshopModuleOps k_ops = {
     files_activate,
     files_idle,
     files_status_text,
-    files_describe_scene
+    files_describe_scene,
+    NULL   /* copy_text: the listing is a DataBrowser and a file is copied by dragging it, not by copying its row as text */
 };
 
 const WorkshopModuleOps *files_module_ops(void)

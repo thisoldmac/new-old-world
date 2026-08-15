@@ -29,4 +29,14 @@ void workshop_resized(void);
 void workshop_select_module(WorkshopModuleID module);
 void workshop_describe_scene(const WorkshopSceneWriter *writer);
 
+/* Edit>Copy. `workshop_can_copy` is what the menu greys on - a page that
+   has nothing worth handing someone says so by leaving `copy_text` NULL,
+   and a greyed item is the honest report of that. `workshop_copy` asks
+   the selected page for its text and puts it on the scrap, returning
+   false when there was nothing to copy (the scrap is then left exactly
+   as it was; clearing it would destroy someone else's clipboard to say
+   "no"). */
+Boolean workshop_can_copy(void);
+Boolean workshop_copy(void);
+
 #endif /* NOW_WORKSHOP_WINDOW_H */

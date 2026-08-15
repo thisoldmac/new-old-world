@@ -758,7 +758,8 @@ static const WorkshopModuleOps k_ops = {
     development_create, development_dispose, development_show,
     development_layout, development_draw, development_click, NULL,
     development_activate, development_idle, development_status,
-    development_describe_scene
+    development_describe_scene,
+    NULL   /* copy_text: the project detail would copy well; not wired yet */
 };
 
 const WorkshopModuleOps *development_module_ops(void) { return &k_ops; }

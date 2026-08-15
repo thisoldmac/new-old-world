@@ -39,7 +39,8 @@ enum {
     kFileSharingItem = 3,
     kFileQuitItem = 5,
     kEditMenuID = 142,
-    kEditPreferencesItem = 1,
+    kEditCopyItem = 1,
+    kEditPreferencesItem = 3,
     kWindowsMenuID = 140,
     kWindowsWorkshopItem = 1,
     kViewMenuID = 141
@@ -67,19 +68,33 @@ static const unsigned char k_sharing_menu_item[] = {
     16, 'F', 'i', 'l', 'e', ' ', 'S', 'h', 'a', 'r', 'i', 'n', 'g',
     '.', '.', '.', ' '
 };
-/* The Edit menu carries Preferences and nothing else, on purpose.
+/* The Edit menu carries Copy and Preferences, and that pairing is the
+   whole editing model this application has.
 
-   Cut/Copy/Paste are ABSENT rather than present-and-dead. This window
-   has no keyboard-focus machinery - workshop_window.c says why, and the
-   text fields on the Chat and Console pages are classic TextEdit that
-   each own their own TEHandle - so there is no "the focused field" for
-   an Edit command to act on. Wiring them properly means a new module op
-   that hands the Workshop the page's current TEHandle; until that
-   exists, four greyed items would advertise an editing model this
-   application does not have. Preferences is where the era's HIG puts
-   it, so the menu is where it goes. */
+   It used to carry Preferences alone, and the reason written here was
+   sound: this window has no keyboard-focus machinery (workshop_window.c
+   says why), the Chat and Console text fields are classic TextEdit each
+   owning its own TEHandle, so there was no "the focused field" for an
+   Edit command to act on, and four greyed items would have advertised an
+   editing model that did not exist.
+
+   Copy arrives by going around that problem rather than solving it. The
+   MODULE answers - `WorkshopModuleOps.copy_text`, "what is selected on
+   me, as plain text" - so there is no focused field to find and no
+   TEHandle to hand over. For most pages the honest answer is the whole
+   page as text, which is what a person reaching for Copy on a page of
+   facts actually wants. A page that has nothing worth handing someone
+   leaves the op NULL and the item greys, which is a true report rather
+   than a command that quietly does nothing.
+
+   Cut and Paste stay absent: they need a writable selection, which is
+   the focus problem again and not one Copy had to solve. Preferences is
+   where the era's HIG puts it, so it stays. */
 static const unsigned char k_edit_menu_title[] = {
     4, 'E', 'd', 'i', 't'
+};
+static const unsigned char k_edit_copy_item[] = {
+    6, 'C', 'o', 'p', 'y', '/', 'C'
 };
 static const unsigned char k_edit_preferences_item[] = {
     14, 'P', 'r', 'e', 'f', 'e', 'r', 'e', 'n', 'c', 'e', 's',
@@ -178,6 +193,8 @@ static void create_menu_bar(void)
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
+    AppendMenu(edit_menu, k_edit_copy_item);
+    AppendMenu(edit_menu, k_separator_menu_item);
     AppendMenu(edit_menu, k_edit_preferences_item);
     InsertMenu(edit_menu, 0);
     /* View selects a Workshop module (the item number IS the module ID);
@@ -302,6 +319,25 @@ static void close_front_window(void)
     }
 }
 
+/* Run before the Menu Manager tracks anything - both a click in the bar
+   and a Command-key, because MenuKey resolves an item without ever
+   drawing the menu and a stale enable state would let Copy fire on a
+   page that cannot answer. Only the items whose availability actually
+   changes are touched; everything else is unconditionally live. */
+static void adjust_menus(void)
+{
+    MenuRef edit_menu = GetMenuHandle(kEditMenuID);
+
+    if (edit_menu == NULL) {
+        return;
+    }
+    if (workshop_can_copy()) {
+        EnableMenuItem(edit_menu, kEditCopyItem);
+    } else {
+        DisableMenuItem(edit_menu, kEditCopyItem);
+    }
+}
+
 static void handle_menu_choice(long choice)
 {
     if (HiWord(choice) == kAppleMenuID) {
@@ -328,7 +364,9 @@ static void handle_menu_choice(long choice)
             g_running = false;
         }
     } else if (HiWord(choice) == kEditMenuID) {
-        if (LoWord(choice) == kEditPreferencesItem) {
+        if (LoWord(choice) == kEditCopyItem) {
+            (void)workshop_copy();   /* greyed unless the page can answer */
+        } else if (LoWord(choice) == kEditPreferencesItem) {
             if (workshop_open()) {
                 workshop_select_module(kWorkshopPreferences);
             }
@@ -388,7 +426,10 @@ static void handle_mouse_down(const EventRecord *event)
     short part = FindWindow(event->where, &window);
 
     if (part == inMenuBar) {
-        long choice = MenuSelect(event->where);
+        long choice;
+
+        adjust_menus();
+        choice = MenuSelect(event->where);
         handle_menu_choice(choice);
         HiliteMenu(0);
         return;
@@ -454,7 +495,10 @@ static void handle_key_down(const EventRecord *event)
     char key = (char)(event->message & charCodeMask);
 
     if ((event->modifiers & cmdKey) != 0) {
-        long choice = MenuKey(key);
+        long choice;
+
+        adjust_menus();
+        choice = MenuKey(key);
         handle_menu_choice(choice);
         HiliteMenu(0);
     } else if (workshop_is(front_document_window())) {

@@ -663,6 +663,72 @@ void workshop_resized(void)
     InvalWindowRect(g_window, &content);
 }
 
+/* Edit>Copy's two halves. The MENU asks the first, every time it is
+   pulled down; the item is greyed when the answer is no, which is this
+   application saying plainly that this page has nothing worth handing
+   someone rather than offering a command that quietly does nothing.
+
+   The buffer is the WINDOW's, not the page's: a page answers into what
+   it is given (workshop_module.h states the contract), so no page has to
+   own a copy buffer and no page decides how much memory copying costs.
+   8 KB is deliberate - a console scrollback or a census detail is a few
+   hundred lines of short lines, and the cap truncating a very long page
+   is a better failure than a page-sized allocation on a 32 MB machine. */
+enum { kWorkshopCopyCap = 8192 };
+
+Boolean workshop_can_copy(void)
+{
+    WorkshopModuleInstance *instance = selected_instance();
+    const WorkshopModuleOps *ops = selected_ops();
+
+    return (Boolean)(g_window != NULL && instance != NULL && ops != NULL
+                     && instance->created && ops->copy_text != NULL);
+}
+
+Boolean workshop_copy(void)
+{
+    const WorkshopModuleOps *ops = selected_ops();
+    Handle text;
+    long len;
+    OSStatus err;
+
+    if (!workshop_can_copy()) {
+        return false;
+    }
+    text = NewHandle(kWorkshopCopyCap);
+    if (text == NULL) {
+        return false;
+    }
+    HLock(text);
+    len = ops->copy_text(*text, kWorkshopCopyCap);
+    HUnlock(text);
+    if (len <= 0) {
+        /* Nothing to copy. The scrap is left exactly as it was: clearing
+           it to say "no" would destroy whatever else a person had on the
+           clipboard, which is a worse answer than silence. */
+        DisposeHandle(text);
+        return false;
+    }
+    if (len > kWorkshopCopyCap - 1) {
+        len = kWorkshopCopyCap - 1;   /* a page that ignored the cap */
+    }
+    SetHandleSize(text, len);
+    err = ClearCurrentScrap();
+    if (err == noErr) {
+        ScrapRef scrap = NULL;
+
+        err = GetCurrentScrap(&scrap);
+        if (err == noErr) {
+            HLock(text);
+            err = PutScrapFlavor(scrap, kScrapFlavorTypeText,
+                                 kScrapFlavorMaskNone, len, *text);
+            HUnlock(text);
+        }
+    }
+    DisposeHandle(text);
+    return (Boolean)(err == noErr);
+}
+
 void workshop_describe_scene(const WorkshopSceneWriter *writer)
 {
     WorkshopModuleInstance *instance = selected_instance();

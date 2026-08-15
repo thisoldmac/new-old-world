@@ -30,6 +30,28 @@ typedef struct WorkshopModuleOps {
     /* Semantic content the module draws by hand. Optional; child controls
        remain Control Manager facts and must not be repeated here. */
     void (*describe_scene)(const WorkshopSceneWriter *writer);
+    /* "What is selected on me, as plain text." Answers Edit>Copy, which
+       is greyed on a page that leaves this NULL - honest, because a page
+       with nothing worth handing someone should not pretend otherwise.
+
+       The MODULE answers, not a focused field: this window has no
+       keyboard-focus machinery, so "the selection" is whatever the page
+       itself decides is worth copying, which for most pages is the whole
+       page as text.
+
+       Contract: write at most `cap - 1` bytes plus a terminator into the
+       CALLER's buffer and return the length written (0 = nothing to
+       copy, which the Workshop treats as a refusal and leaves the scrap
+       alone). The buffer is the caller's so a page never has to own one,
+       and length-capped so a page with a long scrollback cannot decide
+       how much memory this costs.
+
+       Deliberate: that signature is also a wire payload. A future
+       cross-device copy - this Mac's selection landing on the other
+       Mac's clipboard - reads exactly this, so a page implementing it
+       for the local scrap has already served the wire half. Text only;
+       no PICT, no styles, no flavor negotiation. */
+    long (*copy_text)(char *out, long cap);
 } WorkshopModuleOps;
 
 typedef enum {

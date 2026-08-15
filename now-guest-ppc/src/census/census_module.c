@@ -7,6 +7,7 @@
 #include "pump.h"
 #include "wire.h"                 /* now_wire_pump, for the divider drag loop */
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* The Hardware census page. A hand-drawn probe rail on the left - the
    Workshop sidebar's own two-line idiom, because a probe registry is
@@ -1159,6 +1160,22 @@ static void census_describe_scene(const WorkshopSceneWriter *writer)
     }
 }
 
+/* Edit>Copy: the probe rail and the detail pane - a hardware census is exactly
+       the thing someone pastes into a mail or a bug report.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long census_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    census_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     census_create,
     census_dispose,
@@ -1170,7 +1187,8 @@ static const WorkshopModuleOps k_ops = {
     census_activate,
     census_idle,
     census_status_text,
-    census_describe_scene
+    census_describe_scene,
+    census_copy_text
 };
 
 const WorkshopModuleOps *census_module_ops(void)

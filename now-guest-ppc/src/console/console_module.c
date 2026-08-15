@@ -9,6 +9,7 @@
 #include "pump.h"
 #include "wire.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* The page owns pixels and the input line; every remembered thing -
    scrollback, history, the command table - lives in console_model.c, so
@@ -590,6 +591,22 @@ static void console_describe_scene(const WorkshopSceneWriter *writer)
                        &prompt_rect, true);
 }
 
+/* Edit>Copy: the scrollback and the prompt line - the whole page, which for a
+       terminal is what "copy" has always meant.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long console_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    console_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     console_create,
     console_dispose,
@@ -601,7 +618,8 @@ static const WorkshopModuleOps k_ops = {
     console_activate,
     console_idle,
     console_status_text,
-    console_describe_scene
+    console_describe_scene,
+    console_copy_text
 };
 
 const WorkshopModuleOps *console_module_ops(void)

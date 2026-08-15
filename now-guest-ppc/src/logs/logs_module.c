@@ -599,7 +599,8 @@ static const WorkshopModuleOps k_ops = {
     logs_activate,
     logs_idle,
     logs_status_text,
-    logs_describe_scene
+    logs_describe_scene,
+    NULL   /* copy_text: a log would copy well; the page already writes to disk, which is the route people use */
 };
 
 const WorkshopModuleOps *logs_module_ops(void)

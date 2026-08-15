@@ -47,6 +47,7 @@ Every op may be NULL except `create`. What the Workshop guarantees:
 | `idle()` | **every event-loop pass** | be nearly free (see below) |
 | `status_text(out, cap)` | placard repaint | one line, or leave empty |
 | `describe_scene(writer)` | host observation | **required if `draw()` draws text** — emit the same strings and rects it does |
+| `copy_text(out, cap)` | Edit▸Copy | write ≤ `cap-1` bytes into the caller's buffer, return the length; NULL greys the item |
 
 `describe_scene` is the only route by which anything a page draws by hand
 reaches the host's observation plane. Controls do not need it: every one
@@ -71,6 +72,17 @@ draw-only side effects — repaint caches, "this string is now shown"
 bookkeeping — behind `if (writer == NULL)`: describing changes no pixels,
 so marking a string shown would swallow an invalidation `idle` still owes
 it.
+
+`copy_text` is Edit▸Copy, and on a page that already describes itself it
+is three lines: point that same walk at a buffer instead of at the host
+with `workshop_scene_text.h`. What lands on the clipboard is then by
+construction what the page describes, which is by construction what it
+drew. A page that has nothing worth handing someone leaves the op NULL
+and the menu item greys — an honest report, not a command that quietly
+does nothing. The signature (caller's buffer, length-capped, plain text)
+is deliberately also a **wire payload**: a future cross-device copy reads
+exactly this, so a page serving the local scrap has already served the
+wire half.
 
 Modules are created **lazily** and then hidden, never disposed, so a
 page keeps its state — scrollback, listing, settings — for the whole

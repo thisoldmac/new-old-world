@@ -1720,7 +1720,8 @@ static const WorkshopModuleOps k_ops = {
     software_activate,
     software_idle,
     software_status_text,
-    software_describe_scene
+    software_describe_scene,
+    NULL   /* copy_text: the detail column would copy well; not wired yet */
 };
 
 const WorkshopModuleOps *software_module_ops(void)

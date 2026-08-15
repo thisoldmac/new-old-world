@@ -738,6 +738,12 @@ run_py now-guest-ppc software_size_source_test.py
 run_c now-guest-ppc sw_vers_parse_test.c     ""  src/software/sw_vers_parse.c
 run_c now-guest-ppc workshop_layout_test.c   ""  src/workshop/workshop_layout.c
 run_c now-guest-ppc workshop_order_test.c    ""  src/workshop/workshop_order.c
+# Edit>Copy in full: a page's copy_text is its own describe_scene pointed
+# at this sink, so what a person gets on the clipboard is decided here
+# once for every page - which runs are words, how two runs on one line
+# join, and what the cap does to a long scrollback.
+run_c now-guest-ppc workshop_scene_text_test.c "" \
+      src/workshop/workshop_scene_text.c
 run_c now-guest-ppc workshop_construct_test.c "" \
       src/workshop/workshop_construct.c
 run_py now-guest-ppc workshop_registry_source_test.py

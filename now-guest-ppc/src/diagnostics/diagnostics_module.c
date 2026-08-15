@@ -10,6 +10,7 @@
 #include "vprobe.h"
 #include "wire.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* The Diagnostics page: what this Mac can measure about itself, run from
    the machine itself rather than only from the wire.
@@ -730,6 +731,22 @@ static void diagnostics_status_text(char *out, long cap)
     diag_status_text(states, out, cap);
 }
 
+/* Edit>Copy: every instrument card, refusal sentences included - a measurement
+       is only worth taking if it can leave this machine.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long diagnostics_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    diagnostics_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     diagnostics_create,
     diagnostics_dispose,
@@ -744,7 +761,8 @@ static const WorkshopModuleOps k_ops = {
        press - so the page costs the event loop nothing between clicks. */
     NULL,
     diagnostics_status_text,
-    diagnostics_describe_scene
+    diagnostics_describe_scene,
+    diagnostics_copy_text
 };
 
 const WorkshopModuleOps *diagnostics_module_ops(void)

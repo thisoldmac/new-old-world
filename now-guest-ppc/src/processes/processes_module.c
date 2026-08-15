@@ -1479,7 +1479,8 @@ static const WorkshopModuleOps k_ops = {
     procs_activate,
     procs_idle,
     procs_status_text,
-    procs_describe_scene
+    procs_describe_scene,
+    NULL   /* copy_text: the detail column would copy well; not wired yet */
 };
 
 const WorkshopModuleOps *processes_module_ops(void)

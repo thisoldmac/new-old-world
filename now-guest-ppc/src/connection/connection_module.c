@@ -12,6 +12,7 @@
 #include "confirm.h"
 #include "update_model.h"
 #include "update_status.h"
+#include "workshop_scene_text.h"
 
 /* The page has two halves: an "Other Mac" group that SHOWS the saved
    target (address and port drawn read-only, changed through the Edit
@@ -940,6 +941,22 @@ static void conn_status_text(char *out, long cap)
     }
 }
 
+/* Edit>Copy: address, port and the at-a-glance rows - the facts a person is
+       asked for when the link will not come up.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long conn_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    conn_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     conn_create,
     conn_dispose,
@@ -951,7 +968,8 @@ static const WorkshopModuleOps k_ops = {
     conn_activate,
     conn_idle,
     conn_status_text,
-    conn_describe_scene
+    conn_describe_scene,
+    conn_copy_text
 };
 
 const WorkshopModuleOps *connection_module_ops(void)

@@ -1227,7 +1227,8 @@ const WorkshopModuleOps *chat_module_ops(void)
         chat_activate,
         chat_idle,
         chat_status_text,
-        chat_describe_scene
+        chat_describe_scene,
+        NULL   /* copy_text: a transcript would copy well; not wired yet */
     };
 
     return &k_ops;

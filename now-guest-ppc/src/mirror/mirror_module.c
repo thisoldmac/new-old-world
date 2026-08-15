@@ -403,7 +403,8 @@ static const WorkshopModuleOps k_ops = {
     mirror_activate,
     mirror_idle,
     mirror_status,
-    mirror_describe_scene
+    mirror_describe_scene,
+    NULL   /* copy_text: the plane facts would copy well; not wired yet */
 };
 
 const WorkshopModuleOps *mirror_module_ops(void)
