@@ -99,7 +99,11 @@ typedef struct {
    24 shorts so this layout never has to grow again for it. */
 typedef struct {
     PrefsRecordV15 v15;               /* format = 19 */
-    short sidebar_compact;
+    /* Was the sidebar's density, retired when the rail became
+       compact-only. The SLOT stays: this layout is what every format >=
+       19 file on disk is, and reclaiming a field would renumber every
+       byte after it. Written as zero, never read. */
+    short sidebar_density_retired;
     short sidebar_order[kNowSidebarOrderMax];
 } PrefsRecordV19;
 
@@ -250,11 +254,10 @@ static void set_defaults(NowPrefs *prefs)
     prefs->agent_access = 2;
     prefs->workshop_module = 1;       /* Screenshots */
     SetRect(&prefs->workshop_rect, 0, 0, 0, 0);
-    /* An all-zero order means "no opinion": the sidebar fills it from the
-       enum, which is the arrangement every existing machine already has.
-       Rich is likewise what is already on screen, so a file that predates
-       the field changes nothing about how the rail looks. */
-    prefs->sidebar_compact = false;
+    /* An all-zero order means "no opinion": the sidebar fills it from its
+       own curated default, so a file that predates the field - or one
+       saved before the default existed - gets the curation rather than a
+       half-remembered arrangement. */
     prefs->sidebar_collapsed = false;
     /* Passive structure is the useful safe baseline. The other three are
        opt-in while the PB1400 Finder crash is isolated: none may spring to
@@ -515,7 +518,6 @@ void now_prefs_load(NowPrefs *prefs)
             /* Stored raw, sanitised by the sidebar: this file does not
                know which ids are nav rows, and a half-validated order
                would be a second opinion about the same list. */
-            prefs->sidebar_compact = v19.sidebar_compact != 0;
             memcpy(prefs->sidebar_order, v19.sidebar_order,
                    sizeof prefs->sidebar_order);
         }
@@ -644,7 +646,7 @@ OSErr now_prefs_save(const NowPrefs *prefs)
     v15.agent_access = prefs->agent_access;
     memset(&v19, 0, sizeof v19);
     v19.v15 = v15;
-    v19.sidebar_compact = prefs->sidebar_compact ? 1 : 0;
+    v19.sidebar_density_retired = 0;
     memcpy(v19.sidebar_order, prefs->sidebar_order,
            sizeof v19.sidebar_order);
     memset(&v20, 0, sizeof v20);

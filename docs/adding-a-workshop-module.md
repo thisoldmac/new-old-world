@@ -94,8 +94,12 @@ not an enum insertion disguised as a small module edit.
 `nav_rows[i]` is the i-th visible slot, not the i-th module. The rail maps a
 slot through the person's saved order and scroll offset, and `row_rect()`
 returns `NULL` when that row is off screen. Every caller must accept that as
-ordinary state. The definition's subtitle is what compact density drops, so
-the title must still identify the page by itself.
+ordinary state. Every rail row is one line — the title — so the title must
+identify the page by itself; the subtitle is what the hover tag shows when
+the pointer rests on the row, and a non-core `tier` also draws a short
+right-aligned mark that the title truncates around. A new page joins the
+rail's curated default order in `now-guest-ppc/src/workshop/workshop_order.c`,
+which carries the adjacency argument in prose beside the table.
 
 Add a 16×16 `ics#` in `now-guest-ppc/resources/app.r` for a new sidebar icon.
 **Do not** plot it with `PlotIconID`: the System file can outrank your

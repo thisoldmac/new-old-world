@@ -98,10 +98,11 @@ typedef struct {
        nav range; only the pinned ids at the foot have ever been
        renumbered, and those are not in here. */
     short sidebar_order[kNowSidebarOrderMax];
-    Boolean sidebar_compact;  /* one line per row instead of icon + two */
-    /* Collapsed to icons only. Separate from the density rather than a
-       third value of it: collapsing and then expanding must give back
-       the density the person chose, not forget it. */
+    /* Collapsed to icons only - the rail's one shape choice. The density
+       that used to sit beside it is gone (the rail is one line per row
+       everywhere); its slot in the format-19 record is kept and written
+       as zero rather than reclaimed, which is the accretive rule the rest
+       of this file follows. */
     Boolean sidebar_collapsed;
 
     /* Mirror observation policy, owned by the Mirror page and enforced at

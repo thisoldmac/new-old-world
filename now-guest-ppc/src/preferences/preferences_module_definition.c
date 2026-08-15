@@ -8,8 +8,8 @@ const WorkshopModuleDefinition *preferences_module_definition(void)
         kWorkshopPreferences,
         "settings",
         "Preferences",
-        "How this window behaves. Rearrange the rail by Option-dragging a "
-            "row; everything here is remembered between launches.",
+        "How this window behaves. Rearrange the rail by dragging a row; "
+            "everything here is remembered between launches.",
         "Preferences has not moved in yet.",
         "How this window behaves",
         142,
