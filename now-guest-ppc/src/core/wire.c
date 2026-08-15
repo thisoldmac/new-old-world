@@ -6226,7 +6226,15 @@ static void serve_continuity_grab(const char *request)
         now_log(kLogWarn, "mirror",
                 "grab refused #%ld epoch=%lu/%lu gen=%lu: %s",
                 id, epoch, live, generation, code);
-        file_refuse(id, code, "the drag no longer names what it was given");
+        /* grant-expired is the one refusal that is about TIME rather than
+           about what the request names: the epoch ended under a gesture
+           still in flight, which is ordinary, and the window for finishing
+           it closed. Saying "no longer names what it was given" there
+           would send a person looking at their selection. */
+        file_refuse(id, code,
+                    verdict == kNowGrabGrantExpired
+                        ? "the drag was held too long after Continuity ended"
+                        : "the drag no longer names what it was given");
         return;
     }
     if (now_json_find_string(request, "container", container_arg,

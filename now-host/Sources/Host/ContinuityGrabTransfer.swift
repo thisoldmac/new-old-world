@@ -34,10 +34,20 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
             case .busy:
                 return "Another file is already crossing from the classic Mac."
             case .wire(let code, let message):
-                return code == "stale-selection"
-                    ? "The selection on the classic Mac changed before the "
-                        + "file could be copied."
-                    : message
+                switch code {
+                case "stale-selection":
+                    return "The selection on the classic Mac changed before "
+                        + "the file could be copied."
+                case "grant-expired":
+                    /* The one refusal that is about TIME. The drag was
+                       held past the window the classic Mac keeps open
+                       after Continuity ends, which is a thing a person can
+                       simply do again. */
+                    return "The drag was held too long after Continuity "
+                        + "ended. Try dragging it across again."
+                default:
+                    return message
+                }
             }
         }
     }

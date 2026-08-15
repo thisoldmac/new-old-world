@@ -176,4 +176,57 @@ if "now_pump_ae_idle()" not in send:
         "whole bounded wait. pump.h's rule: any new nested loop pumps."
     )
 
+# --- 6. the grant outlives the epoch, and only the epoch ----------------
+#
+# The arithmetic is watched by now_continuity_selection_test.c on the host
+# cc. What cannot be watched there is the WIRING: which of the poll's exits
+# hands the grant to the hold, and which of them drops it. Both epoch exits
+# must hold; the disconnect must not.
+grab = function_body(
+    POLL_C,
+    "int now_continuity_selection_grab(unsigned long live_epoch,",
+    "continuity_selection.c",
+)
+forget = function_body(
+    POLL_C, "void now_continuity_selection_forget(void)",
+    "continuity_selection.c",
+)
+
+if poll.count("hold_grant_for_gesture") != 2:
+    raise SystemExit(
+        "the selection poll no longer hands the ending epoch's grant to "
+        "the hold on BOTH of its epoch exits (live_epoch == 0, and a "
+        "changed epoch). Crossing back ends the epoch by design, so the "
+        "exit nobody covered is a held drag refused bad-epoch."
+    )
+
+if "now_continuity_grant_release" not in forget:
+    raise SystemExit(
+        "now_continuity_selection_forget no longer releases the grant. It "
+        "is called when the LINK drops, and consent is given to one host "
+        "over one connection - a grant surviving a reconnect would let "
+        "the next session collect a drag the previous one set up."
+    )
+
+if "release_grant_for_new_epoch" not in poll:
+    raise SystemExit(
+        "nothing releases the held grant when a new epoch publishes its "
+        "own selection, so the clock is the only backstop and a grant "
+        "outlives the gesture it was held for."
+    )
+
+if "now_continuity_grab_resolve" not in grab:
+    raise SystemExit(
+        "the grab no longer consults the held grant, so a drag released "
+        "after the crossing that ended its epoch is refused bad-epoch - "
+        "the round-2 metal symptom this rule exists to answer."
+    )
+
+if "grant honored after epoch" not in POLL_C or "grant expired" not in POLL_C:
+    raise SystemExit(
+        "the two grant outcomes are no longer named in the log. A grab "
+        "served after its epoch ended and one refused for arriving late "
+        "are the only evidence this rule is working or not."
+    )
+
 print("continuity selection gates ok")

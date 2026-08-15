@@ -2611,8 +2611,21 @@ components:
           - It is bound to ONE generation. The guest serves the item its
             own cache holds under that number and nothing else; a
             generation it does not hold is refused, not resolved.
-          - It expires with the epoch. Continuity ending revokes every
-            grant, so a grab cannot outlive the session that consented.
+          - It expires with the epoch, plus ONE in-flight gesture. The
+            crossing that carries a file to the host is also what ends host
+            ownership, so the drag a person is still holding always names
+            an epoch that is already over — refusing it bad-epoch would
+            refuse every guest→host drag there is (measured on metal
+            2026-08-14). The guest therefore keeps the LAST generation of
+            an ending epoch grantable for a bounded window: 30 seconds, or
+            until the next epoch publishes a selection of its own,
+            whichever comes first. Nothing else about the grant widens —
+            same one generation, same item, no path — and a request
+            arriving after that window is refused `grant-expired` rather
+            than served. Every other way an epoch can end (disarm, lease
+            expiry, guest input) holds the same grant for the same window;
+            the LINK dropping does not, because consent is given to one
+            host over one connection.
           - It names no path. The host cannot ASK for an arbitrary file
             here — it can only ask for the one the guest already told it
             about, so the reachable set is whatever a human selected.
@@ -4039,7 +4052,8 @@ components:
         code:
           enum: [busy, exists, bad-path, not-found, io-error, too-big,
                  changed, bad-source, project-file-unavailable,
-                 bad-epoch, stale-selection, no-selection, folder-not-yet]
+                 bad-epoch, stale-selection, no-selection, folder-not-yet,
+                 grant-expired]
           description: >
             The first seven are the file lane's own answers. The rest name
             a REQUEST SHAPE the responder would not resolve, and they are
@@ -4055,6 +4069,14 @@ components:
             selection stub carries isFolder, so a host can see a folder
             coming, and a folder grab is refused by name rather than
             served as an empty file.
+
+            grant-expired is bad-epoch's other half, and the two are kept
+            apart deliberately: bad-epoch means the request names an epoch
+            this guest never had or never finished, while grant-expired
+            means it named the right one and arrived after the in-flight
+            window closed. A person whose drag took too long and a host
+            asking for something that was never granted are different
+            sentences, and only one of them is worth trying again.
         reason: { type: string }
     FileBegin:
       type: object

@@ -124,6 +124,89 @@ int main(void)
     (void)now_continuity_stub_observe(&table, &folder);
     CHECK(now_continuity_grab_check(&table, 9, 9, 1) == kNowGrabFolderNotYet);
 
+    /* --- the grant that outlives its epoch ---------------------------- */
+
+    /* The gesture ENDS the epoch it started in: crossing back to the host
+       is what ends host ownership. Measured on metal 2026-08-14 as
+       "selection dropped: the Continuity epoch ended" firing before any
+       drop could have happened. */
+    {
+        NowContinuityGrantHold hold;
+        const NowContinuityStubItem *serve;
+        int after;
+
+        now_continuity_grant_release(&hold);
+        now_continuity_stub_reset(&table, 11);
+        (void)now_continuity_stub_observe(&table, &a);      /* generation 1 */
+        CHECK(now_continuity_grab_resolve(&table, &hold, 11, 11, 1, 1000,
+                                          &serve, &after) == kNowGrabOK);
+        CHECK(after == 0 && serve == &table.item);
+
+        /* The epoch ends under the held gesture. */
+        now_continuity_grant_hold(&hold, &table, 1000);
+        now_continuity_stub_reset(&table, 0);
+        CHECK(hold.epoch == 11 && hold.generation == 1);
+
+        /* THE MUTATION THIS BLOCK EXISTS FOR: without the hold this is
+           bad-epoch, and the drag a person is still holding is refused. */
+        CHECK(now_continuity_grab_resolve(&table, &hold, 0, 11, 1, 1200,
+                                          &serve, &after) == kNowGrabOK);
+        CHECK(after == 1 && serve == &hold.item);
+        /* Still true once the NEXT epoch is live but has published
+           nothing: the gesture is older than that epoch. */
+        now_continuity_stub_reset(&table, 12);
+        CHECK(now_continuity_grab_resolve(&table, &hold, 12, 11, 1, 1200,
+                                          &serve, &after) == kNowGrabOK);
+        CHECK(after == 1);
+
+        /* It is ONE generation of ONE ended epoch, and nothing else. */
+        CHECK(now_continuity_grab_resolve(&table, &hold, 0, 11, 2, 1200,
+                                          &serve, &after) == kNowGrabBadEpoch);
+        CHECK(now_continuity_grab_resolve(&table, &hold, 0, 10, 1, 1200,
+                                          &serve, &after) == kNowGrabBadEpoch);
+        CHECK(serve == (const NowContinuityStubItem *)0 && after == 0);
+
+        /* And it closes by the clock, named as its own refusal rather than
+           as bad-epoch: the request had the right shape and arrived late. */
+        CHECK(now_continuity_grab_resolve(
+                  &table, &hold, 0, 11, 1,
+                  1000 + kNowContinuityGrantTicks + 1, &serve, &after)
+              == kNowGrabGrantExpired);
+        CHECK(now_continuity_grab_resolve(
+                  &table, &hold, 0, 11, 1, 1000 + kNowContinuityGrantTicks,
+                  &serve, &after) == kNowGrabOK);
+
+        /* A stale generation under a LIVE epoch stays stale-selection —
+           the hold must not launder it. */
+        (void)now_continuity_stub_observe(&table, &edited);  /* gen 1 of 12 */
+        CHECK(now_continuity_grab_resolve(&table, &hold, 12, 12, 9, 1200,
+                                          &serve, &after)
+              == kNowGrabStaleSelection);
+
+        /* A folder held across the boundary is still refused by name. */
+        {
+            NowContinuityStubTable folders;
+            NowContinuityGrantHold folder_hold;
+
+            now_continuity_grant_release(&folder_hold);
+            now_continuity_stub_reset(&folders, 13);
+            (void)now_continuity_stub_observe(&folders, &folder);
+            now_continuity_grant_hold(&folder_hold, &folders, 1000);
+            now_continuity_stub_reset(&folders, 0);
+            CHECK(now_continuity_grab_resolve(&folders, &folder_hold, 0, 13,
+                                              1, 1100, &serve, &after)
+                  == kNowGrabFolderNotYet);
+        }
+
+        /* An epoch that ended holding nothing holds nothing, and it must
+           overwrite whatever the previous one left. */
+        now_continuity_stub_reset(&table, 14);
+        now_continuity_grant_hold(&hold, &table, 2000);
+        CHECK(hold.epoch == 0);
+        CHECK(now_continuity_grab_resolve(&table, &hold, 0, 11, 1, 2000,
+                                          &serve, &after) == kNowGrabBadEpoch);
+    }
+
     /* Every refusal has a contract code and success has none. */
     CHECK(now_continuity_grab_code(kNowGrabOK) == (const char *)0);
     CHECK(strcmp(now_continuity_grab_code(kNowGrabBadEpoch),
@@ -134,6 +217,8 @@ int main(void)
                  "no-selection") == 0);
     CHECK(strcmp(now_continuity_grab_code(kNowGrabFolderNotYet),
                  "folder-not-yet") == 0);
+    CHECK(strcmp(now_continuity_grab_code(kNowGrabGrantExpired),
+                 "grant-expired") == 0);
 
     printf("continuity selection stub ok\n");
     return 0;
