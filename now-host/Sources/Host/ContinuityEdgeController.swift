@@ -226,7 +226,23 @@ final class ContinuityEdgeController: ObservableObject {
         let item: HostFileDragItem
         let returnPoint: CGPoint
         var waitedForRealEvent = false
+        var suspectEchoes = 0
     }
+
+    /// The hardware's own answer to "is the primary button physically
+    /// held", read at the HID level. Injectable because no test has a
+    /// mouse behind it.
+    ///
+    /// It exists because every OTHER source of that fact is downstream of
+    /// this app's own consuming tap: a swallowed `leftMouseDown` never
+    /// reaches the session's event state, so `NSEvent.pressedMouseButtons`
+    /// and `CGEventSource.buttonState(.combinedSessionState)` both report
+    /// the button UP for the whole captured gesture — this app poisons the
+    /// very field it then reads. Only `.hidSystemState` sits beneath the
+    /// tap (metal, 2026-08-15 02:48: four crossings abandoned in the same
+    /// second as the cross, each on the first post-teardown sample).
+    var physicalPrimaryButtonHeld: () -> Bool =
+        AppKitContinuityPointerEnvironment.primaryButtonIsHeld
 
     init(layout: ContinuityDisplayLayout,
          driver: ContinuityEdgeDriving,
@@ -717,11 +733,43 @@ final class ContinuityEdgeController: ObservableObject {
                                   sourceEvent: NSEvent?) -> Bool {
         guard var waiting = pendingReturnDrag else { return false }
         if !sample.buttonsDown || sample.kind == .primaryUp {
+            /* The sample's word against the hardware's. A `primaryUp` is
+               believed outright — taken as the release goes by, the HID
+               read can still say held, and honouring it would keep a press
+               alive past its own end. A mere "buttons up" on a motion
+               sample is not: the field is derived from event state this
+               app's own tap has been starving all pass, and believing the
+               first post-teardown echo abandoned four metal handoffs in
+               the same second as their crossings (2026-08-15 02:48). */
+            let physicallyHeld = physicalPrimaryButtonHeld()
+            let eventName = sourceEvent
+                .map { "type \($0.type.rawValue)" } ?? "none"
+            if physicallyHeld, sample.kind != .primaryUp {
+                waiting.suspectEchoes += 1
+                if waiting.suspectEchoes == 1 {
+                    /* Once, with everything the decision read — the round
+                       this rule comes from was undiagnosable because the
+                       abandon line named its conclusion and not its
+                       evidence. */
+                    audit(.warn, "a sample claims the button is up while it "
+                        + "is physically held; treating it as an echo of "
+                        + "this app's own tap, not a release: "
+                        + "kind=\(sample.kind), "
+                        + "sampleButtonsDown=\(sample.buttonsDown ? 1 : 0), "
+                        + "sourceEvent=\(eventName), hidPrimaryHeld=1")
+                }
+                pendingReturnDrag = waiting
+                return true
+            }
             pendingReturnDrag = nil
             setFileEdgeCatching(false)
             audit(.warn, "the guest file drag was abandoned: the button was "
                 + "released before this Mac saw a real mouse event to start "
-                + "the drag from")
+                + "the drag from — kind=\(sample.kind), "
+                + "sampleButtonsDown=\(sample.buttonsDown ? 1 : 0), "
+                + "sourceEvent=\(eventName), "
+                + "hidPrimaryHeld=\(physicallyHeld ? 1 : 0), "
+                + "suspectEchoesBefore=\(waiting.suspectEchoes)")
             status = "The file drag ended before this Mac could take it over"
             return true
         }
