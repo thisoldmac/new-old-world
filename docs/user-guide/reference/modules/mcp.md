@@ -93,20 +93,34 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
-sources-sha1: d515d0a80b0b4d2e4fdbab068d4fe6132f1f71e9
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
+sources-sha1: b1efa25b17df53c59d63d4145c84ed0df6841f66
 derive mcp-catalog sha256=dadedb438a578e94422eb5eec7337288e94e19899e6592ebaaf6d86c080258dc lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -243,4 +257,6 @@ rederived: 2026-08-14T22:33:00-0400 13bfe534 sources, sources
 rederived: 2026-08-14T23:36:22-0400 b1fc9796 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 rederived: 2026-08-15T00:20:08-0400 e937faee sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 rederived: 2026-08-15T01:40:30-0400 139dff1a sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:32:41-0400 108db464 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:20:05-0400 de5812ab sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

@@ -38,11 +38,16 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: eb05ddc5f3a7f7c20e9be523811cd28b665d7203
-sources-sha1: eb05ddc5f3a7f7c20e9be523811cd28b665d7203
-sources-sha1: eb05ddc5f3a7f7c20e9be523811cd28b665d7203
-sources-sha1: eb05ddc5f3a7f7c20e9be523811cd28b665d7203
-sources-sha1: eb05ddc5f3a7f7c20e9be523811cd28b665d7203
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
+sources-sha1: 9ba519e97b9416096420169c0706dfd28d0032a9
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -188,4 +193,6 @@ rederived: 2026-08-14T22:33:00-0400 13bfe534 sources
 rederived: 2026-08-14T23:36:22-0400 b1fc9796 sources, sources, sources, sources, sources
 rederived: 2026-08-15T00:20:08-0400 e937faee sources, sources, sources, sources, sources
 rederived: 2026-08-15T01:40:31-0400 139dff1a sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:32:41-0400 108db464 sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:20:06-0400 de5812ab sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

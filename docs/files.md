@@ -202,6 +202,22 @@ approved-artifact integration test proves the wire offer omits it.
   via NavChooseFolder, persisted (prefs v6).
 - **Send File to Host…** (File menu): NavGetFile → `file.offer` → the
   host's share folder. Console: `ls [path]`, `send <path>`.
+- **Drag in, on the guest** (2026-08-14, `workshop_drop.c`): files dragged
+  from the Finder onto the Workshop window, or dropped on NOW's icon
+  (`kAEOpenDocuments`, which this application had sent in four places and
+  never answered), queue and leave through the same `now_wire_send_file`
+  as the two faces above — a third face, not a second transfer path. The
+  window highlights its whole content region for a drag carrying HFS
+  flavours; neither handler sends, because a Drag Manager receive handler
+  runs inside the drag's tracking loop and an Apple Event handler inside
+  `AEProcessAppleEvent`. The queue drains one file at a time from the
+  event loop, since the wire carries one offer. A drop with no session
+  holds the files and says so on the status placard rather than
+  vanishing; a dropped FOLDER is refused with its reason — flat sends
+  only, no recursive send exists on this wire. **Drag-SOURCE (dragging a
+  row out of the guest's browser to the Finder) is not built**; the
+  promised-HFS half below is still the plan for it. Everything here
+  BUILDS and links; none of it has run on a Macintosh.
 - Incoming puts: written to the offered path under the root, then
   stamped; `file.done` only after both forks land.
 - An authorized overwrite of a running `APPL` follows the Finder's
