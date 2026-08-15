@@ -142,3 +142,12 @@ sibling-check first), L-smalls (S1 + volumes/ata units). S3 waits.
   N4 → #31 (builds on the sibling's log work), N6 → #32, N5 → #33,
   N3 → #34. The two arcs (#33, #34) carry their option sets and the
   deciding questions; nothing implemented, per the overnight contract.
+- 2026-08-15 (overnight close): fix wave merged, split re-merged
+  @79468368, gate green end to end. C1/C2/S4/S1/V3-gap fixed; C3 closed
+  as stale binary; S3 waits on Michelle (prefs shape + root cap); ideas
+  are #29-#34. Session.swift activeFileGetID gap handed to the sibling
+  session directly. Morning calls: shelf heroes movable? footer Debug-row
+  drop feedback (live check)? plus the standing pre-PR list (hooks,
+  round-2 bake, rename, QA statuses). PR-ready branch staged as
+  feat/034-host-guest-assessments; draft description in
+  docs/local/pr-draft-034-035.md.

@@ -7,6 +7,68 @@ search:
 
 # Open issues
 
+## EMULATOR-OBSERVED WHERE IT COUNTS: 035 fix wave — the Web proxy serves its first page ever, the footer joins the drop system, drags stop wedging (2026-08-15 overnight, four lanes merged, gate green)
+
+Round 2's fix wave, plan 035. `scripts/test-all` green on the merged
+tree, which also re-merged `refactor/mirror-continuity-split` @ 79468368
+(second inherited bake deferral recorded; cmd_help union was the only
+source conflict; the guest compiles the sibling's mirror-log-gate clean
+against G-7's master consent).
+
+- **C1 Web proxy** (`035-web`): the module had NEVER served a page on
+  any guest — `web_proxy_ot.c` required the peer to be 127.0.0.1, and
+  OT on OS 9.1 reports an in-guest loopback connection's peer as the
+  machine's PRIMARY address. The condition is gone with no replacement
+  (the 127.0.0.1 BIND is the measured boundary — a hostfwd curl cannot
+  reach it). Emulator re-verified on this branch's build: an in-guest
+  HTTP client fetched through 127.0.0.1:5180, the wire carried
+  web.request, the host's bytes landed in a guest file. Three
+  diagnostics ensure the silence is unrepeatable: TBind readback (the
+  page shows what OT GRANTED), last-refused-call in status, and the
+  guest finally reads web.response.end's code for a "Modern Mac: …"
+  clause. New pure accept seam + native test whose FIRST assertion is
+  that a non-loopback peer is accepted. Metal remains the final word
+  (peer address choice is per-machine TCP/IP config). Classilla has
+  still never driven it; the host render pipeline is still unproven
+  past a marker page. S2 (real host status) wants one contract message
+  (web.status, chat.status-shaped) — written up, not built.
+- **C2 footer/drag** (`035-footer`): `.move` previews now render the
+  baseline (the insertion line says where the row lands) — the same
+  decision wave 1 made for `.insert`, which had left every zone band
+  live; the pinned stack gets its own drop geometry (lower fallback
+  APPENDS, mirroring the upper half); hero-displacing drops are refused
+  up front (cursor says no) instead of accepted-then-silently-reverted
+  by enforceSpecialHeroes; the pill bar catches its own near-misses.
+  T1–T6 landed, the failing ones watched failing pre-fix. TWO MORNING
+  CALLS FOR MICHELLE: (1) should shelf heroes become movable (delete
+  fixedModuleHeroID; un-freezes Screen/Files/Connections tab order) —
+  option 1 shipped so nothing is swallowed meanwhile; (2) the one
+  live-only question — does the footer's Debug row show drop feedback
+  during a drag at all? If never, the footer's NSViews aren't being
+  hit-tested and a bigger fix (out of the safeAreaInset) is next.
+- **S4 files drag** (`fix/files-drag-out-promises` — renamed mid-run:
+  git-policy now refuses creator-prefixed branches for new merge
+  bases): getFile has the busy-guard its three siblings had, promise
+  completions can no longer be orphaned (the "ghost" was Finder's own
+  placeholder), a watchdog frees a lost reply instead of wedging every
+  later drag-out; promise metadata derives UTType from the osType with
+  the curated table as overrides and the promised filename gets a
+  consistent extension; acceptDrop handles NSFilePromiseReceiver
+  sources (Photos etc.) and validateDrop only claims what it can read.
+  Request-id keying deferred WITH REASON (single bulk receiver = one
+  waiter by construction once guarded). CHEAPEST LIVE CONFIRMATIONS:
+  drag an extension-less TEXT file onto TextEdit; two quick drag-outs in
+  succession; drag a photo out of Photos.app into the browser.
+- **S1 + V3-gap** (`035-smalls`): the Connections roster toggle lives
+  in the roster's own header (Files' placement), placement-pinned by a
+  mutation-watched test; the Volumes probe and ATA drive line scale
+  through census_size_mib (code-consistent with the live-proven
+  overview path, itself unobserved).
+
+C3 closed earlier as stale-binary (install the current guest). S3
+(multi-root projects) intentionally waits on Michelle's prefs-shape
+call. Ideas N1–N6 are issues #29–#34.
+
 ## TESTED, THE ONE DELIBERATE REGRESSION UNWATCHED: Mirror consent is one switch on the Mac, planes on the host (2026-08-15, `claude/034w5-mirror`, closes plan 034 G-7)
 
 Mirror consent (plan 034 G-7, 2026-08-15). The guest's half of the two-key consent is now ONE master switch; the four per-plane guest gates retired and the host's plane policy is the sole granularity. Both sides must still permit — the guest's veto is untouched, only its granularity moved. Field fates, all decided explicitly: `policy.enabled` is new and required; `structure`/`finderComplements`/`content`/`foregroundCycle` are retired but STILL SENT by a current guest, all four set to the master, because a host built before this change declares them required and would fail to decode the entire facts object without them. A host reading a guest that predates `enabled` collapses the four by the guest's own migration rule (consent only when ALL FOUR were on), stated once per side because two sides guessing differently would grant a permission that Mac's own preferences deny, silently, since every plane would simply work. Prefs reach V29; the V22 slots stay and are written from the master, so the rule is its own inverse and a file round-trips through a format-28 build unchanged. UNVERIFIED, and it is the interesting half: the migration is conservative by design, so almost every existing preferences file collapses to consent OFF — only structure was ever on by default — meaning a person who upgrades finds mirroring refused until they tick one box, and nobody has watched that happen on a real machine. Also unverified on metal: the host's `content` plane default flipped to OFF to inherit the guest's old default (P3 is metal-proven to crash the Finder on the PB1400c), so a fresh pair of machines should behave exactly as before; that equivalence is argued from code, not observed. Neither guest page nor host page has been seen rendered — no emulator or metal pass ran for this change.
