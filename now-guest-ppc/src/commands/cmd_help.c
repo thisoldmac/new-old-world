@@ -622,9 +622,14 @@ static const char *const d_mkdir[] = {
 static const char *const d_offer[] = {
     "  The file the person at the Mac is holding out over the shared",
     "  edge - a bare call reports it (name, kind, type/creator, size),",
-    "  --take asks for it, the same way a Files pull works. No name",
-    "  and no path: this verb reaches nothing the host has not",
-    "  published by a person's own gesture.",
+    "  and what became of the last drag of it. No name and no path:",
+    "  this verb reaches nothing the host has not published by a",
+    "  person's own gesture.",
+    "    --take       file it in the downloads folder",
+    "    --drag       pick it up as a real drag; it lands where you",
+    "                 drop it. Arms only - the drag starts when the",
+    "                 button is down, and says so if it never is.",
+    "    --stop       end a drag that is armed or under way",
     NULL
 };
 
@@ -770,8 +775,8 @@ const NowCommandDoc kNowCommandDocs[] = {
       "mirror", d_mirror },
     { "mirrorlog", 1, "mirror debug diagnostics in the log, on or off",
       "mirrorlog [on|off]", d_mirrorlog },
-    { "offer", 1, "the file held out over the shared edge, or take it",
-      "offer [--take]", d_offer },
+    { "offer", 1, "the file held out over the shared edge: take or drag it",
+      "offer [--take|--drag|--stop]", d_offer },
     { "cycle", 1, "bring each application forward once so the Mirror can "
       "see it", "cycle", d_cycle },
     { "help", 1, "list commands (\"help <cmd>\" for one)",
