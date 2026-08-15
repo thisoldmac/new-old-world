@@ -220,22 +220,14 @@ final class CommandRegistryTests: XCTestCase {
     /// it. The reason is the one this list is for — the contract goes first
     /// — and the debt is real: until a guest serves it, a person typing
     /// `offer` gets `unknown-command` from a verb the schema publishes.
-    private static let servedByNoGuestYet: [String: String] = [
-        "offer": """
-            The console face of the inverted crossing: report the file the \
-            host is holding out over the shared edge, or `--take` it. \
-            Declared 2026-08-15 with `continuity.offer`, the offer \
-            lifetime and `offer-expired`, because a behaviour change \
-            starts in the contract and the guest slice that answers it is \
-            the next one. It is a DEBT and not a division of labour — no \
-            guest answers it today, and the same slice that teaches the \
-            PowerPC guest to take an offer deletes this entry, adds the \
-            row to cmd_help.c, and puts the three halves back under \
-            comparison. If that slice is dropped, drop the declaration \
-            with it rather than leaving a verb the schema publishes and \
-            no machine has.
-            """,
-    ]
+    /// **Emptied again 2026-08-15**: the PowerPC guest now answers `offer`
+    /// (commands.c dispatches it, cmd_help.c documents it), so the
+    /// exemption came out and the three halves are compared for that verb
+    /// again — exactly what the debt existed to force. NOW-68K still
+    /// answers nothing here; it has no Continuity plane at all, which is
+    /// `notOnThePowerPCGuest`'s shape read from the other guest, not this
+    /// map's.
+    private static let servedByNoGuestYet: [String: String] = [:]
 
     func testTheThreeHalvesAgreeOnTheCommandSet() throws {
         let declared = try declared()
