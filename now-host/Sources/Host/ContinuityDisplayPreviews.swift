@@ -105,6 +105,20 @@ final class ContinuityScreenCaptureKitSource: ContinuityHostScreenCapturing {
     private func captureViaScreenshotManager(id: CGDirectDisplayID,
                                              maxPixelWidth: CGFloat)
         async throws -> CGImage {
+        let image = try await Self.screenshotManagerCapture(
+            id: id, maxPixelWidth: maxPixelWidth)
+        plan = .desktopExcludingApplications
+        return image
+    }
+
+    /* Deliberately nonisolated: SCShareableContent and SCContentFilter are
+       not Sendable, and awaiting them from a MainActor method is a send
+       some compilers refuse. Keeping the whole ScreenCaptureKit exchange
+       off the actor means only the final CGImage crosses back. */
+    @available(macOS 14.0, *)
+    private nonisolated static func screenshotManagerCapture(
+        id: CGDirectDisplayID, maxPixelWidth: CGFloat)
+        async throws -> CGImage {
         let content: SCShareableContent
         do {
             content = try await SCShareableContent.excludingDesktopWindows(
@@ -123,7 +137,6 @@ final class ContinuityScreenCaptureKitSource: ContinuityHostScreenCapturing {
         let filter = SCContentFilter(display: display,
                                      excludingApplications: content.applications,
                                      exceptingWindows: [])
-        plan = .desktopExcludingApplications
 
         let configuration = SCStreamConfiguration()
         let scale = min(1, maxPixelWidth / max(1, CGFloat(display.width)))
