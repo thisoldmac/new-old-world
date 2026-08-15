@@ -992,6 +992,28 @@
         "ext/src/now_ext_continuity_keyboard.c"
       ],
       "reason": "branch merge inherits the split thread's own 2026-08-14 deferral (V13 host-modifier word; bake with the round-2 bundle) \u2014 no new resident source authored on this branch"
+    },
+    {
+      "at": "2026-08-15T16:09:10-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "feat/034-host-guest-assessments",
+      "commit": "a15c6640cc7490a2cc0e9671ecd2325503b69ee5",
+      "extBuildFingerprint": "b74b992f87a2cb8197c06f351a8cb54a8fc2d8ea",
+      "extDigest": "2b8fd5ec4b924d183e1a95363d27a3c5ae446735",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 654639104,
+      "imageName": "feat-034-host-guest-assessments",
+      "imageSha256": "8db8ddc2de99c4221ba563ab095ebcb24190a4d3e7ef69ef0720edbdbba199d4",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260815",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 1023,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "d400b6ce0237b0c9f648b12c95d8a5257c521771",
+      "volumeClean": "clean"
     }
   ]
 }
