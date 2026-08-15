@@ -7,17 +7,35 @@ search:
 
 # Open issues
 
-## WORKS TODAY, DEPRECATED UPSTREAM: `hdiutil create` in the DMG assembler (2026-08-15)
+## RESOLVED: the DMG assembler no longer uses the deprecated `hdiutil create` (2026-08-15, `build/dmg-diskutil-migration`)
 
-`scripts/assemble-release :: create_dmg` shells out to `hdiutil create
--srcfolder … -volname … -format UDZO`, and macOS now prints: "'hdiutil
-create -volname -format ...' is deprecated. Please use 'diskutil image
-create from/blank --volumeName --format ...' instead." The DMG still
-builds and mounts correctly (verified 2026-08-15 while adding the
-Applications alias). Migrate to `diskutil image create` on our schedule
-rather than an OS release's — the flags do not map 1:1, so it is a small
-deliberate change with a mount-and-inspect test, not a rename.
-`tools/release-tests` covers the assembler and is the gate for the swap.
+`scripts/assemble-release :: create_dmg` now shells out to `diskutil
+image create from --format UDZO --volumeName "New Old World" <source>
+<destination>`. The flags did map across after all: `UDZO` is one of
+`diskutil`'s own accepted format names, `-volname` becomes
+`--volumeName`, and the source folder and destination become positional.
+Both spellings were built from the same stub folder and compared on
+macOS 27 — UDIF read-only compressed (zlib), GUID partition scheme, APFS
+filesystem, symlinks carried across rather than dereferenced — so this
+is an equivalent image, not a similar one.
+
+The `tools/release-tests` mount-and-inspect case gained the assertion the
+swap actually needed: the drag-to-install `/Applications` alias is a
+symlink with that exact target. A builder that dereferenced it would
+still produce a DMG that mounts and passes every other assertion. Both
+halves were watched failing — a mutation that made the alias a real
+directory, and one that pointed it elsewhere.
+
+The gate clones `HEAD` rather than reading the worktree, which is worth
+knowing before trusting it: the first green run of this change tested
+the unmodified committed script and proved nothing. Commit, then run.
+
+Not closed by this: `tools/release/image.py` still calls `hdiutil
+create` for the generic classic-Mac setup image, and cannot move. It
+needs `-fs HFS+`, `-size` and `-layout NONE`; `diskutil image create
+from` has no equivalent of any of the three and produces APFS only. That
+is a different problem from this one, and it is unsolved rather than
+deferred.
 
 ## EMULATOR-OBSERVED AT BEST, METAL NOT AT ALL: 034 wave 4 — the Files cocktail, one name rule, files drop in from outside (2026-08-15, five lanes merged, gate green)
 
