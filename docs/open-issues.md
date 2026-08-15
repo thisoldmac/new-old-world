@@ -7,6 +7,57 @@ search:
 
 # Open issues
 
+## BUILDS AND TESTED, NEVER RUN ON ANY MACINTOSH: a receive on the PowerPC guest can be seen and stopped (2026-08-14, `claude/034-slice-e3`)
+
+Slice E of plan 034, items G11b and G11a. The receive plumbing in
+`wire.c` had been complete for months with only the Cloud page reading
+it, filtered to receives answering its own `cloud.get`: a plain push
+from the host landed with no bar, no name and no way to stop it.
+
+`now_wire_put_cancel` is `now_wire_get_cancel` one lane over — the
+outbound `file.cancel` first, then the same `put_abort` teardown an
+inbound `file.cancel` already runs, so the host hears `file.done`
+`ok:false` rather than inferring the end from the bytes stopping. A
+floating windoid (`workshop/receive_progress.c`) shows it, from the idle
+tick, whether or not the Workshop is open. The console gains `cancel`
+over the same implementation, so the capability has both faces.
+
+**What is proven.** `scripts/test-all` is green with all eight stages
+RUN — none skipped, including MirrorKit and the guest cross-builds, so
+both guests compile. `put_cancel_source_test.py` is registered in
+`scripts/test-native` and was watched failing against all three
+mutations it claims: the two halves reordered, the frame keyed `id`, and
+the console verb losing its receive half.
+
+**A mutation harness that lies by hitting the wrong function.** The
+first attempt at the `id` mutation reported the guard PASSING against
+it, which would have read as a hole in the test. It was not: `wire.c`
+carries the *identical* cancel frame twice — `g_get.id` at :3862 and
+`g_put.id` at :4755 — and a non-global substitution silently mutated the
+first, which no assertion in this guard covers. The file changed, the
+diffstat confirmed a change, and the mutation still never reached the
+code under test. This is the repository's own rule paid for again from a
+new direction: confirming the mutation *applied* is not the check —
+confirming it applied **where the guard is looking** is. Where a source
+literal appears more than once, anchor the mutation to the line.
+
+**NOT proven, and it is all of the interaction risk: no window has ever
+appeared.** Nothing here has run on the emulator or on metal. The
+windoid's class and attributes (`kFloatingWindowClass`, no
+`kWindowStandardHandlerAttribute`, `kWindowNoActivatesAttribute`), the
+`TrackControl` that pumps the wire, the six-second outcome dwell, the
+close-box latch, and `front_document_window()` in `main.c` — which
+exists because `FrontWindow()` includes a floating window and would
+otherwise point Cmd-W and every keystroke away from the Workshop for the
+length of every transfer — are all asserted by reading, not by watching.
+The `main.c` routing is the highest-risk half: it changes behaviour for
+the Workshop whether or not a transfer is running.
+
+**Deliberately not built.** An outbound SEND still has no
+guest-originated stop; the console verb says so by name rather than
+reporting a quiet machine. Cloud-page receives stay with the Cloud page,
+since two windows reporting one transfer is worse than one.
+
 ## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
 
 Slice 4 of the cross-edge file drag plan, and the consumer the entry
