@@ -44,6 +44,14 @@ static Boolean g_bar_visible;
    window existed cannot be mistaken for this one's. */
 static Boolean g_open;
 static long g_outcome_seq;
+/* Closed by hand, for THIS receive only. Without the latch the close box
+   would be a window that reappears on the next event-loop pass, which is
+   worse than no close box: the idle tick reopens for any active receive.
+   The receive's own identity is not exported, and does not need to be -
+   the lane is one transfer wide, so "the outcome sequence has not moved"
+   is exactly "still the transfer they dismissed". */
+static Boolean g_dismissed;
+static long g_dismissed_seq;
 static unsigned long g_dwell_until;    /* 0 while the receive is live */
 static char g_name[64];
 
@@ -148,9 +156,9 @@ static Boolean open_windoid(void)
 
        kWindowNoActivatesAttribute is the half that keeps the one-window
        app coherent: a floating window that took activation would leave
-       the Workshop drawn as inactive for the length of a transfer, and
-       main.c's key routing asks FrontNonFloatingWindow so this window
-       never becomes the one the keyboard is talking to. */
+       the Workshop drawn as inactive for the length of a transfer.
+       main.c's front_document_window() is the other half - it keeps the
+       keyboard and Cmd-W pointed at the Workshop while this floats. */
     CreateNewWindow(kFloatingWindowClass,
                     kWindowCloseBoxAttribute | kWindowNoActivatesAttribute,
                     &bounds, &g_window);
@@ -247,6 +255,8 @@ Boolean now_receive_progress_click(const EventRecord *event, short part)
            kind of destructive default: the Stop button says what it
            does, this one only stops watching. */
         if (TrackGoAway(g_window, event->where)) {
+            g_dismissed = true;
+            g_dismissed_seq = now_wire_receive_outcome(NULL, 0);
             close_windoid();
         }
         return true;
@@ -306,8 +316,14 @@ void now_receive_progress_idle(void)
     }
     if (!g_open) {
         if (!active) {
+            g_dismissed = false;
             return;
         }
+        if (g_dismissed
+            && now_wire_receive_outcome(NULL, 0) == g_dismissed_seq) {
+            return;                   /* still the one they closed */
+        }
+        g_dismissed = false;
         /* Sampled BEFORE the window exists, so an outcome left over from
            an earlier transfer cannot be shown as this one's. */
         g_outcome_seq = now_wire_receive_outcome(NULL, 0);
