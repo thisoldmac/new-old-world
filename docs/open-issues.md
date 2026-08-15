@@ -67,6 +67,94 @@ UNMEASURED. The Accessibility-permission tap failure seen in round 2 is
 operational and untouched here; the session-start path works either way,
 which is also unmeasured on metal.
 
+## BROKEN ON METAL, CAUSE KNOWN, NOTHING ASKS FOR THE PERMISSION: a newly signed build is a new Accessibility subject (2026-08-14, round 2)
+
+The operational half of round 2, separated from the entry above because it
+is not a defect in the drag at all and will outlive it.
+
+Round 2 ran from a fresh identity-signed DMG. The consuming CGEvent tap was
+dead for the whole attended pass, so host clicks reached host applications
+while the pointer was on the guest — the exact leak
+`ContinuityEdgeController` names when `startInputCapture` returns nil. The
+cause is macOS, not this code: **Accessibility is granted per signed binary
+identity, so a new build is a new subject and an existing grant does not
+carry over.** Every DMG this desk now produces is a new subject by
+construction, which is a direct consequence of the signing work landed the
+same day.
+
+**What exists.** The degradation is honest where a person can see it: the
+controller writes `could not capture host input (Accessibility permission);
+host clicks will also reach host apps` as an ERROR and puts the same
+sentence in the module's status line. Nothing is silent.
+
+**What does not exist, and it is the whole of this entry.** Nothing ever
+ASKS. There is no `AXIsProcessTrustedWithOptions` prompt anywhere on this
+side, so a person meeting the degraded status has to know that System
+Settings is where the answer lives, and has to know to re-grant after every
+new build. The remedy is not in the status line either. Until a prompt
+exists, **every attended round on a new DMG must grant Accessibility to
+that binary before the first crossing**, or its input evidence is void —
+and the failure looks like a product defect, which is how it cost round 2.
+
+## OPEN: the derived-doc gate re-runs a severed derivation, gets nothing, and records the nothing as current (2026-08-14, found healing `9676be3f`)
+
+A gap in the gate this repository built precisely so a derived table could
+not rot unnoticed. It is recorded here rather than fixed because arming a
+new refusal into a live fleet is a decision, not a lane's judgement.
+
+**What happened.** The lineage-crossing cherry-pick sequence committed 31
+conflict blocks across eight derived documents. In two of them the conflict
+fell between a `derive` header and its command lines, severing the command
+from the header. `tools/derived-doc-gate rederive` then did exactly what it
+is written to do: it ran the (now empty) command, got an empty answer,
+hashed it, and wrote the answer down as current. The record is still legible
+in the document's own log — `docs/contract-coverage.md` carries
+`ppc-inbound-types 54->0` at `60bb3427` and `0->57` at the heal — so the
+gate did not merely fail to notice, it **certified** a census of nothing.
+
+**What caught it was incidental.** `tools/mirror-gate-tests/test_public_ci_portability.py
+:: test_disposition_census_has_canonical_spacing` parses the
+`disposition-census` command out of `docs/mcp-coverage.md`, runs it itself,
+and asserts `len(rows) > 0` before checking the row shape. It was written
+against a BSD-versus-GNU `uniq -c` padding mutation — its own docstring says
+so — and caught a severed command only because a non-empty assertion had to
+exist for the spacing check to mean anything. It covers **one** derivation
+of **one** document; the second severed census (`ppc-inbound-types`, in a
+document that test never reads) was found by looking for the same shape
+afterwards, not by any gate.
+
+**It had already recurred, and this pass found it by grepping.** The heal
+above collapsed the markers it could see; the picks that followed it the same
+evening left **eight more** published documents carrying a half-collapsed
+conflict — `=======`, one orphaned `rederived:` line from `835e6acf`, and
+`>>>>>>> 95841394` — in the rederivation log of their own `derived-doc`
+blocks. Those eight sat in the tree through every later commit with
+`scripts/test-docs` reporting `all 8 declared documents are current` and
+`mkdocs build --strict` raising nothing, because a marker inside a log the
+gate only appends to is not something any gate reads, and `--strict` renders
+it as ordinary prose. They are healed in this commit, and the digest that had
+canonized a marker-bearing `docs/mcp-coverage.md` re-derived on the repair —
+which is the gate working exactly as designed, one document too late.
+
+So the missing check is not only "did the command survive": it is **"is this
+block still the shape of a block"**. A cheap grep for conflict markers over
+tracked Markdown belongs in `scripts/test-docs`, ahead of everything
+expensive, on the same argument that puts the frame codec first in
+`test-all`. That one is unambiguous and could be armed without a fleet-wide
+decision.
+
+**The proposed closure** for the severed-command half, which is a one-place
+edit and is not made here:
+a `derive` block asserts its answer is non-empty unless it declares itself
+empty. `lines=0` becomes a refusal in `check` and in `rederive` rather than
+a value, with an explicit flag beside `published` for the block that
+genuinely derives nothing (`tools/derived-doc-gate-selftest`'s fixture
+already writes `lines=0` and would need it). The general lesson is the one
+this file keeps re-buying under new names: **a derivation that reads its own
+answer for currency cannot tell "the source changed" from "the question
+stopped being asked."** Re-running a command is not the same as running a
+question.
+
 ## HOST DONE, GUEST HALF UNIMPLEMENTED: a bare modifier change now crosses the edge (2026-08-14, `fix/continuity-modifier-passthrough`)
 
 Reported from metal: during Continuity, Command-Backspace does not move a
@@ -130,7 +218,17 @@ repository keeps paying for.
 message, and the tap mask is covered only by a source guard because every
 other test here drives a stub environment.
 
-## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
+## SUPERSEDED, IT HAS SINCE BEEN ATTEMPTED: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
+
+**Its "never attempted with a hand on a mouse" status held for hours.**
+Round 2 attended this code the same evening and rounds 2 and 3 are the
+dated record; read the two entries at the top of this file for what a
+Macintosh has actually shown. What survives here is the design argument and
+the list of what slice 4 deliberately did not build — both still true. What
+does not survive is the risk paragraph's framing: the session start, the
+real-`mouseDragged` handoff to the widened panel, and the tap's death are no
+longer unmeasured, and the seed-provenance line named below as an
+unmeasured hope is now the line that decoded the round-2 failure.
 
 Slice 4 of the cross-edge file drag plan, and the consumer the entry
 below ends by saying does not exist: `Session.onContinuitySelection` is
@@ -174,7 +272,19 @@ because stub icon extraction is declared and unsent. Host-to-guest is
 slice 5 and is untouched here — the sentinel still freezes the entry
 point, which is that direction's known defect.
 
-## BUILDS AND TESTED, NEVER RUN ON ANY MACINTOSH: the Finder-selection stub and its gesture-scoped grab (2026-08-14, `feat/continuity-selection-stub`)
+## SUPERSEDED, A MACINTOSH HAS SINCE RUN IT: the Finder-selection stub and its gesture-scoped grab (2026-08-14, `feat/continuity-selection-stub`)
+
+**"Never run on any Macintosh" was true when written and false by that
+evening**, and the proof is derivable rather than remembered: round 2's host
+log carries `selection dropped: the Continuity epoch ended`, and
+`ContinuitySelectionCache.clear` returns early unless a stub is already
+cached. A cached stub means the 1400c's Finder answered the Apple Event
+described below, the guest published a `continuity.selection`, and this side
+decoded it. That closes the largest of the unknowns listed here — the reply
+coercion path — for at least one item on one machine. The grab redemption is
+a separate question and is **still** unanswered, because no drop has yet
+completed; the dated round-2 and round-3 entries at the top of this file are
+authoritative for that.
 
 Slices 2 and 3 of the cross-edge file drag plan. The contract gains
 `continuity.selection` (guest to host, unsolicited while an epoch is
@@ -339,6 +449,85 @@ signing identity; notarization and website publication; classic-browser direct
 download of the generic image; rollback and low-disk acceptance; host
 self-update after canonical deployed releases have a trust/channel policy; and
 the full lifecycle on the PowerBook 1400c.
+
+## TESTED, NOT METAL-VERIFIED: Continuity is its own module, and the split created one regression it also fixed (2026-08-14, `refactor/mirror-continuity-split`)
+
+The structural change the rest of the day's work sits on, recorded because
+nothing else in this file says it happened and several entries above and
+below still describe Continuity as a mode of Mirror.
+
+**Continuity is a module beside Mirror, not a surface inside it.** The guest
+evidence argued for it first — the all-planes-off run proved continuity needs
+no live state from Mirror, and its intake claims its one plane on its own
+wire. `MirrorSurfaceMode` is deleted with the mode; the Mirror is the only
+surface left and arms exactly what policy permits, so the two
+mode-narrowing plane gates are gone and their cost is impossible by
+construction. `continuity.report` gains the guest's main-display bounds on
+the pointer plane's own wire, so the arrangement editor works without Mirror
+having decoded a scene first. The app-owned controller stays shared and
+becomes the arbiter: edge mode and the Mirror's in-picture cursor are
+exclusive inside it, edge mode winning, and stopping Mirror no longer tears
+down a session it does not own. Renaming `MirrorContinuityController` is
+deliberately deferred — a broad mechanical diff against live sibling
+branches.
+
+**The split created a silent regression, which is the part worth keeping.**
+The cross-edge file-drag callbacks were installed inside
+`MirrorHostModuleRuntime`'s lazy `source`, so the AppKit drop destination
+existed only once somebody had opened the Mirror page. After the split, edge
+mode starts from the Continuity module and Mirror's runtime may never be
+constructed: the "both callbacks installed" precondition was never met and
+**no destination was created at all** — silently, because an absent strip
+refuses nothing and logs nothing. Ownership moved to the app, whose lifetime
+matches edge mode's. What genuinely is Mirror's — the live scene both
+directions resolve a point against — is now read WITHOUT constructing it,
+and its absence is a named refusal. `beginFileDrag` takes its source
+`NSEvent` explicitly and non-optionally, retiring a mutable environment field
+that was provably nil on the one path that needed it.
+
+The arrangement editor's numeric zoom went with the mode too: the 50 / 100 /
+200 / 400 % picker is replaced by a **Native / Fit** pill, where Fit is a
+real coordinate scale derived from the shared edge rather than a drawing
+trick, and the stored numeric preference is read once only to be discarded.
+Screen previews in the arrangement tiles are behind a default-OFF toggle, so
+an idle Continuity page performs no capture and asks for no screen-recording
+permission.
+
+**Verification.** `scripts/test-host` green including the Xcode app target;
+each new guard on the file seam watched failing against the mutation it
+names (configuration removed from the app, the no-scene drop made silent,
+the nil-event refusal made silent, the source event dropped in transit).
+The module manifest, page, nav, both screenshot slots and the derived tables
+rode along per their gates. **Nothing here is metal-verified**, and the seam
+this repaired is the one rounds 2 and 3 above are still measuring.
+
+## FIXED BEFORE A PERSON MET IT, AND EVERY GATE WAS GREEN WHILE IT WAS BROKEN: the first identity-signed DMG would not launch (2026-08-14, `feat/release-signing`)
+
+Worth a heading of its own because the failure shape is this file's oldest
+recurring one, in a corner nothing else here covers.
+
+The first identity-signed DMG shipped **unlaunchable** with the whole
+release gate green. `sign_host` wrote restricted entitlements with no
+embedded macOS provisioning profile, AMFI killed the app at spawn, and the
+only thing a person saw was the Finder saying it "can't be opened" — a
+sentence that names neither the cause nor a remedy. Every check that ran
+was checking assembly, not launch.
+
+The assembler now requires `--provision-profile` with an identity (refused
+against `--adhoc`), validates that the profile is a readable macOS profile
+for this team and unexpired, and embeds it before signing — **every refusal
+named at assembly time rather than at the user's double-click**.
+`scripts/release-dmg` formalizes the desk half: identity, descriptor and
+profile live in `.env.lab` and a missing key is refused by name, following
+`scripts/deploy-68k`'s pattern, so a signed development DMG is one command
+instead of a hunt across a keychain, an app bundle and a prior manifest.
+Three new release-gate pins, each watched failing against the mutation it
+names.
+
+**Still open.** Nothing here is notarization, and no gate launches the
+signed artifact — the closing check is still a human double-clicking the
+DMG. A signed build is also a new Accessibility subject, which is its own
+entry above.
 
 ## TESTED, EMULATOR SAFETY PASSED, NOT METAL-VERIFIED: the Continuity resident is consolidated to one product path (2026-08-14, `refactor/continuity-consolidation`)
 
@@ -511,7 +700,11 @@ the input-pump investigation rather than evidence that cooperative scheduling
 alone is the cause. Mirror guest-to-host native file drag and Continuity edge
 file drag do not share one status: the revised Mirror-native drag remains
 metal-unverified, while attended testing has established that Continuity edge
-file dragging does not work in either direction.
+file dragging does not work in either direction. (Also superseded: that
+sentence describes the v1 implementation, which was replaced on 2026-08-14.
+Guest-to-host now starts a real drag session on metal and does not complete a
+drop; host-to-guest is unbuilt in the new lane rather than broken in it. The
+dated 2026-08-14 entries are authoritative.)
 
 **2026-08-13 metal follow-up — open regressions and interaction debt:**
 
@@ -1047,7 +1240,17 @@ did not redraw it. The integrated candidate now includes the task-time reveal
 correction from the resident/input lane. It is tested in the emulator and still
 needs a PowerBook rerun before the visibility case is metal-verified.
 
-## BROKEN ON METAL: Continuity edge file dragging does not complete (2026-08-13, `feat/continuity-integration-candidate`)
+## BROKEN ON METAL, AND THE IMPLEMENTATION IT DESCRIBES NO LONGER EXISTS: Continuity edge file dragging does not complete (2026-08-13, `feat/continuity-integration-candidate`)
+
+**This is the v1 record.** Its post-mortem was the input to a rewrite that
+landed 2026-08-14 as slices 1 through 4 of the cross-edge file drag plan, so
+nothing described below is the code under test now: the two-point strip, the
+synthesized drag seed and the frozen host-to-guest entry point are all
+retired. It is kept because the paragraph naming what the next investigation
+had to establish separately is what the rewrite was built against, and
+because "does not complete" with no per-direction symptom is the complaint
+that made per-direction audit lines a deliverable. For current status read
+the dated 2026-08-14 entries at the top of this file; they are authoritative.
 
 Continuity Mode now gives the configured shared display boundary a two-point,
 transparent AppKit drag destination. A native macOS file URL or file promise

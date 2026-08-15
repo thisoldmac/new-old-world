@@ -62,7 +62,8 @@ returns to a standalone module
 when only one item remains. This Mac is permanent and cannot enter the drawer.
 Connections is permanent but can be put away; its live connection dot then
 appears on the drawer beside the drawer's module count. The current Screen shelf
-contains Screen and Mirror; there is no placeholder Continuity page.
+contains Screen and Mirror; Continuity is a standalone module beside Mirror
+rather than a tab inside that shelf.
 Opening a shelf again in the same app session returns to the tab most recently
 used in that shelf.
 
@@ -223,15 +224,13 @@ rederived: 2026-08-14T12:47:23-0400 804be291 unchanged
 rederived: 2026-08-14T12:49:06-0400 655b2bf1 unchanged
 rederived: 2026-08-14T13:16:43-0400 90cfd8fa sources
 rederived: 2026-08-14T14:27:58-0400 6d037a57 sources, module-map 16->17
+rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
 rederived: 2026-08-14T16:58:28-0400 cf962dbb unchanged
 rederived: 2026-08-14T17:12:28-0400 32ac9165 unchanged
 rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
-=======
-rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
->>>>>>> 95841394 (fix: honor native depth and Files appearance)
 rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:12-0400 e2c66126 unchanged
@@ -243,4 +242,5 @@ rederived: 2026-08-14T19:50:54-0400 d20eee81 unchanged
 rederived: 2026-08-14T20:02:53-0400 068ca7fd unchanged
 rederived: 2026-08-14T21:00:58-0400 ab304cb2 unchanged
 rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
+rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 -->
