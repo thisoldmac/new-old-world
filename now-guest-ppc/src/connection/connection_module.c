@@ -80,7 +80,7 @@ static char g_status[120];
    only when the words change. */
 static char g_vals[kGlanceRowCount][64];
 static char g_fail_line[120];
-static Boolean g_shown_connected;
+static NowConnActionTitle g_action_title;
 static char g_update_lines[3][128];
 
 static const char *k_glance_labels[kGlanceRowCount] = {
@@ -366,6 +366,23 @@ static ControlRef make_button(const Rect *bounds, const char *title)
                       0);
 }
 
+/* The button's words follow the wire wherever the page is in its life:
+   created, shown again after a spell hidden, or ticking. Idle alone is
+   not enough - it is silent while the page is hidden, and a page can be
+   created for the first time long after the connection came up. */
+static void sync_action_title(void)
+{
+    const char *want = now_conn_action_title_next(&g_action_title,
+                                                  conn_is_connected());
+
+    if (want != NULL && g_action != NULL) {
+        Str255 text;
+
+        CopyCStringToPascal(want, text);
+        SetControlTitle(g_action, text);
+    }
+}
+
 static OSErr conn_create(WindowRef owner, const Rect *body)
 {
     Str255 text;
@@ -398,7 +415,12 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("Connect when New Old World opens", text);
     g_auto = now_control_new(owner, &g_r.auto_box, text, false, 0, 0, 1,
                         checkBoxProc, 0);
-    g_action = make_button(&g_r.action_btn, "Connect");
+    {
+        const char *action_title = now_conn_action_title(conn_is_connected());
+
+        g_action = make_button(&g_r.action_btn, action_title);
+        now_conn_action_title_init(&g_action_title, action_title);
+    }
     g_revert = make_button(&g_r.revert_btn, "Revert");
     g_save = make_button(&g_r.save_btn, "Save");
     g_update_app = make_button(&g_r.app_update_btn, "Install App");
@@ -417,7 +439,6 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
         now_prefs_load(&prefs);
         load_fields(&prefs);
     }
-    g_shown_connected = conn_is_connected();
     return noErr;
 }
 
@@ -464,7 +485,11 @@ static void conn_show(Boolean visible)
     show_control(g_action, visible);
     show_control(g_revert, visible);
     show_control(g_save, visible);
-    if (!visible) {
+    if (visible) {
+        /* Idle was mute while this page was away; catch the title up
+           before the human sees it rather than a tick later. */
+        sync_action_title();
+    } else {
         g_status[0] = '\0';
     }
 }
@@ -627,7 +652,10 @@ static Boolean conn_click(const EventRecord *event, Point local)
                 strcpy(g_host, host);
                 g_port_val = port;
                 invalidate_other_group();
-                set_status("Address changed - Save to keep it.");
+                /* Committing an address in the editor IS the intent to
+                   use it; staging it behind a second Save button left
+                   the page showing a target it was not dialling. */
+                do_save(true);
             }
         }
         return true;
@@ -726,7 +754,6 @@ static void conn_idle(void)
     ConnSnapshot snap;
     char vals[kGlanceRowCount][64];
     char fail_line[120];
-    Boolean connected;
     int i;
     int update_changed = 0;
 
@@ -752,14 +779,7 @@ static void conn_idle(void)
         InvalWindowRect(g_owner, &r);
     }
 
-    connected = conn_is_connected();
-    if (connected != g_shown_connected && g_action != NULL) {
-        Str255 text;
-
-        g_shown_connected = connected;
-        CopyCStringToPascal(connected ? "Disconnect" : "Connect", text);
-        SetControlTitle(g_action, text);
-    }
+    sync_action_title();
     for (i = 0; i < kNowUpdateComponentCount; ++i) {
         char version[24], build[65], line[160];
         Rect dirty = i == 0 ? g_r.app_update_line : g_r.ext_update_line;
