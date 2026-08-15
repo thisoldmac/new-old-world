@@ -356,6 +356,37 @@ final class NavigationLayoutStoreTests: XCTestCase {
                        ["console", "logs"])
     }
 
+    /// Making heroes movable needs no migration and no version bump.
+    ///
+    /// Every layout written by the previous build was already canonical under
+    /// the fixed-hero rule — the hero WAS the first module, because
+    /// `enforceSpecialHeroes` had just put it there. So "hero = first" reads
+    /// the same arrangement out of the same bytes, and there is nothing to
+    /// transform. A bump would be the dishonest half: it tells an older app
+    /// this payload is one it cannot understand, when it is a payload that
+    /// build wrote.
+    func testAStoredLayoutFromTheFixedHeroBuildLoadsUnchanged() throws {
+        let defaults = try defaults()
+        var stored = NavigationLayout.standard(for: .standard)
+        stored.upper.swapAt(3, 4)               // an arrangement worth keeping
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]  // as the store writes it
+        let data = try encoder.encode(stored)
+        defaults.set(data, forKey: NavigationLayoutStore.layoutKey)
+
+        let loaded = NavigationLayoutStore(defaults: defaults,
+            registry: .standard).load()
+
+        XCTAssertEqual(loaded, stored)
+        XCTAssertEqual(loaded.version, 4,
+                       "movable heroes are not a payload change")
+        XCTAssertEqual(defaults.data(forKey: NavigationLayoutStore.layoutKey),
+                       data, "loading must not rewrite what it read")
+        XCTAssertEqual(loaded.shelf(id: .network)?.hero, .module("settings"))
+        XCTAssertEqual(loaded.shelf(id: .screen)?.hero, .module("screen"))
+        XCTAssertEqual(loaded.shelf(id: .files)?.hero, .module("files"))
+    }
+
     func testLayoutSurvivesRelaunch() throws {
         let defaults = try defaults()
         let store = NavigationLayoutStore(defaults: defaults, registry: .standard)

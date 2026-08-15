@@ -54,15 +54,24 @@ exactly once in the upper sidebar, lower sidebar, or drawer. It stores stable
 IDs and user-shelf metadata, while labels, summaries, drawer counts, and the
 Connections status indicator are derived presentation.
 
-The default machine shelf has an Overview hero plus `census`, `software`,
-`processes`, and `diagnostics`. Screen contains `screen` and `mirror`; Files
-contains `files` and `icloud`. The main Connections shelf (internally
-`shelf.network`) uses `settings` as its hero, followed by `networking`, `mcp`,
+A shelf opens on its **first tab**, and that order is the person's to
+arrange: dragging a pill to the front of a shelf makes it the tab the shelf
+opens on, and the arrangement survives being saved. Screen, Files and
+Connections once named a fixed module instead, re-imposed on every save, so a
+drop in front of it was accepted and then silently undone. The machine shelf
+is the one exception and differs in kind rather than by policy: its Overview
+is a page the shelf owns rather than a module, so no module can be put in
+front of it.
+
+The default machine shelf has that Overview plus `census`, `software`,
+`processes`, `networking`, and `diagnostics`. Screen contains `screen`,
+`mirror`, and `continuity`; Files contains `files` and `icloud`. The main
+Connections shelf (internally `shelf.network`) defaults to `settings`, `mcp`,
 and `web`; `web` keeps its wire and preference identity while presenting the
 title **Web Proxy**. The default lower stack is the Debug shelf (`console`,
-`logs`) followed by Connections as the bottommost row. There is no
-registered `continuity` descriptor in this revision, so the Screen shelf does
-not manufacture one.
+`logs`) followed by Connections as the bottommost row. `continuity` is a
+registered module in this revision; a layout stored before it existed adopts
+it into the Screen shelf on sanitise rather than manufacturing a shelf for it.
 
 The window uses AppKit's unified full-size toolbar. Guest selection and the
 compact-sidebar control live there instead of in a simulated sidebar header;
