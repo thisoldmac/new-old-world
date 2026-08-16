@@ -42,9 +42,11 @@ The host exposes independent controls for:
   shows and copies the derived URL, and copies the bearer token without
   rendering the secret in the module or logs.
 
-Each card has independent **Start**, **Stop**, and **Start Automatically**
-controls. Start and Stop affect the current app session; Start Automatically
-is the persisted launch policy for that transport.
+Each card has independent **Start** and **Stop** controls, which affect the
+current app session. The persisted launch policy is not here: **Start
+Standard Input automatically** and **Start HTTP automatically** live in the
+Settings window's MCP tab, because they are read once at launch and never
+mid-session. They apply the next time NOW opens.
 
 The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
@@ -60,8 +62,9 @@ credentials or prove that an MCP client can reach the host.
 ## Common tasks
 
 - Confirm the selected machine and requested capability before granting.
-- Start only the transport required by the client, or enable **Start
-  Automatically** for a transport that should be restored whenever NOW opens.
+- Start only the transport required by the client, or set its automatic-start
+  switch in Settings for a transport that should be restored whenever NOW
+  opens.
 - Copy connection details from the relevant transport card rather than
   locating a helper executable.
 - Read the recent call record after an agent action.
@@ -90,7 +93,7 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 427bbccf8f11bbe6320bcbb0952be280d6205de0
+sources-sha1: 92addaf4a75165e04b4f45c8c8c4a42dc12af511
 derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -246,4 +249,5 @@ rederived: 2026-08-16T15:51:39-0400 3c9b1213 sources
 rederived: 2026-08-16T16:01:12-0400 5e83598e sources
 rederived: 2026-08-16T16:13:00-0400 d9f3bb77 sources
 rederived: 2026-08-16T16:57:26-0400 49fcbc64 sources
+rederived: 2026-08-16T18:23:18-0400 1162e33a sources
 -->
