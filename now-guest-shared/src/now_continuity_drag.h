@@ -125,7 +125,22 @@ enum {
        `cancelled` because the two want different diagnosis: one is a
        person changing their mind, the other is a receiver that does not
        speak promised HFS. */
-    kNowDragPromiseNeverAsked = 10
+    kNowDragPromiseNeverAsked = 10,
+    /* TrackDrag ended without a drop AND this machine's own Button() was
+       up when it began. The drag tracked a button that existed only on
+       our plane.
+
+       WHY THIS IS ITS OWN WORD. The first live guest run of this slice
+       (2026-08-15) logged `cancelled (TrackDrag -128)` and nobody could
+       say from that whether a person had let go, whether the Finder had
+       declined the drop, or whether TrackDrag had never had a button to
+       track at all - three different defects wearing one word. The
+       applied button the arm ripens on and the button the Drag Manager
+       tracks are two different questions, and this verdict exists
+       because reading them as one produced a result that could not be
+       attributed. It reports absence and defect separately, which is the
+       standing rule for anything that reads a live machine. */
+    kNowDragButtonNotReal = 11
 };
 
 /* What an arm ripening asks the caller to do. */
@@ -199,8 +214,19 @@ void now_continuity_drag_promise_end(NowContinuityDragState *st, int ok);
 int now_continuity_drag_should_abort(const NowContinuityDragState *st);
 
 /* TrackDrag returned. Back to Idle either way; the verdict distinguishes
-   settled, declined, never-asked and cancelled. Returns it. */
-int now_continuity_drag_ended(NowContinuityDragState *st, int track_ok);
+   settled, declined, never-asked, cancelled and a button that was never
+   the machine's. Returns it.
+
+   `toolbox_button_at_start` is Button() - THIS MACHINE'S OWN VIEW -
+   sampled immediately before TrackDrag was called. It is deliberately a
+   different artifact from the applied button the arm ripened on
+   (now_continuity_button_is_down, the resident's shared cell): the two
+   answer different questions, and only asking both separates "a person
+   let go" from "the Drag Manager was handed a button this Mac never
+   had". Pass 1 when the caller genuinely cannot sample it; that keeps
+   the old verdicts and claims nothing. */
+int now_continuity_drag_ended(NowContinuityDragState *st, int track_ok,
+                              int toolbox_button_at_start);
 
 /* Tear it down. Before the button ripens this ends it outright; once the
    Drag Manager owns the loop it can only ask, and the ask is honoured at

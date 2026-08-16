@@ -212,7 +212,7 @@ static int test_promise_settles(void)
        only thing that may declare the drag over. */
     CHECK(st.state == kNowDragTracking);
 
-    CHECK(now_continuity_drag_ended(&st, 1) == kNowDragOK);
+    CHECK(now_continuity_drag_ended(&st, 1, 1) == kNowDragOK);
     CHECK(st.state == kNowDragIdle);
     return 0;
 }
@@ -232,7 +232,7 @@ static int test_promise_fails_midstream(void)
     now_continuity_drag_promise_end(&st, 0);
     /* A promise that BEGAN and broke must never be reported as a
        receiver that stayed silent - they want different diagnosis. */
-    CHECK(now_continuity_drag_ended(&st, 1) == kNowDragTransferFailed);
+    CHECK(now_continuity_drag_ended(&st, 1, 1) == kNowDragTransferFailed);
     CHECK(strcmp(now_continuity_drag_code(st.last_verdict),
                  "transfer-failed") == 0);
     CHECK(st.state == kNowDragIdle);
@@ -252,7 +252,7 @@ static int test_drop_never_asked(void)
 
     /* TrackDrag returns fine and the promise was never asked for: a
        receiver that does not speak promised HFS, named as itself. */
-    CHECK(now_continuity_drag_ended(&st, 1) == kNowDragPromiseNeverAsked);
+    CHECK(now_continuity_drag_ended(&st, 1, 1) == kNowDragPromiseNeverAsked);
     CHECK(st.state == kNowDragIdle);
     return 0;
 }
@@ -305,7 +305,7 @@ static int test_cancel_during_track(void)
     CHECK(now_continuity_drag_promise_begin(&st) == 0);
     CHECK(st.state == kNowDragTracking);
 
-    CHECK(now_continuity_drag_ended(&st, 1) == kNowDragCancelled);
+    CHECK(now_continuity_drag_ended(&st, 1, 1) == kNowDragCancelled);
     CHECK(st.state == kNowDragIdle);
     /* The flag does not survive into the next drag. */
     CHECK(!st.cancel_requested);
@@ -332,7 +332,7 @@ static int test_cancel_mid_stream(void)
     CHECK(st.state == kNowDragPromising);
 
     now_continuity_drag_promise_end(&st, 0);
-    CHECK(now_continuity_drag_ended(&st, 1) == kNowDragCancelled);
+    CHECK(now_continuity_drag_ended(&st, 1, 1) == kNowDragCancelled);
     return 0;
 }
 
@@ -349,11 +349,78 @@ static int test_escape_declined_drop(void)
 
     /* Escape, or a drop nothing accepted: TrackDrag comes back with a
        failure and the drag is over, cleanly and by name. */
-    CHECK(now_continuity_drag_ended(&st, 0) == kNowDragCancelled);
+    CHECK(now_continuity_drag_ended(&st, 0, 1) == kNowDragCancelled);
     CHECK(st.state == kNowDragIdle);
 
     /* Ending twice is inert, not a second verdict. */
-    CHECK(now_continuity_drag_ended(&st, 0) == kNowDragNotDragging);
+    CHECK(now_continuity_drag_ended(&st, 0, 1) == kNowDragNotDragging);
+    return 0;
+}
+
+/* THE VERDICT THAT SEPARATES THREE DEFECTS THAT WORE ONE WORD.
+   The first live guest run of this slice logged `cancelled (TrackDrag
+   -128)` and that single word covered: a person letting go, the Finder
+   declining the drop, and TrackDrag never having had a button to track.
+   The applied button the arm ripens on is the resident's shared cell;
+   the button TrackDrag tracks is this machine's own Button(). Asking
+   both, separately, is the whole of the distinction. */
+static int test_button_that_was_never_the_machines(void)
+{
+    NowContinuityDragState st;
+    NowContinuityOfferTable table;
+    NowContinuityOfferItem it = file_of(4096L);
+
+    now_continuity_drag_reset(&st);
+    publish(&table, &it);
+    CHECK(now_continuity_drag_request(&st, &table, 9, 10) == kNowDragOK);
+    CHECK(now_continuity_drag_tick(&st, 1, 11) == kNowDragTickStart);
+
+    /* No drop, and the machine's own button was UP when tracking began.
+       The arm ripened on the plane's applied button, so this is exactly
+       the case the live run could not attribute. */
+    CHECK(now_continuity_drag_ended(&st, 0, 0) == kNowDragButtonNotReal);
+    CHECK(st.state == kNowDragIdle);
+    CHECK(st.last_verdict == kNowDragButtonNotReal);
+
+    /* THE OTHER HALF OF THE PAIR, and the reason this is not just a
+       renaming of `cancelled`: same failed TrackDrag, real button, and
+       the verdict must go back to `cancelled`. A guard that only checked
+       the first half would pass against an implementation that answered
+       button-not-real unconditionally. */
+    now_continuity_drag_reset(&st);
+    CHECK(now_continuity_drag_request(&st, &table, 9, 10) == kNowDragOK);
+    CHECK(now_continuity_drag_tick(&st, 1, 11) == kNowDragTickStart);
+    CHECK(now_continuity_drag_ended(&st, 0, 1) == kNowDragCancelled);
+
+    /* AND THE THREE THAT OUTRANK IT. Each of these knows something
+       happened, and the state of a button before it is not evidence
+       against that knowledge - so an up button must NOT overwrite any of
+       them. Ranked wrong, this verdict would swallow a settled promise,
+       a cancel we asked for, and a stream that broke. */
+    now_continuity_drag_reset(&st);
+    CHECK(now_continuity_drag_request(&st, &table, 9, 10) == kNowDragOK);
+    CHECK(now_continuity_drag_tick(&st, 1, 11) == kNowDragTickStart);
+    CHECK(now_continuity_drag_promise_begin(&st) == 1);
+    now_continuity_drag_promise_end(&st, 1);
+    CHECK(now_continuity_drag_ended(&st, 0, 0) == kNowDragOK);
+
+    now_continuity_drag_reset(&st);
+    CHECK(now_continuity_drag_request(&st, &table, 9, 10) == kNowDragOK);
+    CHECK(now_continuity_drag_tick(&st, 1, 11) == kNowDragTickStart);
+    CHECK(now_continuity_drag_cancel(&st) == kNowDragOK);
+    CHECK(now_continuity_drag_ended(&st, 0, 0) == kNowDragCancelled);
+
+    now_continuity_drag_reset(&st);
+    CHECK(now_continuity_drag_request(&st, &table, 9, 10) == kNowDragOK);
+    CHECK(now_continuity_drag_tick(&st, 1, 11) == kNowDragTickStart);
+    CHECK(now_continuity_drag_promise_begin(&st) == 1);
+    now_continuity_drag_promise_end(&st, 0);
+    CHECK(now_continuity_drag_ended(&st, 0, 0) == kNowDragTransferFailed);
+
+    /* The word itself, because a refusal a person reads and a test
+       matches is the same string. */
+    CHECK(strcmp(now_continuity_drag_code(kNowDragButtonNotReal),
+                 "button-not-real") == 0);
     return 0;
 }
 
@@ -412,7 +479,7 @@ static int test_vocabulary(void)
         kNowDragOK, kNowDragNoOffer, kNowDragFolder, kNowDragTooLarge,
         kNowDragBusy, kNowDragButtonNeverCame, kNowDragDragFailed,
         kNowDragTransferFailed, kNowDragCancelled, kNowDragNotDragging,
-        kNowDragPromiseNeverAsked
+        kNowDragPromiseNeverAsked, kNowDragButtonNotReal
     };
     int i, j;
     int n = (int)(sizeof verdicts / sizeof verdicts[0]);
@@ -449,7 +516,7 @@ static int test_null_is_inert(void)
     now_continuity_drag_start_failed((NowContinuityDragState *)0);
     now_continuity_drag_promise_end((NowContinuityDragState *)0, 1);
     CHECK(now_continuity_drag_promise_begin((NowContinuityDragState *)0) == 0);
-    CHECK(now_continuity_drag_ended((NowContinuityDragState *)0, 1)
+    CHECK(now_continuity_drag_ended((NowContinuityDragState *)0, 1, 1)
           == kNowDragNotDragging);
     CHECK(now_continuity_drag_cancel((NowContinuityDragState *)0)
           == kNowDragNotDragging);
@@ -479,6 +546,7 @@ int main(void)
     if (test_cancel_during_track()) return 1;
     if (test_cancel_mid_stream()) return 1;
     if (test_escape_declined_drop()) return 1;
+    if (test_button_that_was_never_the_machines()) return 1;
     if (test_start_failed()) return 1;
     if (test_forget()) return 1;
     if (test_vocabulary()) return 1;

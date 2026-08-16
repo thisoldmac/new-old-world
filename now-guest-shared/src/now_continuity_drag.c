@@ -163,7 +163,8 @@ int now_continuity_drag_should_abort(const NowContinuityDragState *st)
     return st != NULL && st->cancel_requested != 0;
 }
 
-int now_continuity_drag_ended(NowContinuityDragState *st, int track_ok)
+int now_continuity_drag_ended(NowContinuityDragState *st, int track_ok,
+                              int toolbox_button_at_start)
 {
     int verdict;
 
@@ -183,6 +184,16 @@ int now_continuity_drag_ended(NowContinuityDragState *st, int track_ok)
            before the not-asked case so a promise that began and broke
            can never be reported as a receiver that stayed silent. */
         verdict = kNowDragTransferFailed;
+    } else if (!track_ok && !toolbox_button_at_start) {
+        /* No drop, and this Mac's own button was up when tracking began.
+           Ranked BELOW the three above on purpose: a settled promise, a
+           cancel we asked for, and a stream that broke are all things we
+           know happened, and the state of a button before any of them is
+           not evidence against them. It outranks plain `cancelled` for
+           the opposite reason - once nothing else is known, "the button
+           was never real" is the more specific of the two, and the less
+           specific word is what made the first live run unreadable. */
+        verdict = kNowDragButtonNotReal;
     } else if (!track_ok) {
         verdict = kNowDragCancelled;
     } else {
@@ -255,6 +266,8 @@ const char *now_continuity_drag_code(int verdict)
         return "not-dragging";
     case kNowDragPromiseNeverAsked:
         return "promise-never-asked";
+    case kNowDragButtonNotReal:
+        return "button-not-real";
     default:
         break;
     }

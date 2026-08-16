@@ -250,7 +250,17 @@ static void drag_bounds(Point where, Rect *r)
 
    Returns NULL when anything is unavailable, and the caller then drags
    the outline alone. A drag with no picture is a lesser drag; a drag
-   that failed to start because an icon was missing is a broken one. */
+   that failed to start because an icon was missing is a broken one.
+
+   RETURNS WITH ITS PIXELS LOCKED, and the caller unlocks only after
+   TrackDrag has returned. The Drag Manager holds this PixMap and reads
+   it on every tracking pass for the whole life of the drag, so the lock
+   has to outlive drawing into it — an unlocked GWorld's baseAddr is the
+   Memory Manager's to move or purge, and the picture crossing the
+   screen would be whatever landed there instead. Every other GWorld in
+   this tree (screenshots/pixels.c, screenshots/capture.c) holds its
+   lock across exactly the span the pixels are read, which is the same
+   rule stated by a different caller. */
 static GWorldPtr build_drag_image(const Rect *bounds)
 {
     GWorldPtr world = NULL;
@@ -270,7 +280,11 @@ static GWorldPtr build_drag_image(const Rect *bounds)
     }
     GetGWorld(&save_port, &save_device);
     SetGWorld(world, NULL);
-    LockPixels(GetGWorldPixMap(world));
+    if (!LockPixels(GetGWorldPixMap(world))) {
+        SetGWorld(save_port, save_device);
+        DisposeGWorld(world);
+        return NULL;
+    }
 
     /* White ground: the drag image is masked by the drag region, so
        what is not drawn is not shown. */
@@ -305,7 +319,7 @@ static GWorldPtr build_drag_image(const Rect *bounds)
         DrawString(pname);
     }
 
-    UnlockPixels(GetGWorldPixMap(world));
+    /* Deliberately still locked; see the header comment. */
     SetGWorld(save_port, save_device);
     return world;
 }
@@ -337,6 +351,7 @@ static void start_drag(void)
     Point where;
     GWorldPtr image;
     Str255 pname;
+    unsigned long started = TickCount();
     DragSendDataUPP upp = send_upp();
 
     if (upp == NULL) {
@@ -396,11 +411,26 @@ static void start_drag(void)
     image = build_drag_image(&bounds);
     if (image != NULL && region != NULL) {
         Point offset;
+        OSErr set;
 
         offset.h = bounds.left;
         offset.v = bounds.top;
-        SetDragImage(drag, GetGWorldPixMap(image), region, offset,
-                     kDragRegionAndImage);
+        set = SetDragImage(drag, GetGWorldPixMap(image), region, offset,
+                           kDragRegionAndImage);
+        /* Reported rather than ignored: a drag that crosses the screen
+           as a bare outline and one that carries the file's icon look
+           different to a person and identical in a log, and the whole
+           point of the identity crossing early is that the picture is
+           right before any byte moves. Not fatal — the outline alone is
+           still a drag. */
+        if (set != noErr) {
+            now_log(kLogWarn, "mirror",
+                    "drag image refused (%d); dragging the outline alone",
+                    (int)set);
+        }
+    } else {
+        now_log(kLogWarn, "mirror",
+                "drag has no image; dragging the outline alone");
     }
 
     /* The EventRecord the Drag Manager tracks from. The button under it
@@ -423,14 +453,38 @@ static void start_drag(void)
        difference — and the reason the promise callback pumps by hand —
        is that the drop INSIDE this call is where bytes have to move. */
     {
-        OSErr track = TrackDrag(drag, &event, region);
-        int verdict = now_continuity_drag_ended(&g_drag, track == noErr);
+        /* TWO ARTIFACTS, ONE QUESTION, ASKED SEPARATELY.
+           `plane` is the resident's applied button — the one the arm
+           ripened on. `toolbox` is Button(), this Macintosh's own, and
+           it is the one TrackDrag actually tracks. They are sampled
+           HERE rather than at the tick that decided to start, because
+           everything between the two (NewDrag, three flavors, an
+           offscreen world with an icon plotted into it) costs ticks a
+           synthetic button can expire inside. `setup` is that cost,
+           reported rather than assumed. */
+        int plane = now_continuity_button_is_down() ? 1 : 0;
+        int toolbox = Button() ? 1 : 0;
+        unsigned long entered = TickCount();
+        OSErr track;
+        int verdict;
 
+        track = TrackDrag(drag, &event, region);
+        verdict = now_continuity_drag_ended(&g_drag, track == noErr,
+                                            toolbox);
+
+        /* One line, every fact needed to attribute the outcome. The
+           first live run of this slice logged only "cancelled (TrackDrag
+           -128)", and three unrelated defects would each have produced
+           exactly that. */
         now_log(track == noErr && verdict == kNowDragOK
                     ? kLogInfo : kLogWarn,
-                "mirror", "drag %.31s ended: %s (TrackDrag %d)",
+                "mirror",
+                "drag %.31s ended: %s (TrackDrag %d) button plane=%d "
+                "toolbox=%d at %d,%d setup=%lu track=%lu ticks",
                 g_drag.item.name, now_continuity_drag_code(verdict),
-                (int)track);
+                (int)track, plane, toolbox, (int)where.h, (int)where.v,
+                (unsigned long)(entered - started),
+                (unsigned long)(TickCount() - entered));
     }
 
     /* Torn down in every case, including the failures above: classic
@@ -441,6 +495,10 @@ static void start_drag(void)
         DisposeRgn(region);
     }
     if (image != NULL) {
+        /* Paired with the lock build_drag_image deliberately left held
+           for the drag's whole life. Unlocked before disposal so the
+           Memory Manager gets an ordinary block back. */
+        UnlockPixels(GetGWorldPixMap(image));
         DisposeGWorld(image);
     }
 }
