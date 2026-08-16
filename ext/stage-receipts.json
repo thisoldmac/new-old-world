@@ -980,6 +980,26 @@
         "ext/src/now_ext_continuity_keyboard.c"
       ],
       "reason": "V13 host-modifier word + KeyMap co-write; bake with the round-2 bundle"
+    },
+    {
+      "at": "2026-08-16T12:54:37-0400",
+      "branch": "feat/resident-drag-observe",
+      "extDigest": "4419cd5a5ab9e648e5132615aaadfe86342a8dae",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "slice-1 drag observer in development; shared bake due at main"
+    },
+    {
+      "at": "2026-08-16T12:54:47-0400",
+      "branch": "feat/resident-drag-observe",
+      "extDigest": "4419cd5a5ab9e648e5132615aaadfe86342a8dae",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "slice-1 drag observer in development; shared bake due at main"
     }
   ]
 }
