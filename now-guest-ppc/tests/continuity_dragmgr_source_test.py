@@ -177,6 +177,68 @@ check(
     "request is refused `busy` forever.",
 )
 
+# --- 3b. the two buttons are sampled separately, at TrackDrag -----------------
+# The first live run of this slice could not say WHY TrackDrag returned -128,
+# because only one of the two buttons was ever asked about.  They are
+# different questions: `now_continuity_button_is_down` is the resident's
+# applied cell (what the arm ripens on) and `Button()` is this Macintosh's
+# own (what TrackDrag actually tracks).  Neither substitutes for the other.
+track_at = start.index("TrackDrag(")
+before_track = start[:track_at]
+check(
+    "Button()" in before_track,
+    "start_drag must sample Button() -- this Macintosh's OWN view -- before "
+    "TrackDrag. Without it a drag that ended because there was never a real "
+    "button is indistinguishable from a person letting go, which is exactly "
+    "the ambiguity the first live run of this slice produced.",
+)
+check(
+    "now_continuity_button_is_down()" in before_track,
+    "start_drag must also sample the resident's applied button beside "
+    "Button(). One artifact answering a two-artifact question is how the "
+    "button hypothesis stayed a hypothesis.",
+)
+ended_call = start[start.index("now_continuity_drag_ended(") :]
+ended_args = ended_call[: ended_call.index(")")]
+check(
+    "toolbox" in ended_args,
+    "the toolbox button must be PASSED to now_continuity_drag_ended, not "
+    "merely logged: the verdict is what a test and a person read, and a "
+    "fact that only reaches the log cannot name a failure. Args were: "
+    + " ".join(ended_args.split()),
+)
+
+# --- 3c. the drag image's pixels stay locked for the drag's whole life --------
+# The Drag Manager holds the PixMap and reads it on every tracking pass.  An
+# unlocked GWorld's baseAddr is the Memory Manager's to move or purge, so the
+# lock has to outlive the drawing -- the span every other GWorld in this tree
+# (screenshots/pixels.c, screenshots/capture.c) holds its own lock across.
+image = body_of(DRAGMGR, "static GWorldPtr build_drag_image(")
+check(
+    "UnlockPixels" not in image,
+    "build_drag_image must NOT unlock its pixels: it returns the PixMap to "
+    "a caller that hands it to SetDragImage, and the Drag Manager reads it "
+    "for the whole life of the drag. Unlocking here is a wild baseAddr the "
+    "moment the Memory Manager compacts.",
+)
+check(
+    "LockPixels" in image,
+    "build_drag_image must lock the pixels it draws into and returns.",
+)
+unlock_at = start.find("UnlockPixels")
+dispose_at = start.find("DisposeGWorld")
+check(
+    unlock_at != -1 and dispose_at != -1 and unlock_at < dispose_at,
+    "start_drag must UnlockPixels before DisposeGWorld, and only after "
+    "TrackDrag has returned -- the lock build_drag_image deliberately leaves "
+    "held is this function's to release.",
+)
+check(
+    dispose_at > track_at,
+    "the drag image must outlive TrackDrag; disposing it earlier hands the "
+    "Drag Manager a PixMap in freed memory.",
+)
+
 # --- 4. cross-artifact: three files, one set of acts -------------------------
 # The contract's own words for this verb, from the x-commands entry.
 offer_at = CONTRACT.index("\n    offer:\n")
