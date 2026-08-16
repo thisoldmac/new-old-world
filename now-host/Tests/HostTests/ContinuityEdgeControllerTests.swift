@@ -94,13 +94,19 @@ final class ContinuityEdgeControllerTests: XCTestCase {
             layout: layout, driver: driver, environment: environment)
         controller.start()
 
-        controller.reportFileGrabOutcome(
-            "The selection on the classic Mac changed before the file "
-                + "could be copied.")
+        /* Composed through MachineNaming rather than spelled out, for the
+           same reason as `ContinuityGuestDragTests
+           .testAWrongFileRefusalReachesTheOutcomeSinkInPlainWords`: the
+           literal is what this assertion is FOR, so it must not also be
+           the second place the product's noun for the driven machine is
+           written down. */
+        let message = MachineNaming.startingSentence(
+            "the selection on \(MachineNaming.simpleReference) changed "
+            + "before the file could be copied.")
 
-        XCTAssertEqual(controller.status,
-                       "The selection on the classic Mac changed before "
-                        + "the file could be copied.")
+        controller.reportFileGrabOutcome(message)
+
+        XCTAssertEqual(controller.status, message)
     }
 
     func testNativeHostClickIsSentWithoutRelinquishingGuestControl() {
