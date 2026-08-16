@@ -54,6 +54,61 @@ struct ContinuitySharedEdge: Equatable, Sendable {
     let overlap: ClosedRange<CGFloat>
 }
 
+/// The two numbers that decide how forgiving the shared edge is, stated
+/// ONCE here and read by everything else that touches it — the guest-entry
+/// inset (`ContinuityDisplayGeometry.guestEntryPoint`) and the file-drag
+/// catch surface's width (`ContinuityFileEdge`).
+///
+/// Both used to be `static let` constants with nowhere a person could see
+/// or change them. The catch surface's 160 px, in particular, was
+/// discovered — not designed — to be a felt "drop dead zone": widened for
+/// the length of a guest→host file handoff and never narrowed until the
+/// session ends (`ContinuityFileEdge.setCatching`, `returnGuestFileToHost`),
+/// its own destination view refuses this app's OWN drag session
+/// (`EdgeView.isOwnSession`) rather than passing it through — and a refusal
+/// answers a drag instead of asking whatever is really underneath, so no
+/// `+` badge could appear until the cursor physically cleared 160 px of
+/// screen. `ContinuityFileEdge.setDropsThroughOwnSession` fixes that
+/// specific refusal (see its doc); `deadzoneDepth` remains configurable
+/// on top of the fix because the catch surface still exists for a
+/// different reason — giving the returning press somewhere of this app's
+/// own to land before AppKit can own the gesture — and a person may
+/// legitimately want to trade that arming cushion away, down to zero.
+struct ContinuityEdgeGeometry: Equatable, Sendable {
+    /// How far inside the guest boundary a crossing re-enters — the
+    /// click-wiggle guard. See `ContinuityDisplayGeometry.guestEntryPoint`.
+    var entryInsetPixels: CGFloat
+    /// How wide the file-drag catch surface widens to for the length of a
+    /// handoff. Zero is legal and means cursor-at-the-physical-edge
+    /// handoff: no arming cushion at all, so a returning drag must land its
+    /// first real event exactly at the seed point or the handoff is
+    /// abandoned (`ContinuityEdgeController.armSessionButtonIfSurfaceIsReady`).
+    /// See `ContinuityFileEdge.catchThickness`.
+    var deadzoneDepth: CGFloat
+
+    static let entryInsetRange: ClosedRange<CGFloat> = 0...96
+    static let deadzoneDepthRange: ClosedRange<CGFloat> = 0...320
+
+    /// The values this shipped with before either was configurable —
+    /// unchanged as the default so nobody's feel changes without asking.
+    static let `default` = ContinuityEdgeGeometry(
+        entryInsetPixels: 24, deadzoneDepth: 160)
+
+    /// Guards a stale or hand-edited defaults value the same way
+    /// `MirrorContinuityController.clampReconnectDelay` guards the
+    /// reconnect wait: a value outside the sane range reads as a hang (too
+    /// large) or a guard that no longer guards anything (negative).
+    func clamped() -> ContinuityEdgeGeometry {
+        ContinuityEdgeGeometry(
+            entryInsetPixels: min(max(entryInsetPixels,
+                                      Self.entryInsetRange.lowerBound),
+                                  Self.entryInsetRange.upperBound),
+            deadzoneDepth: min(max(deadzoneDepth,
+                                   Self.deadzoneDepthRange.lowerBound),
+                               Self.deadzoneDepthRange.upperBound))
+    }
+}
+
 enum ContinuityDisplayGeometry {
     static let adjacencyTolerance: CGFloat = 0.5
 
@@ -275,16 +330,23 @@ enum ContinuityDisplayGeometry {
        physical wiggle of a click (+4 px measured) tipped straight back
        across - seven "clicks send me home" returns in one minute of the
        2026-08-13 202005 run. A deliberate exit still only costs this many
-       pixels of motion toward the edge. */
-    static let entryInsetPixels: CGFloat = 24
+       pixels of motion toward the edge.
 
+       The number itself now lives in `ContinuityEdgeGeometry.default`, so
+       this stays a doc comment on the RULE rather than a second place
+       holding the value; the parameter below defaults to it so every call
+       site that has not been taught about the geometry seam keeps today's
+       behaviour unchanged. */
     static func guestEntryPoint(at hostPoint: CGPoint,
                                 edge: ContinuitySharedEdge,
                                 guestFrame: CGRect,
                                 guestPixels: CGSize,
-                                scale: CGFloat) -> CGPoint {
-        let insetX = min(entryInsetPixels, max(0, guestPixels.width - 1))
-        let insetY = min(entryInsetPixels, max(0, guestPixels.height - 1))
+                                scale: CGFloat,
+                                insetPixels: CGFloat =
+                                    ContinuityEdgeGeometry.default
+                                        .entryInsetPixels) -> CGPoint {
+        let insetX = min(insetPixels, max(0, guestPixels.width - 1))
+        let insetY = min(insetPixels, max(0, guestPixels.height - 1))
         switch edge.guestSide {
         case .left:
             return CGPoint(x: insetX,
