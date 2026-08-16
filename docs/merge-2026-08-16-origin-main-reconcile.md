@@ -279,6 +279,26 @@ the compiler reached them. A duplicate-symbol scan over every conflicted
 Each duplicate was resolved to the copy this merge had already ruled for
 the surrounding file.
 
+### And one more the host gate found
+
+A **stale literal on the arc's side of a tree-wide rename.**
+`ContinuityGuestDragTests.testAWrongFileRefusalReachesTheOutcomeSinkInPlainWords`
+is the arc's own test — main does not have it — and it spelled out
+`"The selection on the classic Mac changed…"`. The sentence it checks now
+composes through `MachineNaming` (main's H15 rename), so it reads
+`"the guest"`, and the assertion failed on the noun rather than on the
+behaviour it guards.
+
+The test was rewritten to compose through `MachineNaming` too. Respelling
+the literal would have worked once and gone stale at the next rename: what
+this assertion is FOR is that a refusal reaches the person as a plain
+sentence rather than the wire's code, and being the second place the
+product's noun is written down is exactly how it went stale here.
+
+The general shape, worth carrying: **a rename that lands on one branch and
+an assertion that lands on the other do not conflict.** Nothing in either
+half is wrong; the pair is. Only running them together says so.
+
 ## Flagged for Michelle
 
 1. **`ConnectionsModel.swift`'s union** (above). Both suites pass, but the
@@ -291,14 +311,29 @@ the surrounding file.
    simultaneously "stop calling Continuity a Mirror mode". The docs gate
    checks it against the live registry and passes, so this is a note rather
    than a doubt.
-3. **`docs/open-issues.md`'s ordering.** Nineteen new sections from two
+3. **`ContinuityEdgeControllerTests.swift:66` still spells "the classic
+   Mac"** in a string it feeds *in* and asserts comes back *out*. It passes
+   and is not coupled to the product's wording — but as an example it now
+   quotes a sentence the product no longer says. Left alone deliberately;
+   changing it would be noise inside a merge, not a fix.
+4. **`docs/open-issues.md`'s ordering.** Nineteen new sections from two
    branches, appended in two blocks rather than interleaved by date. Nothing
    is lost; the reverse-chronological reading is approximate for
    2026-08-14/15.
-4. **The brief's second "metal-bitten fix main has that the arc lacks" was
-   not one.** `fileshare.c`'s share-root rework (`now_files_share_root`,
-   the `prefs.share_dir > 0 ? … : fsRtDirID` reachability check) is
-   **byte-identical on both sides** — commit `4c909fa9` carries it in this
-   arc's own history. What actually differed in that file was the
-   `trash_move` extraction. The `/Applications` alias half of the brief was
-   correct and is restored.
+5. **The brief's second "metal-bitten fix main has that the arc lacks" was
+   not one, and it is worth being exact about why.** The 1400c's
+   "would not send System Folder/System: no such item in the share" refusal
+   was fixed on the **host** side, in `MirrorAssetIngestion.swift` — asking
+   whether the share reaches the required roots in one listing, before any
+   bytes move. That commit is `4c909fa9`, and it is **in this arc's own
+   history**; the file was byte-identical on both sides going in, and the
+   only region that conflicted was one `MachineNaming` sentence.
+   `fileshare.c`'s `prefs.share_dir > 0 ? … : fsRtDirID` share-root read
+   was likewise identical on both sides at all five call sites. The
+   ~54 lines that genuinely differed in `fileshare.c` were the
+   `now_trash_move_busy` extraction, taken from main.
+
+   Post-merge both files are byte-identical to `origin/main`, so the fix is
+   present however you credit it — but a merge resolved on the brief's
+   premise (main has it, the arc does not) would have been resolved on a
+   wrong reading of where the fix lived.
