@@ -125,36 +125,6 @@ struct CensusModuleView: View {
         }
     }
 
-    @ViewBuilder
-    private var romDumpStatus: some View {
-        switch model.romDumpState {
-        case .idle:
-            EmptyView()
-        case .writing:
-            Label("Reading the ROM into the guest Files share…",
-                  systemImage: "internaldrive")
-                .font(.caption).foregroundStyle(.secondary)
-        case .transferring:
-            Label("Transferring the ROM to this Mac…",
-                  systemImage: "arrow.down.circle")
-                .font(.caption).foregroundStyle(.secondary)
-        case .saved(let url):
-            HStack(spacing: 6) {
-                Label("Saved \(url.lastPathComponent) in Downloads",
-                      systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.secondary)
-                Button("Show in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                }
-                .buttonStyle(.link)
-            }
-            .font(.caption)
-        case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption).foregroundStyle(.red)
-        }
-    }
-
     // MARK: probe list
 
     private var probeList: some View {

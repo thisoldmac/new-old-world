@@ -120,41 +120,6 @@ final class NavigationDragCoordinatorTests: XCTestCase {
             .zone(.lower, index: 0))
     }
 
-    func testNewShelfNamesAdvancePastExistingDefaults() throws {
-        var layout = NavigationLayout.standard(for: .standard)
-        let existingID = UUID(
-            uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
-        layout.lower.removeAll {
-            $0.id == NavigationShelfID.debug.rawValue
-        }
-        layout.lower.insert(.shelf(NavigationShelf(
-            id: .user(existingID), title: "New Shelf",
-            moduleIDs: ["console", "logs"])), at: 0)
-
-        let command = try XCTUnwrap(NavigationDragCoordinator.command(
-            for: .module("development"),
-            droppingOn: .module("chat"),
-            in: layout,
-            makeShelfID: { self.shelfUUID }))
-        let changed = try layout.applying(command)
-
-        XCTAssertEqual(changed.shelf(id: .user(shelfUUID))?.title,
-                       "New Shelf 2")
-    }
-
-    func testWholeSidebarDropResolverSnapsToTheNearestStack() {
-        XCTAssertEqual(
-            NavigationSidebarDropResolver.target(
-                distanceFromTop: 40, height: 400,
-                upperItemCount: 5, lowerItemCount: 3),
-            .zone(.upper, index: 5))
-        XCTAssertEqual(
-            NavigationSidebarDropResolver.target(
-                distanceFromTop: 360, height: 400,
-                upperItemCount: 5, lowerItemCount: 3),
-            .zone(.lower, index: 0))
-    }
-
     func testModuleCanBeExtractedFromShelfAndShelfModuleCanBeReordered() throws {
         let layout = NavigationLayout.standard(for: .standard)
         let extracted = try layout.applying(try XCTUnwrap(
@@ -475,80 +440,6 @@ final class NavigationDragCoordinatorTests: XCTestCase {
                 saved.shelf(id: shelfID)?.moduleIDs.contains(moduleID) ?? true,
                 "\(moduleID) must not be pulled back onto \(shelfID.rawValue)")
             XCTAssertEqual(saved.shelf(id: shelfID)?.hero, .module(next))
-        }
-    }
-
-    func testTwoMemberUserShelfCanReorderWithoutDecomposing() throws {
-        var layout = NavigationLayout.standard(for: .standard)
-        layout.upper.removeAll {
-            $0 == .module("chat") || $0 == .module("development")
-        }
-        layout.upper.append(.shelf(NavigationShelf(
-            id: .user(shelfUUID), moduleIDs: ["chat", "development"])))
-
-        let changed = try layout.applying(try XCTUnwrap(
-            NavigationDragCoordinator.command(
-                for: .module("development"),
-                droppingOn: .shelf(.user(shelfUUID), beforeModuleID: "chat"),
-                in: layout,
-                makeShelfID: { self.shelfUUID })))
-
-        XCTAssertEqual(changed.shelf(id: .user(shelfUUID))?.moduleIDs,
-                       ["development", "chat"])
-    }
-
-    func testPreviewReflowsTopLevelItemsWithoutMutatingTheBaseline() throws {
-        let baseline = NavigationLayout.standard(for: .standard)
-
-        let preview = try XCTUnwrap(NavigationDragPreview(
-            dragged: .shelf(.screen),
-            target: .zone(.upper, index: 0),
-            baseline: baseline,
-            makeShelfID: { self.shelfUUID }))
-
-        XCTAssertEqual(preview.layout.upper.first?.id,
-                       NavigationShelfID.screen.rawValue)
-        XCTAssertEqual(baseline.upper.first?.id,
-                       NavigationShelfID.machine.rawValue)
-    }
-
-    func testPreviewReflowsShelfTabsBeforeDrop() throws {
-        let baseline = NavigationLayout.standard(for: .standard)
-
-        let preview = try XCTUnwrap(NavigationDragPreview(
-            dragged: .module("mcp"),
-            target: .shelf(.network, beforeModuleID: "settings"),
-            baseline: baseline,
-            makeShelfID: { self.shelfUUID }))
-
-        XCTAssertEqual(preview.layout.shelf(id: .network)?.moduleIDs,
-                       ["mcp", "settings", "networking", "web"])
-        XCTAssertEqual(baseline.shelf(id: .network)?.moduleIDs,
-                       ["settings", "networking", "mcp", "web"])
-    }
-
-    func testCombiningModulesWaitsForDropInsteadOfCollapsingTheDragTarget() throws {
-        let baseline = NavigationLayout.standard(for: .standard)
-
-        let preview = try XCTUnwrap(NavigationDragPreview(
-            dragged: .module("development"),
-            target: .module("chat"),
-            baseline: baseline,
-            makeShelfID: { self.shelfUUID }))
-
-        XCTAssertEqual(preview.layout, baseline)
-        XCTAssertEqual(preview.target, .module("chat"))
-    }
-
-    func testFixedModuleHeroesCannotProduceDragCommands() {
-        let layout = NavigationLayout.standard(for: .standard)
-
-        for moduleID in ["screen", "files", "settings"] {
-            XCTAssertNil(NavigationDragCoordinator.command(
-                for: .module(moduleID),
-                droppingOn: .zone(.lower, index: 0),
-                in: layout,
-                makeShelfID: { shelfUUID }))
         }
     }
 

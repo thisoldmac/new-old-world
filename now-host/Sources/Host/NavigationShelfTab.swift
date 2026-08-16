@@ -108,29 +108,3 @@ struct NavigationShelfMenuEntry: Identifiable, Equatable, Sendable {
         }
     }
 }
-
-/// The shelf icon menu exposes real modules only. The shelf hero is navigation
-/// chrome, so it can be selected from the shelf but never dragged as a module.
-struct NavigationShelfMenuEntry: Identifiable, Equatable, Sendable {
-    let id: String
-    let title: String
-    let symbol: String
-    let selection: NavigationSelection
-    let payload: NavigationDraggedItem
-
-    @MainActor
-    static func entries(for shelf: NavigationShelf,
-                        registry: ModuleRegistry) -> [Self] {
-        shelf.moduleIDs.compactMap { moduleID in
-            guard let module = registry.module(id: moduleID) else { return nil }
-            return Self(
-                id: moduleID,
-                title: module.title,
-                symbol: module.symbol,
-                selection: NavigationSelection(
-                    destination: .module(moduleID),
-                    containingShelfID: shelf.id),
-                payload: .module(moduleID))
-        }
-    }
-}
