@@ -180,6 +180,15 @@ check("NSetTrapAddress" not in strip_comments(OBS).replace(
 # ---------------------------------------------------------- the drain
 drain = body(DRAIN, "static void drain_drag_observe(",
              "/* V11 deep click probe drain.")
+# The drain runs on the Mirror's slow idle, not inside the Continuity
+# service: the observer is armed by the act plane too, and the first
+# emulator round drained NOTHING because the service only runs while an
+# epoch runs. That is the mistake this pin exists to keep from returning.
+IDLE = (ROOT / "now-guest-ppc/src/mirror/mirror_log.c").read_text()
+check("now_continuity_drag_observe_idle();" in IDLE,
+      "the drag drain left the Mirror's idle observer")
+check("drain_drag_observe(cell);" not in DRAIN,
+      "the drag drain went back inside the epoch-gated Continuity service")
 check("now_log_memory" not in drain and "now_log(" in drain,
       "the drag observer drain fell back to the never-uploaded memory log")
 # The lifecycle is always on; only the per-look ring is gated. A gate on

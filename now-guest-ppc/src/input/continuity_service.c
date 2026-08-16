@@ -17,6 +17,7 @@
 
 #include "continuity_cursor.h"
 #include "mirror_debug.h"
+#include "peek.h"
 #include "now_continuity_logic.h"
 #include "nowlog.h"
 
@@ -347,7 +348,7 @@ static const char *drag_item_status(NowPeekU32 status)
     }
 }
 
-static void drain_drag_observe(NowPeekContinuityCell *cell)
+static void drain_drag_observe(const NowPeekContinuityCell *cell)
 {
     const NowPeekDragObserve *obs = &cell->drag_observe;
     NowPeekU32 begin_seq = obs->begin_seq;
@@ -463,6 +464,30 @@ static void drain_drag_observe(NowPeekContinuityCell *cell)
                 (unsigned long)obs->sample_dropped);
         gLastDragEndSeq = end_seq;
     }
+}
+
+/* WHERE THIS IS DRAINED FROM, and why it is not the Continuity service.
+   `now_continuity_service_invoke` only runs while an EPOCH runs, and a
+   drag observed by the resident has nothing to do with whether a host is
+   driving: the act plane arms the observer too, and the first emulator
+   round drained nothing at all for exactly this reason. So the entry
+   point is the Mirror's slow idle observer in main.c - which exists to
+   read counters the resident bumped inside foreign processes and write
+   only what changed, at task time rather than in a hook, which is this
+   drain's own description word for word. */
+void now_continuity_drag_observe_idle(void)
+{
+    const NowPeekTable *table = now_peek_table();
+
+    if (table == NULL
+            || table->magic != (NowPeekU32)kNowPeekTableMagic
+            || table->length
+                < (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                               + sizeof(NowPeekContinuityCell))
+            || table->continuity_format
+                != (NowPeekU32)NOW_CONTINUITY_FORMAT_CURRENT)
+        return;
+    drain_drag_observe(&table->continuity);
 }
 
 /* V11 deep click probe drain. Uploadable evidence, so now_log and never
@@ -585,7 +610,6 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
         }
         drain_trace(cell);
         drain_click_probe(cell);
-        drain_drag_observe(cell);
         status_seq = cell->status_seq;
         if ((status_seq & 1u) != 0)
             break;
@@ -788,7 +812,6 @@ int now_continuity_service_invoke(NowPeekContinuityCell *cell)
         }
         drain_trace(cell);
         drain_click_probe(cell);
-        drain_drag_observe(cell);
     }
     gInvoking = 0;
     return 1;
