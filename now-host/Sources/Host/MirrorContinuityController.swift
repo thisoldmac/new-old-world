@@ -422,6 +422,7 @@ final class MirrorContinuityController: ObservableObject,
     /// Longer than the resident's 1.5-second lease: one delayed ack does not
     /// churn ownership, but a dead receive path cannot leave the UI active.
     private let acknowledgementTimeout: TimeInterval
+    private let starvationAnnounceAfter: TimeInterval
     private weak var localNetworkAccess: LocalNetworkAccessController?
     private let accessibility: AccessibilityAuthorization
     private let runningCopy: RunningCopy
@@ -486,6 +487,16 @@ final class MirrorContinuityController: ObservableObject,
     private var validAcks: UInt32 = 0
     private var lastAcknowledgementUptime: TimeInterval?
     private var acknowledgementStarvedSince: TimeInterval?
+    /// One announcement per starvation episode. The status line changes at
+    /// `acknowledgementTimeout`, which is short enough that an ordinary
+    /// tracking loop trips it; this is the second, louder tier, and it
+    /// escalates only once so a two-minute modal is one notification.
+    private var starvationAnnounced = false
+    /// Told once, at `starvationAnnounceAfter`, that this Mac has stopped
+    /// answering while the machine underneath it is still alive. Wired to
+    /// the same notification-plus-flash seam as a drag refusal, because the
+    /// person is looking at their Mac and not at this page.
+    var onStarvation: ((String) -> Void)?
     private var lastAuditedButtonGeneration: UInt32 = 0
     private var lastPrimaryDownUptime: TimeInterval?
     private var buttonTransitionSentUptime: TimeInterval?
@@ -499,6 +510,7 @@ final class MirrorContinuityController: ObservableObject,
          accessibility: AccessibilityAuthorization? = nil,
          runningCopy: RunningCopy = .current,
          acknowledgementTimeout: TimeInterval = 3,
+         starvationAnnounceAfter: TimeInterval = 10,
          audit: Audit? = nil) {
         self.listener = listener
         self.defaults = defaults
@@ -507,6 +519,7 @@ final class MirrorContinuityController: ObservableObject,
         self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
         self.runningCopy = runningCopy
         self.acknowledgementTimeout = acknowledgementTimeout
+        self.starvationAnnounceAfter = starvationAnnounceAfter
         self.audit = audit ?? {
             HostLog.shared.write($0, "continuity", $1)
         }
@@ -1096,6 +1109,7 @@ final class MirrorContinuityController: ObservableObject,
                         self.status = "The Mac is busy in another interaction; "
                             + "pointer safety remains armed"
                     }
+                    self.announceStarvationIfDue(silence: silence)
                 } else {
                     self.guestEnded(reason: "UDP acknowledgements stopped")
                     return
@@ -1109,6 +1123,49 @@ final class MirrorContinuityController: ObservableObject,
         }
         self.timer = timer
         timer.resume()
+    }
+
+    /// THE SENTENCE, WRITTEN ONCE.
+    ///
+    /// What is actually known at this moment is narrow and worth stating
+    /// precisely: the guest application has not acknowledged for `silence`
+    /// seconds, and the resident — a Time Manager task that answers whether
+    /// or not any application is scheduled — is still answering. So the Mac
+    /// is running and NOW is not being given time, which under cooperative
+    /// scheduling is what a modal alert in *another* application looks like
+    /// from here. It is not the only thing that looks like it (a menu held
+    /// down does too), which is why this waits ten seconds first and why the
+    /// sentence describes rather than diagnoses.
+    ///
+    /// The second half is the part a person can act on, and it is honest
+    /// about the current limitation: Continuity's clicks travel through the
+    /// guest application's own task time, so while it is starved NOW cannot
+    /// press that alert's button for the person. Dismissing it has to happen
+    /// at the Mac. When the resident learns to serve a press without the
+    /// application (docs/open-issues.md, the foreign-modal entry), this
+    /// sentence is the one that changes.
+    static func starvationMessage(silence: TimeInterval) -> String {
+        String(
+            format: "NOW on the Mac has not answered for %.0f s, but the "
+                + "machine itself is still running — which is what another "
+                + "application's modal alert looks like from here. Dismiss "
+                + "it at the Mac; Continuity cannot click it for you while "
+                + "NOW is starved.",
+            silence)
+    }
+
+    private func announceStarvationIfDue(silence: TimeInterval) {
+        guard !starvationAnnounced, silence >= starvationAnnounceAfter else {
+            return
+        }
+        starvationAnnounced = true
+        let message = Self.starvationMessage(silence: silence)
+        /* The status line and the notification are handed the same string,
+           never two drafts of it — the rule announceDragRefusal already
+           carries, for the same reason. */
+        status = message
+        audit(.warn, message)
+        onStarvation?(message)
     }
 
     static func pointerLaneWaitingStatus(_ error: NWError) -> String {
@@ -1199,6 +1256,7 @@ final class MirrorContinuityController: ObservableObject,
                                 format: "guest application acknowledgements recovered after %.1f s",
                                 ProcessInfo.processInfo.systemUptime - starved))
                             self.acknowledgementStarvedSince = nil
+                            self.starvationAnnounced = false
                             self.status = "direct pointer connected at "
                                 + "\(self.acceptedHz) Hz"
                         }
@@ -1513,6 +1571,7 @@ final class MirrorContinuityController: ObservableObject,
         validAcks = 0
         lastAcknowledgementUptime = nil
         acknowledgementStarvedSince = nil
+        starvationAnnounced = false
         lastAuditedButtonGeneration = 0
         lastPrimaryDownUptime = nil
         heldSettlePoint = nil
