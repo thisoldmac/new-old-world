@@ -7,6 +7,138 @@ search:
 
 # Open issues
 
+## THE RITUAL IS DEAD: the host binds the drag, not a cache of the selection (2026-08-16, `feat/resident-drag-bind`)
+
+Slice 2, on the route slice 1B proved. The V15 handler record stops being
+a diagnostic and becomes product state: at drag begin the resident writes
+the identity from a live DragRef, the application publishes it at its next
+task time as a `continuity.selection` with `source=drag`, and the host's
+bind prefers it over everything it had cached.
+
+### The contract shape, and why it is not a sibling message
+
+`continuity.selection` grew a `source` field rather than growing a
+sibling. The item shape, the generation space and the `continuity.grab`
+that redeems a generation are identical whichever gesture produced the
+identity — and a sibling message would have created a second generation
+space, which makes a grab ambiguous about which one its generation names.
+That is the single property this family cannot afford to lose.
+
+The sharp end is stated once, under `source`: **the two sources may
+legitimately disagree.** Dragging a file nobody selected is an ordinary
+Macintosh gesture; the Finder's selection is then something else, and both
+statements are true. Two rules follow and both are enforced rather than
+remembered:
+
+- The host prefers a drag-sourced generation **outright, with no clock
+  comparison**. Every other case in `ContinuitySelectionBind` argues about
+  a cache — `adopted` attributes an arrival to a press by reasoning that
+  nothing else could have caused it, which is sound but circumstantial. A
+  drag carries its own attribution.
+- The guest confirms a drag-sourced grab against **the drag**, not the
+  selection. Confirming it against the selection would refuse exactly the
+  gesture the source exists to serve. And it asks something stricter than
+  the Finder was ever asked: same file AND same drag sequence, so a second
+  pick-up of the same icon cannot be served under the first one's
+  generation.
+
+The cache, the press attribution, the grant hold and the grab-time Finder
+confirmation all REMAIN. They are what a Mac without the resident still
+has, and the poll is the fallback whenever the drag plane says nothing.
+
+### No `ext/` change at all
+
+Worth saying because it was not the expectation: slice 1B's V15 block
+already publishes the identity and the drag-begin sequence this reads, so
+slice 2 is contract, guest application, and host. No cell change, no
+resident build input, no bake.
+
+### What was watched failing, and the one that was not
+
+Fourteen mutations, fourteen caught, each against the mutation it names,
+with applied / built / ran confirmed separately from the failure.
+
+Two were wrong on the first pass and both corrections are the point:
+
+- The ordering guard (the pending drag publish must be answered BEFORE the
+  held-button gate) fired for a DIFFERENT reason, because the mutation
+  deleted the block instead of moving it and another guard answered first.
+- **The stale-cache acceptance test PASSED with the entire `.dragged`
+  branch removed.** The timing heuristic bound the same file by a different
+  argument, so the test was green for a reason that had nothing to do with
+  what it claimed. Both drag marks in the rig are now stamped BEFORE the
+  press instant — the shape where no clock can attribute the arrival, where
+  the old ladder said `superseded` and refused, and where only the source
+  answers.
+
+### The emulator round: the wire half PROVED, the drag half NOT REPRODUCED
+
+Rig: `docs/local/dragbind-slice2-provenance-2026-08-16.md`, lane block
+713 (wire 17705), guest build `716f331c…` asserted from its own hello
+before anything was believed, resident `b254480cc559` — the same one
+slice 1B measured on.
+
+What the round PROVED, against a live guest:
+
+- **`source` crosses.** Every `continuity.selection` this guest published
+  carried it: `"source":"selection"`, on the ordinary poll's stub. The
+  contract change, the three templates and the host decoder meet on a
+  real wire.
+- The arm / publish / grab lane is unbroken by the change: arm answered
+  `armed`, a stub arrived, a grab for it was refused `folder-not-yet` by
+  name (the item was the hard disk).
+
+What the round DID NOT reproduce, stated as an absence rather than
+softened: **no drag-sourced generation was published.** Two attempts,
+both with Continuity armed and the target file NEVER selected — the
+Finder's selection was `Macintosh HD` throughout, and the press landed on
+`HELLO_CLAUDE.txt` at (624,108), a desktop document the Finder itself
+named and located. `midGestureSelections` was empty both times.
+
+**Which of two causes it is was not determined, and the distinction
+matters more than the result.** Either
+
+1. the Continuity-driven press never made the Finder enter a drag at all
+   — which is the ALREADY-MEASURED shape (`feat/continuity-selection-bind-race`,
+   21 s of held drag with no task time) and would say nothing whatever
+   about slice 2; or
+2. the tracking handler was not installed under a Continuity-only arm.
+   `now_ext_dragobs_gne` does gate on `cell->enabled || CapAct`, so it
+   *should* arm — but slice 1B's 67,502 handler calls were all taken on
+   ACT-PLANE armed passes, and no round has yet shown the handler firing
+   with Continuity alone.
+
+The counters that separate these two — `handler_calls` beside
+`handler_installs` — were not readable in this round: the guest's log
+retrieval returned empty over the wire, so the drain's own lines
+(`drag handler state=…`, `drag bind seq=… latency=…`) could not be
+recovered. That is a rig gap, not a finding about the code, and it is the
+first thing the next round must fix, because it is the only instrument
+that can tell cause 1 from cause 2.
+
+**Consequence for the claim.** The ceiling reached is Tested plus a
+partial emulator round. The single-gesture acceptance is proven in the
+host suite and the guest's shared logic, both mutation-watched; it is NOT
+proven on a Macintosh. Nobody should quote "the ritual is dead" from a
+machine yet.
+
+### The latency, NOT measured
+
+`drag bind seq=… latency=… ticks` is emitted at the drain and is the
+interval the whole route depends on. **No value was obtained**, for the
+same reason: no drag-sourced publish occurred and the log could not be
+read. The plan asked for this number and it is still owed.
+
+### Still unverified
+
+- Everything on a Macintosh: see the two sections above. The bind, the
+  publish and the confirmation are Tested only.
+- The grab-time drag confirmation has never run against a live resident,
+  so the one path where the guest reads the cell twice — mint, then
+  confirm seconds later — is unexercised outside the host cc.
+- Folders are refused on the drag source exactly as on the poll, which
+  keeps the later folder slice one decision rather than two.
+
 ## THE ROUTE EXISTS, AND IT ANSWERS BOTH QUESTIONS THE PLAN ASKED: a registered tracking handler sees every Finder drag, its file, and what targeting believes (2026-08-16, `feat/resident-drag-observe`)
 
 Slice 1B, taken after slice 1 measured that the trap route does not
