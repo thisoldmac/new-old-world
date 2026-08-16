@@ -14,6 +14,15 @@ import UniformTypeIdentifiers
 /// same receive machinery and the same `FileConverter` finalization, so a
 /// grabbed file resumes, reports and materializes exactly as a Files pull
 /// does. There is no second bulk receiver here and there must never be one.
+
+/// One selection's identity on the wire, exactly as the guest scopes a
+/// grant — epoch plus generation. Local to attempt counting: nothing else
+/// here needs a stub's identity as a dictionary key.
+private struct ContinuityFileStubKey: Hashable {
+    let epoch: UInt32
+    let generation: UInt32
+}
+
 @MainActor
 final class ContinuityGrabTransfer: NSObject, ObservableObject,
                                     NSFilePromiseProviderDelegate {
@@ -54,6 +63,16 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
 
     @Published private(set) var notice: String?
 
+    /// Forwards every terminal `notice` to wherever a person is actually
+    /// looking. `notice` alone is not enough: it is `@Published` on THIS
+    /// object, and nothing observed it — the Continuity page draws the
+    /// edge controller's status, not this transfer's — so a wrong-file
+    /// refusal (`stale-selection`) set `notice` and then sat there
+    /// unread, and the person saw the drag simply vanish. Named a sink
+    /// rather than wired straight to `ContinuityEdgeController` so a test
+    /// can watch it fire without constructing the whole edge stack.
+    var outcomeSink: ((String) -> Void)?
+
     /// The wire, as one function. Named rather than reached through the
     /// listener so a test can watch a refusal arrive without a socket — the
     /// refusal paths are the half v1 shipped silent, and they must be
@@ -69,6 +88,30 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
 
     private let grab: GrabRequest
     private let audit: Audit
+    /// How many wire `grab` calls this generation has seen, across BOTH
+    /// lanes that can redeem one — the eager fetch started at press time
+    /// and the promise-fallback redemption at drop time race for the same
+    /// (epoch, generation) whenever the eager fetch has not finished by the
+    /// time AppKit needs an answer, so two attempts inside one drag is
+    /// ordinary, not a bug. It exists because a refusal like
+    /// `serving=<empty> selected=main.c` that fires on one of those two and
+    /// is immediately followed by `grant honored` on the other reads as
+    /// guest flakiness unless the host's own line says a second attempt for
+    /// the SAME generation was already in flight. This Mac never retries a
+    /// refused grab on its own; every entry here is a fresh eager-fetch or
+    /// redeem call this session made, not a scheduled retry.
+    private var attemptCounts: [ContinuityFileStubKey: Int] = [:]
+
+    /// Counts and returns this attempt's ordinal for one generation. Not
+    /// reset on refusal or success — a stub is retried only by a fresh
+    /// press, which is a new generation, so the count is naturally scoped
+    /// to the identity that matters.
+    private func nextAttempt(epoch: UInt32, generation: UInt32) -> Int {
+        let key = ContinuityFileStubKey(epoch: epoch, generation: generation)
+        let attempt = (attemptCounts[key] ?? 0) + 1
+        attemptCounts[key] = attempt
+        return attempt
+    }
     private let promiseQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "dev.newoldworld.continuity.grab"
@@ -104,6 +147,13 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     }
 
     var isBusy: Bool { grabInFlight }
+
+    /// The one place `notice` changes for a terminal outcome, so the sink
+    /// can never drift out of step with the published property.
+    private func setNotice(_ text: String) {
+        notice = text
+        outcomeSink?(text)
+    }
 
     /// The host-side stub AppKit drags. No bytes cross until something in
     /// macOS accepts the promise on release.
@@ -260,15 +310,17 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
         }
         grabInFlight = true
         notice = nil
+        let attempt = nextAttempt(epoch: stub.epoch, generation: stub.generation)
         audit(.info, "eager fetch started: epoch=\(stub.epoch), "
-            + "generation=\(stub.generation), name=\(stub.item.name), "
-            + "bytes=\(bytes), budget=\(Int(fetch.budgetSeconds * 1000)) ms")
+            + "generation=\(stub.generation), attempt=\(attempt), "
+            + "name=\(stub.item.name), bytes=\(bytes), "
+            + "budget=\(Int(fetch.budgetSeconds * 1000)) ms")
         grab(stub.epoch, stub.generation, stub.wireContainer, staging) {
             [weak self] result in
             guard let self else { return }
             Task { @MainActor in
                 self.finishEagerFetch(result, stub: stub, staging: staging,
-                                      fetch: fetch)
+                                      fetch: fetch, attempt: attempt)
             }
         }
         return fetch
@@ -276,14 +328,19 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
 
     private func finishEagerFetch(
         _ result: Result<GuestListener.FileDelivery, GuestListener.FileFailure>,
-        stub: ContinuityDragStub, staging: URL, fetch: EagerFetch
+        stub: ContinuityDragStub, staging: URL, fetch: EagerFetch,
+        attempt: Int
     ) {
         grabInFlight = false
         switch result {
         case .failure(let failure):
             audit(.info, "eager fetch refused by the Mac: code="
                 + "\(failure.code), reason=\(failure.message), "
-                + "name=\(stub.item.name) — the drag still has its promise")
+                + "generation=\(stub.generation), attempt=\(attempt) — "
+                + "this Mac does not retry a refused grab on its own; the "
+                + "promise-fallback redemption is a SEPARATE attempt for "
+                + "the same generation if AppKit still needs one, not a "
+                + "retry this host scheduled, name=\(stub.item.name)")
             fetch.finish(.failure(GrabError.wire(code: failure.code,
                                                  message: failure.message)))
             /* Nothing will ever read this directory: the promise, not this
@@ -363,16 +420,22 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     private func redeem(_ stub: ContinuityDragStub, to url: URL,
                         completion: GrabCompletion) {
         guard !grabInFlight else {
+            let key = ContinuityFileStubKey(epoch: stub.epoch,
+                                            generation: stub.generation)
             audit(.warn, "grab refused: another grab is already in flight "
-                + "(epoch=\(stub.epoch), generation=\(stub.generation))")
+                + "(epoch=\(stub.epoch), generation=\(stub.generation), "
+                + "attemptsSoFar=\(attemptCounts[key] ?? 0)) — this Mac "
+                + "does not schedule a retry; the promise has nothing to "
+                + "hand AppKit and the drag ends here")
             completion.finish(GrabError.busy)
             return
         }
         grabInFlight = true
         notice = nil
+        let attempt = nextAttempt(epoch: stub.epoch, generation: stub.generation)
         audit(.info, "grab requested: epoch=\(stub.epoch), "
-            + "generation=\(stub.generation), name=\(stub.item.name), "
-            + "container=\(stub.wireContainer ?? "auto")")
+            + "generation=\(stub.generation), attempt=\(attempt), "
+            + "name=\(stub.item.name), container=\(stub.wireContainer ?? "auto")")
         grab(stub.epoch, stub.generation, stub.wireContainer,
              url.deletingLastPathComponent()) { [weak self] result in
             guard let self else {
@@ -388,10 +451,13 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                    line. */
                 self.audit(.error, "grab refused by the Mac: "
                     + "code=\(failure.code), reason=\(failure.message), "
-                    + "epoch=\(stub.epoch), generation=\(stub.generation)")
-                self.notice = GrabError.wire(code: failure.code,
-                                             message: failure.message)
-                    .localizedDescription
+                    + "epoch=\(stub.epoch), generation=\(stub.generation), "
+                    + "attempt=\(attempt) — this Mac does not retry a "
+                    + "refused grab on its own; no further attempt for "
+                    + "this generation is scheduled")
+                self.setNotice(GrabError.wire(code: failure.code,
+                                              message: failure.message)
+                    .localizedDescription)
                 completion.finish(GrabError.wire(code: failure.code,
                                                  message: failure.message))
             case .success(let file):
@@ -429,14 +495,14 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                     + "container=\(file.container), "
                     + "integrity=\(file.crc32 == nil ? "unchecked" : "crc32"), "
                     + "conversion=\(note ?? "none")")
-                self.notice = note.map {
+                self.setNotice(note.map {
                     "Copied \(stub.item.name) to this Mac (\($0))."
-                } ?? "Copied \(stub.item.name) to this Mac."
+                } ?? "Copied \(stub.item.name) to this Mac.")
                 completion.finish(nil)
             case .failure(let error):
                 self.audit(.error, "grab arrived but could not be written: "
                     + "name=\(file.name), reason=\(error.localizedDescription)")
-                self.notice = error.localizedDescription
+                self.setNotice(error.localizedDescription)
                 completion.finish(error)
             }
         }

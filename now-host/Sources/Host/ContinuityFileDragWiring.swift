@@ -42,6 +42,15 @@ enum ContinuityFileDrag {
         }
     ) {
         if let selection, let grab {
+            /* Every terminal grab outcome — refused or completed — becomes
+               the status line a person is actually looking at. Without
+               this, `grab.notice` was published to nobody: the page draws
+               `edge.status`, and a wrong-file refusal
+               (`file.refuse code=stale-selection`) ended with the drag
+               simply vanishing, audited but never said out loud. */
+            grab.outcomeSink = { [weak edge] message in
+                edge?.reportFileGrabOutcome(message)
+            }
             /* The stub lane is installed only when both halves exist: a
                binding with nothing to redeem it would drag a promise that
                can never be fulfilled, which is worse than not claiming the

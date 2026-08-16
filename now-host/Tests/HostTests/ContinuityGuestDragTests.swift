@@ -1479,6 +1479,116 @@ final class ContinuityGuestDragTests: XCTestCase {
                         + "wedges every later one")
     }
 
+    /// The refusal above is named in the log, but nothing on screen used to
+    /// say it — `notice` was `@Published` to nobody. `outcomeSink` is the
+    /// forwarding seam `ContinuityFileDrag.configure` wires to
+    /// `edge.reportFileGrabOutcome`; this pins that EVERY terminal outcome
+    /// reaches it, not just the ones already covered by an audit line.
+    func testAWrongFileRefusalReachesTheOutcomeSinkInPlainWords() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                completion(.failure(.init(code: "stale-selection",
+                                          message: "the selection changed")))
+            })
+        var sunk: [String] = []
+        transfer.outcomeSink = { sunk.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        _ = fulfill(transfer, to: staging.appendingPathComponent("Read Me"),
+                   stub: stub)
+
+        XCTAssertEqual(sunk, [transfer.notice])
+        XCTAssertEqual(sunk.first, "The selection on the classic Mac "
+            + "changed before the file could be copied.",
+            "a wrong-file refusal must reach the person in a plain "
+                + "sentence, not the wire's own code")
+    }
+
+    /// The same seam for the ordinary success path — not required by the
+    /// bug this exists for, but a sink that only ever fires on failure
+    /// would be a second, narrower promise than the one `notice` already
+    /// made.
+    func testACompletedGrabAlsoReachesTheOutcomeSink() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let destination = staging.appendingPathComponent("Read Me")
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in completion(.success(delivery)) })
+        var sunk: [String] = []
+        transfer.outcomeSink = { sunk.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        _ = fulfill(transfer, to: destination, stub: stub)
+
+        XCTAssertEqual(sunk, [transfer.notice])
+    }
+
+    /// The eager fetch (started at press time) and the promise-fallback
+    /// redemption (started at drop time) can both reach the wire for the
+    /// SAME generation when the eager fetch has not finished by drop —
+    /// ordinary, not guest flakiness, and the refusal noise this was meant
+    /// to distinguish from a scheduled retry (there is no such thing here)
+    /// is exactly two attempts on one generation's audit trail.
+    func testTwoAttemptsOnOneGenerationAreNumberedAndNamedAsSeparate()
+        throws {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let stub = ContinuityDragStub(epoch: 9, generation: 4,
+                                      item: Self.file(name: "main.c"))
+        let delivery = try Self.delivery(name: "main.c",
+                                         bytes: Data("int main(){}".utf8),
+                                         in: staging)
+
+        /* Both attempts travel through ONE transfer, because the attempt
+           counter is per-instance: attempt 1 is the eager fetch started at
+           press time, held open so it can be refused on cue; attempt 2 is
+           the promise-fallback redemption at drop time, which this test
+           lets succeed — the exact "refused, then `grant honored` seconds
+           later" shape the metal log reported. */
+        let firstReached = expectation(description: "attempt one reached")
+        let held = Held()
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                if held.completion == nil {
+                    held.completion = completion
+                    firstReached.fulfill()
+                } else {
+                    completion(.success(delivery))
+                }
+            }, audit: { audits.append(($0, $1)) })
+
+        _ = transfer.dragItem(for: stub)
+        wait(for: [firstReached], timeout: 5)
+        held.completion?(.failure(.init(code: "stale-selection",
+                                        message: "empty stub name")))
+
+        let failure = fulfill(transfer,
+                              to: staging.appendingPathComponent("main.c"),
+                              stub: stub)
+        XCTAssertNil(failure, "the second attempt is the one that succeeds")
+
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("attempt=1") && $0.1.contains("eager fetch")
+        }, "the first (eager) attempt must be numbered 1")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("attempt=2") && $0.1.contains("grab requested")
+        }, "the second (promise-fallback) attempt for the SAME generation "
+            + "must be numbered 2, not read as a first attempt")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("does not retry a refused grab on its own")
+        }, "the host must say plainly that it never schedules the retry "
+            + "itself — the second attempt is a separate lane, not a "
+            + "retry loop")
+    }
+
     func testOneGrabAtATime() throws {
         let staging = try Self.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: staging) }
