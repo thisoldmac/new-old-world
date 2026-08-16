@@ -245,7 +245,13 @@ with a real failure mode: any future rig that arms and drives without
 fronting the target will measure a plane that registers nowhere, and will
 read exactly like a resident that does not work.
 
-### WHAT IS STILL BLOCKED, and it has moved one layer out
+### WHAT WAS STILL BLOCKED, and it has moved one layer out
+
+**RESOLVED the same day — see "THE GESTURE WAS THE VARIABLE" below.** The
+account in this section was right about the fact (`calls=0` means the
+drag never began) and it named the press/event plane correctly. It is
+kept because the two rig omissions it did not know about are the useful
+part.
 
 `calls=0` in cell 2. The handler is registered in the Finder and was
 never called, which now means one thing only: **the drag never began.**
@@ -278,6 +284,89 @@ that sends a later round after the wrong half of the system.
 interval the whole route depends on fitting inside a gesture. **No value
 was obtained**: it is emitted only on a drag-sourced publish, and none
 occurred. The plan asked for this number and it is still owed.
+**Measured now — 462 and 464 ticks. See below; the number is bad news.**
+
+### THE GESTURE WAS THE VARIABLE, and the drag plane works end to end (2026-08-16, sixth round, build `cfc5c1a1…`)
+
+Same build, same machine, same bare Continuity arm. The rig changed in
+three ways and the Finder dragged:
+
+    bounds  before (520,60)   after (616,60)      <- the FINDER's own account
+    selection before 'From Claude.txt' after 'HELLO_CLAUDE.txt'
+    drag handler state=0 calls=45863 enter=1/1 in=45859 leave=1/1 reent=0
+    drag handler file seq=2 type=54455854 cr=74747874 name=HELLO_CLAUDE.txt
+    continuity.selection generation=3 source=drag  name=HELLO_CLAUDE.txt
+
+**A drag-sourced generation crossed the wire, naming the file in the hand
+while the cached selection still named a different one.** That is the
+whole point of the plane and it is the first time it has happened.
+
+The three rig changes, in the order they matter:
+
+1. **NOW MUST BE HIDDEN, not merely behind.** Its window lies over the
+   desktop, and a press that lands on it is a press on the wrong
+   application. `hide`, then `front Finder`: fronting reorders, hiding
+   exposes. `tools/local-finder-drag.py` had earned this sentence in a
+   comment and nothing carried it across to the Continuity rig.
+2. **Motion in small steps with dwell**, rather than five state packets
+   back to back. A Finder drag begins from motion the application
+   observes while the button is down, and a hand does not teleport.
+3. The Finder front, which the fifth round had already established.
+
+So the fifth round's conclusion — "the press/event plane, not this
+route" — was correct, and both defects were in the RIG. Worth saying
+plainly: nothing in the product was wrong at any point in rounds two
+through five.
+
+### The wrong-file inversion, asked of the guest itself
+
+Both grabs, one gesture, on the live machine:
+
+    grab generation 1 (the stale selection)
+      -> file.refuse  stale-selection
+         "the drag no longer names what it was given"
+    grab generation 3 (the drag)
+      -> file.begin  name='From Claude.txt' bytes=499 dataBytes=499
+
+The stale cache is refused by name and the drag is served. The host's own
+decision table (`.dragged` above `bound`, `adopted`, `superseded`) is
+unit-tested without a Macintosh; this is the other half of it, and the
+two now agree.
+
+### THE LATENCY IS THE LENGTH OF THE GESTURE, and that is a new blocker
+
+`drag bind seq=2 latency=462 ticks` — and 464 on the second drag of the
+same session. Read it beside the drag's own clock:
+
+    drag begin  seq=2 tk=32817          <- EnterHandler, in the Finder
+    drag end    seq=2 tk=33265 elapsed=448
+    drag bind   seq=2 latency=462 ticks <- so the publish is at tk=33279
+
+**The identity is published 14 ticks after the drag ENDS and 462 ticks —
+7.7 seconds, the whole gesture — after it BEGAN.** `midGestureSelections`
+is empty in every run; nothing at all crossed the wire while the button
+was held. The pump table says why in one row: through the drag, the
+Finder pumps and NOW does not appear at all.
+
+This is the plan's own founding constraint arriving one layer later than
+it was expected. The resident sees the drag at begin and writes the
+identity into the cell correctly — that half works. But the APPLICATION
+publishes it, and the application receives no task time inside the
+Finder's drag loop, so the cell is drained only once the loop returns.
+
+**What that costs, precisely.** A cross that happens while the drag is
+held — the gesture the whole feature is for — reaches the host before any
+drag-sourced generation does. The bind is not wrong, it is late. The
+route therefore serves a gesture that has ENDED, and the acceptance's
+"cross the edge, grab redeems" is NOT met by this route as it stands.
+
+**What it does not cost.** The identity, the refusal of the stale
+generation, and the serve are all correct and now measured on a live
+machine. Nothing above needs rebuilding; the publish needs to move to
+somewhere that runs during the drag — the resident already does, and it
+is the same "make it real one layer down" shape as MBTicks and the
+session re-arm. That is slice 3's first target now, ahead of the 17-cycle
+anomaly.
 
 ### Still unverified
 
@@ -286,6 +375,14 @@ occurred. The plan asked for this number and it is still owed.
 - The grab-time drag confirmation has never run against a live resident,
   so the one path where the guest reads the cell twice — mint, then
   confirm seconds later — is unexercised outside the host cc.
+  **Partly closed:** the grab of a drag-sourced generation was served on
+  a live machine (`file.begin`, 499 bytes) and the stale one refused. The
+  BYTES were never drained, so "the file lands host-side byte-identical"
+  remains unproven — the transfer was announced and not read.
+- The edge cross with the host application in the loop has not been run
+  at all this round; every measurement above is guest-side, over one
+  wire, with an instrument standing in for the host. Given the latency
+  finding it would be expected to bind late rather than to bind wrong.
 - Folders are refused on the drag source exactly as on the poll, which
   keeps the later folder slice one decision rather than two.
 
