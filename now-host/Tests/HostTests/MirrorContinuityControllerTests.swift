@@ -274,6 +274,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         deepClickLog: Bool = false,
         acknowledgementTimeout: TimeInterval = 3,
         starvationAnnounceAfter: TimeInterval = 10,
+        starvationBackstop: TimeInterval = 300,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
         let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
@@ -287,7 +288,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         let controller = MirrorContinuityController(
             listener: listener, defaults: defaults,
             acknowledgementTimeout: acknowledgementTimeout,
-            starvationAnnounceAfter: starvationAnnounceAfter, audit: audit)
+            starvationAnnounceAfter: starvationAnnounceAfter,
+            starvationBackstop: starvationBackstop, audit: audit)
         controller.autoReconnect = autoReconnect
         controller.fastPump = fastPump
         controller.deepClickLog = deepClickLog
@@ -312,6 +314,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         fastPump: Bool = false,
         acknowledgementTimeout: TimeInterval = 3,
         starvationAnnounceAfter: TimeInterval = 10,
+        starvationBackstop: TimeInterval = 300,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ActiveRig {
         let port = try XCTUnwrap(listener.boundPort)
@@ -322,7 +325,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
             initial: initial, autoReconnect: autoReconnect,
             fastPump: fastPump,
             acknowledgementTimeout: acknowledgementTimeout,
-            starvationAnnounceAfter: starvationAnnounceAfter, audit: audit)
+            starvationAnnounceAfter: starvationAnnounceAfter,
+            starvationBackstop: starvationBackstop, audit: audit)
         try rig.guest.send(.continuityReport(.init(
             version: ContinuityContract.version,
             id: rig.arm.id, epoch: rig.arm.epoch, state: "armed",
@@ -489,6 +493,106 @@ final class MirrorContinuityControllerTests: XCTestCase {
         }
         XCTAssertTrue(rig.controller.isActive)
         XCTAssertTrue(rig.controller.status.contains("direct pointer connected"))
+    }
+
+    /// THE KEY TEST: an indefinitely held gesture — modal, menu hold,
+    /// whatever shape — must survive for as long as resident liveness
+    /// answers, well past several multiples of `acknowledgementTimeout`.
+    /// This is the behaviour the ack-silence watchdog must never regress:
+    /// silence with a live resident is starvation, not death, and starving
+    /// for a while longer must not be distinguishable from starving for a
+    /// moment in the one place that matters — whether the epoch survives.
+    func testExtendedStarvationWithLiveResidentNeverEndsTheEpoch()
+        async throws {
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.05, starvationBackstop: 300)
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+
+        // Many multiples of acknowledgementTimeout, none of the backstop:
+        // long enough that the old unconditional watchdog would have ended
+        // the epoch dozens of times over.
+        try await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertTrue(rig.controller.isActive,
+                      "resident liveness answered throughout; the epoch "
+                      + "must still be owned")
+        XCTAssertTrue(rig.controller.isEnabled)
+    }
+
+    /// Every additional `acknowledgementTimeout` of tolerated silence is
+    /// audited on its own line, not just the onset — the log must be able
+    /// to narrate how long a hold has been tolerated without the reader
+    /// re-deriving it from timestamps.
+    func testToleratedStarvationIsAuditedPeriodicallyNotOnlyAtOnset()
+        async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.05, starvationBackstop: 300) {
+                audit.append(($0, $1))
+            }
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+
+        try await waitUntil("more than one tolerated-silence line",
+                            timeout: 2) {
+            audit.filter {
+                $0.1.contains("tolerated: resident liveness answering "
+                    + "(starvation, not death)")
+            }.count >= 3
+        }
+    }
+
+    /// THE BACKSTOP. Resident liveness is a TCP read, and this project
+    /// already argues elsewhere that such a channel can answer "alive"
+    /// long after the machine behind it stopped being reachable. Past the
+    /// backstop, ack silence ends the epoch even while liveness still
+    /// claims the machine is there — the dead-man fallback for evidence
+    /// that may itself be lying.
+    func testStarvationPastTheBackstopEndsTheEpochDespiteLiveResident()
+        async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.05, starvationBackstop: 0.3) {
+                audit.append(($0, $1))
+            }
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+
+        try await waitUntil("backstop ends the epoch", timeout: 2) {
+            !rig.controller.isEnabled
+        }
+        XCTAssertFalse(rig.controller.isActive)
+        XCTAssertTrue(audit.contains {
+            $0.1.contains("exceeded the") && $0.1.contains("backstop")
+        }, "no backstop line was audited: \(audit.map(\.1))")
+        XCTAssertTrue(
+            rig.controller.status.contains("UDP acknowledgements")
+                && rig.controller.status.contains("backstop exceeded"),
+            rig.controller.status)
+    }
+
+    /// The lease clock that keeps the GUEST's own timeout armed is driven
+    /// on its own queue by `ContinuityKeepaliveClock`, independent of the
+    /// ack-silence watchdog. Confirms host patience does not come at the
+    /// cost of the datagrams the guest's lease depends on hearing.
+    func testKeepalivesKeepFlowingThroughoutTolerableStarvation()
+        async throws {
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.05, starvationBackstop: 300)
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+        try await waitUntil("initial state") { !rig.udp.packets.isEmpty }
+        let baseline = rig.udp.packets.count
+
+        try await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertTrue(rig.controller.isActive,
+                      "the epoch must still be owned while asserting on "
+                      + "keepalive delivery")
+        XCTAssertTrue(
+            rig.udp.packets.dropFirst(baseline).contains {
+                $0.flags.contains(.keepalive)
+            }, "no keepalive datagrams arrived during the tolerated hold; "
+                + "the guest's host-fed lease would have expired")
     }
 
     func testDirectClickStreamsReleaseWithoutWaitingForPressAck()
