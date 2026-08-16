@@ -177,7 +177,7 @@ struct HostShown: Codable, Equatable, Sendable {
 
 enum ContinuityContract {
     static let version = Int(ContinuityStateDatagram.version)
-    static let residentTableVersion = 14
+    static let residentTableVersion = 15
     static let residentVersion = "1.3"
 }
 

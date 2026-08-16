@@ -1037,6 +1037,16 @@
         "ext/src/now_ext_dragobs.c"
       ],
       "reason": "slice-1 drag observer in development; shared bake due at main"
+    },
+    {
+      "at": "2026-08-16T14:08:40-0400",
+      "branch": "feat/resident-drag-observe",
+      "extDigest": "b921f85005427d217e9adf8d49fd609667102d7e",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "slice-1b registration route in development; shared bake due at main"
     }
   ]
 }

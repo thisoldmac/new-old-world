@@ -979,6 +979,24 @@ enum {
        anything can see a drag begin, so the only instrument that can is
        one running in the dragging application's own context. */
     kNowPeekContinuityFormatV14 = 14,
+    /* V15 appends what a REGISTERED DRAG HANDLER sees, and it exists
+       because V14 measured that the other route does not. A 68K patch on
+       `_DragDispatch` is provably live and a PowerPC Finder's drag never
+       touches it (2026-08-16: install=1 control=1/2 disp=2 track=0 across
+       a completed Finder file drag). So this block stops patching and
+       ASKS: `InstallTrackingHandler` is a public, per-application
+       registration, and the act plane already runs code in the Finder's
+       own context on every armed pass, which is the one place the
+       registration can be made.
+
+       What that buys, if the Drag Manager honours it: `EnterWindow` /
+       `InWindow` / `LeaveWindow` is a continuous statement of WHICH
+       WINDOW targeting believes the drag is over - the exact quantity
+       `feat/hg-drag-dragmgr` could not see - and the handler holds a live
+       DragRef, so the dragged file's identity is readable at begin with
+       no selection involved. Both halves of the plan through one public
+       API and no code patching at all. */
+    kNowPeekContinuityFormatV15 = 15,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -991,7 +1009,7 @@ enum {
    contain a new application and an older resident while every artifact was
    individually well formed.  The update manifests also publish this value,
    so a stack assembler can reject that pair before it reaches a Macintosh. */
-#define NOW_CONTINUITY_FORMAT_CURRENT 14u
+#define NOW_CONTINUITY_FORMAT_CURRENT 15u
 
 enum {
     kNowPeekContinuityExitNone = 0,
@@ -1382,6 +1400,57 @@ typedef struct {
     NowPeekU32 reserved0;
 } NowPeekDragObsSample;
 
+enum { kNowPeekDragObsTrackCapacity = 16 };
+
+/* How many A5 worlds the plane will hold a registration in at once. A
+   registration is per-APPLICATION, so the count is the count of
+   applications that have pumped while armed - small, bounded, and
+   bounded on purpose: this table is what un-registration is driven from,
+   and a registration we have forgotten is one we can never remove. */
+enum { kNowPeekDragObsContextCapacity = 8 };
+
+/* `handler_state`. Append, never renumber. */
+enum {
+    kNowPeekDragObsHandlerUntried   = 0,
+    /* At least one InstallTrackingHandler returned noErr. Says the Drag
+       Manager ACCEPTED the registration; says nothing at all about
+       whether it will ever call it, which is the separate measurement
+       `handler_calls` exists for. */
+    kNowPeekDragObsHandlerInstalled = 1,
+    /* It refused; `handler_err` says with what. */
+    kNowPeekDragObsHandlerRefused   = 2,
+    /* Every context slot is full. Recorded rather than silently dropping
+       a registration, because a dropped one is also an un-removable one. */
+    kNowPeekDragObsHandlerNoRoom    = 3
+};
+
+/* One call into our registered tracking handler, from inside the
+   dragging application, at the Drag Manager's own pleasure.
+
+   THE WHOLE POINT IS THE PAIR. `window` is the window the Drag Manager
+   NAMES as the drag's target; `dm_*` is where the Drag Manager thinks
+   the mouse is; `lm_*` is the low-memory point this resident is actually
+   driving. `feat/hg-drag-dragmgr` measured targeting believing `inwin=1`
+   while GetMouse read the true point, with 31k enter/leave oscillations,
+   and had no way to see which of those three quantities disagreed with
+   which. Every row here states all three at one instant. */
+typedef struct {
+    NowPeekU32 ticks;
+    NowPeekU32 message;           /* dragTrackingEnterWindow, InWindow, ... */
+    NowPeekU32 window;            /* the WindowRef the Drag Manager named */
+    NowPeekU32 a5;                /* whose context the handler ran in */
+    NowPeekI32 dm_mouse_h;        /* GetDragMouse: `mouse` */
+    NowPeekI32 dm_mouse_v;
+    NowPeekI32 dm_pinned_h;       /* GetDragMouse: `globalPinnedMouse` */
+    NowPeekI32 dm_pinned_v;
+    NowPeekI32 lm_raw_h;          /* low-memory RawMouse: what we drive */
+    NowPeekI32 lm_raw_v;
+    NowPeekI32 lm_mouse_h;        /* low-memory MouseLocation */
+    NowPeekI32 lm_mouse_v;
+    NowPeekU32 attributes;        /* GetDragAttributes, zero-extended */
+    NowPeekI32 err;               /* first nonzero OSErr of this row */
+} NowPeekDragObsTrack;
+
 typedef struct {
     /* -- the instrument's own honesty, before any drag ---------------- */
     NowPeekU32 install_state;     /* kNowPeekDragObsInstall* */
@@ -1441,6 +1510,50 @@ typedef struct {
     NowPeekU32 sample_dropped;    /* entries the rolling window discarded */
     unsigned char file_name[64];  /* FSSpec.name, Pascal, fixed width */
     NowPeekDragObsSample samples[kNowPeekDragObsSampleCapacity];
+    /* ---- V15: the registered handler -------------------------------
+       Everything above this line is the TRAP route and is retained
+       because its zero is a measurement. Everything below is the
+       REGISTRATION route, and the two are deliberately separate
+       counters: they answer the same question through two mechanisms
+       and collapsing them would destroy the only comparison that
+       matters. */
+    NowPeekU32 handler_state;     /* kNowPeekDragObsHandler* */
+    NowPeekI32 handler_err;       /* InstallTrackingHandler's OSErr */
+    NowPeekU32 handler_installs;  /* registrations the Drag Manager took */
+    NowPeekU32 handler_removes;   /* and gave back, per the pairing rule */
+    NowPeekU32 handler_contexts;  /* distinct A5 worlds currently holding one */
+    /* THE RESULT. Every entry into our handler, whatever the message.
+       Zero here beside a nonzero `handler_installs` is the registration
+       route failing exactly the way the trap route did, and it must be
+       possible to say that in those words. */
+    NowPeekU32 handler_calls;
+    NowPeekU32 handler_enter_handler;
+    NowPeekU32 handler_enter_window;
+    NowPeekU32 handler_in_window;
+    NowPeekU32 handler_leave_window;
+    NowPeekU32 handler_leave_handler;
+    NowPeekU32 handler_reentries;
+    /* Odd while an EnterHandler record is being written, even and bumped
+       LAST when it is whole. */
+    NowPeekU32 handler_begin_seq;
+    NowPeekU32 handler_a5;        /* whose drag it was */
+    NowPeekU32 handler_drag_ref;
+    NowPeekU32 handler_first_ticks;
+    NowPeekU32 track_count;       /* TOTAL rows ever; the ring index derives */
+    NowPeekU32 track_dropped;
+    /* The identity, read from the handler's own live DragRef at
+       EnterHandler. Kept separate from the trap route's `item_*` above
+       for the same reason the counters are: two mechanisms, two
+       readings, and a disagreement between them would be a finding. */
+    NowPeekU32 hitem_count;
+    NowPeekU32 hitem_status;      /* kNowPeekDragObsItem*, FIRST ITEM ONLY */
+    NowPeekI32 hitem_err;
+    NowPeekU32 hfile_type;
+    NowPeekU32 hfile_creator;
+    NowPeekI32 hfile_vrefnum;
+    NowPeekU32 hfile_parid;
+    unsigned char hfile_name[64];
+    NowPeekDragObsTrack tracks[kNowPeekDragObsTrackCapacity];
 } NowPeekDragObserve;
 
 /* V10's non-overwriting button timing chain. All times are guest TickCount
@@ -2612,15 +2725,23 @@ _Static_assert(sizeof(NowPeekContinuityClickProbe) == 84,
                "continuity click probe ABI drift");
 _Static_assert(sizeof(NowPeekDragObsSample) == 56,
                "V14 drag observer sample ABI drift");
-_Static_assert(sizeof(NowPeekDragObserve) == 1096,
-               "V14 drag observer block ABI drift");
+_Static_assert(sizeof(NowPeekDragObsTrack) == 56,
+               "V15 tracking row ABI drift");
+_Static_assert(offsetof(NowPeekDragObserve, handler_state) == 1096,
+               "V15 handler block offset");
+_Static_assert(offsetof(NowPeekDragObserve, hfile_name) == 1196,
+               "V15 handler name offset");
+_Static_assert(offsetof(NowPeekDragObserve, tracks) == 1260,
+               "V15 tracking ring offset");
+_Static_assert(sizeof(NowPeekDragObserve) == 2156,
+               "drag observer block ABI drift (V14 trap half + V15 handler half)");
 _Static_assert(offsetof(NowPeekDragObserve, file_name) == 136,
                "V14 drag observer name offset");
 _Static_assert(offsetof(NowPeekDragObserve, samples) == 200,
                "V14 drag observer sample ring offset");
 _Static_assert(sizeof(((NowPeekDragObserve *)0)->file_name) == 64,
                "V14 drag observer name width");
-_Static_assert(sizeof(NowPeekContinuityCell) == 5548,
+_Static_assert(sizeof(NowPeekContinuityCell) == 6608,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
