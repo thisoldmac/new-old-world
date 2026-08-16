@@ -363,14 +363,28 @@ int now_wire_cloud_get(const char *service, const char *item,
 void now_wire_cloud_get_destination(Boolean use, short vref, long dir);
 Boolean now_wire_cloud_get_destination_get(short *vref, long *dir);
 
-/* The inbound receive (the file.offer lane a cloud.get's answer
-   rides), read-only, now_wire_get_active's shape: false when nothing
-   is landing; otherwise fills what has arrived, what is expected, and
-   whether the receive answers our own cloud.get. Every out-parameter
-   is optional. */
+/* EVERY inbound file, whichever lane carries it, read-only and in
+   now_wire_get_active's shape: false when nothing is landing; otherwise
+   fills what has arrived, what is expected, whether the receive answers
+   our own cloud.get, and whether it is a PULL rather than a push. Every
+   out-parameter is optional.
+
+   Two lanes, one question, because the alternative is per-page wiring:
+   the file.offer lane (a push, or a cloud.get's answer) and the
+   file.get lane, whose UNATTENDED pulls — a continuity grab, whether
+   `offer --take` sent it or a Finder drag promise did — have no page
+   drawing them anywhere. An attended pull is left out: the page that
+   asked for it reads now_wire_get_active and draws its own, and two
+   windows reporting one transfer is worse than one (receive_progress.h
+   makes the same argument for the Cloud page's downloads).
+
+   `is_pull` exists because the two lanes stop differently:
+   now_wire_get_cancel for a pull, now_wire_put_cancel for a push. A
+   caller offering a person a Stop button must ask. */
 Boolean now_wire_receive_active(long *received, long *expected,
                                 Boolean *cloud_get,
-                                char *name, long name_cap);
+                                char *name, long name_cap,
+                                Boolean *is_pull);
 
 /* The last inbound receive's one-line outcome ("Received IMG_1234.jpg"
    or why not) and its sequence number, which changes exactly when a
