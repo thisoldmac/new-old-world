@@ -9,7 +9,7 @@ authority: [docs/architecture.md, docs/naming.md, docs/onboarding.md, contract/a
 module_ids: [settings]
 source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/HostSettingsNavigation.swift, now-host/Sources/Host/ContinuityConnectionDefaults.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
 media_ids: [settings-host, settings-ppc]
-last_verified: 2026-08-15
+last_verified: 2026-08-16
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -106,6 +106,17 @@ Extension restart state survives an application relaunch and clears only when
 a later boot reports the installed resident identity active. On launch,
 PowerPC also warns when it detects CarbonLib below the supported 1.6 floor;
 **Don't Warn Again** suppresses that advisory without changing CarbonLib.
+
+Installing an application update never relaunches it, and installing an
+extension update never restarts the guest Mac — the classic side keeps
+running the old build until a person quits and launches it again, or
+restarts it. A row carries a **Needs relaunch** badge from the moment an
+install finishes until this Mac actually sees a reconnect report the new
+build, and that state survives the disconnect a real relaunch causes: it
+is tracked per machine, not per session, so it is still there if the
+machine reconnects under a new session before being relaunched. The
+notice underneath names the build waiting to be picked up and updates
+itself the moment this Mac can confirm it.
 
 ## Current limitations
 
