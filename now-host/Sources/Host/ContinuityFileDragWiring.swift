@@ -39,7 +39,16 @@ enum ContinuityFileDrag {
         grab: ContinuityGrabTransfer? = nil,
         audit: @escaping Audit = {
             HostLog.shared.write($0, "continuity", $1)
-        }
+        },
+        /// Where a REFUSAL — as opposed to any terminal outcome — is said
+        /// out loud somewhere a person is actually looking mid-drag, not
+        /// only on the Continuity page's status line nobody watches while
+        /// their cursor is over Finder or the guest window. Wired by
+        /// `HostAppState` to a system notification plus the menu-bar
+        /// flash, the same pair `ScreenHostModuleRuntime` uses for a
+        /// screenshot outcome. Optional so every existing test that builds
+        /// this seam without one keeps behaving exactly as before.
+        refusal: ((String) -> Void)? = nil
     ) {
         if let selection, let grab {
             /* Every terminal grab outcome — refused or completed — becomes
@@ -51,6 +60,11 @@ enum ContinuityFileDrag {
             grab.outcomeSink = { [weak edge] message in
                 edge?.reportFileGrabOutcome(message)
             }
+            /* The narrower sibling: only the refusal half of the same
+               sentence, handed to whichever surfacing `refusal` was built
+               with. See the parameter's own comment for why this is a
+               second sink rather than a filter downstream of the first. */
+            grab.refusalSink = refusal
             /* The stub lane is installed only when both halves exist: a
                binding with nothing to redeem it would drag a promise that
                can never be fulfilled, which is worse than not claiming the
@@ -124,6 +138,13 @@ enum ContinuityFileDrag {
                 }
                 guard let scene = scene() else {
                     audit(.warn, "file drop refused: " + noSceneReason)
+                    /* The direction a file dragged FROM this Mac TOWARD
+                       the guest travels: refused here because no scene
+                       exists. Left unsurfaced it reads as "host→guest is
+                       not working" with nothing on screen to say why —
+                       the same silent-refusal shape as the grab side, one
+                       edge over. Same sentence, same surfacing. */
+                    refusal?(noSceneReason)
                     return false
                 }
                 switch CrossMachineFileTargeting.destination(
