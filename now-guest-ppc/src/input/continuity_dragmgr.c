@@ -183,6 +183,18 @@ static pascal OSErr drag_send_data(FlavorType type, void *refcon,
 
     (void)refcon;
 
+    /* LOGGED BEFORE ANY DECISION THAT COULD HIDE IT, and the flavor is
+       named. `promise-never-asked` is a verdict derived from state, and
+       state can only say the callback did not COMPLETE - two of the
+       returns below leave no trace in it at all. So the arrival itself
+       is recorded here, unconditionally, where nothing can swallow it.
+
+       Which flavor is the useful half: a receiver asking for something
+       other than the promised one is a different defect from a receiver
+       that never asks, and until this line the two were one word. */
+    now_log(kLogInfo, "mirror", "drag promise asked for '%.4s'",
+            (const char *)&type);
+
     /* The only flavor promised. Anything else is a receiver asking for
        something this drag never offered. */
     if (type != kDragPromisedFlavor) {
@@ -388,9 +400,22 @@ static void start_drag(void)
         return;
     }
     /* Declared with no data: the send-data callback fills it in on
-       demand, which is what makes this a promise rather than a file. */
-    AddDragItemFlavor(drag, kOfferItemRef, kDragPromisedFlavor, NULL, 0,
-                      flavorNotSaved);
+       demand, which is what makes this a promise rather than a file.
+
+       ITS RESULT IS CHECKED, unlike the first version of this line. This
+       is the flavor the receiver asks for, so a failure here is a drag
+       that can never be completed by anybody - and it would present as
+       the receiver simply never asking, which is indistinguishable from
+       a Finder that does not speak promised HFS. Refusing to start is
+       the honest answer to a promise we could not declare. */
+    if (AddDragItemFlavor(drag, kOfferItemRef, kDragPromisedFlavor, NULL, 0,
+                          flavorNotSaved) != noErr) {
+        now_log(kLogError, "mirror",
+                "drag: the promised flavor would not attach; not started");
+        DisposeDrag(drag);
+        now_continuity_drag_start_failed(&g_drag);
+        return;
+    }
     /* The name the Finder should use, offered as a hint rather than
        imposed — the receiver remains free to uniquify it. */
     CopyCStringToPascal(g_drag.item.name, pname);
