@@ -103,34 +103,64 @@ static void web_layout(const Rect *body)
     move_control(g_port, &g_r.port_button);
 }
 
-static void draw_line(const Rect *r, const char *line, TruncCode trunc)
+/* One line of the page, drawn or described. A NULL writer means "draw";
+   a writer means "describe". Both faces walk the same code so the
+   observation plane cannot drift away from the pixels - the drift is
+   what made sixteen pages look empty to the host. */
+static void web_line(const WorkshopSceneWriter *writer, const Rect *r,
+                     const char *line, TruncCode trunc)
 {
     Str255 text;
+
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line, r, true);
+        return;
+    }
     MoveTo(r->left, (short)(r->top + 12));
     CopyCStringToPascal(line, text);
     TruncString((short)(r->right - r->left), text, trunc);
     DrawString(text);
 }
 
-static void web_draw(void)
+static void web_content(const WorkshopSceneWriter *writer)
 {
     NowPrefs prefs;
     char line[220];
     char value[180];
 
+    /* The address Open Transport granted, when there is one. The page used
+       to print "127.0.0.1:<preference>" whether or not anything was
+       listening there, which is the same class of claim as the status line
+       that said "Listening" while every request was being refused. */
+    now_web_proxy_endpoint(value, sizeof value);
+    if (value[0] != '\0') {
+        snprintf(line, sizeof line, "HTTP proxy: %s", value);
+    } else {
+        now_prefs_load(&prefs);
+        now_web_endpoint("127.0.0.1", prefs.web_proxy_port, value,
+                         sizeof value);
+        snprintf(line, sizeof line, "HTTP proxy: %s (not listening)", value);
+    }
+    web_line(writer, &g_r.endpoint, line, truncEnd);
+    web_line(writer, &g_r.direct_note,
+             "Set the browser's HTTP proxy to this loopback address. It is not exposed on the LAN.",
+             truncEnd);
+    web_line(writer, &g_r.relay_note,
+             "Pages travel over New Old World's existing connection. Choose browser and page compatibility on this Mac.",
+             truncEnd);
+}
+
+static void web_draw(void)
+{
     if (g_owner == NULL || !g_visible) return;
-    now_prefs_load(&prefs);
     SetPortWindowPort(g_owner);
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    now_web_endpoint("127.0.0.1", prefs.web_proxy_port, value, sizeof value);
-    snprintf(line, sizeof line, "HTTP proxy: %s", value);
-    draw_line(&g_r.endpoint, line, truncEnd);
-    draw_line(&g_r.direct_note,
-              "Set the browser's HTTP proxy to this loopback address. It is not exposed on the LAN.",
-              truncEnd);
-    draw_line(&g_r.relay_note,
-              "Pages travel over New Old World's existing connection. Choose browser and page compatibility on this Mac.",
-              truncEnd);
+    web_content(NULL);
+}
+
+static void web_describe_scene(const WorkshopSceneWriter *writer)
+{
+    web_content(writer);
 }
 
 static Boolean web_click(const EventRecord *event, Point local)
@@ -149,7 +179,10 @@ static Boolean web_click(const EventRecord *event, Point local)
                 if (now_prefs_save(&prefs) == noErr) {
                     char reason[96];
                     if (now_web_proxy_start(port, reason, sizeof reason) == 0) {
-                        strcpy(g_status, "Proxy restarted on the new loopback port.");
+                        /* Yield the status area back to the listener: a
+                           sticky "restarted" would outlive the fact and
+                           hide the refusal line behind it. */
+                        g_status[0] = '\0';
                     } else {
                         strncpy(g_status, reason, sizeof g_status - 1);
                         g_status[sizeof g_status - 1] = '\0';
@@ -173,7 +206,9 @@ static void web_activate(Boolean active)
 
 static void web_status(char *out, long cap)
 {
-    char live[128];
+    /* Room for the listener line plus a refusal and the host's last word;
+       the proxy composes them and this only chooses which voice wins. */
+    char live[288];
     const char *text;
     now_web_proxy_status(live, sizeof live);
     text = g_status[0] ? g_status : live;
@@ -184,7 +219,9 @@ static void web_status(char *out, long cap)
 
 static const WorkshopModuleOps k_ops = {
     web_create, web_dispose, web_show, web_layout, web_draw, web_click,
-    NULL, web_activate, NULL, web_status, NULL
+    NULL, web_activate, NULL, web_status, web_describe_scene,
+    /* copy_text: two sentences and a port, all visible at once. */
+    NULL
 };
 
 const WorkshopModuleOps *web_module_ops(void) { return &k_ops; }

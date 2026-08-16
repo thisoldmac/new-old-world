@@ -49,17 +49,35 @@ ordered(wire, "now_sha256_update(&g_put.update_sha, bytes, len)",
         "now_files_receive_finish(&g_put.rx)",
         "now_update_install(g_put.update_component")
 
+# 034 H4: cancelling an update mid-download -- whether the person presses
+# Cancel at the host (file.end ok:false) or at the guest console
+# (now_wire_put_cancel) -- must free g_update.pending the same way every
+# OTHER way an update transfer ends already does. Left uncleared,
+# run_update's own "already pending" guard (above) refuses every later
+# attempt until the app relaunches: the guest half of what a sane
+# post-cancel state means.
+put_abort_start = wire.index("static void put_abort(const char *code")
+put_abort_end = wire.index("\n}\n", put_abort_start)
+put_abort_body = wire[put_abort_start:put_abort_end]
+ordered(put_abort_body, "if (g_put.update)", "g_update.pending = false;")
+
 # Finder identity is checked before either component is installed. The old
-# item is renamed to a collision-free recovery name and moved to that volume's
-# Trash before the verified staged item takes the canonical name. There is no
-# exchange: the running app deliberately remains alive from the trashed file
-# long enough to report that a relaunch is required.
+# item moves to that volume's Trash under its OWN unchanged name before the
+# verified staged item takes the canonical name -- 2026-08-14 (034 H4): this
+# used to rename the old item to a collision-free recovery name first, which
+# is the exact fBsyErr operation fileshare.c's move_busy_named was already
+# hardened against (renaming a still-running spec does not succeed reliably
+# on every system Finder replacement does). There is no exchange: the
+# running app deliberately remains alive from the trashed file long enough
+# to report that a relaunch is required.
 ordered(install, "finder_identity(staged, 'APPL', 'NOWo')",
         'replace_to_trash(staged, &current, "application"')
 ordered(install, "finder_identity(staged, 'INIT', 'NOWx')",
         'replace_to_trash(staged, &current, "NOW Extension"')
 ordered(install, "FindFolder(spec->vRefNum, kTrashFolderType",
-        "FSpRename(spec, pname)", "move_to_directory(spec, trash_dir)")
+        "now_trash_move_busy(spec, trash_dir)")
+assert "FSpRename(spec," not in install, (
+    "the live spec must never be renamed -- that is what returns fBsyErr")
 ordered(install, "move_old_to_trash(&old", "FSpRename(&replacement",
         "restore_from_trash(&old")
 assert "FSpExchangeFiles" not in install
@@ -86,9 +104,12 @@ ordered(activation, "now_update_current_identity(kNowUpdateExtension",
         "now_prefs_save(prefs)")
 # The continuity branch already owns V25 for bounded launch-log retention.
 # Activation receipts must extend that record instead of reusing the same
-# format number with a different binary layout.
+# format number with a different binary layout. A later slice (Workshop
+# open/closed persistence) owns V27 on top of this one, so the pin here
+# checks the V26 layer nests unchanged rather than pinning the top-level
+# format number, which the later slice legitimately moved on.
 assert "PrefsRecordV25 v25;               /* format = 26 */" in prefs
-assert "record.format = 26;" in prefs
+assert "PrefsRecordV26 v26;               /* format = 27 */" in prefs
 assert "pending_extension_build" in prefs
 ordered(wire, "now_prefs_load(&prefs);",
         "g_update.restart_required = now_update_activation_reconcile(&prefs);")

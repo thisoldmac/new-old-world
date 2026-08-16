@@ -9,5 +9,5 @@ const char *now_mirror_show_button_title(void)
 
 const char *now_mirror_show_waiting_text(void)
 {
-    return "Asking that Mac to show its Mirror...";
+    return "Asking Other Mac to show its Mirror...";
 }

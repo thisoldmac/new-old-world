@@ -8,6 +8,7 @@
 #include "prefs.h"
 #include "pump.h"
 #include "share_path.h"
+#include "trash_move.h"
 
 enum { kSharingDialogID = 301 };
 
@@ -2312,62 +2313,27 @@ static void free_name(short vref, long dir_a, long dir_b,
     }
 }
 
-/* A collision already in Trash only needs a name free in Trash. The source
-   folder is irrelevant because this rename never touches the running APPL. */
-static void free_name_in_folder(short vref, long dir,
-                                const unsigned char *wanted, Str255 out)
-{
-    FSSpec probe;
-    int suffix;
-
-    memcpy(out, wanted, wanted[0] + 1);
-    for (suffix = 2; suffix < 100; ++suffix) {
-        char base[64], candidate[80];
-
-        if (FSMakeFSSpec(vref, dir, out, &probe) != noErr) {
-            return;
-        }
-        memcpy(base, wanted + 1, wanted[0]);
-        base[wanted[0]] = '\0';
-        snprintf(candidate, sizeof candidate, "%.27s %d", base, suffix);
-        CopyCStringToPascal(candidate, out);
-    }
-}
-
-/* A running application must keep its catalog name. If Trash already holds
-   that name, move the older Trash occupant aside, then move the live APPL
-   unchanged. Renaming the APPL itself is the operation that returns fBsyErr
-   on systems where Finder replacement still succeeds. */
+/* A running application must keep its catalog name; renaming the APPL
+   itself is the operation that returns fBsyErr on systems where Finder
+   replacement still succeeds. `now_trash_move_busy` (shared with the
+   in-place updater, which hit the identical fBsyErr the hard way) is the
+   move-without-renaming-the-live-spec primitive; when desired differs
+   from spec's own name there is nothing "busy" about the move and the
+   ordinary rename-then-move path applies instead. */
 static int move_busy_named(FSSpec *spec, long to_dir,
                            const unsigned char *desired,
                            Str255 out_final)
 {
-    FSSpec collision;
-    Str255 available;
-    Boolean moved_collision = false;
     OSErr err;
 
     if (!EqualString(spec->name, desired, false, false)) {
         return move_named(spec, to_dir, desired, out_final);
     }
-    if (FSMakeFSSpec(spec->vRefNum, to_dir, desired, &collision) == noErr) {
-        free_name_in_folder(spec->vRefNum, to_dir, desired, available);
-        err = FSpRename(&collision, available);
-        if (err != noErr) {
-            g_last_err = err;
-            return kFilesIOError;
-        }
-        memcpy(collision.name, available, available[0] + 1);
-        moved_collision = true;
-    }
-    err = cat_move(spec, to_dir);
+    err = now_trash_move_busy(spec, to_dir);
     if (err != noErr) {
-        if (moved_collision) {
-            (void)FSpRename(&collision, desired);
-        }
+        g_last_err = err;
         return err == fnfErr ? kFilesNotFound : kFilesIOError;
     }
-    spec->parID = to_dir;
     memcpy(out_final, desired, desired[0] + 1);
     return kFilesOK;
 }

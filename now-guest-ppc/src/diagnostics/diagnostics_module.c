@@ -1,13 +1,16 @@
 #include "diagnostics_module.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "diag_layout.h"
 #include "fileshare.h"
+#include "loopstat.h"
 #include "pump.h"
 #include "vprobe.h"
 #include "wire.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* The Diagnostics page: what this Mac can measure about itself, run from
    the machine itself rather than only from the wire.
@@ -138,17 +141,27 @@ static void sync_scrollbar(void)
     HiliteControl(g_scroll, (max > 0 && g_visible) ? 0 : 255);
 }
 
-static void draw_line(const Rect *where, const char *text)
+/* One walk over a card, taken twice: a NULL writer draws it, a writer
+   describes it to the host's observation plane. A probe's refusal
+   sentence in particular must reach the host verbatim and identical to
+   the pixels, which is what sharing the walk buys. */
+static void emit_line(const WorkshopSceneWriter *writer, const Rect *where,
+                      const char *text)
 {
     Str255 pas;
 
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, text, where,
+                           true);
+        return;
+    }
     MoveTo(where->left, (short)(where->top + 11));
     CopyCStringToPascal(text, pas);
     TruncString((short)(where->right - where->left), pas, truncEnd);
     DrawString(pas);
 }
 
-static void draw_card(int index)
+static void emit_card(const WorkshopSceneWriter *writer, int index)
 {
     const DiagCardLayout *card = &g_r.cards[index];
     const DiagCard *state = &g_cards[index];
@@ -165,26 +178,45 @@ static void draw_card(int index)
     if (frame.bottom < g_r.canvas.top || frame.top > g_r.canvas.bottom) {
         return;                       /* wholly scrolled away */
     }
-    RGBForeColor(&gray);
-    FrameRect(&frame);
-    RGBForeColor(&black);
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopScenePanel,
+                           diag_probe_title((DiagProbe)index), &frame, true);
+    } else {
+        RGBForeColor(&gray);
+        FrameRect(&frame);
+        RGBForeColor(&black);
+    }
 
     to_window(&card->title, &where);
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    MoveTo(where.left, (short)(where.top + 12));
-    CopyCStringToPascal(diag_probe_title((DiagProbe)index), pas);
-    DrawString(pas);
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    /* The verb, quietly, after the name: it is what a person types in the
-       Console and what the other Mac's page calls the same measurement. */
-    DrawString((ConstStr255Param)"\p  ");
-    CopyCStringToPascal(diag_probe_verb((DiagProbe)index), pas);
-    DrawString(pas);
+    if (writer != NULL) {
+        /* Name and verb are drawn as one run of text on one baseline, so
+           they are described as one string in that rect rather than as
+           two overlapping ones. */
+        char heading[96];
+
+        snprintf(heading, sizeof heading, "%s  %s",
+                 diag_probe_title((DiagProbe)index),
+                 diag_probe_verb((DiagProbe)index));
+        workshop_scene_add(writer, kWorkshopSceneStaticText, heading,
+                           &where, true);
+    } else {
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+        MoveTo(where.left, (short)(where.top + 12));
+        CopyCStringToPascal(diag_probe_title((DiagProbe)index), pas);
+        DrawString(pas);
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        /* The verb, quietly, after the name: it is what a person types in
+           the Console and what the other Mac's page calls the same
+           measurement. */
+        DrawString((ConstStr255Param)"\p  ");
+        CopyCStringToPascal(diag_probe_verb((DiagProbe)index), pas);
+        DrawString(pas);
+    }
 
     to_window(&card->measures, &where);
-    draw_line(&where, diag_probe_measures((DiagProbe)index));
+    emit_line(writer, &where, diag_probe_measures((DiagProbe)index));
     to_window(&card->cost, &where);
-    draw_line(&where, diag_probe_cost((DiagProbe)index));
+    emit_line(writer, &where, diag_probe_cost((DiagProbe)index));
 
     to_window(&card->body, &where);
     y = where.top;
@@ -195,7 +227,7 @@ static void draw_card(int index)
         Rect line_rect = where;
 
         line_rect.bottom = (short)(y + kDiagLineHeight);
-        draw_line(&line_rect, state->refusal);
+        emit_line(writer, &line_rect, state->refusal);
         return;
     }
     if (state->state == kDiagRows) {
@@ -207,12 +239,12 @@ static void draw_card(int index)
             label_rect.top = y;
             label_rect.bottom = (short)(y + kDiagRowHeight);
             label_rect.right = (short)(where.left + kDiagRowLabelWidth);
-            draw_line(&label_rect, state->rows[i].label);
+            emit_line(writer, &label_rect, state->rows[i].label);
             value_rect = where;
             value_rect.top = y;
             value_rect.bottom = label_rect.bottom;
             value_rect.left = (short)(where.left + kDiagRowLabelWidth);
-            draw_line(&value_rect, state->rows[i].value);
+            emit_line(writer, &value_rect, state->rows[i].value);
             y = (short)(y + kDiagRowHeight);
         }
         return;
@@ -227,7 +259,7 @@ static void draw_card(int index)
         line_rect = where;
         line_rect.top = y;
         line_rect.bottom = (short)(y + kDiagLineHeight);
-        draw_line(&line_rect, line);
+        emit_line(writer, &line_rect, line);
         y = (short)(y + kDiagLineHeight);
     }
 }
@@ -260,7 +292,7 @@ static void draw_canvas(void)
         ClipRect(&inner);
     }
     for (i = 0; i < kDiagProbeCount; ++i) {
-        draw_card(i);
+        emit_card(NULL, i);
     }
     if (saved_clip != NULL) {
         SetClip(saved_clip);
@@ -397,6 +429,58 @@ static void run_vprobe(void)
     state_changed();
 }
 
+/* Translate one LoopStat into the plain DiagLoopStat rows are built from -
+   the same reduction the wire's own wirestat_hist makes (n/mean/min/max
+   plus the median), computed by calling the SAME loopstat.c functions
+   the wire's JSON rendering calls rather than re-deriving the bucket
+   math here. */
+static void fill_loop_stat(const LoopStat *s, DiagLoopStat *out)
+{
+    int med = loopstat_median_bucket(s);
+
+    out->n = s->n;
+    out->mean_us = loopstat_mean_us(s);
+    out->min_us = s->n > 0 ? s->min_us : 0UL;
+    out->max_us = s->max_us;
+    out->median_bucket = med;
+    if (med < 0) {
+        out->median_lo_us = 0;
+        out->median_hi_us = 0;
+        out->median_count = 0;
+        return;
+    }
+    out->median_lo_us = med > 0 ? (long)loopstat_edge_us(med - 1) : 0;
+    out->median_hi_us = (long)loopstat_edge_us(med);
+    out->median_count = s->buckets[med];
+}
+
+static void read_wirestat(void)
+{
+    ConnWakeStats st;
+    DiagWireStat plain;
+    DiagCard *card = &g_cards[kDiagWireStat];
+
+    /* conn_wake_stats/conn_idle_sleep are the exact accessors
+       commands.c :: run_wirestat reads - this card is a second reader of
+       the same counters, never a second source of them. No conn_set_*
+       call anywhere in this file: the card has no control for wake or
+       idle sleep, only for reading what they are now. */
+    conn_wake_stats(&st);
+    plain.sleep_now_ticks = st.sleep_ticks;
+    plain.idle_sleep_ticks = conn_idle_sleep();
+    plain.wake_on = st.wake_enabled;
+    plain.notifier_live = st.notifier_live;
+    plain.data_events = st.data_events;
+    plain.wake_calls = st.wake_calls;
+    fill_loop_stat(&st.pass, &plain.pass);
+    fill_loop_stat(&st.wake, &plain.wake);
+
+    card->row_count = (short)diag_wirestat_rows(&plain, card->rows,
+                                                kDiagMaxRows);
+    card->state = kDiagRows;
+    state_changed();
+}
+
 static void read_putstat(void)
 {
     FileReceiveStats st;
@@ -521,6 +605,19 @@ static void diagnostics_draw(void)
     draw_canvas();
 }
 
+static void diagnostics_describe_scene(const WorkshopSceneWriter *writer)
+{
+    int i;
+
+    workshop_scene_add(writer, kWorkshopScenePanel, "Diagnostics",
+                       &g_r.canvas, true);
+    /* emit_card declines the cards scrolled wholly out of the canvas, so
+       the host is told about the same instruments a person can see. */
+    for (i = 0; i < kDiagProbeCount; ++i) {
+        emit_card(writer, i);
+    }
+}
+
 static Boolean diagnostics_click(const EventRecord *event, Point local)
 {
     ControlRef control = NULL;
@@ -552,6 +649,8 @@ static Boolean diagnostics_click(const EventRecord *event, Point local)
                 run_vprobe();
             } else if (i == kDiagPutStat) {
                 read_putstat();
+            } else if (i == kDiagWireStat) {
+                read_wirestat();
             }
             update_button_title(i);
         }
@@ -632,6 +731,22 @@ static void diagnostics_status_text(char *out, long cap)
     diag_status_text(states, out, cap);
 }
 
+/* Edit>Copy: every instrument card, refusal sentences included - a measurement
+       is only worth taking if it can leave this machine.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long diagnostics_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    diagnostics_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     diagnostics_create,
     diagnostics_dispose,
@@ -646,7 +761,8 @@ static const WorkshopModuleOps k_ops = {
        press - so the page costs the event loop nothing between clicks. */
     NULL,
     diagnostics_status_text,
-    NULL
+    diagnostics_describe_scene,
+    diagnostics_copy_text
 };
 
 const WorkshopModuleOps *diagnostics_module_ops(void)

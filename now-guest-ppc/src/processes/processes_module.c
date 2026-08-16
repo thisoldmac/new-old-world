@@ -13,6 +13,7 @@
 #include "pump.h"
 #include "screenshot.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* The Processes page: a Data Browser of everything the Process Manager
    reports on the left, the selected process on the right, and the two
@@ -857,12 +858,29 @@ static void procs_layout(const Rect *body)
     }
 }
 
-static void draw_fact(const Rect *line, const char *label,
-                      const char *value)
+/* One label/value fact row, drawn or described. A NULL writer draws it
+   at the baseline and right-aligned label position it always used; a
+   writer reports the two rects. The whole detail column goes through
+   this, so what the host reads about a process is by construction what
+   the person is looking at. */
+static void emit_fact(const WorkshopSceneWriter *writer, const Rect *line,
+                      const char *label, const char *value)
 {
     Str255 text;
     short label_right = (short)(line->left + kProcFactLabelWidth);
 
+    if (writer != NULL) {
+        Rect where = *line;
+
+        where.right = label_right;
+        workshop_scene_add(writer, kWorkshopSceneStaticText, label, &where,
+                           true);
+        where = *line;
+        where.left = (short)(label_right + 8);
+        workshop_scene_add(writer, kWorkshopSceneStaticText, value, &where,
+                           true);
+        return;
+    }
     UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     CopyCStringToPascal(label, text);
     MoveTo((short)(label_right - StringWidth(text)),
@@ -919,7 +937,8 @@ static void draw_detail_rule(short y)
    header carrying the count or the read status (none open / no anchor
    yet / unreadable), then up to kProcDetailWindows title+size rows. A
    faceless background app is stated as such rather than chased. */
-static void draw_window_facts(const ProcEntry *entry)
+static void emit_window_facts(const WorkshopSceneWriter *writer,
+                              const ProcEntry *entry)
 {
     Str255 text;
     char line[96];
@@ -976,15 +995,27 @@ static void draw_window_facts(const ProcEntry *entry)
         }
     }
     /* Bold "Windows" header, so the subsection reads as its own group. */
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    CopyCStringToPascal("Windows", text);
-    MoveTo(g_r.windows_line.left, (short)(g_r.windows_line.top + 11));
-    DrawString(text);
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    CopyCStringToPascal(value, text);
-    MoveTo((short)(g_r.windows_line.left + 62),
-           (short)(g_r.windows_line.top + 11));
-    DrawString(text);
+    if (writer != NULL) {
+        Rect where = g_r.windows_line;
+
+        where.right = (short)(g_r.windows_line.left + 62);
+        workshop_scene_add(writer, kWorkshopSceneStaticText, "Windows",
+                           &where, true);
+        where = g_r.windows_line;
+        where.left = (short)(g_r.windows_line.left + 62);
+        workshop_scene_add(writer, kWorkshopSceneStaticText, value, &where,
+                           true);
+    } else {
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+        CopyCStringToPascal("Windows", text);
+        MoveTo(g_r.windows_line.left, (short)(g_r.windows_line.top + 11));
+        DrawString(text);
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        CopyCStringToPascal(value, text);
+        MoveTo((short)(g_r.windows_line.left + 62),
+               (short)(g_r.windows_line.top + 11));
+        DrawString(text);
+    }
 
     if (entry->kind == kProcKindBackground) {
         return;
@@ -998,6 +1029,11 @@ static void draw_window_facts(const ProcEntry *entry)
         snprintf(line, sizeof line, "%s  %d x %d",
                  w->title[0] != '\0' ? w->title : "(untitled)",
                  w->right - w->left, w->bottom - w->top);
+        if (writer != NULL) {
+            workshop_scene_add(writer, kWorkshopSceneStaticText, line, r,
+                               true);
+            continue;
+        }
         CopyCStringToPascal(line, text);
         TruncString((short)(r->right - r->left), text, truncEnd);
         MoveTo(r->left, (short)(r->top + 10));
@@ -1008,13 +1044,18 @@ static void draw_window_facts(const ProcEntry *entry)
 
         snprintf(line, sizeof line, "... and %d more",
                  g_sel_windows.count - full);
+        if (writer != NULL) {
+            workshop_scene_add(writer, kWorkshopSceneStaticText, line, r,
+                               true);
+            return;
+        }
         CopyCStringToPascal(line, text);
         MoveTo(r->left, (short)(r->top + 10));
         DrawString(text);
     }
 }
 
-static void draw_detail(void)
+static void emit_detail(const WorkshopSceneWriter *writer)
 {
     Str255 text;
     char line[96];
@@ -1025,12 +1066,18 @@ static void draw_detail(void)
     }
 
     if (entry == NULL) {
+        const char *empty = g_browser_ok
+                                ? "Select a process."
+                                : "The list is not available on this Mac.";
+
+        if (writer != NULL) {
+            workshop_scene_add(writer, kWorkshopSceneStaticText, empty,
+                               &g_r.title_line, true);
+            return;
+        }
         UseThemeFont(kThemeSmallSystemFont, smSystemScript);
         MoveTo(g_r.title_line.left, (short)(g_r.title_line.top + 12));
-        CopyCStringToPascal(g_browser_ok ? "Select a process."
-                                         : "The list is not available "
-                                           "on this Mac.",
-                            text);
+        CopyCStringToPascal(empty, text);
         DrawString(text);
         return;
     }
@@ -1045,13 +1092,18 @@ static void draw_detail(void)
     } else {
         snprintf(line, sizeof line, "%s", entry->name);
     }
-    UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
-    CopyCStringToPascal(line, text);
-    TruncString((short)(g_r.title_line.right - g_r.title_line.left), text,
-                truncEnd);
-    MoveTo(g_r.title_line.left, (short)(g_r.title_line.top + 13));
-    DrawString(text);
-    draw_detail_rule((short)(g_r.title_line.bottom + 1));
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line,
+                           &g_r.title_line, true);
+    } else {
+        UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
+        CopyCStringToPascal(line, text);
+        TruncString((short)(g_r.title_line.right - g_r.title_line.left),
+                    text, truncEnd);
+        MoveTo(g_r.title_line.left, (short)(g_r.title_line.top + 13));
+        DrawString(text);
+        draw_detail_rule((short)(g_r.title_line.bottom + 1));
+    }
 
     proc_kind_name(entry->kind, line, sizeof line);
     if (entry->is_front) {
@@ -1059,7 +1111,7 @@ static void draw_detail(void)
 
         snprintf(line + n, sizeof line - n, " (frontmost)");
     }
-    draw_fact(&g_r.kind_line, "Kind:", line);
+    emit_fact(writer, &g_r.kind_line, "Kind:", line);
     {
         char type_four[5];
         char sig_four[5];
@@ -1067,25 +1119,32 @@ static void draw_detail(void)
         proc_fourcc_text(entry->type, type_four);
         proc_fourcc_text(entry->sig, sig_four);
         snprintf(line, sizeof line, "%s / %s", type_four, sig_four);
-        draw_fact(&g_r.type_line, "Type:", line);
+        emit_fact(writer, &g_r.type_line, "Type:", line);
     }
     proc_mem_text(entry->used_kb, entry->size_kb, line, sizeof line);
-    draw_fact(&g_r.mem_line, "Memory:", line);
-    draw_mem_bar(entry);
+    emit_fact(writer, &g_r.mem_line, "Memory:", line);
+    if (writer != NULL) {
+        /* The bar is a picture of the same two numbers the Memory row
+           states; described as a panel, not restated as text. */
+        workshop_scene_add(writer, kWorkshopScenePanel, "", &g_r.mem_bar,
+                           true);
+    } else {
+        draw_mem_bar(entry);
+    }
     proc_cpu_text(entry->active_time, line, sizeof line);
-    draw_fact(&g_r.cpu_line, "CPU:", line);
+    emit_fact(writer, &g_r.cpu_line, "CPU:", line);
     /* processLaunchDate is ticks since boot, not a 1904 date; the delta
        to now is the only honest reading (proc_uptime_text). */
     proc_uptime_text((long)(TickCount() - entry->launched), line,
                      sizeof line);
-    draw_fact(&g_r.launched_line, "Launched:", line);
+    emit_fact(writer, &g_r.launched_line, "Launched:", line);
 
-    draw_window_facts(entry);
+    emit_window_facts(writer, entry);
 
     /* Menus: the anchor captures MenuList, but the walk is a later pass;
        the slot is here so it does not move when it arrives. A faceless
        background app has no menu bar to read. */
-    draw_fact(&g_r.menus_line, "Menus:",
+    emit_fact(writer, &g_r.menus_line, "Menus:",
               entry->kind == kProcKindBackground ? "none (background app)"
                                                  : "not read yet");
 }
@@ -1104,7 +1163,7 @@ static void procs_draw(void)
         RGBForeColor(&black);
         FrameRect(&g_r.list);
     }
-    draw_detail();
+    emit_detail(NULL);
 
     /* Group-box interiors are the module's canvas (workshop_window.c
        draws module text after the controls). */
@@ -1115,6 +1174,39 @@ static void procs_draw(void)
                 truncEnd);
     MoveTo(g_r.peek_line.left, (short)(g_r.peek_line.top + 11));
     DrawString(text);
+}
+
+static void procs_describe_scene(const WorkshopSceneWriter *writer)
+{
+    char line[80];
+
+    /* The process list is a DataBrowser and the buttons are controls;
+       both already reach the host through control_kind. The detail
+       column and the plane's status line are hand-drawn and would
+       otherwise reach nobody. */
+    emit_detail(writer);
+    now_peek_status_line(line, sizeof line);
+    workshop_scene_add(writer, kWorkshopSceneStaticText, line,
+                       &g_r.peek_line, true);
+}
+
+/* Edit>Copy: the detail column and the plane's status line, exactly what
+   procs_describe_scene already reports — one walk, so nothing here can
+   drift from either. The roster itself is a DataBrowser, already
+   reachable through control_kind, so this is the honest whole of what a
+   person cannot already get some other way.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long procs_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    procs_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
 }
 
 static Boolean procs_click(const EventRecord *event, Point local)
@@ -1407,7 +1499,8 @@ static const WorkshopModuleOps k_ops = {
     procs_activate,
     procs_idle,
     procs_status_text,
-    NULL
+    procs_describe_scene,
+    procs_copy_text
 };
 
 const WorkshopModuleOps *processes_module_ops(void)

@@ -274,7 +274,8 @@ def main() -> int:
             "does not match host tier 'debug'",
         )
         expect_mutation(
-            test_root, "PPC page without mapping", test_root / "now-guest-ppc/src/workshop/workshop_module.h",
+            test_root, "PPC page without mapping",
+            test_root / "now-guest-ppc/src/workshop/workshop_module_ids.h",
             "    kWorkshopPreferences = 15,",
             "    kWorkshopUnmapped = 18,\n    kWorkshopPreferences = 15,",
             "do not match live enum",
@@ -291,6 +292,42 @@ def main() -> int:
             "        kWorkshopModuleTierCore,",
             "        kWorkshopModuleTierDebug,",
             "does not match PPC page kWorkshopNetworking tier 'debug'",
+        )
+        expect_mutation(
+            test_root, "host module title drift",
+            test_root / "now-host/Sources/Host/NetworkingHostModule.swift",
+            'title: "Networking",', 'title: "Networking Renamed",',
+            "does not match host title 'Networking Renamed'",
+        )
+        expect_mutation(
+            test_root, "PPC module title drift",
+            test_root / "now-guest-ppc/src/network/network_module_definition.c",
+            '        "Networking",', '        "Networking Renamed",',
+            "does not match PPC page kWorkshopNetworking title 'Networking Renamed'",
+        )
+        expect_mutation(
+            test_root, "title_overrides names a foreign ppc_page",
+            test_root / "docs/module-manifest.yaml",
+            "      kWorkshopScreenshots: >-\n", "      kWorkshopScreenshotsTypo: >-\n",
+            "which is not one of this module's ppc_pages",
+        )
+        expect_mutation(
+            test_root, "title_overrides needs a non-empty reason",
+            test_root / "docs/module-manifest.yaml",
+            '''    title_overrides:
+      kWorkshopScreenshots: >-
+        PPC keeps its own window/rail name "Screenshots" (also this
+        module's own doc: "PowerPC Screenshots page"); "Screen" is the
+        cross-app grouping label, not the on-machine page name.''',
+            '''    title_overrides:
+      kWorkshopScreenshots: ""''',
+            "title_overrides for 'kWorkshopScreenshots' needs a non-empty reason",
+        )
+        expect_mutation(
+            test_root, "stale title_overrides once titles agree",
+            test_root / "now-guest-ppc/src/screenshots/screenshots_module_definition.c",
+            '        "Screenshots",', '        "Screen",',
+            "title_overrides for kWorkshopScreenshots is unnecessary",
         )
         expect_mutation(
             test_root, "release profile coverage", test_root / "product/features.yaml",

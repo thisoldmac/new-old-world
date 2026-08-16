@@ -29,10 +29,14 @@ final class DevelopmentHostModuleRuntime: HostModuleRuntime {
 
 @MainActor
 enum DevelopmentHostModule {
+    // The type keeps its historical name (renaming it would ripple through
+    // every call site for no behavior change - AGENTS.md's file-rename
+    // guidance applies to symbols here too); the descriptor below is what
+    // the sidebar, preferences and docs-gate actually read.
     static let definition = HostModuleDefinition(
         descriptor: ModuleDescriptor(
-            id: "development",
-            title: "Development",
+            id: "projects",
+            title: "Projects",
             symbol: "hammer",
             summary: "Projects, toolchains, builds and runs for "
                 + "\(MachineNaming.simpleReference)",

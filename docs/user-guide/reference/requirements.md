@@ -38,7 +38,7 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 06e997a3605070279490c03d6d9655e2f9200254
+sources-sha1: 9889d8821108800f11d3fe687d3e44aa600e3406
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -160,12 +160,36 @@ rederived: 2026-08-14T17:36:05-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
+rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
 rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:08-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources
 rederived: 2026-08-14T18:30:53-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:13-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:26-0400 b248c9a1 unchanged
+rederived: 2026-08-14T20:24:57-0400 6d3d74d7 sources
+rederived: 2026-08-14T20:18:50-0400 cccec57a unchanged
+rederived: 2026-08-14T21:50:43-0400 edcc526f unchanged
+rederived: 2026-08-14T22:27:42-0400 5a6c46dc sources
+rederived: 2026-08-14T22:10:45-0400 568967b9 sources
+rederived: 2026-08-14T23:30:12-0400 0017d984 sources, sources
+rederived: 2026-08-14T22:14:13-0400 0e743bc5 sources
+rederived: 2026-08-14T23:32:10-0400 a9afc153 sources, sources, sources
+rederived: 2026-08-14T22:19:02-0400 fe3d18a0 sources
+rederived: 2026-08-14T23:33:02-0400 09abc942 sources, sources, sources, sources
+rederived: 2026-08-14T22:27:26-0400 67772e4a unchanged
+rederived: 2026-08-14T23:33:53-0400 521b590f unchanged
+rederived: 2026-08-14T22:17:25-0400 4495cfb2 unchanged
+rederived: 2026-08-14T23:35:20-0400 61505862 unchanged
+rederived: 2026-08-14T22:33:00-0400 13bfe534 sources
+rederived: 2026-08-14T23:36:22-0400 b1fc9796 sources, sources, sources, sources, sources
+rederived: 2026-08-15T00:20:08-0400 e937faee sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:40:31-0400 139dff1a sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:32:41-0400 108db464 sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:20:06-0400 de5812ab sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:36:42-0400 34192244 sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:21:04-0400 c87b3288 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:26:46-0400 2749aab1 unchanged
 rederived: 2026-08-14T19:50:32-0400 d20eee81 unchanged
 rederived: 2026-08-14T19:50:54-0400 d20eee81 unchanged
 rederived: 2026-08-14T20:02:54-0400 068ca7fd unchanged
@@ -174,6 +198,11 @@ rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
 rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:16-0400 f4dab407 unchanged
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:58:02-0400 5d767dce unchanged
+rederived: 2026-08-15T03:19:47-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:39:27-0400 829013ee sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:30:51-0400 a327ba45 unchanged
+rederived: 2026-08-15T06:15:20-0400 3c7d14e4 unchanged
 rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources
 rederived: 2026-08-15T03:17:34-0400 2c7ff2a1 unchanged
 rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
@@ -192,4 +221,7 @@ rederived: 2026-08-15T16:43:48-0400 919bcc60 unchanged
 rederived: 2026-08-15T18:06:56-0400 feaa6945 sources
 rederived: 2026-08-15T19:13:29-0400 ce43eb74 unchanged
 rederived: 2026-08-15T22:25:52-0400 f627b5b4 unchanged
+rederived: 2026-08-15T06:18:34-0400 9232bd77 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-16T03:26:12-0400 2fddb4f1 sources
+rederived: 2026-08-16T03:39:17-0400 437152a6 unchanged
 -->

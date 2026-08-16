@@ -70,26 +70,68 @@ struct MirrorWirePlane: Codable, Equatable, Identifiable, Sendable {
     var reason: String?
 }
 
-/// Safety policy owned by the classic Mac. Missing means a guest built before
-/// these fields existed, whose established behavior allowed every domain.
+/// The classic Mac's consent, and the whole of what that Mac decides.
+///
+/// One switch since 2026-08-15. It used to be four per-domain gates whose
+/// vocabulary never mapped onto the five planes this side offers, so
+/// neither page could predict the other; granularity moved here, whole.
+/// The veto did not move — `enabled == false` still refuses everything
+/// this side permits.
+///
+/// Three shapes arrive on the wire and all three decode:
+///
+/// - `enabled`, from a current guest, which also sends the four retired
+///   fields set to the same value. They are ignored here.
+/// - the four alone, from a guest between the gates and this change,
+///   collapsed by the guest's OWN migration rule — consent only when all
+///   four were on. Stated in one place per side on purpose: a consent that
+///   widens because one of four switches was on is the wrong surprise, and
+///   a host that guessed differently from the guest would grant a
+///   permission that Mac's own preferences file denies.
+/// - neither, from a guest predating both, whose established behavior
+///   allowed every domain.
 struct MirrorGuestPolicy: Codable, Equatable, Sendable {
-    var structure: Bool
-    var finderComplements: Bool
-    var content: Bool
-    var foregroundCycle: Bool
+    var enabled: Bool
 
-    static let legacyAllowed = Self(structure: true,
-                                    finderComplements: true,
-                                    content: true,
-                                    foregroundCycle: true)
+    static let legacyAllowed = Self(enabled: true)
 
-    func allows(_ plane: MirrorPlaneID) -> Bool {
-        switch plane {
-        case .structure, .semantics, .interaction, .transitions:
-            return structure
-        case .content:
-            return content
+    func allows(_ plane: MirrorPlaneID) -> Bool { enabled }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, structure, finderComplements, content, foregroundCycle
+    }
+
+    init(enabled: Bool) { self.enabled = enabled }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) {
+            self.enabled = enabled
+            return
         }
+        let gates = [
+            try c.decodeIfPresent(Bool.self, forKey: .structure),
+            try c.decodeIfPresent(Bool.self, forKey: .finderComplements),
+            try c.decodeIfPresent(Bool.self, forKey: .content),
+            try c.decodeIfPresent(Bool.self, forKey: .foregroundCycle)
+        ].compactMap { $0 }
+        /* A partial set is not a permission. Anything short of all four
+           present AND on is read as refusal, which is the same direction
+           the guest's own migration errs in. */
+        enabled = gates.count == 4 && !gates.contains(false)
+    }
+
+    /// Encoded the way a current guest sends it: the master, plus the four
+    /// retired fields carrying it. This side writes mirror facts only in
+    /// tests and fixtures, and a fixture that dropped them would stop
+    /// resembling the wire it stands in for.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encode(enabled, forKey: .structure)
+        try c.encode(enabled, forKey: .finderComplements)
+        try c.encode(enabled, forKey: .content)
+        try c.encode(enabled, forKey: .foregroundCycle)
     }
 }
 
@@ -196,7 +238,7 @@ enum MirrorPlanePresentation: Equatable, Sendable {
         case .unsupported: return "Unsupported"
         case .disconnected: return "Disconnected"
         case .userDisabled: return "Off"
-        case .guestDisabled: return "Off on Mac"
+        case .guestDisabled: return "Not allowed by that Mac"
         case .unavailable(let lifecycle):
             switch lifecycle {
             case .absent: return "Extension absent"
@@ -218,7 +260,11 @@ enum MirrorPlanePresentation: Equatable, Sendable {
         switch self {
         case .refused(let reason), .degraded(let reason): return reason
         case .guestDisabled:
-            return "This observation domain is disabled in the Mac's Mirror settings."
+            /* Names the switch and where it is, because it is not on this
+               screen and nothing here can flip it: the Mac's own consent
+               is the half of the two keys this side does not hold. */
+            return "That Mac is not allowing mirroring. Turn it on in its "
+                + "Workshop, on the Mirror page."
         default: return nil
         }
     }
@@ -269,15 +315,30 @@ final class MirrorPlanePolicyStore {
         self.defaults = defaults
     }
 
+    /// Every plane is on unless somebody said otherwise — except the
+    /// drawing trace, which is off until somebody says so.
+    ///
+    /// That exception moved here on 2026-08-15 and it is the reason the
+    /// guest's four gates could retire without widening anything. The
+    /// guest's own default was structure-on, content-off, and content-off
+    /// is not a preference: `Trace drawing contents` is metal-proven to
+    /// crash the Finder on the PowerBook 1400c. When the guest stopped
+    /// holding that default, this side had to start, or a fresh pair of
+    /// machines would have armed P3 with nobody having asked for it.
+    static func defaultEnabled(_ plane: MirrorPlaneID) -> Bool {
+        plane != .content
+    }
+
     func isEnabled(_ plane: MirrorPlaneID, machineID: String,
                    identityAnchored: Bool, sessionID: String) -> Bool {
         guard plane.isUserPolicy else { return true }
+        let fallback = Self.defaultEnabled(plane)
         if identityAnchored {
             let key = persistentKey(plane, machineID: machineID)
             return defaults.object(forKey: key) == nil
-                ? true : defaults.bool(forKey: key)
+                ? fallback : defaults.bool(forKey: key)
         }
-        return sessions[sessionID]?[plane] ?? true
+        return sessions[sessionID]?[plane] ?? fallback
     }
 
     func set(_ enabled: Bool, plane: MirrorPlaneID, machineID: String,

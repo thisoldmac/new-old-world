@@ -80,6 +80,12 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
 
     var planeFacts: [MirrorWirePlane] { wireFacts?.planes ?? [] }
 
+    /// The other key, for the one line that has to state it plainly rather
+    /// than leave a person to infer it from five identical state words.
+    /// True when nothing has been read yet, so an unanswered machine does
+    /// not accuse itself of refusing.
+    var guestAllowsMirroring: Bool { wireFacts?.policy.enabled ?? true }
+
     func policyEnabled(_ plane: MirrorPlaneID) -> Bool {
         guard let guest = guestProbe.activeGuest else { return true }
         return policyEnabled(plane, for: guest)
@@ -156,12 +162,20 @@ final class MirrorControlModel: ObservableObject, GuestScopedModel {
         })
     }
 
-    func finderComplementsAllowed(for key: GuestKey) -> Bool {
+    /// That Mac's own consent, which is now the whole of what it decides.
+    /// The Finder complement asks this because it used to ask a gate of the
+    /// same name; there is no separate answer any more, and inventing one
+    /// here would be a second policy authority of exactly the kind the
+    /// guest's page stopped being.
+    ///
+    /// Absent facts are read as refusal, unchanged: a machine that has not
+    /// answered has not consented.
+    func mirroringAllowed(for key: GuestKey) -> Bool {
         if let active = guestProbe.activeGuest, active.key == key,
            let wireFacts {
             factsByGuest[key] = wireFacts
         }
-        return factsByGuest[key]?.policy.finderComplements ?? false
+        return factsByGuest[key]?.policy.enabled ?? false
     }
 
     private func updatePendingDeadlines(for facts: MirrorWireFacts, now: Date) {

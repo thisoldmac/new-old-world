@@ -270,6 +270,11 @@ public enum AgentIntegrationCapabilityNames {
     /// The guest's qualified, path-free development environment. A COMMAND
     /// so availability follows from `help`; a guest that does not advertise
     /// it resolves unavailable without an identity branch here.
+    ///
+    /// The Development module became Projects (034 G-2); these wire command
+    /// names and the MCP tool surface built on them did not follow — that
+    /// rename is scoped separately, so "development" here now names a
+    /// module the UI calls "projects". Intentional mismatch, not drift.
     public static let developmentCommand = "development"
     public static let developmentProjectCommand = "development-project"
     public static let developmentStageCommand = "development-stage"

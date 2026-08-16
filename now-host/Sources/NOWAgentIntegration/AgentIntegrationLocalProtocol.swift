@@ -226,6 +226,11 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// anywhere downstream for "whatever is frontmost".
         case observeElements = "observe_elements"
         case projects = "projects"
+        // Names the guest's build/toolchain operation, not this file's
+        // unrelated `.projects` case above (the app-owned project catalog).
+        // The host module this operation drives is titled "Projects" in
+        // the UI now (034 G-2); this wire operation string stays
+        // "development" on purpose — MCP tool names are a separate rename.
         case development = "development"
     }
 

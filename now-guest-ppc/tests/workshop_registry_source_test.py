@@ -10,6 +10,13 @@ SRC = ROOT / "src"
 window = (SRC / "workshop/workshop_window.c").read_text()
 sidebar = (SRC / "workshop/workshop_sidebar.c").read_text()
 header = (SRC / "workshop/workshop_module.h").read_text()
+# The page ids live in their own Toolbox-free header so workshop_order.c
+# (and its native test) can read them; the pinning below follows them
+# there rather than losing sight of them.
+ids = (SRC / "workshop/workshop_module_ids.h").read_text()
+assert '#include "workshop_module_ids.h"' in header, (
+    "workshop_module.h must still carry the page ids to its includers"
+)
 registry = (SRC / "workshop/workshop_registry.c").read_text()
 network = (SRC / "network/network_module_definition.c").read_text()
 cmake = (ROOT / "CMakeLists.txt").read_text()
@@ -49,7 +56,7 @@ expected_pages = {
 }
 declared = {
     name: int(value)
-    for name, value in re.findall(r"\b(kWorkshop[A-Za-z]+)\s*=\s*(\d+)", header)
+    for name, value in re.findall(r"\b(kWorkshop[A-Za-z]+)\s*=\s*(\d+)", ids)
     if name in expected_pages
 }
 assert declared == expected_pages, (

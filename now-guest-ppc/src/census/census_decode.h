@@ -77,4 +77,19 @@ void census_ata_string(const unsigned char *id, int word_start,
    charging" and the like. bit 7 installed, 6 charging, 5 charger. */
 void census_battery_flags(unsigned char flags, char *out, long cap);
 
+/* A volume size already reduced to MiB (by the 64-bit-safe caller, since
+   PBXGetVolInfo's ioVTotalBytes/ioVFreeBytes overflow an unsigned long
+   before this function ever sees them) into MB/GB/TB, whichever keeps the
+   number readable. A modern disk in MB alone ("40960 MB") is correct and
+   useless; this is the same tiering size_text() does for byte counts, one
+   unit up. */
+void census_size_mib(unsigned long mib, char *out, long cap);
+
+/* The Gestalt CPU-type code (gestaltNativeCPUtype, falling back to
+   gestaltProcessorType) named the way a person reads it - "PowerPC G3
+   (750)" - or NULL for a code with no name here, so overview, identity
+   and the console `gestalt` command all read the same table instead of
+   three names for one machine. */
+const char *census_cpu_name(long code);
+
 #endif /* NOW_CENSUS_DECODE_H */

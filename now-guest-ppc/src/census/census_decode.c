@@ -343,6 +343,47 @@ void census_battery_flags(unsigned char flags, char *out, long cap)
     }
 }
 
+void census_size_mib(unsigned long mib, char *out, long cap)
+{
+    if (mib >= 1024UL * 1024UL) {
+        snprintf(out, cap, "%.1f TB", (double)mib / (1024.0 * 1024.0));
+    } else if (mib >= 1024UL) {
+        snprintf(out, cap, "%.1f GB", (double)mib / 1024.0);
+    } else {
+        snprintf(out, cap, "%lu MB", mib);
+    }
+}
+
+const char *census_cpu_name(long code)
+{
+    /* Apple's PowerPC CPU-type constants (Universal Interfaces Gestalt.h),
+       decimal to match how gestaltNativeCPUtype/gestaltProcessorType
+       arrive here. 68040 (4) included: gestaltProcessorType answers on
+       CFM-68K, and the fallback chain in the callers can land here with
+       it. */
+    static const struct { long code; const char *name; } k[] = {
+        { 257, "PowerPC 601" },
+        { 259, "PowerPC 603" },
+        { 262, "PowerPC 603e" },
+        { 263, "PowerPC 603ev" },
+        { 260, "PowerPC 604" },
+        { 265, "PowerPC 604e" },
+        { 266, "PowerPC 604ev" },
+        { 264, "PowerPC G3 (750)" },
+        { 268, "PowerPC G4 (7400)" },
+        { 269, "PowerPC G4 (7450)" },
+        { 4,   "68040" },
+    };
+    int i;
+
+    for (i = 0; i < (int)(sizeof k / sizeof k[0]); i++) {
+        if (k[i].code == code) {
+            return k[i].name;
+        }
+    }
+    return NULL;
+}
+
 const char *census_pram_meaning(int offset)
 {
     /* The well-known bytes of the classic 20-byte SysParm block. */

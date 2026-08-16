@@ -220,8 +220,8 @@ struct DiagnosticsModuleView: View {
         .padding(12)
     }
 
-    /// The three verbs written out, rather than `model.run(state.diagnostic
-    /// .probe)` reaching the same code in one line.
+    /// The three projected verbs written out, rather than `model.run(state
+    /// .diagnostic.probe)` reaching the same code in one line.
     ///
     /// Each of these literals is a projection row's declared app-UI evidence
     /// (`GuestDiagnosticsProjection`, `faces[.appUI].symbol`), and
@@ -229,11 +229,16 @@ struct DiagnosticsModuleView: View {
     /// is really here. A dispatch through the value would name none of them,
     /// and the row's claim to have an app-UI face would stop being provable —
     /// which is the whole point of the claim.
+    ///
+    /// A diagnostic with no projection row has nothing to name, so it goes
+    /// through the verb — `wirestat` is read here and deliberately not on the
+    /// agent surface (`GuestDiagnostic.probe`).
     private func run(_ state: DiagnosticState) {
         switch state.diagnostic.probe {
         case .vprobe: model.run(.vprobe)
         case .shotdiag: model.run(.shotdiag)
         case .putstat: model.run(.putstat)
+        case nil: model.run(verb: state.diagnostic.verb)
         }
     }
 
@@ -293,6 +298,8 @@ struct DiagnosticsModuleView: View {
                 .fixedSize(horizontal: false, vertical: true)
         } else if let reading = state.transferReading {
             transfer(reading)
+        } else if let reading = state.wirestatReading {
+            wirestat(reading)
         } else if !state.rows.isEmpty {
             rows(state.rows)
         } else if state.isRunning {
@@ -376,6 +383,115 @@ struct DiagnosticsModuleView: View {
             }
         } else {
             rows(reading.transfer + reading.live)
+        }
+    }
+
+    /// `wirestat` read as an answer: what the loop is set to, the two
+    /// distributions as bars, and the link's own timing beside them.
+    ///
+    /// **Bars, because the argument is the tail.** The verb exists because a
+    /// median hides what a cooperatively scheduled Mac actually does, and a
+    /// column of bucket counts is a median with extra steps — the shape is
+    /// the reading. The bucket edges stay in the guest's own words beside
+    /// each bar, so nothing here has to be trusted to have read them right.
+    ///
+    /// Nothing on this card sets anything: the same verb can change that
+    /// Mac's scheduling, and those knobs stay on its own console (034, G-1).
+    @ViewBuilder
+    private func wirestat(_ reading: WirestatReading) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if !reading.facts.isEmpty {
+                rows(reading.facts)
+            }
+            ForEach(reading.histograms) { histogram in
+                histogramCard(histogram)
+            }
+            linkTimingCard
+        }
+    }
+
+    private func histogramCard(_ histogram: WirestatReading.Histogram)
+        -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(histogram.title)
+                .font(.subheadline.weight(.semibold))
+            /* The summary line under the heading rather than as four more
+               rows: they are one sentence about the distribution drawn
+               below, and a person reads them together or not at all. */
+            Text(summary(histogram))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            ForEach(histogram.buckets) { bucket in
+                HStack(alignment: .center, spacing: 8) {
+                    Text(bucket.range)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 150, alignment: .trailing)
+                    GeometryReader { geometry in
+                        let peak = max(histogram.peak, 1)
+                        let width = geometry.size.width
+                            * CGFloat(bucket.count) / CGFloat(peak)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(bucket.isMedian
+                                  ? Color.accentColor
+                                  : Color.secondary.opacity(0.45))
+                            /* A non-empty bin never draws as nothing: a bar
+                               too small to see is a count of zero wearing a
+                               measurement's clothes. */
+                            .frame(width: bucket.count > 0
+                                   ? max(width, 2) : 0,
+                                   height: 8)
+                            .frame(maxHeight: .infinity, alignment: .center)
+                    }
+                    .frame(height: 12)
+                    Text("\(bucket.count)")
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(width: 60, alignment: .leading)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.25),
+                    in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// The distribution's own four numbers, in the guest's words, skipping
+    /// any it did not send.
+    private func summary(_ histogram: WirestatReading.Histogram) -> String {
+        var parts: [String] = []
+        if let n = histogram.samples { parts.append("\(n) samples") }
+        if let mean = histogram.mean { parts.append("mean \(mean)") }
+        if let min = histogram.minimum { parts.append("min \(min)") }
+        if let max = histogram.maximum { parts.append("max \(max)") }
+        return parts.isEmpty ? "The machine sent no summary for this."
+            : parts.joined(separator: "  ·  ")
+    }
+
+    /// The link's four timing rows, when they have been read.
+    ///
+    /// Absent rather than empty when they have not: these come from `net` on
+    /// the back of the Wire Timing run, and a machine that does not serve
+    /// `net` has said nothing about its link — which is not the same as a
+    /// link with no round trip.
+    @ViewBuilder
+    private var linkTimingCard: some View {
+        if !model.linkTiming.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("The link itself")
+                    .font(.subheadline.weight(.semibold))
+                Text("Measured at \(machine)'s end of the wire, not at this "
+                     + "one. These moved here from Networking: they describe "
+                     + "the link, not that machine's networking.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                rows(model.linkTiming)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary.opacity(0.25),
+                        in: RoundedRectangle(cornerRadius: 8))
         }
     }
 

@@ -156,13 +156,11 @@ static void check_common(const Rect *content, const WorkshopLayout *lay,
     CHECK(lay->header.right == content->right, "header reaches the edge");
 
     /* Row geometry: every row is the height in effect, and the pinned
-       group follows the nav rows rather than keeping its own. Three
-       heights now - the two densities, and collapsed, which is not a
-       density but has its own row. */
+       group follows the nav rows rather than keeping its own. Two heights
+       since the rich density was retired - expanded, and collapsed. */
     CHECK(lay->row_height == kWorkshopSidebarRowHeight
-              || lay->row_height == kWorkshopSidebarCompactRowHeight
               || lay->row_height == kWorkshopSidebarIconRowHeight,
-          "row height is one of the three the rail can be in");
+          "row height is one of the two the rail can be in");
     CHECK(!lay->collapsed
               || lay->row_height == kWorkshopSidebarIconRowHeight,
           "a collapsed rail always takes the icon row height");
@@ -222,47 +220,52 @@ int main(void)
     WorkshopLayout lay;
     WorkshopRailSpec rail;
 
-    /* Standard content at the spec size, rich and unscrolled - the shape
-       the window had before either was a choice. NULL must mean exactly
-       that, so the old callers' geometry is unchanged. */
+    /* Standard content at the spec size, expanded and unscrolled. NULL
+       must mean exactly that. */
     set_content(&content, kWorkshopStdContentW, kWorkshopStdContentH);
     workshop_layout_compute(&content, NULL, &lay);
     check_common(&content, &lay, "standard");
     check(width(&lay.sidebar) == kWorkshopRailWide,
           "standard: rail at full width");
     check(lay.row_height == kWorkshopSidebarRowHeight,
-          "standard: NULL spec means the rich density");
+          "standard: NULL spec means the expanded row height");
     {
-        WorkshopLayout explicit_rich;
+        WorkshopLayout explicit_expanded;
 
-        rail.compact = 0;
         rail.collapsed = 0;
         rail.scroll_top = 0;
-        workshop_layout_compute(&content, &rail, &explicit_rich);
-        check(explicit_rich.nav_rows[0].bottom == lay.nav_rows[0].bottom
-                  && explicit_rich.conn_row.top == lay.conn_row.top
-                  && explicit_rich.nav_visible == lay.nav_visible,
-              "standard: NULL spec matches an explicit rich one");
+        workshop_layout_compute(&content, &rail, &explicit_expanded);
+        check(explicit_expanded.nav_rows[0].bottom == lay.nav_rows[0].bottom
+                  && explicit_expanded.conn_row.top == lay.conn_row.top
+                  && explicit_expanded.nav_visible == lay.nav_visible,
+              "standard: NULL spec matches an explicit expanded one");
     }
+    check(!lay.rail_scrolls,
+          "standard: every row fits, so nothing scrolls");
 
     /* Minimum content. */
     set_content(&content, kWorkshopMinContentW, kWorkshopMinContentH);
     workshop_layout_compute(&content, NULL, &lay);
     check_common(&content, &lay, "minimum");
     check(width(&lay.sidebar) == kWorkshopRailNarrow,
-          "minimum: rail compacts");
+          "minimum: rail takes the narrow width");
 
-    /* Compact density: shorter rows, and enough of them that the list
-       that overflowed at this size no longer does. */
-    rail.compact = 1;
+    /* The whole argument for retiring the rich density: at the smallest
+       window this app allows - the one a 640x480 screen forces - every
+       nav row is on screen at once, with no scroll bar and nothing hidden
+       behind one. This is the check that fails if anyone reinstates a
+       taller row: 14 rows at 30 pixels do not fit here, which is why the
+       choice went away rather than gaining a better default. */
     rail.collapsed = 0;
     rail.scroll_top = 0;
     workshop_layout_compute(&content, &rail, &lay);
-    check_common(&content, &lay, "minimum compact");
-    check(lay.row_height == kWorkshopSidebarCompactRowHeight,
-          "compact: rows take the compact height");
+    check_common(&content, &lay, "minimum expanded");
+    check(lay.row_height == kWorkshopSidebarRowHeight,
+          "minimum: rows take the one expanded height");
+    check(lay.nav_visible == kWorkshopNavRows,
+          "minimum: every nav row has a slot");
     check(!lay.rail_scrolls,
-          "compact: every row fits at the minimum window size");
+          "minimum: every row fits, so no bar squeezes the rail");
 
     /* Collapsed: a narrow rail of icon-height rows, at every window size,
        and the body gets back everything the rail gave up. */
@@ -271,7 +274,6 @@ int main(void)
         WorkshopLayout tight;
 
         set_content(&content, kWorkshopStdContentW, kWorkshopStdContentH);
-        rail.compact = 0;
         rail.collapsed = 0;
         rail.scroll_top = 0;
         workshop_layout_compute(&content, &rail, &wide);
@@ -289,20 +291,9 @@ int main(void)
         check(!tight.rail_scrolls,
               "collapsed: every row fits, so no bar squeezes the icons");
 
-        /* Collapsed overrides the density rather than combining with it -
-           the words are gone either way, so compact must not shrink the
-           icon rows underneath it. */
-        rail.compact = 1;
-        workshop_layout_compute(&content, &rail, &tight);
-        check(tight.row_height == kWorkshopSidebarIconRowHeight,
-              "collapsed: compact does not change the icon row height");
-        check(width(&tight.sidebar) == kWorkshopRailCollapsed,
-              "collapsed: compact does not change the collapsed width");
-
         /* The narrow-window rule must not shrink it further: an icon rail
            is the same size whatever the window is doing. */
         set_content(&content, kWorkshopMinContentW, kWorkshopMinContentH);
-        rail.compact = 0;
         workshop_layout_compute(&content, &rail, &tight);
         check_common(&content, &tight, "collapsed minimum");
         check(width(&tight.sidebar) == kWorkshopRailCollapsed,
@@ -319,14 +310,19 @@ int main(void)
         WorkshopLayout scrolled;
         WorkshopLayout overscrolled;
 
-        set_content(&content, kWorkshopMinContentW, kWorkshopMinContentH);
-        rail.compact = 0;
+        /* Deliberately SHORTER than the minimum window: no window this
+           app allows can overflow the rail any more, and the scrolling
+           arithmetic still has to be right, because the next page added
+           to the rail is the one that brings it back. Pure arithmetic
+           takes any rectangle; the window manager is not consulted, and
+           check_common is deliberately not run over these - it asserts
+           the body sizes a REAL window guarantees. */
+        set_content(&content, kWorkshopMinContentW, 300);
         rail.collapsed = 0;
         rail.scroll_top = 0;
         workshop_layout_compute(&content, &rail, &unscrolled);
         check(unscrolled.rail_scrolls,
-              "rich at the minimum size: the list overflows");
-        check_common(&content, &unscrolled, "rich scrolling");
+              "a rail too short for its rows overflows");
 
         rail.scroll_top = 1;
         workshop_layout_compute(&content, &rail, &scrolled);
@@ -341,7 +337,6 @@ int main(void)
         check(overscrolled.nav_scroll_top
                   == kWorkshopNavRows - overscrolled.nav_visible,
               "overscrolled: clamped to the last full page");
-        check_common(&content, &overscrolled, "overscrolled");
 
         rail.scroll_top = -5;
         workshop_layout_compute(&content, &rail, &overscrolled);

@@ -48,7 +48,7 @@ struct MirrorToolbarView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .fixedSize()
-                .help("How much of the classic Mac's screen one point here "
+                .help("How much of \(MachineNaming.possessive(nil)) screen one point here "
                       + "is worth. Every numbered stop is a power of two, so "
                       + "the pixels stay exact.")
             }
@@ -57,9 +57,9 @@ struct MirrorToolbarView: View {
             }
             .disabled(!run.running && !model.connection.canCapture)
             .help(run.running
-                  ? "Stop asking the classic Mac for its screen. Every "
+                  ? "Stop asking \(MachineNaming.simpleReference) for its screen. Every "
                     + "Mirror request refuses until it is started again."
-                  : "Start asking the classic Mac for its screen.")
+                  : "Start asking \(MachineNaming.simpleReference) for its screen.")
             Button(presentation.isDetached ? "Attach" : "Detach") {
                 setDetached(!presentation.isDetached)
             }
@@ -134,6 +134,16 @@ struct MirrorToolbarView: View {
 /// like-for-like comparison the data supports (rule 2 of
 /// `docs/mirror-measurement-method.md`). Two different questions about
 /// one record.
+///
+/// **Two keys, and they stopped being the same key.** Both sides still
+/// have to permit an operation before it is scheduled, but since
+/// 2026-08-15 they answer different questions: the classic Mac answers
+/// whether it may be mirrored at all — one switch, on its own Mirror page
+/// — and everything on this screen answers which planes. Before that the
+/// guest carried four gates of its own whose names (structure, Finder
+/// details, drawing trace, foreground discovery) never lined up with the
+/// five planes here, so a person reading either page could not predict
+/// the other. The guest's granularity retired; its refusal did not.
 ///
 /// **The plane switches stayed too, and that is the deliberate half.** A
 /// plane's state is a diagnostic and the host's policy over it is a

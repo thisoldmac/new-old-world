@@ -175,7 +175,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `file.offer` / `file.begin` / `file.end` | ✅ | ✅ | receiving a push |
 | `file.accept` / `file.refuse` / `file.done` | ✅ | ✅ | the reply half, both directions |
 | `file.progress` | ✅ | ❌ | 68K SENDS it and handles none inbound |
-| `file.cancel` | ✅ | ✅ | either direction; 68K also has it as a `cancel` verb |
+| `file.cancel` | ✅ | ✅ | either direction, and both guests ORIGINATE it as well as answer it (PPC: `now_wire_get_cancel` for a pull, `now_wire_put_cancel` for a receive); both also have `cancel` as a console verb, on 68K's wire too |
 | `file.list` | ✅ | ✅ | browse; 68K also has it as an `ls` verb |
 | `file.listing` | ✅ | ❌ | the reply half. 68K SENDS it and handles none inbound — it browses no one |
 | `file.get` | ✅ | ❌ | host-initiated pull |
@@ -287,7 +287,7 @@ number here has been found wrong by re-deriving it.
 | `key` | post one keystroke, with no modifiers | ✅ | ❌ |
 | `net` | this Mac's link, address and network hardware | ✅ | ❌ |
 | `put` | send a file from the guest | console only | ✅ |
-| `cancel` | stop the transfer in flight, either way | via UI / `file.cancel` | ✅ |
+| `cancel` | stop the transfer in flight, either way | console only; the host originates `file.cancel` itself | ✅ |
 | `putstat` | transfer diagnostics | ✅ | ❌ |
 | `desktop` | what the desktop is actually drawn from — the Appearance Manager's theme collection, not the `ppat` resource nobody updates | ✅ | ❌ — declared asymmetry, see below |
 | `wirestat` | how long this Mac takes to NOTICE a request — **and the only verb in the registry that CHANGES the machine's scheduling**; a subsystem, expanded below | ✅ | ❌ |
@@ -461,10 +461,12 @@ produced the first live sighting of the sampler's own stated limit — a
 backgrounded and its event passes never saw the change. See
 [open-issues.md](open-issues.md).
 
-**PPC serves 46 of 49.** `put` is console-only there and `cancel` is
-not a verb at all, both deliberately: the host reaches those
-capabilities through the `file.*` families and that guest's own
-Workshop. `shotdiag` is the third, and the newest: it diagnoses a raw
+**PPC serves 46 of 49.** `put` and `cancel` are console-only there,
+both deliberately: the host reaches those capabilities through the
+`file.*` families it originates itself, so it has no verb to type —
+while the person at the machine reaches sending from the Files page and
+stopping from its own Workshop, over the same implementations the two
+console verbs call. `shotdiag` is the third, and the newest: it diagnoses a raw
 framebuffer walk the PowerPC guest does not have.
 
 **NOW-68K serves 13 of 49** — `help`, `ls`, `sw`, `census`, `put`,
@@ -1369,7 +1371,7 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 48349d1e52b14c2e2a2c0011a785be9c3b02535e
+sources-sha1: ca0a9c9f5cf26b328774ab52cb1cd52d0608e242
 derive ppc-inbound-types sha256=5c659300160d136813e618972ee666eff5313dfd50488d136938776328ffefb0 lines=58 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1540,12 +1542,38 @@ rederived: 2026-08-14T17:36:03-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:38-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:41-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, ppc-inbound-types 54->0, sources, ppc-inbound-types 54->0
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
 rederived: 2026-08-14T18:20:41-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:06-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:11-0400 e2c66126 sources, sources, sources, sources
 rederived: 2026-08-14T18:30:52-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:11-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:25-0400 b248c9a1 ppc-inbound-types 0->57
+rederived: 2026-08-14T20:15:52-0400 eb5bd419 sources
+rederived: 2026-08-14T20:24:55-0400 6d3d74d7 unchanged
+rederived: 2026-08-14T20:18:49-0400 cccec57a unchanged
+rederived: 2026-08-14T21:50:41-0400 edcc526f sources
+rederived: 2026-08-14T22:27:41-0400 5a6c46dc unchanged
+rederived: 2026-08-14T22:10:44-0400 568967b9 unchanged
+rederived: 2026-08-14T23:30:11-0400 0017d984 sources
+rederived: 2026-08-14T22:14:12-0400 0e743bc5 unchanged
+rederived: 2026-08-14T23:32:08-0400 a9afc153 unchanged
+rederived: 2026-08-14T22:19:01-0400 fe3d18a0 unchanged
+rederived: 2026-08-14T23:33:00-0400 09abc942 unchanged
+rederived: 2026-08-14T22:27:25-0400 67772e4a sources
+rederived: 2026-08-14T23:33:51-0400 521b590f sources, sources
+rederived: 2026-08-14T22:17:23-0400 4495cfb2 unchanged
+rederived: 2026-08-14T23:34:43-0400 61505862 unchanged
+rederived: 2026-08-14T23:35:18-0400 61505862 unchanged
+rederived: 2026-08-14T22:32:59-0400 13bfe534 sources
+rederived: 2026-08-14T23:36:20-0400 b1fc9796 sources, sources, sources
+rederived: 2026-08-15T00:20:05-0400 e937faee unchanged
+rederived: 2026-08-15T01:40:28-0400 139dff1a sources, sources, sources
+rederived: 2026-08-15T01:32:38-0400 108db464 unchanged
+rederived: 2026-08-15T02:20:02-0400 de5812ab unchanged
+rederived: 2026-08-15T01:36:37-0400 34192244 unchanged
+rederived: 2026-08-15T02:20:59-0400 c87b3288 unchanged
+rederived: 2026-08-15T02:26:41-0400 2749aab1 unchanged
 rederived: 2026-08-14T19:50:31-0400 d20eee81 sources
 rederived: 2026-08-14T19:50:53-0400 d20eee81 unchanged
 rederived: 2026-08-14T20:02:53-0400 068ca7fd unchanged
@@ -1554,6 +1582,11 @@ rederived: 2026-08-14T21:15:08-0400 5316a23e unchanged
 rederived: 2026-08-14T23:07:31-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:14-0400 f4dab407 unchanged
 rederived: 2026-08-15T01:11:35-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:57:57-0400 5d767dce sources, sources, sources, sources
+rederived: 2026-08-15T03:19:42-0400 098e7ecf sources, sources, sources, sources
+rederived: 2026-08-15T05:39:21-0400 829013ee sources, sources, sources, sources
+rederived: 2026-08-15T05:30:46-0400 a327ba45 unchanged
+rederived: 2026-08-15T06:15:14-0400 3c7d14e4 unchanged
 rederived: 2026-08-15T03:16:29-0400 2c7ff2a1 sources, x-commands-registry 57->58, ppc-verbs 54->55
 rederived: 2026-08-15T03:17:32-0400 2c7ff2a1 unchanged
 rederived: 2026-08-15T03:18:49-0400 2c7ff2a1 unchanged
@@ -1572,4 +1605,7 @@ rederived: 2026-08-15T16:43:47-0400 919bcc60 unchanged
 rederived: 2026-08-15T18:06:55-0400 feaa6945 sources
 rederived: 2026-08-15T19:13:28-0400 ce43eb74 unchanged
 rederived: 2026-08-15T22:25:51-0400 f627b5b4 sources
+rederived: 2026-08-15T06:18:27-0400 9232bd77 sources, sources, sources, sources, sources
+rederived: 2026-08-16T03:26:10-0400 2fddb4f1 sources
+rederived: 2026-08-16T03:39:16-0400 437152a6 sources
 -->

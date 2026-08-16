@@ -1198,7 +1198,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: eb72ef172776ce7c05ab8e786362a38fd77b21d2
+sources-sha1: fb8fdc332204929f63fd367f6d1472591e0c92b4
 derive ppc-inbound-types sha256=5c659300160d136813e618972ee666eff5313dfd50488d136938776328ffefb0 lines=58 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1359,12 +1359,37 @@ rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, ppc-inbound-types 54->0, sources, ppc-inbound-types 54->0
+rederived: 2026-08-14T15:56:43-0400 835e6acf sources
 rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources, sources, disposition-census 3->0, disposition-census 3->0
 rederived: 2026-08-14T18:30:53-0400 b248c9a1 disposition-census 0->3
 rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:25-0400 b248c9a1 ppc-inbound-types 0->57
+rederived: 2026-08-14T20:24:57-0400 6d3d74d7 sources
+rederived: 2026-08-14T20:18:49-0400 cccec57a unchanged
+rederived: 2026-08-14T21:50:42-0400 edcc526f sources
+rederived: 2026-08-14T22:27:41-0400 5a6c46dc unchanged
+rederived: 2026-08-14T22:10:44-0400 568967b9 unchanged
+rederived: 2026-08-14T23:30:11-0400 0017d984 sources
+rederived: 2026-08-14T22:14:12-0400 0e743bc5 unchanged
+rederived: 2026-08-14T23:32:09-0400 a9afc153 unchanged
+rederived: 2026-08-14T22:19:02-0400 fe3d18a0 unchanged
+rederived: 2026-08-14T23:33:01-0400 09abc942 unchanged
+rederived: 2026-08-14T22:27:26-0400 67772e4a sources
+rederived: 2026-08-14T23:33:52-0400 521b590f sources, sources
+rederived: 2026-08-14T22:17:24-0400 4495cfb2 unchanged
+rederived: 2026-08-14T23:34:44-0400 61505862 unchanged
+rederived: 2026-08-14T23:35:19-0400 61505862 unchanged
+rederived: 2026-08-14T22:33:00-0400 13bfe534 sources
+rederived: 2026-08-14T23:36:21-0400 b1fc9796 sources, sources, sources
+rederived: 2026-08-15T00:20:07-0400 e937faee unchanged
+rederived: 2026-08-15T01:40:29-0400 139dff1a sources, sources, sources
+rederived: 2026-08-15T01:32:40-0400 108db464 unchanged
+rederived: 2026-08-15T02:20:04-0400 de5812ab unchanged
+rederived: 2026-08-15T01:36:39-0400 34192244 unchanged
+rederived: 2026-08-15T02:21:00-0400 c87b3288 unchanged
+rederived: 2026-08-15T02:26:43-0400 2749aab1 unchanged
 rederived: 2026-08-14T19:50:32-0400 d20eee81 sources
 rederived: 2026-08-14T19:50:54-0400 d20eee81 unchanged
 rederived: 2026-08-14T20:02:53-0400 068ca7fd unchanged
@@ -1373,6 +1398,11 @@ rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
 rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:15-0400 f4dab407 sources
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
+rederived: 2026-08-15T02:57:59-0400 5d767dce sources, sources, sources, sources
+rederived: 2026-08-15T03:19:44-0400 098e7ecf sources, sources, sources, sources
+rederived: 2026-08-15T05:39:23-0400 829013ee sources, sources, sources, sources
+rederived: 2026-08-15T05:30:48-0400 a327ba45 unchanged
+rederived: 2026-08-15T06:15:16-0400 3c7d14e4 unchanged
 rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources
 rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 disposition-census 3->3
 rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
@@ -1392,4 +1422,7 @@ rederived: 2026-08-15T16:43:48-0400 919bcc60 unchanged
 rederived: 2026-08-15T18:06:56-0400 feaa6945 sources
 rederived: 2026-08-15T19:13:28-0400 ce43eb74 unchanged
 rederived: 2026-08-15T22:25:51-0400 f627b5b4 sources
+rederived: 2026-08-15T06:18:29-0400 9232bd77 sources, sources, sources, sources, sources
+rederived: 2026-08-16T03:26:11-0400 2fddb4f1 sources
+rederived: 2026-08-16T03:39:17-0400 437152a6 sources
 -->

@@ -4,49 +4,64 @@
 #include <string.h>
 
 #include "files_browser_view.h"
+#include "files_layout.h"
+#include "files_peer_label.h"
+#include "files_run.h"
 #include "files_share_view.h"
+#include "files_status.h"
 #include "pump.h"
 #include "wire.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* Composition only: the browser view owns the remote half, the share
-   view the local half, and this file owns the path row, the disclosure,
-   and the routing between them. */
+   view the local half, and this file owns the two headings, the path
+   row, the seam between them, and the routing.
 
-enum {
-    kMargin = 12,
-    kPathRowHeight = 28,
-    kDisclosureHeight = 20,
-    kShareHeight = 112,
-    kStopWidth = 54,                  /* "Stop" in a small push button */
-    kStopGap = 8                      /* button to the text beside it */
-};
+   THE PAGE IS TWO NAMED HALVES, both always on screen:
 
-typedef struct {
-    Rect path_row;
-    Rect up_btn;
-    Rect browser;
-    Rect tri;
-    Rect tri_label;
-    Rect share;
-    /* At the right end of the path row, where the item count normally
-       sits. Nothing moves when it appears: the count and the progress
-       line share the slot, because only one of them is ever the thing a
-       person needs, and a row that reflows mid-transfer is a row whose
-       Stop button moves under the pointer. */
-    Rect stop_btn;
-    Rect xfer_text;
-} FilesRects;
+     Their Files - Maxbook Pro                                    heading
+     [Up]  Macintosh HD:Lab:Reports          12 items    ([Stop])
+     +---------------------------------------------------------+
+     |  the other Mac's listing                                 |
+     +---------------------------------------------------------+
+     - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+     My Shared Folder        Maxbook Pro can browse everything in here.
+     ... files_share_view.c from here down
+
+   WHAT WAS HERE BEFORE, and why it is not any more. A disclosure
+   triangle labelled "Shared from this Mac" hid the sharing SETTING and
+   the two verbs - Send File, and where downloads land - under one
+   heading that described only the first of them. Collapsing it to see
+   more of the listing took away the only way to send a file, and the
+   listing above it had no heading at all: a person learned it was the
+   other Mac's files by noticing that the row below said "from this Mac"
+   and reasoning by elimination.
+
+   So: no triangle, both halves named, and the peer named in the heading
+   through files_peer_label.c. The listing is what grows with the window
+   (files_layout.c measures the bottom half upward from the bottom edge),
+   which is the same pixels the triangle was buying, without taking a
+   capability away to buy them.
+
+   WATCHED DRAWING, 2026-08-15, on the OS 9.1 emulator (QEMU mac99, this
+   tree's build staged into a session clone; the shot is in the run
+   directory's own rig table). What that proves: both headings, the
+   separator, the two radios with Choose Folder enabled beside them, the
+   Sharing line, the downloads row and its two buttons all land where
+   files_layout.c puts them and read as Platinum controls; Up dims at the
+   root, Send File dims with no connection, and the placard says "Not
+   connected - askguest is unreachable" with the peer's own name in it.
+   What it does not prove: anything with a file actually moving - no
+   listing, no pull, no send - and nothing at all about the PowerBook. */
 
 static WindowRef g_owner;
 static Rect g_body;
-static FilesRects g_r;
+static FilesLayoutRects g_r;
 static Boolean g_visible;
-static Boolean g_expanded = true;
 static Boolean g_browser_ok;
 
 static ControlRef g_up;
-static ControlRef g_tri;
 static ControlRef g_stop;
 
 /* Idle cache: Up dims at the root, and only repaints on a change. */
@@ -57,66 +72,21 @@ static short g_up_hilite = -1;
 static Boolean g_stop_shown;
 static long g_xfer_step = -1;
 
-static void compute_rects(const Rect *body, FilesRects *r)
-{
-    short x0 = (short)(body->left + kMargin);
-    short right = (short)(body->right - kMargin);
-    short share_top;
-    short tri_top;
-
-    SetRect(&r->path_row, x0, (short)(body->top + 6), right,
-            (short)(body->top + 6 + kPathRowHeight));
-    SetRect(&r->up_btn, x0, (short)(r->path_row.top + 2),
-            (short)(x0 + 44), (short)(r->path_row.top + 22));
-    SetRect(&r->stop_btn, (short)(right - kStopWidth),
-            (short)(r->path_row.top + 2), right,
-            (short)(r->path_row.top + 22));
-    {
-        /* The progress line takes the right-hand end of the row and
-           leaves the path at least a readable stub. On a narrow window
-           the path gives way first: which file is coming down and how
-           far along it is are the facts that change, and the path is
-           still legible in the list below. */
-        short text_left = (short)(r->stop_btn.left - kStopGap - 210);
-        short floor = (short)(r->up_btn.right + 90);
-
-        if (text_left < floor) {
-            text_left = floor;
-        }
-        SetRect(&r->xfer_text, text_left, r->path_row.top,
-                (short)(r->stop_btn.left - kStopGap),
-                (short)(r->path_row.top + 20));
-    }
-
-    if (g_expanded) {
-        share_top = (short)(body->bottom - 6 - kShareHeight);
-    } else {
-        share_top = (short)(body->bottom - 6);
-    }
-    tri_top = (short)(share_top - kDisclosureHeight);
-    SetRect(&r->browser, x0, r->path_row.bottom, right,
-            (short)(tri_top - 4));
-    SetRect(&r->tri, x0, (short)(tri_top + 4), (short)(x0 + 12),
-            (short)(tri_top + 16));
-    SetRect(&r->tri_label, (short)(x0 + 18), (short)(tri_top + 2), right,
-            (short)(tri_top + 18));
-    SetRect(&r->share, x0, share_top, right, (short)(body->bottom - 6));
-}
+/* The page's one status line. Four concerns write four channels; nobody
+   destroys anybody else's news. files_status.h carries the argument. */
+static FilesStatus g_status;
 
 static void relayout(void)
 {
-    compute_rects(&g_body, &g_r);
+    files_layout_compute(&g_body, &g_r);
     if (g_up != NULL) {
         MoveControl(g_up, g_r.up_btn.left, g_r.up_btn.top);
-    }
-    if (g_tri != NULL) {
-        MoveControl(g_tri, g_r.tri.left, g_r.tri.top);
     }
     if (g_stop != NULL) {
         MoveControl(g_stop, g_r.stop_btn.left, g_r.stop_btn.top);
     }
     files_browser_layout(&g_r.browser);
-    files_share_layout(&g_r.share);
+    files_share_layout(&g_r);
 }
 
 /* --- module ops --------------------------------------------------------- */
@@ -132,9 +102,9 @@ static OSErr files_create(WindowRef owner, const Rect *body)
 
     g_owner = owner;
     g_body = *body;
-    g_expanded = true;
-    compute_rects(body, &g_r);
+    files_layout_compute(body, &g_r);
     g_up_hilite = -1;
+    now_files_status_reset(&g_status);
 
     CopyCStringToPascal("Up", text);
     g_up = now_control_new(owner, &g_r.up_btn, text, false, 0, 0, 1,
@@ -148,16 +118,13 @@ static OSErr files_create(WindowRef owner, const Rect *body)
                         pushButProc, 0);
     g_stop_shown = false;
     g_xfer_step = -1;
-    text[0] = 0;
-    g_tri = now_control_new(owner, &g_r.tri, text, false, 1, 0, 1,
-                       kControlTriangleAutoToggleProc, 0);
-    if (g_up == NULL || g_tri == NULL || g_stop == NULL) {
+    if (g_up == NULL || g_stop == NULL) {
         return memFullErr;
     }
     /* A missing Data Browser costs browsing, not the page: the share
        controls still work, and the pane says what is unavailable. */
     g_browser_ok = files_browser_create(owner, &g_r.browser);
-    if (!files_share_create(owner, &g_r.share)) {
+    if (!files_share_create(owner, &g_r)) {
         return memFullErr;
     }
     return noErr;
@@ -169,7 +136,6 @@ static void files_dispose(void)
     files_browser_dispose();
     g_owner = NULL;
     g_up = NULL;
-    g_tri = NULL;
     g_stop = NULL;
     g_stop_shown = false;
 }
@@ -190,7 +156,6 @@ static void files_show(Boolean visible)
 {
     g_visible = visible;
     show_control(g_up, visible);
-    show_control(g_tri, visible);
     /* Stop follows the transfer, not the page: leaving the page does not
        stop the file coming down, so the button comes back with the page
        if it is still arriving. The next idle pass re-derives it. */
@@ -200,7 +165,7 @@ static void files_show(Boolean visible)
     }
     g_xfer_step = -1;
     files_browser_show(visible);
-    files_share_show(visible && g_expanded);
+    files_share_show(visible);
 }
 
 static void files_layout(const Rect *body)
@@ -213,80 +178,124 @@ static void files_layout(const Rect *body)
    its own rather than only through the status placard: the placard is at
    the far bottom of the window, and a person deciding whether to press
    Stop should not have to look somewhere else to find out what pressing
-   it would abandon. */
+   it would abandon. The live repaint path calls this directly; the page
+   walk below reaches the same run through files_run. */
 static void draw_transfer_text(const PullView *pull)
 {
-    Str255 text;
     char line[160];
-    short room = (short)(g_r.xfer_text.right - g_r.xfer_text.left);
 
     now_pull_note(pull, line, sizeof line);
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    CopyCStringToPascal(line, text);
-    /* truncMiddle, not truncEnd: the name is at the front and the
-       percentage at the back, and losing either end would leave the
-       half of the sentence that says nothing. */
-    TruncString(room, text, truncMiddle);
-    MoveTo((short)(g_r.xfer_text.right - StringWidth(text)),
-           (short)(g_r.path_row.top + 16));
-    DrawString(text);
+    files_run(NULL, &g_r.xfer, true, false, truncMiddle, line);
+}
+
+/* One walk over this file's own drawing, taken twice: a NULL writer
+   draws it, a writer reports it. The share view's half is walked from
+   describe_scene beside this one. */
+static void files_content(const WorkshopSceneWriter *writer)
+{
+    char line[160];
+    char peer[64];
+    PullView pull;
+    Boolean pulling = files_browser_pull(&pull);
+
+    files_peer_label(peer, sizeof peer);
+    now_files_their_heading(peer, line, sizeof line);
+    files_run(writer, &g_r.their_heading, false, true, truncEnd, line);
+
+    files_browser_path_text(line, sizeof line);
+    files_run(writer, pulling ? &g_r.path_busy : &g_r.path, false, true,
+              truncMiddle, line);
+
+    if (pulling) {
+        /* The count and the progress line share the slot; only one of
+           them is the thing a person needs right now.
+           truncMiddle, not truncEnd: the name is at the front and the
+           percentage at the back, and losing either end would leave the
+           half of the sentence that says nothing. */
+        now_pull_note(&pull, line, sizeof line);
+        files_run(writer, &g_r.xfer, true, false, truncMiddle, line);
+    } else {
+        files_browser_count_text(line, sizeof line);
+        files_run(writer, &g_r.count, true, false, truncEnd, line);
+    }
+
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneSeparator, "", &g_r.divider,
+                           true);
+    } else {
+        DrawThemeSeparator(&g_r.divider, kThemeStateActive);
+    }
+
+    files_run(writer, &g_r.mine_heading, false, true, truncEnd,
+              "My Shared Folder");
+    now_files_share_caption(peer, line, sizeof line);
+    files_run(writer, &g_r.mine_caption, true, false, truncEnd, line);
+
+    if (!g_browser_ok) {
+        Rect where;
+
+        if (writer == NULL) {
+            RGBColor black = { 0, 0, 0 };
+
+            RGBForeColor(&black);
+            FrameRect(&g_r.browser);
+        } else {
+            workshop_scene_add(writer, kWorkshopScenePanel, "", &g_r.browser,
+                               true);
+        }
+        SetRect(&where, (short)(g_r.browser.left + 16),
+                (short)((g_r.browser.top + g_r.browser.bottom) / 2 - 7),
+                g_r.browser.right,
+                (short)((g_r.browser.top + g_r.browser.bottom) / 2 + 7));
+        files_run(writer, &where, false, false, truncEnd,
+                  "Browsing is not available on this Mac.");
+    }
 }
 
 static void files_draw(void)
 {
-    Str255 text;
-    char line[160];
-    PullView pull;
-    Boolean pulling = files_browser_pull(&pull);
-    short path_right = pulling ? (short)(g_r.xfer_text.left - 6)
-                               : (short)(g_r.path_row.right - 100);
-
     if (g_owner == NULL || !g_visible) {
         return;
     }
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    files_browser_path_text(line, sizeof line);
-    MoveTo((short)(g_r.up_btn.right + 10), (short)(g_r.path_row.top + 16));
-    CopyCStringToPascal(line, text);
-    TruncString((short)(path_right - g_r.up_btn.right - 10), text,
-                truncMiddle);
-    DrawString(text);
-
-    if (pulling) {
-        /* The count and the progress line share the slot; only one of
-           them is the thing a person needs right now. */
-        draw_transfer_text(&pull);
-    } else {
-        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-        files_browser_count_text(line, sizeof line);
-        CopyCStringToPascal(line, text);
-        TruncString(96, text, truncEnd);
-        MoveTo((short)(g_r.path_row.right - StringWidth(text)),
-               (short)(g_r.path_row.top + 16));
-        DrawString(text);
-    }
-
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    MoveTo(g_r.tri_label.left, (short)(g_r.tri_label.top + 12));
-    CopyCStringToPascal("Shared from this Mac", text);
-    DrawString(text);
-
-    if (!g_browser_ok) {
-        RGBColor black = { 0, 0, 0 };
-
-        RGBForeColor(&black);
-        FrameRect(&g_r.browser);
-        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-        MoveTo((short)(g_r.browser.left + 16),
-               (short)((g_r.browser.top + g_r.browser.bottom) / 2));
-        CopyCStringToPascal("Browsing is not available on this Mac.",
-                            text);
-        DrawString(text);
-    }
+    files_content(NULL);
     files_browser_draw();
-    if (g_expanded) {
-        files_share_draw();
+    files_share_draw();
+}
+
+static void files_describe_scene(const WorkshopSceneWriter *writer)
+{
+    /* Both halves' hand-drawing, and only that. The listing is a
+       DataBrowser and the controls are controls; both are already
+       Control Manager facts that control_kind.c hands over, and
+       repeating them here would double them.
+
+       The share view's runs are described HERE rather than left out, the
+       way they were: a helper file's drawing is invisible to the source
+       gate, so "Sharing: Macintosh HD:Lab:" was on screen and absent
+       from every scene the host read. */
+    if (g_owner == NULL) {
+        return;
     }
+    files_content(writer);
+    files_share_content(writer);
+}
+
+/* Edit>Copy: the same walk, pointed at a buffer.
+
+   What lands on the clipboard is by construction what the page
+   describes, which is by construction what it drew - the headings, the
+   path, the count or the transfer line, what is shared and where files
+   land. NOT the listing: those rows are the DataBrowser's drawing, not
+   this page's, and a file is taken out of that list by dragging it, not
+   by copying a sentence describing it. */
+static long files_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    files_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
 }
 
 /* Show or hide Stop and repaint the progress line, NOW rather than on
@@ -331,22 +340,22 @@ static void paint_transfer_now(void)
     if (saved_clip == NULL) {
         /* No region to put the clip back with: leave the port alone and
            let the update path do it. */
-        InvalWindowRect(g_owner, &g_r.path_row);
+        InvalWindowRect(g_owner, &g_r.xfer);
         return;
     }
     GetClip(saved_clip);
-    ClipRect(&g_r.xfer_text);
-    EraseRect(&g_r.xfer_text);
+    ClipRect(&g_r.xfer);
+    EraseRect(&g_r.xfer);
     if (pulling) {
         draw_transfer_text(&pull);
         g_xfer_step = now_pull_step(&pull);
     } else {
         /* The slot goes back to the item count, which is the other half
-           of files_draw and not worth duplicating here. */
+           of files_content and not worth duplicating here. */
         g_xfer_step = -1;
         SetClip(saved_clip);
         DisposeRgn(saved_clip);
-        InvalWindowRect(g_owner, &g_r.path_row);
+        InvalWindowRect(g_owner, &g_r.count);
         return;
     }
     SetClip(saved_clip);
@@ -361,15 +370,6 @@ static Boolean files_click(const EventRecord *event, Point local)
     if (g_up != NULL && PtInRect(local, &g_r.up_btn)) {
         if (TrackControl(g_up, local, now_pump_action()) != 0) {
             files_browser_go_up();
-        }
-        return true;
-    }
-    if (g_tri != NULL && PtInRect(local, &g_r.tri)) {
-        if (TrackControl(g_tri, local, now_pump_action()) != 0) {
-            g_expanded = GetControlValue(g_tri) != 0;
-            files_share_show(g_visible && g_expanded);
-            relayout();
-            InvalWindowRect(g_owner, &g_body);
         }
         return true;
     }
@@ -426,13 +426,6 @@ static void files_activate(Boolean active)
             DeactivateControl(g_up);
         }
     }
-    if (g_tri != NULL) {
-        if (active) {
-            ActivateControl(g_tri);
-        } else {
-            DeactivateControl(g_tri);
-        }
-    }
     if (g_stop != NULL) {
         if (active) {
             ActivateControl(g_stop);
@@ -456,6 +449,14 @@ static void files_idle(void)
     }
     files_browser_idle();
     files_share_idle();
+    /* The listing changed the path row's words - a folder arrived, a
+       count settled - and the row is this file's pixels. */
+    if (files_browser_chrome_changed()) {
+        Rect row = g_r.path;
+
+        row.right = g_r.count.right;
+        InvalWindowRect(g_owner, &row);
+    }
     want = files_browser_at_root() ? 255 : 0;
     if (want != g_up_hilite && g_up != NULL) {
         g_up_hilite = want;
@@ -480,32 +481,49 @@ static void files_idle(void)
     if (!pulling) {
         if (g_xfer_step != -1) {
             g_xfer_step = -1;         /* put the item count back */
-            InvalWindowRect(g_owner, &g_r.path_row);
+            InvalWindowRect(g_owner, &g_r.xfer);
+            InvalWindowRect(g_owner, &g_r.count);
         }
         return;
     }
     if (now_pull_step(&pull) != g_xfer_step) {
         g_xfer_step = now_pull_step(&pull);
-        InvalWindowRect(g_owner, &g_r.path_row);
+        InvalWindowRect(g_owner, &g_r.xfer);
     }
 }
 
+/* Every concern writes its own channel; files_status.c decides which one
+   a person reads. Composed here rather than in the views because this is
+   the file that knows there is one placard. */
 static void files_status_text(char *out, long cap)
 {
-    files_share_status(out, cap);
-    if (out[0] != '\0') {
-        return;
+    char line[kFilesStatusMax];
+    PullView pull;
+
+    line[0] = '\0';
+    if (files_browser_pull(&pull)) {
+        now_pull_note(&pull, line, sizeof line);
     }
-    files_browser_note_text(out, cap);
-    if (out[0] != '\0') {
-        return;
+    now_files_status_set(&g_status, kFilesStatusTransfer, line);
+
+    files_share_status(line, sizeof line);
+    now_files_status_set(&g_status, kFilesStatusShare, line);
+
+    files_browser_note_text(line, sizeof line);
+    now_files_status_set(&g_status, kFilesStatusBrowse, line);
+
+    if (conn_is_connected()) {
+        line[0] = '\0';
+    } else {
+        char peer[64];
+
+        files_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "Not connected - %.40s is unreachable.",
+                 peer);
     }
-    if (!conn_is_connected()) {
-        snprintf(out, (size_t)cap,
-                 "Not connected - the other Mac's share is unreachable.");
-        return;
-    }
-    snprintf(out, (size_t)cap, "Ready.");
+    now_files_status_set(&g_status, kFilesStatusLink, line);
+
+    now_files_status_text(&g_status, out, cap);
 }
 
 static const WorkshopModuleOps k_ops = {
@@ -519,7 +537,8 @@ static const WorkshopModuleOps k_ops = {
     files_activate,
     files_idle,
     files_status_text,
-    NULL
+    files_describe_scene,
+    files_copy_text
 };
 
 const WorkshopModuleOps *files_module_ops(void)

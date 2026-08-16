@@ -10,12 +10,20 @@ final class NavigationLayoutTests: XCTestCase {
             [NavigationShelfID.machine.rawValue,
              NavigationShelfID.screen.rawValue,
              NavigationShelfID.files.rawValue,
-             "module.chat", "module.development"])
+             "module.chat", "module.projects"])
         XCTAssertEqual(layout.lower.map(\.id),
             [NavigationShelfID.debug.rawValue,
              NavigationShelfID.network.rawValue])
         XCTAssertEqual(layout.shelf(id: .debug)?.moduleIDs,
                        ["console", "logs"])
+        /* Networking is a fact about the driven machine, so it sits with the
+           other three; the Connections shelf keeps only this Mac's own link
+           and the surfaces that ride it. */
+        XCTAssertEqual(layout.shelf(id: .machine)?.moduleIDs,
+                       ["census", "software", "processes", "networking",
+                        "diagnostics"])
+        XCTAssertEqual(layout.shelf(id: .network)?.moduleIDs,
+                       ["settings", "mcp", "web"])
         XCTAssertEqual(layout.shelf(id: .machine)?.hero, .overview)
         XCTAssertEqual(layout.shelf(id: .network)?.hero, .module("settings"))
         XCTAssertTrue(layout.drawer.isEmpty)
@@ -113,7 +121,16 @@ final class NavigationLayoutTests: XCTestCase {
         assertTotalPartition(repaired, registry: .standard)
     }
 
-    func testMovingNetworkHeroBackToNetworkCanDecomposeAUserShelf() {
+    /// Settings put on a shelf of one's own stays there.
+    ///
+    /// This asserted the reverse while Connections had a fixed hero:
+    /// `enforceSpecialHeroes` hunted Settings down wherever it was, dragged
+    /// it back to the front of Connections, and left the user shelf with one
+    /// member to be decomposed — an arrangement overwritten by a rule, on
+    /// every save. Heroes are now the first tab of whatever the person
+    /// arranged, so a shelf keeps what was put on it and Connections opens on
+    /// its own first tab.
+    func testAUserShelfKeepsSettingsRatherThanLosingItToConnections() {
         let userID = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
         let stored = NavigationLayout(
             upper: [.shelf(NavigationShelf(id: .user(userID), title: "Online",
@@ -123,9 +140,10 @@ final class NavigationLayoutTests: XCTestCase {
 
         let repaired = stored.sanitised(for: .standard)
 
-        XCTAssertEqual(repaired.shelf(id: .network)?.moduleIDs.first, "settings")
-        XCTAssertNil(repaired.shelf(id: .user(userID)))
-        XCTAssertTrue(repaired.upper.contains(.module("chat")))
+        XCTAssertEqual(repaired.shelf(id: .user(userID))?.moduleIDs,
+                       ["settings", "chat"])
+        XCTAssertEqual(repaired.shelf(id: .network)?.moduleIDs.first, "web")
+        XCTAssertEqual(repaired.shelf(id: .network)?.hero, .module("web"))
         assertTotalPartition(repaired, registry: .standard)
     }
 
@@ -158,6 +176,55 @@ final class NavigationLayoutTests: XCTestCase {
 
         XCTAssertEqual(repaired.allModuleIDs.filter { $0 == "notes" }.count, 1)
         assertTotalPartition(repaired, registry: registry)
+    }
+
+    /// A layout stored before the move carries Networking on the Connections
+    /// shelf; version 4 lifts it across without disturbing anything else.
+    func testVersionThreeLayoutMovesNetworkingToTheMachineShelf() {
+        var stored = NavigationLayout.standard(for: .standard)
+        stored.version = 3
+        stored.setItems(stored.upper.map { item in
+            guard case .shelf(var shelf) = item, shelf.id == .machine
+            else { return item }
+            shelf.moduleIDs.removeAll { $0 == "networking" }
+            return .shelf(shelf)
+        }, in: .upper)
+        stored.setItems(stored.lower.map { item in
+            guard case .shelf(var shelf) = item, shelf.id == .network
+            else { return item }
+            shelf.moduleIDs.insert("networking", at: 1)
+            return .shelf(shelf)
+        }, in: .lower)
+
+        let migrated = stored.migratedToCurrentVersion()
+
+        XCTAssertEqual(migrated.version, NavigationLayout.currentVersion)
+        XCTAssertEqual(migrated.shelf(id: .machine)?.moduleIDs.last,
+                       "networking")
+        XCTAssertEqual(migrated.shelf(id: .network)?.moduleIDs,
+                       ["settings", "mcp", "web"])
+        assertTotalPartition(migrated, registry: .standard)
+    }
+
+    /// The migration updates a DEFAULT, never an arrangement. Networking
+    /// parked somewhere on purpose is left exactly where it was put.
+    func testVersionThreeMigrationLeavesADeliberatelyPlacedNetworkingAlone() {
+        var stored = NavigationLayout.standard(for: .standard)
+        stored.version = 3
+        stored.setItems(stored.upper.map { item in
+            guard case .shelf(var shelf) = item, shelf.id == .machine
+            else { return item }
+            shelf.moduleIDs.removeAll { $0 == "networking" }
+            return .shelf(shelf)
+        }, in: .upper)
+        stored.drawer.append(.module("networking"))
+
+        let migrated = stored.migratedToCurrentVersion()
+
+        XCTAssertEqual(migrated.zone(containing: "networking"), .drawer)
+        XCTAssertFalse(
+            migrated.shelf(id: .machine)?.moduleIDs.contains("networking")
+                == true)
     }
 
     private func assertTotalPartition(_ layout: NavigationLayout,
@@ -289,6 +356,37 @@ final class NavigationLayoutStoreTests: XCTestCase {
                        ["console", "logs"])
     }
 
+    /// Making heroes movable needs no migration and no version bump.
+    ///
+    /// Every layout written by the previous build was already canonical under
+    /// the fixed-hero rule — the hero WAS the first module, because
+    /// `enforceSpecialHeroes` had just put it there. So "hero = first" reads
+    /// the same arrangement out of the same bytes, and there is nothing to
+    /// transform. A bump would be the dishonest half: it tells an older app
+    /// this payload is one it cannot understand, when it is a payload that
+    /// build wrote.
+    func testAStoredLayoutFromTheFixedHeroBuildLoadsUnchanged() throws {
+        let defaults = try defaults()
+        var stored = NavigationLayout.standard(for: .standard)
+        stored.upper.swapAt(3, 4)               // an arrangement worth keeping
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]  // as the store writes it
+        let data = try encoder.encode(stored)
+        defaults.set(data, forKey: NavigationLayoutStore.layoutKey)
+
+        let loaded = NavigationLayoutStore(defaults: defaults,
+            registry: .standard).load()
+
+        XCTAssertEqual(loaded, stored)
+        XCTAssertEqual(loaded.version, 4,
+                       "movable heroes are not a payload change")
+        XCTAssertEqual(defaults.data(forKey: NavigationLayoutStore.layoutKey),
+                       data, "loading must not rewrite what it read")
+        XCTAssertEqual(loaded.shelf(id: .network)?.hero, .module("settings"))
+        XCTAssertEqual(loaded.shelf(id: .screen)?.hero, .module("screen"))
+        XCTAssertEqual(loaded.shelf(id: .files)?.hero, .module("files"))
+    }
+
     func testLayoutSurvivesRelaunch() throws {
         let defaults = try defaults()
         let store = NavigationLayoutStore(defaults: defaults, registry: .standard)
@@ -306,15 +404,15 @@ final class NavigationLayoutStoreTests: XCTestCase {
         let id = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
         var layout = store.load()
         layout.upper.removeAll { $0 == .module("chat")
-            || $0 == .module("development") }
+            || $0 == .module("projects") }
         layout.upper.append(.shelf(NavigationShelf(id: .user(id), title: "Work",
-            moduleIDs: ["chat", "development"])))
+            moduleIDs: ["chat", "projects"])))
         store.save(layout)
 
         let reopened = NavigationLayoutStore(defaults: defaults,
             registry: .standard).load()
         XCTAssertEqual(reopened.shelf(id: .user(id))?.title, "Work")
         XCTAssertEqual(reopened.shelf(id: .user(id))?.moduleIDs,
-                       ["chat", "development"])
+                       ["chat", "projects"])
     }
 }

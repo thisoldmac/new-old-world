@@ -1632,8 +1632,16 @@ final class ContinuityGuestDragTests: XCTestCase {
                    stub: stub)
 
         XCTAssertEqual(sunk, [transfer.notice])
-        XCTAssertEqual(sunk.first, "The selection on the classic Mac "
-            + "changed before the file could be copied.",
+        /* Composed through MachineNaming rather than spelled out, because
+           the literal is what this assertion is FOR: it must keep saying a
+           plain sentence rather than the wire's own code, and it must not
+           also become the second place the product's noun for the driven
+           machine is written down. It was a literal until 2026-08-16, when
+           the tree-wide rename to "the guest" landed on the sentence and
+           left this one copy behind. */
+        XCTAssertEqual(sunk.first, MachineNaming.startingSentence(
+            "the selection on \(MachineNaming.simpleReference) changed "
+            + "before the file could be copied."),
             "a wrong-file refusal must reach the person in a plain "
                 + "sentence, not the wire's own code")
     }

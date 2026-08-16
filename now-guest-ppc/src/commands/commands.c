@@ -22,6 +22,7 @@
 #include "continuity_dragmgr.h"
 #include "capture.h"
 #include "census.h"
+#include "census_decode.h"
 #include "rom_dump.h"
 #include "cmd_help.h"
 #include "cmd_line.h"
@@ -68,21 +69,9 @@ static void bcd_version(long bcd, char *out, long cap)
     }
 }
 
-static const char *cpu_name(long type)
-{
-    switch (type) {
-    case 257: return "PowerPC 601";
-    case 259: return "PowerPC 603";
-    case 262: return "PowerPC 603e";
-    case 263: return "PowerPC 603ev";
-    case 260: return "PowerPC 604";
-    case 265: return "PowerPC 604e";
-    case 266: return "PowerPC 604ev";
-    case 264: return "PowerPC G3 (750)";
-    case 4:   return "68040";
-    default:  return NULL;
-    }
-}
+/* The Gestalt CPU-type -> name table lives once, in census_decode.c, so
+   the console `gestalt` command names a chip the same way the Overview
+   and Identity census pages do (H13: three surfaces, one table). */
 
 static const char *processor_name(long type)
 {
@@ -263,8 +252,9 @@ int now_gestalt_gather(GestaltRow *rows, int max)
         bcd_version(v, sv, sizeof sv);
         snprintf(sys, sizeof sys, "Mac OS %s", sv);
     }
-    if (Gestalt(gestaltNativeCPUtype, &v) == noErr && cpu_name(v) != NULL) {
-        snprintf(cpu, sizeof cpu, "%s", cpu_name(v));
+    if (Gestalt(gestaltNativeCPUtype, &v) == noErr
+        && census_cpu_name(v) != NULL) {
+        snprintf(cpu, sizeof cpu, "%s", census_cpu_name(v));
     } else if (Gestalt(gestaltProcessorType, &v) == noErr
                && processor_name(v) != NULL) {
         snprintf(cpu, sizeof cpu, "%s", processor_name(v));

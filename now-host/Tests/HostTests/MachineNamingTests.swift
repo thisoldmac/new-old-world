@@ -16,25 +16,25 @@ final class MachineNamingTests: XCTestCase {
     /// The two registers are the whole point: a title says the proper noun,
     /// a sentence says the plain reference, and neither borrows the other.
     func testUnnamedMachineTakesTheRegisterOfItsPosition() {
-        XCTAssertEqual(MachineNaming.title(""), "Old World Mac")
-        XCTAssertEqual(MachineNaming.sentence(""), "the old world mac")
-        XCTAssertEqual(MachineNaming.possessive(""), "the old world mac’s")
+        XCTAssertEqual(MachineNaming.title(""), "Guest")
+        XCTAssertEqual(MachineNaming.sentence(""), "the guest")
+        XCTAssertEqual(MachineNaming.possessive(""), "the guest’s")
     }
 
     func testNoMachineReadsTheSameAsAnUnnamedOne() {
-        XCTAssertEqual(MachineNaming.title(nil), "Old World Mac")
-        XCTAssertEqual(MachineNaming.sentence(nil), "the old world mac")
-        XCTAssertEqual(MachineNaming.several([]), "no old world mac")
+        XCTAssertEqual(MachineNaming.title(nil), "Guest")
+        XCTAssertEqual(MachineNaming.sentence(nil), "the guest")
+        XCTAssertEqual(MachineNaming.several([]), "no guest")
     }
 
     /// The host's own placeholder reaches display code as an ordinary
-    /// string; treating it as a name would print "Classic Mac" beside real
+    /// string; treating it as a name would print "Guest" beside real
     /// machine names as though a Mac had chosen it.
     func testHostPlaceholdersAreNotNames() {
         XCTAssertEqual(MachineNaming.sentence(Session.unnamedGuest),
-                       "the old world mac")
-        XCTAssertEqual(MachineNaming.sentence("   "), "the old world mac")
-        XCTAssertEqual(MachineNaming.title("Old World Mac"), "Old World Mac")
+                       "the guest")
+        XCTAssertEqual(MachineNaming.sentence("   "), "the guest")
+        XCTAssertEqual(MachineNaming.title("Guest"), "Guest")
     }
 
     func testSeveralMachinesReadAsAList() {
@@ -49,11 +49,11 @@ final class MachineNamingTests: XCTestCase {
     /// silent Macs cannot read as one Mac counted twice.
     func testUnnamedMachinesCollapseInAList() {
         XCTAssertEqual(MachineNaming.several([nil]),
-                       "an unnamed Old World Mac")
+                       "an unnamed Guest")
         XCTAssertEqual(MachineNaming.several(["Zulu", nil]),
-                       "Zulu and an unnamed Old World Mac")
+                       "Zulu and an unnamed Guest")
         XCTAssertEqual(MachineNaming.several([nil, nil, "Zulu"]),
-                       "Zulu and 2 unnamed Old World Macs")
+                       "Zulu and 2 unnamed Guests")
     }
 
     /// A machine called Atlas must not become "Atlas's".
@@ -70,8 +70,8 @@ final class MachineNamingTests: XCTestCase {
         XCTAssertEqual(MachineNaming.possessive(.connected(named: "Atlas")),
                        "Atlas’")
         XCTAssertEqual(MachineNaming.sentence(.disconnected),
-                       "the old world mac")
-        XCTAssertEqual(MachineNaming.title(.connecting), "Old World Mac")
+                       "the guest")
+        XCTAssertEqual(MachineNaming.title(.connecting), "Guest")
     }
 
     /// A sentence may start with the plain reference; the noun inside it
@@ -79,7 +79,7 @@ final class MachineNamingTests: XCTestCase {
     func testSentenceStartMovesOnlyTheFirstCharacter() {
         XCTAssertEqual(
             MachineNaming.startingSentence(MachineNaming.possessive(nil)),
-            "The old world mac’s")
+            "The guest’s")
         XCTAssertEqual(MachineNaming.startingSentence("pb1400c’s"),
                        "Pb1400c’s")
     }

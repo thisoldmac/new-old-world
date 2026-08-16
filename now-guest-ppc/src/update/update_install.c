@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../files/trash_move.h"
+
 static int current_application(FSSpec *out)
 {
     ProcessSerialNumber psn;
@@ -89,35 +91,22 @@ static int find_extension(const FSSpec *excluding, FSSpec *out)
     return 0;
 }
 
-static OSErr move_to_directory(FSSpec *spec, long directory)
-{
-    CMovePBRec pb;
-    Str63 name;
-
-    memset(&pb, 0, sizeof pb);
-    memcpy(name, spec->name, spec->name[0] + 1);
-    pb.ioNamePtr = name;
-    pb.ioVRefNum = spec->vRefNum;
-    pb.ioDirID = spec->parID;
-    pb.ioNewName = NULL;
-    pb.ioNewDirID = directory;
-    return PBCatMoveSync(&pb);
-}
-
-/* The running application keeps executing after its file is moved. Keeping
-   that old file in the Trash makes rollback visible and recoverable, while
-   leaving the canonical pathname free for the verified replacement. */
+/* The running application keeps executing after its file is moved, and its
+   catalog name cannot change while it runs -- FSpRename on a live APPL's
+   own spec is the operation that returns fBsyErr on systems where Finder
+   replacement still succeeds (fileshare.c's ordinary drag/drop overwrite
+   discovered this first; `now_trash_move_busy` is the shared fix, and
+   this used to re-derive the broken rename-first order independently).
+   So the old file lands in Trash under its ORIGINAL, unchanged name;
+   `now_trash_move_busy` displaces any Trash occupant already using that
+   name rather than touching spec, leaving the canonical pathname free
+   for the verified replacement. */
 static int move_old_to_trash(FSSpec *spec, Str63 original_name,
                              long *original_dir, char *reason, long cap)
 {
     short trash_vref;
     long trash_dir;
-    char base[40];
-    char candidate[40];
-    Str255 pname;
-    FSSpec probe;
     OSErr err;
-    int suffix;
 
     *original_dir = spec->parID;
     memcpy(original_name, spec->name, spec->name[0] + 1);
@@ -129,60 +118,24 @@ static int move_old_to_trash(FSSpec *spec, Str63 original_name,
                  (int)(err != noErr ? err : paramErr));
         return 0;
     }
-    memcpy(base, spec->name + 1, spec->name[0]);
-    base[spec->name[0]] = '\0';
-    for (suffix = 1; suffix < 100; ++suffix) {
-        if (suffix == 1) {
-            snprintf(candidate, sizeof candidate, "%.27s old", base);
-        } else {
-            snprintf(candidate, sizeof candidate, "%.24s old %d",
-                     base, suffix);
-        }
-        CopyCStringToPascal(candidate, pname);
-        if (FSMakeFSSpec(spec->vRefNum, *original_dir, pname, &probe) != noErr
-            && FSMakeFSSpec(spec->vRefNum, trash_dir, pname, &probe) != noErr) {
-            break;
-        }
-    }
-    if (suffix >= 100) {
-        snprintf(reason, (size_t)cap,
-                 "could not choose a recoverable name in the Trash");
-        return 0;
-    }
-    err = FSpRename(spec, pname);
+    err = now_trash_move_busy(spec, trash_dir);
     if (err != noErr) {
         snprintf(reason, (size_t)cap,
-                 "could not prepare the old item for the Trash (%d)",
-                 (int)err);
+                 "could not move the old item to the Trash (%d)", (int)err);
         return 0;
     }
-    memcpy(spec->name, pname, pname[0] + 1);
-    err = move_to_directory(spec, trash_dir);
-    if (err == noErr) {
-        spec->parID = trash_dir;
-        return 1;
-    }
-    if (FSpRename(spec, original_name) == noErr) {
-        memcpy(spec->name, original_name, original_name[0] + 1);
-        snprintf(reason, (size_t)cap,
-                 "could not move the old item to the Trash (%d); it was "
-                 "restored in place", (int)err);
-    } else {
-        snprintf(reason, (size_t)cap,
-                 "could not move the old item to the Trash (%d); it remains "
-                 "beside the update under a recovery name", (int)err);
-    }
-    return 0;
+    return 1;
 }
 
+/* The old item's name never changed (see move_old_to_trash), so undoing
+   the move is the same busy-move primitive run in reverse: back to
+   `original_dir`, still without renaming a spec that may still be the
+   live running application. */
 static int restore_from_trash(FSSpec *old, long original_dir,
                               const Str63 original_name)
 {
-    if (move_to_directory(old, original_dir) != noErr) return 0;
-    old->parID = original_dir;
-    if (FSpRename(old, original_name) != noErr) return 0;
-    memcpy(old->name, original_name, original_name[0] + 1);
-    return 1;
+    (void)original_name;   /* unchanged throughout; nothing to rename back */
+    return now_trash_move_busy(old, original_dir) == noErr;
 }
 
 static int replace_to_trash(const FSSpec *staged, FSSpec *current,
@@ -206,8 +159,7 @@ static int replace_to_trash(const FSSpec *staged, FSSpec *current,
     } else {
         snprintf(reason, (size_t)cap,
                  "could not put the replacement in place (%d), and the old "
-                 "%s remains in the Trash under a recovery name",
-                 (int)err, kind);
+                 "%s remains in the Trash", (int)err, kind);
     }
     return 0;
 }

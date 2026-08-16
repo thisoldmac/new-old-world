@@ -25,7 +25,7 @@ public enum SessionHealthProjection: HostProjection {
     public static let acceptedArguments: Set<String> = []
 
     public static let faces: [HostCapabilityFace: HostFaceReach] = [
-        .appUI: .reached(file: "SettingsModuleView.swift",
+        .appUI: .reached(file: "ConnectionLinkSection.swift",
                          symbol: "healthBlock(health)"),
         .mcp: .reachedByRegistry,
         .appIntents: .appIntentsFaceNotBuiltYet,

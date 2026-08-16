@@ -13,7 +13,19 @@ import NOWAgentIntegration
 /// spelling it: this page said "this Mac" in five places while meaning the
 /// far end, which is the one error a reader has no way to detect.
 struct GuestDiagnostic: Identifiable, Equatable, Sendable {
-    let probe: AgentIntegrationDiagnosticProbe
+    /// The agent surface's name for this diagnostic, when it has one.
+    ///
+    /// **Nil is a decision, not an omission.** `wirestat` is served by the
+    /// guest and read here, and is deliberately absent from the projected
+    /// surface (docs/mcp-coverage.md): it SETS the scheduling it measures,
+    /// so exposing it as a projected probe would put a configuration knob on
+    /// a surface whose other rows are things a Mac can do. A page can show a
+    /// measurement the agent surface has decided not to carry, and the
+    /// optionality is where that decision is written down.
+    let probe: AgentIntegrationDiagnosticProbe?
+    /// The verb on the wire and this diagnostic's identity — always present,
+    /// because a diagnostic without a verb is nothing to run.
+    let verb: String
     let title: String
     /// What the machine measures, in a sentence — composed around whatever
     /// that machine is called right now.
@@ -31,21 +43,43 @@ struct GuestDiagnostic: Identifiable, Equatable, Sendable {
     /// the three today, and it earns its place — see `vprobe` below.
     let caveat: String?
 
-    var verb: String { probe.rawValue }
-    var id: String { probe.rawValue }
+    var id: String { verb }
+
+    init(probe: AgentIntegrationDiagnosticProbe, title: String,
+         measures: @escaping @Sendable (GuestConnectionState) -> String,
+         cost: String, caveat: String? = nil) {
+        self.probe = probe
+        self.verb = probe.rawValue
+        self.title = title
+        self.measures = measures
+        self.cost = cost
+        self.caveat = caveat
+    }
+
+    init(verb: String, title: String,
+         measures: @escaping @Sendable (GuestConnectionState) -> String,
+         cost: String, caveat: String? = nil) {
+        self.probe = nil
+        self.verb = verb
+        self.title = title
+        self.measures = measures
+        self.cost = cost
+        self.caveat = caveat
+    }
 
     /// Identity is the verb. Everything else here is prose ABOUT that verb —
     /// including a closure, which has no equality of its own — so two values
-    /// carrying the same probe are the same diagnostic.
+    /// carrying the same verb are the same diagnostic.
     static func == (lhs: GuestDiagnostic, rhs: GuestDiagnostic) -> Bool {
-        lhs.probe == rhs.probe
+        lhs.verb == rhs.verb
     }
 }
 
 enum GuestDiagnostics {
-    /// The three, in the order the page draws them: the two measurements of
+    /// The four, in the order the page draws them: the two measurements of
     /// the screen first, since they are the expensive ones and the pair a
-    /// person compares, then the free read of the transfer counters.
+    /// person compares, then the two free reads of counters the machine
+    /// keeps as it runs.
     static let all: [GuestDiagnostic] = [
         GuestDiagnostic(
             probe: .vprobe,
@@ -104,7 +138,188 @@ enum GuestDiagnostics {
                 + "transfer, so a Mac that has received nothing since it "
                 + "launched answers its own zeroes.",
             caveat: nil),
+        /* The fourth instrument, and the only one of the four this host
+           reads without the agent surface carrying it (`probe` is nil —
+           see `GuestDiagnostic.probe`). It measures the half of a slow
+           round trip that bytes, walk time and round trip together cannot
+           separate: whether the answer was expensive, or whether nobody
+           looked at the socket for a tenth of a second. */
+        GuestDiagnostic(
+            verb: "wirestat",
+            title: "Wire Timing",
+            measures: { connection in
+                "How long \(MachineNaming.sentence(connection)) takes to "
+                + "NOTICE a request, as the two distributions only it can "
+                + "take: the interval between its own wire service passes, "
+                + "and the delay from Open Transport announcing that data "
+                + "arrived to its event loop reading it. Histograms, not "
+                + "medians — a cooperatively scheduled Mac has a tail that "
+                + "one number hides, and the tail is what a person feels."
+            },
+            /* The read-only sentence rides on the cost line rather than
+               becoming a second caveat: exactly one diagnostic here carries
+               one, because a caveat on every card is a caveat nobody reads
+               (`testTheFramebufferCardWarnsAgainstReadingItAsACaptureFailure`).
+               It is said at all because a person who knows the verb will
+               look for the two knobs and deserves to be told where they
+               went, rather than finding an absence (034, G-1). */
+            cost: "Free — the loop keeps these counters as it runs, so "
+                + "reading them costs a round trip and nothing else. This "
+                + "page only reads: the same verb can also change that "
+                + "Mac's idle sleep and turn its wake notifier off, and "
+                + "those knobs stay on its own console — they alter how it "
+                + "schedules every application it is running, including "
+                + "the one answering you.",
+            caveat: nil),
     ]
+}
+
+/// `wirestat`'s rows read as what they are: some facts about the loop, and
+/// two histograms.
+///
+/// **Derived from the shape of the labels, never from a list of them.** The
+/// contract says the rows a guest sends are its own diagnostic vocabulary and
+/// that a caller "must not require any particular label to exist"
+/// (`contract/asyncapi.yaml`, `x-commands.wirestat`), so this recognises a
+/// bucket by its grammar — `<key> <lo>-<hi> us`, `<key> <lo>+ us`, either
+/// optionally marked `(median)` — and takes the key from the row itself. A
+/// guest that adds a third distribution renders here without a change; a
+/// guest that renames one renders it under its new name.
+///
+/// The emitter is `now-guest-ppc/src/commands/commands.c :: run_wirestat`
+/// and `wirestat_hist`, which is where the fixture in the tests comes from.
+/// Anything this parser does not recognise stays a plain row rather than
+/// being dropped: an unread row on screen is a smaller failure than a
+/// measurement this side quietly swallowed.
+struct WirestatReading: Equatable {
+    struct Bucket: Equatable, Identifiable {
+        let id: Int
+        /// The bucket's edges, as the guest wrote them, with the key and any
+        /// median marker removed.
+        let range: String
+        let count: Int
+        let isMedian: Bool
+    }
+
+    struct Histogram: Equatable, Identifiable {
+        /// The guest's own key for this distribution — `pass`, `notice`.
+        let id: String
+        var samples: String?
+        var mean: String?
+        var minimum: String?
+        var maximum: String?
+        var buckets: [Bucket] = []
+
+        /// The tallest bin, so a bar can be drawn in proportion. Zero when
+        /// every bin is empty, which the view must not divide by.
+        var peak: Int { buckets.map(\.count).max() ?? 0 }
+
+        /// A heading for the two distributions this host recognises, and the
+        /// guest's own key for any it does not. The key is never replaced by
+        /// a guess: an unknown distribution is shown under the name the
+        /// machine gave it.
+        var title: String {
+            switch id {
+            case "pass":   return "Between service passes"
+            case "notice": return "From data arriving to the loop reading it"
+            default:       return id
+            }
+        }
+    }
+
+    /// The rows that are not part of a histogram, in the guest's order: the
+    /// loop's current settings and its notifier counters.
+    let facts: [DiagnosticRow]
+    /// The distributions, in the order their first row appeared.
+    let histograms: [Histogram]
+
+    var isEmpty: Bool { facts.isEmpty && histograms.isEmpty }
+
+    init(rows: [DiagnosticRow]) {
+        var facts: [DiagnosticRow] = []
+        var order: [String] = []
+        var found: [String: Histogram] = [:]
+        var bucketID = 0
+
+        /* Two passes, because a histogram's summary rows (`pass n`, `pass
+           mean`) are indistinguishable from ordinary facts until a bucket
+           row has proved that `pass` is a distribution. Deciding on the
+           first pass would file "Sleep now" and "pass mean" the same way. */
+        for row in rows {
+            /* A key earns the name "distribution" only from a row that is a
+               COUNT in a labelled range. A bucket-shaped label whose value
+               is not a number proves nothing — and registering the key on it
+               would open an empty histogram and quietly file that key's
+               other rows under it. */
+            guard let (key, rest) = Self.split(row.label),
+                  Self.bucketRange(rest) != nil, Int(row.value) != nil
+            else { continue }
+            if found[key] == nil {
+                found[key] = Histogram(id: key)
+                order.append(key)
+            }
+        }
+
+        for row in rows {
+            guard let (key, rest) = Self.split(row.label),
+                  var histogram = found[key] else {
+                facts.append(row)
+                continue
+            }
+            if let range = Self.bucketRange(rest), let count = Int(row.value) {
+                bucketID += 1
+                histogram.buckets.append(
+                    Bucket(id: bucketID, range: range.text, count: count,
+                           isMedian: range.isMedian))
+            } else {
+                switch rest {
+                case "n":    histogram.samples = row.value
+                case "mean": histogram.mean = row.value
+                case "min":  histogram.minimum = row.value
+                case "max":  histogram.maximum = row.value
+                default:
+                    facts.append(row)
+                    continue
+                }
+            }
+            found[key] = histogram
+        }
+
+        self.facts = facts
+        self.histograms = order.compactMap { found[$0] }
+    }
+
+    /// `"pass 0-1000 us"` → `("pass", "0-1000 us")`. Nil when the label has
+    /// no first word to be a key.
+    private static func split(_ label: String) -> (String, String)? {
+        guard let space = label.firstIndex(of: " ") else { return nil }
+        let key = String(label[label.startIndex..<space])
+        let rest = String(label[label.index(after: space)...])
+        guard !key.isEmpty, !rest.isEmpty else { return nil }
+        return (key, rest)
+    }
+
+    /// Whether what follows the key is a bucket's edges, and whether the
+    /// guest marked it as the median.
+    private static func bucketRange(_ rest: String)
+        -> (text: String, isMedian: Bool)? {
+        let marker = " (median)"
+        let isMedian = rest.hasSuffix(marker)
+        let edges = isMedian ? String(rest.dropLast(marker.count)) : rest
+        guard edges.hasSuffix(" us") else { return nil }
+        let span = edges.dropLast(3)
+        // `0-1000` or `64000+`, and nothing else.
+        if span.hasSuffix("+") {
+            let low = span.dropLast()
+            guard !low.isEmpty, low.allSatisfy(\.isNumber) else { return nil }
+            return (edges, isMedian)
+        }
+        let parts = span.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty,
+              parts.allSatisfy({ $0.allSatisfy(\.isNumber) })
+        else { return nil }
+        return (edges, isMedian)
+    }
 }
 
 /// Whether the connected Mac serves one diagnostic — three states, and the
@@ -197,10 +412,17 @@ struct DiagnosticState: Identifiable, Equatable {
     }
 
     /// `putstat`'s rows read as an answer rather than a table. Nil for the
-    /// other two diagnostics, and before a run.
+    /// other diagnostics, and before a run.
     var transferReading: TransferDiagnosticsReading? {
         guard diagnostic.probe == .putstat, !rows.isEmpty else { return nil }
         return TransferDiagnosticsReading(rows: rows)
+    }
+
+    /// `wirestat`'s rows read as two distributions and the loop's settings.
+    /// Nil for the other diagnostics, and before a run.
+    var wirestatReading: WirestatReading? {
+        guard diagnostic.verb == "wirestat", !rows.isEmpty else { return nil }
+        return WirestatReading(rows: rows)
     }
 }
 
@@ -306,6 +528,10 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     struct Snapshot {
         var states: [DiagnosticState]
         var askedForCommands: Bool
+        /// The link's timing, parked with the machine it was measured
+        /// against — it describes the wire to THAT Mac and means nothing
+        /// under another machine's name.
+        var linkTiming: [DiagnosticRow] = []
         /// That machine's own command table, parked with its readings. It is
         /// the evidence the gate decides over, and it is a fact about the
         /// machine those readings came from — carrying one Mac's table into
@@ -320,6 +546,20 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
         didSet { connectionChanged(from: oldValue) }
     }
     @Published private(set) var states: [DiagnosticState]
+    /// The link's own timing — round trip, receive window, window peak,
+    /// quiet time — as that machine measures it.
+    ///
+    /// Read from `net` rather than from anything this side keeps, because
+    /// this host measures none of it: the numbers are the guest's, taken at
+    /// its end of the wire (`net_layout.c`, the link section). It rides
+    /// alongside `wirestat` because the two answer one question between them
+    /// — how long a request takes to arrive, and how long it then waits to
+    /// be noticed — and neither half is worth much without the other.
+    ///
+    /// Empty is "not read", never "zero". A machine that does not serve
+    /// `net`, or one whose link reports no round trip yet, leaves this alone
+    /// and the card says nothing rather than drawing four blanks.
+    @Published private(set) var linkTiming: [DiagnosticRow] = []
 
     /// Which diagnostic the detail side is showing.
     ///
@@ -438,6 +678,12 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     func notServedSentence(_ diagnostic: GuestDiagnostic) -> String {
         let elsewhere: String
         switch diagnostic.probe {
+        case nil:
+            /* `wirestat`. The wake it measures is an Open Transport
+               notifier, so the 68K guest — which speaks MacTCP — cannot
+               answer it at all (contract, `x-commands.wirestat`). */
+            elsewhere = "The Carbon guest serves it; the 68K guest speaks "
+                + "MacTCP and has nothing to measure here."
         case .vprobe:
             /* Both guests serve it, so a machine without it is neither model
                as this host knows them — an older build, most likely. Nothing
@@ -472,7 +718,16 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
     /// this side declining to ask. It is not offered once the machine has
     /// said it does not have the verb.
     func run(_ probe: AgentIntegrationDiagnosticProbe) {
-        let verb = probe.rawValue
+        run(verb: probe.rawValue)
+    }
+
+    /// The same run, for a diagnostic the agent surface does not carry.
+    ///
+    /// `wirestat` is read here and deliberately unprojected, so it has no
+    /// `AgentIntegrationDiagnosticProbe` to be named by — the verb is the
+    /// identity, and it always was: everything below this line only ever
+    /// used `probe.rawValue`.
+    func run(verb: String) {
         guard isConnected,
               let idx = states.firstIndex(where: { $0.id == verb }),
               /* The same answer the button reads, so a run cannot reach the
@@ -482,6 +737,13 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
               availability(for: states[idx]).isRunnable,
               !states[idx].isRunning
         else { return }
+        /* The wire's other half, asked for in the same gesture. A person
+           running Wire Timing is asking what the link costs, and making them
+           press a second button on a different page for the four numbers
+           that complete the answer would be this app knowing something it
+           declined to say. Best effort: it is enrichment, and a machine that
+           does not serve `net` simply leaves the section absent. */
+        if verb == "wirestat" { readLinkTiming() }
         let gen = (generation[verb] ?? 0) + 1
         generation[verb] = gen
         states[idx].rows = []
@@ -540,6 +802,40 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
                               value: pair.element.count > 1
                                   ? pair.element[1] : "")
             }
+        }
+    }
+
+    /// Read the link's timing rows out of `net`.
+    ///
+    /// **It keeps the rows `GuestLinkTiming` names and nothing else**, from
+    /// the same list `NetworkingModel` drops them by — one list, read from
+    /// two ends, so the four rows cannot end up on both pages or on neither.
+    /// The shape rule is `net`'s own: a member row's label arrives indented
+    /// by two spaces, a section header's does not.
+    ///
+    /// A failure is silence. This was not asked for by the person — it rides
+    /// on their Wire Timing run — so a refusal here must not put a red
+    /// sentence on a card about something else.
+    private func readLinkTiming() {
+        listener.runScheduledCommand(
+            "net", line: "", purpose: .command("diagnostics link timing"),
+            workClass: .ambient, coalescingKey: "diagnostics-net",
+            watchdogSeconds: 8) { [weak self] result in
+            guard let self, result.ok, let rows = result.output?["net"] else {
+                return
+            }
+            var timing: [DiagnosticRow] = []
+            for pair in rows where pair.count >= 2 {
+                let label = pair[0]
+                guard label.hasPrefix("  ") else { continue }
+                let trimmed = String(label.dropFirst(2))
+                guard GuestLinkTiming.isTiming(trimmed),
+                      !pair[1].trimmingCharacters(in: .whitespaces).isEmpty
+                else { continue }
+                timing.append(DiagnosticRow(index: timing.count,
+                                            label: trimmed, value: pair[1]))
+            }
+            self.linkTiming = timing
         }
     }
 
@@ -608,6 +904,7 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
             }
             askedForCommands = fresh.askedForCommands
             commandNames = fresh.commandNames
+            linkTiming = fresh.linkTiming
             askWhatThisMacServes()
             return
         }
@@ -642,6 +939,6 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
 
     private func snapshot() -> Snapshot {
         Snapshot(states: states, askedForCommands: askedForCommands,
-                 commandNames: commandNames)
+                 linkTiming: linkTiming, commandNames: commandNames)
     }
 }

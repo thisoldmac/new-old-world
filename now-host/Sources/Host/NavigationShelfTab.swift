@@ -43,6 +43,44 @@ struct NavigationShelfTab: Identifiable, Equatable, Sendable {
         })
         return tabs
     }
+
+    /// What re-clicking an already-open shelf's icon should reveal: its
+    /// first tab, never wherever this window session last left it — that
+    /// is `NavigationShelfSessionState`'s job for *reopening* a shelf, but
+    /// clicking the shelf you're already on is "go home", not "stay put".
+    @MainActor
+    static func reactivationSelection(
+        for shelf: NavigationShelf,
+        registry: ModuleRegistry
+    ) -> NavigationSelection? {
+        tabs(for: shelf, registry: registry).first?.selection
+    }
+
+    /// A shelf row's click handler has three possible outcomes depending on
+    /// whether it's already the open shelf and whether a session-restoring
+    /// `openShelf` handler is even wired up (it isn't in every presentation
+    /// — see `SidebarShelfRow`'s callers). Extracted as pure decision logic
+    /// so the "go home, don't restore the remembered tab" fix (H5) is
+    /// testable without rendering the row.
+    enum ShelfActivationOutcome: Equatable {
+        case goHome(NavigationSelection)
+        case reopen
+        case select
+    }
+
+    @MainActor
+    static func activationAction(
+        for shelf: NavigationShelf,
+        isAlreadySelected: Bool,
+        registry: ModuleRegistry,
+        canReopen: Bool
+    ) -> ShelfActivationOutcome {
+        if isAlreadySelected,
+           let home = reactivationSelection(for: shelf, registry: registry) {
+            return .goHome(home)
+        }
+        return canReopen ? .reopen : .select
+    }
 }
 
 /// The shelf icon menu exposes real modules only. The shelf hero is navigation

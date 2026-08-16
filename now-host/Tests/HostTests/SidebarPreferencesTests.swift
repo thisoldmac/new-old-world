@@ -18,6 +18,35 @@ final class SidebarPreferencesTests: XCTestCase {
         XCTAssertEqual(prefs.layout, .standard(for: .standard))
     }
 
+    /// Connections leaves the footer through the whole product path.
+    ///
+    /// A boundary marker, and expected green: "you cannot move the
+    /// Connections shelf out of the footer" is NOT a model or persistence
+    /// constraint. `canOccupy` allows every zone, `sanitised` keeps the
+    /// stored one, and `ensurePermanentShelf` no-ops once the shelf has been
+    /// seen elsewhere. So the command, the save and the relaunch all agree,
+    /// and a failure a person sees is provably interaction-level — nobody
+    /// needs to re-derive that from the source a third time.
+    func testConnectionsLeavesTheFooterThroughTheWholeProductPath() throws {
+        let (prefs, defaults) = try makePreferences()
+        XCTAssertEqual(prefs.layout.zone(of: .network), .lower,
+                       "the fixture wants it starting in the footer")
+
+        let moved = try prefs.layout.applying(try XCTUnwrap(
+            NavigationDragCoordinator.command(
+                for: .shelf(.network),
+                droppingOn: .zone(.upper, index: 0),
+                in: prefs.layout)))
+        prefs.replaceLayout(moved)
+
+        XCTAssertEqual(prefs.layout.zone(of: .network), .upper)
+
+        let reopened = SidebarPreferences(defaults: defaults,
+                                          registry: .standard)
+        XCTAssertEqual(reopened.layout.zone(of: .network), .upper,
+                       "and it stays out of the footer across a relaunch")
+    }
+
     func testCollapsedAndCompactAreIndependent() throws {
         let (prefs, _) = try makePreferences()
 
@@ -62,11 +91,11 @@ final class SidebarPreferencesTests: XCTestCase {
         let id = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
         var changed = prefs.layout
         changed.upper.removeAll {
-            $0 == .module("chat") || $0 == .module("development")
+            $0 == .module("chat") || $0 == .module("projects")
         }
         changed.upper.append(.shelf(NavigationShelf(
             id: .user(id), title: "New Shelf",
-            moduleIDs: ["chat", "development"])))
+            moduleIDs: ["chat", "projects"])))
 
         prefs.replaceLayout(changed)
         XCTAssertEqual(prefs.shelfBeingRenamed, .user(id))
@@ -82,11 +111,11 @@ final class SidebarPreferencesTests: XCTestCase {
         let id = UUID(uuidString: "16186E4B-5F6D-42F6-BAE6-C62C7405E492")!
         var changed = previous
         changed.upper.removeAll {
-            $0 == .module("chat") || $0 == .module("development")
+            $0 == .module("chat") || $0 == .module("projects")
         }
         changed.upper.append(.shelf(NavigationShelf(
             id: .user(id), title: "New Shelf",
-            moduleIDs: ["chat", "development"])))
+            moduleIDs: ["chat", "projects"])))
 
         prefs.replaceLayout(changed)
         prefs.cancelShelfCreation(id: .user(id))

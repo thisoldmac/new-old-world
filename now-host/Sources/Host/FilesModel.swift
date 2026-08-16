@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
 
 /// One row in the browser: a guest listing entry plus what a pull of it
@@ -94,7 +95,7 @@ enum FilesBrowserView: String, CaseIterable, Identifiable {
     case columns
 
     var id: String { rawValue }
-    var title: LocalizedStringResource {
+    var title: LocalizedStringKey {
         switch self {
         case .icons: "Icons"
         case .list: "List"

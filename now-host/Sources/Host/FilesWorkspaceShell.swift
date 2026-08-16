@@ -11,10 +11,15 @@ struct FilesWorkspaceShell: View {
     @State private var hostMode = FilesHostMode.browser
     @State private var guestSidebarCompact = false
     @State private var mainPaneFraction =
-        FilesRightSidebarSplitController.defaultLeadingFraction
+        RightSidebarSplitController.defaultLeadingFraction
     @State private var guestSidebarOverride: Bool?
     @State private var hostSidebarOverride: Bool?
     @State private var hostPaneOverride: Bool?
+
+    /// One noun for the right sidebar, read by the split component's rail
+    /// and by the expanded toggle, so the two controls for one surface
+    /// cannot end up naming it differently.
+    static let hostSidebarTitle = "This Mac"
 
     var body: some View {
         GeometryReader { geometry in
@@ -29,12 +34,13 @@ struct FilesWorkspaceShell: View {
             let hostCompact = hostSidebarOverride ?? state.hostSidebarCompact
             let hostCollapsed = hostPaneOverride ?? state.hostPaneCollapsed
 
-            FilesRightSidebarSplitView(
+            RightSidebarSplitView(
                 isTrailingCollapsed: hostCollapsed,
                 onTrailingCollapseChanged: { collapsed in
                     setHostCollapsed(collapsed, responsive: state)
                 },
                 leadingFraction: $mainPaneFraction,
+                trailingTitle: FilesWorkspaceShell.hostSidebarTitle,
                 leading: FilesGuestPane(
                     model: model,
                     sort: $sort,
@@ -114,7 +120,7 @@ private enum FilesHostMode: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
-    var title: LocalizedStringResource {
+    var title: LocalizedStringKey {
         switch self {
         case .browser: "Browser"
         case .settings: "Settings"
@@ -381,8 +387,10 @@ private struct FilesRightSidebar: View {
                         goUp: browser.goUp)
                 }
             },
-            titleAccessory: FilesRightSidebarToggle(
-                isCollapsed: false, action: toggleCollapse),
+            titleAccessory: RightSidebarToggle(
+                isCollapsed: false,
+                title: FilesWorkspaceShell.hostSidebarTitle,
+                action: toggleCollapse),
             viewControls: FilesBrowserViewPicker(
                 label: "This Mac browser view",
                 selection: $model.hostBrowserView,
@@ -596,7 +604,7 @@ private struct FilesGuestUnavailable: View {
         VStack(spacing: 10) {
             Image(systemName: "externaldrive.badge.questionmark")
                 .font(.system(size: 36, weight: .light))
-            Text("No Old World Mac Connected")
+            Text("No \(MachineNaming.properNoun) Connected")
                 .font(.headline)
             Text("Guest files will appear here when a Mac connects.")
                 .font(.callout)
@@ -680,6 +688,7 @@ private struct FilesPlacesSidebar: View {
                 .onMove { model.moveLocations(from: $0, to: $1) }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
             .overlay {
                 if model.locations.isEmpty && !compact {
                     Text(model.isDiscoveringLocations
@@ -693,7 +702,7 @@ private struct FilesPlacesSidebar: View {
         }
         .frame(width: compact ? 52 : 176)
         .animation(.easeInOut(duration: 0.18), value: compact)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(SidebarVibrancyBackground())
         .onDrop(of: [.folder], isTargeted: nil) { _ in
             guard let path = model.draggedFolderPath else { return false }
             return model.pinLocation(path: path)
@@ -816,7 +825,7 @@ private struct FilesSharingPane: View {
             }
             Section("How It Works") {
                 Text("The Browser panel shows this folder. Drag its files " +
-                     "into the Old World Mac pane to copy them to " +
+                     "into the \(MachineNaming.properNoun) pane to copy them to " +
                      model.connection.peerLabel + ".")
                     .foregroundStyle(.secondary)
             }

@@ -476,8 +476,8 @@ void cloud_drive_view_go_forward(void)
 
 /* --- the control --------------------------------------------------------- */
 
-/* Selection changed (-1 = deselected). The pane (view_draw's
-   draw_item_card) reads g_sel directly and draws the selected item's
+/* Selection changed (-1 = deselected). The pane (view_content's
+   emit_item_card) reads g_sel directly and draws the selected item's
    own name/kind/size/date plus the double-click affordance line — that
    text moved off the placard and into the pane in this arc, so
    selection touches only the pane, never the placard. */
@@ -817,39 +817,71 @@ static void view_layout(const CloudLayout *r)
                 (SInt16)(r->list.bottom - r->list.top));
 }
 
-static void draw_small_line(const Rect *row, const char *prefix,
+/* One furniture line, drawn or described — cloud_photos_view.c's
+   emit_small_line, the same idiom (kept local rather than shared for
+   the same reason that one is: the row is always this file's own).
+   The drawn side truncates to the row's pixel width; the described
+   side reports the untruncated words, so a person reading it off the
+   clipboard gets the whole path a 200-pixel row could not show. */
+static void emit_small_line(const WorkshopSceneWriter *writer,
+                            const Rect *row, const char *prefix,
                             const char *rest, Boolean middle_trunc)
 {
-    Str255 text;
     char line[224];
-    short width = (short)(row->right - row->left);
 
-    if (width <= 0) {
+    snprintf(line, sizeof line, "%s%s", prefix, rest);
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line, row,
+                           true);
         return;
     }
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    snprintf(line, sizeof line, "%s%s", prefix, rest);
-    CopyCStringToPascal(line, text);
-    TruncString(width, text, middle_trunc ? truncMiddle : truncEnd);
-    MoveTo(row->left, (short)(row->bottom - 6));
-    DrawString(text);
+    {
+        Str255 text;
+        short width = (short)(row->right - row->left);
+
+        if (width <= 0) {
+            return;
+        }
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        CopyCStringToPascal(line, text);
+        TruncString(width, text, middle_trunc ? truncMiddle : truncEnd);
+        MoveTo(row->left, (short)(row->bottom - 6));
+        DrawString(text);
+    }
 }
 
 /* One left-aligned, end-truncated line at an explicit y — the pane's
-   own card text, as opposed to draw_small_line's fixed single-row
-   furniture (which bottom-aligns inside its own rect). */
-static void draw_pane_line(const Rect *text, short y, const char *s)
+   own card text, as opposed to emit_small_line's fixed single-row
+   furniture (which bottom-aligns inside its own rect). Described as a
+   run from the baseline up, the same rect shape cloud_module.c's
+   emit_at derives for its own baseline-positioned text. */
+static void emit_pane_line(const WorkshopSceneWriter *writer,
+                           const Rect *text, short y, const char *s)
 {
-    Str255 t;
-    short width = (short)(text->right - text->left);
+    if (writer != NULL) {
+        Rect where;
 
-    if (width <= 0 || y > text->bottom) {
+        if (y > text->bottom) {
+            return;
+        }
+        SetRect(&where, text->left, (short)(y - 11), text->right,
+               (short)(y + 3));
+        workshop_scene_add(writer, kWorkshopSceneStaticText, s, &where,
+                           true);
         return;
     }
-    CopyCStringToPascal(s, t);
-    TruncString(width, t, truncEnd);
-    MoveTo(text->left, y);
-    DrawString(t);
+    {
+        Str255 t;
+        short width = (short)(text->right - text->left);
+
+        if (width <= 0 || y > text->bottom) {
+            return;
+        }
+        CopyCStringToPascal(s, t);
+        TruncString(width, t, truncEnd);
+        MoveTo(text->left, y);
+        DrawString(t);
+    }
 }
 
 /* The selected drive item's own detail, in the pane: for a folder,
@@ -865,7 +897,8 @@ static void draw_pane_line(const Rect *text, short y, const char *s)
    fetch-and-decode path this arc does not build. The seam is this
    function: a later arc that wants a preview replaces its body for
    the image-type case, honestly, rather than faking one from text. */
-static void draw_item_card(const Rect *text)
+static void emit_item_card(const WorkshopSceneWriter *writer,
+                           const Rect *text)
 {
     short y;
     char buf[64];
@@ -876,49 +909,71 @@ static void draw_item_card(const Rect *text)
         return;
     }
     y = (short)(text->top + 12);
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    }
     if (g_sel < 0 || g_sel >= g_drive_count) {
-        draw_pane_line(text, y, "Select an item to see its detail.");
+        emit_pane_line(writer, text, y,
+                       "Select an item to see its detail.");
         return;
     }
     row = &g_drive_rows[g_sel];
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    draw_pane_line(text, y, row->name);
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+    }
+    emit_pane_line(writer, text, y, row->name);
     y = (short)(y + 16);
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    }
     now_files_describe(row, buf, sizeof buf);
     snprintf(line, sizeof line, "Kind: %s", buf);
-    draw_pane_line(text, y, line);
+    emit_pane_line(writer, text, y, line);
     y = (short)(y + 14);
     if (row->folder) {
         y = (short)(y + 6);
-        draw_pane_line(text, y, "Double-click opens it.");
+        emit_pane_line(writer, text, y, "Double-click opens it.");
         return;
     }
     format_size(row, buf, sizeof buf);
     snprintf(line, sizeof line, "Size: %s", buf);
-    draw_pane_line(text, y, line);
+    emit_pane_line(writer, text, y, line);
     y = (short)(y + 14);
     if (row->modified != 0 && y <= text->bottom) {
-        Str255 prefix, when;
+        Str255 when;
         LongDateTime ldt = (LongDateTime)row->modified;
 
         /* LongDateString, not DateString: 1904-epoch seconds pass
            2^31 in 1972, so every modern date through the signed API
-           clamps to 1/19/72 - watched happening on the PowerBook.
-           Drawn as two DrawStrings on one baseline rather than built
-           into a C buffer: the pen advances on its own. */
+           clamps to 1/19/72 - watched happening on the PowerBook. */
         LongDateString(&ldt, shortDate, when, NULL);
-        CopyCStringToPascal("Modified: ", prefix);
-        MoveTo(text->left, y);
-        DrawString(prefix);
-        DrawString(when);
+        if (writer != NULL) {
+            /* The describing side has no pen to advance across two
+               DrawStrings, so the prefix and the Pascal result are
+               joined into one C string instead. */
+            char joined[80];
+            int n = when[0] < 64 ? when[0] : 64;
+
+            memcpy(joined, "Modified: ", 10);
+            memcpy(joined + 10, when + 1, (size_t)n);
+            joined[10 + n] = '\0';
+            emit_pane_line(writer, text, y, joined);
+        } else {
+            Str255 prefix;
+
+            /* Drawn as two DrawStrings on one baseline rather than
+               built into a C buffer: the pen advances on its own. */
+            CopyCStringToPascal("Modified: ", prefix);
+            MoveTo(text->left, y);
+            DrawString(prefix);
+            DrawString(when);
+        }
         y = (short)(y + 14);
     }
     y = (short)(y + 6);
     snprintf(line, sizeof line,
              "Double-click fetches \"%.40s\" to this Mac.", row->name);
-    draw_pane_line(text, y, line);
+    emit_pane_line(writer, text, y, line);
 }
 
 /* The breadcrumbs: share-root name plus colon path, the Files page's
@@ -928,12 +983,18 @@ static void draw_item_card(const Rect *text)
    and the pull's byte line are this view's own furniture, in the
    pane now (moved off the old toolbar strip, 2026-08-02); the pane's
    card text is drawn last so its own trimmed detail_text never
-   competes with a live control below it. */
-static void view_draw(const CloudLayout *r, const CloudStore *store,
-                      const CloudService *service, int selected)
+   competes with a live control below it.
+
+   One walk, taken twice: a NULL writer draws with QuickDraw, a real
+   writer reports the same three pieces (breadcrumb, destination
+   furniture, item card) as text runs — the selected item's own detail
+   (drive keeps its own g_sel; the shell's `selected` argument is
+   unused here for the same reason draw() already ignores it). */
+static void view_content(const WorkshopSceneWriter *writer,
+                         const CloudLayout *r, const CloudStore *store,
+                         const CloudService *service, int selected)
 {
     char line[224];
-    Str255 text;
 
     (void)store;
     (void)service;
@@ -942,19 +1003,42 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
     if (r->path_row.right > r->path_row.left) {
         now_files_path_label(g_drive_root, g_drive_path, line,
                              sizeof line);
-        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-        CopyCStringToPascal(line, text);
-        TruncString((short)(r->path_row.right - r->path_row.left - 4),
-                    text, truncMiddle);
-        MoveTo((short)(r->path_row.left + 2),
-               (short)(r->path_row.top + 12));
-        DrawString(text);
+        if (writer != NULL) {
+            Rect where = r->path_row;
+
+            where.left = (short)(where.left + 2);
+            workshop_scene_add(writer, kWorkshopSceneStaticText, line,
+                               &where, true);
+        } else {
+            Str255 text;
+
+            UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
+            CopyCStringToPascal(line, text);
+            TruncString((short)(r->path_row.right - r->path_row.left - 4),
+                        text, truncMiddle);
+            MoveTo((short)(r->path_row.left + 2),
+                   (short)(r->path_row.top + 12));
+            DrawString(text);
+        }
     }
-    draw_small_line(&r->dest_row, "Save into: ", g_dest_path, true);
+    emit_small_line(writer, &r->dest_row, "Save into: ", g_dest_path, true);
     if (g_dl_line[0] != '\0') {
-        draw_small_line(&r->dl_text, "", g_dl_line, false);
+        emit_small_line(writer, &r->dl_text, "", g_dl_line, false);
     }
-    draw_item_card(&r->detail_text);
+    emit_item_card(writer, &r->detail_text);
+}
+
+static void view_draw(const CloudLayout *r, const CloudStore *store,
+                      const CloudService *service, int selected)
+{
+    view_content(NULL, r, store, service, selected);
+}
+
+static void view_describe(const WorkshopSceneWriter *writer,
+                          const CloudLayout *r, const CloudStore *store,
+                          const CloudService *service, int selected)
+{
+    view_content(writer, r, store, service, selected);
 }
 
 static Boolean view_click(const EventRecord *event, Point local)
@@ -1076,6 +1160,7 @@ static const CloudViewOps k_ops = {
                                           browsers' own visibility */
     view_layout,
     view_draw,                         /* the breadcrumb and dest rows */
+    view_describe,
     view_click,
     view_key,
     view_idle,

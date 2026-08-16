@@ -205,7 +205,7 @@ final class DevelopmentModel: ObservableObject {
         problem = nil
         Task { @MainActor in
             let result = await performDevelopment(request)
-            buildRows = rows(from: result, problemPrefix: "Development")
+            buildRows = rows(from: result, problemPrefix: "Projects")
             refresh()
             developmentBusy = false
         }

@@ -9,7 +9,7 @@ authority: [docs/files.md, contract/asyncapi.yaml]
 module_ids: [files]
 source_dependencies: [docs/files.md, contract/asyncapi.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/files, now-guest-68k/src/files]
 media_ids: [files-host, files-ppc, files-detail]
-last_verified: 2026-08-09
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -36,8 +36,14 @@ drag behavior. The path always describes the selected classic session's share.
 
 ## On the classic Mac
 
-The PowerPC Files page browses the host share and chooses the local share. The
-68K console exposes the same bounded file behaviors without copying the
+The PowerPC Files page is two named halves, both always visible. **Their
+Files** is the other machine's listing, headed with that machine's name, with
+Up, the current path, an item count and a Stop button that appears while a
+file is coming down. **My Shared Folder** is what this Mac offers: what is
+shared (one folder, or the whole startup disk), a Send File button with its
+own progress bar, and where files you receive land.
+
+The 68K console exposes the same bounded file behaviors without copying the
 Workshop UI.
 
 ![The PowerPC Files page](../../../assets/screenshots/modules/files/ppc.svg){ .now-placeholder }

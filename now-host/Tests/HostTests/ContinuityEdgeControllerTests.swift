@@ -1008,7 +1008,7 @@ final class ContinuityEdgeControllerTests: XCTestCase {
             "a copy running from a mounted disk image is the case that "
             + "cost the 2026-08-15 round")
         XCTAssertFalse(RunningCopy(
-            path: "/Users/michelle/Downloads/New Old World.app")
+            path: "/Volumes/Scratch/Downloads/New Old World.app")
             .isInApplicationsFolder)
     }
 

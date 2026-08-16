@@ -556,35 +556,54 @@ static void view_layout(const CloudLayout *r)
     }
 }
 
-static void draw_small_line(const Rect *row, const char *prefix,
+/* One furniture line, drawn or described — cloud_module.c's emit_at is
+   the same idiom; kept local because this one truncates to ITS OWN row
+   width on the drawn side, and describes the untruncated words: an
+   observer reading the destination path off the clipboard should not
+   get the ellipsis a 200-pixel row forced on the screen. */
+static void emit_small_line(const WorkshopSceneWriter *writer,
+                            const Rect *row, const char *prefix,
                             const char *rest, Boolean middle_trunc)
 {
-    Str255 text;
     char line[224];
-    short width = (short)(row->right - row->left);
 
-    if (width <= 0) {
+    snprintf(line, sizeof line, "%s%s", prefix, rest);
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line, row,
+                           true);
         return;
     }
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    snprintf(line, sizeof line, "%s%s", prefix, rest);
-    CopyCStringToPascal(line, text);
-    TruncString(width, text, middle_trunc ? truncMiddle : truncEnd);
-    MoveTo(row->left, (short)(row->bottom - 6));
-    DrawString(text);
+    {
+        Str255 text;
+        short width = (short)(row->right - row->left);
+
+        if (width <= 0) {
+            return;
+        }
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        CopyCStringToPascal(line, text);
+        TruncString(width, text, middle_trunc ? truncMiddle : truncEnd);
+        MoveTo(row->left, (short)(row->bottom - 6));
+        DrawString(text);
+    }
 }
 
-static void view_draw(const CloudLayout *r, const CloudStore *store,
-                      const CloudService *service, int selected)
+/* One walk, taken twice (workshop_module_ops's describe_scene idiom):
+   a NULL writer draws with QuickDraw and its own g_pane/g_dl_text_rect
+   bookkeeping intact; a real writer only reports text runs and touches
+   no state — describing is a read, not a frame. The preview well's
+   photo has no text form (cloud_view.h's describe comment says why) and
+   describes as nothing beyond the pane rect the shell already reports;
+   loading/failure words and the generic card fall through to
+   cloud_list_view's own draw/describe pair, so those two cannot drift
+   from each other either. */
+static void view_content(const WorkshopSceneWriter *writer,
+                         const CloudLayout *r, const CloudStore *store,
+                         const CloudService *service, int selected)
 {
     const char *item = (selected >= 0 && selected < store->row_count)
         ? store->rows[selected].item : "";
-
-    /* draw() may run before layout() on a fresh page; the layout the
-       shell passes is current either way. */
-    g_pane = r->photos_text;
-    g_have_pane = true;
-    g_dl_text_rect = r->dl_text;
+    Rect pane = r->photos_text;
 
     /* The summary line, always visible: WHERE the next save lands and
        AT WHAT SIZE, so neither fact costs a click. The folder's leaf
@@ -603,16 +622,18 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
        glyph through it, watched on metal 2026-08-02. cloud_layout.c
        gives the caption size_label for exactly this reason, and
        cloud_layout_test.c asserts the two do not touch. */
-    draw_small_line(&r->size_label, "Size", "", false);
+    emit_small_line(writer, &r->size_label, "Size", "", false);
     if (g_dl_line[0] != '\0') {
-        draw_small_line(&r->dl_text, "", g_dl_line, false);
+        emit_small_line(writer, &r->dl_text, "", g_dl_line, false);
     } else {
-        draw_small_line(&r->dest_row, "Into  ", g_dest_path, true);
+        emit_small_line(writer, &r->dest_row, "Into  ", g_dest_path, true);
     }
 
     if (selected >= 0 && item[0] != '\0'
         && cloud_preview_well_ready("photos", item)) {
-        cloud_preview_well_draw(g_owner, &g_pane);
+        if (writer == NULL) {
+            cloud_preview_well_draw(g_owner, &pane);
+        }
         return;                       /* the preview replaces the card */
     }
     if (selected >= 0 && item[0] != '\0'
@@ -620,27 +641,43 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
         /* Between the ask and the pixels the pane says so — drawn
            state, not a repaint loop: the transition into fetching and
            the settled answer each invalidate exactly once. */
-        Str255 text;
+        if (writer != NULL) {
+            Rect where = pane;
 
-        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-        MoveTo((short)(g_pane.left), (short)(g_pane.top + 12));
-        CopyCStringToPascal("Loading preview...", text);
-        DrawString(text);
+            where.bottom = (short)(where.top + 16);
+            workshop_scene_add(writer, kWorkshopSceneStaticText,
+                               "Loading preview...", &where, true);
+        } else {
+            Str255 text;
+
+            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+            MoveTo((short)(pane.left), (short)(pane.top + 12));
+            CopyCStringToPascal("Loading preview...", text);
+            DrawString(text);
+        }
         return;
     }
     if (selected >= 0 && item[0] != '\0') {
         const char *fail = cloud_preview_well_fail("photos", item);
 
         if (fail[0] != '\0') {
-            Str255 text;
-
             /* The why REPLACES the card: both start at the pane's
                first line, and two texts on one baseline is mush. The
                card comes back with the next selection or preview. */
-            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-            MoveTo((short)(g_pane.left), (short)(g_pane.top + 12));
-            CopyCStringToPascal(fail, text);
-            DrawString(text);
+            if (writer != NULL) {
+                Rect where = pane;
+
+                where.bottom = (short)(where.top + 16);
+                workshop_scene_add(writer, kWorkshopSceneStaticText, fail,
+                                   &where, true);
+            } else {
+                Str255 text;
+
+                UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+                MoveTo((short)(pane.left), (short)(pane.top + 12));
+                CopyCStringToPascal(fail, text);
+                DrawString(text);
+            }
             return;
         }
     }
@@ -650,9 +687,32 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
            card text under a control is the overlap nothing repaints. */
         CloudLayout card_r = *r;
 
-        card_r.detail_text = r->photos_text;
-        cloud_list_view_draw_card(&card_r, store, service, selected);
+        card_r.detail_text = pane;
+        if (writer != NULL) {
+            cloud_list_view_describe_card(writer, &card_r, store, service,
+                                          selected);
+        } else {
+            cloud_list_view_draw_card(&card_r, store, service, selected);
+        }
     }
+}
+
+static void view_draw(const CloudLayout *r, const CloudStore *store,
+                      const CloudService *service, int selected)
+{
+    /* draw() may run before layout() on a fresh page; the layout the
+       shell passes is current either way. */
+    g_pane = r->photos_text;
+    g_have_pane = true;
+    g_dl_text_rect = r->dl_text;
+    view_content(NULL, r, store, service, selected);
+}
+
+static void view_describe(const WorkshopSceneWriter *writer,
+                          const CloudLayout *r, const CloudStore *store,
+                          const CloudService *service, int selected)
+{
+    view_content(writer, r, store, service, selected);
 }
 
 static Boolean view_control_click(ControlRef control,
@@ -792,6 +852,7 @@ static const CloudViewOps k_ops = {
     view_show,
     view_layout,
     view_draw,
+    view_describe,
     NULL,                              /* click: the shell's ask_save() */
     NULL,                              /* key: generic HandleControlKey */
     view_idle,

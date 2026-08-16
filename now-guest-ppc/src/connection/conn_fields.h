@@ -17,4 +17,25 @@ long now_conn_port_parse(const char *text);
 short now_conn_retry_secs_for_item(short item);
 short now_conn_retry_item_for_secs(short secs);
 
+/* The action button's cached title.
+
+   The page caches this so an idle tick can skip the redraw, and the
+   cache must record what the BUTTON READS - not what the wire last
+   said. Seeding it from the wire is how a page created while already
+   connected came up reading "Connect" and stayed that way forever:
+   cache and title disagreed from birth, and the only thing that
+   restamps a title is a disagreement with the cache. */
+typedef struct {
+    const char *shown;                /* never NULL after init */
+} NowConnActionTitle;
+
+/* The words for a connection state; the one place that decides them. */
+const char *now_conn_action_title(int connected);
+
+/* Record the title the button was created with. */
+void now_conn_action_title_init(NowConnActionTitle *st, const char *created);
+
+/* The title to stamp now, or NULL when the button already reads right. */
+const char *now_conn_action_title_next(NowConnActionTitle *st, int connected);
+
 #endif /* NOW_CONN_FIELDS_H */

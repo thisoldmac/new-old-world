@@ -22,7 +22,7 @@ optional handoff when a person wants an IDE, never the build authority.
 
 ```mermaid
 flowchart LR
-  A["Agent or host Development page"] --> P["NOW-owned project and Git history"]
+  A["Agent or host Projects page"] --> P["NOW-owned project and Git history"]
   G["Active guest project"] -->|"verified import"| P
   P -->|"MacBinary candidate"| C["Inactive guest candidate"]
   T["Human-qualified MPW"] --> B["Declarative ToolServer job"]

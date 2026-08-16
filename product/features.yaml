@@ -96,7 +96,7 @@ module_feature_coverage:
     without_extension: Available from the host Direct listener.
     extension_required: false
     status: Experimental; deterministic rendering is tested, while classic-browser metal verification and guest-local relay remain open.
-  - module_id: development
+  - module_id: projects
     title: Build and run classic software with a guest-owned toolchain
     without_extension: Available on the PowerPC guest.
     extension_required: false

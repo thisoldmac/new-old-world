@@ -26,17 +26,23 @@
 #include "peek.h"
 #include "scene_collect.h"
 #include "act_cmds.h"
+#include "workshop_drop.h"
 #include "workshop_layout.h"
 #include "workshop_window.h"
+#include "receive_progress.h"
 #include "update_install.h"
+#include "about_box.h"
 
 enum {
+    kAppleMenuID = 128,
+    kAppleAboutItem = 1,
     kFileMenuID = 129,
     kFileCloseItem = 1,
     kFileSharingItem = 3,
     kFileQuitItem = 5,
     kEditMenuID = 142,
-    kEditPreferencesItem = 1,
+    kEditCopyItem = 1,
+    kEditPreferencesItem = 3,
     kWindowsMenuID = 140,
     kWindowsWorkshopItem = 1,
     kViewMenuID = 141
@@ -64,19 +70,33 @@ static const unsigned char k_sharing_menu_item[] = {
     16, 'F', 'i', 'l', 'e', ' ', 'S', 'h', 'a', 'r', 'i', 'n', 'g',
     '.', '.', '.', ' '
 };
-/* The Edit menu carries Preferences and nothing else, on purpose.
+/* The Edit menu carries Copy and Preferences, and that pairing is the
+   whole editing model this application has.
 
-   Cut/Copy/Paste are ABSENT rather than present-and-dead. This window
-   has no keyboard-focus machinery - workshop_window.c says why, and the
-   text fields on the Chat and Console pages are classic TextEdit that
-   each own their own TEHandle - so there is no "the focused field" for
-   an Edit command to act on. Wiring them properly means a new module op
-   that hands the Workshop the page's current TEHandle; until that
-   exists, four greyed items would advertise an editing model this
-   application does not have. Preferences is where the era's HIG puts
-   it, so the menu is where it goes. */
+   It used to carry Preferences alone, and the reason written here was
+   sound: this window has no keyboard-focus machinery (workshop_window.c
+   says why), the Chat and Console text fields are classic TextEdit each
+   owning its own TEHandle, so there was no "the focused field" for an
+   Edit command to act on, and four greyed items would have advertised an
+   editing model that did not exist.
+
+   Copy arrives by going around that problem rather than solving it. The
+   MODULE answers - `WorkshopModuleOps.copy_text`, "what is selected on
+   me, as plain text" - so there is no focused field to find and no
+   TEHandle to hand over. For most pages the honest answer is the whole
+   page as text, which is what a person reaching for Copy on a page of
+   facts actually wants. A page that has nothing worth handing someone
+   leaves the op NULL and the item greys, which is a true report rather
+   than a command that quietly does nothing.
+
+   Cut and Paste stay absent: they need a writable selection, which is
+   the focus problem again and not one Copy had to solve. Preferences is
+   where the era's HIG puts it, so it stays. */
 static const unsigned char k_edit_menu_title[] = {
     4, 'E', 'd', 'i', 't'
+};
+static const unsigned char k_edit_copy_item[] = {
+    6, 'C', 'o', 'p', 'y', '/', 'C'
 };
 static const unsigned char k_edit_preferences_item[] = {
     14, 'P', 'r', 'e', 'f', 'e', 'r', 'e', 'n', 'c', 'e', 's',
@@ -86,28 +106,28 @@ static const unsigned char k_view_menu_title[] = {
     4, 'V', 'i', 'e', 'w'
 };
 static const unsigned char k_view_screenshots_item[] = {
-    13, 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o', 't', 's', '/', '1'
+    11, 'S', 'c', 'r', 'e', 'e', 'n', 's', 'h', 'o', 't', 's'
 };
 static const unsigned char k_view_files_item[] = {
-    7, 'F', 'i', 'l', 'e', 's', '/', '2'
+    5, 'F', 'i', 'l', 'e', 's'
 };
 static const unsigned char k_view_console_item[] = {
-    9, 'C', 'o', 'n', 's', 'o', 'l', 'e', '/', '3'
+    7, 'C', 'o', 'n', 's', 'o', 'l', 'e'
 };
 static const unsigned char k_view_processes_item[] = {
-    11, 'P', 'r', 'o', 'c', 'e', 's', 's', 'e', 's', '/', '4'
+    9, 'P', 'r', 'o', 'c', 'e', 's', 's', 'e', 's'
 };
 static const unsigned char k_view_hardware_item[] = {
-    10, 'H', 'a', 'r', 'd', 'w', 'a', 'r', 'e', '/', '5'
+    8, 'H', 'a', 'r', 'd', 'w', 'a', 'r', 'e'
 };
 static const unsigned char k_view_software_item[] = {
-    10, 'S', 'o', 'f', 't', 'w', 'a', 'r', 'e', '/', '6'
+    8, 'S', 'o', 'f', 't', 'w', 'a', 'r', 'e'
 };
 static const unsigned char k_view_mcp_item[] = {
-    5, 'M', 'C', 'P', '/', '7'
+    3, 'M', 'C', 'P'
 };
 static const unsigned char k_view_diagnostics_item[] = {
-    13, 'D', 'i', 'a', 'g', 'n', 'o', 's', 't', 'i', 'c', 's', '/', '8'
+    11, 'D', 'i', 'a', 'g', 'n', 'o', 's', 't', 'i', 'c', 's'
 };
 /* The item NUMBER is the module id (see the handler below), so every
    module needs an item and they must appear in enum order. Networking
@@ -115,29 +135,23 @@ static const unsigned char k_view_diagnostics_item[] = {
    and Cmd-0 "Connection" select Logs, and left Connection unreachable
    from this menu.
 
-   Cmd-0 goes to the tenth item because the digits run out at nine and 0
-   is where a person looks next, not the letter C (already Close). iCloud
-   and Mirror landed the same day; iCloud took the last digit, so the
-   final three carry no key — one invented from a letter would collide
-   with File's before it helped anyone, and each is one click away in
-   the rail. */
+   No item carries a Cmd-key any more (I4a): the numbers ran out at ten
+   pages and the rail is the navigation - a shortcut that stops working
+   past the tenth module is worse than no shortcut. */
 static const unsigned char k_view_networking_item[] = {
-    12, 'N', 'e', 't', 'w', 'o', 'r', 'k', 'i', 'n', 'g', '/', '9'
+    10, 'N', 'e', 't', 'w', 'o', 'r', 'k', 'i', 'n', 'g'
 };
 static const unsigned char k_view_icloud_item[] = {
-    8, 'i', 'C', 'l', 'o', 'u', 'd', '/', '0'
+    6, 'i', 'C', 'l', 'o', 'u', 'd'
 };
-/* Unkeyed: eleventh onward, and the digits are spent. The item number
-   must still BE the module ID — Networking landed without a menu item
-   and every entry below it selected its neighbour. */
 static const unsigned char k_view_chat_item[] = {
     4, 'C', 'h', 'a', 't'
 };
 static const unsigned char k_view_mirror_item[] = {
     6, 'M', 'i', 'r', 'r', 'o', 'r'
 };
-static const unsigned char k_view_development_item[] = {
-    11, 'D', 'e', 'v', 'e', 'l', 'o', 'p', 'm', 'e', 'n', 't'
+static const unsigned char k_view_projects_item[] = {
+    8, 'P', 'r', 'o', 'j', 'e', 'c', 't', 's'
 };
 static const unsigned char k_view_web_item[] = {
     3, 'W', 'e', 'b'
@@ -152,27 +166,43 @@ static const unsigned char k_view_connection_item[] = {
     10, 'C', 'o', 'n', 'n', 'e', 'c', 't', 'i', 'o', 'n'
 };
 static const unsigned char k_workshop_menu_item[] = {
-    8, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p'
+    10, 'W', 'o', 'r', 'k', 's', 'h', 'o', 'p', '/', 'O'
 };
 
 static void create_menu_bar(void)
 {
+    /* GetMenu, not NewMenu: the Apple-glyph title character Rez encoded
+       from the `apple` keyword in app.r's MENU 128 has to come from the
+       resource - NewMenu takes an ordinary Pascal string and cannot
+       produce it. */
+    MenuRef apple_menu = GetMenu(kAppleMenuID);
     MenuRef file_menu = NewMenu(kFileMenuID, k_file_menu_title);
     MenuRef edit_menu = NewMenu(kEditMenuID, k_edit_menu_title);
     MenuRef view_menu = NewMenu(kViewMenuID, k_view_menu_title);
     MenuRef windows_menu = NewMenu(kWindowsMenuID, k_windows_menu_title);
 
+    if (apple_menu != NULL) {
+        /* The standard OS 9 idiom: whatever aliases live in the Apple
+           Menu Items folder appear below the separator app.r already
+           placed at item 2. Selecting one is handled in
+           handle_menu_choice via OpenDeskAcc. */
+        AppendResMenu(apple_menu, 'DRVR');
+        InsertMenu(apple_menu, 0);
+    }
     AppendMenu(file_menu, k_close_menu_item);
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_sharing_menu_item);
     AppendMenu(file_menu, k_separator_menu_item);
     AppendMenu(file_menu, k_quit_menu_item);
     InsertMenu(file_menu, 0);
+    AppendMenu(edit_menu, k_edit_copy_item);
+    AppendMenu(edit_menu, k_separator_menu_item);
     AppendMenu(edit_menu, k_edit_preferences_item);
     InsertMenu(edit_menu, 0);
-    /* View selects a Workshop module (Cmd-1..9 then Cmd-0, the item number
-       IS the module ID, and the last two have no key); Windows reopens
-       the one window. Every module lives in the Workshop now. */
+    /* View selects a Workshop module (the item number IS the module ID);
+       no item carries a Cmd-key (I4a - the rail is the navigation).
+       Windows reopens the one window. Every module lives in the
+       Workshop now. */
     AppendMenu(view_menu, k_view_screenshots_item);
     AppendMenu(view_menu, k_view_files_item);
     AppendMenu(view_menu, k_view_console_item);
@@ -185,7 +215,7 @@ static void create_menu_bar(void)
     AppendMenu(view_menu, k_view_icloud_item);
     AppendMenu(view_menu, k_view_chat_item);
     AppendMenu(view_menu, k_view_mirror_item);
-    AppendMenu(view_menu, k_view_development_item);
+    AppendMenu(view_menu, k_view_projects_item);
     AppendMenu(view_menu, k_view_web_item);
     AppendMenu(view_menu, k_view_preferences_item);
     AppendMenu(view_menu, k_view_logs_item);
@@ -265,16 +295,66 @@ static void set_window_active(WindowRef window, Boolean active)
     }
 }
 
+/* The window a person means when they press a key or Cmd-W.
+ *
+ * FrontWindow() includes the receive windoid, which floats: while a file
+ * is landing it IS the front window, and every `workshop_is(FrontWindow())`
+ * test would answer false - Cmd-W would stop closing the Workshop and
+ * keystrokes would stop reaching it, for the length of a transfer.
+ *
+ * Carbon has FrontNonFloatingWindow for exactly this, and it is declared
+ * for CarbonLib 1.0. It is not used here because this application has
+ * only ever two windows and knows which is which, and a symbol declared
+ * in these headers is not proof CarbonLib 1.6 exports it - GetControlKind
+ * is the one that cost this project a link failure (control_kind.h). */
+static WindowRef front_document_window(void)
+{
+    WindowRef front = FrontWindow();
+
+    return now_receive_progress_is(front) ? workshop_ref() : front;
+}
+
 static void close_front_window(void)
 {
-    if (workshop_is(FrontWindow())) {
-        workshop_close();
+    if (workshop_is(front_document_window())) {
+        workshop_close(false);        /* user-initiated: records closed */
+    }
+}
+
+/* Run before the Menu Manager tracks anything - both a click in the bar
+   and a Command-key, because MenuKey resolves an item without ever
+   drawing the menu and a stale enable state would let Copy fire on a
+   page that cannot answer. Only the items whose availability actually
+   changes are touched; everything else is unconditionally live. */
+static void adjust_menus(void)
+{
+    MenuRef edit_menu = GetMenuHandle(kEditMenuID);
+
+    if (edit_menu == NULL) {
+        return;
+    }
+    if (workshop_can_copy()) {
+        EnableMenuItem(edit_menu, kEditCopyItem);
+    } else {
+        DisableMenuItem(edit_menu, kEditCopyItem);
     }
 }
 
 static void handle_menu_choice(long choice)
 {
-    if (HiWord(choice) == kFileMenuID) {
+    if (HiWord(choice) == kAppleMenuID) {
+        if (LoWord(choice) == kAppleAboutItem) {
+            now_about_box_show();
+        }
+        /* Everything past the separator is an Apple Menu Items folder
+           alias, enumerated by AppendResMenu('DRVR') so the menu looks
+           and populates like every other OS 9 application's. Opening one
+           is deliberately NOT wired: OpenDeskAcc is the classic call for
+           it and TARGET_API_MAC_CARBON does not declare it - CarbonLib
+           does not run 68K CODE-resource desk accessories. Selecting an
+           item here highlights and does nothing, which is honest: this
+           app cannot open it, so it does not pretend to. */
+    } else if (HiWord(choice) == kFileMenuID) {
         if (LoWord(choice) == kFileCloseItem) {
             close_front_window();
         } else if (LoWord(choice) == kFileSharingItem) {
@@ -286,7 +366,9 @@ static void handle_menu_choice(long choice)
             g_running = false;
         }
     } else if (HiWord(choice) == kEditMenuID) {
-        if (LoWord(choice) == kEditPreferencesItem) {
+        if (LoWord(choice) == kEditCopyItem) {
+            (void)workshop_copy();   /* greyed unless the page can answer */
+        } else if (LoWord(choice) == kEditPreferencesItem) {
             if (workshop_open()) {
                 workshop_select_module(kWorkshopPreferences);
             }
@@ -346,7 +428,10 @@ static void handle_mouse_down(const EventRecord *event)
     short part = FindWindow(event->where, &window);
 
     if (part == inMenuBar) {
-        long choice = MenuSelect(event->where);
+        long choice;
+
+        adjust_menus();
+        choice = MenuSelect(event->where);
         handle_menu_choice(choice);
         HiliteMenu(0);
         return;
@@ -361,12 +446,19 @@ static void handle_mouse_down(const EventRecord *event)
         }
         return;
     }
+    /* The receive windoid floats above the Workshop, so it is hit first
+       and answers for itself (receive_progress.h). It is the only other
+       window this loop routes to; confirm.c's modal runs its own. */
+    if (now_receive_progress_is(window)) {
+        now_receive_progress_click(event, part);
+        return;
+    }
     if (workshop_is(window)) {
         if (part == inDrag) {
             DragWindow(window, event->where, &g_screen_bounds);
         } else if (part == inGoAway) {
             if (TrackGoAway(window, event->where)) {
-                workshop_close();
+                workshop_close(false);    /* user-initiated: records closed */
             }
         } else if (part == inGrow) {
             Rect limits;
@@ -386,7 +478,11 @@ static void handle_mouse_down(const EventRecord *event)
                 workshop_resized();
             }
         } else if (part == inContent) {
-            if (window != FrontWindow()) {
+            /* front_document_window, not FrontWindow: with the receive
+               windoid floating above, every click here would otherwise
+               be spent selecting a window that is already the active
+               one and can never be "front". */
+            if (window != front_document_window()) {
                 SelectWindow(window);
                 return;
             }
@@ -401,10 +497,13 @@ static void handle_key_down(const EventRecord *event)
     char key = (char)(event->message & charCodeMask);
 
     if ((event->modifiers & cmdKey) != 0) {
-        long choice = MenuKey(key);
+        long choice;
+
+        adjust_menus();
+        choice = MenuKey(key);
         handle_menu_choice(choice);
         HiliteMenu(0);
-    } else if (workshop_is(FrontWindow())) {
+    } else if (workshop_is(front_document_window())) {
         workshop_key(event);
     }
 }
@@ -418,6 +517,25 @@ static pascal OSErr handle_quit_apple_event(const AppleEvent *event,
     (void)refcon;
     g_running = false;
     return noErr;
+}
+
+/* The Finder dropping files on NOW's icon, and the launch that carries
+   the same event when someone opens a document with this application.
+ *
+   This application SENT kAEOpenDocuments in four places and had never
+   answered one, which is why app.r's FREF said 'APPL' and nothing else:
+   an application that advertises documents it cannot open is worse than
+   one that advertises none. Both halves change together — the document
+   FREF and this handler — or the Finder offers a drop that goes nowhere.
+ *
+   It queues and returns. Sending from inside AEProcessAppleEvent would
+   start a transfer underneath the event loop that has to pump it. */
+static pascal OSErr handle_open_documents_apple_event(const AppleEvent *event,
+                                                       AppleEvent *reply,
+                                                       long refcon)
+{
+    (void)refcon;
+    return now_drop_open_documents(event, reply);
 }
 
 /* The wire holds a send that the other machine says would replace
@@ -446,6 +564,7 @@ int main(void)
 {
     EventRecord event;
     AEEventHandlerUPP quit_handler;
+    AEEventHandlerUPP open_documents_handler;
 
     InitCursor();
     FlushEvents(everyEvent, 0);
@@ -459,15 +578,25 @@ int main(void)
     /* The Workshop is the primary window; the remaining old module
        windows stay reachable from the menus until each one moves in. If
        the shell cannot build its navigation, say so once - the rest of
-       the app still works the old way. */
-    if (!workshop_open()) {
-        static const unsigned char k_empty[] = { 0 };
-        Str255 message;
+       the app still works the old way.
 
-        CopyCStringToPascal("The Workshop window could not be created. "
-                            "The Windows menu still works.", message);
-        ParamText(message, k_empty, k_empty, k_empty);
-        StopAlert(200, now_pump_modal_filter());
+       Opening it is gated on whether the last session left it open:
+       workshop_close records a deliberate user-close, and a file that
+       predates the field defaults to open, the behavior every existing
+       machine already has. */
+    {
+        NowPrefs launch_prefs;
+
+        now_prefs_load(&launch_prefs);
+        if (launch_prefs.workshop_open_at_quit && !workshop_open()) {
+            static const unsigned char k_empty[] = { 0 };
+            Str255 message;
+
+            CopyCStringToPascal("The Workshop window could not be created. "
+                                "The Windows menu still works.", message);
+            ParamText(message, k_empty, k_empty, k_empty);
+            StopAlert(200, now_pump_modal_filter());
+        }
     }
     /* Log first: a hang during connection setup is precisely the case
        the log exists for, and the old order left none. The in-memory ring
@@ -509,6 +638,18 @@ int main(void)
         AEInstallEventHandler(kCoreEventClass, kAEQuitApplication,
                               quit_handler, 0, false);
     }
+    /* Same construction rule, same failure posture: without the handler
+       the Finder's drop simply is not answered, which is the state this
+       application was in before it had one. */
+    open_documents_handler =
+        NewAEEventHandlerUPP(handle_open_documents_apple_event);
+    if (open_documents_handler != NULL) {
+        AEInstallEventHandler(kCoreEventClass, kAEOpenDocuments,
+                              open_documents_handler, 0, false);
+    } else {
+        now_log(kLogWarn, "app",
+                "odoc: no handler UPP; Finder icon drops will not answer");
+    }
 
     while (g_running) {
         /* WATCHED, NOT READ. Cross-application stacking order exists
@@ -534,6 +675,15 @@ int main(void)
         now_continuity_dragmgr_service();
         dispatch_pending_menu_choice();
         workshop_idle();
+        /* Whether or not the Workshop is open: a file the host pushes
+           arrives without anyone here having asked for it, so its
+           progress cannot live on a page. */
+        now_receive_progress_idle();
+        /* Also whether or not the Workshop is open: a file dropped on
+           NOW's icon in the Finder arrives with no window involved. This
+           is the ONLY place a dropped file is sent - both handlers only
+           ever queued (workshop_drop.h). */
+        now_drop_idle();
         /* The writer heartbeat, renewed because this loop is running -
            which is the fact it exists to prove. Renewed anywhere else it
            measures something else; see now_peek_idle's header comment
@@ -581,7 +731,11 @@ int main(void)
             handle_key_down(&event);
             break;
         case updateEvt:
-            if (workshop_is((WindowRef)event.message)) {
+            if (now_receive_progress_is((WindowRef)event.message)) {
+                BeginUpdate((WindowRef)event.message);
+                now_receive_progress_draw();
+                EndUpdate((WindowRef)event.message);
+            } else if (workshop_is((WindowRef)event.message)) {
                 BeginUpdate(workshop_ref());
                 workshop_draw();
                 EndUpdate(workshop_ref());
@@ -595,7 +749,7 @@ int main(void)
             /* Suspend and resume. The high byte of the message names the
                kind of osEvt; only this one concerns us. */
             if (((event.message >> 24) & 0x0FF) == suspendResumeMessage) {
-                set_window_active(FrontWindow(),
+                set_window_active(front_document_window(),
                                   (event.message & resumeFlag) != 0);
             }
             break;
@@ -642,10 +796,22 @@ int main(void)
         DisposeAEEventHandlerUPP(quit_handler);
         quit_handler = NULL;
     }
+    if (open_documents_handler != NULL) {
+        AERemoveEventHandler(kCoreEventClass, kAEOpenDocuments,
+                             open_documents_handler, false);
+        DisposeAEEventHandlerUPP(open_documents_handler);
+        open_documents_handler = NULL;
+    }
+    /* Deliberately before workshop_close, which is the next step but
+       one: RemoveTrackingHandler takes the WindowRef the handler was
+       installed on, so the window must still exist when it runs.
+       workshop_close calls the same remove and finds nothing left. */
+    now_drop_shutdown();
 
     now_log(kLogInfo, "app", "quit: disposing window");
     now_log_flush();
-    workshop_close();
+    now_receive_progress_shutdown();
+    workshop_close(true);   /* quit teardown: records open iff it existed */
 
     now_log(kLogInfo, "app", "quit: clean");
     now_log_close();

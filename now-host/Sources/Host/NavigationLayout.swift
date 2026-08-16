@@ -48,15 +48,6 @@ enum NavigationShelfID: Hashable, Sendable {
             true
         }
     }
-
-    var fixedModuleHeroID: String? {
-        switch self {
-        case .screen: "screen"
-        case .files: "files"
-        case .network: "settings"
-        case .machine, .debug, .user: nil
-        }
-    }
 }
 
 extension NavigationShelfID: Codable {
@@ -102,14 +93,20 @@ struct NavigationShelf: Codable, Equatable, Sendable, Identifiable {
         self.moduleIDs = moduleIDs
     }
 
+    /// The tab a shelf opens on.
+    ///
+    /// Every shelf but the machine one answers with its FIRST tab, which is
+    /// the tab order the person arranged. Screen, Files and Connections used
+    /// to name a fixed module here and have it re-prepended on every save, so
+    /// a drop in front of it was accepted, animated and silently undone. The
+    /// machine shelf is different in kind rather than by policy: its hero is
+    /// an Overview page and not a module at all, so there is no module order
+    /// for it to be the first of.
     var hero: NavigationShelfHero? {
         switch id {
         case .machine: .overview
-        case .screen: .module("screen")
-        case .files: .module("files")
-        case .debug: moduleIDs.first.map(NavigationShelfHero.module)
-        case .network: .module("settings")
-        case .user: moduleIDs.first.map(NavigationShelfHero.module)
+        case .screen, .files, .debug, .network, .user:
+            moduleIDs.first.map(NavigationShelfHero.module)
         }
     }
 }
@@ -172,7 +169,7 @@ extension NavigationItem: Codable {
 /// The serializable navigation contract. It stores identities and composition,
 /// never registry descriptors or derived presentation such as drawer counts.
 struct NavigationLayout: Codable, Equatable, Sendable {
-    static let currentVersion = 3
+    static let currentVersion = 4
 
     var version: Int
     var upper: [NavigationItem]
@@ -204,8 +201,8 @@ struct NavigationLayout: Codable, Equatable, Sendable {
     func shelf(id: NavigationShelfID) -> NavigationShelf? {
         NavigationZone.allCases
             .flatMap { items(in: $0) }
-            .compactMap {
-                guard case .shelf(let shelf) = $0, shelf.id == id else {
+            .compactMap { item -> NavigationShelf? in
+                guard case .shelf(let shelf) = item, shelf.id == id else {
                     return nil
                 }
                 return shelf
@@ -228,16 +225,6 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         }
     }
 
-    func isFixedModuleHero(_ moduleID: String) -> Bool {
-        NavigationZone.allCases
-            .flatMap { items(in: $0) }
-            .contains { item in
-                guard case .shelf(let shelf) = item else { return false }
-                return shelf.id.fixedModuleHeroID == moduleID
-                    && shelf.moduleIDs.contains(moduleID)
-            }
-    }
-
     @MainActor
     static func standard(for registry: ModuleRegistry) -> NavigationLayout {
         let known = Set(registry.modules.map(\.id))
@@ -256,7 +243,7 @@ struct NavigationLayout: Codable, Equatable, Sendable {
                 .shelf(NavigationShelf(
                     id: .files,
                     moduleIDs: present(Self.members(of: .files)))),
-            ] + present(["chat", "development"]).map(NavigationItem.module),
+            ] + present(["chat", "projects"]).map(NavigationItem.module),
             lower: [
                 .shelf(NavigationShelf(
                     id: .debug,
@@ -296,6 +283,8 @@ struct NavigationLayout: Codable, Equatable, Sendable {
     /// Version 2 turns the old outer utility strip into a second stack inside
     /// the sidebar canvas. Version 3 groups the two loose debug tools and puts
     /// Connections at the bottom when it already belongs to that stack.
+    /// Version 4 moves Networking off the Connections shelf and in beside the
+    /// other facts about the driven machine.
     /// User shelves and items deliberately moved to other zones stay put.
     func migratedToCurrentVersion() -> NavigationLayout {
         guard version < Self.currentVersion else { return self }
@@ -310,14 +299,33 @@ struct NavigationLayout: Codable, Equatable, Sendable {
             migrated.groupLooseDebugModules()
             migrated.moveConnectionsToBottomOfLowerStack()
         }
+        if version < 4 {
+            migrated.moveNetworkingToTheMachineShelf()
+        }
         migrated.version = Self.currentVersion
         return migrated
+    }
+
+    /// Version 4's move, and it is deliberately narrow.
+    ///
+    /// It only lifts Networking out of the **Connections shelf** — the place
+    /// the old default put it. A person who had already dragged it somewhere
+    /// else (a user shelf, the drawer, a loose row) chose that, and a
+    /// migration that hunted the module down wherever it was would overwrite
+    /// an arrangement rather than update a default. Nothing happens either if
+    /// the machine shelf is gone: `sanitised` recreates it and adopts the
+    /// module through `defaultShelf(for:)`, which is now the same answer.
+    private mutating func moveNetworkingToTheMachineShelf() {
+        guard let network = shelf(id: .network),
+              network.moduleIDs.contains("networking"),
+              shelf(id: .machine) != nil else { return }
+        removeModule("networking")
+        _ = append("networking", toShelf: .machine)
     }
 
     /// Repairs stored state into a total partition of the live registry.
     @MainActor
     func sanitised(for registry: ModuleRegistry) -> NavigationLayout {
-        let known = Set(registry.modules.map(\.id))
         var seenModules = Set<String>()
         var seenShelves = Set<NavigationShelfID>()
         var output = NavigationLayout(upper: [], lower: [], drawer: [])
@@ -374,7 +382,6 @@ struct NavigationLayout: Codable, Equatable, Sendable {
             seenModules.insert(id)
         }
 
-        output.enforceSpecialHeroes(known: known)
         output.decomposeSmallUserShelves()
         output.version = Self.currentVersion
         return output
@@ -386,14 +393,21 @@ struct NavigationLayout: Codable, Equatable, Sendable {
     }
 
     private static let shelfSpecifications = [
+        /* Networking sits here rather than on the Connections shelf because
+           it answers a question about the DRIVEN machine — its address, its
+           interfaces, its stack — the same kind of question Hardware,
+           Software and Processes answer. The Connections shelf is about this
+           Mac's link and the machines on it, which is a different subject
+           that happened to share the word "network". */
         ShelfSpecification(id: .machine,
-            moduleIDs: ["census", "software", "processes", "diagnostics"]),
+            moduleIDs: ["census", "software", "processes", "networking",
+                        "diagnostics"]),
         ShelfSpecification(id: .screen,
             moduleIDs: ["screen", "mirror", "continuity"]),
         ShelfSpecification(id: .files, moduleIDs: ["files", "icloud"]),
         ShelfSpecification(id: .debug, moduleIDs: ["console", "logs"]),
         ShelfSpecification(id: .network,
-            moduleIDs: ["settings", "networking", "mcp", "web"]),
+            moduleIDs: ["settings", "mcp", "web"]),
     ]
 
     private static func members(of shelfID: NavigationShelfID) -> [String] {
@@ -486,33 +500,6 @@ struct NavigationLayout: Codable, Equatable, Sendable {
         NavigationZone.allCases.contains { zone in
             items(in: zone).contains(.module(moduleID))
         }
-    }
-
-    private mutating func enforceSpecialHeroes(known: Set<String>) {
-        for shelfID in [NavigationShelfID.screen, .files, .network] {
-            guard let heroID = shelfID.fixedModuleHeroID,
-                  known.contains(heroID) else { continue }
-            guard shelf(id: shelfID) != nil else { continue }
-            removeModule(heroID)
-            _ = prepend(heroID, toShelf: shelfID)
-        }
-    }
-
-    private mutating func prepend(_ moduleID: String,
-                                  toShelf id: NavigationShelfID) -> Bool {
-        for zone in NavigationZone.allCases {
-            var items = items(in: zone)
-            guard let index = items.firstIndex(where: {
-                guard case .shelf(let shelf) = $0 else { return false }
-                return shelf.id == id
-            }) else { continue }
-            guard case .shelf(var shelf) = items[index] else { continue }
-            shelf.moduleIDs.insert(moduleID, at: 0)
-            items[index] = .shelf(shelf)
-            setItems(items, in: zone)
-            return true
-        }
-        return false
     }
 
     private mutating func removeModule(_ moduleID: String) {

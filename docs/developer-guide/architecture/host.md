@@ -6,9 +6,9 @@ doc_type: explanation
 audience: developer
 lifecycle: current
 authority: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, docs/architecture.md]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationLayoutStore.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/NavigationShelfTab.swift, now-host/Sources/Host/HostRootView.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/NavigationDragCoordinator.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/GuestScopedState.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/OnboardingPortal.swift]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationLayoutStore.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/NavigationShelfTab.swift, now-host/Sources/Host/HostRootView.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/NavigationDragCoordinator.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/HostSettingsNavigation.swift, now-host/Sources/Host/HostModuleDefinition.swift, now-host/Sources/Host/ContinuityConnectionDefaults.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/GuestScopedState.swift, now-host/Sources/Host/GuestWorkScheduler.swift, now-host/Sources/Host/OnboardingPortal.swift]
 media_ids: []
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -38,7 +38,7 @@ flowchart TD
   SCHED --> LISTENER
   LISTENER --> CODEC["FrameCodec + ContractMessages"]
   NAV --> NATIVE_NAV["AppKit adapters\nsidebar drag and spring loading"]
-  ROOT --> SETTINGS["Native Settings window\nappearance + glass policy"]
+  ROOT --> SETTINGS["Native Settings window\npill tabs: appearance, sidebar,\nmoved module preferences,\nconnection defaults"]
   ROOT --> NATIVE_CONTROL["AppKit adapters\nNSTableView, status item"]
   AGENT["HostProjectionCatalog"] --> MODELS
   SETUP["OnboardingPortal"] --> MEDIA["Classic setup media"]
@@ -54,15 +54,24 @@ exactly once in the upper sidebar, lower sidebar, or drawer. It stores stable
 IDs and user-shelf metadata, while labels, summaries, drawer counts, and the
 Connections status indicator are derived presentation.
 
-The default machine shelf has an Overview hero plus `census`, `software`,
-`processes`, and `diagnostics`. Screen contains `screen` and `mirror`; Files
-contains `files` and `icloud`. The main Connections shelf (internally
-`shelf.network`) uses `settings` as its hero, followed by `networking`, `mcp`,
+A shelf opens on its **first tab**, and that order is the person's to
+arrange: dragging a pill to the front of a shelf makes it the tab the shelf
+opens on, and the arrangement survives being saved. Screen, Files and
+Connections once named a fixed module instead, re-imposed on every save, so a
+drop in front of it was accepted and then silently undone. The machine shelf
+is the one exception and differs in kind rather than by policy: its Overview
+is a page the shelf owns rather than a module, so no module can be put in
+front of it.
+
+The default machine shelf has that Overview plus `census`, `software`,
+`processes`, `networking`, and `diagnostics`. Screen contains `screen`,
+`mirror`, and `continuity`; Files contains `files` and `icloud`. The main
+Connections shelf (internally `shelf.network`) defaults to `settings`, `mcp`,
 and `web`; `web` keeps its wire and preference identity while presenting the
 title **Web Proxy**. The default lower stack is the Debug shelf (`console`,
-`logs`) followed by Connections as the bottommost row. There is no
-registered `continuity` descriptor in this revision, so the Screen shelf does
-not manufacture one.
+`logs`) followed by Connections as the bottommost row. `continuity` is a
+registered module in this revision; a layout stored before it existed adopts
+it into the Screen shelf on sanitise rather than manufacturing a shelf for it.
 
 The window uses AppKit's unified full-size toolbar. Guest selection and the
 compact-sidebar control live there instead of in a simulated sidebar header;
@@ -127,12 +136,27 @@ state may receive an offline banner, and live-only modules receive a recovery
 surface. The policy does not clear caches or change selection; module models
 retain ownership of their data and reconnection rebinds the same destination.
 
-Application appearance is not a registry module. The AppKit application
-delegate owns one `SettingsWindowController`, opened by Command-,. Its
-`AppearancePreferences` applies System, Light, or Dark immediately and stores
-the three-detent Off, Clear, or Regular glass choice. `GlassStyle` centralizes
-the macOS 26+ Liquid Glass path and uses material on macOS 13–25 or when Reduce
-Transparency or Increase Contrast requires it.
+Settings is not a registry module. The AppKit application delegate owns one
+`SettingsWindowController`, opened by Command-, or by a module's own
+"Settings…" button. Its `HostSettingsView` is a pill switcher over
+`HostSettingsTab`, holding Appearance alongside preferences moved out of
+individual modules: Sidebar (row density, icon collapse), MCP and Web
+start-automatically, Web compatibility/safety, Logs' disk-write switch, and a
+"Defaults for New Connections" tab seeding `MirrorContinuityController`'s
+per-machine values for a Mac it has never paired with before
+(`ContinuityConnectionDefaults`). A module reaches a specific tab through
+`HostModuleContext.showSettings`, threaded through `HostAppState
+.settingsPresenter` to `AppDelegate.openSettings(selecting:)`, which
+`SettingsWindowController.select(_:)` applies to the one navigation object
+the window's pill reads — the same shape `selectModule` already gives a
+module for the shelf. `AppearancePreferences` applies System, Light, or Dark
+immediately and stores the three-detent Off, Clear, or Regular glass choice.
+`GlassStyle` centralizes the macOS 26+ Liquid Glass path and uses material on
+macOS 13–25 or when Reduce Transparency or Increase Contrast requires it.
+Files and Screenshots keep their own in-module settings panes; Continuity's
+and Mirror's per-machine controls stay in-module too — Mirror's
+Finder-emulation "Development controls" are deliberately excluded even from
+the new connection-defaults tab, since that surface is still evolving.
 
 Prefer native controls over replicas. In particular, the Files table remains AppKit-backed because it must participate in native drag and file-promise behavior.
 

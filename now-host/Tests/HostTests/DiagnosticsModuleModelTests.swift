@@ -567,6 +567,187 @@ final class DiagnosticsModuleModelTests: XCTestCase {
         ["Loop passes", "11406"],
     ]
 
+    // MARK: - wirestat, the fourth instrument
+
+    /// **The rows split into the loop's facts and its two distributions**,
+    /// and every expectation here comes from the guest's own emitter rather
+    /// than from what this side's parser happens to do.
+    ///
+    /// The fixture is the shape `now-guest-ppc/src/commands/commands.c ::
+    /// run_wirestat` composes: six `[label, value]` facts, then
+    /// `wirestat_hist` twice — `<key> n|mean|min|max` followed by one row per
+    /// non-empty bucket, labelled with the edges from
+    /// `now-guest-ppc/src/core/loopstat.c :: k_edges` and marked `(median)`
+    /// on the median bin.
+    func testWirestatSplitsIntoTheLoopsFactsAndItsTwoDistributions() {
+        let reading = WirestatReading(rows: Self.rows(Self.wirestatRows))
+
+        XCTAssertEqual(reading.facts.map(\.label),
+                       ["Sleep now", "Idle sleep", "Wake on data",
+                        "Notifier", "Data notifications",
+                        "WakeUpProcess calls"],
+                       "The settings and the notifier counters are facts "
+                           + "about the loop, not bins of a distribution.")
+        XCTAssertEqual(reading.histograms.map(\.id), ["pass", "notice"],
+                       "In the order the guest emits them: its own service "
+                           + "interval first, then the notice delay.")
+
+        let pass = try? XCTUnwrap(reading.histograms.first)
+        XCTAssertEqual(pass?.samples, "1287")
+        XCTAssertEqual(pass?.mean, "24000 us")
+        XCTAssertEqual(pass?.minimum, "900 us")
+        XCTAssertEqual(pass?.maximum, "216000 us")
+        XCTAssertEqual(pass?.buckets.map(\.range),
+                       ["500-1000 us", "1000-2000 us", "2000-4000 us",
+                        "8000-16000 us", "66000-133000 us", "133000+ us"],
+                       "The edges stay in the guest's words, the median "
+                           + "marker stripped off the one that carries it.")
+        XCTAssertEqual(pass?.buckets.filter(\.isMedian).map(\.range),
+                       ["1000-2000 us"])
+        XCTAssertEqual(pass?.peak, 840)
+
+        let notice = reading.histograms.last
+        XCTAssertEqual(notice?.samples, "413")
+        XCTAssertEqual(notice?.buckets.map(\.count), [377, 24, 8, 4])
+    }
+
+    /// **A bucket is recognised by its grammar, never by a list of labels.**
+    ///
+    /// The contract says the rows a guest sends are its own diagnostic
+    /// vocabulary and that a caller "must not require any particular label to
+    /// exist" (`contract/asyncapi.yaml`, `x-commands.wirestat`). So a guest
+    /// that grows a third distribution draws as one here with no host change,
+    /// and a row this side cannot read stays visible as a fact rather than
+    /// being swallowed.
+    func testAThirdDistributionNeedsNoHostChangeAndOddRowsSurvive() {
+        let reading = WirestatReading(rows: Self.rows([
+            ["Sleep now", "2 tick(s)"],
+            ["sync n", "12"],
+            ["sync 0-500 us (median)", "9"],
+            ["sync 133000+ us", "3"],
+            ["pass 4000-8000 us", "not a number"],
+            ["pass whatever", "7"],
+        ]))
+
+        XCTAssertEqual(reading.histograms.map(\.id), ["sync"],
+                       "`pass` never proved itself a distribution here: no "
+                           + "row of its own carried bucket edges.")
+        XCTAssertEqual(reading.histograms.first?.buckets.map(\.count), [9, 3])
+        XCTAssertEqual(reading.facts.map(\.label),
+                       ["Sleep now", "pass 4000-8000 us", "pass whatever"],
+                       "A row this side cannot read is shown as it arrived. "
+                           + "An unread row on screen is a smaller failure "
+                           + "than a measurement quietly dropped.")
+    }
+
+    /// The page runs the verb, reads it, and takes the link's own timing off
+    /// `net` in the same gesture — the four rows that used to sit on
+    /// Networking's first card (034, G-1).
+    func testRunningWireTimingAlsoReadsTheLinksOwnTiming() async throws {
+        let guest = try await connectGuest(
+            commands: ["help", "wirestat", "net"],
+            replies: [
+                "wirestat": .init(id: 0, ok: true,
+                                  output: ["wirestat": Self.wirestatRows],
+                                  error: nil),
+                "net": .init(id: 0, ok: true,
+                             output: ["net": Self.netRows], error: nil),
+            ])
+        defer { guest.connection.cancel() }
+
+        model.run(verb: "wirestat")
+        try await waitUntil("wirestat answered") {
+            !(self.model.state(id: "wirestat")?.rows.isEmpty ?? true)
+        }
+        try await waitUntil("link timing read") {
+            !self.model.linkTiming.isEmpty
+        }
+
+        let reading = try XCTUnwrap(
+            model.state(id: "wirestat")?.wirestatReading)
+        XCTAssertEqual(reading.histograms.count, 2)
+        XCTAssertEqual(model.linkTiming.map(\.label),
+                       ["Round trip", "Receive window", "Window peak",
+                        "Quiet for"],
+                       "Exactly the rows `GuestLinkTiming` names, and the "
+                           + "machine's facts — Peer, Port, Address — stay "
+                           + "on Networking.")
+        XCTAssertEqual(model.linkTiming.map(\.value),
+                       ["31 ms", "8192 bytes", "16384 bytes", "4s"])
+    }
+
+    /// A machine without `wirestat` in its table says which guest has it,
+    /// and the page does not offer a run that could only be refused.
+    func testAMachineWithoutWireTimingSaysWhichGuestServesIt() async throws {
+        let guest = try await connectGuest(commands: ["help", "vprobe"])
+        defer { guest.connection.cancel() }
+
+        try await waitUntil("help answered") {
+            self.serving("wirestat") != .unknown
+        }
+        XCTAssertEqual(serving("wirestat"), .notServed)
+        XCTAssertFalse(runnable("wirestat"))
+        let state = try XCTUnwrap(model.state(id: "wirestat"))
+        XCTAssertTrue(
+            model.notServedSentence(state.diagnostic).contains("MacTCP"),
+            "The 68K guest cannot measure an Open Transport wake at all; "
+                + "that is a fact about the stack, not a fault.")
+    }
+
+    /// `wirestat`'s rows as the Carbon guest composes them
+    /// (`commands.c :: run_wirestat` and `wirestat_hist`, bucket edges from
+    /// `loopstat.c :: k_edges`). Empty bins are omitted by the emitter and
+    /// the low edge carries forward, which is why the ranges below skip.
+    private static let wirestatRows: [[String]] = [
+        ["Sleep now", "2 tick(s)"],
+        ["Idle sleep", "2 tick(s)"],
+        ["Wake on data", "on"],
+        ["Notifier", "installed"],
+        ["Data notifications", "413"],
+        ["WakeUpProcess calls", "390"],
+        ["pass n", "1287"],
+        ["pass mean", "24000 us"],
+        ["pass min", "900 us"],
+        ["pass max", "216000 us"],
+        ["pass 500-1000 us", "12"],
+        ["pass 1000-2000 us (median)", "840"],
+        ["pass 2000-4000 us", "301"],
+        ["pass 8000-16000 us", "94"],
+        ["pass 66000-133000 us", "31"],
+        ["pass 133000+ us", "9"],
+        ["notice n", "413"],
+        ["notice mean", "3000 us"],
+        ["notice min", "100 us"],
+        ["notice max", "86000 us"],
+        ["notice 0-500 us (median)", "377"],
+        ["notice 500-1000 us", "24"],
+        ["notice 33000-66000 us", "8"],
+        ["notice 133000+ us", "4"],
+    ]
+
+    /// `net` as the Carbon guest composes it (`commands.c :: run_net`): a
+    /// section header is a label with an empty value, and every member row's
+    /// label arrives indented by two spaces.
+    private static let netRows: [[String]] = [
+        ["This Connection", ""],
+        ["  Peer", "10.0.2.2"],
+        ["  Port", "5555"],
+        ["  Up", "3m"],
+        ["  Round trip", "31 ms"],
+        ["  Receive window", "8192 bytes"],
+        ["  Window peak", "16384 bytes"],
+        ["  Quiet for", "4s"],
+        ["TCP/IP", ""],
+        ["  Address", "10.0.2.15"],
+    ]
+
+    private static func rows(_ pairs: [[String]]) -> [DiagnosticRow] {
+        pairs.enumerated().map {
+            DiagnosticRow(index: $0.offset, label: $0.element[0],
+                          value: $0.element[1])
+        }
+    }
+
     private final class Counter {
         var value = 0
     }

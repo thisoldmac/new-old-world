@@ -44,21 +44,21 @@ enum {
 
     kWorkshopHeaderHeight = 38,
     kWorkshopStatusHeight = 23,
-    /* Two text lines per row: bold title over a quiet subtitle. 30
-       rather than 32 since Chat made eleven nav rows: at the 430-high
-       minimum (a 640x480 screen leaves no room to grow the window),
-       11x32 plus the pinned pair overran the divider. The baselines
-       (13/25) still fit. */
-    kWorkshopSidebarRowHeight = 30,
-    /* The compact density: the icon and the title, no subtitle. 18 is
-       the classic small-icon list row - the icon still fits at its
-       native 16, which is why compact keeps it rather than becoming a
-       bare text list. */
-    kWorkshopSidebarCompactRowHeight = 18,
-    /* Collapsed rows are square-ish around the icon. Its own height
-       rather than the density's, because collapsed is not a third
-       density - it is the rail with the words taken away, and a 30-pixel
-       icon-only row reads as a mistake. */
+    /* One line per row: the icon and the title. 18 is the classic
+       small-icon list row - the icon still fits at its native 16, which
+       is why the row keeps it rather than becoming a bare text list.
+
+       It is the ONLY expanded row height now. A two-line density of 30
+       shipped alongside it and was retired: at the minimum window height
+       (a 640x480 screen leaves no room to grow the window) fourteen rich
+       rows do not fit above the divider and fourteen compact ones do, so
+       one setting of that choice could not show the list. The
+       description the second line carried is the hover tag's now. */
+    kWorkshopSidebarRowHeight = 18,
+    /* Collapsed rows are square-ish around the icon, taller than an
+       expanded row rather than equal to one: collapsed is the rail with
+       the words taken away, and an icon centred in an 18-pixel band
+       reads as cramped where the words used to be. */
     kWorkshopSidebarIconRowHeight = 24,
     kWorkshopGrowBoxSize = 15,
 
@@ -90,10 +90,8 @@ enum {
    prefs here, because this file must stay free of everything but
    arithmetic - it is compiled by the host cc for the native test. */
 typedef struct WorkshopRailSpec {
-    Boolean compact;     /* one line per row instead of two */
-    /* Collapsed to icons only. NOT a third density: it overrides compact
-       rather than extending it, because the words are gone either way
-       and the row height it wants is its own. */
+    /* Collapsed to icons only: the rail with the words taken away, and
+       the row height it wants is its own. */
     Boolean collapsed;
     short scroll_top;    /* first visible nav row; clamped on the way in */
 } WorkshopRailSpec;
@@ -119,7 +117,7 @@ typedef struct WorkshopLayout {
     Rect prefs_row;     /* Preferences, first of the pinned group */
     Rect logs_row;      /* Logs, pinned just above Connection */
     Rect conn_row;      /* Connection, pinned at the panel's bottom */
-    short row_height;   /* the density in effect, rich or compact */
+    short row_height;   /* expanded or collapsed, whichever is in effect */
 
     Boolean collapsed;  /* the rail is showing icons only */
     Rect rail_toggle;   /* the collapse button, in the header's left edge */
@@ -131,8 +129,7 @@ typedef struct WorkshopLayout {
     Rect grow_safe;     /* corner square that status text must not enter */
 } WorkshopLayout;
 
-/* rail may be NULL, which means the rich density unscrolled - the shape
-   this window had before either was a choice. */
+/* rail may be NULL, which means expanded and unscrolled. */
 void workshop_layout_compute(const Rect *content, const WorkshopRailSpec *rail,
                              WorkshopLayout *out);
 
