@@ -77,14 +77,26 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
     }
 
     private func waitConnected() async throws {
-        let deadline = Date().addingTimeInterval(60)
+        // 180s, not 60s. THE GUEST'S REDIAL BACKS OFF, and it grows with
+        // consecutive failures — the Workshop's own Connection row counts
+        // it down ("Retry in 22 s" was observed at 2026-08-15 21:07). Every
+        // run of this file leaves the guest disconnected when the listener
+        // stops, so a case that follows a spin-up, a `tools/askguest.py`
+        // nudge, or another case can easily arrive mid-backoff. At 60s
+        // three runs in a row failed `no guest dialled in` against a guest
+        // that answered `tools/askguest.py` seconds later — a live machine
+        // reported dead by a stopwatch, which is the one thing an opted-in
+        // gate must never do quietly.
+        let deadline = Date().addingTimeInterval(180)
         while Date() < deadline {
             if case .connected = listener.state, listener.activeKey != nil {
                 return
             }
             try await Task.sleep(nanoseconds: 200_000_000)
         }
-        XCTFail("no guest dialled in on \(port) within 60s")
+        XCTFail("no guest dialled in on \(port) within 180s — long enough "
+                + "to outlast the guest's redial backoff, so this is a "
+                + "guest that is not dialling rather than one that is slow")
     }
 
     @discardableResult

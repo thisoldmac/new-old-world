@@ -7,60 +7,102 @@ search:
 
 # Open issues
 
-## THE DRAG STARTS AND NOTHING IS EVER DROPPED: TrackDrag runs on the guest and returns userCanceledErr at once (2026-08-15, `feat/hg-drag-dragmgr`)
+## THE DROP HAPPENS AND THE PROMISE IS NEVER ASKED FOR: the Finder accepts the drag and does not request `flavorTypePromiseHFS` (2026-08-15, `feat/hg-drag-dragmgr`)
 
 Slice 2 of the host→guest crossing is built: `offer --drag` starts a real
 Drag Manager drag of the published item, carrying `flavorTypePromiseHFS`,
 whose send-data callback pulls the bytes through the slice-1 lane into
 the folder the drop landed on and hands the Finder that file's FSSpec.
 
-**What a live emulator guest proved** (`spin-up-ppc`, lane block 210,
-build under test asserted by fingerprint `b74b992f87a2`; five cases in
-`LiveDragManagerAcceptanceTests`). The guest's own log:
+**This entry replaces an earlier one that was wrong in both of its
+claims**, and how it was wrong is the more useful half. It said TrackDrag
+"returns `userCanceledErr` at once" and named a leading hypothesis: that
+the applied button the arm ripens on is not the button TrackDrag tracks.
+Neither survived being measured. Both were honest readings of a log line
+that carried one fact where three were needed.
+
+### What a live guest now proves
+
+Lane block 210, `spin-up-ppc` onto a session-private clone, build under
+test asserted from its own output (the `drag detail:` line no earlier
+build emits). The guest's own log, dropping on the desktop:
 
 ```
-mirror drag armed for now-slice2-ripen-C71AD#24C9.bin; waiting on the button
-mirror drag tracking now-slice2-ripen-C71AD#24C9.bin (4096 bytes)
-mirror drag now-slice2-ripen-C71AD#24C9.bin ended: cancelled (TrackDrag -128)
+mirror drag armed for now-slice2-drop-BE85C8#0A0E.bin; waiting on the button
+mirror drag tracking now-slice2-drop-BE85C8#0A0E.bin (4096 bytes)
+mirror drag now-slice2-drop-BE85C8#0A0E.bin ended: promise-never-asked (TrackDrag 0)
+mirror drag detail: button plane=1 toolbox=1 at 300,240 setup=1 track=198 ticks
 ```
 
-So the arm ripens on APPLIED button state and a real `TrackDrag` runs.
-The apply-race guard reads from the other side too: an arm with no button
-expires `button-never-came` rather than having quietly dragged, which is
-positive evidence that wire arrival did not start anything. The size cap,
-the folder refusal, `busy`, and the cancel path all answer by name on both
-faces.
+- **`toolbox=1`. The button hypothesis is dead.** `Button()` — this
+  Macintosh's own view, a different artifact from the resident's applied
+  cell — was down when TrackDrag began. The Drag Manager was tracking a
+  real button. Nothing was ever wrong there.
+- **`setup=1` tick.** The other candidate — that NewDrag, three flavors
+  and an offscreen icon cost enough ticks for a synthetic button to
+  expire underneath them — is dead too. The whole setup is one tick.
+- **`track=198` ticks, and `TrackDrag 0`.** 3.3 seconds of real tracking,
+  ending in `noErr`: **a drop that a receiver ACCEPTED.** This is the
+  first drop in the history of this feature, and the earlier "at once" is
+  simply not what happens.
+- **Why the earlier run said `cancelled`.** It held the button at
+  (300, 240). A screen capture of that guest says why: the screen is
+  800x600, NOW's own Workshop window covers x 20..785, y 45..550, and the
+  desktop is the band y 555..575 (measured off the capture, not guessed).
+  So (300, 240) was inside OUR window, NOW installs no drag receive
+  handler, and `userCanceledErr` was the correct answer to a drop nothing
+  accepted. The pointer had never been over a receiver.
 
-**What is BROKEN, or at least unfinished:** `TrackDrag` returns `-128`
-(`userCanceledErr`) immediately, so no drop ever happens, the promise
-callback has never fired on any machine, and **not one byte has been
-materialised at a drop location**. Everything downstream of the drop —
-the pump rule inside the Finder's drop handling, the FSSpec handback, the
-placement fidelity the whole feature is for — is code that has run
-nowhere. It is written and gated; it is not verified in any sense.
+### What is still broken
 
-**The leading hypothesis, and it is a hypothesis:** the applied button
-that ripens the arm is not the button `TrackDrag` tracks. The arm reads
-the resident's shared cell (`now_continuity_button_is_down`), which the
-Continuity plane sets; `TrackDrag` runs its own tracking loop against
-whatever the Toolbox believes the mouse is doing. Those are two different
-questions and this run is consistent with the first being true while the
-second is false. That is a slice-3 problem more than a slice-2 one — edge
-custody is precisely the lane that has to make a held button real — but
-it is recorded here because slice 2 is where it became visible, and
-because anyone reading "the drag works" off the green gates would be
-wrong.
+The send-data callback **has never run on any machine**. There is no
+`drag promise asked for '....'` line — logged unconditionally at the top
+of the callback, before any decision that could hide it — so this is the
+receiver not asking, not our refusing.
 
-**Also unverified:** the deliberate slow-serve test the plan asks for
-(host delays bytes; the guest's Finder must not starve the wire) cannot
-run until a drop happens, so the pump rule — the named hazard of the
-whole slice — has no live evidence behind it at all. The nested loop
-pumps by construction and a source gate pins that it does; nobody has
-watched it survive a real drop.
+Ruled out already, each by a check that would now say so by name:
 
-**Not attempted, on purpose:** background fill above the size cap. v1
-refuses `too-large` and the plan says a fork still filling is a lie
-shaped like a file until something marks it busy.
+- The promised flavor attaches: `AddDragItemFlavor` for `'fssP'` has its
+  result checked and the drag refuses to start if it fails. It does not.
+- The constants are right: `flavorTypePromiseHFS = 'phfs'` and
+  `kDragPromisedFlavor = 'fssP'`, read from the Universal Interfaces.
+- The drop is on the desktop, which the Finder owns, and it was accepted.
+
+**The leading suspect, named AS a suspect:** the offer carries no type
+and no creator. The guest's own report prints `Type` and `Creator` blank,
+so the promise goes out as `'????'/'????'` — a file the Finder cannot
+classify. The plan's "one early decision" says the extension→type/creator
+mapping is stated once in the contract, and it is not implemented on
+either side yet. Whether a Finder that cannot classify the promised file
+declines to ask for it is **untested**: the experiment was attempted
+(promise `'TEXT'/'ttxt'` from a throwaway guest build) and could not be
+run, because the guest stopped reaching the test's listener while
+answering `tools/askguest.py` on the same port seconds later. That is a
+rig flake, it is not evidence either way, and the experiment is still
+owed.
+
+### Also unverified, and it cannot be otherwise yet
+
+The pump rule — the named hazard of the whole slice — still has **no live
+evidence behind it**. The nested loop pumps by construction and a source
+gate pins that it does; nobody has watched it survive a real drop,
+because no promise has ever streamed. The deliberate slow-serve test the
+plan asks for cannot run until the paragraph above is closed.
+
+### Not attempted, on purpose
+
+Background fill above the size cap. v1 refuses `too-large` and the plan
+says a fork still filling is a lie shaped like a file until something
+marks it busy.
+
+### A rig fact worth carrying
+
+The guest's redial backs off, and it grows: the Workshop's Connection row
+was observed counting down "Retry in 22 s". `waitConnected` was 60s and
+failed three runs in a row against a guest that answered
+`tools/askguest.py` seconds later — a live machine reported dead by a
+stopwatch. It is 180s now, and it is still intermittent; anyone seeing
+`no guest dialled in` should ask the guest directly before believing it.
 
 ## DECLARED ONLY — NO MACHINE SERVES ANY OF IT: the host→guest crossing has a contract and nothing behind it (2026-08-15, `feat/hg-drag-contract`)
 
