@@ -18,6 +18,7 @@
 #include "continuity_cursor.h"
 #include "mirror_debug.h"
 #include "peek.h"
+#include "continuity_selection.h"
 #include "now_continuity_logic.h"
 #include "nowlog.h"
 
@@ -356,6 +357,51 @@ static const char *drag_item_status(NowPeekU32 status)
     }
 }
 
+/* Lift one whole V15 identity record out of the cell. `handler_begin_seq`
+   is odd while the resident is writing the record and bumped LAST when it
+   is whole, so an odd read is a torn record and refuses rather than
+   handing back half an identity. Read twice around the copy for the same
+   reason: the resident writes from a foreign context and this is task
+   time, not a critical section. */
+static int read_drag_identity(const NowPeekDragObserve *obs,
+                              NowContinuityDragIdentity *out)
+{
+    NowPeekU32 before = obs->handler_begin_seq;
+    unsigned len;
+
+    if (before == 0 || (before & 1u) != 0)
+        return 0;
+    memset(out, 0, sizeof *out);
+    out->is_hfs = (obs->hitem_status == (NowPeekU32)kNowPeekDragObsItemHFS);
+    out->vref = (short)obs->hfile_vrefnum;
+    out->parid = (long)obs->hfile_parid;
+    len = (unsigned)obs->hfile_name[0];
+    if (len > 63u)
+        return 0;
+    BlockMoveData(obs->hfile_name, out->name, (long)len + 1);
+    if (obs->handler_begin_seq != before)
+        return 0;
+    out->seq = (unsigned long)before;
+    return 1;
+}
+
+int now_continuity_drag_identity(NowContinuityDragIdentity *out)
+{
+    const NowPeekTable *table = now_peek_table();
+
+    if (out == NULL)
+        return 0;
+    if (table == NULL
+            || table->magic != (NowPeekU32)kNowPeekTableMagic
+            || table->length
+                < (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                               + sizeof(NowPeekContinuityCell))
+            || table->continuity_format
+                != (NowPeekU32)NOW_CONTINUITY_FORMAT_CURRENT)
+        return 0;
+    return read_drag_identity(&table->continuity.drag_observe, out);
+}
+
 static void drain_drag_observe(const NowPeekContinuityCell *cell)
 {
     const NowPeekDragObserve *obs = &cell->drag_observe;
@@ -544,6 +590,31 @@ static void drain_drag_observe(const NowPeekContinuityCell *cell)
                 (unsigned long)obs->hfile_creator,
                 (long)obs->hfile_vrefnum,
                 (unsigned long)obs->hfile_parid, hname);
+        /* FROM DIAGNOSTIC TO PRODUCT STATE. Slice 1B stopped at the two
+           lines above; this is the same record becoming a generation the
+           host may bind. Only an HFS first item qualifies - a text drag
+           or a promise names no file this side could serve, and the
+           publish must not invent one.
+
+           THE LATENCY IS MEASURED HERE RATHER THAN ASSERTED. `tk` is the
+           resident's TickCount at EnterHandler and this is task time in
+           the application, so the difference is exactly the interval the
+           whole route depends on fitting inside a gesture: the person is
+           still dragging toward the edge, and the cross is seconds
+           away. */
+        if (obs->hitem_status == (NowPeekU32)kNowPeekDragObsItemHFS) {
+            NowContinuityDragIdentity ident;
+
+            if (read_drag_identity(obs, &ident)
+                    && now_continuity_selection_note_drag(&ident)) {
+                now_log(kLogInfo, "mirror",
+                        "drag bind seq=%lu latency=%lu ticks name=%s",
+                        ident.seq,
+                        (unsigned long)((NowPeekU32)TickCount()
+                                        - obs->handler_first_ticks),
+                        hname);
+            }
+        }
         gLastHandlerBegin = obs->handler_begin_seq;
         gLastTracks = 0;
     }

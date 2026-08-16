@@ -7409,11 +7409,19 @@ static void service_continuity_selection(void)
     const NowContinuityStubTable *table;
     char json[512];
     char esc_name[128];
+    const char *source;
 
     if (!now_continuity_selection_poll(now_continuity_live_epoch())) {
         return;
     }
     table = now_continuity_selection_table();
+    /* WHICH GESTURE MADE THIS GENERATION. Sent on every stub rather than
+       only on a drag: a host that sees the field only sometimes cannot
+       tell an old guest from a quiet one, and the contract's default
+       exists for guests that never had the field at all. */
+    source = (table->have_item
+              && table->item.source == kNowStubSourceDrag)
+             ? "drag" : "selection";
     if (!table->have_item) {
         /* An empty selection is a stub with a generation and no item, and
            it is sent for a reason: the host has a cached stub to drop,
@@ -7421,9 +7429,9 @@ static void service_continuity_selection(void)
            stopped running. */
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.selection\",\"version\":%u,"
-                 "\"epoch\":%lu,\"generation\":%lu}",
+                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\"}",
                  (unsigned)NOW_CONTINUITY_VERSION,
-                 table->epoch, table->generation);
+                 table->epoch, table->generation, source);
         send_control(json);
         return;
     }
@@ -7436,12 +7444,13 @@ static void service_continuity_selection(void)
            a host would have to know to ignore. */
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.selection\",\"version\":%u,"
-                 "\"epoch\":%lu,\"generation\":%lu,\"item\":{"
+                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\","
+                 "\"item\":{"
                  "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
                  "\"dataSize\":0,\"resourceSize\":0,"
                  "\"modifiedAt\":%lu,\"isFolder\":true}}",
                  (unsigned)NOW_CONTINUITY_VERSION,
-                 table->epoch, table->generation,
+                 table->epoch, table->generation, source,
                  esc_name, (int)table->item.volume_ref, table->item.dir_id,
                  table->item.modified);
     } else {
@@ -7458,13 +7467,14 @@ static void service_continuity_selection(void)
         now_json_escape(creator, esc_creator, sizeof esc_creator);
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.selection\",\"version\":%u,"
-                 "\"epoch\":%lu,\"generation\":%lu,\"item\":{"
+                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\","
+                 "\"item\":{"
                  "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
                  "\"fileType\":\"%s\",\"creator\":\"%s\","
                  "\"dataSize\":%ld,\"resourceSize\":%ld,"
                  "\"modifiedAt\":%lu,\"isFolder\":false}}",
                  (unsigned)NOW_CONTINUITY_VERSION,
-                 table->epoch, table->generation,
+                 table->epoch, table->generation, source,
                  esc_name, (int)table->item.volume_ref, table->item.dir_id,
                  esc_type, esc_creator,
                  table->item.data_size, table->item.rsrc_size,

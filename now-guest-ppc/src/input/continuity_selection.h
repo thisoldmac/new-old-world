@@ -4,6 +4,7 @@
 #include <Carbon.h>
 
 #include "now_continuity_selection.h"
+#include "continuity_service.h"     /* NowContinuityDragIdentity */
 
 /* Watching what the person at the Macintosh has selected.
    ------------------------------------------------------------------
@@ -59,6 +60,27 @@
    unchanged one HERE — the host is told about the selection, not about
    the Finder's mood — but it is not silent: see the log lines. */
 int now_continuity_selection_poll(unsigned long live_epoch);
+
+/* THE DRAG PLANE'S GENERATION, and the reason the gate above is no longer
+   the end of the story.
+
+   The paragraph on the held button remains true of the APPLICATION: it
+   still gets no task time inside the Finder's drag loop, so no poll can
+   see a drag begin. What changed is that something else can. The optional
+   resident registers a Drag Manager tracking handler from the dragging
+   application's own context and publishes the item at EnterHandler; this
+   is where that identity becomes a generation the host may bind.
+
+   Call it from the observer drain with the record it just read. Returns 1
+   when a NEW generation exists and the wire owes the host a
+   continuity.selection - which the wire learns from the poll's own return
+   value, so a drag published between two polls is not held back for a
+   cadence it has nothing to do with.
+
+   Everything the poll would have refused, this refuses too: no epoch, no
+   generation. A drag observed while nothing is armed is a person using
+   their Macintosh. */
+int now_continuity_selection_note_drag(const NowContinuityDragIdentity *ident);
 
 /* What the last change published. Never NULL. */
 const NowContinuityStubTable *now_continuity_selection_table(void);

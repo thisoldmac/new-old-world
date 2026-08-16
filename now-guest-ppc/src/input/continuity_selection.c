@@ -16,6 +16,12 @@ static NowContinuityGrantHold g_hold;
 static unsigned long g_table_epoch;
 static unsigned long g_next_poll;
 static int g_poll_seeded;
+/* A generation the drag plane minted since the wire last looked. It rides
+   the poll's return value rather than a second service call: the wire owes
+   the host ONE continuity.selection per generation whatever produced it,
+   and a second sender would be a second place for the epoch gates to be
+   wrong. */
+static int g_drag_pending;
 
 const NowContinuityStubTable *now_continuity_selection_table(void)
 {
@@ -286,6 +292,65 @@ static void release_grant_for_new_epoch(unsigned long live_epoch)
 
 
 
+/* Turn one V15 identity into the same NowContinuityStubItem a poll would
+   have made. It goes through stub_from_spec deliberately: the drag gives
+   volume, directory and name, and the sizes, date and folderness the host
+   needs come from the File Manager exactly as they do for a selection. A
+   drag-sourced stub is then the SAME SHAPE as a polled one, which is what
+   lets the grab, the grant hold and the wire stay single-implementation. */
+static OSErr stub_from_drag(const NowContinuityDragIdentity *ident,
+                            NowContinuityStubItem *out)
+{
+    FSSpec spec;
+
+    memset(&spec, 0, sizeof spec);
+    spec.vRefNum = ident->vref;
+    spec.parID = ident->parid;
+    BlockMoveData(ident->name, spec.name, (long)ident->name[0] + 1);
+    return stub_from_spec(&spec, out);
+}
+
+int now_continuity_selection_note_drag(const NowContinuityDragIdentity *ident)
+{
+    unsigned long live_epoch = now_continuity_live_epoch();
+    NowContinuityStubItem item;
+
+    if (ident == NULL || ident->seq == 0 || !ident->is_hfs) {
+        return 0;
+    }
+    /* No epoch, no publish. The observer is armed by the act plane too, so
+       this drain runs when no host is driving anything - and a drag seen
+       then is a person using their own Macintosh, not a consent. */
+    settle_to_epoch(live_epoch);
+    if (live_epoch == 0) {
+        return 0;
+    }
+    if (stub_from_drag(ident, &item) != noErr) {
+        /* The Drag Manager named something the File Manager will not
+           describe. Refusing beats publishing a stub whose grab could only
+           fail later, further from the cause. */
+        now_log(kLogWarn, "mirror",
+                "drag identity unusable seq=%lu vref=%d par=%ld",
+                ident->seq, (int)ident->vref, ident->parid);
+        return 0;
+    }
+    if (item.is_folder) {
+        /* Folders cross in a later slice, on both sources. Named rather
+           than published so the refusal happens here, once, instead of at
+           the host's bind and again at the guest's grab. */
+        return 0;
+    }
+    if (!now_continuity_stub_observe_drag(&g_table, &item, ident->seq)) {
+        return 0;
+    }
+    release_grant_for_new_epoch(live_epoch);
+    g_drag_pending = 1;
+    now_log(kLogInfo, "mirror",
+            "selection epoch=%lu gen=%lu %.31s (drag)",
+            live_epoch, g_table.generation, g_table.item.name);
+    return 1;
+}
+
 int now_continuity_selection_poll(unsigned long live_epoch)
 {
     FSSpec spec;
@@ -303,6 +368,19 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     settle_to_epoch(live_epoch);
     if (live_epoch == 0) {
         return 0;                  /* no epoch, no poll */
+    }
+    /* THE DRAG PLANE'S GENERATION GOES OUT FIRST, and before the button
+       gate rather than after it - a drag-sourced generation exists exactly
+       when the button IS down, so a gate written for the poll would
+       swallow the one thing it cannot produce. Checked after the settle so
+       an epoch that turned over in between cannot publish a table that has
+       already been reset out from under it. */
+    if (g_drag_pending) {
+        g_drag_pending = 0;
+        if (g_table.have_item
+                && g_table.item.source == kNowStubSourceDrag) {
+            return 1;
+        }
     }
     if (now_continuity_button_is_down()) {
         /* Mid-gesture. Do not touch the deadline: the next pass after the
@@ -404,6 +482,64 @@ static int confirm_serve_against_finder(const NowContinuityStubItem *serve)
     return verdict;
 }
 
+/* THE SAME LAST CHECK, ASKING THE DRAG INSTEAD.
+
+   A drag-sourced generation names the file the Drag Manager handed us,
+   which for a never-selected file is deliberately NOT what the Finder has
+   selected. Confirming it against the selection would refuse the one
+   gesture this whole route exists to serve, so the witness changes with
+   the source and the contract says so once, under `source`.
+
+   The check is stricter than the selection's rather than looser: it is
+   not enough that the drag plane still names this file, it must still be
+   the SAME DRAG - `seq` moves for every gesture. A second pick-up of the
+   same icon has a generation of its own, and serving it under the first
+   one's name would be the stale-generation hole reopened one layer down.
+
+   IT DOES NOT ASK THE FINDER AT ALL, which is the point: the Finder is a
+   process that may be busy, and the resident's record is a shared cell
+   this side reads in three lines. The consent was the drag; the drag is
+   what is consulted. */
+static int confirm_serve_against_drag(const NowContinuityStubItem *serve)
+{
+    NowContinuityDragIdentity ident;
+    NowContinuityStubItem observed;
+    int read_ok;
+    int verdict;
+
+    read_ok = now_continuity_drag_identity(&ident) && ident.is_hfs;
+    if (read_ok && stub_from_drag(&ident, &observed) != noErr) {
+        /* The plane named something this side cannot describe. Not a
+           confirmation; treating it as one would be the guard reading its
+           own failure as a pass. */
+        read_ok = 0;
+    }
+    verdict = now_continuity_grab_confirm_drag(
+        serve, read_ok,
+        read_ok ? &observed : (const NowContinuityStubItem *)0,
+        read_ok ? ident.seq : 0UL);
+    if (verdict == kNowGrabOK) {
+        return verdict;
+    }
+    now_log(kLogWarn, "mirror",
+            "grab refused: the drag is not what this grab names - "
+            "serving=%.31s seq=%lu dragging=%.31s seq=%lu",
+            serve->name, serve->drag_seq,
+            read_ok ? observed.name : "<unreadable>",
+            read_ok ? ident.seq : 0UL);
+    return verdict;
+}
+
+/* Which witness this stub is owed. One line, one place, so a third source
+   cannot be added without landing here. */
+static int confirm_serve(const NowContinuityStubItem *serve)
+{
+    if (serve != NULL && serve->source == kNowStubSourceDrag) {
+        return confirm_serve_against_drag(serve);
+    }
+    return confirm_serve_against_finder(serve);
+}
+
 int now_continuity_selection_grab(unsigned long live_epoch,
                                   unsigned long epoch,
                                   unsigned long generation,
@@ -439,7 +575,7 @@ int now_continuity_selection_grab(unsigned long live_epoch,
        above proves consent was given for this generation; none of it can
        notice the generation stopped describing what the person is holding.
        Before the checks below turn a stub into a real FSSpec, ask. */
-    verdict = confirm_serve_against_finder(serve);
+    verdict = confirm_serve(serve);
     if (verdict != kNowGrabOK) {
         return verdict;
     }
