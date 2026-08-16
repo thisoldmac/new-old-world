@@ -49,8 +49,9 @@ SHIM_CODE = "\n".join(
 
 # ---------------------------------------------------------------- contract
 check("kNowPeekContinuityFormatV14" in CONTRACT
-      and "NOW_CONTINUITY_FORMAT_CURRENT 14u" in CONTRACT,
-      "V14 must have an explicit format number and be the current one")
+      and "kNowPeekContinuityFormatV15" in CONTRACT
+      and "NOW_CONTINUITY_FORMAT_CURRENT 15u" in CONTRACT,
+      "both observer formats must be explicit and V15 must be current")
 check("_Static_assert(offsetof(NowPeekContinuityCell, drag_observe) == 4452"
       in CONTRACT,
       "the V14 block moved without its offset assert following it")
@@ -92,7 +93,7 @@ check("if (gInside) {" in enter_code
           < enter_code.index("block->dispatches++"),
       "the re-entrancy guard no longer runs before the observer works")
 check(OBS_CODE.count("gInside = 1;") == OBS_CODE.count("gInside = 0;")
-      and OBS_CODE.count("gInside = 1;") == 2,
+      and OBS_CODE.count("gInside = 1;") == 6,
       "a Drag Manager call escaped the re-entrancy guard's brackets")
 # Every Drag Manager entry point this file uses, and where it may appear.
 # `leave` runs from the return thunk with NO bracket around it, so a Drag
@@ -141,11 +142,11 @@ check("drag_observe" not in RESIDENT_OTHERS,
 # A fixed-width Pascal copy, bounded by BOTH the length byte and the
 # field, because it is read from a foreign heap that may be gone.
 check("if (len > 62)" in OBS_CODE
-      and "block->file_name[0] = (unsigned char)len;" in OBS_CODE,
+      and "out_name[0] = (unsigned char)len;" in OBS_CODE,
       "the dragged file's name is copied without both its bounds")
 check("flavor.fileSpec.name" in OBS_CODE
       and "= flavor.fileSpec.name" not in OBS_CODE.replace(
-          "block->file_name[i + 1] = flavor.fileSpec.name[i + 1];", ""),
+          "out_name[i + 1] = flavor.fileSpec.name[i + 1];", ""),
       "the observer kept a pointer into a foreign heap instead of a copy")
 
 # -------------------------------------------------------- honest status
@@ -154,7 +155,7 @@ check("flavor.fileSpec.name" in OBS_CODE
 check("kNowPeekDragObsItemPromise" in OBS_CODE
       and "flavorTypePromiseHFS" in OBS_CODE,
       "a promised HFS flavor would now be reported as a real file")
-check("block->item_count = (NowPeekU32)count;" in OBS_CODE,
+check("*out_count = (NowPeekU32)count;" in OBS_CODE,
       "the item count stopped being the count the Drag Manager gave")
 
 # ------------------------------------------------------------- the control
@@ -176,6 +177,86 @@ for outcome in ("kNowPeekDragObsSelftestSeen",
 check("block->selftest_state != (NowPeekU32)kNowPeekDragObsSelftestUntried"
       in selftest,
       "the control stopped being once-per-boot")
+
+# ================================================ V15, the registration route
+handler = body(OBS, "static pascal OSErr now_dragobs_tracking(DragTrackingMessage",
+               "/* ---- the control")
+handler_code = strip_comments(handler)
+
+# THE UPP IS NEVER A CAST ON THIS RUNTIME. A 68K handler reached by a
+# PowerPC Drag Manager goes through Mixed Mode and needs a descriptor
+# that says so; a cast produces a jump into the middle of one.
+check("BUILD_ROUTINE_DESCRIPTOR(" in OBS_CODE
+      and "uppDragTrackingHandlerProcInfo" in OBS_CODE,
+      "the tracking handler UPP became a cast")
+check("(DragTrackingHandlerUPP)now_dragobs_tracking" not in OBS_CODE,
+      "the handler is passed to the Drag Manager as a bare cast")
+# NOTHING IS ALLOCATED. NewDragTrackingHandlerUPP allocates, and it would
+# allocate in the FOREIGN application's heap from a hook.
+check("NewDragTrackingHandlerUPP" not in OBS_CODE
+      and "NewRoutineDescriptor" not in OBS_CODE,
+      "the handler descriptor is allocated in a foreign application's heap")
+# ...and it is built from a LOCAL initializer, because this INIT is
+# relocated at load and a procedure address in static data is either
+# fixed up or a jump into nowhere.
+check("RoutineDescriptor built = BUILD_ROUTINE_DESCRIPTOR(" in OBS_CODE,
+      "the descriptor went back to static initialisation across a relocation")
+
+# INSTALL/REMOVE PAIRING. A registration is per-application and can only
+# be given back from the application that took it. A handler left behind
+# after the arm ends is worse than a leaked patch: the Drag Manager keeps
+# calling a plane that has been told to stand down.
+check("RemoveTrackingHandler(" in OBS_CODE,
+      "the plane can register a handler and never give it back")
+arm_pass = body(OBS, "void now_ext_dragobs_gne(NowPeekTable *table,",
+                "/* ---- reading a drag")
+# Stated as the exact guard rather than as mere presence: a call to
+# track_remove behind a condition that is never true reads identical to
+# one that runs, and the ordering check alone let that through.
+check("""        if (gTrackContextCount != 0)
+            track_remove(&cell->drag_observe,
+                         (NowPeekU32)LMGetCurrentA5());
+        return;""" in arm_pass,
+      "the disarm path no longer un-registers whenever a context holds one")
+check(arm_pass.index("track_remove") < arm_pass.index("track_install"),
+      "un-registration moved after the arm branch it is supposed to precede")
+check("gTrackContexts[gTrackContextCount++] = a5;" in OBS_CODE
+      and "gTrackContextCount--;" in OBS_CODE,
+      "the context table stopped tracking what must be un-registered")
+check("kNowPeekDragObsHandlerNoRoom" in OBS_CODE,
+      "a registration that would not fit is dropped instead of recorded, "
+      "and a dropped one can never be removed")
+
+# THE HANDLER IS OBSERVE-ONLY AND MUST NOT REFUSE. Its result is
+# consulted by the Drag Manager.
+check(handler_code.count("return noErr;") >= 2
+      and "return err" not in handler_code
+      and "return userCanceledErr" not in handler_code,
+      "the tracking handler can answer the Drag Manager with a refusal")
+for token in ("SetDragMouse", "SetDropLocation", "SetDragImage"):
+    check(token not in handler_code,
+          f"the tracking handler gained a Drag Manager mutator: {token}")
+# Its Drag Manager reads go back out through our own trap shim, so they
+# are inside the same guard as everything else here.
+check("block->handler_reentries++" in handler_code,
+      "the handler stopped counting its own re-entries")
+
+# The two routes are counted SEPARATELY. Collapsing them destroys the
+# only comparison that matters.
+check("handler_calls" in CONTRACT and "handler_installs" in CONTRACT
+      and "dispatches" in CONTRACT and "trackdrag_entries" in CONTRACT,
+      "the trap route and the registration route share a counter")
+check("hitem_status" in CONTRACT and "item_status" in CONTRACT,
+      "the two routes stopped reading identity into separate fields")
+
+hdrain = body(DRAIN, "    /* ---- V15, the registration route",
+              "    if (end_seq != gLastDragEndSeq")
+check("drag handler state=" in hdrain and "drag track n=" in hdrain
+      and "drag handler item seq=" in hdrain,
+      "the registration route lost one of its three always-on lines")
+check("now_mirror_debug_on()" not in hdrain,
+      "the targeting stream went behind the debug gate - it is the whole "
+      "reason the route was tried")
 
 # ------------------------------------------------------ install per pass
 # Once-per-boot is the act plane's measured mistake: the install lands in

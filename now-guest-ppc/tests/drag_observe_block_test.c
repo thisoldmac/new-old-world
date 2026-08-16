@@ -85,9 +85,11 @@ int main(void)
 
     /* ---- the format is the gate, and it is exact -------------------- */
     check(NOW_CONTINUITY_FORMAT_CURRENT
-              == (unsigned)kNowPeekContinuityFormatV14,
-          "the current continuity format is not V14");
-    check((unsigned)kNowPeekContinuityFormatV14
+              == (unsigned)kNowPeekContinuityFormatV15,
+          "the current continuity format is not V15");
+    check((unsigned)kNowPeekContinuityFormatV15
+              > (unsigned)kNowPeekContinuityFormatV14
+          && (unsigned)kNowPeekContinuityFormatV14
               > (unsigned)kNowPeekContinuityFormatV13,
           "the format numbers stopped increasing");
 
@@ -154,6 +156,40 @@ int main(void)
     check((unsigned)kNowPeekDragObsSampleCapacity > 0
               && (unsigned)kNowPeekDragObsSampleGapTicks > 0,
           "the sample ring or its cadence bound became unbounded");
+
+    /* ---- V15: the two routes must stay two ------------------------- */
+    /* Collapsing the trap route's counters into the registration
+       route's would destroy the only comparison this pair exists for:
+       the same question, asked two ways, on the same machine. */
+    check(offsetof(NowPeekDragObserve, dispatches)
+              != offsetof(NowPeekDragObserve, handler_calls),
+          "the trap route and the registration route share a counter");
+    check(offsetof(NowPeekDragObserve, item_status)
+              != offsetof(NowPeekDragObserve, hitem_status),
+          "the two routes read identity into the same field");
+    /* `accepted the registration` and `ever called it` are different
+       facts, and V14 was built because the first was allowed to imply
+       the second once already. */
+    obs->handler_state = (NowPeekU32)kNowPeekDragObsHandlerInstalled;
+    obs->handler_installs = 1;
+    obs->handler_calls = 0;
+    check(obs->handler_state == (NowPeekU32)kNowPeekDragObsHandlerInstalled
+              && obs->handler_installs == 1 && obs->handler_calls == 0,
+          "'registered and never called' is no longer expressible");
+    /* Install/remove pairing is a NUMBER a reader can check. */
+    obs->handler_installs = 3;
+    obs->handler_removes = 3;
+    check(obs->handler_installs == obs->handler_removes,
+          "the registration pairing is no longer checkable from the cell");
+    check((unsigned)kNowPeekDragObsContextCapacity > 0,
+          "the context table became unbounded");
+    check(offsetof(NowPeekDragObserve, tracks) % 4 == 0
+              && sizeof(obs->tracks)
+                  == sizeof(NowPeekDragObsTrack)
+                      * (unsigned)kNowPeekDragObsTrackCapacity,
+          "the tracking ring drifted from its capacity or its alignment");
+    check(sizeof(obs->hfile_name) == 64,
+          "the handler's name field is no longer fixed width");
 
     if (g_failures != 0) {
         fprintf(stderr, "drag_observe_block_test: %d failure(s)\n",
