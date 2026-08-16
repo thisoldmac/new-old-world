@@ -7,6 +7,92 @@ search:
 
 # Open issues
 
+## FIXED AND TESTED, NOT METAL-VERIFIED: the epoch teardown erased the settled release on SLOW drags only (2026-08-15 18:47 round, `fix/continuity-press-origin-loss`)
+
+**The snap-back worked, except when the person dragged slowly — then the
+icon dropped near the guest's right edge at the handoff.** Two attended
+crosses, one build (`69721dc17914`), and the guest's own settle line
+convicts the wire rather than either half's arithmetic:
+
+    18:47:18  button edge settle gen=62 at=792,231 from=536,201 state=3 reason=1 err=0
+    18:48:20  button edge settle gen=64 at=799,232 from=524,203 …
+
+Those `at=` values are the CROSS points, one drag sample short of the
+`802,231` and `800,232` the host recorded crossing at. The section above
+says a disagreeing `at=` means the wrong point is on the wire — it was
+half right. **The host commanded the right point and logged it**
+(`~/Library/Logs/now-logs/2026-08-15 184028.log`, area `contin`):
+
+    18:47:20  held position settled before release: 522,199
+    18:48:22  held position settled before release: 524,203
+
+So the brief's premise — a lost `pressOrigin` falling back to
+`ownership.guestPoint`, which IS the cross point — is disproved by the
+host's own line. The origin was never lost. What was lost is the packet
+carrying it.
+
+**Mechanism: three datagrams inside a millisecond, and a mailbox that
+holds one.** The cross-edge handback sends the settle to the press origin,
+then the release carrying that same origin, then `pointerLeft`'s epoch
+teardown with `inside` cleared. The UDP lane is a latest-state mailbox —
+the notifier overwrites `want_h/want_v` and commits `packet_seq` last —
+and both readers take ONE snapshot per pass: `now_ext_continuity_service`
+reads `cell->packet_seq` once, and the Time Manager button task likewise.
+Both honour a cleared `inside` **before** they take that snapshot's
+position (`ext/src/now_ext_continuity.c`, the `finish_locked(…ExitHostLeft)`
+and `release_button(…ExitHostLeft)` returns). So when the application is
+starved deeply enough for all three to collapse into one snapshot, the
+teardown short-circuits ahead of the position, `request_h/request_v` keeps
+the last mid-drag point the guest ingested, and the release — and the
+`settle_before_edge` reconcile above it — are served against that.
+
+`reason=1` on both settle lines is that short-circuit naming itself:
+**host-left**, not `4`/disarmed as the 17:19 round's pair showed.
+
+**Why only slow drags, and why the fast path was never broken.** A slow
+drag is exactly the one where the guest is deep in the Finder's
+drag-tracking loop and cannot run between packets. It is also, separately,
+the only path that sends a settle datagram at all: `settleHeldPosition`
+returns early when the press is unacknowledged, parking the origin in the
+deferred slot so the release carries it in ONE packet. The fast path had
+the right shape by accident.
+
+**The fix is that shape, made deliberate: after a settled release the
+epoch-ending datagram is withheld** (`MirrorContinuityController.pointerLeft`).
+The epoch still ends, over the reliable control stream in the next
+statement, bounded by the resident's own lease — so the last datagram the
+guest can possibly see carries the settled origin beside the release edge.
+Scoped to a release that actually carries the point a settle just asked
+for; an ordinary click's release still ends the epoch on the wire.
+
+**And the silent fallback is gone regardless.** `pressOrigin ??
+ownership.guestPoint` turned "I lost the origin" into "the origin was the
+screen edge" with nothing logged, and the held non-file return did nothing
+at all with nothing logged. Both now say so at `.error`. That is not
+cosmetic: from outside, a lost origin and a guest ignoring a correct
+settle produce the same symptom, and this round spent its evidence
+distinguishing them.
+
+**Ceiling: Tested.** Host suites pass; each guard was watched failing
+against the mutation it names. No emulator round drives an attended
+cross-edge drag out of a Finder window, and nothing here has run on the
+PowerBook.
+
+**The lines the next slow drag should print.** Host, after the settle:
+
+    held position settled before release: 522,199
+    epoch-ending datagram withheld: the release settled at 522,199 …
+
+Guest, in the same second:
+
+    button edge settle gen=N at=522,199 from=<mid-drag> state=3 reason=4 err=0
+    button edge gen=N down=0 applied=522,199 exposed=522,199 … settled
+
+`at=` must now equal the host's settled value. If it still shows the cross
+point while the host logged the origin, the withheld datagram did not help
+and the collapse is happening earlier than the teardown — read `reason=`:
+`1` would mean an `inside`-cleared packet still reached the guest first.
+
 ## FIXED AND EMULATOR-VERIFIED, THE HALF THAT REMAINS IS NAMED: a grab served the file the person had STOPPED holding (2026-08-15 17:19 round, `fix/continuity-selection-bind-race`)
 
 **A person dragged `main.c` across the shared edge and `hello.txt` arrived.**
