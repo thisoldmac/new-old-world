@@ -132,6 +132,30 @@ int main(void)
     /* ---- the sample ring ------------------------------------------- */
     check(offsetof(NowPeekDragObserve, samples) % 4 == 0,
           "the sample ring is not word aligned");
+    /* V16: the registry is a flat 40 per row with no padding either
+       compiler could disagree about, and it sits at the block's TAIL so
+       every offset above it is unmoved. The three-compiler rule made
+       checkable rather than asserted in a comment. */
+    check(sizeof(NowPeekDragObsReg) == 40,
+          "a registration row must be a flat 40 bytes");
+    check(sizeof(((NowPeekDragObsReg *)0)->name) == 32,
+          "the registering app's name is 32 bytes, Pascal");
+    check(offsetof(NowPeekDragObsReg, ticks)
+              == offsetof(NowPeekDragObsReg, a5) + 4,
+          "no padding between a5 and ticks");
+    check(offsetof(NowPeekDragObsReg, name)
+              == offsetof(NowPeekDragObsReg, ticks) + 4,
+          "no padding before the name");
+    check(offsetof(NowPeekDragObserve, regs) % 4 == 0,
+          "the registry must be four-byte aligned");
+    check(offsetof(NowPeekDragObserve, regs)
+              > offsetof(NowPeekDragObserve, tracks),
+          "the registry is appended at the TAIL: every preceding offset "
+          "must be unmoved by it");
+    check(sizeof(obs->regs)
+              == (unsigned long)kNowPeekDragObsRegCapacity
+                 * sizeof(NowPeekDragObsReg),
+          "the registry holds exactly its declared capacity");
     check(sizeof(obs->samples)
               == sizeof(NowPeekDragObsSample)
                   * (unsigned)kNowPeekDragObsSampleCapacity,

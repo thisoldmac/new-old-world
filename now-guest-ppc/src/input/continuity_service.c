@@ -546,6 +546,40 @@ static void drain_drag_observe(const NowPeekContinuityCell *cell)
                 (unsigned long)obs->handler_leave_window,
                 (unsigned long)obs->handler_leave_handler,
                 (unsigned long)obs->handler_reentries);
+        /* V16. WHICH applications hold a registration, printed with the
+           counters rather than behind a debug gate: on 2026-08-16 the
+           count alone could not distinguish "the route never registers in
+           the Finder" from "the Finder was not pumping", and those are
+           opposite findings. One line per row, because the name is the
+           half that answers it and kLogLineMax is 120. */
+        {
+            NowPeekU32 rows = obs->reg_count;
+            NowPeekU32 n;
+
+            if (rows > (NowPeekU32)kNowPeekDragObsRegCapacity)
+                rows = (NowPeekU32)kNowPeekDragObsRegCapacity;
+            for (n = 0; n < rows; ++n) {
+                const NowPeekDragObsReg *reg = &obs->regs[n];
+                char rname[32];
+                unsigned len = (unsigned)reg->name[0];
+                unsigned i;
+
+                if (len > 30u)
+                    len = 30u;
+                for (i = 0; i < len; ++i) {
+                    unsigned char c = reg->name[i + 1u];
+
+                    rname[i] = (c < 0x20u || c > 0x7Eu) ? '.' : (char)c;
+                }
+                rname[len] = '\0';
+                now_log(kLogInfo, "mirror",
+                        "drag handler reg n=%lu/%lu a5=%08lx tk=%lu app=%s",
+                        (unsigned long)(n + 1u),
+                        (unsigned long)obs->reg_count,
+                        (unsigned long)reg->a5,
+                        (unsigned long)reg->ticks, rname);
+            }
+        }
         gLastHandlerState = obs->handler_state;
         gLastHandlerInstalls = obs->handler_installs;
         gLastHandlerCalls = obs->handler_calls;

@@ -1409,6 +1409,20 @@ enum { kNowPeekDragObsTrackCapacity = 16 };
    and a registration we have forgotten is one we can never remove. */
 enum { kNowPeekDragObsContextCapacity = 8 };
 
+/* How many registrations are described by name. The same 8 as the context
+   capacity on purpose: a registry that could describe fewer contexts than
+   may be held would be a table whose silence means two things. */
+enum { kNowPeekDragObsRegCapacity = 8 };
+
+/* One registration, named. `name` is CurApName as the pumping process had
+   it - Pascal, and 32 bytes so this struct is a flat 40 with no padding
+   for either compiler to disagree about (the three-compiler rule). */
+typedef struct {
+    NowPeekU32 a5;                /* the A5 world that took it */
+    NowPeekU32 ticks;             /* when, in the guest's own TickCount */
+    unsigned char name[32];
+} NowPeekDragObsReg;
+
 /* `handler_state`. Append, never renumber. */
 enum {
     kNowPeekDragObsHandlerUntried   = 0,
@@ -1554,6 +1568,22 @@ typedef struct {
     NowPeekU32 hfile_parid;
     unsigned char hfile_name[64];
     NowPeekDragObsTrack tracks[kNowPeekDragObsTrackCapacity];
+    /* ---- V16: WHICH applications registered, not merely how many ----
+       `handler_contexts` is a COUNT, and on 2026-08-16 a count could not
+       answer the only question that mattered. A Continuity-only arm
+       reached 1 while the act plane's passes reached 5 on the same
+       resident and the same machine, and nothing anywhere could say
+       whether that 1 was the Finder - which is the difference between
+       "the route does not register in the Finder" and "the Finder was
+       simply not pumping". Two opposite findings, one number.
+
+       Registration happens at the jGNE boundary in whatever process is
+       pumping, and track_install is called for every one of them, so the
+       set recorded here IS the set of applications that pumped while
+       armed (up to capacity). It is a ledger rather than a ring: the
+       first few are the interesting ones and an overflow is counted. */
+    NowPeekU32 reg_count;         /* registrations ever made, uncapped */
+    NowPeekDragObsReg regs[kNowPeekDragObsRegCapacity];
 } NowPeekDragObserve;
 
 /* V10's non-overwriting button timing chain. All times are guest TickCount
@@ -2733,15 +2763,19 @@ _Static_assert(offsetof(NowPeekDragObserve, hfile_name) == 1196,
                "V15 handler name offset");
 _Static_assert(offsetof(NowPeekDragObserve, tracks) == 1260,
                "V15 tracking ring offset");
-_Static_assert(sizeof(NowPeekDragObserve) == 2156,
-               "drag observer block ABI drift (V14 trap half + V15 handler half)");
+_Static_assert(offsetof(NowPeekDragObserve, reg_count) == 2156,
+               "V16 registry is APPENDED: the V14+V15 halves must be unmoved");
+_Static_assert(sizeof(NowPeekDragObsReg) == 40,
+               "V16 registration row layout (three-compiler rule)");
+_Static_assert(sizeof(NowPeekDragObserve) == 2480,
+               "drag observer block ABI drift (V14 trap + V15 handler + V16 registry)");
 _Static_assert(offsetof(NowPeekDragObserve, file_name) == 136,
                "V14 drag observer name offset");
 _Static_assert(offsetof(NowPeekDragObserve, samples) == 200,
                "V14 drag observer sample ring offset");
 _Static_assert(sizeof(((NowPeekDragObserve *)0)->file_name) == 64,
                "V14 drag observer name width");
-_Static_assert(sizeof(NowPeekContinuityCell) == 6608,
+_Static_assert(sizeof(NowPeekContinuityCell) == 6932,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");

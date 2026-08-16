@@ -1057,6 +1057,17 @@
         "ext/src/now_ext_dragobs.c"
       ],
       "reason": "slice-1b registration route in development; shared bake due at main"
+    },
+    {
+      "at": "2026-08-16T15:45:34-0400",
+      "branch": "feat/resident-drag-bind",
+      "extDigest": "3cbdc01e8f70f14153bb2dc8f3322d658f147ca2",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_dragobs.c"
+      ],
+      "reason": "V16 registry is a diagnostic appended at the block tail; the round it exists to serve runs against a staged clone (spin-up-ppc stages this tree's ext), and a shared bake would replace the oracle other lanes are cloning mid-arc. Due at main."
     }
   ]
 }
