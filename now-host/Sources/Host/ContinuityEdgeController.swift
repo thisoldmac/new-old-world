@@ -225,6 +225,22 @@ final class ContinuityEdgeController: ObservableObject {
     private var pending: Ownership?
     private var ownership: Ownership?
     private var cursorHiddenOn: UInt32?
+    /// Mirrors `cursorHiddenOn`'s shape but is deliberately its own
+    /// variable, not a second use of that one. `cursorHiddenOn` is
+    /// entangled with the warp/pin/associate machinery a host file drag
+    /// must never touch (see the `!hostFileDrag` guards throughout this
+    /// file) — a foreign `NSDraggingSession` belongs to Finder, and this
+    /// app can detach or warp the real cursor for an ordinary crossing but
+    /// not for someone else's live drag. This variable remembers only
+    /// which display had its cursor VISIBLE LAYER hidden for a host file
+    /// drag, so `showHostDragCursor` can restore exactly that and nothing
+    /// else — see `hideHostDragCursor`/`showHostDragCursor`.
+    private var hostDragCursorHiddenOn: UInt32?
+    /// Identifies one host→guest file-drag gesture in the log, so an
+    /// attended run can pair a "hid" line with its "restored" line without
+    /// guessing from timestamps. Incremented once per arrival — the same
+    /// false→true edge that announces `hostDragArrived`.
+    private var hostFileDragGestureID: UInt64 = 0
     private var inputCapture: AnyObject?
     @Published private(set) var captureFailureReason: CaptureFailureReason?
     private var cursorDissociated = false
