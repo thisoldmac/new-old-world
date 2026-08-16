@@ -7,6 +7,72 @@ search:
 
 # Open issues
 
+## FIXED AND TESTED, NOT METAL-VERIFIED: attachment made an invariant, an offline-tile design shipped and reversed same day, and a black host preview traced to the wrong detector (2026-08-16, `fix/continuity-arrange-invariants`)
+
+Three attended defects on the Continuity Arrange Displays pane, from one
+review session (Michelle, build `afc91eed`).
+
+**1. A guest display is never unattached — repaired at load, forced at
+release.** `attachToDefaultEdgeIfNeverPlaced` (2026-08-15) only fixed a
+virgin install; a placement persisted from before that fix stayed a
+genuine island, faithfully preserved by the very guard meant to stop
+that. `ContinuityDisplayGeometry.nearestEdgeOrigin` lifts `snappedOrigin`'s
+48pt magnetic threshold to none at all — nearest host edge wins
+regardless of distance — and is now called from two places:
+`ContinuityDisplayLayout.init` (a persisted-but-unattached placement is
+coerced to the nearest edge, logged as a repair, made durable) and
+`finishGuestMove` (a drag release that lands outside the ordinary 48pt
+snap no longer stays an island). `testFitLeavesAnUnattachedGuestWhereItWasPut`,
+which asserted the OLD contract, is rewritten to assert the new one.
+
+**2. An offline/remembered tile shipped, then was overruled the same
+day.** The first pass distinguished three presence states — connected,
+remembered-but-offline (an editable tile, dashed and secondary-tinted,
+labelled "remembered, not connected"), and empty — reasoning from the
+idiom `ConnectionsModuleView`'s `.known` presence already uses. Michelle's
+review was narrower: **"it should not show any guest display when no
+guest is connected,"** full stop, and separately noted the label
+undermined the design on its own terms — a dashed tile still reads as a
+machine that is there, and it named an absence rather than a remembered
+one. `ContinuityArrangementPresence` was simplified back to two states
+(`.connected` draws the tile, everything else draws the empty state), and
+`MirrorContinuityController.hasRememberedGuest` — the roster read that
+fed the removed state — was deleted as now-dead code. **The persisted
+placement data (`ContinuityDisplayLayout`'s `guestOrigin`/`guestScale`) was
+never touched by either version of this UI** — a reconnecting machine
+still comes back exactly where it was; only the RENDERING of an offline
+placement was added and then removed.
+
+**3. The black host preview was `CGRequestScreenCaptureAccess()`'s
+unreliable return value, defended by a detector the OS's own denial
+placeholder defeats.** The previous version threw a named error on
+outright capture failure, and separately sampled a captured image's
+pixels to catch a "successful" capture that came back with nothing — but
+trusted `CGRequestScreenCaptureAccess()`'s boolean to decide whether to
+even attempt a capture, and that boolean is documented to be unreliable
+in the same direction preflight is not. Michelle's screenshot showed the
+actual failure mode: black content with the menu bar (and this app's own
+self-capture-exempt windows) still visible — macOS's own denied-capture
+placeholder — which the whole-frame pixel sample could never catch,
+because a real menu bar is never all-zero either. `CGPreflightScreenCaptureAccess()`
+is now the sole, freshly-checked-per-capture authority
+(`ScreenRecordingAuthorization`/`SystemScreenRecordingAuthorization`,
+the same seam shape as `AccessibilityAuthorization`); a refusal renders
+the note and deep link BEFORE any ScreenCaptureKit or CGDisplayCreateImage
+call. `isEffectivelyBlack` is kept as a secondary guard for a grant
+revoked mid-session, now sampling below the top eighth of the frame so
+the always-lit menu-bar band cannot mask an otherwise-empty capture.
+`requestAccessIfNeeded()` moved to `ContinuityDisplayPreviewStore.setEnabled(true)`
+— the one place the system prompt may fire, never a refresh. The desktop
+capture's `SCContentFilter(display:excludingApplications:exceptingWindows:)`
+was reviewed against Apple's documented desktop-capture recipe and found
+to preserve the wallpaper regardless of which apps are excluded; no
+filter defect was found, though this could not be verified against a
+live Screen-Recording-granted run — recorded as reviewed, not proven.
+
+Tested: `scripts/test-all` green, `TBT_ALLOW_UNARMED_HOOKS=1` (this
+clone's hooks are locally unarmed). Not metal-verified.
+
 ## FIXED AND TESTED, NOT METAL-VERIFIED: the epoch teardown erased the settled release on SLOW drags only (2026-08-15 18:47 round, `fix/continuity-press-origin-loss`)
 
 **The snap-back worked, except when the person dragged slowly — then the

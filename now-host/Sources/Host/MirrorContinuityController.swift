@@ -218,16 +218,6 @@ final class MirrorContinuityController: ObservableObject,
     var hasConnectedTarget: Bool {
         listener.activeContinuityTarget != nil
     }
-    /// Whether the host has EVER seen a machine at all — the same roster the
-    /// Connections module reads (`GuestRegistry.known`). The arrangement
-    /// page needs this distinction, separate from `hasConnectedTarget`, so
-    /// it can tell a genuinely empty roster — nothing has ever connected,
-    /// there is nothing to arrange — from a REMEMBERED machine that is
-    /// simply not connected right now, whose saved placement is still
-    /// legitimate to look at and edit.
-    var hasRememberedGuest: Bool {
-        !listener.registry.known.isEmpty
-    }
     @Published private(set) var phase: Phase = .idle {
         didSet {
             guard phase != oldValue else { return }
