@@ -226,6 +226,12 @@ run_c now-guest-shared now_continuity_drag_test.c "" \
 run_c now-guest-shared now_continuity_keyboard_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
 run_py now-guest-shared continuity_keyboard_safety_source_test.py
+# V14's drag observer patches the trap EVERY Drag Manager call goes
+# through, so its safety properties are properties of the source: an
+# unconditional chain, a re-entrancy guard around every Drag Manager call
+# the observer itself makes, no allocation in a foreign application's
+# context, and no mutator anywhere.
+run_py now-guest-shared dragobs_safety_source_test.py
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
 run_py now-guest-shared act_inflight_wiring_source_test.py
 # The gestaltSystemVersion decode `hello.os` carries since 2026-08-07.
@@ -362,6 +368,11 @@ run_c now-guest-ppc wirestat_cmd_test.c      ""  src/core/wirestat_cmd.c
 run_c now-guest-ppc mirror_debug_test.c      ""  src/mirror/mirror_debug.c
 run_py now-guest-ppc mirror_debug_gate_source_test.py
 run_c now-guest-ppc peek_table_test.c \
+      "-DNOW_PEEK_TABLE_HOST"
+# The V14 block's own reader contract: the length gate that keeps a
+# pre-V14 resident from being read past its allocation, and the ring
+# arithmetic the resident and the drain each derive independently.
+run_c now-guest-ppc drag_observe_block_test.c \
       "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c
 run_c now-guest-ppc peek_lease_test.c \
