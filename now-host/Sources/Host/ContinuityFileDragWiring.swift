@@ -13,21 +13,43 @@ import UniformTypeIdentifiers
 /// and NO AppKit drop destination existed at all. Configuration therefore
 /// belongs to the lifetime of edge mode, which is the app's, not a page's.
 ///
-/// What still depends on the Mirror is the SCENE: both directions resolve a
-/// guest item or a drop target by point against the live scene, and nothing
-/// else on this side has one. That dependency is now explicit and named
-/// rather than structural and silent: the destination exists, and a drop
-/// arriving with no scene is refused with a line that says why.
+/// **NO CONTINUITY FILE PATH REQUIRES THE MIRROR.** Michelle's ruling,
+/// 2026-08-16: *"the mirror required thing is weird. it shouldn't be needed,
+/// either from a technical perspective or a product perspective."*
+///
+/// The scene was a Mirror-era convenience for the question "where in the
+/// guest", and it was never the only answer to it. Continuity's edge mapping
+/// answers that question continuously and with no scene at all — it is the
+/// same geometry that drives the pointer, which is running whenever a file
+/// can cross in the first place. So a file crossing to the guest resolves its
+/// landing place from the CROSSING, and a scene, when one happens to exist,
+/// only makes that answer more specific.
+///
+/// Concretely: with a scene, a drop is targeted at the window, folder or
+/// application under the point, exactly as before. Without one it lands on
+/// the guest DESKTOP — the honest, always-available answer, and the one the
+/// classic Finder itself would give a drag released over empty screen. What
+/// used to happen instead was a refusal reading "file drag needs the Mirror
+/// running", which stated an implementation's dependency as if it were a
+/// property of the product.
+///
+/// The one genuine remainder is the OTHER direction, and it is a different
+/// question: picking a guest file up by pointing at it needs to know which
+/// icon is under the pointer, and no geometry can answer that. It refuses in
+/// its own words now, naming what is missing rather than naming the Mirror —
+/// and it is not the path a person normally uses, because the selection lane
+/// beside it needs no scene either.
 @MainActor
 enum ContinuityFileDrag {
     typealias Audit = (HostLog.LogLevel, String) -> Void
 
-    /// The one sentence the human and the log both get when the seam is
-    /// alive but has nothing to aim at. Stated once so the two callbacks
-    /// cannot drift into describing the same gap differently.
-    static let noSceneReason =
-        "file drag needs the Mirror running: this Mac has no scene of the "
-        + "guest screen, so there is nothing to resolve a point against"
+    /// Why pointing at a guest file cannot pick it up without a picture of
+    /// the guest screen. Names the missing capability, never the component
+    /// that used to provide it — see the type comment.
+    static let noGuestPictureReason =
+        "nothing here can say which guest file is under the pointer without "
+        + "a picture of the guest screen; select it on the Macintosh and it "
+        + "will cross"
 
     static func configure(
         edge: ContinuityEdgeController,
@@ -106,7 +128,7 @@ enum ContinuityFileDrag {
                 }
                 guard let scene = scene() else {
                     audit(.info, "no guest file can be picked up: "
-                        + noSceneReason)
+                        + noGuestPictureReason)
                     return nil
                 }
                 guard case .success(let subject) = DragTargeting.subject(
@@ -136,16 +158,21 @@ enum ContinuityFileDrag {
                         + "model is gone")
                     return false
                 }
+                /* THE POINT IS THE CROSSING'S, AND THE SCENE ONLY SHARPENS
+                   IT. `point` arrived from the edge mapping — the same
+                   arithmetic driving the guest pointer this instant — so
+                   this side always knows WHERE on the guest the file is
+                   going. What a scene adds is WHAT is drawn there, and that
+                   is a refinement, not a prerequisite. See the type comment
+                   for the ruling this implements. */
                 guard let scene = scene() else {
-                    audit(.warn, "file drop refused: " + noSceneReason)
-                    /* The direction a file dragged FROM this Mac TOWARD
-                       the guest travels: refused here because no scene
-                       exists. Left unsurfaced it reads as "host→guest is
-                       not working" with nothing on screen to say why —
-                       the same silent-refusal shape as the grab side, one
-                       edge over. Same sentence, same surfacing. */
-                    refusal?(noSceneReason)
-                    return false
+                    audit(.info, "file drop landing on the guest desktop at "
+                        + "\(point.x),\(point.y): this Mac has no picture of "
+                        + "the guest screen, so it cannot aim at a window "
+                        + "there — the crossing still says where, and the "
+                        + "desktop is a real place")
+                    return fileTransfer.copyHostPasteboard(pasteboard,
+                                                           to: .desktop)
                 }
                 switch CrossMachineFileTargeting.destination(
                     scene, x: point.x, y: point.y) {

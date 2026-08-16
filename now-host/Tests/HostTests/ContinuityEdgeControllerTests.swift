@@ -1104,23 +1104,37 @@ final class ContinuityEdgeControllerTests: XCTestCase {
                       "the strip must accept the drag to be steerable")
         controller.transportPhaseChanged(.active)
 
-        XCTAssertFalse(callbacks.dropped(.init(name: .drag)),
-                       "with no scene there is no honest drop target")
+        _ = callbacks.dropped(.init(name: .drag))
+        /* THE RULING, PINNED (Michelle, 2026-08-16): "the mirror required
+           thing is weird. it shouldn't be needed, either from a technical
+           perspective or a product perspective." No Continuity file path may
+           make the Mirror a precondition, and this is the path that did.
+           With no scene the drop now aims at the guest DESKTOP — resolved
+           from the crossing, which knows the guest coordinate continuously —
+           rather than refusing. */
         XCTAssertTrue(
-            audits.contains { $0.1.contains(ContinuityFileDrag.noSceneReason) },
-            "the refusal must name what is missing, not fail silently")
+            audits.contains {
+                $0.1.contains("file drop landing on the guest desktop")
+            },
+            "with no scene the drop must land on the guest desktop, not be "
+                + "refused: \(audits.map(\.1))")
+        XCTAssertFalse(
+            audits.contains { $0.1.contains("needs the Mirror") },
+            "no Continuity file path may name the Mirror as a requirement: "
+                + "\(audits.map(\.1))")
         XCTAssertEqual(controller.state, .ready)
     }
 
-    /// The host→guest sibling of the grab-side refusal sink test: this Mac
-    /// dragging a file TOWARD the guest with no scene to resolve against
-    /// used to end at `audit(.warn, …)` alone — a line in the log and
-    /// nothing on screen, which a metal run on 2026-08-16 read as
-    /// "host→guest is not working". `refusal` is the seam
-    /// `HostAppState` wires to a system notification plus the menu-bar
-    /// flash; this pins that it fires, with the exact sentence the log
-    /// already carries.
-    func testNoSceneDropRefusalReachesTheRefusalClosureByName() throws {
+    /// The refusal this used to pin is GONE, and its absence is the guard.
+    ///
+    /// It was the host→guest sibling of the grab-side refusal-sink test:
+    /// with no scene, a file dragged toward the guest was refused, and the
+    /// test's job was to prove the refusal reached a person rather than only
+    /// the log. Michelle's 2026-08-16 ruling retired the refusal itself —
+    /// a missing Mirror is not a reason a file cannot cross — so the seam
+    /// must now stay SILENT on this path. A refusal surfaced to a person for
+    /// a drop that is going to work anyway is worse than the log line was.
+    func testAMissingSceneNoLongerSurfacesARefusalToAnybody() throws {
         let layout = makeLayout()
         let driver = Driver()
         let environment = Environment()
@@ -1142,10 +1156,11 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450)))
         controller.transportPhaseChanged(.active)
 
-        XCTAssertFalse(callbacks.dropped(.init(name: .drag)))
-        XCTAssertEqual(refusals, [ContinuityFileDrag.noSceneReason],
-                       "the refusal closure must carry the exact sentence "
-                           + "the log already names — no second draft")
+        _ = callbacks.dropped(.init(name: .drag))
+        XCTAssertEqual(refusals, [],
+                       "a missing scene is no longer a refusal, so nothing "
+                           + "may be surfaced to a person for one: "
+                           + "\(refusals)")
     }
 
     /// The same claim against the REAL wiring: the app installs the seam on

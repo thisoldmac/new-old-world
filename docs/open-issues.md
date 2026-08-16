@@ -7,6 +7,64 @@ search:
 
 # Open issues
 
+## PRODUCT DECISION: no Continuity file path may require the Mirror (2026-08-16, Michelle, `feat/hg-drag-edge-custody`)
+
+Her wording, verbatim: **"the mirror required thing is weird. it shouldn't be
+needed, either from a technical perspective or a product perspective."**
+
+The rule this settles, at product level and not only for the gesture being
+built when it was made: **no Continuity file-transfer path may make the Mirror
+a precondition.** That includes the drop-on-the-edge-strip path that already
+shipped, not merely the new one.
+
+### Why the dependency was never real
+
+The scene was a Mirror-era convenience for the question *where in the guest*,
+and it was never the only answer to it. Continuity's edge mapping answers that
+question continuously and with no scene at all — it is the same geometry that
+is driving the guest pointer at the instant a file crosses, which is to say it
+is running exactly whenever a file can cross in the first place. The scene
+answers a narrower question, *what is drawn there*, and that is a refinement.
+
+Stating a refinement as a prerequisite is what produced the metal round of
+2026-08-16 17:14/17:19, where three attempts to drag a file to the guest ended
+`file drop refused: file drag needs the Mirror running`. Read as a person
+reads it, that sentence says host→guest file transfer is a Mirror feature. It
+is not, and the code did not think so either — it simply had one convenient
+resolver wired in front of an always-available one.
+
+### What changed
+
+`ContinuityFileDrag`'s `noSceneReason` is gone, along with both its uses:
+
+- **Host→guest drop.** With a scene, targeting is unchanged: the window,
+  folder or application under the point. Without one, the drop lands on the
+  guest **desktop** at the crossing's own coordinate — the honest,
+  always-available answer, and the one the classic Finder itself gives a drag
+  released over empty screen. No refusal, and nothing surfaced to a person,
+  because nothing failed.
+- **Guest→host pickup by pointing** is the one genuine remainder, and it is a
+  *different question*: knowing which icon sits under the pointer cannot be
+  derived from geometry. It refuses in its own words now
+  (`noGuestPictureReason`) — naming the missing capability rather than the
+  component that used to supply it, per the ruling's second half. In practice
+  a person does not meet it: the selection lane beside it needs no scene.
+
+### The flagged remainder, named rather than implied
+
+That pickup path is the single place where a Continuity file gesture still
+cannot proceed without a picture of the guest screen. It is recorded here as a
+remainder rather than closed, because the honest fix is not geometry — it is
+the resident drag plane (`plan-resident-drag-plane-2026-08-16.md`), which
+learns the dragged item's identity from the drag itself and makes the question
+moot in both directions.
+
+Guarded by `testEdgeModeWithoutMirrorStillHasALiveDropDestination` (the drop
+must land on the desktop, and no path may name the Mirror as a requirement)
+and `testAMissingSceneNoLongerSurfacesARefusalToAnybody` (the retired refusal
+must not reach a person). Both mutation-watched by restoring the old refusal:
+three assertions fail, quoting the restored sentence.
+
 ## FIXED AND TESTED, NOT METAL-VERIFIED: the ack-silence watchdog had no upper bound on trusting resident liveness (2026-08-16, `fix/continuity-watchdog-starvation`)
 
 **The remaining half of the split the arrival-starvation and modal-starvation
