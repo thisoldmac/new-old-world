@@ -169,15 +169,53 @@ registration route has been riding the act plane's context-hopping as a
 side effect, and nothing yet puts a handler in the Finder for a gesture
 the Finder itself starts.
 
-### What the next round must do first
+### NOT REFUSED — THE FINDER NEVER ARRIVES. One attempt, ever.
 
-Get the handler into the Finder's context under an ordinary arm. The jGNE
-boundary is already the right place; what is missing is a pass that
-actually runs there while armed. Whether that means the Finder does not
-reach our shim, or reaches it only when driven, is the next measurement —
-and it should be made by counting SHIM PASSES PER CurApName, which is one
-more field on the same registry and the same instrument. Do not add a
-second mechanism before that number exists.
+Fourth round, build `96a3c345…`, asserted from the guest's own hello. The
+registry now records every ATTEMPT with `InstallTrackingHandler`'s own
+OSErr, because the previous instrument could not have shown a refusal:
+`handler_state` and `handler_err` are single globals, so a registration
+refused in the Finder and then taken in NOW leaves NOW's success in both.
+
+Continuity armed, never-selected document, press and 180 px of motion:
+
+    drag handler reg n=1/1 a5=1f1c5d70 tk=4081 err=0 app=New Old World
+    drag handler state=1 err=0 inst=1 rem=1 ctx=0 calls=0 enter=0/0
+
+**`reg n=1/1` is the answer.** `reg_count` counts attempts, uncapped, and
+a row goes down before the early return — so one attempt, ever, and it
+SUCCEEDED. The Finder is not being refused. `now_ext_dragobs_gne` is
+never reached with the Finder's A5 while armed.
+
+That closes the branch the cross-reference opened. The two hooks are
+NOT different: `deep_click_capture` runs at the top of
+`now_ext_continuity_observe_event`, ahead of its enabled gate, and
+`now_ext_gne_apply` calls that eight lines before `now_ext_dragobs_gne`
+with no early return between them. The V11 probe's `app=Find` rows and
+this registry are reading the same boundary. So the difference is not
+WHERE the code sits; it is WHEN it runs — the probe captures on every
+pass, the registration only on an ARMED one.
+
+### The one question left, and it is now the only one
+
+**Does the Finder pump at all during an armed window?** Two candidates
+remain and they are separated by one number:
+
+- the Finder is not scheduled during the ~30 s the arm is up — NOW is
+  frontmost and driving, classic Mac OS is cooperative, and a background
+  Finder with nothing pending may simply not run; or
+- it pumps, and the arm predicate evaluates false in its context.
+
+**Shim passes per CurApName** separates them, and it is one more field on
+the registry already built — a per-application pass counter written
+ungated, beside the attempt rows that are written armed. If the Finder
+shows passes but no attempt, it is the predicate. If it shows no passes,
+it is scheduling, and the fix is not in this plane at all.
+
+Do not add a second registration mechanism before that number exists. The
+V11 probe's rows were captured on metal with a person clicking, which is
+a machine being USED; every round here has been a machine being driven by
+a harness with nothing else running, and those are not the same guest.
 
 ### A correction to this branch's own earlier claim
 
