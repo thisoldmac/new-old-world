@@ -98,11 +98,15 @@ protocol ContinuityPointerEnvironment: AnyObject {
     /// for.
     func readDragWitness(_ token: AnyObject) -> ContinuityDragWitness
     func stopDragWitness(_ token: AnyObject)
-    func showFileEdge(_ edge: ContinuitySharedEdge,
+    func showFileEdge(_ edge: ContinuitySharedEdge, catchThickness: CGFloat,
                       callbacks: ContinuityFileEdge.Callbacks) -> AnyObject
     func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
+                        catchThickness: CGFloat,
                         callbacks: ContinuityFileEdge.Callbacks)
     func hideFileEdge(_ token: AnyObject)
+    /// See `ContinuityFileEdge.setDropsThroughOwnSession`.
+    func setFileEdgeDropsThroughOwnSession(_ token: AnyObject,
+                                           _ dropsThrough: Bool)
     /// Widens the sentinel strip into a catch surface, or narrows it back.
     ///
     /// Two physical pixels are enough to DETECT a crossing and far too few
@@ -183,6 +187,11 @@ final class ContinuityEdgeController: ObservableObject {
 
     @Published private(set) var state: State = .disabled
     @Published private(set) var status = "off"
+    /// The entry inset and catch-surface deadzone depth. Owned here rather
+    /// than read from a static constant so a person can feel a different
+    /// size without restarting Continuity — `updateEdgeGeometry` applies a
+    /// change to both the live catch surface and the next crossing.
+    @Published private(set) var edgeGeometry = ContinuityEdgeGeometry.default
 
     /// Why the consuming tap most recently failed to start. It answers two
     /// questions, not one. Is a later retry worth attempting —
@@ -429,6 +438,25 @@ final class ContinuityEdgeController: ObservableObject {
         refreshFileEdge()
         state = .ready
         refreshReadyStatus()
+        /* Self-describing, the way a metal measurement is: the geometry a
+           session ran under should be answerable from its own log rather
+           than assumed from the default in source. */
+        audit(.info, "edge geometry: entryInset=\(Int(edgeGeometry.entryInsetPixels))"
+            + "px, deadzoneDepth=\(Int(edgeGeometry.deadzoneDepth))px")
+    }
+
+    /// Applies a new entry inset / deadzone depth. Clamped to a sane range
+    /// the way a hand-edited reconnect delay is, and pushed to the live
+    /// catch surface immediately — see `ContinuityFileEdge.update
+    /// (catchThickness:)` for why that is safe mid-handoff.
+    func updateEdgeGeometry(_ geometry: ContinuityEdgeGeometry) {
+        let clamped = geometry.clamped()
+        guard clamped != edgeGeometry else { return }
+        edgeGeometry = clamped
+        audit(.info, "edge geometry changed: entryInset="
+            + "\(Int(clamped.entryInsetPixels))px, deadzoneDepth="
+            + "\(Int(clamped.deadzoneDepth))px")
+        refreshFileEdge()
     }
 
     func stop(reason: String = "Continuity Mode disabled") {
@@ -522,7 +550,8 @@ final class ContinuityEdgeController: ObservableObject {
               isCrossingOutward(sample, edge: edge) else { return }
         let guest = ContinuityDisplayGeometry.guestEntryPoint(
             at: sample.location, edge: edge, guestFrame: layout.guestFrame,
-            guestPixels: layout.guestSize, scale: layout.guestScale)
+            guestPixels: layout.guestSize, scale: layout.guestScale,
+            insetPixels: edgeGeometry.entryInsetPixels)
         let anchor = ContinuityDisplayGeometry.hostReturnPoint(
             for: guest, edge: edge, guestFrame: layout.guestFrame,
             scale: layout.guestScale)
@@ -1172,7 +1201,13 @@ final class ContinuityEdgeController: ObservableObject {
             status = "Copying the guest file to this Mac on release"
             /* The catch surface stays wide for the length of the session.
                Narrowing it here moved the drag source's own window out from
-               under a live drag, one frame after starting it. */
+               under a live drag, one frame after starting it. But WIDE is
+               not the same question as HIT-TESTABLE: this app's own session
+               must never be refused by the surface it just seeded from, so
+               the surface stops intercepting anything at all for exactly
+               this session's length. See
+               `ContinuityFileEdge.setDropsThroughOwnSession`. */
+            setFileEdgeDropsThroughOwnSession(true)
             return
         }
         audit(.error, "the host file drag was refused by AppKit at "
@@ -1194,6 +1229,7 @@ final class ContinuityEdgeController: ObservableObject {
            make this app the answer. */
         let report = endDragWitness()
         setFileEdgeCatching(false)
+        setFileEdgeDropsThroughOwnSession(false)
         let took = operation.isEmpty ? "nobody" : "\(operation.rawValue)"
         audit(operation.isEmpty ? .warn : .info,
               "host file drag session ended at "
@@ -1264,6 +1300,11 @@ final class ContinuityEdgeController: ObservableObject {
     private func setFileEdgeCatching(_ catching: Bool) {
         guard let fileEdge else { return }
         environment.setFileEdgeCatching(fileEdge, catching)
+    }
+
+    private func setFileEdgeDropsThroughOwnSession(_ dropsThrough: Bool) {
+        guard let fileEdge else { return }
+        environment.setFileEdgeDropsThroughOwnSession(fileEdge, dropsThrough)
     }
 
     private func isCrossingOutward(_ sample: HostPointerSample,
@@ -1503,10 +1544,12 @@ final class ContinuityEdgeController: ObservableObject {
         }
         if let fileEdge {
             environment.updateFileEdge(fileEdge, edge: edge,
+                                       catchThickness: edgeGeometry.deadzoneDepth,
                                        callbacks: fileEdgeCallbacks)
         } else {
             fileEdge = environment.showFileEdge(
-                edge, callbacks: fileEdgeCallbacks)
+                edge, catchThickness: edgeGeometry.deadzoneDepth,
+                callbacks: fileEdgeCallbacks)
         }
     }
 
@@ -1530,7 +1573,8 @@ final class ContinuityEdgeController: ObservableObject {
         }
         let guest = ContinuityDisplayGeometry.guestEntryPoint(
             at: hostPoint, edge: edge, guestFrame: layout.guestFrame,
-            guestPixels: layout.guestSize, scale: layout.guestScale)
+            guestPixels: layout.guestSize, scale: layout.guestScale,
+            insetPixels: edgeGeometry.entryInsetPixels)
         let anchor = ContinuityDisplayGeometry.hostReturnPoint(
             for: guest, edge: edge, guestFrame: layout.guestFrame,
             scale: layout.guestScale)

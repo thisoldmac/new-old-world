@@ -346,6 +346,47 @@ final class MirrorContinuityController: ObservableObject,
         }
     }
 
+    /// Bridges to `edge.edgeGeometry`, persisting per machine like the other
+    /// Continuity prefs. Two setters rather than a mirrored `@Published`
+    /// pair here, because the geometry itself has to live on the edge
+    /// controller — it reaches the live catch surface immediately, the way
+    /// `edge.updateEdgeGeometry` is written to — and this is the settings
+    /// funnel around it, the same shape as `keyboardConfigurationChanged`
+    /// pushing a toggle INTO `edge` rather than `edge` owning its own copy.
+    func setEdgeEntryInset(_ pixels: CGFloat) {
+        var geometry = edge.edgeGeometry
+        geometry.entryInsetPixels = pixels
+        applyEdgeGeometry(geometry)
+    }
+
+    func setEdgeDeadzoneDepth(_ pixels: CGFloat) {
+        var geometry = edge.edgeGeometry
+        geometry.deadzoneDepth = pixels
+        applyEdgeGeometry(geometry)
+    }
+
+    private func applyEdgeGeometry(_ geometry: ContinuityEdgeGeometry) {
+        edge.updateEdgeGeometry(geometry)
+        guard let machine = listener.activeContinuityTarget?.key.machine
+        else { return }
+        // Persist what was actually APPLIED, not what was asked for —
+        // `updateEdgeGeometry` clamps, and a value on disk that the
+        // controller itself would refuse on the next launch is a silent
+        // drift the same way an un-derived count is.
+        defaults.set(edge.edgeGeometry.entryInsetPixels,
+                     forKey: edgeEntryInsetKey(for: machine))
+        defaults.set(edge.edgeGeometry.deadzoneDepth,
+                     forKey: edgeDeadzoneDepthKey(for: machine))
+    }
+
+    private func edgeEntryInsetKey(for machine: GuestID) -> String {
+        "mirror.continuity.edgeEntryInset.\(machine.slug)"
+    }
+
+    private func edgeDeadzoneDepthKey(for machine: GuestID) -> String {
+        "mirror.continuity.edgeDeadzoneDepth.\(machine.slug)"
+    }
+
     var isActive: Bool { phase == .active }
     @Published private(set) var isMenuTracking = false
 
@@ -1542,6 +1583,15 @@ final class MirrorContinuityController: ObservableObject,
         let delayKey = reconnectDelayKey(for: machine)
         reconnectDelay = defaults.object(forKey: delayKey) == nil
             ? 0.75 : clampReconnectDelay(defaults.double(forKey: delayKey))
+        let entryInsetKey = edgeEntryInsetKey(for: machine)
+        let deadzoneDepthKey = edgeDeadzoneDepthKey(for: machine)
+        edge.updateEdgeGeometry(ContinuityEdgeGeometry(
+            entryInsetPixels: defaults.object(forKey: entryInsetKey) == nil
+                ? ContinuityEdgeGeometry.default.entryInsetPixels
+                : defaults.double(forKey: entryInsetKey),
+            deadzoneDepth: defaults.object(forKey: deadzoneDepthKey) == nil
+                ? ContinuityEdgeGeometry.default.deadzoneDepth
+                : defaults.double(forKey: deadzoneDepthKey)))
         loadingSettings = false
     }
 

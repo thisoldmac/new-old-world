@@ -304,12 +304,26 @@ final class ContinuityFileEdge: NSObject {
     private let edgeView: EdgeView
     private var edge: ContinuitySharedEdge
     private var catching = false
+    /// How wide the catch surface widens to while `catching`. Configurable
+    /// — see `ContinuityEdgeGeometry.deadzoneDepth` — and defaults to the
+    /// value this shipped with before it was. Zero is legal: the strip
+    /// still exists (so the ARM phase has a window of ours to be
+    /// hit-tested against) but never widens beyond the ordinary two-pixel
+    /// sentinel, so a handoff has no arming cushion at all.
+    private var catchThickness: CGFloat
+    /// Whether the panel is currently letting every event fall through to
+    /// whatever real window is beneath it. See `setDropsThroughOwnSession`.
+    private var dropsThroughOwnSession = false
 
-    init(edge: ContinuitySharedEdge, callbacks: Callbacks) {
+    init(edge: ContinuitySharedEdge,
+         catchThickness: CGFloat = ContinuityEdgeGeometry.default.deadzoneDepth,
+         callbacks: Callbacks) {
         self.edge = edge
+        self.catchThickness = catchThickness
         edgeView = EdgeView(callbacks: callbacks)
         panel = EdgePanel(
-            contentRect: Self.frame(for: edge, catching: false),
+            contentRect: Self.frame(for: edge, catching: false,
+                                    catchThickness: catchThickness),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
         super.init()
@@ -332,9 +346,22 @@ final class ContinuityFileEdge: NSObject {
 
     func update(edge: ContinuitySharedEdge) {
         self.edge = edge
-        panel.setFrame(Self.frame(for: edge, catching: catching),
+        panel.setFrame(Self.frame(for: edge, catching: catching,
+                                  catchThickness: catchThickness),
                        display: false)
         panel.orderFrontRegardless()
+    }
+
+    /// Applies a new deadzone depth. Effective immediately — including
+    /// while a handoff is in progress and the strip is already widened —
+    /// because a person turning this knob wants to feel the new size, not
+    /// wait for the next crossing.
+    func update(catchThickness: CGFloat) {
+        guard catchThickness != self.catchThickness else { return }
+        self.catchThickness = catchThickness
+        panel.setFrame(Self.frame(for: edge, catching: catching,
+                                  catchThickness: catchThickness),
+                       display: false)
     }
 
     /// Widens the strip into a catch surface for one handoff, or narrows it
@@ -343,7 +370,8 @@ final class ContinuityFileEdge: NSObject {
     func setCatching(_ catching: Bool) {
         guard catching != self.catching else { return }
         self.catching = catching
-        panel.setFrame(Self.frame(for: edge, catching: catching),
+        panel.setFrame(Self.frame(for: edge, catching: catching,
+                                  catchThickness: catchThickness),
                        display: false)
         /* Key for the handoff instant only. The gesture arrives with the
            button already held and no application holding the press, so the
@@ -357,6 +385,47 @@ final class ContinuityFileEdge: NSObject {
 
     func update(callbacks: Callbacks) {
         edgeView.callbacks = callbacks
+    }
+
+    /// **A refusing destination is not a transparent one.**
+    ///
+    /// `EdgeView.isOwnSession` already answers this app's own drag session
+    /// with no operation — the panel must never let its own file drop on
+    /// itself — but a refusal still ANSWERS the drag. AppKit shows no `+`
+    /// badge and asks nothing else, because the refusing panel was the
+    /// topmost thing the window server hit-tested at that point. Measured
+    /// on this Mac, 2026-08-16, at the shipped 160 px `catchThickness`: a
+    /// human felt that refusal as a drop dead zone extending the full width
+    /// of the strip, because the badge could not appear until the cursor
+    /// physically cleared it and reached whatever was actually underneath.
+    ///
+    /// `ignoresMouseEvents` is the one property that makes a window
+    /// invisible to the window server's routing rather than merely
+    /// declining what it is asked — already the load-bearing fact behind
+    /// `catchSurfaceIsHitTestable` and `hitTestableAlpha` above. Set for the
+    /// length of the live session THIS APP itself seeded, the strip stops
+    /// being hit-tested at all and every drag query — including this one —
+    /// falls straight through to the real destination beneath it, which
+    /// answers with its own badge immediately, at whatever cursor position
+    /// the strip would otherwise have masked.
+    ///
+    /// Only the LIVE session gets this: the ARM phase before a session
+    /// exists still needs the window server to agree this panel owns the
+    /// seed point (`serverOwnsPoint`) before the synthetic primary-down is
+    /// posted, and the physical strip still has to widen before the tap
+    /// dies so a returning press has somewhere of ours to land — both of
+    /// which need the panel to keep being hit-testable. Only once
+    /// `beginFileDrag` has actually started a session does dropping through
+    /// apply, and the caller is responsible for undoing it the moment that
+    /// session ends — narrowing (`setCatching(false)`) and this are
+    /// independent knobs, because narrowing mid-session moves the drag
+    /// source's own window out from under a live drag (see
+    /// `returnGuestFileToHost`'s doc), while this only changes whether the
+    /// strip still intercepts.
+    func setDropsThroughOwnSession(_ dropsThrough: Bool) {
+        guard dropsThrough != dropsThroughOwnSession else { return }
+        dropsThroughOwnSession = dropsThrough
+        panel.ignoresMouseEvents = dropsThrough
     }
 
     func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
@@ -399,7 +468,11 @@ final class ContinuityFileEdge: NSObject {
     /// has already left by the time the tap dies. Restored the moment the
     /// drag starts or the handoff is abandoned — a permanently wide surface
     /// would eat the edge of whatever app lives there.
-    static let catchThickness: CGFloat = 160
+    ///
+    /// How wide is now `catchThickness`, the instance property configured
+    /// from `ContinuityEdgeGeometry.deadzoneDepth` — see that type for why
+    /// 160 remains the default and why zero is a legal choice rather than a
+    /// clamp floor.
 
     /// **A window the window server cannot see is not a catch surface.**
     ///
@@ -445,8 +518,8 @@ final class ContinuityFileEdge: NSObject {
             panelWindowNumber: panel.windowNumber)
     }
 
-    private static func frame(for edge: ContinuitySharedEdge,
-                              catching: Bool) -> CGRect {
+    private static func frame(for edge: ContinuitySharedEdge, catching: Bool,
+                              catchThickness: CGFloat) -> CGRect {
         let thickness: CGFloat = catching ? catchThickness : 2
         switch edge.guestSide {
         case .left:

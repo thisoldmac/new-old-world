@@ -376,22 +376,31 @@ final class AppKitContinuityPointerEnvironment:
         box.source = nil
     }
 
-    func showFileEdge(_ edge: ContinuitySharedEdge,
+    func showFileEdge(_ edge: ContinuitySharedEdge, catchThickness: CGFloat,
                       callbacks: ContinuityFileEdge.Callbacks) -> AnyObject {
-        let fileEdge = ContinuityFileEdge(edge: edge, callbacks: callbacks)
+        let fileEdge = ContinuityFileEdge(edge: edge,
+                                          catchThickness: catchThickness,
+                                          callbacks: callbacks)
         activeFileEdge = fileEdge
         return fileEdge
     }
 
     func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
+                        catchThickness: CGFloat,
                         callbacks: ContinuityFileEdge.Callbacks) {
         guard let edgeWindow = token as? ContinuityFileEdge else { return }
         edgeWindow.update(edge: edge)
+        edgeWindow.update(catchThickness: catchThickness)
         edgeWindow.update(callbacks: callbacks)
     }
 
     func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool) {
         (token as? ContinuityFileEdge)?.setCatching(catching)
+    }
+
+    func setFileEdgeDropsThroughOwnSession(_ token: AnyObject,
+                                           _ dropsThrough: Bool) {
+        (token as? ContinuityFileEdge)?.setDropsThroughOwnSession(dropsThrough)
     }
 
     func catchSurfaceHitTest(_ token: AnyObject, at screenPoint: CGPoint)

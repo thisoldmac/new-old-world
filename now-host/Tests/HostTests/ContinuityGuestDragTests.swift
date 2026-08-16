@@ -2001,21 +2001,33 @@ private final class Rig {
             _ = token
             captureHandler = nil
         }
+        var catchThicknesses: [CGFloat] = []
+
         func showFileEdge(_ edge: ContinuitySharedEdge,
+                          catchThickness: CGFloat,
                           callbacks: ContinuityFileEdge.Callbacks)
             -> AnyObject {
             _ = edge
+            catchThicknesses.append(catchThickness)
             fileCallbacks = callbacks
             return Token()
         }
         func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
+                            catchThickness: CGFloat,
                             callbacks: ContinuityFileEdge.Callbacks) {
             _ = (token, edge)
+            catchThicknesses.append(catchThickness)
             fileCallbacks = callbacks
         }
         func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool) {
             _ = token
             catchChanges.append(catching)
+        }
+        var dropsThroughChanges: [Bool] = []
+        func setFileEdgeDropsThroughOwnSession(_ token: AnyObject,
+                                               _ dropsThrough: Bool) {
+            _ = token
+            dropsThroughChanges.append(dropsThrough)
         }
         /// Whether the WINDOW SERVER has put the catch surface under the
         /// seed point. True by default so the ordinary tests describe a Mac
