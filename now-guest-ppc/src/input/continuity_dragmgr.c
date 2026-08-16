@@ -472,17 +472,27 @@ static void start_drag(void)
         verdict = now_continuity_drag_ended(&g_drag, track == noErr,
                                             toolbox);
 
-        /* One line, every fact needed to attribute the outcome. The
-           first live run of this slice logged only "cancelled (TrackDrag
-           -128)", and three unrelated defects would each have produced
-           exactly that. */
+        /* TWO LINES, NOT ONE, AND THE SPLIT IS LOAD-BEARING. nowlog.c
+           formats the body with "%.99s", so a body longer than 99
+           characters loses its tail SILENTLY. The first version of this
+           was one line and the live guest logged
+
+               ... (TrackDrag -128) button plane=1 toolbox=1 at
+
+           - every measured fact after "at" cut off, with nothing saying
+           so. An instrument whose reading is truncated reports the
+           absence of the reading and the absence of the thing in the
+           same words, which is the failure this whole line exists to
+           end. Both bodies below are well inside the cap. */
         now_log(track == noErr && verdict == kNowDragOK
                     ? kLogInfo : kLogWarn,
-                "mirror",
-                "drag %.31s ended: %s (TrackDrag %d) button plane=%d "
-                "toolbox=%d at %d,%d setup=%lu track=%lu ticks",
+                "mirror", "drag %.31s ended: %s (TrackDrag %d)",
                 g_drag.item.name, now_continuity_drag_code(verdict),
-                (int)track, plane, toolbox, (int)where.h, (int)where.v,
+                (int)track);
+        now_log(kLogInfo, "mirror",
+                "drag detail: button plane=%d toolbox=%d at %d,%d "
+                "setup=%lu track=%lu ticks",
+                plane, toolbox, (int)where.h, (int)where.v,
                 (unsigned long)(entered - started),
                 (unsigned long)(TickCount() - entered));
     }
