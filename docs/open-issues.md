@@ -7,6 +7,71 @@ search:
 
 # Open issues
 
+## FIXED, EMULATOR-VERIFIED: the receive windoid was owned by ONE lane, not by the RX protocol (2026-08-16, `chore/recover-034-orphans`)
+
+G11a's floating receive windoid (`receive_progress.c`, 6d3d74d7) says a file
+is landing whether or not the Workshop is open, and it is meant to belong to
+the receive protocol itself: *"any files it's receiving should show it."* It
+belonged to one lane.
+
+There are two inbound lanes on the PowerPC guest. `g_put` is the push lane —
+`file.offer`, which carries a host push, an update transfer, and a
+cloud.get's answer. `g_get` is the pull lane — `file.get`, which carries a
+page's own download **and a continuity grab**, because
+`now_wire_get_offer`'s own comment says everything past the send is the
+ordinary pull. `now_wire_receive_active` read `g_put` and nothing else.
+
+Every pull the Files and Cloud pages ask for is drawn by the page that asked,
+which is why nothing noticed: the only *un*attended pull is the one nobody
+asks for from a page — a person's drag from the Mac to the Macintosh.
+
+Measured before the fix, on this lane's own emulator (run 87665, base
+`now-mirror-stage.qcow2` sha256 `8db8ddc2…`, this tree's app and ext staged
+into a session-private clone, resident sourceManifest `0b83a0e1666b`):
+
+| path | how it was driven | windoid |
+|---|---|---|
+| host push | `file.offer` + bulk, 600 KB, no page open | **shown** — "Receiving / Windoid Push / 49 of 586 K (8%)", bar, Stop |
+| continuity grab | `continuity.offer` + `offer --take`, 600 KB | **not one pixel changed** for the whole transfer |
+| update transfer | not driven | *see below* |
+
+After the fix, same rig, app restaged and relaunched (build stamp moved
+`ec32cf2e` → `dfd037e7`), three grabs on fresh names: windoid shown every
+time — "Receiving / Diag File / 78 of 391 K (20%)" — and 2.5 s after
+`file.end` it still read "Received Second Grab - it is in Desktop Folder"
+with Stop dimmed, so the ending reaches a person too. The push path was
+re-run after the change and is unaffected.
+
+The fix is at the seam, not in a page, which is the design's whole point:
+`g_get` gains `unattended`, set at the two entry points (true for the grab,
+false for a page's pull); `now_wire_receive_active` answers for an
+unattended pull as well and reports `is_pull`, because the two lanes stop
+differently and a Stop button must send the right cancel; `get_note` feeds
+`rx_outcome` for an unattended pull only.
+`receive_windoid_owns_both_lanes_source_test.py` pins all four facts and was
+watched failing against each separately.
+
+### What this entry does NOT claim
+
+- **The update transfer was not driven.** It rides `g_put` through the same
+  `serve_file_offer` with `from_cloud_get` false, so `now_wire_receive_active`
+  cannot tell it from the push that was proven — but that is an argument from
+  code, not a measurement, and driving it would have installed an update over
+  the app under test. Unverified.
+- **The Drag Manager promise path was not changed and was not driven.** The
+  `offer --take` grab and a Finder drop send the same `continuity.grab` down
+  the same lane, but the drop's receive runs inside `drag_receive_promise`'s
+  nested loop, in a `SendDataProc` within `TrackDrag`, which pumps the wire
+  and dispatches no update events. A window opened there would show a frame
+  it never fills. Deliberately left alone; it needs its own attended pass.
+- **An unattended pull that fails BEFORE its first byte still says nothing.**
+  Reproduced twice: a grab whose name had already landed in the Desktop
+  Folder sent the `continuity.grab`, and the pull never began — no `get` line
+  in the ring at all. The control that isolates it is the same epoch with a
+  fresh name, which succeeds. The outcome now reaches `rx_outcome`, but the
+  windoid only opens for a receive that became *active*, so a refusal is
+  written to a window that never opens. Separate defect, separate fix.
+
 ## CORRECTED BY DERIVATION: the "17 TrackDrag cycles" anomaly is a misread counter (2026-08-16, `feat/hg-drag-edge-custody`)
 
 Addendum 2 of `plan-resident-drag-plane-2026-08-16.md` made settling this the
