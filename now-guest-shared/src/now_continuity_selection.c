@@ -65,6 +65,36 @@ int now_continuity_grab_confirm(const NowContinuityStubItem *serve,
     return kNowGrabOK;
 }
 
+int now_continuity_grab_confirm_drag(const NowContinuityStubItem *serve,
+                                     int read_ok,
+                                     const NowContinuityStubItem *observed,
+                                     unsigned long observed_seq)
+{
+    if (serve == NULL) {
+        return kNowGrabNoSelection;
+    }
+    /* The wrong witness for this stub. Not a refusal the person caused. */
+    if (serve->source != kNowStubSourceDrag || serve->drag_seq == 0) {
+        return kNowGrabNoSelection;
+    }
+    if (!read_ok) {
+        return kNowGrabStaleSelection;
+    }
+    if (observed == NULL) {
+        return kNowGrabNoSelection;
+    }
+    /* THE SHARPER HALF. Same file is not enough: it must be the same
+       DRAG, or a second pick-up of the same icon would be served under
+       the first one's generation. */
+    if (observed_seq != serve->drag_seq) {
+        return kNowGrabStaleSelection;
+    }
+    if (!now_continuity_stub_same_item(serve, observed)) {
+        return kNowGrabStaleSelection;
+    }
+    return kNowGrabOK;
+}
+
 int now_continuity_stub_observe(NowContinuityStubTable *table,
                                 const NowContinuityStubItem *item)
 {
@@ -86,10 +116,42 @@ int now_continuity_stub_observe(NowContinuityStubTable *table,
            date alone, and a stub the host already holds is not worth a
            generation. Refreshing them silently keeps the cache the grab
            serves from agreeing with the disk without republishing. */
+        int was_source = table->item.source;
+        unsigned long was_seq = table->item.drag_seq;
+
         table->item = *item;
+        /* THE SOURCE BELONGS TO THE GENERATION. The poll's item is always
+           selection-sourced; copying it wholesale over a generation the
+           drag plane minted would demote that generation's source without
+           moving the generation — and the host, the grant hold and the
+           grab confirmation would then disagree about which witness to
+           ask for a name none of them had republished. */
+        table->item.source = was_source;
+        table->item.drag_seq = was_seq;
         return 0;
     }
     table->item = *item;
+    table->have_item = 1;
+    table->generation++;
+    return 1;
+}
+
+int now_continuity_stub_observe_drag(NowContinuityStubTable *table,
+                                     const NowContinuityStubItem *item,
+                                     unsigned long drag_seq)
+{
+    if (table == NULL || item == NULL || drag_seq == 0) {
+        return 0;
+    }
+    /* Idempotent on the sequence, not on the item: see the header. */
+    if (table->have_item
+        && table->item.source == kNowStubSourceDrag
+        && table->item.drag_seq == drag_seq) {
+        return 0;
+    }
+    table->item = *item;
+    table->item.source = kNowStubSourceDrag;
+    table->item.drag_seq = drag_seq;
     table->have_item = 1;
     table->generation++;
     return 1;

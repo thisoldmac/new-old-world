@@ -14,9 +14,12 @@
 
 #include <Carbon.h>
 #include <MixedMode.h>
+#include <string.h>
 
 #include "continuity_cursor.h"
 #include "mirror_debug.h"
+#include "peek.h"
+#include "continuity_selection.h"
 #include "now_continuity_logic.h"
 #include "nowlog.h"
 
@@ -309,6 +312,454 @@ static void drain_trace(const NowPeekContinuityCell *cell)
             seq = 1;
     }
     gLastTraceSeq = newest;
+}
+
+/* V14 drag observer drain. The resident sees drags from inside the
+   dragging application; this is the only place that evidence can be got
+   off the machine, so every line here is now_log and never
+   now_log_memory - the crash-forensics buffer does not upload, and the
+   last probe that forgot cost a full metal round (2026-08-13).
+
+   TIERING. The lifecycle is ALWAYS ON: install state, a drag beginning,
+   its identity, and its end. Those are four or five lines per gesture
+   and they are the answer to the question this slice exists to ask. The
+   per-sample ring is behind `mirrorlog`, because it is up to sixteen
+   lines per drag and it is diagnosis rather than fact.
+
+   THE NEGATIVE HAS ITS OWN LINE, and this is the point of the whole
+   block. The Mac OS 9 Finder is a PowerPC application; whether its
+   TrackDrag reaches the 68K trap table at all is what slice 1 measures.
+   So the counters line prints whenever the install verdict or the first
+   dispatch arrives, and it prints `dispatches` beside
+   `trackdrag_entries` - "patched, and nothing came through" is a
+   measurement, and it must not read the same as silence. */
+static NowPeekU32 gLastDragInstall = 0xFFFFFFFFu;
+static NowPeekU32 gLastDragSelftest = 0xFFFFFFFFu;
+static NowPeekU32 gLastDragTracks = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerState = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerInstalls = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerCalls = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerRemoves = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerBegin = 0;
+static NowPeekU32 gLastTracks = 0;
+static NowPeekU32 gLastDragDispatches = 0;
+static NowPeekU32 gLastDragBeginSeq = 0;
+static NowPeekU32 gLastDragEndSeq = 0;
+static NowPeekU32 gLastDragSamples = 0;
+
+static const char *drag_item_status(NowPeekU32 status)
+{
+    switch (status) {
+    case (NowPeekU32)kNowPeekDragObsItemHFS:     return "hfs";
+    case (NowPeekU32)kNowPeekDragObsItemNoHFS:   return "no-hfs";
+    case (NowPeekU32)kNowPeekDragObsItemPromise: return "promise";
+    case (NowPeekU32)kNowPeekDragObsItemError:   return "error";
+    default:                                     return "unknown";
+    }
+}
+
+/* Lift one whole V15 identity record out of the cell. `handler_begin_seq`
+   is odd while the resident is writing the record and bumped LAST when it
+   is whole, so an odd read is a torn record and refuses rather than
+   handing back half an identity. Read twice around the copy for the same
+   reason: the resident writes from a foreign context and this is task
+   time, not a critical section. */
+static int read_drag_identity(const NowPeekDragObserve *obs,
+                              NowContinuityDragIdentity *out)
+{
+    NowPeekU32 before = obs->handler_begin_seq;
+    unsigned len;
+
+    if (before == 0 || (before & 1u) != 0)
+        return 0;
+    memset(out, 0, sizeof *out);
+    out->is_hfs = (obs->hitem_status == (NowPeekU32)kNowPeekDragObsItemHFS);
+    out->vref = (short)obs->hfile_vrefnum;
+    out->parid = (long)obs->hfile_parid;
+    len = (unsigned)obs->hfile_name[0];
+    if (len > 63u)
+        return 0;
+    BlockMoveData(obs->hfile_name, out->name, (long)len + 1);
+    if (obs->handler_begin_seq != before)
+        return 0;
+    out->seq = (unsigned long)before;
+    return 1;
+}
+
+int now_continuity_drag_identity(NowContinuityDragIdentity *out)
+{
+    const NowPeekTable *table = now_peek_table();
+
+    if (out == NULL)
+        return 0;
+    if (table == NULL
+            || table->magic != (NowPeekU32)kNowPeekTableMagic
+            || table->length
+                < (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                               + sizeof(NowPeekContinuityCell))
+            || table->continuity_format
+                != (NowPeekU32)NOW_CONTINUITY_FORMAT_CURRENT)
+        return 0;
+    return read_drag_identity(&table->continuity.drag_observe, out);
+}
+
+static void drain_drag_observe(const NowPeekContinuityCell *cell)
+{
+    const NowPeekDragObserve *obs = &cell->drag_observe;
+    NowPeekU32 begin_seq = obs->begin_seq;
+    NowPeekU32 end_seq = obs->end_seq;
+
+    /* The instrument's own state, before any drag. Printed when the
+       verdict changes and when the very first Drag Manager call of the
+       machine's life comes through, so "installed and never called" is
+       something a reader is told rather than something they infer from
+       an absence of drag lines. */
+    /* Printed on any state change AND on any new Drag Manager traffic
+       while the gate is on. The 0 -> nonzero edge alone was not enough:
+       the emulator round of 2026-08-16 could show that the FIRST two
+       dispatches were the control's own and could not show whether any
+       arrived later, which is the same counter being asked two
+       questions. `trackdrag_entries` is included because a drag is what
+       the whole plane is for and its arrival must never be a silence. */
+    if (obs->install_state != gLastDragInstall
+            || obs->selftest_state != gLastDragSelftest
+            || obs->trackdrag_entries != gLastDragTracks
+            || (obs->dispatches != 0 && gLastDragDispatches == 0)
+            || (now_mirror_debug_on()
+                && obs->dispatches != gLastDragDispatches)) {
+        now_log(kLogInfo, "mirror",
+                "drag obs install=%lu passes=%lu disp=%lu track=%lu "
+                "ret=%lu reent=%lu control=%lu/%lu err=%ld",
+                (unsigned long)obs->install_state,
+                (unsigned long)obs->install_passes,
+                (unsigned long)obs->dispatches,
+                (unsigned long)obs->trackdrag_entries,
+                (unsigned long)obs->trackdrag_returns,
+                (unsigned long)obs->reentries,
+                (unsigned long)obs->selftest_state,
+                (unsigned long)obs->selftest_seen,
+                (long)obs->selftest_err);
+        gLastDragInstall = obs->install_state;
+        gLastDragSelftest = obs->selftest_state;
+        gLastDragTracks = obs->trackdrag_entries;
+    }
+    gLastDragDispatches = obs->dispatches;
+
+    if (begin_seq != gLastDragBeginSeq) {
+        /* Odd means the resident is mid-write; leave the baseline alone
+           and read it whole on the next pass. */
+        if ((begin_seq & 1u) == 0) {
+            char name[64];
+            unsigned len = (unsigned)obs->file_name[0];
+            unsigned i;
+
+            if (len > 62u)
+                len = 62u;
+            for (i = 0; i < len; ++i) {
+                unsigned char c = obs->file_name[i + 1u];
+
+                name[i] = (c < 0x20u || c > 0x7Eu) ? '.' : (char)c;
+            }
+            name[len] = '\0';
+            now_log(kLogInfo, "mirror",
+                    "drag begin seq=%lu tk=%lu a5=%08lx ref=%08lx "
+                    "at=%ld,%ld org=%ld,%ld attr=%lx mod=%04lx",
+                    (unsigned long)begin_seq,
+                    (unsigned long)obs->begin_ticks,
+                    (unsigned long)obs->entry_a5,
+                    (unsigned long)obs->drag_ref,
+                    (long)obs->event_where_h, (long)obs->event_where_v,
+                    (long)obs->origin_h, (long)obs->origin_v,
+                    (unsigned long)obs->entry_attributes,
+                    (unsigned long)obs->event_modifiers);
+            /* The identity, from the drag reference itself. No selection
+               was consulted anywhere to produce this line - that is the
+               whole reason the plane exists. `items` is the honest count
+               and `what` describes ITEM ONE only; an over-count is
+               visible as items>1 rather than folded into the name. */
+            now_log(kLogInfo, "mirror",
+                    "drag item seq=%lu items=%lu what=%s err=%ld "
+                    "type=%08lx cr=%08lx vref=%ld par=%lu name=%s",
+                    (unsigned long)begin_seq,
+                    (unsigned long)obs->item_count,
+                    drag_item_status(obs->item_status),
+                    (long)obs->item_err,
+                    (unsigned long)obs->file_type,
+                    (unsigned long)obs->file_creator,
+                    (long)obs->file_vrefnum,
+                    (unsigned long)obs->file_parid, name);
+            gLastDragBeginSeq = begin_seq;
+            gLastDragSamples = 0;
+        }
+    }
+
+    /* The sample ring: what the Drag Manager believes against what we are
+       driving. Debug tier - this is the diagnosis behind the fact. */
+    if (now_mirror_debug_on() && obs->sample_count != gLastDragSamples) {
+        NowPeekU32 total = obs->sample_count;
+        NowPeekU32 fresh;
+        NowPeekU32 n;
+
+        if (total < gLastDragSamples)
+            gLastDragSamples = 0;            /* a new drag reset the ring */
+        fresh = total - gLastDragSamples;
+        if (fresh > (NowPeekU32)kNowPeekDragObsSampleCapacity)
+            fresh = (NowPeekU32)kNowPeekDragObsSampleCapacity;
+        for (n = total - fresh; n != total; ++n) {
+            const NowPeekDragObsSample *s =
+                &obs->samples[n % (NowPeekU32)kNowPeekDragObsSampleCapacity];
+
+            now_log(kLogInfo, "mirror",
+                    "drag look n=%lu sel=%lu tk=%lu dm=%ld,%ld "
+                    "pin=%ld,%ld raw=%ld,%ld lm=%ld,%ld attr=%lx err=%ld",
+                    (unsigned long)(n + 1u), (unsigned long)s->selector,
+                    (unsigned long)s->ticks,
+                    (long)s->dm_mouse_h, (long)s->dm_mouse_v,
+                    (long)s->dm_pinned_h, (long)s->dm_pinned_v,
+                    (long)s->lm_raw_h, (long)s->lm_raw_v,
+                    (long)s->lm_mouse_h, (long)s->lm_mouse_v,
+                    (unsigned long)s->attributes, (long)s->err);
+        }
+        gLastDragSamples = total;
+    }
+
+    /* ---- V15, the registration route -------------------------------
+       Its counters are printed on ANY change, always on. `installs`
+       without `calls` is the registration route failing the same way
+       the trap route did, and that sentence has to be sayable. */
+    if (obs->handler_state != gLastHandlerState
+            || obs->handler_installs != gLastHandlerInstalls
+            || obs->handler_calls != gLastHandlerCalls
+            || obs->handler_removes != gLastHandlerRemoves) {
+        now_log(kLogInfo, "mirror",
+                "drag handler state=%lu err=%ld inst=%lu rem=%lu ctx=%lu "
+                "calls=%lu enter=%lu/%lu in=%lu leave=%lu/%lu reent=%lu",
+                (unsigned long)obs->handler_state,
+                (long)obs->handler_err,
+                (unsigned long)obs->handler_installs,
+                (unsigned long)obs->handler_removes,
+                (unsigned long)obs->handler_contexts,
+                (unsigned long)obs->handler_calls,
+                (unsigned long)obs->handler_enter_handler,
+                (unsigned long)obs->handler_enter_window,
+                (unsigned long)obs->handler_in_window,
+                (unsigned long)obs->handler_leave_window,
+                (unsigned long)obs->handler_leave_handler,
+                (unsigned long)obs->handler_reentries);
+        /* V16. WHICH applications hold a registration, printed with the
+           counters rather than behind a debug gate: on 2026-08-16 the
+           count alone could not distinguish "the route never registers in
+           the Finder" from "the Finder was not pumping", and those are
+           opposite findings. One line per row, because the name is the
+           half that answers it and kLogLineMax is 120. */
+        {
+            NowPeekU32 rows = obs->reg_count;
+            NowPeekU32 n;
+
+            if (rows > (NowPeekU32)kNowPeekDragObsRegCapacity)
+                rows = (NowPeekU32)kNowPeekDragObsRegCapacity;
+            for (n = 0; n < rows; ++n) {
+                const NowPeekDragObsReg *reg = &obs->regs[n];
+                char rname[32];
+                unsigned len = (unsigned)reg->name[0];
+                unsigned i;
+
+                if (len > 30u)
+                    len = 30u;
+                for (i = 0; i < len; ++i) {
+                    unsigned char c = reg->name[i + 1u];
+
+                    rname[i] = (c < 0x20u || c > 0x7Eu) ? '.' : (char)c;
+                }
+                rname[len] = '\0';
+                now_log(kLogInfo, "mirror",
+                        "drag handler reg n=%lu/%lu a5=%08lx tk=%lu "
+                        "err=%ld app=%s",
+                        (unsigned long)(n + 1u),
+                        (unsigned long)obs->reg_count,
+                        (unsigned long)reg->a5,
+                        (unsigned long)reg->ticks,
+                        (long)reg->err, rname);
+            }
+        }
+        /* V17. WHO PUMPS, in two buckets. This is the line that says
+           whether an application reaches the plane at all and whether it
+           reached it while armed - a Finder row with passes>0 and
+           armed=0 is the predicate, passes=0 is scheduling. */
+        {
+            NowPeekU32 rows = obs->pump_count;
+            NowPeekU32 n;
+
+            if (rows > (NowPeekU32)kNowPeekDragObsPumpCapacity)
+                rows = (NowPeekU32)kNowPeekDragObsPumpCapacity;
+            for (n = 0; n < rows; ++n) {
+                const NowPeekDragObsPump *pm = &obs->pumps[n];
+                char pname[32];
+                unsigned len = (unsigned)pm->name[0];
+                unsigned i;
+
+                if (len > 30u)
+                    len = 30u;
+                for (i = 0; i < len; ++i) {
+                    unsigned char c = pm->name[i + 1u];
+
+                    pname[i] = (c < 0x20u || c > 0x7Eu) ? '.' : (char)c;
+                }
+                pname[len] = '\0';
+                now_log(kLogInfo, "mirror",
+                        "drag handler pump n=%lu/%lu a5=%08lx passes=%lu "
+                        "armed=%lu app=%s",
+                        (unsigned long)(n + 1u),
+                        (unsigned long)obs->pump_count,
+                        (unsigned long)pm->a5,
+                        (unsigned long)pm->passes,
+                        (unsigned long)pm->armed_passes, pname);
+            }
+        }
+        gLastHandlerState = obs->handler_state;
+        gLastHandlerInstalls = obs->handler_installs;
+        gLastHandlerCalls = obs->handler_calls;
+        gLastHandlerRemoves = obs->handler_removes;
+    }
+
+    if (obs->handler_begin_seq != gLastHandlerBegin
+            && (obs->handler_begin_seq & 1u) == 0) {
+        char hname[64];
+        unsigned len = (unsigned)obs->hfile_name[0];
+        unsigned i;
+
+        if (len > 62u)
+            len = 62u;
+        for (i = 0; i < len; ++i) {
+            unsigned char c = obs->hfile_name[i + 1u];
+
+            hname[i] = (c < 0x20u || c > 0x7Eu) ? '.' : (char)c;
+        }
+        hname[len] = '\0';
+        /* THE IDENTITY, from a live DragRef the Drag Manager handed us,
+           with no selection consulted anywhere. */
+        /* TWO lines because kLogLineMax is 120 and the NAME is the half
+           that matters - the first emulator round of this route printed
+           a complete, correct identity and cut it off two characters
+           into the creator code. The click probe already splits for
+           exactly this reason. */
+        now_log(kLogInfo, "mirror",
+                "drag handler item seq=%lu a5=%08lx ref=%08lx tk=%lu "
+                "items=%lu what=%s err=%ld",
+                (unsigned long)obs->handler_begin_seq,
+                (unsigned long)obs->handler_a5,
+                (unsigned long)obs->handler_drag_ref,
+                (unsigned long)obs->handler_first_ticks,
+                (unsigned long)obs->hitem_count,
+                drag_item_status(obs->hitem_status),
+                (long)obs->hitem_err);
+        now_log(kLogInfo, "mirror",
+                "drag handler file seq=%lu type=%08lx cr=%08lx "
+                "vref=%ld par=%lu name=%s",
+                (unsigned long)obs->handler_begin_seq,
+                (unsigned long)obs->hfile_type,
+                (unsigned long)obs->hfile_creator,
+                (long)obs->hfile_vrefnum,
+                (unsigned long)obs->hfile_parid, hname);
+        /* FROM DIAGNOSTIC TO PRODUCT STATE. Slice 1B stopped at the two
+           lines above; this is the same record becoming a generation the
+           host may bind. Only an HFS first item qualifies - a text drag
+           or a promise names no file this side could serve, and the
+           publish must not invent one.
+
+           THE LATENCY IS MEASURED HERE RATHER THAN ASSERTED. `tk` is the
+           resident's TickCount at EnterHandler and this is task time in
+           the application, so the difference is exactly the interval the
+           whole route depends on fitting inside a gesture: the person is
+           still dragging toward the edge, and the cross is seconds
+           away. */
+        if (obs->hitem_status == (NowPeekU32)kNowPeekDragObsItemHFS) {
+            NowContinuityDragIdentity ident;
+
+            if (read_drag_identity(obs, &ident)
+                    && now_continuity_selection_note_drag(&ident)) {
+                now_log(kLogInfo, "mirror",
+                        "drag bind seq=%lu latency=%lu ticks name=%s",
+                        ident.seq,
+                        (unsigned long)((NowPeekU32)TickCount()
+                                        - obs->handler_first_ticks),
+                        hname);
+            }
+        }
+        gLastHandlerBegin = obs->handler_begin_seq;
+        gLastTracks = 0;
+    }
+
+    /* THE TARGETING STREAM. What window the Drag Manager believes the
+       drag is over, beside the point this resident is driving, at the
+       instant it believed it. This is slice 3's question and it is
+       always on rather than debug tier - it is the whole reason the
+       route was tried. */
+    if (obs->track_count != gLastTracks) {
+        NowPeekU32 total = obs->track_count;
+        NowPeekU32 fresh;
+        NowPeekU32 n;
+
+        if (total < gLastTracks)
+            gLastTracks = 0;
+        fresh = total - gLastTracks;
+        if (fresh > (NowPeekU32)kNowPeekDragObsTrackCapacity)
+            fresh = (NowPeekU32)kNowPeekDragObsTrackCapacity;
+        for (n = total - fresh; n != total; ++n) {
+            const NowPeekDragObsTrack *t =
+                &obs->tracks[n % (NowPeekU32)kNowPeekDragObsTrackCapacity];
+
+            now_log(kLogInfo, "mirror",
+                    "drag track n=%lu msg=%lu win=%08lx tk=%lu "
+                    "dm=%ld,%ld pin=%ld,%ld raw=%ld,%ld lm=%ld,%ld "
+                    "attr=%lx err=%ld",
+                    (unsigned long)(n + 1u), (unsigned long)t->message,
+                    (unsigned long)t->window, (unsigned long)t->ticks,
+                    (long)t->dm_mouse_h, (long)t->dm_mouse_v,
+                    (long)t->dm_pinned_h, (long)t->dm_pinned_v,
+                    (long)t->lm_raw_h, (long)t->lm_raw_v,
+                    (long)t->lm_mouse_h, (long)t->lm_mouse_v,
+                    (unsigned long)t->attributes, (long)t->err);
+        }
+        gLastTracks = total;
+    }
+
+    if (end_seq != gLastDragEndSeq && (end_seq & 1u) == 0) {
+        now_log(kLogInfo, "mirror",
+                "drag end seq=%lu err=%ld tk=%lu elapsed=%lu "
+                "final=%ld,%ld looks=%lu dropped=%lu",
+                (unsigned long)end_seq, (long)obs->result,
+                (unsigned long)obs->end_ticks,
+                (unsigned long)(obs->end_ticks - obs->begin_ticks),
+                (long)obs->final_h, (long)obs->final_v,
+                (unsigned long)obs->sample_count,
+                (unsigned long)obs->sample_dropped);
+        gLastDragEndSeq = end_seq;
+    }
+}
+
+/* WHERE THIS IS DRAINED FROM, and why it is not the Continuity service.
+   `now_continuity_service_invoke` only runs while an EPOCH runs, and a
+   drag observed by the resident has nothing to do with whether a host is
+   driving: the act plane arms the observer too, and the first emulator
+   round drained nothing at all for exactly this reason. So the entry
+   point is the Mirror's slow idle observer in main.c - which exists to
+   read counters the resident bumped inside foreign processes and write
+   only what changed, at task time rather than in a hook, which is this
+   drain's own description word for word. */
+void now_continuity_drag_observe_idle(void)
+{
+    const NowPeekTable *table = now_peek_table();
+
+    if (table == NULL
+            || table->magic != (NowPeekU32)kNowPeekTableMagic
+            || table->length
+                < (NowPeekU32)(offsetof(NowPeekTable, continuity)
+                               + sizeof(NowPeekContinuityCell))
+            || table->continuity_format
+                != (NowPeekU32)NOW_CONTINUITY_FORMAT_CURRENT)
+        return;
+    drain_drag_observe(&table->continuity);
 }
 
 /* V11 deep click probe drain. Uploadable evidence, so now_log and never

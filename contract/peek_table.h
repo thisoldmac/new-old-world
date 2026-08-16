@@ -964,6 +964,39 @@ enum {
        ADB driver rewrites it on real transitions and the co-write
        re-asserts per pass while an epoch runs. */
     kNowPeekContinuityFormatV13 = 13,
+    /* V14 appends the DRAG OBSERVER: a foreign-context presence at the
+       Drag Manager's own dispatch trap, published while a Continuity pass
+       is armed. It records what a drag IS (item count, the first item's
+       HFS flavor identity) and what the Drag Manager BELIEVES about it
+       (its own reported mouse, its attributes, its modifiers) beside the
+       low-memory point the resident is actually driving.
+
+       Observe-only, and the boundary matters: every field here is
+       written from a patch that chains through unconditionally, so
+       nothing in V14 can change what a drag does. It exists because the
+       guest application receives ZERO task time inside a Finder drag
+       loop (21 s probe, 2026-08-15) - no poll, AppleEvent or task-time
+       anything can see a drag begin, so the only instrument that can is
+       one running in the dragging application's own context. */
+    kNowPeekContinuityFormatV14 = 14,
+    /* V15 appends what a REGISTERED DRAG HANDLER sees, and it exists
+       because V14 measured that the other route does not. A 68K patch on
+       `_DragDispatch` is provably live and a PowerPC Finder's drag never
+       touches it (2026-08-16: install=1 control=1/2 disp=2 track=0 across
+       a completed Finder file drag). So this block stops patching and
+       ASKS: `InstallTrackingHandler` is a public, per-application
+       registration, and the act plane already runs code in the Finder's
+       own context on every armed pass, which is the one place the
+       registration can be made.
+
+       What that buys, if the Drag Manager honours it: `EnterWindow` /
+       `InWindow` / `LeaveWindow` is a continuous statement of WHICH
+       WINDOW targeting believes the drag is over - the exact quantity
+       `feat/hg-drag-dragmgr` could not see - and the handler holds a live
+       DragRef, so the dragged file's identity is readable at begin with
+       no selection involved. Both halves of the plan through one public
+       API and no code patching at all. */
+    kNowPeekContinuityFormatV15 = 15,
     kNowPeekContinuityStateInactive = 0,
     kNowPeekContinuityStateArmed = 1,
     kNowPeekContinuityStateActive = 2,
@@ -976,7 +1009,7 @@ enum {
    contain a new application and an older resident while every artifact was
    individually well formed.  The update manifests also publish this value,
    so a stack assembler can reject that pair before it reaches a Macintosh. */
-#define NOW_CONTINUITY_FORMAT_CURRENT 13u
+#define NOW_CONTINUITY_FORMAT_CURRENT 15u
 
 enum {
     kNowPeekContinuityExitNone = 0,
@@ -1245,6 +1278,353 @@ typedef struct {
     NowPeekU32 cell_state;        /* continuity state at capture: separates phases */
 } NowPeekContinuityClickProbe;
 
+/* ======================================================================
+   V14 - THE DRAG OBSERVER
+   ======================================================================
+
+   WHAT IT IS FOR, IN ONE SENTENCE: so that the host can bind THE DRAG
+   rather than a cached selection, and so that slice 3 finally has data
+   on what Drag Manager targeting actually consults.
+
+   THE TRAP IS ONE TRAP. On 68K the whole Drag Manager is selectors on
+   `_DragDispatch` (0xABED) - `TrackDrag` is `moveq #13,%d0` in front of
+   it (Universal Interfaces 3.4, `TWOWORDINLINE(0x700D, 0xABED)`), NOT a
+   trap of its own. So a presence at TrackDrag is a presence at every
+   Drag Manager call, which is why `dispatches` is counted beside
+   `trackdrag_entries`: they answer two different questions and the
+   difference between them is the evidence.
+
+   THE NEGATIVE THIS BLOCK MUST BE ABLE TO REPORT HONESTLY. The Mac OS 9
+   Finder is a PowerPC application and the Drag Manager is native PPC
+   code; whether a PPC caller's TrackDrag reaches the 68K trap table at
+   all is NOT known here and is exactly what this slice measures. The
+   act plane's own history is the reason the fields are shaped this way:
+   a resident once reported `active` with full capabilities while every
+   act refused, and nothing named the cause. So this block separates,
+   with its own counter for each:
+
+     - `install_state`  - was the trap even patchable, this boot
+     - `dispatches`     - did ANY Drag Manager call come through
+     - `trackdrag_entries` - did a DRAG come through
+     - `begin_seq`      - did we manage to read one
+
+   A reader that finds `install_state == Installed` and `dispatches == 0`
+   has learned something specific and true: the patch is in the table and
+   the dragging application is not calling through it. That is a
+   measurement, not a silence.
+
+   INTERRUPT AND MEMORY RULES. Everything here is written from task time,
+   inside the dragging application's own context, from a trap patch whose
+   prologue allocates nothing and whose Drag Manager calls are re-entrancy
+   guarded (our own nested dispatches chain straight through and are not
+   counted). `file_name` is a fixed-width Pascal string and never a
+   pointer into a foreign heap, for the same reason `guest_name` is one. */
+
+enum { kNowPeekDragObsSampleCapacity = 16 };
+
+/* Minimum ticks between samples. A drag generates Drag Manager traffic
+   at tracking-loop rates; the ring is small on purpose (it is evidence,
+   not a recording) and `sample_dropped` says what it discarded. */
+enum { kNowPeekDragObsSampleGapTicks = 4 };
+
+/* `install_state`. Values are the contract; append, never renumber. */
+enum {
+    kNowPeekDragObsInstallUntried = 0,  /* no armed pass has looked yet */
+    kNowPeekDragObsInstallDone    = 1,  /* our shim is in the dispatch table */
+    /* `NGetTrapAddress` answered with the Unimplemented handler, or with
+       nothing. On a machine with no Drag Manager this is the correct and
+       final answer, and it is NOT a defect - it is the one case where an
+       absent capability must not read as a broken one. */
+    kNowPeekDragObsInstallNoTrap  = 2
+};
+
+/* `selftest_state`. What the resident's own 68K Drag Manager call did,
+   which is the only thing that gives `dispatches == 0` a meaning. */
+enum {
+    kNowPeekDragObsSelftestUntried = 0,
+    /* The control ran AND the shim saw it. So the shim is in the 68K
+       dispatch path, and a zero `dispatches` beside this means the
+       drags in this machine are not arriving through that path. */
+    kNowPeekDragObsSelftestSeen    = 1,
+    /* The control ran and the shim did NOT see it. The patch is in the
+       trap table by its own account and calls are not reaching it -
+       which is a defect in this plane, and must never be read as a
+       fact about anybody's Finder. */
+    kNowPeekDragObsSelftestBlind   = 2,
+    /* NewDrag refused; `selftest_err` says with what. Nothing is known
+       either way and this block says so rather than implying. */
+    kNowPeekDragObsSelftestRefused = 3
+};
+
+/* `item_status` - what the first dragged item turned out to be. The
+   count is published separately and is never inferred from this. */
+enum {
+    kNowPeekDragObsItemUnknown = 0,   /* nothing has been read yet */
+    /* A real `flavorTypeHFS` was read and `file_*` below are its FSSpec.
+       This is the identity the host may bind: it comes from the drag
+       reference itself, with no selection involved anywhere. */
+    kNowPeekDragObsItemHFS     = 1,
+    /* The item exists and carries no HFS flavor (a text drag, a clipping,
+       an application's own private flavor). Recorded as itself rather
+       than guessed at - `file_*` stay zero. */
+    kNowPeekDragObsItemNoHFS   = 2,
+    /* `flavorTypePromiseHFS` only: the sender has a file to give but has
+       not made it yet. Not the same as having an FSSpec and must never
+       be reported as one. */
+    kNowPeekDragObsItemPromise = 3,
+    /* A Drag Manager call refused; `item_err` carries the OSErr. */
+    kNowPeekDragObsItemError   = 4
+};
+
+/* One look at a live drag, taken from inside the dragging application.
+   The point of every pair below is the DIFFERENCE between them: what the
+   Drag Manager reports (`dm_*`) against the low-memory point the
+   resident is driving (`lm_*`). `feat/hg-drag-dragmgr` measured window
+   targeting believing `inwin=1` while GetMouse read the true point, with
+   31k enter/leave oscillations, and could not see which side of the
+   Drag Manager the disagreement began on. This is that instrument. */
+typedef struct {
+    NowPeekU32 ticks;             /* TickCount at the sample */
+    NowPeekU32 selector;          /* the _DragDispatch selector we rode in on */
+    NowPeekI32 dm_mouse_h;        /* GetDragMouse: `mouse` */
+    NowPeekI32 dm_mouse_v;
+    NowPeekI32 dm_pinned_h;       /* GetDragMouse: `globalPinnedMouse` */
+    NowPeekI32 dm_pinned_v;
+    NowPeekI32 lm_raw_h;          /* low-memory RawMouse: what we drive */
+    NowPeekI32 lm_raw_v;
+    NowPeekI32 lm_mouse_h;        /* low-memory MouseLocation: what GetMouse reads */
+    NowPeekI32 lm_mouse_v;
+    NowPeekU32 attributes;        /* GetDragAttributes, zero-extended */
+    NowPeekU32 modifiers;         /* GetDragModifiers `modifiers`, zero-extended */
+    NowPeekI32 err;               /* first nonzero OSErr of this sample, 0 = clean */
+    NowPeekU32 reserved0;
+} NowPeekDragObsSample;
+
+enum { kNowPeekDragObsTrackCapacity = 16 };
+
+/* How many A5 worlds the plane will hold a registration in at once. A
+   registration is per-APPLICATION, so the count is the count of
+   applications that have pumped while armed - small, bounded, and
+   bounded on purpose: this table is what un-registration is driven from,
+   and a registration we have forgotten is one we can never remove. */
+enum { kNowPeekDragObsContextCapacity = 8 };
+
+/* How many registrations are described by name. The same 8 as the context
+   capacity on purpose: a registry that could describe fewer contexts than
+   may be held would be a table whose silence means two things. */
+enum { kNowPeekDragObsRegCapacity = 8 };
+
+/* How many applications are counted by name. */
+enum { kNowPeekDragObsPumpCapacity = 8 };
+
+/* One application's traffic through the shim. 44 bytes flat, like the
+   registration row, so neither compiler has padding to disagree about. */
+typedef struct {
+    NowPeekU32 a5;
+    NowPeekU32 passes;            /* every pass, ungated */
+    NowPeekU32 armed_passes;      /* those with a plane armed */
+    unsigned char name[32];       /* CurApName, Pascal */
+} NowPeekDragObsPump;
+
+/* One registration, named. `name` is CurApName as the pumping process had
+   it - Pascal, and 32 bytes so this struct is a flat 40 with no padding
+   for either compiler to disagree about (the three-compiler rule). */
+typedef struct {
+    NowPeekU32 a5;                /* the A5 world that attempted it */
+    NowPeekU32 ticks;             /* when, in the guest's own TickCount */
+    /* THE OUTCOME, PER ATTEMPT, and this field is the whole reason the
+       row exists rather than a counter. `handler_state` and `handler_err`
+       are single globals: a registration REFUSED in one application and
+       then taken in another leaves the second one's success in both, so a
+       per-context failure is invisible by construction. That is not a
+       hypothetical - it is exactly the shape that would make the Finder
+       look like it never reached this code when it did. */
+    NowPeekI32 err;               /* InstallTrackingHandler's OSErr; 0 = took */
+    unsigned char name[32];       /* CurApName, Pascal */
+} NowPeekDragObsReg;
+
+/* `handler_state`. Append, never renumber. */
+enum {
+    kNowPeekDragObsHandlerUntried   = 0,
+    /* At least one InstallTrackingHandler returned noErr. Says the Drag
+       Manager ACCEPTED the registration; says nothing at all about
+       whether it will ever call it, which is the separate measurement
+       `handler_calls` exists for. */
+    kNowPeekDragObsHandlerInstalled = 1,
+    /* It refused; `handler_err` says with what. */
+    kNowPeekDragObsHandlerRefused   = 2,
+    /* Every context slot is full. Recorded rather than silently dropping
+       a registration, because a dropped one is also an un-removable one. */
+    kNowPeekDragObsHandlerNoRoom    = 3
+};
+
+/* One call into our registered tracking handler, from inside the
+   dragging application, at the Drag Manager's own pleasure.
+
+   THE WHOLE POINT IS THE PAIR. `window` is the window the Drag Manager
+   NAMES as the drag's target; `dm_*` is where the Drag Manager thinks
+   the mouse is; `lm_*` is the low-memory point this resident is actually
+   driving. `feat/hg-drag-dragmgr` measured targeting believing `inwin=1`
+   while GetMouse read the true point, with 31k enter/leave oscillations,
+   and had no way to see which of those three quantities disagreed with
+   which. Every row here states all three at one instant. */
+typedef struct {
+    NowPeekU32 ticks;
+    NowPeekU32 message;           /* dragTrackingEnterWindow, InWindow, ... */
+    NowPeekU32 window;            /* the WindowRef the Drag Manager named */
+    NowPeekU32 a5;                /* whose context the handler ran in */
+    NowPeekI32 dm_mouse_h;        /* GetDragMouse: `mouse` */
+    NowPeekI32 dm_mouse_v;
+    NowPeekI32 dm_pinned_h;       /* GetDragMouse: `globalPinnedMouse` */
+    NowPeekI32 dm_pinned_v;
+    NowPeekI32 lm_raw_h;          /* low-memory RawMouse: what we drive */
+    NowPeekI32 lm_raw_v;
+    NowPeekI32 lm_mouse_h;        /* low-memory MouseLocation */
+    NowPeekI32 lm_mouse_v;
+    NowPeekU32 attributes;        /* GetDragAttributes, zero-extended */
+    NowPeekI32 err;               /* first nonzero OSErr of this row */
+} NowPeekDragObsTrack;
+
+typedef struct {
+    /* -- the instrument's own honesty, before any drag ---------------- */
+    NowPeekU32 install_state;     /* kNowPeekDragObsInstall* */
+    NowPeekU32 install_passes;    /* armed passes that ran the install check */
+    NowPeekU32 dispatches;        /* every _DragDispatch entry the shim saw */
+    NowPeekU32 trackdrag_entries; /* of those, selector 13 */
+    NowPeekU32 trackdrag_returns; /* of those, the ones we saw return */
+    NowPeekU32 reentries;         /* nested dispatches declined by the guard */
+    /* -- the drag ------------------------------------------------------ */
+    /* Odd while a begin is being written, even when committed; bumped
+       LAST, so a reader that finds it even has a whole record. */
+    NowPeekU32 begin_seq;
+    NowPeekU32 end_seq;
+    NowPeekU32 begin_ticks;
+    NowPeekU32 end_ticks;
+    NowPeekU32 entry_a5;          /* CurrentA5 at entry: WHOSE drag this is */
+    NowPeekU32 drag_ref;          /* the DragRef, opaque, for correlation only */
+    NowPeekI32 result;            /* TrackDrag's own OSErr return */
+    /* What the Drag Manager was HANDED: the EventRecord the caller
+       passed to TrackDrag. `event_where_*` is the position targeting
+       starts from, and is the first place a driven pointer can be lost. */
+    NowPeekI32 event_where_h;
+    NowPeekI32 event_where_v;
+    NowPeekU32 event_when;
+    NowPeekU32 event_modifiers;
+    NowPeekI32 origin_h;          /* GetDragOrigin at entry */
+    NowPeekI32 origin_v;
+    NowPeekU32 entry_attributes;  /* GetDragAttributes at entry */
+    NowPeekI32 final_h;           /* low-memory RawMouse at TrackDrag's return */
+    NowPeekI32 final_v;
+    /* -- what is being dragged ---------------------------------------- */
+    NowPeekU32 item_count;        /* CountDragItems; > 1 is an over-count */
+    NowPeekU32 item_status;       /* kNowPeekDragObsItem*, FIRST ITEM ONLY */
+    NowPeekI32 item_err;
+    NowPeekU32 file_type;         /* HFSFlavor.fileType */
+    NowPeekU32 file_creator;      /* HFSFlavor.fileCreator */
+    NowPeekI32 file_vrefnum;      /* FSSpec.vRefNum, sign-extended */
+    NowPeekU32 file_parid;        /* FSSpec.parID */
+    /* -- the control, and it is the point of the block ---------------- */
+    /* `dispatches == 0` has two meanings and they are opposites: the
+       shim is blind, or nothing called. The first emulator round hit
+       exactly that wall - `install=1 disp=0` after a harness-driven
+       Finder drag, with no way to tell a PowerPC Finder bypassing the
+       68K trap table from a Finder that never started a drag at all.
+       An instrument that reports absence and defect in the same words
+       is the failure AGENTS.md names, so the plane carries its own
+       control: ONE 68K NewDrag/DisposeDrag pair, made by the resident,
+       once per boot, on the first armed pass, OUTSIDE the re-entrancy
+       guard - so it must come back through the shim if the shim is in
+       the path at all.
+       A probe's control must be code you own. This is that code. */
+    NowPeekU32 selftest_state;    /* kNowPeekDragObsSelftest* */
+    NowPeekI32 selftest_err;      /* NewDrag's OSErr, when it refused */
+    NowPeekU32 selftest_seen;     /* dispatches the control itself caused */
+    /* -- the sample ring ---------------------------------------------- */
+    NowPeekU32 sample_count;      /* TOTAL ever taken; the ring index derives */
+    NowPeekU32 sample_dropped;    /* entries the rolling window discarded */
+    unsigned char file_name[64];  /* FSSpec.name, Pascal, fixed width */
+    NowPeekDragObsSample samples[kNowPeekDragObsSampleCapacity];
+    /* ---- V15: the registered handler -------------------------------
+       Everything above this line is the TRAP route and is retained
+       because its zero is a measurement. Everything below is the
+       REGISTRATION route, and the two are deliberately separate
+       counters: they answer the same question through two mechanisms
+       and collapsing them would destroy the only comparison that
+       matters. */
+    NowPeekU32 handler_state;     /* kNowPeekDragObsHandler* */
+    NowPeekI32 handler_err;       /* InstallTrackingHandler's OSErr */
+    NowPeekU32 handler_installs;  /* registrations the Drag Manager took */
+    NowPeekU32 handler_removes;   /* and gave back, per the pairing rule */
+    NowPeekU32 handler_contexts;  /* distinct A5 worlds currently holding one */
+    /* THE RESULT. Every entry into our handler, whatever the message.
+       Zero here beside a nonzero `handler_installs` is the registration
+       route failing exactly the way the trap route did, and it must be
+       possible to say that in those words. */
+    NowPeekU32 handler_calls;
+    NowPeekU32 handler_enter_handler;
+    NowPeekU32 handler_enter_window;
+    NowPeekU32 handler_in_window;
+    NowPeekU32 handler_leave_window;
+    NowPeekU32 handler_leave_handler;
+    NowPeekU32 handler_reentries;
+    /* Odd while an EnterHandler record is being written, even and bumped
+       LAST when it is whole. */
+    NowPeekU32 handler_begin_seq;
+    NowPeekU32 handler_a5;        /* whose drag it was */
+    NowPeekU32 handler_drag_ref;
+    NowPeekU32 handler_first_ticks;
+    NowPeekU32 track_count;       /* TOTAL rows ever; the ring index derives */
+    NowPeekU32 track_dropped;
+    /* The identity, read from the handler's own live DragRef at
+       EnterHandler. Kept separate from the trap route's `item_*` above
+       for the same reason the counters are: two mechanisms, two
+       readings, and a disagreement between them would be a finding. */
+    NowPeekU32 hitem_count;
+    NowPeekU32 hitem_status;      /* kNowPeekDragObsItem*, FIRST ITEM ONLY */
+    NowPeekI32 hitem_err;
+    NowPeekU32 hfile_type;
+    NowPeekU32 hfile_creator;
+    NowPeekI32 hfile_vrefnum;
+    NowPeekU32 hfile_parid;
+    unsigned char hfile_name[64];
+    NowPeekDragObsTrack tracks[kNowPeekDragObsTrackCapacity];
+    /* ---- V16: WHICH applications registered, not merely how many ----
+       `handler_contexts` is a COUNT, and on 2026-08-16 a count could not
+       answer the only question that mattered. A Continuity-only arm
+       reached 1 while the act plane's passes reached 5 on the same
+       resident and the same machine, and nothing anywhere could say
+       whether that 1 was the Finder - which is the difference between
+       "the route does not register in the Finder" and "the Finder was
+       simply not pumping". Two opposite findings, one number.
+
+       Registration happens at the jGNE boundary in whatever process is
+       pumping, and track_install is called for every one of them, so the
+       set recorded here IS the set of applications that pumped while
+       armed (up to capacity). It is a ledger rather than a ring: the
+       first few are the interesting ones and an overflow is counted. */
+    /* ATTEMPTS, not successes. A row is written whether the Drag Manager
+       took the registration or refused it, because "the Finder never got
+       here" and "the Finder got here and was refused" are opposite
+       findings and the counters above cannot separate them. */
+    NowPeekU32 reg_count;         /* attempts ever made, uncapped */
+    NowPeekDragObsReg regs[kNowPeekDragObsRegCapacity];
+    /* ---- V17: WHO PUMPS, ungated, in two buckets --------------------
+       The attempt rows above are written only on an ARMED pass, so their
+       silence for an application has two readings: it never pumped, or it
+       pumped and the arm predicate was false in its context. Those are a
+       scheduling problem and a code problem respectively, and nothing
+       above can separate them.
+
+       So this table is written BEFORE the arm gate, on every pass, and
+       carries both totals. `passes` says the application reaches this
+       shim at all; `armed_passes` says it reached it while a plane was
+       armed. Finder rows with passes > 0 and armed_passes == 0 is the
+       predicate; passes == 0 is scheduling, and then the answer is not in
+       this plane at all. */
+    NowPeekU32 pump_count;        /* distinct applications seen, uncapped */
+    NowPeekDragObsPump pumps[kNowPeekDragObsPumpCapacity];
+} NowPeekDragObserve;
+
 /* V10's non-overwriting button timing chain. All times are guest TickCount
    values: the host logs its own monotonic source/send/ack chain separately,
    and neither side pretends the clocks share an epoch. `write_seq` is odd
@@ -1483,6 +1863,10 @@ typedef struct {
        Zeroed at every epoch boundary the keyboard word already observes. */
     NowPeekU32 host_modifiers;
     NowPeekU32 host_modifiers_seq;
+    /* V14 drag observer. Written only from the _DragDispatch shim, in the
+       dragging application's own context, and read by nothing in the
+       resident: it is evidence, and no decision anywhere consults it. */
+    NowPeekDragObserve drag_observe;
 } NowPeekContinuityCell;
 
 /* One process's anchors, captured by the jGNE filter while that
@@ -2408,7 +2792,31 @@ _Static_assert(sizeof(NowPeekContinuityEventTiming) == 56,
                "continuity event timing ABI drift");
 _Static_assert(sizeof(NowPeekContinuityClickProbe) == 84,
                "continuity click probe ABI drift");
-_Static_assert(sizeof(NowPeekContinuityCell) == 4452,
+_Static_assert(sizeof(NowPeekDragObsSample) == 56,
+               "V14 drag observer sample ABI drift");
+_Static_assert(sizeof(NowPeekDragObsTrack) == 56,
+               "V15 tracking row ABI drift");
+_Static_assert(offsetof(NowPeekDragObserve, handler_state) == 1096,
+               "V15 handler block offset");
+_Static_assert(offsetof(NowPeekDragObserve, hfile_name) == 1196,
+               "V15 handler name offset");
+_Static_assert(offsetof(NowPeekDragObserve, tracks) == 1260,
+               "V15 tracking ring offset");
+_Static_assert(offsetof(NowPeekDragObserve, reg_count) == 2156,
+               "V16 registry is APPENDED: the V14+V15 halves must be unmoved");
+_Static_assert(sizeof(NowPeekDragObsReg) == 44,
+               "V16 registration row layout (three-compiler rule)");
+_Static_assert(sizeof(NowPeekDragObsPump) == 44,
+               "V17 pump row layout (three-compiler rule)");
+_Static_assert(sizeof(NowPeekDragObserve) == 2868,
+               "drag observer block ABI drift (V14 trap + V15 handler + V16 registry)");
+_Static_assert(offsetof(NowPeekDragObserve, file_name) == 136,
+               "V14 drag observer name offset");
+_Static_assert(offsetof(NowPeekDragObserve, samples) == 200,
+               "V14 drag observer sample ring offset");
+_Static_assert(sizeof(((NowPeekDragObserve *)0)->file_name) == 64,
+               "V14 drag observer name width");
+_Static_assert(sizeof(NowPeekContinuityCell) == 7320,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");
@@ -2466,6 +2874,8 @@ _Static_assert(offsetof(NowPeekContinuityCell, button_manager_busy) == 4440,
                "continuity V12 manager-busy handshake offset");
 _Static_assert(offsetof(NowPeekContinuityCell, host_modifiers) == 4444,
                "continuity V13 host modifier word offset");
+_Static_assert(offsetof(NowPeekContinuityCell, drag_observe) == 4452,
+               "continuity V14 drag observer offset");
 _Static_assert(offsetof(NowPeekTable, continuity_format)
                    == offsetof(NowPeekTable, gne_passes) + 4,
                "continuity appends behind the pass counter");

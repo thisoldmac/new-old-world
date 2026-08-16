@@ -56,6 +56,51 @@ final class GuestWireFixtureTests: XCTestCase {
                        "late confirmation keeps its earlier timeout")
     }
 
+    /// service_continuity_selection() in now-guest-ppc/src/core/wire.c,
+    /// both sources, exactly as the three templates write them.
+    ///
+    /// The field is on ALL THREE — empty, folder and file — and that is
+    /// what this fixture is really for: a `source` sent only when it is
+    /// `drag` would be indistinguishable, from over here, from a guest too
+    /// old to have the field, and the host's default would then quietly
+    /// call a drag a selection.
+    func testContinuitySelectionSourceAsTheGuestWritesIt() throws {
+        let dragged = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":4,"source":"drag","item":{"name":"main.c",\
+        "volumeRef":-1,"dirID":2,"fileType":"TEXT","creator":"ttxt",\
+        "dataSize":5,"resourceSize":0,"modifiedAt":3400000000,\
+        "isFolder":false}}
+        """
+        guard case .continuitySelection(let drag) = try decode(dragged) else {
+            return XCTFail("not a continuity selection")
+        }
+        XCTAssertEqual(drag.resolvedSource, .drag)
+        XCTAssertEqual(drag.item?.name, "main.c")
+
+        let polled = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":3,"source":"selection","item":{"name":"hello.txt",\
+        "volumeRef":-1,"dirID":2,"fileType":"TEXT","creator":"ttxt",\
+        "dataSize":5,"resourceSize":0,"modifiedAt":3400000000,\
+        "isFolder":false}}
+        """
+        guard case .continuitySelection(let poll) = try decode(polled) else {
+            return XCTFail("not a continuity selection")
+        }
+        XCTAssertEqual(poll.resolvedSource, .selection)
+
+        let cleared = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":5,"source":"selection"}
+        """
+        guard case .continuitySelection(let empty) = try decode(cleared) else {
+            return XCTFail("not a continuity selection")
+        }
+        XCTAssertNil(empty.item)
+        XCTAssertEqual(empty.resolvedSource, .selection)
+    }
+
     /// send_scene_same() in now-guest-ppc/src/core/wire.c, built across
     /// several snprintf calls because its phases block loops over the
     /// phase table. This is the answer a guest gives when the machine did

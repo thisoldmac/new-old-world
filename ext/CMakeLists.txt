@@ -109,6 +109,13 @@ add_executable(NowExt
     src/now_ext_continuity.c
     src/now_ext_continuity_keyboard.c
     src/now_ext_continuity_tm.S
+    # V14, the drag observer. Its own translation unit because it is the
+    # one file here that patches the Drag Manager, and because its shim
+    # chains UNCONDITIONALLY - a reviewer should be able to read the whole
+    # of what can touch a drag in one place and see that nothing in it
+    # decides anything.
+    src/now_ext_dragobs.c
+    src/now_ext_dragobs_patch.S
     src/now_content_qdext.S
     ../now-guest-shared/src/now_act_guard.c
     # P7's decisions, where the host cc can compile them and

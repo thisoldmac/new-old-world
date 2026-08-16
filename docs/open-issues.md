@@ -568,6 +568,583 @@ Worth carrying because two of them could never have gone green:
   not fail, it HUNG — watched sitting past ten minutes while the guest
   answered `tools/askguest.py` on the same port seconds later. It throws
   now.
+
+## THE RITUAL IS DEAD: the host binds the drag, not a cache of the selection (2026-08-16, `feat/resident-drag-bind`)
+
+Slice 2, on the route slice 1B proved. The V15 handler record stops being
+a diagnostic and becomes product state: at drag begin the resident writes
+the identity from a live DragRef, the application publishes it at its next
+task time as a `continuity.selection` with `source=drag`, and the host's
+bind prefers it over everything it had cached.
+
+### The contract shape, and why it is not a sibling message
+
+`continuity.selection` grew a `source` field rather than growing a
+sibling. The item shape, the generation space and the `continuity.grab`
+that redeems a generation are identical whichever gesture produced the
+identity — and a sibling message would have created a second generation
+space, which makes a grab ambiguous about which one its generation names.
+That is the single property this family cannot afford to lose.
+
+The sharp end is stated once, under `source`: **the two sources may
+legitimately disagree.** Dragging a file nobody selected is an ordinary
+Macintosh gesture; the Finder's selection is then something else, and both
+statements are true. Two rules follow and both are enforced rather than
+remembered:
+
+- The host prefers a drag-sourced generation **outright, with no clock
+  comparison**. Every other case in `ContinuitySelectionBind` argues about
+  a cache — `adopted` attributes an arrival to a press by reasoning that
+  nothing else could have caused it, which is sound but circumstantial. A
+  drag carries its own attribution.
+- The guest confirms a drag-sourced grab against **the drag**, not the
+  selection. Confirming it against the selection would refuse exactly the
+  gesture the source exists to serve. And it asks something stricter than
+  the Finder was ever asked: same file AND same drag sequence, so a second
+  pick-up of the same icon cannot be served under the first one's
+  generation.
+
+The cache, the press attribution, the grant hold and the grab-time Finder
+confirmation all REMAIN. They are what a Mac without the resident still
+has, and the poll is the fallback whenever the drag plane says nothing.
+
+### No `ext/` change at all
+
+Worth saying because it was not the expectation: slice 1B's V15 block
+already publishes the identity and the drag-begin sequence this reads, so
+slice 2 is contract, guest application, and host. No cell change, no
+resident build input, no bake.
+
+### What was watched failing, and the one that was not
+
+Fourteen mutations, fourteen caught, each against the mutation it names,
+with applied / built / ran confirmed separately from the failure.
+
+Two were wrong on the first pass and both corrections are the point:
+
+- The ordering guard (the pending drag publish must be answered BEFORE the
+  held-button gate) fired for a DIFFERENT reason, because the mutation
+  deleted the block instead of moving it and another guard answered first.
+- **The stale-cache acceptance test PASSED with the entire `.dragged`
+  branch removed.** The timing heuristic bound the same file by a different
+  argument, so the test was green for a reason that had nothing to do with
+  what it claimed. Both drag marks in the rig are now stamped BEFORE the
+  press instant — the shape where no clock can attribute the arrival, where
+  the old ladder said `superseded` and refused, and where only the source
+  answers.
+
+### The emulator round: the wire half PROVED, and the drag half has a NAMED cause
+
+Rig: `docs/local/dragbind-slice2-provenance-2026-08-16.md`, lane block
+713 (wire 17705), guest build `716f331c…` asserted from its own hello
+before anything was believed, resident `b254480cc559` — the same one
+slice 1B measured on. Two boots; the second one read the counters.
+
+What the round PROVED, against a live guest:
+
+- **`source` crosses.** Every `continuity.selection` this guest published
+  carried it: `"source":"selection"` on the ordinary poll's stub. The
+  contract change, the three templates and the host decoder meet on a
+  real wire.
+- The arm / publish / grab lane is unbroken by the change.
+
+**No drag-sourced generation was published**, and the V15 counters say
+why in a sentence. Continuity armed, target `HELLO_CLAUDE.txt` at
+(624,108) — a desktop document the Finder itself located — never
+selected (the Finder's selection was `Macintosh HD` throughout), a
+four-second idle after the arm, then a press and 180 px of held motion:
+
+    15:37:21  drag handler state=1 err=0 inst=1 rem=0 ctx=1 calls=0 enter=0/0
+    15:37:26  drag handler state=1 err=0 inst=1 rem=1 ctx=0 calls=0 enter=0/0
+    15:37:21  selection epoch=1 gen=1 Macintosh HD (folder)
+
+**The handler INSTALLED and was NEVER CALLED.** `inst=1`, cleanly paired
+`rem=1`, `calls=0`, `enter=0/0`. So the arm gate is not the problem —
+`now_ext_dragobs_gne` gates on `cell->enabled || CapAct` and a
+Continuity-only arm does reach the install, exactly as read.
+
+**The number that names the cause is `ctx`.** Registration is PER
+APPLICATION and is made when a process pumps while armed, so the count of
+distinct A5 worlds holding a registration is the count of applications
+that can ever call us. Under a Continuity-only arm it reached **1**.
+Under slice 1B's ACT-PLANE arming, on the same resident and the same
+machine, it reached **5** — and recorded 67,502 calls across two Finder
+drags.
+
+So the standing reading is refined, and the refinement is the finding:
+**the registration route works, and a Continuity arm does not get it into
+the Finder's context the way an act-plane pass does.** One context
+registered in a five-second armed window, and nothing proves that one was
+the Finder — which is the next measurement, below.
+
+Two things this does NOT say, worth stating because both are the easy
+misreading:
+
+- It does not say the drag plane is broken. Slice 1B measured it working
+  on this resident.
+- It does not yet say the Finder never started a drag. That is still
+  possible and still unmeasured here; `drag obs disp=2` is only the trap
+  route's own self-test control, and slice 1 already proved the trap route
+  cannot see a DragLib drag, so it is silent on the question either way.
+
+### THE CAUSE, NAMED: the Finder never registers — only NOW does
+
+Third round, with a V16 registry that records WHICH applications took a
+registration rather than how many. Build `ce347c46…` / resident
+`cbf060f7…`, asserted from the guest's own hello — the guard fired on the
+first attempt when the rebuild moved the stamp, which is the guard
+working.
+
+Continuity armed (`state: armed`), a desktop document never selected,
+press and 180 px of held motion:
+
+    15:49:24  drag handler reg n=1/1 a5=1f1c6530 tk=8087 app=New Old World
+    15:49:24  drag handler state=1 err=0 inst=1 rem=1 ctx=0 calls=0 enter=0/0
+
+**The one registration is NOW itself.** `New Old World`, A5 `1f1c6530` —
+the same A5 `axsnap` reports for this application. The Finder never
+registered, so `calls=0` is fully explained without needing to know
+whether a drag ever began. That retires the second owed measurement: it
+was there to disambiguate "installed but never called" from "installed,
+with nothing to call it for", and the registry answers it upstream of
+both.
+
+**The mechanism is NOT what it looked like.** A reasonable candidate was
+that `now_ext_dragobs_gne` runs only in NOW's own context. It does not:
+its call site is `now_ext_gne_apply`, which IS the jGNE shim — "in
+whatever process is pumping" — so the registration already rides the true
+all-contexts boundary and there was nothing to move. The candidate was
+checked against the source and dropped rather than built on.
+
+What fits every observation instead: **a registration happens in the
+process the resident is actively DRIVING, plus NOW — and a bare arm of
+either kind does not reach the Finder.** The same round shows
+`spin-up`'s act-plane selftest, which targets NOW itself, also registering
+exactly one context and also naming `New Old World`. Slice 1B's five
+contexts and 67,502 calls came from `menuact` driving the FINDER, which
+is precisely when the resident is executing inside it. So the earlier
+reading of this branch — "the act plane reaches five contexts, Continuity
+reaches one" — was comparing an arm against a DRIVE, not two arms.
+
+That is the real finding, and it is a bigger one than the slice: the
+registration route has been riding the act plane's context-hopping as a
+side effect, and nothing yet puts a handler in the Finder for a gesture
+the Finder itself starts.
+
+### NOT REFUSED — THE FINDER NEVER ARRIVES. One attempt, ever.
+
+Fourth round, build `96a3c345…`, asserted from the guest's own hello. The
+registry now records every ATTEMPT with `InstallTrackingHandler`'s own
+OSErr, because the previous instrument could not have shown a refusal:
+`handler_state` and `handler_err` are single globals, so a registration
+refused in the Finder and then taken in NOW leaves NOW's success in both.
+
+Continuity armed, never-selected document, press and 180 px of motion:
+
+    drag handler reg n=1/1 a5=1f1c5d70 tk=4081 err=0 app=New Old World
+    drag handler state=1 err=0 inst=1 rem=1 ctx=0 calls=0 enter=0/0
+
+**`reg n=1/1` is the answer.** `reg_count` counts attempts, uncapped, and
+a row goes down before the early return — so one attempt, ever, and it
+SUCCEEDED. The Finder is not being refused. `now_ext_dragobs_gne` is
+never reached with the Finder's A5 while armed.
+
+That closes the branch the cross-reference opened. The two hooks are
+NOT different: `deep_click_capture` runs at the top of
+`now_ext_continuity_observe_event`, ahead of its enabled gate, and
+`now_ext_gne_apply` calls that eight lines before `now_ext_dragobs_gne`
+with no early return between them. The V11 probe's `app=Find` rows and
+this registry are reading the same boundary. So the difference is not
+WHERE the code sits; it is WHEN it runs — the probe captures on every
+pass, the registration only on an ARMED one.
+
+### FRONTNESS WAS THE VARIABLE. The Finder registers when it is front.
+
+Fifth round, build `cfc5c1a1…`, two cells of one matrix, same gesture in
+both, only the frontmost application changed. The instrument is an
+UNGATED pass counter per CurApName with an armed bucket beside it, so
+"never pumped" and "pumped while the predicate was false" are different
+rows rather than the same silence.
+
+**Cell 1 — NOW front (every previous round's shape):**
+
+    pump n=1/1 a5=1f1c5d70 passes=382 armed=379 app=New Old World
+
+The Finder does not appear in the table AT ALL during the armed window.
+Zero passes, not zero armed passes. Its 790 passes earlier in the boot
+all predate the arm, when it was front and nothing was driving.
+
+**Cell 2 — the Finder brought front first (`front Finder`), nothing else
+changed:**
+
+    pump n=1/1 a5=1f50f550 passes=316 armed=309 app=Finder
+    reg  n=1/1 a5=1f50f550 tk=11993 err=0       app=Finder
+    state=1 err=0 inst=1 rem=1 ctx=0 calls=0
+
+**The Finder pumped, and the Finder REGISTERED** — the first time in this
+project that a handler has been taken in the Finder's context under a
+bare arm, with no act-plane drive anywhere in the round. NOW is now
+absent from the table, having become the background application.
+
+So the scheduling account is right and the predicate account is dead. The
+arm predicate was never wrong; under cooperative scheduling a background
+Finder, with NOW frontmost and driving at 60 Hz, simply never pumps — and
+a plane that can only register from a pass cannot register from a process
+that never runs. It also retires this branch's "act plane reaches five
+contexts" reading for good: `menuact` reached the Finder because it
+BRINGS THE FINDER FRONT, not because trap patching hops contexts.
+
+### Is frontness a rig requirement or a product constraint?
+
+**A rig requirement, and it is the natural case** — but it deserves the
+sentence. A person dragging a file out of a Finder window has the Finder
+front by the act of pointing at it; there is no gesture that starts in a
+background application. So the product does not need a new mechanism, and
+the harness needs one line it was missing.
+
+It is worth stating in the plan anyway, because it is a real precondition
+with a real failure mode: any future rig that arms and drives without
+fronting the target will measure a plane that registers nowhere, and will
+read exactly like a resident that does not work.
+
+### WHAT WAS STILL BLOCKED, and it has moved one layer out
+
+**RESOLVED the same day — see "THE GESTURE WAS THE VARIABLE" below.** The
+account in this section was right about the fact (`calls=0` means the
+drag never began) and it named the press/event plane correctly. It is
+kept because the two rig omissions it did not know about are the useful
+part.
+
+`calls=0` in cell 2. The handler is registered in the Finder and was
+never called, which now means one thing only: **the drag never began.**
+The Continuity-driven press and 180 px of held motion did not put the
+Finder into a drag. `midGestureSelections` and `afterReleaseSelections`
+are both empty, so no drag-sourced generation was published and the
+acceptance did not run.
+
+That is not this slice's code and not the registration route. It is the
+press/event plane, and it is the question `tools/local-finder-drag.py`
+exists to answer with the Finder's own `bounds of` before and after. The
+next round is that instrument against a Finder-front armed pass — and it
+is now the ONLY thing between here and the acceptance, with everything
+upstream of it measured rather than assumed.
+
+### A correction to this branch's own earlier claim
+
+An earlier version of this entry reported that guest log retrieval
+returned empty over the wire and called it a possible new defect. **That
+was wrong and the error was mine:** the verb is `tail`, not `log`. `tail`
+works, pages under the control-frame cap (three rows a page here, with
+`next` for the rest), and every line quoted above came out of it. There is
+no log-retrieval defect. It is recorded rather than deleted because a
+tool-shaped mistake read as a product defect is exactly the confusion
+that sends a later round after the wrong half of the system.
+
+### The latency, NOT measured
+
+`drag bind seq=… latency=… ticks` is emitted at the drain and is the
+interval the whole route depends on fitting inside a gesture. **No value
+was obtained**: it is emitted only on a drag-sourced publish, and none
+occurred. The plan asked for this number and it is still owed.
+**Measured now — 462 and 464 ticks. See below; the number is bad news.**
+
+### THE GESTURE WAS THE VARIABLE, and the drag plane works end to end (2026-08-16, sixth round, build `cfc5c1a1…`)
+
+Same build, same machine, same bare Continuity arm. The rig changed in
+three ways and the Finder dragged:
+
+    bounds  before (520,60)   after (616,60)      <- the FINDER's own account
+    selection before 'From Claude.txt' after 'HELLO_CLAUDE.txt'
+    drag handler state=0 calls=45863 enter=1/1 in=45859 leave=1/1 reent=0
+    drag handler file seq=2 type=54455854 cr=74747874 name=HELLO_CLAUDE.txt
+    continuity.selection generation=3 source=drag  name=HELLO_CLAUDE.txt
+
+**A drag-sourced generation crossed the wire, naming the file in the hand
+while the cached selection still named a different one.** That is the
+whole point of the plane and it is the first time it has happened.
+
+The three rig changes, in the order they matter:
+
+1. **NOW MUST BE HIDDEN, not merely behind.** Its window lies over the
+   desktop, and a press that lands on it is a press on the wrong
+   application. `hide`, then `front Finder`: fronting reorders, hiding
+   exposes. `tools/local-finder-drag.py` had earned this sentence in a
+   comment and nothing carried it across to the Continuity rig.
+2. **Motion in small steps with dwell**, rather than five state packets
+   back to back. A Finder drag begins from motion the application
+   observes while the button is down, and a hand does not teleport.
+3. The Finder front, which the fifth round had already established.
+
+So the fifth round's conclusion — "the press/event plane, not this
+route" — was correct, and both defects were in the RIG. Worth saying
+plainly: nothing in the product was wrong at any point in rounds two
+through five.
+
+### The wrong-file inversion, asked of the guest itself
+
+Both grabs, one gesture, on the live machine:
+
+    grab generation 1 (the stale selection)
+      -> file.refuse  stale-selection
+         "the drag no longer names what it was given"
+    grab generation 3 (the drag)
+      -> file.begin  name='From Claude.txt' bytes=499 dataBytes=499
+
+The stale cache is refused by name and the drag is served. The host's own
+decision table (`.dragged` above `bound`, `adopted`, `superseded`) is
+unit-tested without a Macintosh; this is the other half of it, and the
+two now agree.
+
+### THE LATENCY IS THE LENGTH OF THE GESTURE, and that is a new blocker
+
+`drag bind seq=2 latency=462 ticks` — and 464 on the second drag of the
+same session. Read it beside the drag's own clock:
+
+    drag begin  seq=2 tk=32817          <- EnterHandler, in the Finder
+    drag end    seq=2 tk=33265 elapsed=448
+    drag bind   seq=2 latency=462 ticks <- so the publish is at tk=33279
+
+**The identity is published 14 ticks after the drag ENDS and 462 ticks —
+7.7 seconds, the whole gesture — after it BEGAN.** `midGestureSelections`
+is empty in every run; nothing at all crossed the wire while the button
+was held. The pump table says why in one row: through the drag, the
+Finder pumps and NOW does not appear at all.
+
+This is the plan's own founding constraint arriving one layer later than
+it was expected. The resident sees the drag at begin and writes the
+identity into the cell correctly — that half works. But the APPLICATION
+publishes it, and the application receives no task time inside the
+Finder's drag loop, so the cell is drained only once the loop returns.
+
+**What that costs, precisely.** A cross that happens while the drag is
+held — the gesture the whole feature is for — reaches the host before any
+drag-sourced generation does. The bind is not wrong, it is late. The
+route therefore serves a gesture that has ENDED, and the acceptance's
+"cross the edge, grab redeems" is NOT met by this route as it stands.
+
+**What it does not cost.** The identity, the refusal of the stale
+generation, and the serve are all correct and now measured on a live
+machine. Nothing above needs rebuilding; the publish needs to move to
+somewhere that runs during the drag — the resident already does, and it
+is the same "make it real one layer down" shape as MBTicks and the
+session re-arm. That is slice 3's first target now, ahead of the 17-cycle
+anomaly.
+
+### Still unverified
+
+- Everything on a Macintosh: see the two sections above. The bind, the
+  publish and the confirmation are Tested only.
+- The grab-time drag confirmation has never run against a live resident,
+  so the one path where the guest reads the cell twice — mint, then
+  confirm seconds later — is unexercised outside the host cc.
+  **Partly closed:** the grab of a drag-sourced generation was served on
+  a live machine (`file.begin`, 499 bytes) and the stale one refused. The
+  BYTES were never drained, so "the file lands host-side byte-identical"
+  remains unproven — the transfer was announced and not read.
+- The edge cross with the host application in the loop has not been run
+  at all this round; every measurement above is guest-side, over one
+  wire, with an instrument standing in for the host. Given the latency
+  finding it would be expected to bind late rather than to bind wrong.
+- Folders are refused on the drag source exactly as on the poll, which
+  keeps the later folder slice one decision rather than two.
+
+## THE ROUTE EXISTS, AND IT ANSWERS BOTH QUESTIONS THE PLAN ASKED: a registered tracking handler sees every Finder drag, its file, and what targeting believes (2026-08-16, `feat/resident-drag-observe`)
+
+Slice 1B, taken after slice 1 measured that the trap route does not
+exist. It stops patching and uses the public door:
+`InstallTrackingHandler` registers per APPLICATION, and the act plane
+already runs code in the Finder's own context on every armed pass, which
+is the one place that registration can be made.
+
+### It fires, and there is no ambiguity left to resolve
+
+Two harness-driven Finder drags of a desktop file, never selected first,
+`now-mirror-stage.qcow2` clone with this tree's build staged and
+cold-booted (`docs/local/dragobs-slice1b-provenance-2026-08-16.md`,
+tableLength 12736):
+
+    drag handler state=1 err=0 inst=5 rem=5 ctx=0 calls=67502
+                enter=2/2 in=67494 leave=2/2 reent=0
+
+Two drags, two `EnterHandler`, two `LeaveHandler`, 67,494 `InWindow`
+messages between them. Both files moved on screen. **On the same machine
+across the same two drags the trap route recorded zero** — `dispatches`
+never left the 2 its own control put there. Two mechanisms, one drag,
+and the comparison is the finding.
+
+### The identity, with no selection anywhere
+
+    drag handler item seq=2 a5=1f50f550 ref=00b25200 tk=4554
+                items=1 what=hfs err=0
+    drag handler file seq=2 type=54455854 cr=3f3f3f3f vref=-1 par=19
+                name=From Claude.txt
+
+Read from the live `DragRef` the Drag Manager handed us at
+`EnterHandler`, in the Finder's own A5 world (`1f50f550`, matching what
+`observe` reports for the Finder). The file was never selected, never
+polled, never cached. `vref=-1 par=19` is the desktop folder on the boot
+volume. **This is what slice 2 needs and it is available at drag
+begin.**
+
+### The targeting answer, and it overturns the standing reading
+
+Every row states three things at one instant: the window the Drag
+Manager NAMES, where the Drag Manager thinks the mouse is, and the
+low-memory point this resident is driving.
+
+    drag track n=33622 msg=3 win=000d3610 dm=620,565 pin=620,565 raw=620,565 lm=620,565 attr=6
+    drag track n=33623 msg=3 win=000d3610 dm=620,565 pin=620,565 raw=250,568 lm=250,568 attr=6
+    drag track n=33624 msg=3 win=000d3610 dm=250,568 pin=250,568 raw=250,568 lm=250,568 attr=6
+    drag track n=33625 msg=4 win=000d3610 dm=250,568 ...
+    drag track n=33626 msg=5 win=00000000 dm=250,568 ...
+
+**Drag Manager targeting FOLLOWS the driven pointer.** `dm_mouse` equals
+the low-memory point on every row but the single one that spans the
+jump, and it catches up on the very next message — one iteration of lag,
+not a disagreement. The window is constant and correct for the whole
+drag, `attr=6` (`InsideSenderApplication|InsideSenderWindow`) is true of
+a desktop-to-desktop drag, and `enter/leave` are 1/1 per drag: **no
+oscillation at all.**
+
+That matters because it contradicts the reading this project has been
+carrying. `feat/hg-drag-dragmgr` recorded `inwin=1` while GetMouse read
+the true point, with "31k enter/leave oscillations", and the conclusion
+drawn was that targeting ignores a driven pointer. Two corrections:
+
+- Targeting does not ignore it. Measured here, it tracks it exactly.
+- The 31k was very probably not oscillation. The Drag Manager's tracking
+  loop calls a handler roughly 8,000 times a second on this machine —
+  33,000 messages in one four-second drag — so a raw count of that order
+  is the LOOP RATE, and reading it as enter/leave churn attributed a
+  defect to a number that was only a frequency. This lane's enter/leave
+  counters are 1 and 1.
+
+So slice 3's blocker is not what it was thought to be. Whatever went
+wrong in that lane is a property of a drag ORIGINATED by our own
+application, not of the Drag Manager's willingness to track a synthetic
+pointer, and it should be re-measured with this instrument before any
+more is built on the old reading.
+
+### Charter and un-registration
+
+- The handler runs in the dragging application's context at the Drag
+  Manager's pleasure, at task time, reached through Mixed Mode because a
+  PowerPC Drag Manager is calling 68K code. Its UPP is a real
+  `RoutineDescriptor` built by `BUILD_ROUTINE_DESCRIPTOR`, never a cast.
+- **Nothing is allocated.** `NewDragTrackingHandlerUPP` allocates, and
+  from a hook it would allocate in the FOREIGN application's heap. The
+  descriptor is a module global in the resident's own relocated
+  system-heap storage — reachable from every context, the same property
+  the trap trampolines depend on — filled from a LOCAL initializer,
+  because this INIT is relocated at load and a procedure address baked
+  into static data is either fixed up or a jump into nowhere.
+- The handler touches only the resident's own table and globals, and its
+  Drag Manager reads go back out through our own shim inside the same
+  re-entrancy guard (`reent=0` across 67,502 calls).
+- **Un-registration is paired and measured.** A registration belongs to
+  the application that made it and can only be removed there, while a
+  disarm arrives on whatever process is pumping — so the plane keeps the
+  A5 of every context it registered in and gives the registration back
+  when it is next inside that context unarmed. `inst=5 rem=5 ctx=0`
+  after five cycles; `ctx` returns to zero every time.
+
+### What is still not known
+
+- **No metal round.** Emulator only.
+- The `ReceiveHandler` half was not registered. Only tracking was
+  needed to answer these two questions, and a receive handler is a
+  behaviour change rather than an observation.
+- The trap route (V14) is retained, unexercised, and its sample ring and
+  TrackDrag return thunk have still never executed.
+- Whether a 68K application's drag would come through BOTH routes is
+  untested — no 68K drag was made. If the trap route only ever sees 68K
+  drags and the handler sees both, that split is worth a line and this
+  lane did not earn it.
+- No shared bake; every ext-touching commit carries a written deferral.
+
+## MEASURED AND DECISIVE, AND IT CLOSES A ROUTE RATHER THAN OPENING ONE: the Mac OS 9 Finder drags a file without one call through the 68K Drag Manager trap (2026-08-16, `feat/resident-drag-observe`)
+
+Slice 1 of the resident drag plane
+(`docs/local/plan-resident-drag-plane-2026-08-16.md`) built the
+instrument the plan asked for and used it to answer the question slice 3
+was waiting on. The answer is a negative, it is earned rather than
+inferred, and it means the route the plan proposed does not exist.
+
+### What was built
+
+V14 of the shared table carries a drag observer: a shim on the 68K
+`_DragDispatch` trap (0xABED — the WHOLE Drag Manager is selectors on
+that one trap, and `TrackDrag` is selector 13), installed on every armed
+pass in the foreign application's own context, chaining unconditionally.
+At a TrackDrag it would record the item count, the first item's
+`flavorTypeHFS` FSSpec, what the Drag Manager was handed, and a bounded
+ring of samples pairing the Drag Manager's own reported mouse against
+the low-memory point this resident drives.
+
+### What the emulator said, and why it is believable
+
+One harness-driven Finder drag of a desktop file, the file never
+selected first, `now-mirror-stage.qcow2` clone with this tree's build
+staged and cold-booted (`/private/tmp/nowvm-dragobs4/provenance.md`,
+tableLength 11676, buildFingerprint `ae2e86dbbad9`):
+
+    drag obs install=1 passes=5 disp=2 track=0 ret=0 reent=0 control=1/2
+
+- `install=1` — the shim is in the trap table.
+- `control=1/2` — **the plane's own control**: one 68K
+  `NewDrag`/`DisposeDrag` pair made by the resident, outside the
+  re-entrancy guard, and the shim saw BOTH calls. So the shim is
+  genuinely in the 68K dispatch path.
+- `disp=2` — and those two dispatches are exactly the control's own.
+  Nothing else in the machine came through.
+- `track=0`, and **no `drag begin` line at all** — while the Finder
+  completed a real file drag: the icon moved from (620,560) to (300,568)
+  and the move is in the after-screendump.
+
+The control is the whole reason this reads as a measurement. The FIRST
+emulator round of the same day produced `install=1 disp=0` and could not
+distinguish a PowerPC Finder bypassing the trap table from a shim in
+nobody's path — absence and defect in the same words, which is the
+failure AGENTS.md names. The plane was given a control made of code we
+own before any conclusion was drawn from a zero.
+
+### What it means for slices 2 and 3
+
+**A 68K trap patch cannot see, and therefore cannot steer, a PowerPC
+application's drag on Mac OS 9.** The Drag Manager there is native
+PowerPC code reached through CFM; the 68K trap is an entry point for 68K
+callers and the Finder is not one. So:
+
+- Slice 2 ("bind the drag rather than the selection") cannot get its
+  identity from this route. The drag reference exists only inside the
+  Finder's own PowerPC world.
+- Slice 3's targeting question is not answerable by this instrument
+  either — `inwin=1` while GetMouse reads the true point remains
+  unexplained, and nothing in this plane will explain it.
+- The routes that remain are all on the CFM side rather than the trap
+  side: patching the Finder's own DragLib import connection, or getting
+  a `TrackingHandler`/`ReceiveHandler` registered into the Finder's
+  context, which is a different mechanism with a different charter
+  question. Neither has been attempted or costed.
+
+The observer itself is kept: it is cheap, it is honest about its own
+zeroes, and it is the instrument that will say immediately whether any
+future route reaches a drag.
+
+### Unverified
+
+- No metal round. Whether a PowerBook 1400c's Finder differs here is
+  unknown, and there is no reason to expect it does.
+- The sample ring, the HFS identity read and the TrackDrag return path
+  have **never executed** — no TrackDrag has ever reached them. They
+  build, they are pinned, and they are unexercised. A 68K application
+  making a drag would exercise them and none was tried.
+- The drain's counters line was widened after the emulator round so that
+  Drag Manager traffic arriving later cannot be a silence. That widening
+  is Tested, not emulator-verified.
+- No shared bake. Every commit here carries a written
+  `TBT_DEFER_EXT_BAKE` deferral, which comes due at `main`.
+
 ## FIXED AND TESTED, NOT METAL-VERIFIED: the epoch teardown erased the settled release on SLOW drags only (2026-08-15 18:47 round, `fix/continuity-press-origin-loss`)
 
 **The snap-back worked, except when the person dragged slowly — then the

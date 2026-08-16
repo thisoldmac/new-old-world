@@ -255,6 +255,85 @@ final class ContinuityGuestDragTests: XCTestCase {
         })
     }
 
+    /// **THE RITUAL IS DEAD.** One gesture, on a file that was never
+    /// selected: press, drag, cross. Nothing selected it first, nothing
+    /// polled it, and the Finder's selection throughout is something else
+    /// entirely — which is exactly what dragging an unselected icon looks
+    /// like on a Macintosh.
+    ///
+    /// Every rule that existed before this slice refuses this drag, and
+    /// none of them was wrong: they were all reasoning about a cache of the
+    /// selection, and the selection genuinely does not name this file. The
+    /// drag plane is what makes the file knowable at all.
+    func testASingleGestureDragOfANeverSelectedFileBindsThatFile() throws {
+        let rig = Rig()
+        // What the Finder actually has selected, and keeps having.
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        /* The person picked up a DIFFERENT icon. The Drag Manager says so —
+           and the mark is stamped before the press instant so that no clock
+           heuristic can rescue this test: what binds it is the source. */
+        rig.dragBeginsAsOf(rig.now() - 1, Self.file(name: "main.c"),
+                           generation: 3)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c",
+                       "the file in the hand crosses, not the file in the "
+                         + "selection")
+        XCTAssertEqual(stub.generation, 3)
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("binding this cross to the drag itself")
+                && $0.1.contains("generation=3")
+                && $0.1.contains("replacing generation 2")
+        }, "the bind must name what it replaced: a drag and a cache "
+            + "disagreeing is the ordinary case here, not a fault, and the "
+            + "line is how anyone sees which one was taken")
+    }
+
+    /// **THE WRONG-FILE CASE, INVERTED.** A stale cache and a fresh drag
+    /// naming different files used to be `superseded` — a refusal, and the
+    /// right answer while a cache was all there was. It is now a bind, and
+    /// the file it binds is the dragged one.
+    ///
+    /// The cache here is stale in the way that produced the 17:19 report:
+    /// applied BEFORE the press, so the clock cannot attribute it to this
+    /// gesture and `adopted` cannot rescue it either.
+    func testAStaleCacheAndAFreshDragBindTheDrag() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.selectAsOf(rig.now() - 1, Self.file(name: "notes.txt"),
+                       generation: 3)
+        /* STAMPED BEFORE THE PRESS INSTANT, which is what makes this the
+           case only the source can answer. The clock cannot attribute this
+           generation to this gesture, so `adopted` does not fire and the
+           old ladder reached `superseded` and refused. Nothing about the
+           timing changed; what changed is that the Mac now says WHAT the
+           generation is, and a drag needs no alibi. */
+        rig.dragBeginsAsOf(rig.now() - 1, Self.file(name: "main.c"),
+                           generation: 4)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c")
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("the selection changed under this press")
+        }, "a cache disagreeing with a drag is not an ambiguity: the drag "
+            + "is the gesture, and refusing here would refuse every "
+            + "never-selected file")
+    }
+
     /// The pure decision, including the two cases the rig cannot stage
     /// without a real epoch ending underneath it.
     func testTheBindDecisionInEveryShape() {
@@ -298,6 +377,69 @@ final class ContinuityGuestDragTests: XCTestCase {
             pressed: nil, current: nil, downSentAt: press), .nothing)
         XCTAssertEqual(ContinuitySelectionBind.decide(
             pressed: nil, current: crossed, downSentAt: press), .nothing)
+
+        /* --- and the drag source, which outranks all of it -------------
+           Every case above argues about a CACHE; a drag-sourced mark is a
+           report of the gesture, so it wins on kind rather than on
+           freshness and needs no clock comparison to do it. */
+        let dragged = ContinuitySelectionMark(epoch: 7, generation: 4,
+                                              appliedAt: press + 0.4,
+                                              source: .drag)
+        /* THE ONE THAT MATTERS: applied BEFORE the press instant, so the
+           clock cannot attribute it and `adopted` would not fire — and it
+           binds anyway, because the Drag Manager named it. */
+        let draggedEarly = ContinuitySelectionMark(epoch: 7, generation: 4,
+                                                   appliedAt: press - 5,
+                                                   source: .drag)
+
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: dragged, downSentAt: press),
+            .dragged(dragged))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: nil, current: dragged, downSentAt: press),
+            .dragged(dragged))
+        /* Where the old ladder said `superseded` and refused. */
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: draggedEarly, downSentAt: press),
+            .dragged(draggedEarly))
+        /* And where it said `bound` — still a drag, and still said so, so
+           one line can tell the ritual working from it being unnecessary. */
+        let sameGeneration = ContinuitySelectionMark(epoch: 7, generation: 2,
+                                                     appliedAt: press - 1,
+                                                     source: .drag)
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: sameGeneration, downSentAt: press),
+            .dragged(sameGeneration))
+        /* A cleared cache is still a cleared cache: there is no drag mark
+           to prefer, and the guest's own grant hold redeems it. */
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: draggedEarly, current: nil, downSentAt: press),
+            .unchallenged(draggedEarly))
+    }
+
+    /// The contract's default, applied where a host actually reads it.
+    ///
+    /// An absent `source` is `selection` — a guest built before the field
+    /// existed had only the poll. An UNKNOWN value is not: it decodes as a
+    /// failure rather than being demoted, because a future third source
+    /// bound as if it were a poll is the quiet wrong-file bug this whole
+    /// field exists to close.
+    func testAnAbsentSourceIsASelectionAndAnUnknownOneIsNotDecodable()
+    throws {
+        let absent = try JSONDecoder().decode(
+            ContinuitySelection.self,
+            from: Data(#"{"version":4,"epoch":7,"generation":2}"#.utf8))
+        XCTAssertNil(absent.source)
+        XCTAssertEqual(absent.resolvedSource, .selection)
+
+        let drag = try JSONDecoder().decode(
+            ContinuitySelection.self,
+            from: Data(#"{"version":4,"epoch":7,"generation":2,"source":"drag"}"#.utf8))
+        XCTAssertEqual(drag.resolvedSource, .drag)
+
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            ContinuitySelection.self,
+            from: Data(#"{"version":4,"epoch":7,"generation":2,"source":"telepathy"}"#.utf8)))
     }
 
     // MARK: - The cross
@@ -1881,7 +2023,7 @@ final class ContinuityGuestDragTests: XCTestCase {
                                   item: ContinuitySelection.Item?)
         -> ContinuitySelection {
         .init(version: ContinuityContract.version, epoch: epoch,
-              generation: generation, item: item)
+              generation: generation, source: .selection, item: item)
     }
 
     fileprivate static func file(name: String) -> ContinuitySelection.Item {
@@ -2043,7 +2185,26 @@ private final class Rig {
     func select(_ item: ContinuitySelection.Item,
                 generation: UInt32 = 3) {
         cache.apply(.init(version: ContinuityContract.version, epoch: epoch,
-                          generation: generation, item: item),
+                          generation: generation, source: .selection,
+                          item: item),
+                    activeEpoch: epoch)
+    }
+
+    /// The Mac's drag plane publishing what the Drag Manager handed it at
+    /// drag begin. No selection is involved — this is the generation a
+    /// never-selected file gets, and the whole reason it can have one.
+    func dragBeginsAsOf(_ at: TimeInterval, _ item: ContinuitySelection.Item,
+                        generation: UInt32) {
+        cacheClock.value = at
+        dragBegins(item, generation: generation)
+        cacheClock.value = nil
+    }
+
+    func dragBegins(_ item: ContinuitySelection.Item,
+                    generation: UInt32 = 4) {
+        cache.apply(.init(version: ContinuityContract.version, epoch: epoch,
+                          generation: generation, source: .drag,
+                          item: item),
                     activeEpoch: epoch)
     }
 

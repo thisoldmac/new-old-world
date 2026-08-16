@@ -78,6 +78,11 @@ struct ContinuitySelectionMark: Equatable, Sendable {
     /// of the same clock taken seconds earlier, and a wall clock can move
     /// under it.
     var appliedAt: TimeInterval
+    /// Which gesture produced the generation. A `drag` mark is the item the
+    /// Drag Manager itself handed the guest at drag begin, so it needs no
+    /// clock comparison to be attributed to the gesture in flight — see
+    /// `ContinuitySelectionBind.decide`.
+    var source: ContinuitySelection.Source = .selection
 
     /// The same published selection, whenever either side heard about it.
     func isSameSelection(as other: ContinuitySelectionMark) -> Bool {
@@ -97,6 +102,24 @@ struct ContinuitySelectionMark: Equatable, Sendable {
 /// The cross is seconds later and is the first moment both facts exist: the
 /// press, and whatever the guest published under it.
 enum ContinuitySelectionBind: Equatable {
+    /// THE DRAG ITSELF, named by the guest at the moment it began.
+    ///
+    /// This is the case that ends the ritual. Every other outcome below is
+    /// reasoning about a CACHE of what a person had selected before they
+    /// pressed — necessarily so, because nothing could see the drag. A
+    /// drag-sourced generation is not a better cache; it is a different
+    /// kind of fact, read from a live DragRef in the dragging application's
+    /// own context, and it names the file in the hand rather than the file
+    /// in the selection. Single-gesture press-and-drag of a file that was
+    /// never selected lands here, and so does a stale cache disagreeing
+    /// with a fresh drag.
+    ///
+    /// It needs no clock comparison, which is the property worth stating:
+    /// `adopted` below attributes an arrival to this press by arguing that
+    /// nothing else could have caused it, and that argument is sound but
+    /// circumstantial. A drag-sourced generation carries its own
+    /// attribution — the gesture is what published it.
+    case dragged(ContinuitySelectionMark)
     /// The cache holds exactly what the press bound. The two-step ritual —
     /// select, release, press again, drag — lands here and must keep
     /// working, because it is the one that works today.
@@ -137,6 +160,16 @@ enum ContinuitySelectionBind: Equatable {
         guard let current else {
             return pressed.map(ContinuitySelectionBind.unchallenged)
                 ?? .nothing
+        }
+        /* THE DRAG WINS, AND IT WINS FIRST. Every test below this line is
+           an argument about a cache; this one is a report of the gesture.
+           It is placed above `bound` as well as above `superseded` on
+           purpose: a drag that happens to name the same generation the
+           press was made under is still a drag, and saying so is what lets
+           one audit line distinguish the ritual working from the ritual
+           being unnecessary. */
+        if current.source == .drag {
+            return .dragged(current)
         }
         if let pressed, pressed.isSameSelection(as: current) {
             return .bound(current)
@@ -231,9 +264,12 @@ final class ContinuitySelectionCache {
                                   item: item)
         mark = ContinuitySelectionMark(epoch: selection.epoch,
                                        generation: selection.generation,
-                                       appliedAt: now())
+                                       appliedAt: now(),
+                                       source: selection.resolvedSource)
         audit(.info, "selection cached: epoch=\(selection.epoch), "
-            + "generation=\(selection.generation), name=\(item.name), "
+            + "generation=\(selection.generation), "
+            + "source=\(selection.resolvedSource.rawValue), "
+            + "name=\(item.name), "
             + "type=\(item.fileType ?? "none"), "
             + "creator=\(item.creator ?? "none"), "
             + "dataSize=\(item.dataSize ?? 0), "

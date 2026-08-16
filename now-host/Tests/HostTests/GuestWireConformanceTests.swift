@@ -305,6 +305,12 @@ final class GuestWireConformanceTests: XCTestCase {
             "state": "queued",
             "reason": "malformed",
         ],
+        // Which gesture minted the generation. The scanner can only carry
+        // one value through the template, so it carries the NEW one — an
+        // old guest's frame has no field at all and is covered by the
+        // decoder's own default test. Both values, spelled out, are in
+        // GuestWireFixtureTests.
+        "continuity.selection": ["source": "drag"],
     ]
 
     private func replacingKnownEnumPlaceholders(in json: String) -> String {

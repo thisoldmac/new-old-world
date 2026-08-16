@@ -289,20 +289,64 @@ if "now_continuity_grab_resolve" not in grab:
 # The arithmetic is watched in now_continuity_selection_test.c. What cannot
 # be watched there is that the grab actually CALLS it, and calls it before
 # the stub becomes a real FSSpec.
-if "confirm_serve_against_finder" not in grab:
+if "confirm_serve(" not in grab:
     raise SystemExit(
-        "the grab no longer confirms its serve against the Finder. Every "
+        "the grab no longer confirms its serve against the machine. Every "
         "consent check it makes reads a table this side wrote earlier, so "
         "a grab naming a generation the guest still holds can still name a "
         "file the person stopped holding - which is how hello.txt crossed "
         "the edge on 2026-08-15 while main.c was being dragged."
     )
 
-if grab.index("confirm_serve_against_finder") > grab.index("FSMakeFSSpec"):
+if grab.index("confirm_serve(") > grab.index("FSMakeFSSpec"):
     raise SystemExit(
         "the grab resolves the FSSpec before confirming the serve. The "
         "confirmation has to stand between the stub and the disk, not "
         "beside it."
+    )
+
+# --- 7b. and it asks the witness the SOURCE names -----------------------
+#
+# A drag-sourced generation names the file the Drag Manager handed us, which
+# for a never-selected file is deliberately not what the Finder has
+# selected. Confirming it against the selection would refuse exactly the
+# gesture the drag source exists to serve - so the routing is a rule, not a
+# convenience, and it lives in one place so a third source cannot be added
+# without landing there.
+route = function_body(
+    POLL_C,
+    "static int confirm_serve(const NowContinuityStubItem *serve)",
+    "continuity_selection.c",
+)
+if "kNowStubSourceDrag" not in route:
+    raise SystemExit(
+        "the grab confirmation no longer routes on the stub's SOURCE. A "
+        "drag-sourced generation confirmed against the Finder's selection "
+        "refuses every drag of a file nobody selected first - which is the "
+        "entire gesture the drag plane was built to serve."
+    )
+if "confirm_serve_against_drag" not in route:
+    raise SystemExit(
+        "the drag witness is unreachable from the routing, so a "
+        "drag-sourced serve falls back to the Finder's selection."
+    )
+
+drag_confirm = function_body(
+    POLL_C,
+    "static int confirm_serve_against_drag(const NowContinuityStubItem *serve)",
+    "continuity_selection.c",
+)
+if "now_continuity_drag_identity" not in drag_confirm:
+    raise SystemExit(
+        "the drag confirmation no longer re-reads the resident's live "
+        "drag identity. Confirming a cache against itself is not a "
+        "confirmation, whichever cache it is."
+    )
+if "now_continuity_grab_confirm_drag" not in drag_confirm:
+    raise SystemExit(
+        "the drag confirmation no longer runs the shared verdict, so the "
+        "sequence check the host cc watches - same file is not enough, it "
+        "must be the same DRAG - is not the check this path makes."
     )
 
 confirm = function_body(
@@ -327,6 +371,95 @@ if "grant honored after epoch" not in POLL_C or "grant expired" not in POLL_C:
         "the two grant outcomes are no longer named in the log. A grab "
         "served after its epoch ended and one refused for arriving late "
         "are the only evidence this rule is working or not."
+    )
+
+# --- 8. the drag plane's publish path -----------------------------------
+#
+# The gate the poll cannot have. A drag-sourced generation exists exactly
+# when the button IS down, so the poll's own button gate would swallow the
+# one thing the poll cannot produce - and the ordering below is the whole
+# of what keeps that from happening silently.
+SERVICE_C = uncommented((SRC / "input" / "continuity_service.c").read_text())
+
+drain = function_body(
+    SERVICE_C,
+    "static void drain_drag_observe(const NowPeekContinuityCell *cell)",
+    "continuity_service.c",
+)
+if "now_continuity_selection_note_drag" not in drain:
+    raise SystemExit(
+        "the drag observer drain no longer publishes what it observed. "
+        "The V15 record then stays a diagnostic and the host keeps binding "
+        "a cache - which is the ritual this slice exists to kill."
+    )
+if "kNowPeekDragObsItemHFS" not in drain:
+    raise SystemExit(
+        "the drain publishes without checking the first item carried an "
+        "HFS flavor. A text drag or a promise names no file this side can "
+        "serve, and publishing one invents an identity."
+    )
+if "latency=" not in drain:
+    raise SystemExit(
+        "the EnterHandler-to-publish latency is no longer measured. The "
+        "whole route depends on that interval fitting inside a gesture, "
+        "and an interval nobody measures is an interval nobody knows."
+    )
+
+note = function_body(
+    POLL_C,
+    "int now_continuity_selection_note_drag(const NowContinuityDragIdentity *ident)",
+    "continuity_selection.c",
+)
+if "live_epoch == 0" not in note:
+    raise SystemExit(
+        "the drag publish no longer refuses a zero epoch. The observer is "
+        "armed by the act plane too, so a drag seen with nothing armed is "
+        "a person using their own Macintosh, not a consent."
+    )
+if "now_continuity_stub_observe_drag" not in note:
+    raise SystemExit(
+        "the drag publish no longer goes through the drag-sourced observe, "
+        "so a second pick-up of the same file would not mint a generation "
+        "of its own."
+    )
+if "is_folder" not in note:
+    raise SystemExit(
+        "the drag publish no longer refuses a folder. Folders cross in a "
+        "later slice on BOTH sources, and refusing here is what keeps that "
+        "from being discovered twice, further from the cause."
+    )
+
+# THE ORDERING. The pending drag publish must be answered before the button
+# gate, or every drag-sourced generation waits for a button that is only
+# released after the cross it was supposed to inform.
+if "g_drag_pending" not in poll:
+    raise SystemExit(
+        "the poll no longer reports the drag plane's pending generation, "
+        "so nothing sends it: the wire owes the host one "
+        "continuity.selection per generation and learns of it here."
+    )
+if poll.index("g_drag_pending") > poll.index("now_continuity_button_is_down"):
+    raise SystemExit(
+        "the pending drag generation is checked AFTER the held-button "
+        "gate. A drag-sourced generation exists exactly while the button "
+        "is down, so that ordering swallows every one of them and the "
+        "route reads as a resident that never published."
+    )
+
+# --- 9. the source crosses the wire -------------------------------------
+selection_send = function_body(
+    WIRE, "static void service_continuity_selection(void)", "wire.c")
+if '\\"source\\"' not in selection_send:
+    raise SystemExit(
+        "continuity.selection no longer carries `source`. The host then "
+        "cannot tell a drag from a poll, and the bind falls back to "
+        "reasoning about a cache for a fact it was handed."
+    )
+if selection_send.count('\\"source\\"') != 3:
+    raise SystemExit(
+        "`source` is not on all three continuity.selection templates "
+        "(empty, folder, file). A field sent only sometimes cannot be "
+        "distinguished by a host from a guest too old to have it."
     )
 
 print("continuity selection gates ok")
