@@ -1418,9 +1418,17 @@ enum { kNowPeekDragObsRegCapacity = 8 };
    it - Pascal, and 32 bytes so this struct is a flat 40 with no padding
    for either compiler to disagree about (the three-compiler rule). */
 typedef struct {
-    NowPeekU32 a5;                /* the A5 world that took it */
+    NowPeekU32 a5;                /* the A5 world that attempted it */
     NowPeekU32 ticks;             /* when, in the guest's own TickCount */
-    unsigned char name[32];
+    /* THE OUTCOME, PER ATTEMPT, and this field is the whole reason the
+       row exists rather than a counter. `handler_state` and `handler_err`
+       are single globals: a registration REFUSED in one application and
+       then taken in another leaves the second one's success in both, so a
+       per-context failure is invisible by construction. That is not a
+       hypothetical - it is exactly the shape that would make the Finder
+       look like it never reached this code when it did. */
+    NowPeekI32 err;               /* InstallTrackingHandler's OSErr; 0 = took */
+    unsigned char name[32];       /* CurApName, Pascal */
 } NowPeekDragObsReg;
 
 /* `handler_state`. Append, never renumber. */
@@ -1582,7 +1590,11 @@ typedef struct {
        set recorded here IS the set of applications that pumped while
        armed (up to capacity). It is a ledger rather than a ring: the
        first few are the interesting ones and an overflow is counted. */
-    NowPeekU32 reg_count;         /* registrations ever made, uncapped */
+    /* ATTEMPTS, not successes. A row is written whether the Drag Manager
+       took the registration or refused it, because "the Finder never got
+       here" and "the Finder got here and was refused" are opposite
+       findings and the counters above cannot separate them. */
+    NowPeekU32 reg_count;         /* attempts ever made, uncapped */
     NowPeekDragObsReg regs[kNowPeekDragObsRegCapacity];
 } NowPeekDragObserve;
 
@@ -2765,9 +2777,9 @@ _Static_assert(offsetof(NowPeekDragObserve, tracks) == 1260,
                "V15 tracking ring offset");
 _Static_assert(offsetof(NowPeekDragObserve, reg_count) == 2156,
                "V16 registry is APPENDED: the V14+V15 halves must be unmoved");
-_Static_assert(sizeof(NowPeekDragObsReg) == 40,
+_Static_assert(sizeof(NowPeekDragObsReg) == 44,
                "V16 registration row layout (three-compiler rule)");
-_Static_assert(sizeof(NowPeekDragObserve) == 2480,
+_Static_assert(sizeof(NowPeekDragObserve) == 2512,
                "drag observer block ABI drift (V14 trap + V15 handler + V16 registry)");
 _Static_assert(offsetof(NowPeekDragObserve, file_name) == 136,
                "V14 drag observer name offset");
@@ -2775,7 +2787,7 @@ _Static_assert(offsetof(NowPeekDragObserve, samples) == 200,
                "V14 drag observer sample ring offset");
 _Static_assert(sizeof(((NowPeekDragObserve *)0)->file_name) == 64,
                "V14 drag observer name width");
-_Static_assert(sizeof(NowPeekContinuityCell) == 6932,
+_Static_assert(sizeof(NowPeekContinuityCell) == 6964,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");

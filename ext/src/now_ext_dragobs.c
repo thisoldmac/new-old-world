@@ -290,28 +290,10 @@ static int track_context_index(NowPeekU32 a5)
    which the Drag Manager reads as "every window this application owns" -
    the Finder's icons live on the desktop window and in folder windows
    and we have no business enumerating either. */
-static void track_install(NowPeekDragObserve *block, NowPeekU32 a5)
+/* V16. One attempt, named, with its outcome. See the contract for why
+   this is a row per ATTEMPT rather than a counter of successes. */
+static void track_note(NowPeekDragObserve *block, NowPeekU32 a5, NowPeekI32 err)
 {
-    OSErr err;
-
-    if (track_context_index(a5) >= 0)
-        return;
-    if (gTrackContextCount >= kNowPeekDragObsContextCapacity) {
-        block->handler_state = (NowPeekU32)kNowPeekDragObsHandlerNoRoom;
-        return;
-    }
-    gInside = 1;                  /* the call itself is a _DragDispatch */
-    err = InstallTrackingHandler(track_upp(), NULL, NULL);
-    gInside = 0;
-    if (err != noErr) {
-        block->handler_state = (NowPeekU32)kNowPeekDragObsHandlerRefused;
-        block->handler_err = (NowPeekI32)err;
-        return;
-    }
-    gTrackContexts[gTrackContextCount++] = a5;
-    /* V16. WHO took it, not just how many - see the contract. Written
-       before the count below so a reader that catches the block mid-write
-       sees a row without its count rather than a count without its row. */
     if (block->reg_count < (NowPeekU32)kNowPeekDragObsRegCapacity) {
         NowPeekDragObsReg *reg = &block->regs[block->reg_count];
         /* Through a volatile, for the reason now_ext.c states once: low
@@ -325,6 +307,7 @@ static void track_install(NowPeekDragObserve *block, NowPeekU32 a5)
 
         reg->a5 = a5;
         reg->ticks = (NowPeekU32)LMGetTicks();
+        reg->err = err;
         for (i = 0; i < 32; ++i)
             reg->name[i] = 0;
         /* Bounded by what we WRITE, never by the source: CurApName is
@@ -339,6 +322,32 @@ static void track_install(NowPeekDragObserve *block, NowPeekU32 a5)
         }
     }
     block->reg_count++;
+}
+
+static void track_install(NowPeekDragObserve *block, NowPeekU32 a5)
+{
+    OSErr err;
+
+    if (track_context_index(a5) >= 0)
+        return;
+    if (gTrackContextCount >= kNowPeekDragObsContextCapacity) {
+        block->handler_state = (NowPeekU32)kNowPeekDragObsHandlerNoRoom;
+        return;
+    }
+    gInside = 1;                  /* the call itself is a _DragDispatch */
+    err = InstallTrackingHandler(track_upp(), NULL, NULL);
+    gInside = 0;
+    /* THE ROW GOES DOWN WHATEVER HAPPENED, and before the early return
+       below, because a refusal here is the finding this instrument was
+       added to catch: handler_state and handler_err are single globals
+       that the next application's success overwrites. */
+    track_note(block, a5, (NowPeekI32)err);
+    if (err != noErr) {
+        block->handler_state = (NowPeekU32)kNowPeekDragObsHandlerRefused;
+        block->handler_err = (NowPeekI32)err;
+        return;
+    }
+    gTrackContexts[gTrackContextCount++] = a5;
     block->handler_installs++;
     block->handler_contexts = (NowPeekU32)gTrackContextCount;
     block->handler_state = (NowPeekU32)kNowPeekDragObsHandlerInstalled;

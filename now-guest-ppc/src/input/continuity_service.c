@@ -573,11 +573,13 @@ static void drain_drag_observe(const NowPeekContinuityCell *cell)
                 }
                 rname[len] = '\0';
                 now_log(kLogInfo, "mirror",
-                        "drag handler reg n=%lu/%lu a5=%08lx tk=%lu app=%s",
+                        "drag handler reg n=%lu/%lu a5=%08lx tk=%lu "
+                        "err=%ld app=%s",
                         (unsigned long)(n + 1u),
                         (unsigned long)obs->reg_count,
                         (unsigned long)reg->a5,
-                        (unsigned long)reg->ticks, rname);
+                        (unsigned long)reg->ticks,
+                        (long)reg->err, rname);
             }
         }
         gLastHandlerState = obs->handler_state;

@@ -136,15 +136,18 @@ int main(void)
        compiler could disagree about, and it sits at the block's TAIL so
        every offset above it is unmoved. The three-compiler rule made
        checkable rather than asserted in a comment. */
-    check(sizeof(NowPeekDragObsReg) == 40,
-          "a registration row must be a flat 40 bytes");
+    check(sizeof(NowPeekDragObsReg) == 44,
+          "a registration row must be a flat 44 bytes");
     check(sizeof(((NowPeekDragObsReg *)0)->name) == 32,
           "the registering app's name is 32 bytes, Pascal");
     check(offsetof(NowPeekDragObsReg, ticks)
               == offsetof(NowPeekDragObsReg, a5) + 4,
           "no padding between a5 and ticks");
-    check(offsetof(NowPeekDragObsReg, name)
+    check(offsetof(NowPeekDragObsReg, err)
               == offsetof(NowPeekDragObsReg, ticks) + 4,
+          "no padding between ticks and the outcome");
+    check(offsetof(NowPeekDragObsReg, name)
+              == offsetof(NowPeekDragObsReg, err) + 4,
           "no padding before the name");
     check(offsetof(NowPeekDragObserve, regs) % 4 == 0,
           "the registry must be four-byte aligned");

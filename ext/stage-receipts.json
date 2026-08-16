@@ -1068,6 +1068,17 @@
         "ext/src/now_ext_dragobs.c"
       ],
       "reason": "V16 registry is a diagnostic appended at the block tail; the round it exists to serve runs against a staged clone (spin-up-ppc stages this tree's ext), and a shared bake would replace the oracle other lanes are cloning mid-arc. Due at main."
+    },
+    {
+      "at": "2026-08-16T15:56:22-0400",
+      "branch": "feat/resident-drag-bind",
+      "extDigest": "b3edf06a6b791dd997c252ca558b1f8a8ce27140",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_dragobs.c"
+      ],
+      "reason": "V16 registry records attempts per context; diagnostic, appended at the block tail, exercised against a staged clone. Shared bake would replace the oracle other lanes are cloning mid-arc. Due at main."
     }
   ]
 }
