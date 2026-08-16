@@ -552,7 +552,7 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
 
         // THE GUEST'S DESKTOP BEFORE, so what lands is what THIS test put
         // there. A file already present would otherwise read as a pass.
-        let before = await execLine("ls Desktop")
+        let before = await execLine("ls Desktop Folder")
         print("=== guest Desktop before the drop: \(before.text) ===")
         XCTAssertFalse(
             before.text.contains(expectedName),
@@ -584,7 +584,21 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
         // shown — and travel to the desktop, which is the crossing this
         // slice is a stand-in for.
         let startH = 300, startV = 240
-        let dropH = 300, dropV = 570
+        // WHERE THE DESKTOP ACTUALLY IS, AND IT IS NOT A CONSTANT.
+        // 800x600 with the Workshop window at its default size leaves a
+        // desktop band roughly y 552..570 — eighteen pixels between our
+        // own window's bottom edge and the Control Strip, with the
+        // Finder's own icons in it. The first drop this slice ever
+        // measured aimed at (300, 570) and came back `loc='null'`: no
+        // receiver set a drop location, which is what a drop onto a
+        // strip that is not the desktop looks like. A target that thin
+        // is a rig hazard, not a property of the product, so the point
+        // is settable and the case that runs for real makes room first.
+        let target = ProcessInfo.processInfo.environment["NOW_DRAG_DROP"]?
+            .split(separator: ",").compactMap { Int($0) }
+        let dropH = target?.count == 2 ? target![0] : 300
+        let dropV = target?.count == 2 ? target![1] : 570
+        print("=== drop target: \(dropH),\(dropV) ===")
 
         for _ in 0..<10 {
             send(h: startH, v: startV, down: false)
@@ -646,10 +660,13 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
         // this build has rather than by a version string.
         let logText = String(describing: log.output)
         XCTAssertTrue(
-            logText.contains("drag detail:"),
-            "no `drag detail:` line: this guest is not running the build "
+            logText.contains("drag drop:"),
+            "no `drag drop:` line: this guest is not running the build "
                 + "under test, so nothing it says about the drop is "
-                + "evidence about this code. Log: " + logText)
+                + "evidence about this code. It was `drag detail:` until "
+                + "this commit, and that line now exists in TWO builds — "
+                + "which is the whole failure mode this assertion is "
+                + "for, arriving one build later. Log: " + logText)
 
         // THE OUTCOME, FROM THE GUEST'S OWN STATE MACHINE.
         XCTAssertTrue(
@@ -663,7 +680,7 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
         // state machine and the only one that can say a FILE exists. A
         // state machine reporting success is exactly what a promise that
         // handed back a stale FSSpec would also do.
-        let after = await execLine("ls Desktop")
+        let after = await execLine("ls Desktop Folder")
         print("=== guest Desktop after the drop: \(after.text) ===")
         XCTAssertTrue(
             after.text.contains(expectedName),

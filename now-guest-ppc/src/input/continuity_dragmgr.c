@@ -57,10 +57,97 @@ void now_continuity_dragmgr_diag(long mask)
     g_diag_mask = mask;
 }
 
+/* The one drag item; see the note at its original home below. */
+enum { kOfferItemRef = 1 };
+
+/* ---- DIAGNOSTIC bit 4: A CONTROL MADE OF CODE WE OWN ---------------
+   Every measurement so far has asked the Finder a question and read
+   silence as an answer, which cannot tell "our promise is malformed"
+   from "the Finder never saw this drag". A control has to be a receiver
+   whose source is ours, so a negative means something.
+
+   So NOW installs its own tracking and receive handlers on its own
+   window and the drop happens INSIDE it. If the promise is asked for
+   there, the sender half is correct and the defect is in delivery to
+   another process; if it is not asked for even by a handler we wrote,
+   the defect is in what this drag DECLARES and no Finder was ever going
+   to ask. (docs: a probe's control must target our own source.) */
+static DragTrackingHandlerUPP g_diag_track_upp;
+static DragReceiveHandlerUPP g_diag_recv_upp;
+static long g_diag_track_msgs;
+
+static pascal OSErr diag_tracking(DragTrackingMessage message,
+                                  WindowRef window, void *refcon,
+                                  DragRef drag)
+{
+    (void)window; (void)refcon; (void)drag;
+    g_diag_track_msgs++;
+    /* Only the edges, and never every pass: kDragTrackingInWindow
+       arrives dozens of times a second and would bury the log. */
+    if (message == kDragTrackingEnterWindow
+        || message == kDragTrackingLeaveWindow
+        || message == kDragTrackingEnterHandler) {
+        now_log(kLogInfo, "mirror", "drag ctrl: tracking msg=%d",
+                (int)message);
+    }
+    return noErr;
+}
+
+static pascal OSErr diag_receive(WindowRef window, void *refcon, DragRef drag)
+{
+    FSSpec spec;
+    Size size = (Size)sizeof spec;
+    OSErr err;
+    short vref = 0;
+    long dir = 0;
+    AEDesc where;
+
+    (void)window; (void)refcon;
+
+    now_log(kLogInfo, "mirror", "drag ctrl: RECEIVE handler ran");
+
+    /* Say where, the way a real receiver does — the sender's send proc
+       reads this back with GetDropLocation, and a promise with nowhere
+       to go is a different failure from one nobody asked for. */
+    if (FindFolder(kOnSystemDisk, kDesktopFolderType, kDontCreateFolder,
+                   &vref, &dir) == noErr
+        && FSMakeFSSpec(vref, dir, (ConstStr255Param)"\p", &spec) == noErr
+        && AECreateDesc(typeFSS, &spec, sizeof spec, &where) == noErr) {
+        SetDropLocation(drag, &where);
+        AEDisposeDesc(&where);
+    }
+
+    /* THE ASK. This is the exact call the Finder would make, from code
+       whose source is in this repository. */
+    err = GetFlavorData(drag, kOfferItemRef, kDragPromisedFlavor, &spec,
+                        &size, 0);
+    now_log(kLogInfo, "mirror",
+            "drag ctrl: GetFlavorData('fssP') -> %d, size=%ld", (int)err,
+            (long)size);
+    return noErr;
+}
+
+static void diag_install_handlers(void)
+{
+    WindowRef win = FrontWindow();
+
+    if (win == NULL || g_diag_track_upp != NULL) {
+        return;
+    }
+    g_diag_track_upp = NewDragTrackingHandlerUPP(diag_tracking);
+    g_diag_recv_upp = NewDragReceiveHandlerUPP(diag_receive);
+    if (g_diag_track_upp == NULL || g_diag_recv_upp == NULL) {
+        now_log(kLogError, "mirror", "drag ctrl: no handler UPPs");
+        return;
+    }
+    now_log(kLogInfo, "mirror", "drag ctrl: handlers installed t=%d r=%d",
+            (int)InstallTrackingHandler(g_diag_track_upp, win, NULL),
+            (int)InstallReceiveHandler(g_diag_recv_upp, win, NULL));
+}
+
 /* The one drag item. The Drag Manager wants a reference number per item
    and this drag has exactly one, always: an offer holds one file (a
    folder is refused before we get here). */
-enum { kOfferItemRef = 1 };
 
 /* How long the streaming promise waits with no progress at all before
    giving up on the Finder's behalf.
@@ -414,6 +501,9 @@ static void start_drag(void)
         now_continuity_drag_start_failed(&g_drag);
         return;
     }
+    if ((g_diag_mask & 4) != 0) {
+        diag_install_handlers();
+    }
     if (NewDrag(&drag) != noErr || drag == NULL) {
         now_log(kLogError, "mirror", "drag: NewDrag refused");
         now_continuity_drag_start_failed(&g_drag);
@@ -515,6 +605,31 @@ static void start_drag(void)
     now_log(kLogInfo, "mirror", "drag tracking %.31s (%ld bytes)",
             g_drag.item.name, g_drag.item.data_size);
 
+    /* WHAT THE DRAG MANAGER SAYS IT IS HOLDING, read back rather than
+       assumed from three noErr returns. AddDragItemFlavor answering
+       noErr and the drag actually carrying that flavor are two claims,
+       and only the second is the one a receiver acts on. */
+    {
+        UInt16 items = 0, flavors = 0, i;
+        char list[64];
+        long used = 0;
+
+        CountDragItems(drag, &items);
+        CountDragItemFlavors(drag, kOfferItemRef, &flavors);
+        list[0] = '\0';
+        for (i = 1; i <= flavors && used + 6 < (long)sizeof list; i++) {
+            FlavorType ft = 0;
+
+            if (GetFlavorType(drag, kOfferItemRef, i, &ft) != noErr) {
+                break;
+            }
+            used += snprintf(list + used, sizeof list - used, "%s'%.4s'",
+                             used > 0 ? " " : "", (const char *)&ft);
+        }
+        now_log(kLogInfo, "mirror", "drag carries: items=%u flavors=%u %s",
+                (unsigned)items, (unsigned)flavors, list);
+    }
+
     /* THE WIRE STOPS HERE, and that is documented rather than fixed:
        TrackDrag takes no idle callback, exactly like MenuSelect and
        DragWindow in pump.h's list of what cannot be pumped. The
@@ -579,19 +694,52 @@ static void start_drag(void)
         {
             AEDesc drop;
             OSType kind = typeNull;
+            OSErr loc_err;
             Point endp;
+            DragAttributes attrs = 0;
 
             AECreateDesc(typeNull, NULL, 0, &drop);
-            if (GetDropLocation(drag, &drop) == noErr) {
+            loc_err = GetDropLocation(drag, &drop);
+            if (loc_err == noErr) {
                 kind = drop.descriptorType;
             }
             AEDisposeDesc(&drop);
             GetMouse(&endp);
             LocalToGlobal(&endp);
             now_log(kLogInfo, "mirror",
-                    "drag drop: loc='%.4s' end=%d,%d mods=0x%04x asks=%ld",
-                    (const char *)&kind, (int)endp.h, (int)endp.v,
+                    "drag drop: loc='%.4s' err=%d end=%d,%d mods=0x%04x "
+                    "asks=%ld",
+                    (const char *)&kind, (int)loc_err,
+                    (int)endp.h, (int)endp.v,
                     (unsigned)event.modifiers, g_diag_asks);
+
+            /* WHETHER THE DRAG EVER LEFT US, asked of the Drag Manager
+               rather than inferred from coordinates. A drop location of
+               typeNull says no receiver claimed the drop; it cannot say
+               whether the drag was ever OFFERED to one. These three bits
+               can:
+
+                 left   the drag left the sender WINDOW at some point
+                 inapp  it ended inside the sender APPLICATION
+                 inwin  it ended inside the sender window
+
+               `left=0` means the Drag Manager never considered this drag
+               to have gone anywhere - a different defect from a Finder
+               that saw it and declined. Reading the pointer's final
+               coordinates off a screen capture answers neither, and that
+               is how this slice has been reasoning so far. */
+            GetDragAttributes(drag, &attrs);
+            now_log(kLogInfo, "mirror",
+                    "drag attrs: 0x%08lx left=%d inapp=%d inwin=%d",
+                    (unsigned long)attrs,
+                    (attrs & kDragHasLeftSenderWindow) ? 1 : 0,
+                    (attrs & kDragInsideSenderApplication) ? 1 : 0,
+                    (attrs & kDragInsideSenderWindow) ? 1 : 0);
+            if ((g_diag_mask & 4) != 0) {
+                now_log(kLogInfo, "mirror",
+                        "drag ctrl: tracking messages seen = %ld",
+                        g_diag_track_msgs);
+            }
         }
     }
 
