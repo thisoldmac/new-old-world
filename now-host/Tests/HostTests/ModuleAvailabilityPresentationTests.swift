@@ -9,7 +9,7 @@ final class ModuleAvailabilityPresentationTests: XCTestCase {
             "icloud": .local,
             "chat": .local,
             "web": .local,
-            "development": .local,
+            "projects": .local,
             "mcp": .local,
             "logs": .local,
             "settings": .local,

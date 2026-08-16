@@ -812,6 +812,435 @@ them is non-zero. Both were watched firing in the emulator.
 port-mismatch error line (a rebuild that binds somewhere else) is
 **Builds** only — no emulator run can force XTI to bind elsewhere.
 
+
+## EMULATOR-OBSERVED WHERE IT COUNTS: 035 fix wave — the Web proxy serves its first page ever, the footer joins the drop system, drags stop wedging (2026-08-15 overnight, four lanes merged, gate green)
+
+Round 2's fix wave, plan 035. `scripts/test-all` green on the merged
+tree, which also re-merged `refactor/mirror-continuity-split` @ 79468368
+(second inherited bake deferral recorded; cmd_help union was the only
+source conflict; the guest compiles the sibling's mirror-log-gate clean
+against G-7's master consent).
+
+- **C1 Web proxy** (`035-web`): the module had NEVER served a page on
+  any guest — `web_proxy_ot.c` required the peer to be 127.0.0.1, and
+  OT on OS 9.1 reports an in-guest loopback connection's peer as the
+  machine's PRIMARY address. The condition is gone with no replacement
+  (the 127.0.0.1 BIND is the measured boundary — a hostfwd curl cannot
+  reach it). Emulator re-verified on this branch's build: an in-guest
+  HTTP client fetched through 127.0.0.1:5180, the wire carried
+  web.request, the host's bytes landed in a guest file. Three
+  diagnostics ensure the silence is unrepeatable: TBind readback (the
+  page shows what OT GRANTED), last-refused-call in status, and the
+  guest finally reads web.response.end's code for a "Modern Mac: …"
+  clause. New pure accept seam + native test whose FIRST assertion is
+  that a non-loopback peer is accepted. Metal remains the final word
+  (peer address choice is per-machine TCP/IP config). Classilla has
+  still never driven it; the host render pipeline is still unproven
+  past a marker page. S2 (real host status) wants one contract message
+  (web.status, chat.status-shaped) — written up, not built.
+- **C2 footer/drag** (`035-footer`): `.move` previews now render the
+  baseline (the insertion line says where the row lands) — the same
+  decision wave 1 made for `.insert`, which had left every zone band
+  live; the pinned stack gets its own drop geometry (lower fallback
+  APPENDS, mirroring the upper half); hero-displacing drops are refused
+  up front (cursor says no) instead of accepted-then-silently-reverted
+  by enforceSpecialHeroes; the pill bar catches its own near-misses.
+  T1–T6 landed, the failing ones watched failing pre-fix. TWO MORNING
+  CALLS FOR MICHELLE: (1) should shelf heroes become movable (delete
+  fixedModuleHeroID; un-freezes Screen/Files/Connections tab order) —
+  option 1 shipped so nothing is swallowed meanwhile; (2) the one
+  live-only question — does the footer's Debug row show drop feedback
+  during a drag at all? If never, the footer's NSViews aren't being
+  hit-tested and a bigger fix (out of the safeAreaInset) is next.
+- **S4 files drag** (`fix/files-drag-out-promises` — renamed mid-run:
+  git-policy now refuses creator-prefixed branches for new merge
+  bases): getFile has the busy-guard its three siblings had, promise
+  completions can no longer be orphaned (the "ghost" was Finder's own
+  placeholder), a watchdog frees a lost reply instead of wedging every
+  later drag-out; promise metadata derives UTType from the osType with
+  the curated table as overrides and the promised filename gets a
+  consistent extension; acceptDrop handles NSFilePromiseReceiver
+  sources (Photos etc.) and validateDrop only claims what it can read.
+  Request-id keying deferred WITH REASON (single bulk receiver = one
+  waiter by construction once guarded). CHEAPEST LIVE CONFIRMATIONS:
+  drag an extension-less TEXT file onto TextEdit; two quick drag-outs in
+  succession; drag a photo out of Photos.app into the browser.
+- **S1 + V3-gap** (`035-smalls`): the Connections roster toggle lives
+  in the roster's own header (Files' placement), placement-pinned by a
+  mutation-watched test; the Volumes probe and ATA drive line scale
+  through census_size_mib (code-consistent with the live-proven
+  overview path, itself unobserved).
+
+Morning addendum — heroes: CLOSED as option 2 (Michelle: "let the user
+decide"). `hero` is `moduleIDs.first` everywhere but the machine shelf
+(whose Overview hero is a page, not a module — pinned by its own test);
+fixedModuleHeroID, enforceSpecialHeroes and both drag guards (including
+the overnight refuse-up-front) are deleted. A drop in front of a first
+pill is accepted, previewed live, and survives the save; Settings on a
+user shelf stays put now. No migration, no version bump: every layout
+the old build wrote was already canonical under the old rule, so the new
+rule reads the same arrangement from the same bytes (a store test pins
+that loading does not rewrite them). Four pinning tests inverted into
+user-order-wins coverage; mutation-watched by reintroducing a minimal
+enforceSpecialHeroes and watching the rewritten T4 name the reorder.
+Unwatched: the feel of a pill sliding out from under the bar, and the
+untested path where an empty non-machine shelf renders `unavailable`.
+
+C3 closed earlier as stale-binary (install the current guest). S3
+(multi-root projects) intentionally waits on Michelle's prefs-shape
+call. Ideas N1–N6 are issues #29–#34.
+
+Post-wave addendum: a granted mirror get / continuity grab was cancelled
+by the host's own begin guard (sendMirrorFileGet/sendContinuityGrab never
+set activeFileGetID) — found by the files lane, confirmed end-to-end by
+the DMG-migration session, fixed @ c752cb99 with the success-path tests
+the API never had. Why nothing saw it: refusals route ungated
+(Session:657 → GuestListener:3347, fromActive() only) while successes
+were gated — so the API's only test asserted a refusal. The next API on
+this lane gets tested success-first for exactly that reason.
+
+## TESTED, THE ONE DELIBERATE REGRESSION UNWATCHED: Mirror consent is one switch on the Mac, planes on the host (2026-08-15, `claude/034w5-mirror`, closes plan 034 G-7)
+
+Mirror consent (plan 034 G-7, 2026-08-15). The guest's half of the two-key consent is now ONE master switch; the four per-plane guest gates retired and the host's plane policy is the sole granularity. Both sides must still permit — the guest's veto is untouched, only its granularity moved. Field fates, all decided explicitly: `policy.enabled` is new and required; `structure`/`finderComplements`/`content`/`foregroundCycle` are retired but STILL SENT by a current guest, all four set to the master, because a host built before this change declares them required and would fail to decode the entire facts object without them. A host reading a guest that predates `enabled` collapses the four by the guest's own migration rule (consent only when ALL FOUR were on), stated once per side because two sides guessing differently would grant a permission that Mac's own preferences deny, silently, since every plane would simply work. Prefs reach V29; the V22 slots stay and are written from the master, so the rule is its own inverse and a file round-trips through a format-28 build unchanged. UNVERIFIED, and it is the interesting half: the migration is conservative by design, so almost every existing preferences file collapses to consent OFF — only structure was ever on by default — meaning a person who upgrades finds mirroring refused until they tick one box, and nobody has watched that happen on a real machine. Also unverified on metal: the host's `content` plane default flipped to OFF to inherit the guest's old default (P3 is metal-proven to crash the Finder on the PB1400c), so a fresh pair of machines should behave exactly as before; that equivalence is argued from code, not observed. Neither guest page nor host page has been seen rendered — no emulator or metal pass ran for this change.
+
+## RESOLVED: the DMG assembler no longer uses the deprecated `hdiutil create` (2026-08-15, `build/dmg-diskutil-migration`)
+
+`scripts/assemble-release :: create_dmg` now shells out to `diskutil
+image create from --format UDZO --volumeName "New Old World" <source>
+<destination>`. The flags did map across after all: `UDZO` is one of
+`diskutil`'s own accepted format names, `-volname` becomes
+`--volumeName`, and the source folder and destination become positional.
+Both spellings were built from the same stub folder and compared on
+macOS 27 — UDIF read-only compressed (zlib), GUID partition scheme, APFS
+filesystem, symlinks carried across rather than dereferenced — so this
+is an equivalent image, not a similar one.
+
+The `tools/release-tests` mount-and-inspect case gained the assertion the
+swap actually needed: the drag-to-install `/Applications` alias is a
+symlink with that exact target. A builder that dereferenced it would
+still produce a DMG that mounts and passes every other assertion. Both
+halves were watched failing — a mutation that made the alias a real
+directory, and one that pointed it elsewhere.
+
+The gate clones `HEAD` rather than reading the worktree, which is worth
+knowing before trusting it: the first green run of this change tested
+the unmodified committed script and proved nothing. Commit, then run.
+
+Not closed by this: `tools/release/image.py` still calls `hdiutil
+create` for the generic classic-Mac setup image, and cannot move. It
+needs `-fs HFS+`, `-size` and `-layout NONE`; `diskutil image create
+from` has no equivalent of any of the three and produces APFS only.
+Worse, `diskutil listFilesystems` on macOS 27 no longer offers an HFS+
+personality at all, so the replacement tool has retired the capability
+the classic image depends on rather than merely not grown it yet. That
+is a different problem from this one, tracked as
+[issue #28](https://github.com/thisoldmac/new-old-world/issues/28), and
+it is unsolved rather than deferred.
+
+## EMULATOR-OBSERVED AT BEST, METAL NOT AT ALL: 034 wave 4 — the Files cocktail, one name rule, files drop in from outside (2026-08-15, five lanes merged, gate green)
+
+Wave 4 of plan 034, the last implementation wave; `scripts/test-all`
+green on the merged tree.
+
+- **Files rebuild** (`034w4-files`): two named halves, no disclosure
+  triangle; the four-writer status placard became per-channel storage
+  with one priority rule (`files_status.c`), so a clearing channel
+  uncovers unread news instead of falling to "Ready." Emulator-observed
+  drawing — the observation is recorded in commit 85340049's message;
+  the screenshot itself was a gitignored artifact in the lane's worktree
+  and was lost when the merged worktrees were removed. Nothing
+  with a file actually moving was exercised. Three corrections it forced:
+  the research claim "catsearch.c is dead" was WRONG (live console+wire
+  verb; kept); the share half's hand-drawn text had NEVER reached the
+  observation plane (helper files are invisible to the describe gate —
+  the gate's own stated limit, now having cost one real gap); and the
+  hidden send progress bar reports `visible:true` in the scene while the
+  pixels show none — an observation-plane fidelity nit, pre-existing,
+  unowned.
+- **Naming** (`034w4-naming` + merge-time consolidation): the hostname
+  was already on the wire (`Hello.name` → `g.peer_name`) — no contract
+  change. `core/peer_name.c` owns the one conversion (This Mac / trimmed
+  hostname / "Other Mac"); `conn_peer_label()` and the Files label both
+  delegate. The retired "the other Mac" phrasing is test-pinned against
+  return.
+- **Drag, drop-first** (`034w4-drag`): Drag Manager tracking/receive on
+  the Workshop window (real UPPs, runtime-gated on Gestalt; absence is a
+  supported state), `flavorTypeHFS` accepted, and `kAEOpenDocuments`
+  answered for the first time (the app had sent it in four places and
+  never served it). NEITHER handler sends: drops land in a ring drained
+  from the idle loop into the existing send path. Finder icon drops via
+  the new documents FREF/BNDL. **This slice's automated gates can be
+  green while the feature does nothing** — Drag Manager behavior is
+  invisible to all of them; Emulator QA and Metal QA statuses are
+  required by repository policy before the PR merges.
+- **Cloud describe + copy** (`034w4-cloud`): `CloudViewOps` gained a
+  describe entry across all four views; iCloud no longer reports its
+  card pane as a bare rect, and Chat/Mirror/Projects/Processes/Software
+  now serve `copy_text`. All 17 pages describe; 11 serve Copy.
+- **Chevron** (`034w4-chevron`): H10's symbol bounce on the shared
+  rail's icon, macOS 14-gated over a macOS 13 floor, Reduce-Motion
+  aware. Build-verified; the visual is unwatched.
+
+What remains of plan 034: G-7 (mirror consent contract change — gated on
+`refactor/mirror-continuity-split` landing), the guest chat sidebar
+(gated on the guest-browsing contract decision), and the verification
+debt this ledger keeps repeating: one structured emulator pass over the
+whole guest app, then the metal pass, then the Emulator/Metal QA
+statuses for the PR.
+
+## TESTED, NOTHING WATCHED ON A MACHINE: 034 wave 3 — every page can say what it drew, Copy exists, Connections reorg, saved chats, Settings window (2026-08-15, four lanes merged at `0bfdee71`)
+
+Wave 3 of plan 034; `scripts/test-all` green on the merged tree.
+
+- **Guest citizenship** (`034w3-citizenship`): all 17 Workshop pages
+  implement `describe_scene` — each page is ONE walk taken twice (draw on
+  a NULL writer, describe on a real one), so the description cannot
+  disagree with the pixels; a source gate fails any module that draws
+  text while the entry is NULL, and it looks the ops field up BY NAME
+  after its first version read "last element" and broke on the very next
+  appended field — one commit from reading green off the wrong member.
+  Edit▸Copy exists for the first time (`copy_text(out, cap)` ops entry,
+  the MODULE answers, no focus machinery): served on Console, Hardware,
+  Diagnostics, Connection, Networking; greyed elsewhere. Declared
+  partial: iCloud describes its card pane as a rect only — CloudViewOps
+  has no describe entry (four sibling files, follow-up owned by wave 4);
+  Files/Chat/Mirror/Projects/Processes/Software could serve copy_text
+  cheaply and do not yet.
+- **Connections reorg** (`034w3-conn`): the Files right-sidebar became a
+  shared `RightSidebarSplitView` with Files and Connections both
+  consuming it; the roster is a collapsible right sidebar (collapse
+  persisted); `ConnectionLinkSection`/`ConnectionListenerLog` moved out
+  of `SettingsModuleView.swift`; one guard was rewritten after PASSING
+  its own mutation (substring match accepted a forked alias — now
+  word-boundary).
+- **Saved chats** (`034w3-chat`): ChatStore persists chat metadata with
+  transcripts in per-chat files loaded only on selection; projects are
+  folders on disk with an optional `linkedProjectID`; first launch
+  adopts the live conversation as chat #1. Privacy surface a reader
+  must not rediscover: transcripts can contain guest-screen content and
+  now persist in Application Support, local-only.
+- **Settings window** (`034w3-settings`): the ⌘, window is a pill-tab
+  switcher (Appearance / Sidebar / MCP / Web / Logs / New Connections)
+  with deep-link routing; Continuity gained a global seeded-defaults
+  store for new connections; Mirror's slot is a deliberate placeholder
+  (its controls stay in-module while the feature is unsettled).
+
+None of it has been watched on a running host or guest.
+
+## TESTED ACROSS THE BOARD, NOTHING WATCHED ON A MACHINE: 034 wave 2 — update-in-place, guest citizenship, module moves, Projects (2026-08-14, seven lanes merged at `c8b1d827`)
+
+Wave 2 of plan 034; `scripts/test-all` green on the merged tree, every
+stage run. Per lane, with the honest status:
+
+- **H4 update-in-place** (`034w2-b-update`): `now_trash_move_busy`
+  (files/trash_move.c) is the one shared "trash a possibly-running APPL
+  without renaming it" primitive; the rename WAS the bug. Two extra
+  defects fixed on the way: `put_abort()` left `g_update.pending` stuck
+  (one cancelled update wedged all later ones until relaunch), and the
+  host's update progress never correlated by `putId` (it rides
+  `onOutboundProgress`). Host adds a 3-minute watchdog, determinate
+  progress, Cancel, all converging through one `finishUpdate` seam that
+  also refuses a late answer resurrecting a settled notice. fBsyErr is
+  system-dependent: nothing here is metal-verified.
+- **About box + View keys** (`034w2-f-menu`): Apple menu with About
+  (movable modal, build stamp), ⌘1-0 removed. `OpenDeskAcc` is not
+  declared under Carbon, so Apple-Menu-Items selections deliberately
+  highlight and do nothing — honest degradation, commented in place.
+- **Rail** (`034w2-f-rail`): compact-only (all 14 rows fit at 640×480 —
+  arithmetic, not observation), description in the hover tag, tier marks
+  in the rail, plain-drag rearrange, curated default order in
+  `workshop_order.c` with the adjacency argument in prose. The page enum
+  moved to `workshop_module_ids.h` so the host cc can read it.
+- **Title gate** (`034w2-f-gate`): docs-gate compares `title` now; the
+  three known drifts proved deliberate and are recorded as gate-validated
+  `title_overrides` with reasons that go stale if titles converge.
+- **G-1** (`034w2-g1a-host` + `034w2-g1b-guest`): Networking on the
+  Machine shelf (layout v4 migration lifts only the default placement);
+  Diagnostics grew `wirestat` (read-only, shape-decoded so a guest can
+  grow a distribution without a host change) plus the link timing rows;
+  guest Connection page gained Test/round-trip via the same heartbeat
+  send the cadence uses; guest Networking dropped its link card from the
+  PAGE while `run_net`'s wire rows are unchanged (the host reads them).
+  The g1b lane died before reporting; its work was verified by
+  cross-compile + native tests afterward. No wirestat decode has ever
+  seen a real guest's answer.
+- **G-2** (`034w2-g2a-rename` + `034w2-g2b-projects`): the module is
+  Projects everywhere a person reads (ids/titles/docs; type and file
+  names deliberately kept; MCP tool names deliberately kept — decided
+  separately). The guest lists its projects (`development-project
+  catalog` — regularized, not a new verb: the contract now declares the
+  action the guest always served, and the console face `help` advertised
+  was implemented at last), remembers the active one (NowPrefs V28),
+  keeps a session ring of 8 settled jobs, and has Build/Run against the
+  selection. The Workshop Projects page has never been drawn on any
+  machine.
+
+Prefs formats V27 (workshop open-state) and V28 (active project) are
+taken; the next persisted field is V29.
+
+## TESTED, THE CURE NOT YET WATCHED: the Connect button lied only to pages born after auto-connect (2026-08-14, `claude/034-inv-conn`)
+
+Assessment item G8 of plan 034. Michelle reported from a running guest
+that the Connection page's button read "Connect" while the link was
+active and healthy — while `conn_idle()` visibly polls the wire and
+flips the title every tick, and the disconnect action already worked.
+
+The mechanism was neither of the briefed hypotheses (idle not running;
+module state diverging from the wire). `conn_is_connected()` IS wire
+truth. The defect was **seeding**: Workshop pages are created lazily,
+and the page cached the wire STATE while creating the button with a
+hardcoded "Connect" — so a Connection page first opened *after* prefs
+auto-connect was born with cache and title already in agreement about
+the wrong thing, and a restamp-on-change idle never saw a change to
+stamp. The fix caches the TITLE rather than the state, synced through
+one helper at create, at show, and on tick, with the decision extracted
+to a Toolbox-free seam (`conn_fields.c`) whose test was watched failing
+against both mutations it names. Connect-on-edit landed in the same
+commit: committing a new address/port now calls the same force-connect
+path the button uses instead of staging behind "Save to keep it."
+
+**Not proven:** nobody has yet opened the page for the first time after
+an auto-connect on a running guest and read "Disconnect". That single
+observation is the remaining verification, and it is exactly the
+scenario the bug lived in. The connect-on-edit path is unverified by
+test (pure Toolbox click handling, no seam).
+
+## BUILDS AND TESTED, NEVER RUN ON ANY MACINTOSH: a receive on the PowerPC guest can be seen and stopped (2026-08-14, `claude/034-slice-e3`)
+
+Slice E of plan 034, items G11b and G11a. The receive plumbing in
+`wire.c` had been complete for months with only the Cloud page reading
+it, filtered to receives answering its own `cloud.get`: a plain push
+from the host landed with no bar, no name and no way to stop it.
+
+`now_wire_put_cancel` is `now_wire_get_cancel` one lane over — the
+outbound `file.cancel` first, then the same `put_abort` teardown an
+inbound `file.cancel` already runs, so the host hears `file.done`
+`ok:false` rather than inferring the end from the bytes stopping. A
+floating windoid (`workshop/receive_progress.c`) shows it, from the idle
+tick, whether or not the Workshop is open. The console gains `cancel`
+over the same implementation, so the capability has both faces.
+
+**What is proven.** `scripts/test-all` is green with all eight stages
+RUN — none skipped, including MirrorKit and the guest cross-builds, so
+both guests compile. `put_cancel_source_test.py` is registered in
+`scripts/test-native` and was watched failing against all three
+mutations it claims: the two halves reordered, the frame keyed `id`, and
+the console verb losing its receive half.
+
+**A mutation harness that lies by hitting the wrong function.** The
+first attempt at the `id` mutation reported the guard PASSING against
+it, which would have read as a hole in the test. It was not: `wire.c`
+carries the *identical* cancel frame twice — `g_get.id` at :3862 and
+`g_put.id` at :4755 — and a non-global substitution silently mutated the
+first, which no assertion in this guard covers. The file changed, the
+diffstat confirmed a change, and the mutation still never reached the
+code under test. This is the repository's own rule paid for again from a
+new direction: confirming the mutation *applied* is not the check —
+confirming it applied **where the guard is looking** is. Where a source
+literal appears more than once, anchor the mutation to the line.
+
+**NOT proven, and it is all of the interaction risk: no window has ever
+appeared.** Nothing here has run on the emulator or on metal. The
+windoid's class and attributes (`kFloatingWindowClass`, no
+`kWindowStandardHandlerAttribute`, `kWindowNoActivatesAttribute`), the
+`TrackControl` that pumps the wire, the six-second outcome dwell, the
+close-box latch, and `front_document_window()` in `main.c` — which
+exists because `FrontWindow()` includes a floating window and would
+otherwise point Cmd-W and every keystroke away from the Workshop for the
+length of every transfer — are all asserted by reading, not by watching.
+The `main.c` routing is the highest-risk half: it changes behaviour for
+the Workshop whether or not a transfer is running.
+
+**Deliberately not built.** An outbound SEND still has no
+guest-originated stop; the console verb says so by name rather than
+reporting a quiet machine. Cloud-page receives stay with the Cloud page,
+since two windows reporting one transfer is worse than one.
+
+## TESTED, THE SYMPTOM ITSELF NOT YET WATCHED: sidebar spring loading was armed against the wrong thing (2026-08-14, `claude/034-inv-drag`)
+
+Assessment items H6, H7 and H16. Michelle reported from a running build
+that the Finder-style double flash never appears, that the connections
+shelf cannot be spring-loaded into because it moves out of the way, and
+that a shelf's dropdown leaves its row lit after closing. All three had
+implementation and passing tests; the code read as correct.
+
+**H6's cause is best-supported, not confirmed.** The chain: her own H7
+report is live evidence that `draggingUpdated` reaches
+`NativeNavigationDragView` and that `previewDrop` applies moves on
+screen, so the drag plumbing is not the problem. What was gated is the
+arming. `springLoadingEntered` resolved the drop target from the *band*
+under the pointer and refused `.enabled` unless that band supported
+spring loading — and two of a row's three bands are `.zone` insertions,
+which never do. A drag entering a shelf row anywhere but its middle
+third told AppKit "no spring loading here", and every band crossing
+revoked the arm and restarted the dwell. `flashTwice()` is reached only
+from `springLoadingActivated`, so it had nothing to fire from. Arming now
+asks the row (`NavigationRowDropTargets.springLoadingTarget`) and keeps
+its own feedback state, disarmed only when the drag leaves or ends.
+
+Arming and activating had to be split apart to do that, and they answer
+different questions. The row arms wherever the pointer is, so AppKit's
+dwell survives a band crossing; the *activation* still asks the band,
+because a dwell spent aiming at the gap between two rows is aiming at an
+insertion, and springing a shelf open there would expand it under a
+pointer deliberately held still — H7 in another costume. The options
+gained `.continuousActivation` so that the single activation an entry
+would otherwise be given is not spent while the person was aiming at a
+gap.
+
+Nobody has watched the flash fire. If it still does not appear with the
+arming fixed, the next suspect is the flash itself rather than the
+gate — 0.28-alpha accent for 0.13s over `nowGlassShelf()` material may
+simply not read, and U3 sketched the brightening and the icon scale pulse
+that would answer that. Do not add a second animation before looking.
+
+**H7 has two mechanisms and the sharper one is not about bands at all.**
+The whole sidebar renders `dragPreview.layout`, so any preview that
+changes the layout moves rows live. Dropping a module INTO a shelf is an
+`.insert`, and applying it takes that module out of the top-level stack:
+its row closes up and every row below rises — including the shelf the
+pointer is resting on. The drag then leaves the row it was aimed at,
+which is both "the connections shelf gets out of the way" and a
+spring-load dwell that can never finish. An insert now previews the
+baseline unchanged when the module is a top-level row, the way `.combine`
+already did; a module already inside the shelf still reflows its tabs
+live, because that displaces nothing and is the affordance
+`testPreviewReflowsShelfTabsBeforeDrop` was written for.
+
+The second mechanism is the bands, and it is the one that fires before
+the pointer has settled: they shrink from a third of the row each to 20%,
+and to 10% on first contact, so arriving on a row resolves the row rather
+than an insertion whose `.move` really does reorder the stack. Both fixes
+are deliberately general rather than a network-shelf special case — the
+connections shelf is only the row most likely to reproduce it, being the
+last one before the window edge.
+
+H16 is the ordinary AppKit trap: `NSMenu.popUp` runs its own tracking
+loop and the `mouseExited` that would clear the row highlight is spent
+inside it. The row's hover is now recomputed after `popUp` returns, from
+where the pointer actually is rather than forced to `false`, so
+dismissing with the pointer still on the row keeps it lit.
+
+One thing this work found about itself, and it is the reason the
+interrupted run's "the host gate passed" line is not repeated here: it
+had not. `NavigationShelfTabTests` gates the spring-load handler by
+reading this source, and the refactor moved the check inside
+`springLoadingTarget`, where it reads unwrapped — so the string the gate
+looked for was gone. The compile error in a later run masked it. A gate
+that reads source is worth its line, and it is also a second place to be
+wrong.
+
+Still open: none of the three has been watched on screen. Nine claims
+here are pinned by a mutation somebody watched fail, each against the
+claim its own test names and each confirmed to have built and run first.
+The three that carry the arming argument
+are driven through a stub `NSDraggingInfo` rather than read out of the
+source, so they fail on behaviour: arm from the band again and the row's
+edges stop arming; share one feedback state and a band round-trip springs
+an already-sprung row a second time; drop the activation gate and a dwell
+over an insertion opens the shelf.
+
+## TESTED, NEVER ATTEMPTED WITH A HAND ON A MOUSE: the host half of guest-to-host cross-edge drag (2026-08-14, `feat/continuity-guest-drag`)
 ## SHIPPED: the guest's log ring is retrievable over the wire, and what that leaves unverified (2026-08-15, `feat/guest-log-retrieval`)
 
 Diagnosing a guest defect used to mean saving the Logs page to a file on

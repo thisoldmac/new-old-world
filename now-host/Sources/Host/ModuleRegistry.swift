@@ -63,6 +63,7 @@ struct ModuleRegistry {
         "agent": "mcp",
         "screenshots": "screen",
         "connections": "settings",
+        "development": "projects",
     ]
 
     /// The module a saved selection means today, following one rename.
@@ -84,7 +85,7 @@ struct ModuleRegistry {
 
     /* The summaries below say WHICH machine each page is about, in the
        vocabulary MachineNaming carries: the machine being driven is the
-       old world mac, the machine the app runs on is this Mac. They are
+       guest, the machine the app runs on is this Mac. They are
        written through those constants rather than spelled out, because a
        sidebar that says "the connected Mac" while every page under it says
        something else is how the copy drifted in the first place. */

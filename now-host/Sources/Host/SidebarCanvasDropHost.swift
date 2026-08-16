@@ -9,15 +9,22 @@ import SwiftUI
 struct SidebarCanvasDropHost<Content: View>: NSViewRepresentable {
     let upperItemCount: Int
     let lowerItemCount: Int
+    /// Measured by the pinned stack itself. The canvas cannot derive it: the
+    /// footer is a `safeAreaInset` sized by its own rows, and guessing left
+    /// every point in its chrome prepending to the stack whose last row is
+    /// Connections.
+    let pinnedStackHeight: CGFloat
     let dragActions: SidebarNavigationDragActions
     let content: Content
 
     init(upperItemCount: Int,
          lowerItemCount: Int,
+         pinnedStackHeight: CGFloat,
          dragActions: SidebarNavigationDragActions,
          @ViewBuilder content: () -> Content) {
         self.upperItemCount = upperItemCount
         self.lowerItemCount = lowerItemCount
+        self.pinnedStackHeight = pinnedStackHeight
         self.dragActions = dragActions
         self.content = content()
     }
@@ -38,6 +45,7 @@ struct SidebarCanvasDropHost<Content: View>: NSViewRepresentable {
         SidebarCanvasDropConfiguration(
             upperItemCount: upperItemCount,
             lowerItemCount: lowerItemCount,
+            pinnedStackHeight: pinnedStackHeight,
             canDrop: dragActions.canDrop,
             previewDrop: dragActions.previewDrop,
             performDrop: dragActions.performDrop)
@@ -47,6 +55,7 @@ struct SidebarCanvasDropHost<Content: View>: NSViewRepresentable {
 struct SidebarCanvasDropConfiguration {
     let upperItemCount: Int
     let lowerItemCount: Int
+    let pinnedStackHeight: CGFloat
     let canDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
     let previewDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
     let performDrop: (NavigationDraggedItem, NavigationDropTarget) -> Bool
@@ -118,7 +127,8 @@ final class NativeSidebarCanvasDropView<Content: View>: NSView {
             distanceFromTop: point.y,
             height: bounds.height,
             upperItemCount: configuration.upperItemCount,
-            lowerItemCount: configuration.lowerItemCount)
+            lowerItemCount: configuration.lowerItemCount,
+            pinnedStackHeight: configuration.pinnedStackHeight)
         guard configuration.canDrop(payload, target) else { return nil }
         return (payload, target)
     }

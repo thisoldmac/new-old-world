@@ -7,6 +7,7 @@
 #include "pump.h"
 #include "wire.h"                 /* now_wire_pump, for the divider drag loop */
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* The Hardware census page. A hand-drawn probe rail on the left - the
    Workshop sidebar's own two-line idiom, because a probe registry is
@@ -511,7 +512,12 @@ static int rail_row_at(Point local)
     return -1;
 }
 
-static void draw_rail(void)
+/* The probe rail, walked once and rendered twice: a NULL writer paints
+   the rows, a writer describes them. The rail is hand-drawn - it is not a
+   List Manager list and not a DataBrowser - so this walk is the only way
+   the host learns which probes exist, which one is selected, and what
+   each last answered. */
+static void emit_rail(const WorkshopSceneWriter *writer)
 {
     RGBColor black = { 0, 0, 0 };
     RGBColor gray = { 0x5555, 0x5555, 0x5555 };
@@ -519,20 +525,25 @@ static void draw_rail(void)
     RgnHandle save_clip;
     int i;
 
-    RGBForeColor(&white);
-    PaintRect(&g_r.rail);
-    RGBForeColor(&black);
-    FrameRect(&g_r.rail);
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopScenePanel, "Probes",
+                           &g_r.rail, true);
+    } else {
+        RGBForeColor(&white);
+        PaintRect(&g_r.rail);
+        RGBForeColor(&black);
+        FrameRect(&g_r.rail);
+    }
 
     /* Bound the rows to the rail: with fourteen probes the list is taller
        than a shrunk-down window, and an unclipped row would paint over the
        button strip below. Clipping truncates the tail cleanly - the honest
        stopgap until the rail carries a scroll bar (the witness tier). */
-    save_clip = NewRgn();
+    save_clip = writer == NULL ? NewRgn() : NULL;
     if (save_clip != NULL) {
         GetClip(save_clip);
+        ClipRect(&g_r.rail);
     }
-    ClipRect(&g_r.rail);
 
     for (i = 0; i < g_probe_count; i++) {
         Rect row;
@@ -541,6 +552,25 @@ static void draw_rail(void)
 
         SetRect(&row, (short)(g_r.rail.left + 1), base,
                 (short)(g_r.rail.right - 1), (short)(base + kRowH));
+        if (writer != NULL) {
+            Rect line;
+
+            if (i == g_sel_probe) {
+                workshop_scene_add(writer, kWorkshopSceneSelectionBand, "",
+                                   &row, true);
+            }
+            SetRect(&line, (short)(row.left + 12), base,
+                    (short)(row.right - 4), (short)(base + 14));
+            workshop_scene_add(writer, kWorkshopSceneStaticText,
+                               probe_name(i), &line, true);
+            SetRect(&line, (short)(row.left + 12), (short)(base + 12),
+                    (short)(row.right - 4), (short)(base + 24));
+            workshop_scene_add(writer, kWorkshopSceneStaticText,
+                               g_subtitle[i][0] == '\0' ? "not run yet"
+                                                        : g_subtitle[i],
+                               &line, true);
+            continue;
+        }
         if (i == g_sel_probe) {
             RGBColor band;
             LMGetHiliteRGB(&band);      /* the system list-highlight color */
@@ -576,7 +606,10 @@ static void draw_rail(void)
 
 /* --- the drawn detail pane ---------------------------------------------- */
 
-static void draw_detail(void)
+/* The detail pane, walked once and rendered twice. Same reason as the
+   rail: none of it is a control, so this walk is the host's only route
+   to the facts a probe reported. */
+static void emit_detail(const WorkshopSceneWriter *writer)
 {
     RGBColor black = { 0, 0, 0 };
     RGBColor gray = { 0x5555, 0x5555, 0x5555 };
@@ -586,7 +619,7 @@ static void draw_detail(void)
     short y;
 
     /* etched group box */
-    {
+    if (writer == NULL) {
         RGBColor light = { 0x8888, 0x8888, 0x8888 };
         Rect box = g_r.detail;
         box.top = (short)(box.top + 5);
@@ -605,12 +638,21 @@ static void draw_detail(void)
         }
     }
     /* title breaks the top rule */
-    UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
-    {
+    if (writer != NULL) {
+        Rect cap;
+
+        SetRect(&cap, (short)(g_r.detail.left + 10), g_r.detail.top,
+                g_r.detail.right, (short)(g_r.detail.top + 12));
+        workshop_scene_add(writer, kWorkshopScenePanel, title, &g_r.detail,
+                           true);
+        workshop_scene_add(writer, kWorkshopSceneStaticText, title, &cap,
+                           true);
+    } else {
         RGBColor bg;
         Rect cap;
         short w;
 
+        UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
         CopyCStringToPascal(title, text);
         w = StringWidth(text);
         SetRect(&cap, (short)(g_r.detail.left + 10), g_r.detail.top,
@@ -621,14 +663,24 @@ static void draw_detail(void)
         RGBForeColor(&black);
         MoveTo((short)(g_r.detail.left + 16), (short)(g_r.detail.top + 10));
         DrawString(text);
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     }
 
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     y = (short)(g_r.detail.top + 30);
     for (i = 0; i < g_detail_count; i++) {
         /* a blank line spaces the block, a summary line goes gray */
         if (g_detail[i][0] == '\0') {
             y = (short)(y + 8);
+            continue;
+        }
+        if (writer != NULL) {
+            Rect line;
+
+            SetRect(&line, (short)(g_r.detail.left + 16), (short)(y - 10),
+                    (short)(g_r.detail.right - 10), (short)(y + 3));
+            workshop_scene_add(writer, kWorkshopSceneStaticText,
+                               g_detail[i], &line, true);
+            y = (short)(y + 14);
             continue;
         }
         if (strstr(g_detail[i], "clear -") != NULL
@@ -947,7 +999,7 @@ static void census_draw(void)
     if (g_owner == NULL || !g_visible) {
         return;
     }
-    draw_rail();
+    emit_rail(NULL);
     {
         /* a native themed separator down the middle of the divider strip */
         Rect sep = g_r.divider;
@@ -955,7 +1007,7 @@ static void census_draw(void)
         sep.right = (short)(sep.left + 2);
         DrawThemeSeparator(&sep, kThemeStateActive);
     }
-    draw_detail();
+    emit_detail(NULL);
     if (g_tip_shown) {
         draw_tip();                     /* on top of everything */
     }
@@ -1095,6 +1147,35 @@ static void census_status_text(char *out, long cap)
     }
 }
 
+static void census_describe_scene(const WorkshopSceneWriter *writer)
+{
+    emit_rail(writer);
+    emit_detail(writer);
+    if (g_tip_shown) {
+        /* The hover tag is a real thing on screen, so it is described -
+           an observer that saw the page without it would be looking at a
+           different page than the person is. */
+        workshop_scene_add(writer, kWorkshopScenePlacard, g_tip_text,
+                           &g_tip_rect, true);
+    }
+}
+
+/* Edit>Copy: the probe rail and the detail pane - a hardware census is exactly
+       the thing someone pastes into a mail or a bug report.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long census_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    census_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     census_create,
     census_dispose,
@@ -1106,7 +1187,8 @@ static const WorkshopModuleOps k_ops = {
     census_activate,
     census_idle,
     census_status_text,
-    NULL
+    census_describe_scene,
+    census_copy_text
 };
 
 const WorkshopModuleOps *census_module_ops(void)

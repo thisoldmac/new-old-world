@@ -337,8 +337,9 @@ final class MirrorAssetIngestion: ObservableObject {
         case let .failure(failure):
             return .failure(.init(
                 code: "now-assets-pull-\(failure.code)",
-                message: "The classic Mac would not send \(file.path): "
-                    + failure.message))
+                message: MachineNaming.startingSentence(
+                    "\(MachineNaming.simpleReference) would not send \(file.path): "
+                    + failure.message)))
         case let .success(value):
             delivery = value
         }

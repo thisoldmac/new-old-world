@@ -35,6 +35,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private lazy var sidebarPreferences = SidebarPreferences(
         defaults: defaults,
         registry: registry)
+    /// Owned here, beside `appearancePreferences`, and for the same reason:
+    /// a module's "Settings…" button reaches this through `HostAppState`'s
+    /// `settingsPresenter` closure and must land on the one navigation
+    /// object the window's pill reads, not a copy that SwiftUI would
+    /// otherwise reconstruct with `HostSettingsView` itself.
+    private lazy var settingsNavigation = HostSettingsNavigation()
 
     init(defaults: UserDefaults = UserDefaults(
         suiteName: ProductIdentity.preferencesSuite) ?? .standard,
@@ -69,6 +75,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             stopStdio: { [weak self] in self?.stopMCPStdio() },
             startHTTP: { [weak self] in self?.startMCPHTTP() },
             stopHTTP: { [weak self] in self?.stopMCPHTTP() })
+        /* The deep-link seam: a module's "Settings…" button reaches
+           `HostModuleContext.showSettings`, which calls
+           `state.settingsPresenter`, which lands here. Wired before any
+           module view can be shown, same as the MCP transports above. */
+        state.settingsPresenter = { [weak self] tab in
+            self?.openSettings(selecting: tab)
+        }
         /* Not the activating variant. A launch the person performed is
            activated by macOS itself, and a launch they did NOT perform — a
            background `open`, a script restarting the app while they work
@@ -82,6 +95,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let preferences = MCPTransportPreferences(defaults: defaults)
         if preferences.stdioStartsAutomatically { startMCPStdio() }
         if preferences.httpStartsAutomatically { startMCPHTTP() }
+        // Web's own model owns its UserDefaults key, unlike MCP's separate
+        // preferences struct — reading the key directly here (rather than
+        // forcing the "web" runtime into existence just to ask it) keeps the
+        // off-by-default case free of the runtime's listener registration.
+        if defaults.bool(forKey: WebBridgeModel.startsAutomaticallyDefaultsKey) {
+            state.moduleRuntime(for: "web", as: WebHostModuleRuntime.self)?
+                .model.start()
+        }
     }
 
     /// A person granting Accessibility in System Settings brings THIS app
@@ -173,9 +194,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     /// Application appearance is a native window. Connection settings retain
     /// their stable module identity and later become Connections' hero.
     @objc func showSettings() {
+        openSettings(selecting: nil)
+    }
+
+    /// The deep-link seam every module's "Settings…" button and Cmd-,
+    /// itself share. `tab == nil` opens (or raises) the window on whatever
+    /// tab it was last showing, exactly like the old zero-argument
+    /// `showSettings()` always did. Named apart from `showSettings()`
+    /// itself so `#selector(showSettings)` above stays unambiguous — Swift
+    /// resolves a bare name against every overload, default arguments or
+    /// not.
+    func openSettings(selecting tab: HostSettingsTab?) {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(
-                preferences: appearancePreferences)
+                preferences: appearancePreferences,
+                navigation: settingsNavigation,
+                sidebar: sidebarPreferences,
+                state: state,
+                registry: registry,
+                defaults: defaults)
+        }
+        if let tab {
+            settingsWindowController?.select(tab)
         }
         settingsWindowController?.showWindow(self)
     }

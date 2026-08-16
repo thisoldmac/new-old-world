@@ -262,6 +262,12 @@ final class NetworkingModel: ObservableObject, GuestScopedModel {
             guard !value.trimmingCharacters(in: .whitespaces).isEmpty,
                   !trimmed.trimmingCharacters(in: .whitespaces).isEmpty
             else { continue }
+            /* The link's timing rows are a measurement of the wire, not a
+               fact about this machine's networking, and they are read on
+               Diagnostics beside `wirestat` now. Dropped here rather than
+               hidden in the view so the page's own "3 of 4 groups answered"
+               verdict counts what it draws. See `GuestLinkTiming`. */
+            guard !GuestLinkTiming.isTiming(trimmed) else { continue }
             rowID += 1
             out[out.count - 1].rows.append(Row(id: rowID, label: trimmed,
                                                value: value))

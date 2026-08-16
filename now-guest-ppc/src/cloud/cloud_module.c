@@ -19,6 +19,7 @@
 #include "pump.h"
 #include "wire.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* The iCloud page: the modern machine's cloud, browsed from this one.
    One dropdown of services (cloud.report), and a render tailored to
@@ -669,7 +670,13 @@ static void note_report(const char *reply)
     g_service = first;
     rebuild_popup();
     if (g_store.service_count == 0) {
-        set_status("The other Mac offers no cloud services");
+        char status[64];
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(status, sizeof status, "%.24s offers no cloud services",
+                 peer);
+        set_status(status);
         return;
     }
     choose_service(first);
@@ -1253,13 +1260,29 @@ static void cloud_layout(const Rect *body)
     apply_layout();
 }
 
-static void draw_at(short x, short y, const char *s)
+/* This page positions by baseline; the describing face derives the rect
+   from the baseline and a right edge. A NULL writer draws as before. */
+static void emit_at(const WorkshopSceneWriter *writer, short x, short y,
+                    short right, const char *s)
 {
     Str255 t;
 
+    if (writer != NULL) {
+        Rect where;
+
+        SetRect(&where, x, (short)(y - 11), right, (short)(y + 3));
+        workshop_scene_add(writer, kWorkshopSceneStaticText, s, &where,
+                           true);
+        return;
+    }
     CopyCStringToPascal(s, t);
     MoveTo(x, y);
     DrawString(t);
+}
+
+static void draw_at(short x, short y, const char *s)
+{
+    emit_at(NULL, x, y, 0, s);
 }
 
 /* The search field: software_module.c's hand-drawn shape exactly — a
@@ -1267,12 +1290,22 @@ static void draw_at(short x, short y, const char *s)
    the placeholder word when it does not and is empty. Fore-painted
    only, never a background change (RGBBackColor is port state on the
    one shared Workshop window). */
-static void draw_search(void)
+static void emit_search(const WorkshopSceneWriter *writer)
 {
     Rect f = g_r.toolbar_search;
     RGBColor black = { 0, 0, 0 };
     RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
 
+    if (writer != NULL) {
+        Rect inner = f;
+
+        InsetRect(&inner, 3, 1);
+        workshop_scene_add(writer, kWorkshopScenePanel, "", &f, true);
+        workshop_scene_add(writer, kWorkshopSceneStaticText,
+                           g_search[0] != '\0' ? g_search : "search",
+                           &inner, true);
+        return;
+    }
     RGBForeColor(&black);
     FrameRect(&f);
     if (g_search_focus) {
@@ -1363,10 +1396,10 @@ static void cloud_draw(void)
         return;
     }
     /* The status line. */
-    draw_at((short)(g_r.status.left + 2),
-            (short)(g_r.status.bottom - 3), g_status);
+    emit_at(NULL, (short)(g_r.status.left + 2),
+            (short)(g_r.status.bottom - 3), 0, g_status);
 
-    draw_search();
+    emit_search(NULL);
 
     /* The card pane: whichever view is active draws it. */
     if (g_view != NULL && g_view->draw != NULL) {
@@ -1671,6 +1704,49 @@ static void cloud_status_text(char *out, long cap)
     }
 }
 
+/* What this FILE draws: the status line and the hand-drawn search field.
+   The listing is a DataBrowser and the toolbar is controls, so both
+   already reach the host through control_kind.
+
+   The card pane's interior is drawn by whichever CloudViewOps is active
+   (drive, photos, contacts, list), those live in sibling files, and each
+   now carries its own describe entry (cloud_view.h) — this shell just
+   delegates to it, the same delegation cloud_draw already does for
+   pixels. A future fifth view that leaves describe NULL still reports
+   the pane's own RECT below, so an observer never sees LESS than "this
+   region exists and is not empty chrome" even when a view has nothing
+   further to say. */
+static void cloud_describe_scene(const WorkshopSceneWriter *writer)
+{
+    const CloudService *service = current_service();
+
+    emit_at(writer, (short)(g_r.status.left + 2),
+            (short)(g_r.status.bottom - 3), g_r.status.right, g_status);
+    emit_search(writer);
+    workshop_scene_add(writer, kWorkshopScenePanel, "", &g_r.detail_text,
+                       true);
+    if (g_view != NULL && g_view->describe != NULL) {
+        g_view->describe(writer, &g_r, &g_store, service, g_selected);
+    }
+}
+
+/* Edit>Copy: the status line, the search field and whichever view's
+   card is on stage — exactly what cloud_describe_scene reports, one
+   walk, so nothing here can drift from either.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long cloud_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    cloud_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     cloud_create,
     cloud_dispose,
@@ -1682,7 +1758,8 @@ static const WorkshopModuleOps k_ops = {
     cloud_activate,
     cloud_idle,
     cloud_status_text,
-    NULL
+    cloud_describe_scene,
+    cloud_copy_text
 };
 
 const WorkshopModuleOps *cloud_module_ops(void)

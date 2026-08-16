@@ -7,9 +7,9 @@ audience: user
 lifecycle: current
 authority: [docs/architecture.md, docs/naming.md, docs/onboarding.md, contract/asyncapi.yaml]
 module_ids: [settings]
-source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
+source_dependencies: [now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/GuestListener.swift, now-host/Sources/Host/ConnectionsModel.swift, now-host/Sources/Host/ConnectionsModuleView.swift, now-host/Sources/Host/UpdateProvider.swift, now-host/Sources/Host/OnboardingPortal.swift, now-host/Sources/Host/OnboardingView.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/HostSettingsNavigation.swift, now-host/Sources/Host/ContinuityConnectionDefaults.swift, now-guest-ppc/src/connection, now-guest-ppc/src/update, now-guest-ppc/src/core/prefs.c, now-guest-68k/src/ui/window.c]
 media_ids: [settings-host, settings-ppc]
-last_verified: 2026-08-13
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -23,11 +23,20 @@ portal. On the macOS host it is the landing page of the Connections shelf. The
 PowerPC Workshop separately provides Preferences and Connection pages, and
 NOW-68K keeps connection controls in its main window.
 
-The macOS application's own appearance no longer lives in this module. Choose
+The macOS application's own appearance, and a set of preferences that used to
+sit inside individual modules, no longer live in this module. Choose
 **New Old World > Settings…** or press **Command-,** to open the separate
-Settings window for System, Light, or Dark theme and Off, Clear, or Regular
-Liquid Glass. The glass choices fall back to native material on macOS 13–25
-and when Reduce Transparency or Increase Contrast is enabled.
+Settings window: a pill switcher over Appearance (System, Light, or Dark
+theme; Off, Clear, or Regular Liquid Glass — the glass choices fall back to
+native material on macOS 13–25 and when Reduce Transparency or Increase
+Contrast is enabled), Sidebar (row density, icon collapse, reset layout), MCP
+(whether each transport starts automatically), Web (page-compatibility mode
+and the private-destinations safety toggle), Logs (whether the event log
+also writes to disk), and Defaults for New Connections (what a Continuity
+pairing with a Mac it has never seen before starts with). Several modules —
+MCP, Web, Logs — carry their own **Settings…** button that opens this window
+already on their tab. Files and Screenshots keep their own in-module settings
+panes; Continuity and Mirror keep their per-machine controls in-module.
 
 ![The macOS Connections module](../../../assets/screenshots/modules/settings/host.svg){ .now-placeholder }
 

@@ -16,6 +16,9 @@ enum {
        above it are all about what the resident CAN do. */
     kMirrorLifecycleRows = 5,
     kMirrorNoteLines = 1,
+    /* Platinum's checkbox row. One row since 2026-08-15, where there were
+       four: the guest's granularity retired to the host and what is left
+       is this Mac's consent. */
     kMirrorPolicyRowHeight = 18,
     /* The push button that opens the host's own Mirror window. Platinum's
        standard push-button height is 20 and a
@@ -33,7 +36,13 @@ typedef struct MirrorLayout {
     Rect plane_heading;
     Rect plane_rows[kMirrorPlaneCount];
     Rect policy_heading;
-    Rect policy_rows[kMirrorPolicyCount];
+    Rect consent_row;
+    /* The sentence under the checkbox that says where the REST of the
+       decision is made. It is on the page rather than in the manual
+       because "on" here does not mean "everything is being captured",
+       and a consent switch that overstates what it grants is the one
+       mistake this page cannot afford. */
+    Rect consent_note;
     Rect policy_status;
     Rect note[kMirrorNoteLines];
     /* Where the "Show Mirror on Host" button goes, and the status line
@@ -49,6 +58,11 @@ const char *now_mirror_plane_purpose(MirrorPlane plane);
 void now_mirror_plane_value(const MirrorFacts *facts, MirrorPlane plane,
                             char *out, long cap);
 const char *now_mirror_note(int line);
+/* The consent line under the checkbox, named for the machine that owns
+   the other half of the decision. `peer` is `conn_peer_label()`'s answer
+   — "Other Mac" when nothing is connected — and is never NULL. */
+void now_mirror_consent_note(Boolean enabled, const char *peer, char *out,
+                             long cap);
 void now_mirror_status_text(const MirrorFacts *facts, char *out, long cap);
 /* The "Installed" row's sentence. Toolbox-free and here rather than in
    the module, like every other string on this page, so the host `cc`

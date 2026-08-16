@@ -12,16 +12,16 @@ import Foundation
 ///
 /// - The machine being driven is called by **its own name** whenever the
 ///   host knows one. A name beats every generic phrase — "Zulu's screen",
-///   never "the old world mac's screen", once Zulu has said who it is.
+///   never "the guest's screen", once Zulu has said who it is.
 /// - With no name there are two registers, and they are not
-///   interchangeable: `Old World Mac` is the proper noun, for title and
-///   name position, and `the old world mac` is the plain reference, for
-///   running prose. The lowercase is deliberate; it is a description there,
-///   not a name.
+///   interchangeable: `Guest` is the proper noun, for title and name
+///   position, and `guest` is the plain reference, for running prose. The
+///   lowercase is deliberate; it is a description there, not a name.
 /// - The machine this app runs on is `this Mac`, and nothing else ever is.
 ///
-/// "Guest" and "host" stay out of what a person reads. They are the words
-/// this codebase thinks in, and on screen they name neither machine.
+/// "Guest" is the on-screen word for the classic machine — this is the one
+/// codebase word that IS also the reader's word. "Host" stays off screen;
+/// it names neither machine to a person reading this app.
 enum MachineNaming {
 
     /// The Mac this app is running on. One phrase, no synonyms — "the local
@@ -32,16 +32,16 @@ enum MachineNaming {
 
     /// Name position: a title, a heading, a menu item, a column label —
     /// anywhere the phrase stands where a name would stand.
-    static let properNoun = "Old World Mac"
-    static let properNounPlural = "Old World Macs"
+    static let properNoun = "Guest"
+    static let properNounPlural = "Guests"
 
-    /// Sentence position, article supplied by the call site ("no old world
-    /// mac", "another old world mac").
-    static let commonNoun = "old world mac"
-    static let commonNounPlural = "old world macs"
+    /// Sentence position, article supplied by the call site ("no guest",
+    /// "another guest").
+    static let commonNoun = "guest"
+    static let commonNounPlural = "guests"
 
-    /// Sentence position, the ordinary case: "waiting for the old world mac
-    /// to answer".
+    /// Sentence position, the ordinary case: "waiting for the guest to
+    /// answer".
     static let simpleReference = "the \(commonNoun)"
 
     /// The machine in name position: its own name if it has one, otherwise
@@ -56,8 +56,8 @@ enum MachineNaming {
         normalized(name) ?? simpleReference
     }
 
-    /// The machine as the owner of something — "Zulu's screen", "the old
-    /// world mac's share".
+    /// The machine as the owner of something — "Zulu's screen", "the
+    /// guest's share".
     ///
     /// A machine name ending in `s` takes the bare apostrophe, because the
     /// alternative is `Atlas's`, and these names are read at a glance in a
@@ -71,8 +71,8 @@ enum MachineNaming {
     /// site remembers to handle separately.
     ///
     /// Unnamed machines collapse rather than repeat: two of them written
-    /// out in full would be "the old world mac and the old world mac",
-    /// which reads as one machine counted twice.
+    /// out in full would be "the guest and the guest", which reads as one
+    /// machine counted twice.
     static func several(_ names: [String?]) -> String {
         let named = names.compactMap(normalized)
         let unnamed = names.count - named.count
@@ -89,10 +89,10 @@ enum MachineNaming {
 
     /// The same phrase where a sentence begins.
     ///
-    /// Only the first character moves, so "the old world mac’s" becomes
-    /// "The old world mac’s" and a machine's own name is left exactly as it
-    /// spells itself — a site that reached for `.capitalized` instead would
-    /// turn "pb1400c" into "Pb1400C".
+    /// Only the first character moves, so "the guest’s" becomes "The
+    /// guest’s" and a machine's own name is left exactly as it spells
+    /// itself — a site that reached for `.capitalized` instead would turn
+    /// "pb1400c" into "Pb1400C".
     static func startingSentence(_ text: String) -> String {
         guard let first = text.first else { return text }
         return String(first).uppercased() + text.dropFirst()

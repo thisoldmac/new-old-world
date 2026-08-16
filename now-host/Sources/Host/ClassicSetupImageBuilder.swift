@@ -36,7 +36,7 @@ struct ClassicSetupImageBuilder: Sendable {
             case .missingDevice:
                 return "macOS did not return the setup image device."
             case .couldNotEncode:
-                return "The setup image could not be wrapped for the classic Mac."
+                return "The setup image could not be wrapped for " + MachineNaming.simpleReference + "."
             case .invalidStarterPack(let reason):
                 return "The Development starter pack was refused: \(reason)"
             }

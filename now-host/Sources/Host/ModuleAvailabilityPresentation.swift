@@ -32,7 +32,7 @@ struct ModuleAvailabilityPresentation: Equatable, Sendable {
 
         switch moduleID {
         // These pages configure or operate services owned by this Mac.
-        case "files", "icloud", "chat", "web", "development", "mcp",
+        case "files", "icloud", "chat", "web", "projects", "mcp",
              "logs", "settings":
             return ModuleAvailabilityPresentation(
                 availability: .local,

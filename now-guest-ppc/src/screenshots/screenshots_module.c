@@ -639,7 +639,10 @@ static const WorkshopModuleOps k_ops = {
     shots_activate,
     shots_idle,
     shots_status_text,
-    shots_describe_scene
+    shots_describe_scene,
+    /* copy_text: a picture, not words. The caption alone is not worth a
+       Copy, and a PICT flavor is a different feature. */
+    NULL
 };
 
 const WorkshopModuleOps *screenshots_module_ops(void)

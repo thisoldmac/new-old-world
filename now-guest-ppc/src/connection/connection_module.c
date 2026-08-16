@@ -12,6 +12,7 @@
 #include "confirm.h"
 #include "update_model.h"
 #include "update_status.h"
+#include "workshop_scene_text.h"
 
 /* The page has two halves: an "Other Mac" group that SHOWS the saved
    target (address and port drawn read-only, changed through the Edit
@@ -24,10 +25,16 @@
 
 enum {
     kRetryMenuID = 133,
-    kGlanceRowCount = 5,
+    /* "Other Mac", "Connected", "Last traffic", "Wire", "This Mac", then
+       "Round trip" - the guest already times its own ping/pong
+       (wire.c :: g.last_rtt_ms); this is the sixth row rather than a
+       second card, and the one row with a button beside it. */
+    kGlanceRowCount = 6,
+    kRttRow = kGlanceRowCount - 1,
     kMargin = 12,
     kFieldHeight = 16,
     kButtonHeight = 20,
+    kTestButtonWidth = 56,
     /* Stack the two groups when the body is narrower than this. */
     kStackBelow = 560
 };
@@ -40,6 +47,7 @@ typedef struct {
     Rect retry_popup;
     Rect auto_box;
     Rect glance_group;
+    Rect test_btn;         /* beside the Round trip row */
     Rect update_group;
     Rect app_update_line;
     Rect ext_update_line;
@@ -60,6 +68,7 @@ static ControlRef g_edit;
 static ControlRef g_retry;
 static ControlRef g_auto;
 static ControlRef g_group_glance;
+static ControlRef g_test;
 static ControlRef g_group_update;
 static ControlRef g_update_app;
 static ControlRef g_update_ext;
@@ -80,11 +89,12 @@ static char g_status[120];
    only when the words change. */
 static char g_vals[kGlanceRowCount][64];
 static char g_fail_line[120];
-static Boolean g_shown_connected;
+static NowConnActionTitle g_action_title;
 static char g_update_lines[3][128];
 
 static const char *k_glance_labels[kGlanceRowCount] = {
-    "Other Mac", "Connected", "Last traffic", "Wire", "This Mac"
+    "Other Mac", "Connected", "Last traffic", "Wire", "This Mac",
+    "Round trip"
 };
 
 static char g_this_mac[64];           /* computed once; it cannot change */
@@ -142,11 +152,17 @@ static void compute_rects(const Rect *body, ConnRects *r)
 
     if (stacked) {
         SetRect(&r->glance_group, left, (short)(r->other_group.bottom + 8),
-                right, (short)(r->other_group.bottom + 132));
+                right, (short)(r->other_group.bottom + 152));
     } else {
         SetRect(&r->glance_group, (short)(r->other_group.right + 12), top,
-                right, (short)(top + 178));
+                right, (short)(top + 198));
     }
+    SetRect(&r->test_btn,
+            (short)(r->glance_group.right - 8 - kTestButtonWidth),
+            (short)(r->glance_group.top + 12 + kRttRow * 18 - 1),
+            (short)(r->glance_group.right - 8),
+            (short)(r->glance_group.top + 12 + kRttRow * 18 - 1
+                    + kButtonHeight));
 
     SetRect(&r->update_group, left,
             (short)(r->glance_group.bottom + 8), right,
@@ -327,6 +343,20 @@ static void build_values(const ConnSnapshot *snap,
 
     snprintf(vals[4], 64, "%.60s", g_this_mac);
 
+    /* The guest's own ping/pong timing (wire.c), read rather than
+       measured here - a second reader of the same clock, never a second
+       one. -1 before any pong has come back, the same absence the wire
+       itself uses. */
+    {
+        long rtt = conn_last_rtt_ms();
+
+        if (rtt >= 0) {
+            snprintf(vals[5], 64, "%ld ms", rtt);
+        } else {
+            strcpy(vals[5], "Not measured yet");
+        }
+    }
+
     /* Failure detail outranks pleasantries when there is one. */
     if (snap->phase != kConnConnected && snap->last_fail[0] != '\0') {
         snprintf(fail_line, (size_t)fail_cap, "%.24s:%u - %.80s",
@@ -341,9 +371,17 @@ static void build_values(const ConnSnapshot *snap,
 
 static void glance_value_rect(int row, Rect *out)
 {
+    /* The Round trip row shares its band with the Test button, so its
+       value column stops short of it - the same reason the address/port
+       lines on this page stop short of Edit. */
+    short right = (short)(g_r.glance_group.right - 8);
+
+    if (row == kRttRow) {
+        right = (short)(right - kTestButtonWidth - 8);
+    }
     SetRect(out, (short)(g_r.glance_group.left + 96),
             (short)(g_r.glance_group.top + 12 + row * 18),
-            (short)(g_r.glance_group.right - 8),
+            right,
             (short)(g_r.glance_group.top + 12 + (row + 1) * 18));
 }
 
@@ -366,6 +404,23 @@ static ControlRef make_button(const Rect *bounds, const char *title)
                       0);
 }
 
+/* The button's words follow the wire wherever the page is in its life:
+   created, shown again after a spell hidden, or ticking. Idle alone is
+   not enough - it is silent while the page is hidden, and a page can be
+   created for the first time long after the connection came up. */
+static void sync_action_title(void)
+{
+    const char *want = now_conn_action_title_next(&g_action_title,
+                                                  conn_is_connected());
+
+    if (want != NULL && g_action != NULL) {
+        Str255 text;
+
+        CopyCStringToPascal(want, text);
+        SetControlTitle(g_action, text);
+    }
+}
+
 static OSErr conn_create(WindowRef owner, const Rect *body)
 {
     Str255 text;
@@ -385,7 +440,7 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("At a glance", text);
     g_group_glance = now_control_new(owner, &g_r.glance_group, text, false, 0,
                                 0, 0, kControlGroupBoxTextTitleProc, 0);
-    CopyCStringToPascal("Updates from the other Mac", text);
+    CopyCStringToPascal("Updates from Other Mac", text);
     g_group_update = now_control_new(owner, &g_r.update_group, text, false, 0,
                                 0, 0, kControlGroupBoxTextTitleProc, 0);
     g_edit = make_button(&g_r.edit_btn, "Edit\xC9");   /* MacRoman ellipsis */
@@ -398,9 +453,15 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
     CopyCStringToPascal("Connect when New Old World opens", text);
     g_auto = now_control_new(owner, &g_r.auto_box, text, false, 0, 0, 1,
                         checkBoxProc, 0);
-    g_action = make_button(&g_r.action_btn, "Connect");
+    {
+        const char *action_title = now_conn_action_title(conn_is_connected());
+
+        g_action = make_button(&g_r.action_btn, action_title);
+        now_conn_action_title_init(&g_action_title, action_title);
+    }
     g_revert = make_button(&g_r.revert_btn, "Revert");
     g_save = make_button(&g_r.save_btn, "Save");
+    g_test = make_button(&g_r.test_btn, "Test");
     g_update_app = make_button(&g_r.app_update_btn, "Install App");
     g_update_ext = make_button(&g_r.ext_update_btn, "Install Extension");
 
@@ -408,7 +469,7 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
         || g_retry == NULL || g_auto == NULL
         || g_group_update == NULL || g_update_app == NULL
         || g_update_ext == NULL || g_action == NULL || g_revert == NULL
-        || g_save == NULL) {
+        || g_save == NULL || g_test == NULL) {
         return memFullErr;
     }
     {
@@ -417,7 +478,6 @@ static OSErr conn_create(WindowRef owner, const Rect *body)
         now_prefs_load(&prefs);
         load_fields(&prefs);
     }
-    g_shown_connected = conn_is_connected();
     return noErr;
 }
 
@@ -436,6 +496,7 @@ static void conn_dispose(void)
     g_action = NULL;
     g_revert = NULL;
     g_save = NULL;
+    g_test = NULL;
 }
 
 static void show_control(ControlRef control, Boolean visible)
@@ -464,7 +525,12 @@ static void conn_show(Boolean visible)
     show_control(g_action, visible);
     show_control(g_revert, visible);
     show_control(g_save, visible);
-    if (!visible) {
+    show_control(g_test, visible);
+    if (visible) {
+        /* Idle was mute while this page was away; catch the title up
+           before the human sees it rather than a tick later. */
+        sync_action_title();
+    } else {
         g_status[0] = '\0';
     }
 }
@@ -494,82 +560,114 @@ static void conn_layout(const Rect *body)
     move_control(g_action, &g_r.action_btn);
     move_control(g_revert, &g_r.revert_btn);
     move_control(g_save, &g_r.save_btn);
+    move_control(g_test, &g_r.test_btn);
 }
 
-static void conn_draw(void)
+/* One run of hand-drawn text, drawn or described. A NULL writer draws at
+   the run's own baseline with its own truncation; a writer reports the
+   rect it occupies. Both faces of this page take one walk - the address,
+   the port and the glance rows are exactly the facts a host asks about,
+   and a second traversal free to disagree with the pixels about them is
+   the drift this whole change exists to close. `room <= 0` means the run
+   was never truncated. */
+static void emit_run(const WorkshopSceneWriter *writer, const Rect *where,
+                     short baseline, short room, TruncCode trunc,
+                     const char *line)
 {
     Str255 text;
-    int i;
 
-    if (g_owner == NULL || !g_visible) {
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, line, where,
+                           true);
         return;
     }
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-    MoveTo(g_r.addr_line.left, (short)(g_r.addr_line.top + 12));
-    CopyCStringToPascal("Address:", text);
+    CopyCStringToPascal(line, text);
+    if (room > 0) {
+        TruncString(room, text, trunc);
+    }
+    MoveTo(where->left, baseline);
     DrawString(text);
-    CopyCStringToPascal(g_host[0] != '\0' ? g_host : "not set", text);
-    MoveTo((short)(g_r.addr_line.left + 58),
-           (short)(g_r.addr_line.top + 12));
-    TruncString((short)(g_r.addr_line.right - g_r.addr_line.left - 58),
-                text, truncEnd);
-    DrawString(text);
+}
 
-    MoveTo(g_r.port_line.left, (short)(g_r.port_line.top + 12));
-    CopyCStringToPascal("Port:", text);
-    DrawString(text);
+static void conn_content(const WorkshopSceneWriter *writer)
+{
+    Rect where;
+    int i;
+
+    where = g_r.addr_line;
+    where.right = (short)(where.left + 58);
+    emit_run(writer, &where, (short)(g_r.addr_line.top + 12), 0, truncEnd,
+             "Address:");
+    where = g_r.addr_line;
+    where.left = (short)(g_r.addr_line.left + 58);
+    emit_run(writer, &where, (short)(g_r.addr_line.top + 12),
+             (short)(g_r.addr_line.right - g_r.addr_line.left - 58),
+             truncEnd, g_host[0] != '\0' ? g_host : "not set");
+
+    where = g_r.port_line;
+    where.right = (short)(where.left + 58);
+    emit_run(writer, &where, (short)(g_r.port_line.top + 12), 0, truncEnd,
+             "Port:");
     {
         char port_text[16];
 
         snprintf(port_text, sizeof port_text, "%u", g_port_val);
-        CopyCStringToPascal(port_text, text);
+        where = g_r.port_line;
+        where.left = (short)(g_r.port_line.left + 58);
+        emit_run(writer, &where, (short)(g_r.port_line.top + 12), 0,
+                 truncEnd, port_text);
     }
-    MoveTo((short)(g_r.port_line.left + 58),
-           (short)(g_r.port_line.top + 12));
-    DrawString(text);
 
     for (i = 0; i < kGlanceRowCount; ++i) {
         Rect value;
 
         glance_value_rect(i, &value);
-        MoveTo((short)(g_r.glance_group.left + 12),
-               (short)(value.top + 12));
-        CopyCStringToPascal(k_glance_labels[i], text);
-        DrawString(text);
-        MoveTo(value.left, (short)(value.top + 12));
-        CopyCStringToPascal(g_vals[i], text);
-        TruncString((short)(value.right - value.left), text, truncEnd);
-        DrawString(text);
+        where = value;
+        where.left = (short)(g_r.glance_group.left + 12);
+        where.right = value.left;
+        emit_run(writer, &where, (short)(value.top + 12), 0, truncEnd,
+                 k_glance_labels[i]);
+        emit_run(writer, &value, (short)(value.top + 12),
+                 (short)(value.right - value.left), truncEnd, g_vals[i]);
     }
     if (g_fail_line[0] != '\0') {
         Rect fail;
 
         glance_fail_rect(&fail);
-        MoveTo(fail.left, (short)(fail.top + 12));
-        CopyCStringToPascal(g_fail_line, text);
-        TruncString((short)(fail.right - fail.left), text, truncMiddle);
-        DrawString(text);
+        emit_run(writer, &fail, (short)(fail.top + 12),
+                 (short)(fail.right - fail.left), truncMiddle, g_fail_line);
     }
-    MoveTo(g_r.app_update_line.left,
-           (short)(g_r.app_update_line.top + 12));
-    CopyCStringToPascal(g_update_lines[0], text);
-    TruncString((short)(g_r.app_update_line.right
-                       - g_r.app_update_line.left), text, truncMiddle);
-    DrawString(text);
-    MoveTo(g_r.ext_update_line.left,
-           (short)(g_r.ext_update_line.top + 12));
-    CopyCStringToPascal(g_update_lines[1], text);
-    TruncString((short)(g_r.ext_update_line.right
-                       - g_r.ext_update_line.left), text, truncMiddle);
-    DrawString(text);
+    emit_run(writer, &g_r.app_update_line,
+             (short)(g_r.app_update_line.top + 12),
+             (short)(g_r.app_update_line.right - g_r.app_update_line.left),
+             truncMiddle, g_update_lines[0]);
+    emit_run(writer, &g_r.ext_update_line,
+             (short)(g_r.ext_update_line.top + 12),
+             (short)(g_r.ext_update_line.right - g_r.ext_update_line.left),
+             truncMiddle, g_update_lines[1]);
     if (g_update_lines[2][0] != '\0') {
-        MoveTo((short)(g_r.update_group.left + 12),
-               (short)(g_r.update_group.bottom - 10));
-        CopyCStringToPascal(g_update_lines[2], text);
-        TruncString((short)(g_r.update_group.right
-                           - g_r.update_group.left - 24), text, truncMiddle);
-        DrawString(text);
+        SetRect(&where, (short)(g_r.update_group.left + 12),
+                (short)(g_r.update_group.bottom - 22),
+                (short)(g_r.update_group.right - 12),
+                (short)(g_r.update_group.bottom - 6));
+        emit_run(writer, &where, (short)(g_r.update_group.bottom - 10),
+                 (short)(g_r.update_group.right - g_r.update_group.left - 24),
+                 truncMiddle, g_update_lines[2]);
     }
+}
+
+static void conn_draw(void)
+{
+    if (g_owner == NULL || !g_visible) {
+        return;
+    }
+    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    conn_content(NULL);
+}
+
+static void conn_describe_scene(const WorkshopSceneWriter *writer)
+{
+    conn_content(writer);
 }
 
 static void install_update(NowUpdateComponent component)
@@ -627,7 +725,10 @@ static Boolean conn_click(const EventRecord *event, Point local)
                 strcpy(g_host, host);
                 g_port_val = port;
                 invalidate_other_group();
-                set_status("Address changed - Save to keep it.");
+                /* Committing an address in the editor IS the intent to
+                   use it; staging it behind a second Save button left
+                   the page showing a target it was not dialling. */
+                do_save(true);
             }
         }
         return true;
@@ -666,6 +767,17 @@ static Boolean conn_click(const EventRecord *event, Point local)
         }
         return true;
     }
+    if (control == g_test) {
+        if (TrackControl(control, local, now_pump_action()) != 0) {
+            /* No set_status here, deliberately: that placard is the last
+               ACTION's result and would otherwise freeze on "Pinging..."
+               forever, hiding the live RTT the wire keeps stamping into
+               it on every connected tick (conn_status). The Round trip
+               row is where this press's answer shows up. */
+            conn_ping_now();
+        }
+        return true;
+    }
     if (control == g_update_app || control == g_update_ext) {
         if (TrackControl(control, local, now_pump_action()) != 0) {
             install_update(control == g_update_app
@@ -695,7 +807,7 @@ static Boolean conn_key(const EventRecord *event)
 
 static void conn_activate(Boolean active)
 {
-    ControlRef controls[11];
+    ControlRef controls[12];
     int i;
 
     controls[0] = g_group_other;
@@ -709,7 +821,8 @@ static void conn_activate(Boolean active)
     controls[8] = g_group_update;
     controls[9] = g_update_app;
     controls[10] = g_update_ext;
-    for (i = 0; i < 11; ++i) {
+    controls[11] = g_test;
+    for (i = 0; i < 12; ++i) {
         if (controls[i] == NULL) {
             continue;
         }
@@ -726,7 +839,6 @@ static void conn_idle(void)
     ConnSnapshot snap;
     char vals[kGlanceRowCount][64];
     char fail_line[120];
-    Boolean connected;
     int i;
     int update_changed = 0;
 
@@ -752,14 +864,10 @@ static void conn_idle(void)
         InvalWindowRect(g_owner, &r);
     }
 
-    connected = conn_is_connected();
-    if (connected != g_shown_connected && g_action != NULL) {
-        Str255 text;
-
-        g_shown_connected = connected;
-        CopyCStringToPascal(connected ? "Disconnect" : "Connect", text);
-        SetControlTitle(g_action, text);
-    }
+    sync_action_title();
+    /* Nothing to ping without a live session - see conn_ping_now(). */
+    HiliteControl(g_test, snap.phase == kConnConnected
+                              ? kControlNoPart : kControlInactivePart);
     for (i = 0; i < kNowUpdateComponentCount; ++i) {
         char version[24], build[65], line[160];
         Rect dirty = i == 0 ? g_r.app_update_line : g_r.ext_update_line;
@@ -833,6 +941,22 @@ static void conn_status_text(char *out, long cap)
     }
 }
 
+/* Edit>Copy: address, port and the at-a-glance rows - the facts a person is
+       asked for when the link will not come up.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long conn_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    conn_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     conn_create,
     conn_dispose,
@@ -844,7 +968,8 @@ static const WorkshopModuleOps k_ops = {
     conn_activate,
     conn_idle,
     conn_status_text,
-    NULL
+    conn_describe_scene,
+    conn_copy_text
 };
 
 const WorkshopModuleOps *connection_module_ops(void)

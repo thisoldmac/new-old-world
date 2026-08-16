@@ -95,8 +95,19 @@ Development is the argument-carrying fallback example. The five
 console hands the typed remainder through `now_console_line_request` to the
 same command functions the wire calls. The parity gate's source regex includes
 hyphens; before 2026-08-09 it silently omitted this entire command family from
-both its dispatch and registry derivations. The host Development module and
+both its dispatch and registry derivations. The host Projects module and
 agent projection are clients of that wire face, not a third guest face.
+
+**And "the same command function" is not the same as "the same grammar"**
+(2026-08-14). `development-project` reached the console through that
+fallback the whole time, and typing `development-project catalog` — the
+grammar its own `help` printed — answered `project-unavailable`, because the
+implementation took the first word as a project id and only the wire's
+`action` argument selected the catalog. The verb was present on both faces
+and broken on one, which is the shape this page says the parity gate cannot
+see. It is also why the contract now declares that `action`: the guest served
+it, `args` said `required: [projectID]` with `additionalProperties: false`,
+and the host's own request did not conform to the file both halves read.
 
 `mirror` is the one-extension example. Both faces call `now_mirror_probe()`;
 the wire serializes its schema-1 facts while the Console and Workshop render
@@ -122,7 +133,7 @@ Kept in the test as data, not prose, so they cannot rot:
 | `help`, `clear`, `?` | console only | act on the console window itself and mean nothing on a wire |
 | `put`, `mv`, `trash`, `untrash`, `mkdir` | console only (PPC) | the host reaches the same capability through the `file.*` message families, not through x-commands |
 | `put` | **both faces (NOW-68K)** | the same capability, the opposite decision — see below |
-| `cancel` | **both faces (NOW-68K)**, no verb on PPC | ending a transfer, split the same way `put` is and for a sharper reason — see below |
+| `cancel` | **both faces (NOW-68K)**, console only on PPC | ending a transfer, split the same way `put` is and for a sharper reason — see below |
 | `showmirror` | console only (PPC) | asks the HOST to show its own Mirror, through the `host.*` family. It names an OUTCOME on the host rather than a window, which is why it survived the Mirror becoming a module: the host is free to satisfy it by selecting that module, and since 019 it also starts the poll first. The host reaches its own Mirror from its Window menu and the `mirror_open` agent verb, so there is nothing for it to type at the guest. Its second face is not a wire verb but the **Mirror page's own Start control** — both sit over `mirror_show.h` and `now_wire_host_show`, which is the one-implementation half of the rule doing its work in a direction this file had not had to describe before |
 | `chat` | console only (PPC) | asks the OTHER Mac's model through the `chat.*` family. The host reaches chat by SERVING it — there is nothing for it to type at the guest — and it can still type this verb through the exec plane, where the streamed answer comes back as `exec.output`. That exec-plane reach is the command-first proof: `chat hi` was typeable from an unchanged host console before the Chat page existed. NOW-68K never asks the family at all; the deliberate never-asks is recorded in [contract-coverage.md](contract-coverage.md), not here, because parity compares FACES per guest and a guest with neither face has no asymmetry |
 
@@ -163,10 +174,18 @@ command existed that only the other guest answers.
 Ending a transfer went the same way, and the argument is stronger there
 than for `put`. Both guests honour `file.cancel` on the wire, so the
 CAPABILITY was never asymmetric; what differed is whether it needed to
-be typeable. The PowerPC guest is cancelled from the host's Files UI or
-from its own Workshop, so it declares no verb. NOW-68K has neither — no
-Files page, no cancel affordance anywhere — so on that machine the verb
-IS the face.
+be a WIRE verb. The PowerPC guest is cancelled by a host that sends
+`file.cancel` itself, so it declares no verb — and by the person at the
+machine from the receive windoid or by typing `cancel`, which is
+console-only there for `put`'s reason. NOW-68K has no Files page and no
+cancel affordance anywhere, so on that machine the verb IS the face.
+
+Both PowerPC faces sit over the same two functions —
+`now_wire_put_cancel` for a receive, `now_wire_get_cancel` for a pull —
+so the windoid's button and the typed word cannot come to disagree. A
+file the guest is SENDING has no guest-originated stop yet; the console
+says so rather than reporting a quiet machine, which is the one answer
+there worse than a refusal.
 
 And it is the face that matters most. The lane is one transfer wide
 across BOTH directions, so a transfer nobody can end is a machine that

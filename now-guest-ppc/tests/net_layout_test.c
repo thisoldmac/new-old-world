@@ -12,6 +12,10 @@
  *   - Connections gains a Refresh button                   -> 1 fail
  *   - a section with no rows gets zero body height         -> 1 fail
  *   - the link section requires Open Transport             -> 2 fail
+ *
+ * Mutation check, 034 (This Connection card retired from this page):
+ *   - the link card is laid out on this page anyway            -> 1 fail
+ *   - the Connections card keeps its old blurb-line gap         -> 1 fail
  */
 
 #include <stdio.h>
@@ -209,12 +213,16 @@ int main(void)
         }
     }
 
-    /* ---- layout: every section has a body, including the empty one ---- */
+    /* ---- layout: every VISIBLE section has a body ---- */
     now_net_layout_compute(&body, &f, &lay);
     {
         int i;
         for (i = 0; i < (int)kNetSectionCount; ++i) {
             const NetSectionLayout *s = &lay.sections[i];
+
+            if ((NetSection)i == kNetSectionLink) {
+                continue;              /* checked on its own below */
+            }
             check(s->card.bottom > s->card.top, "every card has height");
             check(s->body.bottom > s->body.top,
                   "every card has a body - including the one that is "
@@ -224,6 +232,35 @@ int main(void)
         check(lay.content_height > 0, "the page has content height");
         check(lay.scrollbar.left == lay.canvas.right,
               "the scrollbar sits against the canvas");
+    }
+
+    /* ---- This Connection is not laid out on this page any more ----
+       now_net_section_rows/now_net_row still answer for kNetSectionLink
+       (checked above, and by the wire's `net` command) - only the VISUAL
+       card is gone, because peer/uptime/round trip are shown live on the
+       Connection page instead (034 G-1). */
+    {
+        const NetSectionLayout *link = &lay.sections[kNetSectionLink];
+
+        check(link->card.bottom == link->card.top
+                  && link->card.right == link->card.left,
+              "the link card is not laid out on this page");
+    }
+
+    /* ---- Connections is a placard line, not an essay ----
+       No blurb-line gap before its body: title.bottom feeds body.top
+       directly, where every other section reserves kNetLineHeight for a
+       blurb first. */
+    {
+        const NetSectionLayout *conn = &lay.sections[kNetSectionConnections];
+        const NetSectionLayout *inet = &lay.sections[kNetSectionInet];
+
+        check(conn->body.top == conn->title.bottom,
+              "Connections has no blurb gap before its body");
+        check(inet->body.top > inet->title.bottom,
+              "TCP/IP still reserves its blurb line, for contrast");
+        check(now_net_section_blurb(kNetSectionConnections)[0] == '\0',
+              "and draws no separate blurb text either");
     }
 
     /* A button never overlaps its title. */

@@ -14,12 +14,17 @@ struct SidebarNavigationCanvas: View {
     let cancelShelfCreation: (NavigationShelfID) -> Void
     let openShelf: (NavigationShelf) -> Void
     let select: (NavigationSelection) -> Void
+    /// The footer's own height, reported by the footer. A closure rather
+    /// than a SwiftUI preference because the pinned stack lives inside an
+    /// `NSHostingView` and preferences do not cross that boundary.
+    @State private var pinnedStackHeight: CGFloat = 0
 
     var body: some View {
         GeometryReader { geometry in
             SidebarCanvasDropHost(
                 upperItemCount: upperItems.count,
                 lowerItemCount: lowerItems.count,
+                pinnedStackHeight: pinnedStackHeight,
                 dragActions: dragActions) {
                     List {
                         SidebarNavigationItems(
@@ -52,7 +57,13 @@ struct SidebarNavigationCanvas: View {
                             renameShelf: renameShelf,
                             cancelShelfCreation: cancelShelfCreation,
                             openShelf: openShelf,
-                            select: select)
+                            select: select,
+                            heightChanged: { height in
+                                guard pinnedStackHeight != height else {
+                                    return
+                                }
+                                pinnedStackHeight = height
+                            })
                     }
                 }
                 .frame(width: geometry.size.width,
@@ -74,6 +85,7 @@ private struct SidebarPinnedStack: View {
     let cancelShelfCreation: (NavigationShelfID) -> Void
     let openShelf: (NavigationShelf) -> Void
     let select: (NavigationSelection) -> Void
+    let heightChanged: (CGFloat) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -96,6 +108,13 @@ private struct SidebarPinnedStack: View {
                 .padding(.vertical, 5)
         }
         .background(.bar)
+        // The canvas's fallback drop resolver needs to know where this stack
+        // starts, and only this stack knows how tall it is.
+        .background(GeometryReader { proxy in
+            Color.clear
+                .onAppear { heightChanged(proxy.size.height) }
+                .onChange(of: proxy.size.height) { heightChanged($0) }
+        })
         .animation(.easeInOut(duration: 0.16), value: items)
     }
 }
@@ -442,7 +461,18 @@ private struct SidebarShelfRow: View {
     }
 
     private func activate(_ fallback: NavigationSelection) {
-        if let openShelf { openShelf(shelf) } else { select(fallback) }
+        switch NavigationShelfTab.activationAction(
+            for: shelf,
+            isAlreadySelected: selection.containingShelfID == shelf.id,
+            registry: registry,
+            canReopen: openShelf != nil) {
+        case .goHome(let home):
+            select(home)
+        case .reopen:
+            openShelf?(shelf)
+        case .select:
+            select(fallback)
+        }
     }
 
     private var title: String {

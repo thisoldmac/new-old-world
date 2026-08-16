@@ -46,6 +46,43 @@ Every op may be NULL except `create`. What the Workshop guarantees:
 | `activate(active)` | window activate/suspend | Activate/DeactivateControl |
 | `idle()` | **every event-loop pass** | be nearly free (see below) |
 | `status_text(out, cap)` | placard repaint | one line, or leave empty |
+| `describe_scene(writer)` | host observation | **required if `draw()` draws text** — emit the same strings and rects it does |
+| `copy_text(out, cap)` | Edit▸Copy | write ≤ `cap-1` bytes into the caller's buffer, return the length; NULL greys the item |
+
+`describe_scene` is the only route by which anything a page draws by hand
+reaches the host's observation plane. Controls do not need it: every one
+of them is already a Control Manager fact that `control_kind.c` hands
+over. Raw QuickDraw is different — it tells nobody anything, so a page
+that draws a heading, a fact row or a scrollback line and leaves this
+entry NULL is reported to the host as an **empty body**, which is
+indistinguishable from a page with nothing on it.
+
+That is not hypothetical: for most of this project's life exactly one
+page implemented it and sixteen did not, so most of the Workshop looked
+blank to the plane. `now-guest-shared/tests/module_describe_scene_source_test.py`
+now fails any module whose source draws text while this entry is NULL.
+
+The shape to copy is **one walk taken twice**, not a second function that
+re-derives the same strings: write `<page>_content(writer)` (or per-piece
+`emit_*` helpers) that draws when the writer is NULL and describes when it
+is not, and have both `draw()` and `describe_scene()` call it. Two walks
+are two chances to disagree, and a page that describes something other
+than what it drew is worse than one that describes nothing. Keep
+draw-only side effects — repaint caches, "this string is now shown"
+bookkeeping — behind `if (writer == NULL)`: describing changes no pixels,
+so marking a string shown would swallow an invalidation `idle` still owes
+it.
+
+`copy_text` is Edit▸Copy, and on a page that already describes itself it
+is three lines: point that same walk at a buffer instead of at the host
+with `workshop_scene_text.h`. What lands on the clipboard is then by
+construction what the page describes, which is by construction what it
+drew. A page that has nothing worth handing someone leaves the op NULL
+and the menu item greys — an honest report, not a command that quietly
+does nothing. The signature (caller's buffer, length-capped, plain text)
+is deliberately also a **wire payload**: a future cross-device copy reads
+exactly this, so a page serving the local scrap has already served the
+wire half.
 
 Modules are created **lazily** and then hidden, never disposed, so a
 page keeps its state — scrollback, listing, settings — for the whole
@@ -85,7 +122,9 @@ behavior:
 
 A genuinely new page additionally needs an explicit `WorkshopModuleID`, its
 View-menu command, rail geometry or pinned-row behavior, public module page,
-manifest row, media slots, and 68K posture. Existing numeric IDs are persisted
+manifest row, media slots, 68K posture, and — if it draws any text of its
+own — a `describe_scene` (the gate above) and, where "the whole page as
+text" is a sensible thing to hand someone, a `copy_text` for Edit▸Copy. Existing numeric IDs are persisted
 and **must never be renumbered**. The current rail stores the non-pinned pages
 as a contiguous prefix and pins Preferences, Logs, and Connection at 15–17;
 adding another page therefore requires an intentional rail/prefs migration,
@@ -94,8 +133,12 @@ not an enum insertion disguised as a small module edit.
 `nav_rows[i]` is the i-th visible slot, not the i-th module. The rail maps a
 slot through the person's saved order and scroll offset, and `row_rect()`
 returns `NULL` when that row is off screen. Every caller must accept that as
-ordinary state. The definition's subtitle is what compact density drops, so
-the title must still identify the page by itself.
+ordinary state. Every rail row is one line — the title — so the title must
+identify the page by itself; the subtitle is what the hover tag shows when
+the pointer rests on the row, and a non-core `tier` also draws a short
+right-aligned mark that the title truncates around. A new page joins the
+rail's curated default order in `now-guest-ppc/src/workshop/workshop_order.c`,
+which carries the adjacency argument in prose beside the table.
 
 Add a 16×16 `ics#` in `now-guest-ppc/resources/app.r` for a new sidebar icon.
 **Do not** plot it with `PlotIconID`: the System file can outrank your

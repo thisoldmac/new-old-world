@@ -36,6 +36,9 @@ typedef enum {
     kDiagVProbe = 0,
     kDiagShotDiag,
     kDiagPutStat,
+    kDiagWireStat,       /* fourth instrument: how long this Mac takes to
+                             notice the wire, read rather than run - see
+                             below */
     kDiagProbeCount
 } DiagProbe;
 
@@ -133,5 +136,45 @@ Boolean diag_putstat_has_run(const DiagPutStat *stats);
    Fewer rows than the wire's: the wire is for a machine that will keep
    them, this is for a person looking at a screen. Returns the row count. */
 int diag_putstat_rows(const DiagPutStat *stats, DiagRow *rows, int max);
+
+/* A distribution, reduced to what fits a row: n/mean/min/max plus the
+   ONE bucket the median falls in (range and count), rather than the
+   wire's full ten-bucket histogram. Same reduction putstat already makes
+   for the same reason - a person reading a card wants the shape, not
+   the instrument's full resolution. `median_bucket` is -1 with no
+   samples; `median_hi_us` is 0 for the open-ended last bucket, the same
+   sentinel the wire's own rendering uses. */
+typedef struct DiagLoopStat {
+    long n;
+    unsigned long mean_us;
+    unsigned long min_us;
+    unsigned long max_us;
+    int median_bucket;
+    long median_lo_us;
+    long median_hi_us;
+    long median_count;
+} DiagLoopStat;
+
+/* The `wirestat` report's read-only half, as plain scalars - the counters
+   conn_wake_stats() and conn_idle_sleep() already keep, translated the
+   same way FileReceiveStats becomes a DiagPutStat. Wake and sleep are
+   SET only from the console or the wire (wirestat_cmd.c); this card has
+   no control for either, so nothing here can change what it reads. */
+typedef struct DiagWireStat {
+    long sleep_now_ticks;
+    long idle_sleep_ticks;
+    Boolean wake_on;
+    Boolean notifier_live;
+    long data_events;
+    long wake_calls;
+    DiagLoopStat pass;          /* interval between the wire's service passes */
+    DiagLoopStat wake;          /* T_DATA notification -> the read that took it */
+} DiagWireStat;
+
+/* The page's reading of the same report the `wirestat` command sends -
+   one implementation of the distribution math (loopstat.c), two
+   renderings: JSON rows there, a card here. Returns the row count, or 0
+   when `max` cannot hold it (a ceiling, never a truncation). */
+int diag_wirestat_rows(const DiagWireStat *stats, DiagRow *rows, int max);
 
 #endif /* NOW_DIAG_LAYOUT_H */

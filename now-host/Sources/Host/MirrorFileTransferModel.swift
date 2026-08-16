@@ -20,7 +20,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
 
         var label: String {
             switch direction {
-            case .toGuest: return "Copying \(name) to the classic Mac"
+            case .toGuest: return "Copying \(name) to \(MachineNaming.simpleReference)"
             case .toHost: return "Copying \(name) to this Mac"
             }
         }
@@ -169,7 +169,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
         to target: CrossMachineFileTargeting.Destination
     ) -> Bool {
         guard case .connected = connection else {
-            notice = "No classic Mac is connected."
+            notice = "No \(MachineNaming.commonNoun) is connected."
             return false
         }
         let options: [NSPasteboard.ReadingOptionKey: Any] = [
@@ -188,7 +188,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
             forClasses: [NSFilePromiseReceiver.self], options: nil) ?? [])
             .compactMap { $0 as? NSFilePromiseReceiver }
         guard !receivers.isEmpty else {
-            notice = "That drag did not contain a file the classic Mac can copy."
+            notice = "That drag did not contain a file \(MachineNaming.simpleReference) can copy."
             return false
         }
         guard receivers.count <= 32 else {
@@ -207,7 +207,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
         promiseBatch: PromiseBatch?
     ) {
         guard case .connected = connection else {
-            notice = "No classic Mac is connected."
+            notice = "No \(MachineNaming.commonNoun) is connected."
             if let promiseBatch {
                 promiseBatch.callbackFinished(enqueued: false)
                 finishPromiseBatchIfPossible(promiseBatch)
@@ -310,7 +310,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     func promise(for source: CrossMachineFileTargeting.Source)
         -> NSFilePromiseProvider? {
         guard case .connected = connection else {
-            notice = "No classic Mac is connected."
+            notice = "No \(MachineNaming.commonNoun) is connected."
             return nil
         }
         let type = UTType(filenameExtension:
@@ -506,8 +506,8 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
                     switch result {
                     case .success:
                         self.notice = plan.note.map {
-                            "Copied \(plan.name) to the classic Mac (\($0))."
-                        } ?? "Copied \(plan.name) to the classic Mac."
+                            "Copied \(plan.name) to \(MachineNaming.simpleReference) (\($0))."
+                        } ?? "Copied \(plan.name) to \(MachineNaming.simpleReference)."
                         self.startNextHostFile()
                     case .failure(let failure):
                         self.notice = failure.message

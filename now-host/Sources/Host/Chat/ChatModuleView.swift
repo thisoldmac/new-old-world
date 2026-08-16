@@ -23,6 +23,8 @@ import SwiftUI
 struct ChatModuleView: View {
     @ObservedObject var model: ChatModuleModel
     @State private var settingsShown = false
+    /// Saved chats visible, or the page given over to the conversation.
+    @AppStorage("chat.sidebarShown") private var sidebarShown = true
     @State private var draft = ""
     /// Following the tail, as opposed to reading further up.
     @State private var pinnedToBottom = true
@@ -30,6 +32,25 @@ struct ChatModuleView: View {
     private static let column: CGFloat = 720
 
     var body: some View {
+        HSplitView {
+            if sidebarShown {
+                ChatSidebar(model: model)
+            }
+            conversation
+                .frame(minWidth: 420, maxWidth: .infinity,
+                       maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            model.refresh()
+            model.bootstrapChats()
+        }
+        .sheet(isPresented: $settingsShown) {
+            ChatProvidersSheet(model: model)
+        }
+    }
+
+    private var conversation: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
@@ -41,10 +62,6 @@ struct ChatModuleView: View {
                     ? "Set up a provider to start"
                     : "Ask about the connected machine...",
                 send: submit, stop: model.cancel)
-        }
-        .onAppear { model.refresh() }
-        .sheet(isPresented: $settingsShown) {
-            ChatProvidersSheet(model: model)
         }
     }
 
@@ -59,6 +76,14 @@ struct ChatModuleView: View {
 
     private var toolbar: some View {
         HStack(spacing: 10) {
+            Button {
+                sidebarShown.toggle()
+            } label: {
+                Image(systemName: "sidebar.leading")
+            }
+            .buttonStyle(.borderless)
+            .help(sidebarShown ? "Hide saved chats" : "Show saved chats")
+
             ChatModelButton(
                 models: model.models, providers: model.providersWithModels,
                 selection: $model.selectedWireModelID,

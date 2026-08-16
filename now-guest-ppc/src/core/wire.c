@@ -39,6 +39,7 @@
 #include "software.h"
 #include "transitions_cmd.h"
 #include "development_candidate.h"
+#include "peer_name.h"
 #include "wire_sleep.h"
 #include "sha256.h"
 #include "update_install.h"
@@ -481,7 +482,7 @@ static unsigned long g_scene_plane_caps;
 
 static void renew_scene_planes(void)
 {
-    if (!now_mirror_policy_enabled(kMirrorPolicyStructure)) {
+    if (!now_mirror_policy_enabled()) {
         now_peek_release(kNowPeekOwnerScene,
                          (unsigned long)(kNowPeekCapAnchors
                                          | kNowPeekCapTree
@@ -547,6 +548,11 @@ static void enter_backoff(void)
             g.host, g.port, g.last_fail);
     link_drop_transfers();
     close_endpoint();
+    /* The name a peer answered belongs to THAT connection; a stale one
+       carried into backoff would have conn_peer_label report a machine
+       that is not there, right when G-8's "Other Mac" fallback is
+       supposed to take over. */
+    g.peer_name[0] = '\0';
     if (!g.want_connection) {
         g.phase = kConnIdle;
         return;
@@ -2100,7 +2106,7 @@ static void serve_scene(const char *request)
        Held across requests, every application that pumps between two
        scenes gets one, which is what makes a mirror show the machine
        rather than this application. */
-    if (now_mirror_policy_enabled(kMirrorPolicyStructure)) {
+    if (now_mirror_policy_enabled()) {
         unsigned long requested = (unsigned long)kNowPeekCapAnchors;
         unsigned long optional = (unsigned long)(kNowPeekCapTree
                                                   | kNowPeekTableCapAct);
@@ -2114,7 +2120,7 @@ static void serve_scene(const char *request)
            renew_scene_planes(). */
         g_scene_plane_caps = requested;
     } else {
-        /* Structure-off is not a thin structural request. It is no
+        /* Consent withheld is not a thin structural request. It is no
            foreign-memory observation at all: withdraw every scene-owned
            claim and let scene_collect report only what Process Manager and
            this application's own context can prove. */
@@ -2926,7 +2932,10 @@ static Boolean browse_refused(const char *reply)
     }
     g_browse.pending = false;
     if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
-        strcpy(reason, "the other Mac refused");
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(reason, sizeof reason, "%.30s refused", peer);
     }
     if (g_listing_hook != NULL) {
         g_listing_hook(g_browse.path, NULL, 0, false, 1, NULL, reason);
@@ -3327,7 +3336,11 @@ static Boolean cloud_refused(const char *reply)
             strcpy(reason, "Preview after the download");
         } else if (!now_json_find_text(reply, "reason", reason,
                                        sizeof reason)) {
-            strcpy(reason, "the other Mac refused the preview");
+            char peer[40];
+
+            conn_peer_label(peer, sizeof peer);
+            snprintf(reason, sizeof reason, "%.30s refused the preview",
+                     peer);
         }
         preview_fail(reason);
         return true;
@@ -3335,7 +3348,10 @@ static Boolean cloud_refused(const char *reply)
         return false;
     }
     if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
-        strcpy(reason, "the other Mac refused");
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(reason, sizeof reason, "%.30s refused", peer);
     }
     cloud_note(kCloudAnswerError, reason);
     return true;
@@ -3767,7 +3783,13 @@ static void host_shown_answer(const char *reply)
 static void service_host_show(void)
 {
     if (g_hostshow.pending && TickCount() > g_hostshow.deadline) {
-        host_show_settle(false, "No answer - that Mac may be too old.");
+        char peer[40];
+        char reason[64];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(reason, sizeof reason, "No answer - %.30s may be too old.",
+                 peer);
+        host_show_settle(false, reason);
     }
 }
 
@@ -4145,10 +4167,14 @@ static void get_end(const char *reply)
         return;
     }
     if (!now_json_find_bool(reply, "ok", 0)) {
+        char peer[40];
+
         now_log(kLogWarn, "get", "#%ld ended early at %ld of %ld bytes",
                 g_get.id, g_get.rx.received, g_get.expected);
         get_cleanup(false);
-        get_note("The other Mac stopped sending");
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "%s stopped sending", peer);
+        get_note(line);
         return;
     }
     /* The same seam check finish_put makes for the other direction. An
@@ -4194,8 +4220,13 @@ static void service_get(void)
 {
     if ((g_get.pending || g_get.receiving)
         && TickCount() > g_get.deadline) {
+        char peer[40];
+        char line[64];
+
         get_cleanup(false);
-        get_note("The other Mac stopped answering");
+        conn_peer_label(peer, sizeof peer);
+        snprintf(line, sizeof line, "%s stopped answering", peer);
+        get_note(line);
     }
 }
 
@@ -4631,13 +4662,16 @@ int now_wire_update_request(NowUpdateComponent component,
 {
     NowUpdateOffer offer;
     char json[256];
+    char peer[40];
 
     if (g.phase != kConnConnected) {
-        snprintf(err, (size_t)cap, "Connect to the other Mac first");
+        conn_peer_label(peer, sizeof peer);
+        snprintf(err, (size_t)cap, "Connect to %s first", peer);
         return -1;
     }
     if (!now_update_offer_get(component, &offer)) {
-        snprintf(err, (size_t)cap, "The other Mac has no %s update",
+        conn_peer_label(peer, sizeof peer);
+        snprintf(err, (size_t)cap, "%s has no %s update", peer,
                  now_update_component_name(component));
         return -1;
     }
@@ -4847,6 +4881,15 @@ static void put_done(Boolean ok, const char *code, const char *reason,
     g_put.active = false;
 }
 
+/* 034 H4: every OTHER way finish_put ends an update transfer clears
+   g_update.pending (checksum mismatch, SHA-256 mismatch, receive-finish
+   failure, install failure); this shared abort path -- the one both
+   now_wire_put_cancel (guest console, G11b) and a host Cancel button
+   (file.end ok:false) route through -- was the one exception. Left
+   uncleared, the guest refuses every later update attempt with
+   "already pending" (run_update's own guard, wire.c:4518) until the
+   app relaunches, which is exactly the state a person cancelling an
+   update should never be left in. */
 static void put_abort(const char *code, const char *reason)
 {
     Boolean retained;
@@ -4855,9 +4898,43 @@ static void put_abort(const char *code, const char *reason)
         return;
     }
     retained = g_put.rx.keep_partial && g_put.rx.received > 0;
+    if (g_put.update) {
+        g_update.pending = false;
+    }
     now_files_receive_abort(&g_put.rx);
     put_done(false, code, reason,
              retained ? "partial-retained" : "temp-discarded");
+}
+
+/* Stop the receive in flight, from this side. now_wire_get_cancel's two
+   halves in the same order, one lane over: tell the other Mac to stop
+   sending, then end it here. Wire-only would leave this side writing
+   into a temp nobody finishes; local-only would leave the host pushing
+   into a lane that is one transfer wide, which is the state that makes
+   a machine transfer nothing ever again.
+
+   send_control is best effort for get_cancel's reason — a stop pressed
+   on a dead wire still has to free this side — and put_abort is the
+   same teardown an inbound file.cancel already runs (serve of
+   file.cancel), so the host also hears file.done ok:false "cancelled"
+   and does not have to infer the end from silence. */
+int now_wire_put_cancel(char *err, long cap)
+{
+    char json[64];
+
+    if (!g_put.active) {
+        snprintf(err, (size_t)cap, "Nothing is being received");
+        return -1;
+    }
+    /* `transfer`, not `id`: contract/asyncapi.yaml FileCancel requires
+       {type, transfer} with additionalProperties false. */
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.cancel\",\"transfer\":%ld}", g_put.id);
+    (void)send_control(json);
+    now_log(kLogInfo, "put", "#%ld stopped at %ld bytes by the person",
+            g_put.id, g_put.rx.received);
+    put_abort("cancelled", "stopped at this Mac");
+    return 0;
 }
 
 /* Called for every inbound bulk frame. */
@@ -6440,6 +6517,122 @@ static void serve_continuity_grab(const char *request)
     }
 }
 
+/* Serve the item one continuity.selection generation named.
+
+   THIS IS THE ONE PLACE THE GUEST READS OUTSIDE THE FILES SHARE ON THE
+   HOST'S WORD, so it is worth being plain about what makes that safe.
+   The host cannot name a file here: it names a GENERATION this guest
+   published, and the guest serves whatever its own cache holds under
+   that number. The reachable set is therefore exactly what a person
+   selected in the Finder with their own hand, during a live epoch, and
+   it shrinks to nothing the moment the epoch ends. The gesture is the
+   consent — the same bargain a host-to-guest drop already strikes.
+
+   Everything after the check is the ORDINARY file lane: the same stage,
+   the same file.begin, the same transfer. There is no second bulk path,
+   which is why a grabbed file cancels and reports progress the way a
+   Files pull does. */
+static void serve_continuity_grab(const char *request)
+{
+    NowPrefs prefs;
+    FileStage stage;
+    FSSpec spec;
+    char container_arg[16];
+    char json[512];
+    long id = now_json_find_int(request, "id", 0);
+    unsigned long epoch =
+        (unsigned long)now_json_find_int(request, "epoch", 0);
+    unsigned long generation =
+        (unsigned long)now_json_find_int(request, "generation", 0);
+    unsigned long live = now_continuity_live_epoch();
+    FileContainer want = kContainerAuto;
+    long chunk;
+    short pace_ms;
+    Boolean pack_unused;
+    unsigned short xfer;
+    int verdict;
+    int rc;
+
+    if (wire_busy()) {
+        file_refuse(id, "busy", "a transfer is already in flight");
+        return;
+    }
+    verdict = now_continuity_selection_grab(live, epoch, generation, &spec);
+    if (verdict != kNowGrabOK) {
+        const char *code = now_continuity_grab_code(verdict);
+
+        /* NAMED, both on the wire and in the log. A refusal here is the
+           consent boundary doing its job, and the one thing worse than
+           refusing is refusing in a way nobody can tell apart from a
+           transfer that failed. */
+        now_log(kLogWarn, "mirror",
+                "grab refused #%ld epoch=%lu/%lu gen=%lu: %s",
+                id, epoch, live, generation, code);
+        /* grant-expired is the one refusal that is about TIME rather than
+           about what the request names: the epoch ended under a gesture
+           still in flight, which is ordinary, and the window for finishing
+           it closed. Saying "no longer names what it was given" there
+           would send a person looking at their selection. */
+        file_refuse(id, code,
+                    verdict == kNowGrabGrantExpired
+                        ? "the drag was held too long after Continuity ended"
+                        : "the drag no longer names what it was given");
+        return;
+    }
+    if (now_json_find_string(request, "container", container_arg,
+                             sizeof container_arg)) {
+        if (strcmp(container_arg, "macbinary") == 0) {
+            want = kContainerMacBinary;
+        } else if (strcmp(container_arg, "data") == 0) {
+            want = kContainerData;
+        }
+    }
+    rc = now_files_stage_spec(&spec, want, &stage);
+    if (rc != kFilesOK) {
+        now_log(kLogWarn, "mirror",
+                "grab #%ld could not stage gen=%lu rc=%d",
+                id, generation, rc);
+        file_refuse_rc(id, rc);
+        return;
+    }
+    now_prefs_load(&prefs);
+    tuning_from_json(request, &prefs, &chunk, &pace_ms, &pack_unused);
+    xfer = next_xfer();
+    {
+        char type[8], creator[8];
+        char esc_name[200], esc_type[40], esc_creator[40];
+
+        memcpy(type, &stage.file_type, 4);
+        type[4] = '\0';
+        memcpy(creator, &stage.creator, 4);
+        creator[4] = '\0';
+        now_json_escape(stage.name, esc_name, sizeof esc_name);
+        now_json_escape(type, esc_type, sizeof esc_type);
+        now_json_escape(creator, esc_creator, sizeof esc_creator);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"file.begin\",\"id\":%ld,\"transfer\":%u,"
+                 "\"name\":\"%s\",\"container\":\"%s\","
+                 "\"bytes\":%ld,\"dataBytes\":%ld,\"rsrcBytes\":%ld,"
+                 "\"fileType\":\"%s\",\"creator\":\"%s\","
+                 "\"modified\":%lu}",
+                 id, xfer, esc_name,
+                 stage.container == kContainerMacBinary ? "macbinary" : "data",
+                 stage.total_bytes, stage.data_bytes, stage.rsrc_bytes,
+                 esc_type, esc_creator, stage.modified);
+    }
+    now_log(kLogInfo, "mirror", "grab granted #%ld epoch=%lu gen=%lu %.31s",
+            id, epoch, generation, stage.name);
+    if (!send_control(json)) {
+        now_files_stage_dispose(&stage);
+        return;
+    }
+    if (!arm_file_transfer(id, xfer, &stage, chunk, pace_ms)) {
+        now_files_stage_dispose(&stage);
+        file_start_failed(id, xfer);
+        return;
+    }
+}
+
 /* --- live stream ------------------------------------------------------- */
 
 static void stream_pipeline_clear(void)
@@ -7714,11 +7907,17 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "web.response.end")) {
         char reason[193];
-        reason[0] = '\0';
+        char code[24];
+        Boolean ok = (Boolean)now_json_find_bool(reply, "ok", 0);
+        reason[0] = code[0] = '\0';
         (void)now_json_find_text(reply, "reason", reason, sizeof reason);
+        (void)now_json_find_string(reply, "code", code, sizeof code);
+        /* The contract has declared `code` on this message since the Web
+           family landed; nothing on this side read it, so the guest page
+           could say nothing at all about the host's Web service. */
+        now_web_proxy_note_host(ok, code, reason);
         now_web_proxy_response_end(
-            now_json_find_int(reply, "id", -1),
-            now_json_find_bool(reply, "ok", 0), reason);
+            now_json_find_int(reply, "id", -1), ok, reason);
         return 1;
     }
     if (now_json_type_is(reply, "preview.begin")) {
@@ -7747,7 +7946,10 @@ static int handle_frame(const char *reply)
             code[0] = '\0';
             now_json_find_string(reply, "code", code, sizeof code);
             if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
-                strcpy(reason, "the other Mac refused");
+                char peer[40];
+
+                conn_peer_label(peer, sizeof peer);
+                snprintf(reason, sizeof reason, "%.30s refused", peer);
             }
             /* THE CODE, NAMED, not just the prose. bad-epoch,
                stale-selection, no-selection and offer-expired are the
@@ -7945,10 +8147,38 @@ static void service_connected_io(void)
     }
 }
 
+/* The ping itself - what both the scheduled cadence below and a person's
+   own "Test" button on the Connection page send, so a forced ping is not
+   a second implementation of what a scheduled one already does. */
+static void send_heartbeat_ping(unsigned long now)
+{
+    char ping[48];
+
+    ++g.ping_id;
+    snprintf(ping, sizeof ping, "{\"type\":\"ping\",\"id\":%ld}", g.ping_id);
+    g.ping_sent_tick = now;
+    if (!send_control(ping)) {
+        fail("Connection lost");
+        return;
+    }
+    ++g.pings_sent;
+    g.next_ping_tick = now + kPingIntervalTicks;
+}
+
+void conn_ping_now(void)
+{
+    /* Nothing to ping without a live session - a press before the
+       handshake finishes would otherwise queue a control frame the
+       protocol does not expect yet. */
+    if (g.phase != kConnConnected) {
+        return;
+    }
+    send_heartbeat_ping(TickCount());
+}
+
 static void service_heartbeat(void)
 {
     unsigned long now = TickCount();
-    char ping[48];
 
     /* **Time we were not scheduled is not time the host was silent, and
        this is the one place that used to assume it was.**
@@ -8007,16 +8237,7 @@ static void service_heartbeat(void)
         return;
     }
     if (now >= g.next_ping_tick) {
-        ++g.ping_id;
-        snprintf(ping, sizeof ping, "{\"type\":\"ping\",\"id\":%ld}",
-                 g.ping_id);
-        g.ping_sent_tick = now;
-        if (!send_control(ping)) {
-            fail("Connection lost");
-            return;
-        }
-        ++g.pings_sent;
-        g.next_ping_tick = now + kPingIntervalTicks;
+        send_heartbeat_ping(now);
     }
 }
 
@@ -8271,6 +8492,7 @@ void conn_disconnect(void)
     now_update_model_reset();
     g.phase = kConnIdle;
     strcpy(g.status, "Not connected");
+    g.peer_name[0] = '\0';             /* G-8: a person asked; no peer now */
 }
 
 void conn_connect_now(void)
@@ -8331,11 +8553,7 @@ void conn_reset_wake_stats(void)
 
 void conn_peer_label(char *out, long cap)
 {
-    if (g.peer_name[0] != '\0') {
-        snprintf(out, (size_t)cap, "%s", g.peer_name);
-    } else {
-        snprintf(out, (size_t)cap, "the other Mac");
-    }
+    now_peer_name(g.peer_name, out, cap);
 }
 
 ConnPhase conn_phase(void)

@@ -92,16 +92,17 @@ final class MirrorPlaneDomainTests: XCTestCase {
             "the Mac's safety gate is distinct from host preference")
     }
 
-    func testGuestPolicyDomainsStayIndependent() {
-        let policy = MirrorGuestPolicy(
-            structure: true, finderComplements: false,
-            content: false, foregroundCycle: true)
-        XCTAssertTrue(policy.allows(.structure))
-        XCTAssertTrue(policy.allows(.semantics))
-        XCTAssertTrue(policy.allows(.interaction))
-        XCTAssertFalse(policy.allows(.content))
-        XCTAssertFalse(policy.finderComplements)
-        XCTAssertTrue(policy.foregroundCycle)
+    func testGuestConsentCoversEveryPlaneOrNone() {
+        /* One answer for every plane, which is the change: the guest no
+           longer has an opinion about WHICH, only about whether. */
+        let refused = MirrorGuestPolicy(enabled: false)
+        for plane in MirrorPlaneID.allCases {
+            XCTAssertFalse(refused.allows(plane))
+        }
+        let allowed = MirrorGuestPolicy(enabled: true)
+        for plane in MirrorPlaneID.allCases {
+            XCTAssertTrue(allowed.allows(plane))
+        }
     }
 
     func testLifecycleFailureMakesSupportedPlaneUnavailable() {
@@ -231,7 +232,7 @@ final class MirrorPlaneDomainTests: XCTestCase {
         let registry = MirrorStateEngineRegistry()
         let engineA = registry.engine(for: keyA)
         _ = engineA.accept(scene)
-        let before = try XCTUnwrap(engineA.snapshot)
+        var before = try XCTUnwrap(engineA.snapshot)
 
         let listener = GuestListener(
             identity: .init(version: "test", name: "Test Host"))
@@ -256,6 +257,16 @@ final class MirrorPlaneDomainTests: XCTestCase {
             cycleIO: io)
         model.bindPolicyProjection { source.planePolicyDidChange() }
         source.start()
+
+        /* Asked for explicitly, because the drawing trace is the one plane
+           that is off until somebody says so (its default moved here when
+           the guest's gates retired). This test is about guest B failing
+           to reproject guest A, so A has to have something to lose. */
+        model.setPolicy(true, for: .content)
+        /* Re-read after that deliberate change: what must not move is
+           where guest A stood when guest B took over, not where it stood
+           before this test set anything up. */
+        before = try XCTUnwrap(engineA.snapshot)
 
         probe.activeGuest = guestB
         model.connection = .connected(name: guestB.name, key: keyB)
@@ -295,15 +306,73 @@ final class MirrorPlaneDomainTests: XCTestCase {
                        "an older guest keeps its established behavior")
     }
 
-    func testCurrentGuestPolicyDecodesWithoutChangingSchema() throws {
-        let json = #"{"schema":1,"extension":{"selector":"NWex","lifecycle":"active","expectedMajor":1},"policy":{"structure":true,"finderComplements":false,"content":false,"foregroundCycle":false},"planes":[{"id":"structure","purpose":"Window structure","capability":1,"supported":true,"format":3,"requested":false,"active":false,"freshness":"unavailable","state":"inactive","generation":0}]}"#
-        let facts = try JSONDecoder().decode(
-            MirrorWireFacts.self, from: Data(json.utf8))
+    /// The three shapes that arrive on this wire, and the collapse rule
+    /// applied to the middle one.
+    ///
+    /// The middle case is the load-bearing one: a guest between the four
+    /// gates and the master sends only the gates, and this side must read
+    /// them the way that guest's OWN migration reads them. If the two
+    /// sides disagreed, the host would grant a permission the Mac's
+    /// preferences file denies — and it would do it silently, because
+    /// every plane would simply work.
+    func testGuestPolicyDecodesFromEitherGeneration() throws {
+        func policy(_ fragment: String) throws -> MirrorGuestPolicy {
+            let json = #"{"schema":1,"extension":{"selector":"NWex","lifecycle":"active","expectedMajor":1},"#
+                + fragment
+                + #""planes":[{"id":"structure","purpose":"Window structure","capability":1,"supported":true,"format":3,"requested":false,"active":false,"freshness":"unavailable","state":"inactive","generation":0}]}"#
+            return try JSONDecoder().decode(
+                MirrorWireFacts.self, from: Data(json.utf8)).policy
+        }
 
-        XCTAssertTrue(facts.policy.structure)
-        XCTAssertFalse(facts.policy.finderComplements)
-        XCTAssertFalse(facts.policy.content)
-        XCTAssertFalse(facts.policy.foregroundCycle)
+        // A current guest: the master, plus the four carrying it.
+        XCTAssertTrue(try policy(#""policy":{"enabled":true,"structure":true,"finderComplements":true,"content":true,"foregroundCycle":true},"#).enabled)
+        // The master wins over the compatibility fields, never the reverse.
+        XCTAssertFalse(try policy(#""policy":{"enabled":false,"structure":true,"finderComplements":true,"content":true,"foregroundCycle":true},"#).enabled)
+        // A gate-generation guest with everything on: consent.
+        XCTAssertTrue(try policy(#""policy":{"structure":true,"finderComplements":true,"content":true,"foregroundCycle":true},"#).enabled)
+        // Three of four on is NOT consent — the whole point of the rule.
+        XCTAssertFalse(try policy(#""policy":{"structure":true,"finderComplements":true,"content":true,"foregroundCycle":false},"#).enabled)
+        // The shipped default of that generation — structure alone.
+        XCTAssertFalse(try policy(#""policy":{"structure":true,"finderComplements":false,"content":false,"foregroundCycle":false},"#).enabled)
+        // No policy object at all: a guest predating both, established
+        // behavior kept.
+        XCTAssertTrue(try policy("").enabled)
+    }
+
+    /// What this side SENDS in a fixture has to look like what the wire
+    /// carries, four retired fields and all: a host that predates the
+    /// master declares them required, and a fixture that dropped them
+    /// would stop standing in for the thing it stands in for.
+    func testEncodedPolicyKeepsTheCompatibilityFields() throws {
+        let data = try JSONEncoder().encode(MirrorGuestPolicy(enabled: true))
+        let object = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [String: Bool])
+
+        XCTAssertEqual(object["enabled"], true)
+        for retired in ["structure", "finderComplements", "content",
+                        "foregroundCycle"] {
+            XCTAssertEqual(object[retired], true,
+                           "\(retired) must carry the master consent")
+        }
+        let refused = try JSONEncoder().encode(
+            MirrorGuestPolicy(enabled: false))
+        let off = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: refused)
+                as? [String: Bool])
+        XCTAssertEqual(off.values.filter { $0 }.count, 0,
+                       "a refusal sets none of the five")
+    }
+
+    /// The default that moved sides. The guest used to hold content-off,
+    /// and it is not a taste: the drawing trace is metal-proven to crash
+    /// the Finder on the PowerBook 1400c. When the guest's granularity
+    /// retired, this side had to inherit that default or a fresh pair of
+    /// machines would arm P3 with nobody having asked.
+    func testDrawingTraceIsOffUntilSomebodySaysOtherwise() {
+        XCTAssertFalse(MirrorPlanePolicyStore.defaultEnabled(.content))
+        for plane in MirrorPlaneID.allCases where plane != .content {
+            XCTAssertTrue(MirrorPlanePolicyStore.defaultEnabled(plane))
+        }
     }
 
     func testAScrambledPlaneOrderIsStillRefused() throws {

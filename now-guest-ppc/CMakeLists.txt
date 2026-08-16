@@ -35,6 +35,7 @@ add_application(now-guest-ppc
     ../now-guest-shared/src/macbinary_lengths.c
     src/screenshots/capture.c
     src/files/fileshare.c
+    src/files/trash_move.c
     src/files/files_drop.c
     src/files/files_module_definition.c
     src/files/files_capacity.c
@@ -100,6 +101,7 @@ add_application(now-guest-ppc
     src/mirror/mirror_debug.c
     src/mirror/mirror_layout.c
     src/mirror/mirror_log.c
+    src/mirror/mirror_consent.c
     src/mirror/mirror_policy.c
     src/mirror/mirror_json.c
     src/mirror/mirror_probe.c
@@ -108,6 +110,9 @@ add_application(now-guest-ppc
     src/development/development_contract.c
     src/development/development_build.c
     src/development/development_project.c
+    src/development/development_projects.c
+    src/development/development_projects_rows.c
+    src/development/development_history.c
     src/development/development_candidate.c
     src/development/development_sha256.c
     src/development/development_open.c
@@ -118,6 +123,7 @@ add_application(now-guest-ppc
     src/development/development_module.c
     src/development/development_module_definition.c
     src/web/web_model.c
+    src/web/web_accept.c
     src/web/web_proxy_request.c
     src/web/web_proxy_ot.c
     src/web/web_port_dialog.c
@@ -129,14 +135,21 @@ add_application(now-guest-ppc
     src/files/files_module.c
     src/files/files_browser_view.c
     src/files/files_path_label.c
+    src/files/files_layout.c
+    src/files/files_run.c
+    src/files/files_status.c
+    src/files/files_peer_label.c
     src/files/files_share_view.c
     src/files/files_pull.c
     src/workshop/confirm.c
+    src/workshop/about_box.c
+    src/workshop/receive_progress.c
     src/core/ot_carbon.c
     src/core/json.c
     src/core/screen_bounds.c
     src/core/loopstat.c
     src/core/wire_sleep.c
+    src/core/peer_name.c
     src/core/wirestat_cmd.c
     src/core/nowlog.c
     src/core/logquery.c
@@ -180,7 +193,10 @@ add_application(now-guest-ppc
     src/workshop/workshop_construct.c
     src/workshop/workshop_registry.c
     src/workshop/workshop_layout.c
+    src/workshop/workshop_order.c
     src/workshop/workshop_sidebar.c
+    src/workshop/workshop_scene_text.c
+    src/workshop/workshop_drop.c
     src/workshop/workshop_window.c
     src/scene/scene_build.c
     src/scene/scene_digest.c

@@ -190,10 +190,11 @@ static void run_start(const char *json, long id, char *out, long cap)
     long ttl;
     int verdict;
 
-    if (!now_mirror_policy_enabled(kMirrorPolicyContent)) {
-        now_qdtrace_error_json(id, "content-policy-disabled",
-                               "drawing-content tracing is disabled in "
-                               "Mirror settings", out, cap);
+    if (!now_mirror_policy_enabled()) {
+        now_qdtrace_error_json(id, "mirror-consent-refused",
+                               "this Mac does not allow mirroring; the "
+                               "switch is on the Workshop's Mirror page",
+                               out, cap);
         return;
     }
     if (block == NULL) {

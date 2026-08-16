@@ -28,7 +28,9 @@ final class AgentIntegrationHostLogTailTests: XCTestCase {
     private let policy = AgentIntegrationHostLogPolicy.self
 
     override func setUp() async throws {
-        try await super.setUp()
+        /* No super.setUp() call: XCTestCase's async variant is empty by
+           contract, and awaiting it from a MainActor-isolated suite is a
+           non-Sendable send some compilers refuse. */
         /* The switch OFF for every test in this file, deliberately: this row
            must answer out of the ring, and a suite that ran with disk
            logging on could not tell the two apart. */

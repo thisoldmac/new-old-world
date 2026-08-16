@@ -9,6 +9,7 @@
 #include "../core/contract.h"
 #include "../core/pump.h"
 #include "../core/wire.h"
+#include "workshop_scene_text.h"
 
 /* The Chat page: a transcript of pre-wrapped lines (the Console's
    shape - no variable-height rows anywhere in this application), a
@@ -826,12 +827,19 @@ static void prompt_grew_or_shrank(void)
     g_shown_lines = -1;               /* the pane's rows all moved */
 }
 
-static void draw_transcript(void)
+/* The transcript, walked once and rendered twice: a NULL writer draws
+   the rows (erasing each band as it goes), a writer describes them. The
+   visible window - g_top, the row count that fits, the model accessor -
+   is computed here and only here, so the host is never told about a turn
+   the person has scrolled past, and never told a different one. */
+static void emit_transcript(const WorkshopSceneWriter *writer)
 {
     Rect f = g_r.transcript;
     Rect inner = f;
     Rect band;
     RgnHandle saved = NewRgn();
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RGBColor saved_back;
     int fit = visible_lines();
     int lines = chat_transcript_count(&g_transcript);
     int i;
@@ -843,36 +851,52 @@ static void draw_transcript(void)
        where a whole-pane erase is a visible white flash at streaming
        cadence. Every pixel is still reconstructed from state - the
        bands above and below the rows included, for the reset case. */
-    FrameRect(&f);
-    InsetRect(&inner, 1, 1);
-    if (saved != NULL) {
-        GetClip(saved);
-        ClipRect(&inner);
+    if (writer != NULL) {
+        workshop_scene_add(writer, kWorkshopScenePanel, "Transcript", &f,
+                           true);
+        InsetRect(&inner, 1, 1);
+    } else {
+        FrameRect(&f);
+        InsetRect(&inner, 1, 1);
+        if (saved != NULL) {
+            GetClip(saved);
+            ClipRect(&inner);
+        }
+        /* EraseRect erases to the port's CURRENT back color, not white - a
+           themed back color (workshop_sidebar.c's pattern) left it tinted
+           here, so transcript rows painted whatever the port last set. */
+        GetBackColor(&saved_back);
+        RGBBackColor(&white);
+        band = inner;
+        band.bottom = (short)(f.top + 4);
+        EraseRect(&band);
+        band = inner;
+        band.top = (short)(f.top + 4 + fit * kChatLineHeight);
+        EraseRect(&band);
+        TextFont(g_font);
+        TextSize(9);
+        TextFace(normal);
     }
-    band = inner;
-    band.bottom = (short)(f.top + 4);
-    EraseRect(&band);
-    band = inner;
-    band.top = (short)(f.top + 4 + fit * kChatLineHeight);
-    EraseRect(&band);
-    TextFont(g_font);
-    TextSize(9);
-    TextFace(normal);
     for (i = 0; i < fit; ++i) {
         int line = g_top + i;
 
         band = inner;
         band.top = (short)(f.top + 4 + i * kChatLineHeight);
         band.bottom = (short)(band.top + kChatLineHeight);
-        EraseRect(&band);
+        if (writer == NULL) {
+            EraseRect(&band);
+        }
         if (line < lines) {
             const char *text = chat_transcript_line(&g_transcript, line);
 
-            /* The person's turns sit against the right edge - who is
-               speaking is visible at a glance, the modern transcript
-               shape drawn with plain QuickDraw. */
-            if (chat_transcript_line_kind(&g_transcript, line)
-                    == kChatLinePerson) {
+            if (writer != NULL) {
+                workshop_scene_add(writer, kWorkshopSceneStaticText, text,
+                                   &band, true);
+            } else if (chat_transcript_line_kind(&g_transcript, line)
+                           == kChatLinePerson) {
+                /* The person's turns sit against the right edge - who is
+                   speaking is visible at a glance, the modern transcript
+                   shape drawn with plain QuickDraw. */
                 short w = TextWidth(text, 0, (short)strlen(text));
 
                 draw_at((short)(f.right - 5 - w), y, text);
@@ -883,13 +907,35 @@ static void draw_transcript(void)
         y = (short)(y + kChatLineHeight);
     }
     if (lines == 0) {
-        draw_at(x, (short)(f.top + 16),
-                g_model_count > 0
-                    ? "Ask the other Mac's model about this one."
-                    : "Waiting for the other Mac's models...");
+        char empty[80];
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        if (g_model_count > 0) {
+            snprintf(empty, sizeof empty, "Ask %.24s's model about this one.",
+                     peer);
+        } else {
+            snprintf(empty, sizeof empty, "Waiting for %.24s's models...",
+                     peer);
+        }
+
+        if (writer != NULL) {
+            band = inner;
+            band.top = (short)(f.top + 4);
+            band.bottom = (short)(band.top + kChatLineHeight);
+            workshop_scene_add(writer, kWorkshopSceneStaticText, empty,
+                               &band, true);
+        } else {
+            draw_at(x, (short)(f.top + 16), empty);
+        }
+    }
+    if (writer == NULL) {
+        RGBBackColor(&saved_back);
     }
     if (saved != NULL) {
-        SetClip(saved);
+        if (writer == NULL) {
+            SetClip(saved);
+        }
         DisposeRgn(saved);
     }
 }
@@ -911,10 +957,15 @@ static void draw_status_line(void)
 static void draw_input(void)
 {
     Rect f = g_r.input;
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RGBColor saved_back;
 
     /* Runs on page show and resize only: keystrokes never invalidate
        here, because TEKey draws its own insertion incrementally. */
+    GetBackColor(&saved_back);
+    RGBBackColor(&white);
     EraseRect(&f);
+    RGBBackColor(&saved_back);
     FrameRect(&f);
     if (g_te != NULL) {
         TextFont(g_font);
@@ -926,12 +977,45 @@ static void draw_input(void)
 
 static void chat_draw(void)
 {
-    draw_transcript();
+    emit_transcript(NULL);
     draw_status_line();
     draw_input();
     g_shown_lines = chat_transcript_count(&g_transcript);
     g_shown_open_len = g_transcript.feed.open_len;
     strncpy(g_shown_status, g_status, sizeof g_shown_status - 1);
+}
+
+static void chat_describe_scene(const WorkshopSceneWriter *writer)
+{
+    emit_transcript(writer);
+    if (g_status[0] != '\0') {
+        workshop_scene_add(writer, kWorkshopSceneStaticText, g_status,
+                           &g_r.status, true);
+    }
+    /* The prompt well is a TextEdit record, not a control, so nothing
+       else would mention it. Its contents are what the person is still
+       typing; the rect is reported, the keystrokes are not. */
+    workshop_scene_add(writer, kWorkshopScenePanel, "Prompt", &g_r.input,
+                       true);
+}
+
+/* Edit>Copy: the transcript and the status line — the prompt's own
+   keystrokes are deliberately not described above, so they are not
+   copyable either; a person mid-sentence does not want Copy to hand
+   someone else what they have not sent yet.
+
+   Served by pointing this page's own describe_scene at a buffer
+   instead of at the host, so what lands on the clipboard is by
+   construction what the page describes, which is by construction what
+   it drew. */
+static long chat_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    chat_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
 }
 
 static Boolean chat_click(const EventRecord *event, Point local)
@@ -1149,13 +1233,21 @@ static void chat_status_text(char *out, long cap)
         return;
     }
     if (g_provider_count > 0) {
-        snprintf(out, (size_t)cap, "%d provider%s on the other Mac",
-                 g_provider_count, g_provider_count == 1 ? "" : "s");
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(out, (size_t)cap, "%d provider%s on %.24s",
+                 g_provider_count, g_provider_count == 1 ? "" : "s", peer);
         return;
     }
-    snprintf(out, (size_t)cap,
-             g_asked_catalog ? "That Mac offers no chat"
-                             : "Asking about models...");
+    if (g_asked_catalog) {
+        char peer[40];
+
+        conn_peer_label(peer, sizeof peer);
+        snprintf(out, (size_t)cap, "%.24s offers no chat", peer);
+        return;
+    }
+    snprintf(out, (size_t)cap, "Asking about models...");
 }
 
 const WorkshopModuleOps *chat_module_ops(void)
@@ -1171,7 +1263,8 @@ const WorkshopModuleOps *chat_module_ops(void)
         chat_activate,
         chat_idle,
         chat_status_text,
-        NULL   /* describe_scene: this page does not self-describe yet */
+        chat_describe_scene,
+        chat_copy_text
     };
 
     return &k_ops;

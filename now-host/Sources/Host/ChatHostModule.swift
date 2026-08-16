@@ -24,7 +24,8 @@ final class ChatHostModuleRuntime: HostModuleRuntime {
             guestFiles: guestFiles,
             agentActivity: context.agentActivity,
             guestScreen: context.guestScreen,
-            defaults: context.defaults)
+            defaults: context.defaults,
+            chatStore: try? ChatStore())
         listener.chatService = model.wireService
     }
 

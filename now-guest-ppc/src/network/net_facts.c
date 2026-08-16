@@ -42,7 +42,10 @@ const char *now_net_state_sentence(NetFactState state)
         /* Deliberately about Open Transport, not about this Mac. A
            person reading "unavailable" concludes their machine is
            broken; the truth is that the question has no documented way
-           to be asked, and the machine is fine. */
+           to be asked, and the machine is fine. This is the Connections
+           card's whole placard line now (see net_layout.c) - the
+           card lost its separate blurb line, not this sentence its
+           reassurance. */
         return "Open Transport publishes no way to list a Mac's "
                "connections. Nothing is wrong with this Mac.";
     }

@@ -55,6 +55,18 @@ private struct ShelfPillTabBar: View {
             }
         }
         .padding(.vertical, 10)
+        // The bar's own fallback, the pill equivalent of
+        // `SidebarCanvasDropHost`. The only registered surfaces here are the
+        // pills and a 10x30pt slot, inside 3pt and 10pt of padding — so on a
+        // ~30pt pill in a ~56pt bar, about half the bar's height accepted
+        // nothing and said nothing about it. Behind the pills, so a drop
+        // that does hit one still resolves to that pill.
+        .background(SidebarNativeDragSurface(
+            payload: nil,
+            target: .shelf(shelfID, beforeModuleID: nil),
+            canDrop: dragActions.canDrop,
+            previewDrop: dragActions.previewDrop,
+            performDrop: dragActions.performDrop))
     }
 }
 

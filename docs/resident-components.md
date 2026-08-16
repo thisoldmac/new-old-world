@@ -130,13 +130,23 @@ Rules the table carries:
 
 The five production planes are Structure (P1), Semantics (P2), Content (P3),
 Interaction (P4), and Transitions (P5). Their host projection remains
-independently selectable, but the guest also owns four safety domains which do
-not pretend to be plane bits: passive structure observation, automatic Finder
-complements, content tracing, and explicit foreground discovery. Both the
-guest gate and the host's per-machine policy must permit work before it starts.
-A disabled domain cannot clear another plane or another owner's claim.
-Capability, declared length, format, freshness, owner lease, and guest policy
-must all agree before a plane is trusted.
+independently selectable, and the guest owns one safety gate beside it: a
+master consent, on the Workshop's Mirror page, which either permits mirroring
+of that machine or refuses all of it. Both the guest's consent and the host's
+per-machine plane policy must permit work before it starts, and a plane
+switched off cannot clear another plane or another owner's claim. Capability,
+declared length, format, freshness, owner lease, and guest consent must all
+agree before a plane is trusted.
+
+Until 2026-08-15 the guest carried four safety domains instead — passive
+structure observation, automatic Finder complements, content tracing, explicit
+foreground discovery — which deliberately did not pretend to be plane bits.
+That was the problem: their vocabulary never mapped onto the five planes, so
+neither side's page predicted the other's. The guest's granularity retired to
+the host; its refusal did not move. One default came with the granularity —
+content tracing is off until somebody asks, because P3 is metal-proven to
+crash the Finder on the PowerBook 1400c, and the guest was the side that used
+to hold that default.
 
 P3 transports bounded structured drawing and explicit visual-exception bounds,
 not framebuffer bytes. Bitmap, PICT, CopyBits-only, or manually drawn regions

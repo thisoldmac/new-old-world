@@ -6,8 +6,8 @@ import SwiftUI
 final class FilesBrowserPreferencesTests: XCTestCase {
     func testPeerDividerUsesAppKitsEffectiveDragRegionAndStartsHalfway() {
         XCTAssertEqual(
-            FilesRightSidebarSplitController.defaultLeadingFraction, 0.5)
-        let controller = FilesRightSidebarSplitController()
+            RightSidebarSplitController.defaultLeadingFraction, 0.5)
+        let controller = RightSidebarSplitController()
         _ = controller.install(leading: NSViewController(),
                                trailing: NSViewController(),
                                trailingCollapsed: false)
@@ -30,7 +30,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
             effectiveRect: drawn, forDrawnRect: drawn, ofDividerAt: 0)
         XCTAssertGreaterThanOrEqual(effective.width, drawn.width + 10,
                              "The native divider needs a forgiving hit target")
-        let nativeSplit = controller.splitView as? FilesSplitView
+        let nativeSplit = controller.splitView as? SidebarSplitView
         XCTAssertNotNil(nativeSplit)
         XCTAssertGreaterThanOrEqual(
             nativeSplit?.dividerInteractionRect(at: 0)?.width ?? 0,
@@ -39,7 +39,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
     }
 
     func testPeerRightSideUsesOneFixedNativeRailWhenCollapsed() {
-        let controller = FilesRightSidebarSplitController()
+        let controller = RightSidebarSplitController()
         let item = controller.install(leading: NSViewController(),
                                       trailing: NSViewController(),
                                       trailingCollapsed: false)
@@ -61,12 +61,12 @@ final class FilesBrowserPreferencesTests: XCTestCase {
         XCTAssertFalse(item.isCollapsed,
                        "the native trailing item must remain present as the rail")
         XCTAssertEqual(controller.splitView.arrangedSubviews[1].frame.width,
-                       FilesRightSidebarSplitController.collapsedRailWidth,
+                       RightSidebarSplitController.collapsedRailWidth,
                        accuracy: 1)
         XCTAssertEqual(item.minimumThickness,
-                       FilesRightSidebarSplitController.collapsedRailWidth)
+                       RightSidebarSplitController.collapsedRailWidth)
         XCTAssertEqual(item.maximumThickness,
-                       FilesRightSidebarSplitController.collapsedRailWidth,
+                       RightSidebarSplitController.collapsedRailWidth,
                        "a collapsed rail must not keep resizing")
         controller.setTrailingCollapsed(false)
         controller.view.layoutSubtreeIfNeeded()
@@ -77,7 +77,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
     }
 
     func testCollapsedHostRailUsesItsWholeSurfaceToReopen() throws {
-        let rail = FilesRightSidebarRailView(
+        let rail = RightSidebarRailView(
             frame: NSRect(x: 0, y: 0, width: 54, height: 600))
         var expansionCount = 0
         rail.onExpand = { expansionCount += 1 }
@@ -97,7 +97,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
     }
 
     func testCollapsedHostRailWinsOverHostedContentsMinimumWidthInAWindow() {
-        let controller = FilesRightSidebarSplitController()
+        let controller = RightSidebarSplitController()
         let hostedContent = NSHostingController(rootView:
             Color.clear.frame(minWidth: 360, minHeight: 300))
         let item = controller.install(
@@ -113,11 +113,11 @@ final class FilesBrowserPreferencesTests: XCTestCase {
         controller.view.layoutSubtreeIfNeeded()
 
         XCTAssertEqual(item.minimumThickness,
-                       FilesRightSidebarSplitController.collapsedRailWidth)
+                       RightSidebarSplitController.collapsedRailWidth)
         XCTAssertEqual(item.maximumThickness,
-                       FilesRightSidebarSplitController.collapsedRailWidth)
+                       RightSidebarSplitController.collapsedRailWidth)
         XCTAssertEqual(controller.splitView.arrangedSubviews[1].frame.width,
-                       FilesRightSidebarSplitController.collapsedRailWidth,
+                       RightSidebarSplitController.collapsedRailWidth,
                        accuracy: 2,
                        "hidden browser content must leave the rail out of layout")
 
@@ -126,7 +126,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
     }
 
     func testPeerRightSideSurvivesRepeatedCollapseAndReopenCycles() {
-        let controller = FilesRightSidebarSplitController()
+        let controller = RightSidebarSplitController()
         let item = controller.install(leading: NSViewController(),
                                       trailing: NSViewController(),
                                       trailingCollapsed: false)
@@ -139,9 +139,9 @@ final class FilesBrowserPreferencesTests: XCTestCase {
             controller.setTrailingCollapsed(true)
             controller.view.layoutSubtreeIfNeeded()
             XCTAssertEqual(item.maximumThickness,
-                           FilesRightSidebarSplitController.collapsedRailWidth)
+                           RightSidebarSplitController.collapsedRailWidth)
             XCTAssertEqual(controller.splitView.arrangedSubviews[1].frame.width,
-                           FilesRightSidebarSplitController.collapsedRailWidth,
+                           RightSidebarSplitController.collapsedRailWidth,
                            accuracy: 1)
 
             controller.setTrailingCollapsed(false)
@@ -155,7 +155,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
     }
 
     func testPeerDividerRestoresTheUsersPositionAndKeepsItsRatioOnRelayout() {
-        let controller = FilesRightSidebarSplitController()
+        let controller = RightSidebarSplitController()
         _ = controller.install(leading: NSViewController(),
                                trailing: NSViewController(),
                                trailingCollapsed: false)
@@ -184,7 +184,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
     }
 
     func testPeerDividerFractionSurvivesControllerRecreation() {
-        let first = FilesRightSidebarSplitController()
+        let first = RightSidebarSplitController()
         _ = first.install(leading: NSViewController(),
                           trailing: NSViewController(),
                           trailingCollapsed: false)
@@ -194,7 +194,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
         first.splitView.setPosition(330, ofDividerAt: 0)
         first.setTrailingCollapsed(true)
 
-        let second = FilesRightSidebarSplitController()
+        let second = RightSidebarSplitController()
         _ = second.install(leading: NSViewController(),
                            trailing: NSViewController(),
                            trailingCollapsed: false,
@@ -212,20 +212,20 @@ final class FilesBrowserPreferencesTests: XCTestCase {
         let source = try GateSource.hostSwift(
             "now-host/Sources/Host/FilesWorkspaceShell.swift")
         let splitSource = try GateSource.hostSwift(
-            "now-host/Sources/Host/FilesNativeSplitViews.swift")
+            "now-host/Sources/Host/RightSidebarSplitView.swift")
         let hostBrowserSource = try GateSource.hostSwift(
             "now-host/Sources/Host/HostFileBrowser.swift")
 
-        XCTAssertTrue(source.contains("FilesRightSidebarSplitView("))
+        XCTAssertTrue(source.contains("RightSidebarSplitView("))
         XCTAssertTrue(source.contains("isTrailingCollapsed:"))
         XCTAssertTrue(source.contains("leadingFraction: $mainPaneFraction"))
         XCTAssertTrue(source.contains("leading: FilesGuestPane("))
         XCTAssertTrue(source.contains("trailing: FilesRightSidebar("))
         XCTAssertTrue(source.contains(
-            "titleAccessory: FilesRightSidebarToggle("),
+            "titleAccessory: RightSidebarToggle("),
             "the right sidebar must own its expanded collapse control")
         XCTAssertTrue(splitSource.contains(
-            "FilesRightSidebarContainerController"),
+            "RightSidebarContainerController"),
             "the native trailing item must own both content and reopen rail")
         XCTAssertFalse(splitSource.contains("HStack(spacing: 0)"),
             "SwiftUI must not place a second rail outside the native split")
@@ -252,8 +252,17 @@ final class FilesBrowserPreferencesTests: XCTestCase {
         XCTAssertTrue(splitSource.contains(
             "preferredThicknessFraction = 0.5"))
         XCTAssertTrue(splitSource.contains("canCollapse = false"))
-        XCTAssertTrue(splitSource.contains("Show This Mac"))
-        XCTAssertTrue(splitSource.contains("Hide This Mac"))
+        /* The noun moved to the consumer when Connections became the
+           second one: the component composes Show/Hide around whatever it
+           is given, and Files is what still gives it "This Mac". Asserting
+           the literal in the shared file would now be asserting that the
+           extraction did not happen. */
+        XCTAssertTrue(source.contains("hostSidebarTitle = \"This Mac\""),
+                      "Files must still name its right sidebar")
+        XCTAssertTrue(splitSource.contains("(isCollapsed ? \"Show \" : \"Hide \") + title"),
+                      "the toggle composes its label from the consumer's noun")
+        XCTAssertTrue(splitSource.contains("let label = \"Show \\(title)\""),
+                      "so does the collapsed rail")
         XCTAssertFalse(source.contains("TabView"))
         XCTAssertFalse(splitSource.contains("override func mouseDragged"),
                        "AppKit must own divider dragging")
@@ -462,7 +471,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
             url: URL(fileURLWithPath: "/"), name: "Macintosh HD",
             symbol: "externaldrive")
         let desktop = HostFileLocation(
-            url: URL(fileURLWithPath: "/Users/test/Desktop"),
+            url: URL(fileURLWithPath: "/Volumes/Scratch/Desktop"),
             name: "Desktop", symbol: "folder")
         let host = FilesCurrentFolderDisplay.host(
             breadcrumbs: [root, desktop], source: "Local")
@@ -512,7 +521,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
     func testCollapsedHostRailOwnsDelayedNativeDisclosureAndSpringLoading()
         throws {
         let source = try GateSource.hostSwift(
-            "now-host/Sources/Host/FilesNativeSplitViews.swift")
+            "now-host/Sources/Host/RightSidebarSplitView.swift")
         XCTAssertTrue(source.contains("NSTrackingArea("))
         XCTAssertTrue(source.contains("static let hoverDelay"))
         XCTAssertTrue(source.contains("NSPopover()"))
@@ -530,7 +539,7 @@ final class FilesBrowserPreferencesTests: XCTestCase {
 
     func testCollapsedHostRailUsesCenteredInteractiveHandle() throws {
         let source = try GateSource.hostSwift(
-            "now-host/Sources/Host/FilesNativeSplitViews.swift")
+            "now-host/Sources/Host/RightSidebarSplitView.swift")
         XCTAssertTrue(source.contains("systemSymbolName: \"chevron.left\""))
         XCTAssertTrue(source.contains("iconView.centerYAnchor"),
             "the reopen affordance belongs at the rail center")
@@ -1076,6 +1085,35 @@ final class FilesBrowserPreferencesTests: XCTestCase {
             }
         }
         return (model.path, model.lastError, model.lastNotice)
+    }
+
+    // H2: both leading Places sidebars used to paint a flat
+    // controlBackgroundColor behind a .sidebar-style List, while the
+    // collapsed right rail (RightSidebarRailView) already used real
+    // .sidebar vibrancy — one material, two implementations. This is a
+    // source check because NSVisualEffectView material is not observable
+    // from a hosted, unrendered SwiftUI tree in a unit test.
+    func testFilesAndHostSidebarsShareRealSidebarVibrancyNotFlatColor() throws {
+        let shell = try GateSource.hostSwift(
+            "now-host/Sources/Host/FilesWorkspaceShell.swift")
+        let hostBrowser = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostFileBrowser.swift")
+        let splitViews = try GateSource.hostSwift(
+            "now-host/Sources/Host/RightSidebarSplitView.swift")
+
+        XCTAssertTrue(splitViews.contains(
+            "struct SidebarVibrancyBackground: NSViewRepresentable"),
+            "the collapsed rail's .sidebar material must be reusable")
+        XCTAssertTrue(splitViews.contains("material = .sidebar"))
+
+        for (label, source) in [("Files places sidebar", shell),
+                                 ("Host files sidebar", hostBrowser)] {
+            XCTAssertTrue(source.contains(
+                ".background(SidebarVibrancyBackground())"),
+                "\(label) must sit on real sidebar vibrancy, not a flat color")
+            XCTAssertTrue(source.contains(".scrollContentBackground(.hidden)"),
+                          "\(label)'s List must not paint over the vibrancy")
+        }
     }
 
 }

@@ -37,9 +37,39 @@ final class NetworkingGroupingTests: XCTestCase {
         XCTAssertEqual(out.map(\.title),
                        ["This Connection", "TCP/IP", "Ports", "Connections"],
                        "the guest's order and titles come through untouched")
-        XCTAssertEqual(out[0].rows.count, 4)
+        XCTAssertEqual(out[0].rows.count, 3,
+                       "Peer, port and uptime. The link's TIMING row is not "
+                           + "here any more — see the test below.")
         XCTAssertEqual(out[1].rows.count, 3)
         XCTAssertEqual(out[2].rows.count, 1)
+    }
+
+    /// **The link's timing rows are not on this page.** Round trip, receive
+    /// window, window peak and quiet time measure the WIRE, not this
+    /// machine's networking, and they are read on Diagnostics beside
+    /// `wirestat` now (034, G-1). Networking keeps the facts.
+    ///
+    /// Dropped in the grouping rather than hidden in the view, so the page's
+    /// own "3 of 4 groups answered" verdict counts what it actually draws.
+    /// One list decides it — `GuestLinkTiming` — read from here and from
+    /// `DiagnosticsModel`, so the four rows cannot land on both pages or on
+    /// neither.
+    func testTheLinksTimingRowsAreLeftForDiagnostics() {
+        let out = NetworkingModel.group(configured + [
+            ["  Receive window", "8192 bytes"],
+            ["  Window peak", "16384 bytes"],
+            ["  Quiet for", "4s"],
+        ])
+        let everyLabel = out.flatMap { $0.rows.map(\.label) }
+
+        for timing in GuestLinkTiming.labels {
+            XCTAssertFalse(everyLabel.contains(timing),
+                           "\(timing) belongs to the wire, not to this "
+                               + "machine's networking.")
+        }
+        XCTAssertTrue(everyLabel.contains("Peer"),
+                      "Only the timing goes. Who is on the link, and on "
+                          + "which port, is still a fact this page shows.")
     }
 
     func testAnIndentedLabelLosesItsIndentButNotItsSpaces() {

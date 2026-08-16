@@ -1,5 +1,7 @@
 #include "conn_fields.h"
 
+#include <string.h>
+
 int now_conn_ipv4_valid(const char *text)
 {
     int octets = 0;
@@ -86,4 +88,28 @@ short now_conn_retry_item_for_secs(short secs)
         return 3;
     }
     return 4;
+}
+
+const char *now_conn_action_title(int connected)
+{
+    return connected ? "Disconnect" : "Connect";
+}
+
+/* Deliberately records the title rather than the state that produced
+   it: a caller holding a live connection flag cannot accidentally seed
+   the cache with it, which is the bug this pair exists to prevent. */
+void now_conn_action_title_init(NowConnActionTitle *st, const char *created)
+{
+    st->shown = created;
+}
+
+const char *now_conn_action_title_next(NowConnActionTitle *st, int connected)
+{
+    const char *want = now_conn_action_title(connected);
+
+    if (st->shown != NULL && strcmp(st->shown, want) == 0) {
+        return NULL;
+    }
+    st->shown = want;
+    return want;
 }

@@ -1516,33 +1516,53 @@ final class MirrorContinuityController: ObservableObject,
         suppressEnabledObserver = false
     }
 
+    /// A never-before-seen machine has none of the per-machine keys below,
+    /// and falls back to `connectionDefaults` — the values Settings'
+    /// "Defaults for New Connections" tab edits — rather than a literal
+    /// constant. A machine with its own saved settings is unaffected: this
+    /// only reads the global keys when the per-machine key is absent.
     private func loadSettingsForActiveGuest() {
         guard let machine = listener.activeContinuityTarget?.key.machine else {
             return
         }
-        let stored = defaults.integer(forKey: rateKey(for: machine))
-        let rate = [15, 30, 60].contains(stored) ? stored : 30
+        let seed = connectionDefaults
+        let rateStoredKey = rateKey(for: machine)
+        let stored = defaults.integer(forKey: rateStoredKey)
+        let rate = defaults.object(forKey: rateStoredKey) != nil
+                && [15, 30, 60].contains(stored)
+            ? stored : seed.rate
         loadingSettings = true
         requestedHz = rate
-        autoReconnect = defaults.bool(forKey: reconnectKey(for: machine))
+        let reconnectStoredKey = reconnectKey(for: machine)
+        autoReconnect = defaults.object(forKey: reconnectStoredKey) == nil
+            ? seed.autoReconnect : defaults.bool(forKey: reconnectStoredKey)
         for option in ContinuityOptionCatalog.all {
             let key = optionKey(option, for: machine)
             self[keyPath: option.keyPath] = defaults.object(forKey: key) == nil
-                ? option.defaultEnabled : defaults.bool(forKey: key)
+                ? seed.optionEnabled(option) : defaults.bool(forKey: key)
         }
         let keyboardKey = keyboardForwardingKey(for: machine)
         keyboardForwardingEnabled = defaults.object(forKey: keyboardKey) == nil
-            ? true : defaults.bool(forKey: keyboardKey)
+            ? seed.keyboardForwarding : defaults.bool(forKey: keyboardKey)
         if let raw = defaults.string(forKey: escapeShortcutKey(for: machine)),
            let shortcut = ContinuityEscapeShortcut(rawValue: raw) {
             escapeShortcut = shortcut
         } else {
-            escapeShortcut = .controlOptionEscape
+            escapeShortcut = seed.escapeShortcut
         }
         let delayKey = reconnectDelayKey(for: machine)
         reconnectDelay = defaults.object(forKey: delayKey) == nil
-            ? 0.75 : clampReconnectDelay(defaults.double(forKey: delayKey))
+            ? seed.reconnectDelay : clampReconnectDelay(defaults.double(forKey: delayKey))
         loadingSettings = false
+    }
+
+    /// The seam Settings' "Defaults for New Connections" tab reads and
+    /// writes through — a fresh value each call, over the same
+    /// `UserDefaults` this controller itself reads, so an edit made while
+    /// this controller is alive is visible the next time a new machine
+    /// connects without either side holding a stale copy.
+    var connectionDefaults: ContinuityConnectionDefaults {
+        ContinuityConnectionDefaults(defaults: defaults)
     }
 
     /* Guards against a stale or hand-edited defaults value putting the

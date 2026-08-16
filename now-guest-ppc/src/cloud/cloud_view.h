@@ -5,6 +5,7 @@
 
 #include "cloud_layout.h"
 #include "cloud_model.h"
+#include "workshop_scene.h"
 
 /* The SHELL's Data Browser's two columns, drawn from CloudRow by its
    item_data callback for the list and contacts views. Drive and
@@ -69,6 +70,21 @@ typedef struct CloudViewOps {
        already drawn the status line. */
     void (*draw)(const CloudLayout *r, const CloudStore *store,
                  const CloudService *service, int selected);
+
+    /* Reports the card pane's hand-drawn TEXT as scene runs — the same
+       walk draw() takes, with a real writer standing in for QuickDraw
+       instead of a NULL one (workshop_module_ops's describe_scene, one
+       layer up, is the same idiom). Pictures (the preview well's photo)
+       and anything already a Control Manager control (group boxes, the
+       view's own Data Browser) are NOT this op's job — control_kind
+       already reaches those, and workshop_scene.h carries no picture
+       payload to duplicate a CopyBits in text. NULL means this view's
+       draw() paints nothing describe_scene has not already reported
+       some other way (no view is NULL today; a future one is free to
+       be, the way a Workshop page's own describe_scene may be). */
+    void (*describe)(const WorkshopSceneWriter *writer, const CloudLayout *r,
+                     const CloudStore *store, const CloudService *service,
+                     int selected);
 
     /* The view's one action was invoked — the Save/Up button's
        TrackControl already succeeded; this is "do it", not "was my

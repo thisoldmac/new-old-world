@@ -337,6 +337,7 @@ def extract_host_catalog(root: Path) -> dict[str, dict[str, object]]:
             if not id_match:
                 continue
             module_id = id_match.group(1)
+            title_match = re.search(r'\btitle:\s*"([^"]+)"', body)
             tier_match = re.search(r"\btier:\s*\.([A-Za-z0-9_]+)", body)
             domains_match = re.search(r"\bdomains:\s*\[([^\]]*)\]", body, re.DOTALL)
             feature_match = re.search(r"\bfeatureID:\s*\.([A-Za-z0-9_]+)", body)
@@ -346,6 +347,7 @@ def extract_host_catalog(root: Path) -> dict[str, dict[str, object]]:
                                              f"<unresolved:{feature_match.group(1)}>")
                           if feature_match else None)
             catalog[module_id] = {
+                "title": title_match.group(1) if title_match else f"<unresolved-title:{module_id}>",
                 "tier": tier_match.group(1) if tier_match else "core",
                 "domains": domains,
                 "feature_id": feature_id,
@@ -354,7 +356,11 @@ def extract_host_catalog(root: Path) -> dict[str, dict[str, object]]:
 
 
 def extract_ppc_pages(root: Path) -> list[str]:
-    text = (root / "now-guest-ppc/src/workshop/workshop_module.h").read_text()
+    # The page ids live in their own Toolbox-free header, so the rail's
+    # order table and its native test can read them; workshop_module.h
+    # includes it and adds the Carbon-dependent half.
+    text = (root
+            / "now-guest-ppc/src/workshop/workshop_module_ids.h").read_text()
     block = text[text.index("typedef enum {"):text.index("} WorkshopModuleID")]
     return re.findall(r"\b(kWorkshop[A-Za-z0-9]+)\b", block)
 
@@ -463,6 +469,7 @@ def extract_ppc_catalog(root: Path) -> tuple[dict[str, dict[str, object]], list[
                 continue
             page_id = fields[0]
             stable_match = re.fullmatch(r'"([^"]+)"', fields[1])
+            title_match = re.fullmatch(r'"([^"]+)"', fields[2])
             tier = tier_ids.get(fields[7], f"<unresolved:{fields[7]}>")
             domain_count = fields[9]
             if fields[8] in {"NULL", "0"}:
@@ -489,6 +496,7 @@ def extract_ppc_catalog(root: Path) -> tuple[dict[str, dict[str, object]], list[
                 continue
             catalog[page_id] = {
                 "id": stable_match.group(1) if stable_match else f"<unresolved:{fields[1]}>",
+                "title": title_match.group(1) if title_match else f"<unresolved-title:{page_id}>",
                 "tier": tier,
                 "domains": domains,
                 "feature_id": feature_id,
@@ -1159,6 +1167,11 @@ def check(root: Path, site_dir: Path | None) -> int:
         "id", "title", "tier", "domains", "feature_id", "page",
         "ppc_pages", "guest_68k",
     }
+    # title_overrides is the one optional field: a page whose guest title is
+    # deliberately not the manifest's rail-grouping title (a specific window
+    # name, a second page inside a multi-page module) records why here
+    # instead of silently drifting past the title comparison below.
+    optional_module_fields = {"title_overrides"}
     for index, row in enumerate(module_rows):
         if not isinstance(row, dict):
             errors.append(f"docs/module-manifest.yaml: module row {index} must be a mapping")
@@ -1168,11 +1181,29 @@ def check(root: Path, site_dir: Path | None) -> int:
             errors.append(
                 f"module {row.get('id', index)}: missing fields: {', '.join(missing_fields)}"
             )
-        extra_fields = sorted(set(row) - required_module_fields)
+        extra_fields = sorted(set(row) - required_module_fields - optional_module_fields)
         if extra_fields:
             errors.append(
                 f"module {row.get('id', index)}: unknown fields: {', '.join(extra_fields)}"
             )
+        title_overrides = row.get("title_overrides")
+        if title_overrides is not None:
+            if not isinstance(title_overrides, dict):
+                errors.append(
+                    f"module {row.get('id', index)}: title_overrides must be a mapping"
+                )
+            else:
+                for ppc_page, reason in title_overrides.items():
+                    if ppc_page not in row.get("ppc_pages", []):
+                        errors.append(
+                            f"module {row.get('id', index)}: title_overrides names "
+                            f"{ppc_page!r}, which is not one of this module's ppc_pages"
+                        )
+                    if not str(reason or "").strip():
+                        errors.append(
+                            f"module {row.get('id', index)}: title_overrides for "
+                            f"{ppc_page!r} needs a non-empty reason"
+                        )
         if row.get("tier") not in ALLOWED_MODULE_TIERS:
             errors.append(
                 f"module {row.get('id', index)}: invalid tier {row.get('tier')!r}"
@@ -1313,6 +1344,11 @@ def check(root: Path, site_dir: Path | None) -> int:
                     f"module {row['id']}: manifest {field} {row.get(field)!r} "
                     f"does not match host {field} {live[field]!r}"
                 )
+        if row.get("title") != live["title"]:
+            errors.append(
+                f"module {row['id']}: manifest title {row.get('title')!r} "
+                f"does not match host title {live['title']!r}"
+            )
     ppc_declared = [page for row in module_rows for page in row.get("ppc_pages", [])]
     ppc_live = extract_ppc_pages(root)
     if set(ppc_declared) != set(ppc_live) or len(ppc_declared) != len(ppc_live):
@@ -1342,6 +1378,20 @@ def check(root: Path, site_dir: Path | None) -> int:
                         f"module {row.get('id')}: manifest {field} {row.get(field)!r} "
                         f"does not match PPC page {ppc_page} {field} {live[field]!r}"
                     )
+            override_reason = (row.get("title_overrides") or {}).get(ppc_page)
+            if override_reason:
+                if row.get("title") == live["title"]:
+                    errors.append(
+                        f"module {row.get('id')}: title_overrides for {ppc_page} is "
+                        f"unnecessary; manifest and PPC titles already match "
+                        f"({live['title']!r})"
+                    )
+            elif row.get("title") != live["title"]:
+                errors.append(
+                    f"module {row.get('id')}: manifest title {row.get('title')!r} "
+                    f"does not match PPC page {ppc_page} title {live['title']!r} "
+                    "(declare title_overrides with a reason if this is deliberate)"
+                )
     for row in module_rows:
         page = docs / row["page"]
         if not page.exists():

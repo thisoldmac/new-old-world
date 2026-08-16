@@ -33,18 +33,14 @@ void workshop_sidebar_describe_scene(const WorkshopSceneWriter *writer);
    answer the rail will draw with. */
 void workshop_sidebar_rail_spec(WorkshopRailSpec *out);
 
-/* Seeded from prefs before the first layout, because density decides row
-   height and therefore every rectangle in the rail. */
+/* Seeded from prefs before the first layout: the saved arrangement and
+   the collapsed state both reach the rectangles. */
 void workshop_sidebar_load_prefs(void);
 
-/* The Preferences page's two levers. Both persist and relay out to the
-   window, which must recompute the layout - a density change moves every
-   row. */
-Boolean workshop_sidebar_compact(void);
-void workshop_sidebar_set_compact(Boolean compact);
-
-/* Collapsed to icons only. Separate from the density: collapsing and
-   expanding again gives back the density the person chose. */
+/* Collapsed to icons only - the rail's one remaining shape choice, since
+   the rich density was retired and every expanded row is one line. It
+   persists and relays out to the window, which must recompute the
+   layout: the rail's whole width changes. */
 Boolean workshop_sidebar_collapsed(void);
 void workshop_sidebar_set_collapsed(Boolean collapsed);
 
@@ -55,13 +51,14 @@ void workshop_sidebar_set_collapsed(Boolean collapsed);
 void workshop_sidebar_draw_toggle(void);
 Boolean workshop_sidebar_toggle_click(Point local);
 
-/* Hover help for the collapsed rail's icons, drawn by hand because
-   Carbon's help tags do not display under Mac OS 9. Cheap per pass and
-   silent while the rail is expanded. */
+/* Hover help for a rail row, drawn by hand because Carbon's help tags do
+   not display under Mac OS 9: the page's name when the rail is collapsed
+   to icons, its description when the rail is expanded - the line the
+   retired rich density used to carry. Cheap per pass. */
 void workshop_sidebar_tag_idle(void);
-/* Back to the order the enum declares. The escape hatch for a rail
-   rearranged into confusion, and the only way back that does not require
-   dragging every row. */
+/* Back to the curated default order (workshop_order.c). The escape hatch
+   for a rail rearranged into confusion, and the only way back that does
+   not require dragging every row. */
 void workshop_sidebar_reset_order(void);
 
 /* Told to the window when the rail's geometry changes under it: a

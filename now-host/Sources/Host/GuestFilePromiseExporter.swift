@@ -39,6 +39,7 @@ final class GuestFilePromiseExporter {
         case malformedListing(String)
         case tooManyItems(Int)
         case exportFailed(name: String, reason: String)
+        case abandoned(String)
 
         var errorDescription: String? {
             switch self {
@@ -48,6 +49,8 @@ final class GuestFilePromiseExporter {
                 return "That folder contains more than \(limit) items."
             case .exportFailed(let name, let reason):
                 return "Could not export \(name): \(reason)"
+            case .abandoned(let name):
+                return "\(name) stopped arriving, so the drag was abandoned."
             }
         }
     }
@@ -57,23 +60,44 @@ final class GuestFilePromiseExporter {
     /// without limit in this process.
     static let itemLimit = FilesModuleModel.dropFileLimit
 
+    /// How long the active promise may go with nothing happening at all
+    /// before it is abandoned.
+    ///
+    /// This is silence, not duration: every listing page and every file that
+    /// lands resets it, so a genuinely large folder survives while a request
+    /// whose answer never comes does not. It exists because the lane below
+    /// can lose a completion outright — that is the defect this arc fixed in
+    /// `GuestListener.getFile` — and a lost completion here does not fail one
+    /// drag, it leaves `active` set for the life of the process and refuses
+    /// every later drag-out at `startNextIfIdle`. A queue whose only exit is
+    /// a callback it does not own needs its own way out.
+    static let silenceSeconds: TimeInterval = 90
+
     private let listPage: ListPage
     private let fetchFile: FetchFile
     private let onFailure: FailureReporter
     private let fileManager: FileManager
+    private let silenceSeconds: TimeInterval
     private var pending: ArraySlice<Request> = []
     private var active: Request?
     private var generation = 0
+    private var lastActivity = Date()
+    private var watchdog: Task<Void, Never>?
 
     init(listPage: @escaping ListPage,
          fetchFile: @escaping FetchFile,
          onFailure: @escaping FailureReporter = { _ in },
-         fileManager: FileManager = .default) {
+         fileManager: FileManager = .default,
+         silenceSeconds: TimeInterval = GuestFilePromiseExporter
+             .silenceSeconds) {
         self.listPage = listPage
         self.fetchFile = fetchFile
         self.onFailure = onFailure
         self.fileManager = fileManager
+        self.silenceSeconds = silenceSeconds
     }
+
+    deinit { watchdog?.cancel() }
 
     func enqueue(_ row: FileRow, to destination: URL,
                  completion: @escaping (Result<Void, Error>) -> Void) {
@@ -87,6 +111,7 @@ final class GuestFilePromiseExporter {
     /// behind it rather than letting their paths resolve on a different disk.
     func cancelAll(reason: String) {
         generation += 1
+        disarm()
         let failure = ExportError.cancelled(reason)
         if let active {
             if active.ownsDestinationOnFailure {
@@ -101,10 +126,69 @@ final class GuestFilePromiseExporter {
         pending.removeAll()
     }
 
+    /// Abandons the active promise, freeing the lane for the ones behind it.
+    ///
+    /// The generation bump is the point rather than a formality: the lane is
+    /// being reopened precisely because a callback is missing, and a missing
+    /// callback may yet arrive. Orphaning the abandoned run's own callbacks
+    /// stops a late fetch from publishing a file into a destination AppKit
+    /// has already been told about. Requests still queued behind it never
+    /// started, so they are untouched and start now.
+    private func abandonActive(token: Int) {
+        guard token == generation, let request = active else { return }
+        generation += 1
+        disarm()
+        if request.ownsDestinationOnFailure {
+            try? fileManager.removeItem(at: request.destination)
+        }
+        let failure = ExportError.abandoned(request.row.name)
+        active = nil
+        onFailure(failure)
+        request.completion(.failure(failure))
+        startNextIfIdle()
+    }
+
+    /// Test seam: expire the silence watchdog now, so a test can prove the
+    /// lane reopens without waiting out the timeout.
+    func expireSilenceForTesting() {
+        abandonActive(token: generation)
+    }
+
+    private func arm(token: Int) {
+        disarm()
+        lastActivity = Date()
+        watchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let remaining = self.lastActivity
+                    .addingTimeInterval(self.silenceSeconds)
+                    .timeIntervalSinceNow
+                if remaining <= 0 {
+                    self.abandonActive(token: token)
+                    return
+                }
+                try? await Task.sleep(
+                    nanoseconds: UInt64(remaining * 1_000_000_000))
+            }
+        }
+    }
+
+    private func disarm() {
+        watchdog?.cancel()
+        watchdog = nil
+    }
+
+    /// Evidence that the active promise is still moving.
+    private func touch() { lastActivity = Date() }
+
     private func startNextIfIdle() {
-        guard active == nil, let request = pending.popFirst() else { return }
+        guard active == nil, let request = pending.popFirst() else {
+            disarm()
+            return
+        }
         active = request
         let token = generation
+        arm(token: token)
         if request.row.isFolder {
             exportFolder(request, token: token)
         } else {
@@ -166,6 +250,7 @@ final class GuestFilePromiseExporter {
     ) {
         listPage(path, cursor) { [weak self] result in
             guard let self, token == self.generation else { return }
+            self.touch()
             switch result {
             case .failure(let error):
                 completion(.failure(error))
@@ -262,6 +347,7 @@ final class GuestFilePromiseExporter {
             guard let self else { return }
             defer { try? self.fileManager.removeItem(at: staging) }
             guard token == self.generation else { return }
+            self.touch()
             switch result {
             case .failure:
                 completion(result)
@@ -282,6 +368,7 @@ final class GuestFilePromiseExporter {
         guard token == generation, active?.id == request.id else {
             return
         }
+        disarm()
         if case .failure(let error) = result {
             if active?.ownsDestinationOnFailure == true {
                 try? fileManager.removeItem(at: request.destination)

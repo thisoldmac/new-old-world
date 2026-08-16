@@ -131,7 +131,7 @@ enum FilesListColumn: String, CaseIterable {
     case size
     case kind
 
-    var title: LocalizedStringResource {
+    var title: String {
         switch self {
         case .name: "Name"
         case .modified: "Date Modified"
@@ -313,7 +313,7 @@ struct FileBrowserTable: NSViewRepresentable {
             let column = NSTableColumn(
                 identifier: NSUserInterfaceItemIdentifier(
                     specification.rawValue))
-            column.title = String(localized: specification.title)
+            column.title = specification.title
             column.width = specification.defaultWidth
             column.minWidth = specification.minimumWidth
             column.sortDescriptorPrototype =
@@ -507,7 +507,7 @@ struct FileBrowserTable: NSViewRepresentable {
                     NSUserInterfaceItemIdentifier(specification.rawValue))
                 else { continue }
                 let item = menu.addItem(
-                    withTitle: String(localized: specification.title),
+                    withTitle: specification.title,
                     action: #selector(toggleColumn(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = specification.rawValue

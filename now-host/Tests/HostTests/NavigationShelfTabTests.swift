@@ -10,13 +10,15 @@ final class NavigationShelfTabTests: XCTestCase {
         let tabs = NavigationShelfTab.tabs(for: shelf, registry: .standard)
 
         XCTAssertEqual(tabs.map(\.title), [
-            "Overview", "Hardware", "Software", "Processes", "Diagnostics",
+            "Overview", "Hardware", "Software", "Processes", "Networking",
+            "Diagnostics",
         ])
         XCTAssertEqual(tabs.first?.selection,
                        NavigationSelection(destination: .shelfHero(.machine),
                                            containingShelfID: .machine))
         XCTAssertEqual(tabs.dropFirst().compactMap(\.moduleID),
-                       ["census", "software", "processes", "diagnostics"])
+                       ["census", "software", "processes", "networking",
+                        "diagnostics"])
     }
 
     func testNetworkShelfUsesConnectionsAsItsFirstPill() throws {
@@ -26,11 +28,58 @@ final class NavigationShelfTabTests: XCTestCase {
         let tabs = NavigationShelfTab.tabs(for: shelf, registry: .standard)
 
         XCTAssertEqual(tabs.map(\.title),
-                       ["Connections", "Networking", "MCP", "Web Proxy"])
+                       ["Connections", "MCP", "Web Proxy"])
         XCTAssertEqual(tabs.first?.moduleID, "settings")
         XCTAssertEqual(tabs.first?.selection,
                        NavigationSelection(destination: .module("settings"),
                                            containingShelfID: .network))
+    }
+
+    func testReactivationSelectionIsAlwaysTheShelfsFirstTab() throws {
+        // H5: re-clicking a shelf you're already on returns to its first
+        // tab, regardless of what this window session last opened there —
+        // that's NavigationShelfSessionState's job for *reopening*, not this.
+        let network = try XCTUnwrap(
+            NavigationLayout.standard(for: .standard).shelf(id: .network))
+        let machine = try XCTUnwrap(
+            NavigationLayout.standard(for: .standard).shelf(id: .machine))
+
+        XCTAssertEqual(
+            NavigationShelfTab.reactivationSelection(
+                for: network, registry: .standard),
+            NavigationSelection(destination: .module("settings"),
+                                containingShelfID: .network))
+        XCTAssertEqual(
+            NavigationShelfTab.reactivationSelection(
+                for: machine, registry: .standard),
+            NavigationSelection(destination: .shelfHero(.machine),
+                                containingShelfID: .machine))
+    }
+
+    func testActivatingAnAlreadyOpenShelfGoesHomeInsteadOfReopening() throws {
+        // The click handler must prefer "go home" over "restore the
+        // session's remembered tab" once the shelf is already the one
+        // showing — this is the exact decision `SidebarShelfRow.activate()`
+        // dispatches on, so a regression there fails here too.
+        let network = try XCTUnwrap(
+            NavigationLayout.standard(for: .standard).shelf(id: .network))
+
+        XCTAssertEqual(
+            NavigationShelfTab.activationAction(
+                for: network, isAlreadySelected: true,
+                registry: .standard, canReopen: true),
+            .goHome(NavigationSelection(destination: .module("settings"),
+                                        containingShelfID: .network)))
+        XCTAssertEqual(
+            NavigationShelfTab.activationAction(
+                for: network, isAlreadySelected: false,
+                registry: .standard, canReopen: true),
+            .reopen)
+        XCTAssertEqual(
+            NavigationShelfTab.activationAction(
+                for: network, isAlreadySelected: false,
+                registry: .standard, canReopen: false),
+            .select)
     }
 
     func testDebugShelfUsesConsoleThenLogs() throws {
@@ -69,11 +118,12 @@ final class NavigationShelfTabTests: XCTestCase {
             for: shelf, registry: .standard)
 
         XCTAssertEqual(entries.map(\.title), [
-            "Hardware", "Software", "Processes", "Diagnostics",
+            "Hardware", "Software", "Processes", "Networking",
+            "Diagnostics",
         ])
         XCTAssertEqual(entries.map(\.payload), [
             .module("census"), .module("software"), .module("processes"),
-            .module("diagnostics"),
+            .module("networking"), .module("diagnostics"),
         ])
         XCTAssertTrue(entries.allSatisfy {
             $0.selection.containingShelfID == .machine
@@ -128,6 +178,49 @@ final class NavigationShelfTabTests: XCTestCase {
         XCTAssertEqual(tab.tier, .experimental)
         XCTAssertTrue(sidebar.contains("ModuleTierBadge(tier: module.tier"))
         XCTAssertTrue(detail.contains("ModuleTierBadge(tier: tab.tier"))
+    }
+
+    /// Both stacks build their rows through one zone-agnostic builder.
+    ///
+    /// "Footer-pinned shelves are outside the drop system" was the standing
+    /// hypothesis for why Connections could not be dropped on or moved out
+    /// of the footer, and it is false: the pinned stack goes through the
+    /// same `SidebarNavigationItems` → `SidebarNavigationListRow` path the
+    /// list does, with `zone` as a parameter. This gate keeps it that way,
+    /// so a future refactor cannot quietly give the footer a second, thinner
+    /// path and reopen the question.
+    func testBothStacksBuildRowsThroughOneZoneAgnosticBuilder() throws {
+        let sidebar = try GateSource.hostSwift(
+            "now-host/Sources/Host/SidebarNavigationContent.swift")
+
+        let calls = Array(sidebar
+            .components(separatedBy: "SidebarNavigationItems(")
+            .dropFirst()
+            .map { $0.components(separatedBy: "select: select)")[0] })
+
+        XCTAssertEqual(calls.count, 2, "one call site per stack, no more")
+        XCTAssertEqual(calls.filter { $0.contains("zone: .upper") }.count, 1)
+        XCTAssertEqual(calls.filter { $0.contains("zone: .lower") }.count, 1)
+        for call in calls {
+            XCTAssertTrue(call.contains("dragActions: dragActions,"),
+                          "both stacks are handed the same drag actions")
+        }
+        XCTAssertFalse(sidebar.contains("zone =="),
+                       "no row builder may branch on which stack it is in")
+        XCTAssertFalse(sidebar.contains("zone !="))
+    }
+
+    /// The pill bar owns its uncovered points, the way the sidebar canvas
+    /// does. Without it a drop a few points high or low of a pill lands on
+    /// nothing and is discarded with no feedback at all.
+    func testPillBarCatchesDropsThatMissAPill() throws {
+        let detail = try GateSource.hostSwift(
+            "now-host/Sources/Host/ShelfDetailView.swift")
+
+        XCTAssertTrue(detail.contains(".background(SidebarNativeDragSurface("))
+        XCTAssertEqual(
+            detail.components(separatedBy: "SidebarNativeDragSurface(").count,
+            /* the pills, the trailing slot, and the bar's fallback */ 4)
     }
 
     func testShelfMembersRenderAsDetailPillsInsteadOfSidebarRows() throws {
@@ -277,8 +370,11 @@ final class NavigationShelfTabTests: XCTestCase {
 
         XCTAssertTrue(sidebar.contains(
             "springLoad: { activate(shelfSelection) }"))
+        // The gate is still "a row with no spring-load handler never arms".
+        // It reads unwrapped now because the check moved inside
+        // `springLoadingTarget`, which binds the configuration first.
         XCTAssertTrue(dragSurface.contains(
-            "configuration?.springLoad != nil"))
+            "configuration.springLoad != nil"))
     }
 
     func testNativeDragOverlayPublishesReliableHoverChanges() throws {

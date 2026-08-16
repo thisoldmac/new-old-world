@@ -47,9 +47,11 @@ static void compute(DiagLayout *lay, DiagCardState a, DiagCardState b,
     states[kDiagVProbe] = a;
     states[kDiagShotDiag] = b;
     states[kDiagPutStat] = c;
+    states[kDiagWireStat] = kDiagReady;   /* always served - never absent */
     rows[kDiagVProbe] = rows_a;
     rows[kDiagShotDiag] = 0;
     rows[kDiagPutStat] = rows_c;
+    rows[kDiagWireStat] = 0;
     diag_layout_compute(&body, states, rows, lay);
 }
 
@@ -59,6 +61,7 @@ static void test_served(void)
        shotdiag belongs to the 68K sibling and always will. */
     check(diag_probe_served(kDiagVProbe), "this guest serves vprobe");
     check(diag_probe_served(kDiagPutStat), "this guest serves putstat");
+    check(diag_probe_served(kDiagWireStat), "this guest serves wirestat");
     check(!diag_probe_served(kDiagShotDiag),
           "this guest does not serve shotdiag");
 }
@@ -233,8 +236,9 @@ static void test_status_text(void)
     states[kDiagVProbe] = kDiagReady;
     states[kDiagShotDiag] = kDiagAbsent;
     states[kDiagPutStat] = kDiagReady;
+    states[kDiagWireStat] = kDiagReady;
     diag_status_text(states, line, (long)sizeof line);
-    check(strstr(line, "2 of 3") != NULL,
+    check(strstr(line, "3 of 4") != NULL,
           "the placard counts what this Mac serves");
 
     /* A run in progress does NOT get its own placard line: the probes are
@@ -243,11 +247,64 @@ static void test_status_text(void)
        the one a person can actually see. */
     states[kDiagVProbe] = kDiagRunning;
     diag_status_text(states, line, (long)sizeof line);
-    check(strstr(line, "2 of 3") != NULL,
+    check(strstr(line, "3 of 4") != NULL,
           "a running probe changes nothing the placard can show");
     check(diag_body_line(kDiagVProbe, kDiagRunning, 0, line,
                          (long)sizeof line) > 0,
           "the card is where a run in progress is said");
+}
+
+static void test_wirestat_card(void)
+{
+    DiagWireStat stats;
+    DiagRow rows[kDiagMaxRows];
+
+    /* Read-only, never Run: it reports counters this Mac already keeps,
+       the same reason putstat's button says "Read". */
+    check(strcmp(diag_button_title(kDiagWireStat, kDiagReady), "Read") == 0,
+          "wirestat's button reads, it does not run");
+    check(diag_probe_measures(kDiagWireStat) != NULL, "wirestat measures");
+    check(strcmp(diag_probe_verb(kDiagWireStat), "wirestat") == 0,
+          "the verb is the one a person types");
+
+    memset(&stats, 0, sizeof stats);
+    stats.sleep_now_ticks = 30;
+    stats.idle_sleep_ticks = 30;
+    stats.wake_on = 0;
+    stats.notifier_live = 0;
+    stats.data_events = 0;
+    stats.wake_calls = 0;
+    stats.pass.median_bucket = -1;      /* no samples yet */
+    stats.wake.median_bucket = -1;
+    check(diag_wirestat_rows(&stats, rows, kDiagMaxRows) == 16,
+          "sixteen rows: six counters plus two five-row distributions");
+    check(strcmp(rows[0].label, "Sleep now") == 0, "sleep leads the card");
+    check(strcmp(rows[2].value, "off") == 0, "wake-on-data, spelled out");
+    check(strcmp(rows[6].label, "Pass n") == 0, "the pass distribution");
+    check(strstr(rows[10].value, "no samples") != NULL,
+          "an unmeasured median says so rather than a bogus range");
+    check(strcmp(rows[11].label, "Notice n") == 0,
+          "the notice distribution follows, not interleaved with pass");
+
+    /* A median in a real bucket renders as a range; the open-ended last
+       bucket renders as "N+ us" - the same two shapes the wire's own
+       histogram rows use (commands.c :: wirestat_hist). */
+    stats.pass.median_bucket = 2;
+    stats.pass.median_lo_us = 500;
+    stats.pass.median_hi_us = 1000;
+    stats.pass.median_count = 4;
+    check(diag_wirestat_rows(&stats, rows, kDiagMaxRows) == 16, "still 16");
+    check(strcmp(rows[10].value, "500-1000 us") == 0,
+          "a real median bucket is a range");
+
+    stats.pass.median_hi_us = 0;        /* open-ended */
+    stats.pass.median_lo_us = 133000;
+    check(diag_wirestat_rows(&stats, rows, kDiagMaxRows) == 16, "still 16");
+    check(strcmp(rows[10].value, "133000+ us") == 0,
+          "the open-ended bucket says so rather than a fake upper edge");
+
+    check(diag_wirestat_rows(&stats, rows, 15) == 0,
+          "a caller with no room gets nothing, not a truncated table");
 }
 
 int main(void)
@@ -259,6 +316,7 @@ int main(void)
     test_card_heights();
     test_cost_is_stated();
     test_status_text();
+    test_wirestat_card();
     if (failures != 0) {
         printf("%d failed\n", failures);
         return 1;

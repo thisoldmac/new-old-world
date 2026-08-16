@@ -8,17 +8,34 @@
 /* The generic listing+card render, moved out of cloud_module.c's
    cloud_draw whole. Behaviour is unchanged. */
 
-static void draw_at(short x, short y, const char *s)
+/* One line of hand-drawn text, drawn or described — cloud_module.c's
+   emit_at, the same idiom, kept local rather than shared because this
+   file's rect is always the pane's own right edge, never a caller's. */
+static void emit_line(const WorkshopSceneWriter *writer,
+                      const CloudLayout *r, short x, short y,
+                      const char *s)
 {
-    Str255 t;
+    if (writer != NULL) {
+        Rect where;
 
-    CopyCStringToPascal(s, t);
-    MoveTo(x, y);
-    DrawString(t);
+        SetRect(&where, x, (short)(y - 11), r->detail_text.right,
+               (short)(y + 3));
+        workshop_scene_add(writer, kWorkshopSceneStaticText, s, &where,
+                           true);
+        return;
+    }
+    {
+        Str255 t;
+
+        CopyCStringToPascal(s, t);
+        MoveTo(x, y);
+        DrawString(t);
+    }
 }
 
-static void view_draw(const CloudLayout *r, const CloudStore *store,
-                      const CloudService *service, int selected)
+static void view_content(const WorkshopSceneWriter *writer,
+                         const CloudLayout *r, const CloudStore *store,
+                         const CloudService *service, int selected)
 {
     short y = (short)(r->detail_text.top + 12);
     int i;
@@ -30,7 +47,7 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
 
             snprintf(line, sizeof line, "%.22s: %.128s",
                      store->card[i].label, store->card[i].value);
-            draw_at(r->detail_text.left, y, line);
+            emit_line(writer, r, r->detail_text.left, y, line);
             y = (short)(y + 14);
         }
         return;
@@ -38,22 +55,36 @@ static void view_draw(const CloudLayout *r, const CloudStore *store,
     if (service != NULL
         && (strcmp(service->state, "serving") != 0
             || !cloud_service_listable(service->service))) {
-        draw_at(r->detail_text.left, y, service->label);
+        emit_line(writer, r, r->detail_text.left, y, service->label);
         y = (short)(y + 16);
         if (service->detail[0] != '\0') {
-            draw_at(r->detail_text.left, y, service->detail);
+            emit_line(writer, r, r->detail_text.left, y, service->detail);
             y = (short)(y + 16);
         }
         if (strcmp(service->service, "drive") == 0
             && strcmp(service->state, "serving") == 0) {
-            draw_at(r->detail_text.left, y,
-                    "Browse it in the Files page.");
+            emit_line(writer, r, r->detail_text.left, y,
+                     "Browse it in the Files page.");
         }
         return;
     }
     if (selected < 0 && store->row_count > 0) {
-        draw_at(r->detail_text.left, y, "Select an item to see its card.");
+        emit_line(writer, r, r->detail_text.left, y,
+                 "Select an item to see its card.");
     }
+}
+
+static void view_draw(const CloudLayout *r, const CloudStore *store,
+                      const CloudService *service, int selected)
+{
+    view_content(NULL, r, store, service, selected);
+}
+
+static void view_describe(const WorkshopSceneWriter *writer,
+                          const CloudLayout *r, const CloudStore *store,
+                          const CloudService *service, int selected)
+{
+    view_content(writer, r, store, service, selected);
 }
 
 /* The shell's shared rows (CloudRow), searched by title and subtitle —
@@ -76,6 +107,7 @@ static const CloudViewOps k_ops = {
     NULL,                              /* show */
     NULL,                              /* layout */
     view_draw,
+    view_describe,
     NULL,                              /* click: the shell's ask_save() */
     NULL,                              /* key: generic HandleControlKey */
     NULL,                              /* idle: nothing to watch */
@@ -95,5 +127,14 @@ void cloud_list_view_draw_card(const CloudLayout *r,
                                const CloudStore *store,
                                const CloudService *service, int selected)
 {
-    view_draw(r, store, service, selected);
+    view_content(NULL, r, store, service, selected);
+}
+
+void cloud_list_view_describe_card(const WorkshopSceneWriter *writer,
+                                   const CloudLayout *r,
+                                   const CloudStore *store,
+                                   const CloudService *service,
+                                   int selected)
+{
+    view_content(writer, r, store, service, selected);
 }

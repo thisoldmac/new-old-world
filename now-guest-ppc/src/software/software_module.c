@@ -10,6 +10,7 @@
 #include "pump.h"
 #include "wire.h"
 #include "control_kind.h"
+#include "workshop_scene_text.h"
 
 /* Rung 3, the Data Browser cut - rebuilt from the first metal round.
    What that round taught:
@@ -1037,21 +1038,50 @@ static void release_icons(void)
 
 /* --- drawing ------------------------------------------------------------- */
 
-static void draw_at(short x, short y, const char *s)
+/* This page positions text by BASELINE, not by rect, so the describing
+   face derives the rect from the baseline and the pane's right edge. A
+   NULL writer draws exactly as before. One walk, two faces: the detail
+   column is what the host reads to know which item is selected and what
+   it is, and a second traversal would be free to disagree with it. */
+static void emit_at(const WorkshopSceneWriter *writer, short x, short y,
+                    short right, const char *s)
 {
     Str255 t;
 
+    if (writer != NULL) {
+        Rect where;
+
+        SetRect(&where, x, (short)(y - 11), right, (short)(y + 3));
+        workshop_scene_add(writer, kWorkshopSceneStaticText, s, &where,
+                           true);
+        return;
+    }
     CopyCStringToPascal(s, t);
     MoveTo(x, y);
     DrawString(t);
 }
 
-static void draw_search(void)
+static void draw_at(short x, short y, const char *s)
+{
+    emit_at(NULL, x, y, 0, s);
+}
+
+static void emit_search(const WorkshopSceneWriter *writer)
 {
     Rect f = g_lay.toolbar_search;
     RGBColor black = { 0, 0, 0 };
     RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
 
+    if (writer != NULL) {
+        Rect inner = f;
+
+        InsetRect(&inner, 3, 1);
+        workshop_scene_add(writer, kWorkshopScenePanel, "", &f, true);
+        workshop_scene_add(writer, kWorkshopSceneStaticText,
+                           g_search[0] != '\0' ? g_search : "search",
+                           &inner, true);
+        return;
+    }
     RGBForeColor(&black);
     FrameRect(&f);
     if (g_search_focus) {
@@ -1139,7 +1169,7 @@ static void echo_search_delta(const char *old_text)
     DisposeRgn(saved_clip);
 }
 
-static void draw_detail(void)
+static void emit_detail(const WorkshopSceneWriter *writer)
 {
     DomainState *d = dom();
     RGBColor black = { 0, 0, 0 };
@@ -1148,10 +1178,15 @@ static void draw_detail(void)
     short x = (short)(g_lay.detail.left + 14);
     short y;
 
-    RGBForeColor(&black);
+    if (writer == NULL) {
+        RGBForeColor(&black);
+    }
     if (d->sel < 0 || d->sel >= d->count) {
-        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
-        draw_at(x, (short)(g_lay.detail.top + 24), "Select an item.");
+        if (writer == NULL) {
+            UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+        }
+        emit_at(writer, x, (short)(g_lay.detail.top + 24), g_lay.detail.right,
+                "Select an item.");
         return;
     }
     it = &d->items[d->sel];
@@ -1166,34 +1201,42 @@ static void draw_detail(void)
             r.top = (short)(g_lay.detail.top + 12);
             r.right = (short)(r.left + kSwDetailIcon);
             r.bottom = (short)(r.top + kSwDetailIcon);
-            PlotIconRef(&r, kAlignNone, kTransformNone,
-                        kIconServicesNormalUsageFlag, icon);
+            if (writer != NULL) {
+                workshop_scene_add(writer, kWorkshopSceneIcon, "", &r, true);
+            } else {
+                PlotIconRef(&r, kAlignNone, kTransformNone,
+                            kIconServicesNormalUsageFlag, icon);
+            }
         }
     }
 
-    UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
+    if (writer == NULL) {
+        UseThemeFont(kThemeEmphasizedSystemFont, smSystemScript);
+    }
     {
         long n = it->name[0] < 40 ? it->name[0] : 40;
 
         memcpy(buf, it->name + 1, (size_t)n);
         buf[n] = '\0';
     }
-    draw_at((short)(x + kSwDetailIcon + 10),
-            (short)(g_lay.detail.top + 26), buf);
+    emit_at(writer, (short)(x + kSwDetailIcon + 10),
+            (short)(g_lay.detail.top + 26), g_lay.detail.right, buf);
 
-    UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    if (writer == NULL) {
+        UseThemeFont(kThemeSmallSystemFont, smSystemScript);
+    }
     y = (short)(g_lay.detail.top + 12 + kSwDetailIcon + 18);
     snprintf(buf, sizeof buf, "Version:  %s",
              it->version_read ? (it->version[0] ? it->version : "none")
                               : "reading...");
-    draw_at(x, y, buf);
+    emit_at(writer, x, y, g_lay.detail.right, buf);
     y = (short)(y + 15);
     {
         char kind[24];
 
         sw_kind_text(it->type, it->creator, kind, sizeof kind);
         snprintf(buf, sizeof buf, "Kind:  %s", kind);
-        draw_at(x, y, buf);
+        emit_at(writer, x, y, g_lay.detail.right, buf);
     }
     y = (short)(y + 15);
     if (it->size_k >= 0) {
@@ -1201,13 +1244,13 @@ static void draw_detail(void)
 
         sw_size_k_text((unsigned long)it->size_k, sz, sizeof sz);
         snprintf(buf, sizeof buf, "Size:  %s on disk", sz);
-        draw_at(x, y, buf);
+        emit_at(writer, x, y, g_lay.detail.right, buf);
         y = (short)(y + 15);
     }
     snprintf(buf, sizeof buf, "State:  %s",
              it->running ? "running"
                          : (it->off ? "disabled (off)" : "not running"));
-    draw_at(x, y, buf);
+    emit_at(writer, x, y, g_lay.detail.right, buf);
     y = (short)(y + 15);
 
     /* Where: the full path, wrapped over two lines, broken after a
@@ -1218,7 +1261,7 @@ static void draw_detail(void)
         long split = len;
         char line[64];
 
-        draw_at(x, y, "Where:");
+        emit_at(writer, x, y, g_lay.detail.right, "Where:");
         y = (short)(y + 13);
         if (len > 44) {
             long p;
@@ -1233,12 +1276,12 @@ static void draw_detail(void)
         }
         memcpy(line, g_sel_path, (size_t)(split < 60 ? split : 60));
         line[split < 60 ? split : 60] = '\0';
-        draw_at((short)(x + 8), y, line);
+        emit_at(writer, (short)(x + 8), y, g_lay.detail.right, line);
         if (split < len) {
             y = (short)(y + 13);
             snprintf(line, sizeof line, "%.48s%s", g_sel_path + split,
                      len - split > 48 ? "..." : "");
-            draw_at((short)(x + 8), y, line);
+            emit_at(writer, (short)(x + 8), y, g_lay.detail.right, line);
         }
     }
 }
@@ -1462,8 +1505,8 @@ static void software_draw(void)
         return;
     }
     SetPortWindowPort(g_owner);
-    draw_search();
-    draw_detail();
+    emit_search(NULL);
+    emit_detail(NULL);
     RGBForeColor(&black);
     /* The splitter's grip: three quiet dots between the panes. */
     {
@@ -1657,6 +1700,34 @@ static void software_status_text(char *out, long cap)
                    cap);
 }
 
+static void software_describe_scene(const WorkshopSceneWriter *writer)
+{
+    /* The listing is a DataBrowser and the domain popup is a control;
+       both already reach the host through control_kind. What is left -
+       the hand-drawn search field and the whole detail column - is this
+       page's only account of which item is selected and what it is. */
+    emit_search(writer);
+    emit_detail(writer);
+}
+
+/* Edit>Copy: the search field and the detail column, exactly what
+   software_describe_scene already reports — one walk, so nothing here
+   can drift from either. The listing and the domain popup are already
+   reachable through control_kind.
+
+   Served by pointing this page's own describe_scene at a buffer instead
+   of at the host, so what lands on the clipboard is by construction what
+   the page describes, which is by construction what it drew. */
+static long software_copy_text(char *out, long cap)
+{
+    WorkshopSceneText sink;
+    WorkshopSceneWriter writer;
+
+    workshop_scene_text_begin(&sink, &writer, out, cap);
+    software_describe_scene(&writer);
+    return workshop_scene_text_end(&sink);
+}
+
 static const WorkshopModuleOps k_ops = {
     software_create,
     software_dispose,
@@ -1668,7 +1739,8 @@ static const WorkshopModuleOps k_ops = {
     software_activate,
     software_idle,
     software_status_text,
-    NULL
+    software_describe_scene,
+    software_copy_text
 };
 
 const WorkshopModuleOps *software_module_ops(void)

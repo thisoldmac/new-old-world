@@ -7,9 +7,9 @@ audience: operator
 lifecycle: experimental
 authority: [docs/agent-integration.md, docs/mcp-coverage.md]
 module_ids: [mcp]
-source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/Host/MCP, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
+source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/Host/MCP, now-host/Sources/Host/MCPModuleView.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
 media_ids: [mcp-host, mcp-ppc]
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -42,9 +42,11 @@ The host exposes independent controls for:
   shows and copies the derived URL, and copies the bearer token without
   rendering the secret in the module or logs.
 
-Each card has independent **Start**, **Stop**, and **Start Automatically**
-controls. Start and Stop affect the current app session; Start Automatically
-is the persisted launch policy for that transport.
+Each card has independent **Start** and **Stop** controls for the current app
+session. Whether a transport starts automatically at launch is the MCP tab of
+the Settings window (**New Old World > Settings…**, or the module's own
+**Settings…** button) — a persisted launch policy the running card no longer
+holds.
 
 The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
@@ -61,7 +63,8 @@ credentials or prove that an MCP client can reach the host.
 
 - Confirm the selected machine and requested capability before granting.
 - Start only the transport required by the client, or enable **Start
-  Automatically** for a transport that should be restored whenever NOW opens.
+  Standard Input automatically** / **Start HTTP automatically** in Settings
+  for a transport that should be restored whenever NOW opens.
 - Copy connection details from the relevant transport card rather than
   locating a helper executable.
 - Read the recent call record after an agent action.
@@ -203,12 +206,36 @@ rederived: 2026-08-14T17:36:05-0400 02e9de5e sources
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a sources
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 sources
 rederived: 2026-08-14T18:19:51-0400 60bb3427 sources, sources
+rederived: 2026-08-14T15:56:44-0400 835e6acf sources
 rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources, sources
 rederived: 2026-08-14T18:30:53-0400 b248c9a1 sources, sources, sources, sources
 rederived: 2026-08-14T18:31:13-0400 b248c9a1 sources, sources, sources
 rederived: 2026-08-14T18:31:26-0400 b248c9a1 sources
+rederived: 2026-08-14T20:24:57-0400 6d3d74d7 sources
+rederived: 2026-08-14T20:18:50-0400 cccec57a sources
+rederived: 2026-08-14T21:50:43-0400 edcc526f sources, sources
+rederived: 2026-08-14T22:27:42-0400 5a6c46dc sources, sources
+rederived: 2026-08-14T22:10:45-0400 568967b9 sources, sources
+rederived: 2026-08-14T23:30:12-0400 0017d984 sources, sources, sources, sources
+rederived: 2026-08-14T22:14:12-0400 0e743bc5 sources, sources
+rederived: 2026-08-14T23:32:10-0400 a9afc153 sources, sources, sources, sources, sources, sources
+rederived: 2026-08-14T22:19:02-0400 fe3d18a0 sources, sources
+rederived: 2026-08-14T23:33:02-0400 09abc942 sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-14T22:27:26-0400 67772e4a sources, sources
+rederived: 2026-08-14T23:33:53-0400 521b590f sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-14T22:17:25-0400 4495cfb2 sources, sources
+rederived: 2026-08-14T23:35:20-0400 61505862 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-14T22:33:00-0400 13bfe534 sources, sources
+rederived: 2026-08-14T23:36:22-0400 b1fc9796 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T00:20:08-0400 e937faee sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:40:30-0400 139dff1a sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:32:41-0400 108db464 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:20:05-0400 de5812ab sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T01:36:41-0400 34192244 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:21:03-0400 c87b3288 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T02:26:45-0400 2749aab1 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 rederived: 2026-08-14T19:50:32-0400 d20eee81 sources
 rederived: 2026-08-14T19:50:54-0400 d20eee81 sources
 rederived: 2026-08-14T20:02:53-0400 068ca7fd sources
@@ -217,6 +244,11 @@ rederived: 2026-08-14T21:15:09-0400 5316a23e sources
 rederived: 2026-08-14T23:07:32-0400 9d85a31d sources
 rederived: 2026-08-15T00:30:16-0400 f4dab407 sources, mcp-catalog 3->3
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 sources
+rederived: 2026-08-15T02:58:01-0400 5d767dce sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, mcp-catalog 3->3, sources, mcp-catalog 3->3
+rederived: 2026-08-15T03:19:46-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:39:26-0400 829013ee sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T05:30:50-0400 a327ba45 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T06:15:20-0400 3c7d14e4 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources
 rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 sources
 rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 sources
@@ -236,4 +268,5 @@ rederived: 2026-08-15T16:43:48-0400 919bcc60 sources
 rederived: 2026-08-15T18:06:56-0400 feaa6945 sources
 rederived: 2026-08-15T19:13:29-0400 ce43eb74 sources
 rederived: 2026-08-15T22:25:52-0400 f627b5b4 sources
+rederived: 2026-08-15T06:18:33-0400 9232bd77 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 -->

@@ -1,12 +1,14 @@
 import SwiftUI
 
 /// This Mac's own event log, surfaced the way the guest's Logs page is: a
-/// monospaced scrollback that follows the tail, an Invert switch for a dark
-/// canvas, and a switch for whether the lines also reach the disk.
+/// monospaced scrollback that follows the tail and an Invert switch for a
+/// dark canvas. Whether the lines also reach disk is a Settings tab now.
 struct LogsModuleView: View {
     @ObservedObject var model: LogsModel
     @ObservedObject var log: HostLog
     @ObservedObject var continuity: MirrorContinuityController
+    /// Nil in a preview or a test with no Settings window to open.
+    var openSettings: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -44,16 +46,20 @@ struct LogsModuleView: View {
             + "not written to disk"
     }
 
+    /// "Log to disk" moved to Settings (a disk-writing preference); Invert
+    /// stays — it is display state a person wants to see change while
+    /// they're looking at the scrollback it repaints.
     private var switches: some View {
         HStack(spacing: 16) {
             Toggle("Invert", isOn: Binding(
                 get: { model.invert },
                 set: { model.setInvert($0) }))
-            Toggle("Log to disk", isOn: Binding(
-                get: { model.persistsToDisk },
-                set: { model.setPersistsToDisk($0) }))
+                .toggleStyle(.checkbox)
+            if let openSettings {
+                Button("Settings…", action: openSettings)
+                    .controlSize(.small)
+            }
         }
-        .toggleStyle(.checkbox)
     }
 
     private var scrollback: some View {

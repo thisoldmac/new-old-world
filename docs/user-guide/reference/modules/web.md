@@ -7,9 +7,9 @@ audience: user
 lifecycle: experimental
 authority: [web-bridge/README.md, docs/status.md, SECURITY.md]
 module_ids: [web]
-source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/Web/WebWireService.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, now-guest-ppc/src/web/web_proxy_ot.c, now-guest-ppc/src/web/web_proxy_request.c, SECURITY.md]
+source_dependencies: [web-bridge/nowweb/server.py, web-bridge/nowweb/document.py, now-host/Sources/Host/Web/WebBridgeModels.swift, now-host/Sources/Host/Web/WebModuleView.swift, now-host/Sources/Host/Web/WebWireService.swift, now-host/Sources/Host/WebHostModule.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/ModuleRegistry.swift, now-guest-ppc/src/web/web_model.c, now-guest-ppc/src/web/web_module.c, now-guest-ppc/src/web/web_proxy_ot.c, now-guest-ppc/src/web/web_accept.c, now-guest-ppc/src/web/web_proxy_request.c, SECURITY.md]
 media_ids: [web-host, web-ppc]
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -33,17 +33,25 @@ The browser does not connect to the modern Mac's LAN address and no second
 browser-facing port is opened there.
 
 The PowerPC Workshop Web page saves only the guest-loopback port and reports
-relay status. The host module owns the browser profile, rendering lens,
-handlers, outbound policy, and internal renderer lifecycle.
+relay status. The address it shows is the one Open Transport granted the
+listener, not the one that was requested, and its status area names a refused
+browser connection and what the modern Mac last said about a page — so
+"nothing has connected yet" and "every connection was refused" cannot read
+alike. The host module owns the internal renderer's lifecycle and
+relay status; the browser profile, rendering lens, fetch engine, handlers,
+and outbound policy live in the Web tab of the Settings window
+(**New Old World > Settings…**, or the module's own **Settings…** button),
+alongside whether the renderer starts automatically.
 
 NOW-68K does not yet ship a Web page or MacTCP relay.
 
 ## On the modern Mac
 
-1. Choose a browser profile, rendering lens, and fetch engine.
-2. Optionally choose an installed AI planner or model.
-3. Start the renderer. Its private ephemeral loopback address is managed by
-   New Old World and is not browser configuration.
+1. In Settings' Web tab, choose a browser profile, rendering lens, and fetch
+   engine.
+2. Optionally choose an installed AI planner or model, also in Settings.
+3. Start the renderer from the Web page. Its private ephemeral loopback
+   address is managed by New Old World and is not browser configuration.
 
 Compatible Page is the deterministic default. Reader is a reduced view of the
 same semantic block tree. AI Layout is optional and falls back to Compatible
@@ -72,13 +80,20 @@ CONNECT tunnel.
 
 ## Safety, consent, and privacy
 
-The browser-facing listener accepts loopback peers only. The host renderer is
-also loopback-only and ephemeral. The remaining network boundary is NOW's
+The browser-facing listener is bound to the classic Mac's own loopback
+address, so nothing outside that machine can reach it. That bind is the
+boundary. The listener does not additionally filter the peer address of an
+accepted connection: Open Transport reports a genuine loopback connection's
+peer as the machine's primary interface address, so a peer test on
+`127.0.0.1` refuses every real browser instead of protecting anything. The
+host renderer is also loopback-only and ephemeral. The remaining network
+boundary is NOW's
 existing plaintext guest-to-host connection, so use it only on a trusted
 network.
 
 Private, link-local, loopback, and special-use destinations are blocked by
-default. The unsafe development switch broadens the host's outbound reach and
+default. The unsafe development switch — Settings' Web tab, "Allow private
+and local web destinations (unsafe)" — broadens the host's outbound reach and
 must not be enabled casually.
 
 Ordinary helper logs omit request paths, URL queries, cookies, authorization,
@@ -87,7 +102,7 @@ and page bodies. The bridge does not import browser cookies or credentials.
 ## Failure states
 
 Missing helper, stopped, starting, ready, incompatible helper protocol,
-renderer failure, blocked destination, refused peer, unsupported browser
+renderer failure, blocked destination, refused connection, unsupported browser
 profile, expired page token, and unavailable AI planner remain distinct.
 
 ## Current limitations
@@ -96,8 +111,11 @@ profile, expired page token, and unavailable AI planner remain distinct.
   explicit optional dependencies and are never downloaded on a page request.
 - Forms, logins, uploads, session replay, synthetic JavaScript event links,
   video, and a complete image-transcoding pipeline are not yet served.
-- The PowerPC listener, wire relay, and host renderer build and have automated
-  parser/codec tests, but have not yet been runtime-verified from Classilla.
+- Until 2026-08-15 the PowerPC listener refused every browser connection, so
+  no page had ever been served on any guest. It has now served one end to end
+  on the emulator — an in-guest HTTP client fetched a page through
+  `127.0.0.1:5180` and the host's bytes arrived intact — but not yet from
+  Classilla, and not yet on real hardware.
 - The optional local layout model is not distributed until its model card,
   base-model and training-data provenance, license, version, and checksum are
   settled. An already-installed local model folder can be selected in the host

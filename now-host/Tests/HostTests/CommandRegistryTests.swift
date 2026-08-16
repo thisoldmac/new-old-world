@@ -150,9 +150,12 @@ final class CommandRegistryTests: XCTestCase {
             The same split as `put`, one step further along the same \
             transfer. Both guests honour file.cancel on the wire, so the \
             CAPABILITY is symmetric; what differs is whether it needs to \
-            be typeable. A host driving the PowerPC guest cancels from \
-            the Files UI, and a person at that guest cancels from its \
-            own Workshop — neither needs a verb. NOW-68K has no Files \
+            be typeable ON THE WIRE. A host driving the PowerPC guest \
+            cancels by sending file.cancel itself, so it has nothing to \
+            type at that guest; the person standing there reaches the \
+            same two implementations from the receive windoid and from \
+            the console verb (consoleOnly in CommandParityTests, the \
+            same split as `put`). NOW-68K has no Files \
             page and no cancel affordance anywhere, so on that machine \
             the verb IS the face, and it is the face that matters most: \
             the lane is one transfer wide across both directions, so \
