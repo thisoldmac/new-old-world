@@ -7,6 +7,47 @@ search:
 
 # Open issues
 
+## OPEN, ARCHITECTURE READ, REPRODUCTION PENDING: a foreign application's modal alert stops Continuity dead (2026-08-16, attended metal, `fix/continuity-modal-starvation`)
+
+**What happened.** Internet Explorer was launched on the guest with too
+small a memory partition. Its out-of-memory alert came up — an ordinary
+`Alert`/`ModalDialog` loop, running in **IE's** context. From that
+moment Continuity was dead: no pointer, no clicks, no wire service. The
+person at the Mac could not even click the alert's own OK button to get
+out of it, because the route a Continuity click takes runs through NOW's
+task time, and under cooperative scheduling a foreign modal loop yields
+none.
+
+**Why, from the source rather than from the symptom.** Continuity V3
+moved placement into the application on purpose (resident 1.17, after
+six PowerBook wedges — see resident-components.md > P9), and
+`continuity_intake.c :: now_continuity_take_report` says so in a
+sentence that is now also the defect:
+
+> Every ordinary and nested wire pump services the resident from this
+> application's cooperative context. No Time Manager or global jGNE
+> path performs Continuity placement.
+
+So the split under a foreign modal is expected to be:
+
+- **survives** — the OT notifier (`continuity_notifier`, deferred-task
+  level, preempts task time) still decodes datagrams and publishes
+  `want_h`/`want_v` into the shared cell; the resident's P6 liveness
+  Time Manager task still answers the host, which is exactly why P6 was
+  built as a Time Manager task in the first place ("P6 exists because a
+  modal starved the application for ninety seconds");
+- **dies** — everything downstream of `now_continuity_service_invoke`:
+  the cursor move, the button posts, the ACK send, the TCP wire
+  service, arm/disarm, grabs.
+
+Which means the host sees precisely the split it already has a sentence
+for: acknowledgements starved while resident liveness keeps answering.
+
+**Status.** Read from the architecture only. The empirical split, the
+emulator reproduction, and whatever fix layer it points at are this
+lane's work and are recorded below this line as they land. Nothing here
+is verified yet.
+
 ## FIXED AND TESTED, NOT METAL-VERIFIED: the epoch teardown erased the settled release on SLOW drags only (2026-08-15 18:47 round, `fix/continuity-press-origin-loss`)
 
 **The snap-back worked, except when the person dragged slowly — then the
