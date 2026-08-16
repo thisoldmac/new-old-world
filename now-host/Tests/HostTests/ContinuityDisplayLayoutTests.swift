@@ -333,6 +333,45 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertEqual(returned.y, 600)
     }
 
+    /// `insetPixels` defaults to `ContinuityEdgeGeometry.default
+    /// .entryInsetPixels` (24), so a call site that has not been taught
+    /// about the geometry seam gets exactly today's behaviour — asserted
+    /// against the same fixture as the fit-scale test above, at native
+    /// scale where the math is easiest to check by hand.
+    func testGuestEntryPointDefaultsToTheStockInset() throws {
+        let layout = makeLayout()
+        let edge = try XCTUnwrap(layout.sharedEdge)
+
+        let guest = ContinuityDisplayGeometry.guestEntryPoint(
+            at: CGPoint(x: 1440, y: 600), edge: edge,
+            guestFrame: layout.guestFrame, guestPixels: layout.guestSize,
+            scale: layout.guestScale)
+
+        XCTAssertEqual(guest.x, ContinuityEdgeGeometry.default.entryInsetPixels)
+    }
+
+    /// **Zero is a legal, distinct answer, not a fallback to the default.**
+    /// A person who dials the entry inset to zero wants the pointer seeded
+    /// exactly on the boundary — cursor-at-the-edge entry — and this is
+    /// the geometry math proving that request is honoured rather than
+    /// silently floored back to 24.
+    func testGuestEntryPointHonoursAConfiguredInsetIncludingZero() throws {
+        let layout = makeLayout()
+        let edge = try XCTUnwrap(layout.sharedEdge)
+
+        let zero = ContinuityDisplayGeometry.guestEntryPoint(
+            at: CGPoint(x: 1440, y: 600), edge: edge,
+            guestFrame: layout.guestFrame, guestPixels: layout.guestSize,
+            scale: layout.guestScale, insetPixels: 0)
+        XCTAssertEqual(zero.x, 0)
+
+        let wide = ContinuityDisplayGeometry.guestEntryPoint(
+            at: CGPoint(x: 1440, y: 600), edge: edge,
+            guestFrame: layout.guestFrame, guestPixels: layout.guestSize,
+            scale: layout.guestScale, insetPixels: 60)
+        XCTAssertEqual(wide.x, 60)
+    }
+
     /* Defect: a fresh install computes an attached default in memory at
        construction, but nothing WRITES it down unless the person drags,
        resizes, or a display genuinely reconfigures. If the constructor's
@@ -421,5 +460,48 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         ContinuityDisplayLayout(hostDisplays: [host],
                                 guestSize: CGSize(width: 800, height: 600),
                                 defaults: nil, observeScreens: false)
+    }
+}
+
+/// `ContinuityEdgeGeometry` on its own: the one place both configurable
+/// numbers are declared, and the guard that keeps a hand-edited defaults
+/// value from putting either one somewhere that reads as broken rather
+/// than merely different.
+final class ContinuityEdgeGeometryTests: XCTestCase {
+    func testDefaultMatchesWhatShippedBeforeEitherWasConfigurable() {
+        XCTAssertEqual(ContinuityEdgeGeometry.default.entryInsetPixels, 24)
+        XCTAssertEqual(ContinuityEdgeGeometry.default.deadzoneDepth, 160)
+    }
+
+    /// Zero is IN the legal range for both — asserted explicitly because a
+    /// careless clamp (`min(max(value, 1), ...)`) would silently take zero
+    /// away from a person who asked for cursor-at-the-edge handoff.
+    func testZeroIsWithinRangeForBothAndSurvivesClamping() {
+        let zeroed = ContinuityEdgeGeometry(entryInsetPixels: 0,
+                                            deadzoneDepth: 0).clamped()
+        XCTAssertEqual(zeroed.entryInsetPixels, 0)
+        XCTAssertEqual(zeroed.deadzoneDepth, 0)
+    }
+
+    func testClampingRejectsNegativeAndOutOfRangeValuesInEitherDirection() {
+        let tooLow = ContinuityEdgeGeometry(entryInsetPixels: -50,
+                                            deadzoneDepth: -50).clamped()
+        XCTAssertEqual(tooLow.entryInsetPixels,
+                       ContinuityEdgeGeometry.entryInsetRange.lowerBound)
+        XCTAssertEqual(tooLow.deadzoneDepth,
+                       ContinuityEdgeGeometry.deadzoneDepthRange.lowerBound)
+
+        let tooHigh = ContinuityEdgeGeometry(entryInsetPixels: 10_000,
+                                             deadzoneDepth: 10_000).clamped()
+        XCTAssertEqual(tooHigh.entryInsetPixels,
+                       ContinuityEdgeGeometry.entryInsetRange.upperBound)
+        XCTAssertEqual(tooHigh.deadzoneDepth,
+                       ContinuityEdgeGeometry.deadzoneDepthRange.upperBound)
+    }
+
+    func testAnInRangeValueIsLeftExactlyAlone() {
+        let value = ContinuityEdgeGeometry(entryInsetPixels: 40,
+                                           deadzoneDepth: 96)
+        XCTAssertEqual(value.clamped(), value)
     }
 }

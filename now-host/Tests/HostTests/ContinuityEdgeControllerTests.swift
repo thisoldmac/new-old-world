@@ -49,6 +49,38 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(environment.moves.last?.point.y, 300)
     }
 
+    /// `updateEdgeGeometry` is the one funnel both configurable numbers go
+    /// through: this pins that a changed entry inset actually reaches the
+    /// NEXT crossing (no restart needed) and that an out-of-range request
+    /// arrives clamped rather than applied verbatim — the published value a
+    /// settings UI would bind to must be what was actually applied, not
+    /// what was asked for.
+    func testUpdatedEdgeGeometryReachesTheNextCrossingClamped() {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.start()
+
+        controller.updateEdgeGeometry(
+            ContinuityEdgeGeometry(entryInsetPixels: 0, deadzoneDepth: 999_000))
+
+        XCTAssertEqual(controller.edgeGeometry.entryInsetPixels, 0,
+                       "zero is legal and must survive exactly")
+        XCTAssertEqual(controller.edgeGeometry.deadzoneDepth,
+                       ContinuityEdgeGeometry.deadzoneDepthRange.upperBound,
+                       "an absurd request is clamped, not honoured verbatim")
+
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1439, y: 600),
+                               delta: CGPoint(x: 3, y: 0),
+                               buttonsDown: false))
+        XCTAssertEqual(driver.points.last, MirrorKit.Point(x: 0, y: 300),
+                       "the zeroed inset must reach this crossing without a "
+                        + "restart")
+    }
+
     /// `reportFileGrabOutcome` is the seam `ContinuityFileDrag.configure`
     /// wires a grab's terminal `notice` into — see
     /// `ContinuityGuestDragTests.testAWrongFileRefusalReachesTheOutcomeSinkInPlainWords`

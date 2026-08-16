@@ -678,6 +678,62 @@ final class ContinuityGuestDragTests: XCTestCase {
                        "the wide surface belongs to one handoff only")
     }
 
+    /// **WIDE and HIT-TESTABLE are two different questions**, and the fix
+    /// for the felt drop dead zone answers only the second one.
+    ///
+    /// The strip stays WIDE for the length of the session — asserted above
+    /// — because narrowing it moves the drag source's own window out from
+    /// under a live drag. But `EdgeView.isOwnSession` refuses the strip's
+    /// own drag rather than passing it through, and a refusal still
+    /// answers the drag: no `+` badge, and nothing else is asked. Michelle
+    /// felt that refusal, at the shipped 160 px, as a drop dead zone the
+    /// width of the whole strip. This asserts the controller turns the
+    /// strip drop-transparent to ITS OWN session the instant that session
+    /// actually starts, and restores it the instant the session ends — the
+    /// two calls a real Mac needs so the badge is decided by whatever is
+    /// really beneath the strip, not by the strip's own refusal.
+    func testTheCatchSurfaceDropsThroughItsOwnLiveSessionOnly() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+
+        XCTAssertTrue(rig.environment.dropsThroughChanges.isEmpty,
+                      "no session has started yet — nothing should be "
+                        + "drop-transparent before there is a session to "
+                        + "protect")
+
+        rig.deliverRealDragEvent()
+        XCTAssertEqual(rig.environment.dropsThroughChanges, [true],
+                       "the session just started; the strip must stop "
+                        + "intercepting its own drag from this instant")
+
+        rig.endHostDragSession(operation: .copy)
+        XCTAssertEqual(rig.environment.dropsThroughChanges, [true, false],
+                       "drop-through belongs to one live session only — an "
+                        + "ordinary foreign drag afterwards must still be "
+                        + "caught and refused by identity")
+    }
+
+    /// A drag AppKit refuses to start never became drop-through in the
+    /// first place, so there is nothing to undo — asserting the array
+    /// stays empty is the same shape of guard as `catchChanges` staying at
+    /// `[true, false]` above rather than growing a spurious third entry.
+    func testARefusedDragNeverTogglesDropThrough() {
+        let rig = Rig()
+        rig.environment.dragSeed = nil
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.environment.dropsThroughChanges.isEmpty,
+                      "AppKit never started a session, so there was never a "
+                        + "session's own refusal to fix")
+    }
+
     /// **The strip must not catch the drag it just started.**
     ///
     /// Metal, 2026-08-14: the drag image appeared with a `.copy` badge and
@@ -950,6 +1006,49 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertTrue(seed.summary.contains("ourWindow=yes"))
     }
 
+    /// `catchThickness` is now configurable, and this is the geometry math
+    /// against a real AppKit panel: the same seed point covered at the
+    /// shipped 160 px default must NOT be covered at zero, because zero
+    /// means the strip never widens past the ordinary two-pixel sentinel
+    /// at all — cursor-at-the-very-edge handoff, exactly as asked for.
+    func testConfiguredCatchThicknessChangesWhatThePanelCovers() throws {
+        let host = HostDisplayDescriptor(
+            id: 41, name: "Studio Display",
+            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: CGPoint(x: 10, y: 10),
+            modifierFlags: [], timestamp: 12, windowNumber: 14932,
+            context: nil, eventNumber: 4242, clickCount: 1, pressure: 1))
+        // 160 px in from the left host's right edge (1440): 1280...1440.
+        let seedPoint = CGPoint(x: 1380, y: 450)
+
+        let wide = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            catchThickness: 160,
+            callbacks: .init(entered: { _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { wide.close() }
+        let wideSeed = try XCTUnwrap(wide.makeDragSeed(at: seedPoint,
+                                                       from: event))
+        XCTAssertTrue(wideSeed.panelCoversPoint,
+                      "1380 is 60px in from the edge — inside the 160px "
+                        + "catch surface")
+
+        let zero = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            catchThickness: 0,
+            callbacks: .init(entered: { _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { zero.close() }
+        let zeroSeed = try XCTUnwrap(zero.makeDragSeed(at: seedPoint,
+                                                       from: event))
+        XCTAssertFalse(zeroSeed.panelCoversPoint,
+                       "at zero the strip never widens beyond the ordinary "
+                         + "sentinel, so the same point 60px off the "
+                         + "physical edge is no longer covered")
+    }
+
     /// **A window the window server cannot see is not a catch surface.**
     ///
     /// The strip was `backgroundColor = .clear` over a view that draws
@@ -980,6 +1079,38 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertLessThan(ContinuityFileEdge.hitTestableAlpha, 0.01,
                           "and it must stay below a visible tint: this strip "
                             + "sits over another app's window all day")
+    }
+
+    /// Against a real AppKit panel, not the mock: `catchSurfaceIsHitTestable`
+    /// already reads `!panel.ignoresMouseEvents` as half of what makes the
+    /// strip a valid destination — this is the other half of that same
+    /// fact, that setting it TRUE is exactly what un-hit-tests the strip,
+    /// which is the mechanism `setDropsThroughOwnSession` exists to drive.
+    func testDropsThroughOwnSessionMakesTheStripNotHitTestableAndBackAgain() {
+        let host = HostDisplayDescriptor(
+            id: 41, name: "Studio Display",
+            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
+        let fileEdge = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            callbacks: .init(entered: { _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { fileEdge.close() }
+        XCTAssertTrue(fileEdge.catchSurfaceIsHitTestable,
+                      "the ordinary state: a foreign drag must still be able "
+                        + "to reach this destination")
+
+        fileEdge.setDropsThroughOwnSession(true)
+        XCTAssertFalse(fileEdge.catchSurfaceIsHitTestable,
+                       "drop-through means the window server routes the "
+                         + "OWN session's drag query straight past this "
+                         + "panel to whatever is really underneath")
+
+        fileEdge.setDropsThroughOwnSession(false)
+        XCTAssertTrue(fileEdge.catchSurfaceIsHitTestable,
+                      "restored the instant the live session ends, so the "
+                        + "strip goes back to being an ordinary destination "
+                        + "for the NEXT foreign drag")
     }
 
     /// The seed-time audit line carries the three facts that separate the
