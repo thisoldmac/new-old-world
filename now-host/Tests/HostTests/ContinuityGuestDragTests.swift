@@ -893,7 +893,7 @@ final class ContinuityGuestDragTests: XCTestCase {
         rig.deliverRealDragEvent()
         let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
 
-        XCTAssertFalse(callbacks.entered(CGPoint(x: 1439, y: 450)),
+        XCTAssertFalse(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)),
                        "the strip answered .copy to our own session and armed "
                         + "a pass back to the guest")
         XCTAssertFalse(callbacks.dropped(.init(name: .drag)),
@@ -1124,7 +1124,7 @@ final class ContinuityGuestDragTests: XCTestCase {
             pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
         let fileEdge = ContinuityFileEdge(
             edge: .init(host: host, guestSide: .left, overlap: 0...900),
-            callbacks: .init(entered: { _ in false }, exited: {},
+            callbacks: .init(entered: { _, _ in false }, exited: {},
                              dropped: { _ in false }))
         defer { fileEdge.close() }
         let foreign = try XCTUnwrap(NSEvent.mouseEvent(
@@ -1168,7 +1168,7 @@ final class ContinuityGuestDragTests: XCTestCase {
         let wide = ContinuityFileEdge(
             edge: .init(host: host, guestSide: .left, overlap: 0...900),
             catchThickness: 160,
-            callbacks: .init(entered: { _ in false }, exited: {},
+            callbacks: .init(entered: { _, _ in false }, exited: {},
                              dropped: { _ in false }))
         defer { wide.close() }
         let wideSeed = try XCTUnwrap(wide.makeDragSeed(at: seedPoint,
@@ -1180,7 +1180,7 @@ final class ContinuityGuestDragTests: XCTestCase {
         let zero = ContinuityFileEdge(
             edge: .init(host: host, guestSide: .left, overlap: 0...900),
             catchThickness: 0,
-            callbacks: .init(entered: { _ in false }, exited: {},
+            callbacks: .init(entered: { _, _ in false }, exited: {},
                              dropped: { _ in false }))
         defer { zero.close() }
         let zeroSeed = try XCTUnwrap(zero.makeDragSeed(at: seedPoint,
@@ -1210,7 +1210,7 @@ final class ContinuityGuestDragTests: XCTestCase {
             pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
         let fileEdge = ContinuityFileEdge(
             edge: .init(host: host, guestSide: .left, overlap: 0...900),
-            callbacks: .init(entered: { _ in false }, exited: {},
+            callbacks: .init(entered: { _, _ in false }, exited: {},
                              dropped: { _ in false }))
         defer { fileEdge.close() }
 
@@ -1235,7 +1235,7 @@ final class ContinuityGuestDragTests: XCTestCase {
             pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
         let fileEdge = ContinuityFileEdge(
             edge: .init(host: host, guestSide: .left, overlap: 0...900),
-            callbacks: .init(entered: { _ in false }, exited: {},
+            callbacks: .init(entered: { _, _ in false }, exited: {},
                              dropped: { _ in false }))
         defer { fileEdge.close() }
         XCTAssertTrue(fileEdge.catchSurfaceIsHitTestable,
@@ -1266,7 +1266,7 @@ final class ContinuityGuestDragTests: XCTestCase {
             pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
         let fileEdge = ContinuityFileEdge(
             edge: .init(host: host, guestSide: .left, overlap: 0...900),
-            callbacks: .init(entered: { _ in false }, exited: {},
+            callbacks: .init(entered: { _, _ in false }, exited: {},
                              dropped: { _ in false }))
         defer { fileEdge.close() }
         let event = try XCTUnwrap(NSEvent.mouseEvent(
@@ -2061,6 +2061,128 @@ final class ContinuityGuestDragTests: XCTestCase {
                      transferMs: 1, crc32: nil, resumeToken: nil)
     }
 
+    // MARK: - The carried drag's presentation
+
+    /// A pasteboard carrying one real file, the way a Finder drag arrives.
+    private static func fileDrag(_ url: URL) -> NSPasteboard {
+        let board = NSPasteboard(name: .init("carry.\(UUID().uuidString)"))
+        board.clearContents()
+        board.writeObjects([url as NSURL])
+        return board
+    }
+
+    /// **THE IDENTITY CROSSES AT THE CROSSING** — the plan's one early
+    /// decision. The guest must be able to draw an honest drag, right name
+    /// and right icon, before a single byte moves; `draggingEntered` is the
+    /// only moment this side holds both the pointer and what is being
+    /// carried, so a gesture that reached the edge without publishing here
+    /// would have to publish from memory later or not at all.
+    func testCarryingAFileToTheEdgePublishesItOnceForTheGuestToDraw() throws {
+        let rig = Rig()
+        var carried: [String] = []
+        var released = 0
+        rig.controller.configureHostDragPresentation(
+            arrived: { board in
+                carried.append(ContinuityFileDrag.firstFile(on: board)?
+                    .lastPathComponent ?? "none")
+            },
+            departed: { released += 1 })
+        let url = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)/main.c")
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450),
+                              Self.fileDrag(url))
+        XCTAssertEqual(carried, ["main.c"])
+        /* The strip is asked again on every motion of the drag. */
+        _ = callbacks.entered(CGPoint(x: 1439, y: 460),
+                              Self.fileDrag(url))
+        _ = callbacks.entered(CGPoint(x: 1439, y: 470),
+                              Self.fileDrag(url))
+        XCTAssertEqual(carried, ["main.c"],
+                       "the offer is published once per gesture, not once "
+                        + "per draggingUpdated: a generation that moves on "
+                        + "every mouse motion names nothing")
+        XCTAssertEqual(released, 0)
+    }
+
+    /// **A DRAG THAT BEGINS ON THE GUEST AND IS NEVER TOLD TO STOP** is the
+    /// failure classic Finder punishes hardest, so every departure path
+    /// tears the presentation down — and each does it exactly once.
+    func testEveryDeparturePathEndsThePresentationExactlyOnce() throws {
+        for departure in ["exit", "drop"] {
+            let rig = Rig()
+            var carried = 0
+            var released = 0
+            rig.controller.configureHostDragPresentation(
+                arrived: { _ in carried += 1 }, departed: { released += 1 })
+            let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+            let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+            _ = callbacks.entered(CGPoint(x: 1439, y: 450),
+                                  Self.fileDrag(url))
+            XCTAssertEqual(carried, 1, departure)
+            switch departure {
+            case "exit": callbacks.exited()
+            default: _ = callbacks.dropped(Self.fileDrag(url))
+            }
+            XCTAssertEqual(released, 1,
+                           "the guest is still drawing a drag after \(departure)")
+            /* Idempotent: a strip can be told twice, and telling the guest
+               to stop a drag it already stopped is a second refusal in the
+               log for no reason. */
+            callbacks.exited()
+            XCTAssertEqual(released, 1, "torn down twice after \(departure)")
+        }
+    }
+
+    /// The release backstop reaches the PICTURE too. `draggingExited`
+    /// belongs to another application's session and can simply not arrive;
+    /// a guest left drawing a drag for a gesture that ended is the visible
+    /// half of the same stuck-flag defect.
+    func testTheSelfHealingReleaseAlsoEndsThePresentation() throws {
+        let rig = Rig()
+        var held = true
+        var released = 0
+        rig.controller.physicalPrimaryButtonHeld = { held }
+        rig.controller.configureHostDragPresentation(
+            arrived: { _ in }, departed: { released += 1 })
+        rig.enterGuest()
+        _ = try XCTUnwrap(rig.environment.fileCallbacks)
+            .entered(CGPoint(x: 1439, y: 450),
+                     Self.fileDrag(URL(fileURLWithPath: "/tmp/x/main.c")))
+        held = false
+        rig.press()
+        rig.crossBackHolding()
+
+        XCTAssertEqual(released, 1,
+                       "the drag ended where no callback could see it and "
+                        + "the guest was left holding the picture")
+    }
+
+    /// A drag carrying no file this Mac can name publishes nothing, and
+    /// that is an ordinary answer rather than a defect: a drag can hold
+    /// text, a colour, or a promise whose file does not exist yet. The DROP
+    /// still decides — the transfer lane reads the pasteboard again, and it
+    /// understands promises this path deliberately does not.
+    func testADragWithNoNameableFileDrawsNothingAndRefusesNothing() throws {
+        let rig = Rig()
+        var carried = 0
+        rig.controller.configureHostDragPresentation(
+            arrived: { _ in carried += 1 }, departed: {})
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+
+        let text = NSPasteboard(name: .init("text.\(UUID().uuidString)"))
+        text.clearContents()
+        text.setString("not a file", forType: .string)
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), text)
+
+        XCTAssertNil(ContinuityFileDrag.firstFile(on: text))
+        XCTAssertEqual(carried, 1,
+                       "the controller still announces the arrival; deciding "
+                        + "there is nothing to draw belongs to the wiring, "
+                        + "which is the only place that can say so once")
+    }
+
     // MARK: - Two features, one crossing
 
     /// **THE 17:22 CONFLATION, AS IT HAPPENED.** Metal, 2026-08-16: Michelle
@@ -2088,7 +2210,7 @@ final class ContinuityGuestDragTests: XCTestCase {
            steering when the strip finally hears about the drag. */
         rig.enterGuest()
         XCTAssertEqual(rig.environment.fileCallbacks?
-            .entered(CGPoint(x: 1439, y: 450)), false,
+            .entered(CGPoint(x: 1439, y: 450), .init(name: .drag)), false,
             "an active controller does not start steering a second time — "
                 + "and that refusal is exactly what used to lose the fact")
         rig.press()
@@ -2146,7 +2268,7 @@ final class ContinuityGuestDragTests: XCTestCase {
         var held = true
         rig.controller.physicalPrimaryButtonHeld = { held }
         rig.enterGuest()
-        _ = rig.environment.fileCallbacks?.entered(CGPoint(x: 1439, y: 450))
+        _ = rig.environment.fileCallbacks?.entered(CGPoint(x: 1439, y: 450), .init(name: .drag))
         /* The drag ends somewhere this app never hears about. */
         held = false
         rig.select(Self.file(name: "main.c"), generation: 3)

@@ -289,6 +289,30 @@ final class ContinuityEdgeController: ObservableObject {
     /// So the suppression keys off the EXISTENCE of the host drag rather
     /// than off which reporter won.
     private var hostDragOverThisMac = false
+    /// Whether this gesture's identity has already crossed. The strip is
+    /// asked on every motion, and the offer is published once.
+    private var announcedHostDragArrival = false
+    /// What this Mac is carrying has reached the edge: publish the offer so
+    /// the guest can draw an honest drag, and start the guest's own
+    /// presentation drag.
+    ///
+    /// **PRESENTATION, NOT TRANSPORT.** The guest's Drag Manager drag exists
+    /// so a person sees the right icon and name follow the pointer on the
+    /// other machine. It carries no bytes and its drop location is not
+    /// consulted: for a FOREIGN drag, AppKit owns the session and this app
+    /// can neither end it early nor carry it across, so the release lands on
+    /// our own strip and the transfer runs on the existing proven lane
+    /// (`performDragOperation` → `copyHostFiles` → `putMirrorFile` → the
+    /// guest's `mirrorDrop`) at the crossing's coordinate. That is a real
+    /// reduction in placement fidelity against the promise design, taken
+    /// deliberately for v1 — it sidesteps the unresolved `loc='null' /
+    /// promise-never-asked` defect entirely, and the promise path remains
+    /// available later as an upgrade with no rework here.
+    private var hostDragArrived: ((NSPasteboard) -> Void)?
+    /// The drag left, dropped, or was released: tear down whatever the guest
+    /// is drawing. Paired with `hostDragArrived` on every path, because a
+    /// classic Finder is unforgiving of a drag that never ends.
+    private var hostDragDeparted: (() -> Void)?
     private var announcedOwnDragRefusal = false
     private var heldGesture: HeldGestureCustody?
     /// The last button state any sample reported. The escape chord arrives
@@ -422,6 +446,22 @@ final class ContinuityEdgeController: ObservableObject {
         self.guestFileAtPoint = guestFileAtPoint
         self.hostFilesDropped = hostFilesDropped
         refreshFileEdge()
+    }
+
+    /// Installs the host→guest PRESENTATION half: what the guest draws while
+    /// a person carries a file across, and its teardown.
+    ///
+    /// Separate from `configureFileDragging` because it is separate in kind.
+    /// That pair moves bytes; this pair moves a picture, and the product
+    /// degrades honestly without it — an unwired presentation is a crossing
+    /// that transfers correctly and looks like nothing is happening, which
+    /// is exactly what shipped before this seam existed.
+    func configureHostDragPresentation(
+        arrived: @escaping (NSPasteboard) -> Void,
+        departed: @escaping () -> Void
+    ) {
+        self.hostDragArrived = arrived
+        self.hostDragDeparted = departed
     }
 
     /// Binds a cross-edge drag to the guest's PUBLISHED SELECTION rather
@@ -612,6 +652,10 @@ final class ContinuityEdgeController: ObservableObject {
             hostDragOverThisMac = false
             audit(.info, "the host drag over the shared edge is over: the "
                 + "button is not held any more and no drag callback said so")
+            /* The guest is still drawing a drag for a gesture that has
+               ended. Same backstop, same reason: the teardown must not be
+               reachable only through the callback that failed to arrive. */
+            endHostDragPresentation()
         }
         guard var ownership else { return }
         if hostFileDrag || hostDragOverThisMac,
@@ -1615,8 +1659,9 @@ final class ContinuityEdgeController: ObservableObject {
 
     private var fileEdgeCallbacks: ContinuityFileEdge.Callbacks {
         .init(
-            entered: { [weak self] point in
-                self?.hostFileEntered(at: point) ?? false
+            entered: { [weak self] point, pasteboard in
+                self?.hostFileEntered(at: point,
+                                      pasteboard: pasteboard) ?? false
             },
             exited: { [weak self] in self?.hostFileExited() },
             dropped: { [weak self] pasteboard in
@@ -1645,7 +1690,8 @@ final class ContinuityEdgeController: ObservableObject {
         }
     }
 
-    private func hostFileEntered(at hostPoint: CGPoint) -> Bool {
+    private func hostFileEntered(at hostPoint: CGPoint,
+                                 pasteboard: NSPasteboard) -> Bool {
         /* The strip is a destination for FOREIGN drags. A drag this app
            started is refused by identity in the view itself; this is the
            second door onto the same rule, because a host→guest pass armed
@@ -1669,7 +1715,23 @@ final class ContinuityEdgeController: ObservableObject {
            this edge right now. That forgetting is the 17:22 defect; see
            `hostDragOverThisMac`. */
         hostDragOverThisMac = true
-        if hostFileDrag { return state == .arming || state == .active }
+        /* THE IDENTITY CROSSES HERE, ONCE PER GESTURE. Announced on the
+           false→true edge rather than on every `draggingUpdated`, which the
+           strip receives on every motion. Announced BEFORE the steering
+           decision below for the same reason the flag is set before it: the
+           person is carrying this file whether or not this controller ends
+           up driving the guest pointer for them, and the guest should be
+           drawing it either way. */
+        if !announcedHostDragArrival {
+            announcedHostDragArrival = true
+            hostDragArrived?(pasteboard)
+        }
+        if hostFileDrag {
+            /* Every `draggingUpdated` lands here too — the strip is asked on
+               every motion — so the arrival is announced ONCE per gesture
+               and the rest are steering. */
+            return state == .arming || state == .active
+        }
         guard state == .ready, let edge = layout.sharedEdge else {
             return false
         }
@@ -1696,12 +1758,28 @@ final class ContinuityEdgeController: ObservableObject {
            flag that outlives the gesture it describes turns one defect into
            a permanently deaf edge. */
         hostDragOverThisMac = false
+        endHostDragPresentation()
         guard hostFileDrag, let current = ownership ?? pending else { return }
         returnToHost(current, reason: "host file left the shared edge")
     }
 
+    /// Ends the guest's presentation drag exactly once, on whichever path
+    /// gets there first. Every exit from a carried drag runs through here:
+    /// leaving the strip, dropping on it, and the self-healing release.
+    private func endHostDragPresentation() {
+        guard announcedHostDragArrival else { return }
+        announcedHostDragArrival = false
+        hostDragDeparted?()
+    }
+
     private func hostFileDropped(_ pasteboard: NSPasteboard) -> Bool {
         hostDragOverThisMac = false
+        /* Torn down BEFORE the transfer is handed off, not after. The drop
+           is the end of the gesture a person is watching, and a guest still
+           drawing a drag while its file is being written is the shape of lie
+           this project keeps paying for. The transfer's own outcome speaks
+           for itself afterwards. */
+        endHostDragPresentation()
         guard hostFileDrag, let current = ownership ?? pending,
               let hostFilesDropped else { return false }
         let accepted = hostFilesDropped(

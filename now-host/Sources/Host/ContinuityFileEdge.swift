@@ -117,7 +117,15 @@ struct ContinuityCatchHitTest: Equatable, Sendable {
 @MainActor
 final class ContinuityFileEdge: NSObject {
     struct Callbacks {
-        var entered: (CGPoint) -> Bool
+        /// The pointer, AND WHAT IS BEING CARRIED. The pasteboard rides
+        /// along because the identity has to cross at the crossing — the
+        /// guest draws an honest drag, right name and right icon, before
+        /// any byte moves (`plan-host-to-guest-drag-2026-08-15.md`, "the one
+        /// early decision"). `draggingEntered` is the only moment this side
+        /// has both facts at once, and a drag that reached the edge without
+        /// its identity would have to publish from memory later or not at
+        /// all.
+        var entered: (CGPoint, NSPasteboard) -> Bool
         var exited: () -> Void
         var dropped: (NSPasteboard) -> Bool
         /// The guest→host session this app itself started has ended, wherever
@@ -174,13 +182,15 @@ final class ContinuityFileEdge: NSObject {
         override func draggingEntered(_ sender: any NSDraggingInfo)
             -> NSDragOperation {
             guard !isOwnSession(sender) else { return [] }
-            return callbacks.entered(screenPoint(sender)) ? .copy : []
+            return callbacks.entered(screenPoint(sender),
+                                     sender.draggingPasteboard) ? .copy : []
         }
 
         override func draggingUpdated(_ sender: any NSDraggingInfo)
             -> NSDragOperation {
             guard !isOwnSession(sender) else { return [] }
-            return callbacks.entered(screenPoint(sender)) ? .copy : []
+            return callbacks.entered(screenPoint(sender),
+                                     sender.draggingPasteboard) ? .copy : []
         }
 
         override func draggingExited(_ sender: (any NSDraggingInfo)?) {

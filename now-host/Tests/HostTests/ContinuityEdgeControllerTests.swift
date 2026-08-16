@@ -581,7 +581,7 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         controller.start()
 
         let callbacks = try XCTUnwrap(environment.fileCallbacks)
-        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450)))
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)))
         XCTAssertEqual(controller.state, .arming)
         controller.transportPhaseChanged(.active)
         environment.emit(.init(kind: .moved,
@@ -752,7 +752,7 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         controller.start()
 
         let callbacks = try XCTUnwrap(environment.fileCallbacks)
-        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450)))
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)))
         controller.transportPhaseChanged(.active)
         XCTAssertTrue(environment.associationChanges.isEmpty)
         XCTAssertEqual(environment.captureStarts, 0)
@@ -1100,7 +1100,7 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         let callbacks = try XCTUnwrap(
             environment.fileCallbacks,
             "edge mode with no Mirror had no AppKit drop destination")
-        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450)),
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)),
                       "the strip must accept the drag to be steerable")
         controller.transportPhaseChanged(.active)
 
@@ -1153,7 +1153,7 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         controller.start()
 
         let callbacks = try XCTUnwrap(environment.fileCallbacks)
-        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450)))
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)))
         controller.transportPhaseChanged(.active)
 
         _ = callbacks.dropped(.init(name: .drag))
