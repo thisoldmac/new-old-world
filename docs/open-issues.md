@@ -71,63 +71,92 @@ Two were wrong on the first pass and both corrections are the point:
   the old ladder said `superseded` and refused, and where only the source
   answers.
 
-### The emulator round: the wire half PROVED, the drag half NOT REPRODUCED
+### The emulator round: the wire half PROVED, and the drag half has a NAMED cause
 
 Rig: `docs/local/dragbind-slice2-provenance-2026-08-16.md`, lane block
 713 (wire 17705), guest build `716f331c…` asserted from its own hello
 before anything was believed, resident `b254480cc559` — the same one
-slice 1B measured on.
+slice 1B measured on. Two boots; the second one read the counters.
 
 What the round PROVED, against a live guest:
 
 - **`source` crosses.** Every `continuity.selection` this guest published
-  carried it: `"source":"selection"`, on the ordinary poll's stub. The
+  carried it: `"source":"selection"` on the ordinary poll's stub. The
   contract change, the three templates and the host decoder meet on a
   real wire.
-- The arm / publish / grab lane is unbroken by the change: arm answered
-  `armed`, a stub arrived, a grab for it was refused `folder-not-yet` by
-  name (the item was the hard disk).
+- The arm / publish / grab lane is unbroken by the change.
 
-What the round DID NOT reproduce, stated as an absence rather than
-softened: **no drag-sourced generation was published.** Two attempts,
-both with Continuity armed and the target file NEVER selected — the
-Finder's selection was `Macintosh HD` throughout, and the press landed on
-`HELLO_CLAUDE.txt` at (624,108), a desktop document the Finder itself
-named and located. `midGestureSelections` was empty both times.
+**No drag-sourced generation was published**, and the V15 counters say
+why in a sentence. Continuity armed, target `HELLO_CLAUDE.txt` at
+(624,108) — a desktop document the Finder itself located — never
+selected (the Finder's selection was `Macintosh HD` throughout), a
+four-second idle after the arm, then a press and 180 px of held motion:
 
-**Which of two causes it is was not determined, and the distinction
-matters more than the result.** Either
+    15:37:21  drag handler state=1 err=0 inst=1 rem=0 ctx=1 calls=0 enter=0/0
+    15:37:26  drag handler state=1 err=0 inst=1 rem=1 ctx=0 calls=0 enter=0/0
+    15:37:21  selection epoch=1 gen=1 Macintosh HD (folder)
 
-1. the Continuity-driven press never made the Finder enter a drag at all
-   — which is the ALREADY-MEASURED shape (`feat/continuity-selection-bind-race`,
-   21 s of held drag with no task time) and would say nothing whatever
-   about slice 2; or
-2. the tracking handler was not installed under a Continuity-only arm.
-   `now_ext_dragobs_gne` does gate on `cell->enabled || CapAct`, so it
-   *should* arm — but slice 1B's 67,502 handler calls were all taken on
-   ACT-PLANE armed passes, and no round has yet shown the handler firing
-   with Continuity alone.
+**The handler INSTALLED and was NEVER CALLED.** `inst=1`, cleanly paired
+`rem=1`, `calls=0`, `enter=0/0`. So the arm gate is not the problem —
+`now_ext_dragobs_gne` gates on `cell->enabled || CapAct` and a
+Continuity-only arm does reach the install, exactly as read.
 
-The counters that separate these two — `handler_calls` beside
-`handler_installs` — were not readable in this round: the guest's log
-retrieval returned empty over the wire, so the drain's own lines
-(`drag handler state=…`, `drag bind seq=… latency=…`) could not be
-recovered. That is a rig gap, not a finding about the code, and it is the
-first thing the next round must fix, because it is the only instrument
-that can tell cause 1 from cause 2.
+**The number that names the cause is `ctx`.** Registration is PER
+APPLICATION and is made when a process pumps while armed, so the count of
+distinct A5 worlds holding a registration is the count of applications
+that can ever call us. Under a Continuity-only arm it reached **1**.
+Under slice 1B's ACT-PLANE arming, on the same resident and the same
+machine, it reached **5** — and recorded 67,502 calls across two Finder
+drags.
 
-**Consequence for the claim.** The ceiling reached is Tested plus a
-partial emulator round. The single-gesture acceptance is proven in the
-host suite and the guest's shared logic, both mutation-watched; it is NOT
-proven on a Macintosh. Nobody should quote "the ritual is dead" from a
-machine yet.
+So the standing reading is refined, and the refinement is the finding:
+**the registration route works, and a Continuity arm does not get it into
+the Finder's context the way an act-plane pass does.** One context
+registered in a five-second armed window, and nothing proves that one was
+the Finder — which is the next measurement, below.
+
+Two things this does NOT say, worth stating because both are the easy
+misreading:
+
+- It does not say the drag plane is broken. Slice 1B measured it working
+  on this resident.
+- It does not yet say the Finder never started a drag. That is still
+  possible and still unmeasured here; `drag obs disp=2` is only the trap
+  route's own self-test control, and slice 1 already proved the trap route
+  cannot see a DragLib drag, so it is silent on the question either way.
+
+### What the next round must do first
+
+1. **Publish WHICH A5 worlds hold a registration**, not just how many.
+   `ctx` is a count, and a count cannot answer "was the Finder one of
+   them" — which is the whole question. The block already carries
+   `handler_a5`, but it is written at EnterHandler and EnterHandler never
+   happened, so the one context that registered is unidentifiable from
+   this round's evidence. This is the same shape as the standing rule that
+   a count you did not derive is not evidence.
+2. **Measure whether the Finder entered a drag at all**, with the Finder's
+   own `bounds of` before and after (`tools/local-finder-drag.py` is that
+   instrument). Until that exists beside the counters, "installed but
+   never called" and "installed, and there was nothing to call it for" are
+   the same three digits.
+
+### A correction to this branch's own earlier claim
+
+An earlier version of this entry reported that guest log retrieval
+returned empty over the wire and called it a possible new defect. **That
+was wrong and the error was mine:** the verb is `tail`, not `log`. `tail`
+works, pages under the control-frame cap (three rows a page here, with
+`next` for the rest), and every line quoted above came out of it. There is
+no log-retrieval defect. It is recorded rather than deleted because a
+tool-shaped mistake read as a product defect is exactly the confusion
+that sends a later round after the wrong half of the system.
 
 ### The latency, NOT measured
 
 `drag bind seq=… latency=… ticks` is emitted at the drain and is the
-interval the whole route depends on. **No value was obtained**, for the
-same reason: no drag-sourced publish occurred and the log could not be
-read. The plan asked for this number and it is still owed.
+interval the whole route depends on fitting inside a gesture. **No value
+was obtained**: it is emitted only on a drag-sourced publish, and none
+occurred. The plan asked for this number and it is still owed.
 
 ### Still unverified
 
