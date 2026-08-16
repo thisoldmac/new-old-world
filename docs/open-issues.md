@@ -7,6 +7,96 @@ search:
 
 # Open issues
 
+## FIXED AND TESTED, NOT METAL-VERIFIED: the ack-silence watchdog had no upper bound on trusting resident liveness (2026-08-16, `fix/continuity-watchdog-starvation`)
+
+**The remaining half of the split the arrival-starvation and modal-starvation
+lanes both found.** Both already established that `MirrorContinuityController`
+must not end the epoch on ack silence alone: while the resident's own
+liveness channel keeps answering, silence from the guest application is
+STARVATION (a foreign nested loop withholding task time), not DEATH. That
+gate already existed (`fix(review): harden continuity and mirror
+transfers`, 2026-08-13) and already had a test
+(`testResidentLivenessKeepsModalStarvationAttachedUntilAckRecovers`). What
+neither lane closed: the gate had **no upper bound**. As written, a guest
+whose resident liveness channel answers "alive" forever — including a
+half-open TCP connection lying about it — could hold the epoch open
+forever too, and every extension of patience was invisible: only the
+first `acknowledgementStarvedSince` line was ever logged.
+
+**The decision table, after this change:**
+
+| ack silence | resident liveness | action |
+|---|---|---|
+| < `acknowledgementTimeout` (3 s) | any | none; ordinary active state |
+| ≥ `acknowledgementTimeout`, < `starvationBackstop` (300 s) | answering | tolerated: epoch stays owned, status says "busy in another interaction", `onStarvation` escalates once at `starvationAnnounceAfter` (10 s) unchanged, and an audit line fires every additional `acknowledgementTimeout` of silence |
+| ≥ `starvationBackstop` | answering | dead-man fallback: epoch ends anyway — the liveness channel is no longer trusted past minutes-scale, because a half-open TCP connection can answer "alive" indefinitely |
+| ≥ `acknowledgementTimeout` | not answering | unchanged: epoch ends immediately (`reason=UDP acknowledgements stopped`) |
+
+**The backstop argument.** `starvationBackstop` defaults to 300 s (5
+minutes) — minutes-scale specifically so it outlasts any menu hold or
+modal a person is expected to leave open at the machine, while still
+existing as a bound rather than infinite trust. It is a defense against
+the resident's liveness *evidence* being wrong, not a patience budget an
+ordinary gesture can spend; nothing observed on this arc argues for a
+tighter number, and the choice is recorded here rather than only in a
+constant so a later arc with real minutes-scale metal data can revise it
+with evidence instead of guessing again.
+
+**Keepalive-flow confirmation.** `ContinuityKeepaliveClock` — the
+mechanism that keeps the GUEST's own host-fed lease from expiring — runs
+on its own queue, driven by its own timer, and is stopped only by
+`guestEnded`/`relinquish`/`clearTransportState`. Since this change keeps
+the ack-silence watchdog from calling any of those while resident
+liveness answers and the backstop has not been reached, the keepalive
+clock is structurally unaffected by tolerated starvation — confirmed by
+`testKeepalivesKeepFlowingThroughoutTolerableStarvation`, which asserts
+keepalive datagrams keep arriving across a hold many multiples of
+`acknowledgementTimeout` long.
+
+**Exact log lines an extended, tolerated hold produces**, in order:
+
+```
+guest application acknowledgements starved for 3.0 s; resident liveness is still answering and the independent lease clock remains armed
+ack silence 6.0 s tolerated: resident liveness answering (starvation, not death)
+ack silence 9.0 s tolerated: resident liveness answering (starvation, not death)
+...
+NOW on the Mac has not answered for 10 s, but the machine itself is still running — which is what another application's modal alert looks like from here. Dismiss it at the Mac; Continuity cannot click it for you while NOW is starved.
+...
+guest application acknowledgements recovered after N s
+```
+
+And if the hold outlives the backstop instead of the person letting go:
+
+```
+ack silence 300.0 s exceeded the 300 s backstop despite resident liveness still answering; treating as dead rather than trusting a possibly half-open liveness channel indefinitely
+guest ended Continuity: reason=UDP acknowledgements stopped despite resident liveness (backstop exceeded), epoch=…
+```
+
+**Mutation evidence.** Four tests, each watched failing against the exact
+mutation it claims to catch, built and run, before this fix's own code
+was restored:
+`testExtendedStarvationWithLiveResidentNeverEndsTheEpoch` and
+`testKeepalivesKeepFlowingThroughoutTolerableStarvation` both fail when
+the liveness gate is disabled (`false && (...)`) — the epoch ends and
+keepalives stop, for the reason each test names.
+`testToleratedStarvationIsAuditedPeriodicallyNotOnlyAtOnset` fails when
+the throttle interval is inflated 1000x — no second "tolerated" line
+ever fires. `testStarvationPastTheBackstopEndsTheEpochDespiteLiveResident`
+fails when the backstop is inflated 1000x — the epoch never ends. All
+four pass again with the mutation reverted. `now-host`'s
+`MirrorContinuityControllerTests` (48 tests) and `scripts/test-all`
+(`TBT_ALLOW_UNARMED_HOOKS=1`) both green.
+
+**Host-only.** No `ext/`, contract, or guest code touched — the guest-side
+half of this split (making acknowledgements survive a foreign nested
+loop at all) is `ext/`'s, not this arc's, per
+`fix/continuity-arrival-starvation`'s own note that closing the ack-silence
+watchdog "needs either a resident-side ACK path or a host-side watchdog
+that can tell silence from starvation." This is the host-side half.
+
+**Unverified:** metal — nobody has watched an indefinitely held guest menu
+survive on the PowerBook with this change in place. Tested only.
+
 ## REPRODUCED IN THE EMULATOR, THE HOST NOW SAYS IT, SELF-RESCUE STILL DOES NOT WORK: a foreign application's modal alert stops Continuity dead (2026-08-16, attended metal + emulator, `fix/continuity-modal-starvation`)
 
 **What happened on metal.** Internet Explorer was launched on the guest
