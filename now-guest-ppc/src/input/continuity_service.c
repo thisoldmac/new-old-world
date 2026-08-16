@@ -14,6 +14,7 @@
 
 #include <Carbon.h>
 #include <MixedMode.h>
+#include <string.h>
 
 #include "continuity_cursor.h"
 #include "mirror_debug.h"
