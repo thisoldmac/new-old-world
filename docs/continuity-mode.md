@@ -18,11 +18,36 @@ movement, and primary up use the same owned input epoch.
 It is off by default and its enable switch is session-only. The update rate is
 user-selectable at 15, 30, or 60 Hz; 30 Hz is the default, and the selection is
 remembered per stable guest identity. Automatic recovery of an interrupted
-pointer epoch and experimental Fast Pump are also remembered per guest.
+pointer epoch and experimental Fast Pump are also remembered per guest. Two
+further per-machine settings tune the shared edge itself
+(`ContinuityEdgeGeometry`, `now-host/Sources/Host/ContinuityDisplayLayout.swift`):
+entry inset (0–96 px, default 24) is the click-wiggle guard that keeps an
+ordinary click from tipping straight back across the edge it just crossed,
+and the file-drag deadzone (0–320 px, default 160) is how far the file-drag
+catch surface widens for the length of a guest→host handoff.
 Keyboard forwarding defaults on, and its host-owned return shortcut is
 configurable and remembered per guest. Fast Pump reuses the guest event loop's
 one-tick work-in-flight sleep while an epoch is armed; it does not move any
 manager or drawing work into the Open Transport notifier or resident timer.
+
+## Accessibility permission and capture refusal
+
+The host's *consuming* input tap (`ContinuityEdgeController`, in
+`now-host/Sources/Host/ContinuityEdgeController.swift`) needs Accessibility
+permission to consume this Mac's own mouse and keyboard events while the
+pointer is on the guest. When it cannot start, the session does not fail
+closed: it degrades to an observe-only monitor, the pointer still crosses,
+but host clicks also reach host apps and window-drag protection is off.
+`captureFailureReason` distinguishes the two ways that happens, because
+each needs a different fix: `missingPermission` when this process is not
+yet trusted for Accessibility — retried automatically the next time the app
+becomes active, since granting the permission and switching back is enough
+— versus `relaunchNeeded` when the process *is* trusted but macOS did not
+pick up the grant for this launch, which no retry in place can fix because
+Accessibility trust is read at process start. The module surfaces the
+missing-permission case as an inline row naming which copy of the app is
+running (Accessibility is granted per signed copy, not per bundle
+identifier) with a button into Privacy & Security › Accessibility.
 
 ## Current mechanism set
 
@@ -431,12 +456,35 @@ the Event Manager scope above.
 
 ## Evidence and remaining work
 
-### Where the cross-edge file drag stands (2026-08-14)
+### Where the cross-edge file drag stands (2026-08-14, superseded below)
 
 The pointer, click, held-drag and keyboard rows are covered by the dated
 material below and in the engineering ledger. This subsection is only about
 carrying a **file** across the edge, because it is the one arc in flight and
 the sections below predate its rewrite.
+
+**Update, 2026-08-15 (`feat/hg-drag-dragmgr`, slice 2 of the host→guest
+crossing):** the round 4 questions this subsection asked are now answered
+for the host→guest direction, and the honest status moved rather than
+closed. `offer --drag` starts a real Drag Manager promise drag of the
+published item (`flavorTypePromiseHFS`); on a live emulator guest the
+send-data callback, the drop-location resolution, and the streaming pull
+through the file lane are all proven — the received file comes back
+byte-identical to the host original. But the drag **never leaves NOW's own
+process**: three drops onto the Finder desktop all report `loc='null',
+asks=0` — no receive handler anywhere else ever ran. The cause is
+targeting, not the promise machinery: while a button is held, `GetMouse`
+and `Button` correctly follow the resident's low-memory writes (so
+`TrackDrag` runs and the button edges work), but the Drag Manager's own
+window-under-the-pointer tracking does not — it kept reporting `inwin=1`
+for NOW's own window with the pointer 400 px outside it. That is the same
+problem as making a held button real for a foreign application, one layer
+up, and it is judged to belong to edge custody (slice 3), not to another
+implementation inside the promise-drag code. See "THE PROMISE WORKS AND
+THE DRAG NEVER LEAVES THIS APPLICATION" in
+[open-issues.md](open-issues.md) for the full account, including the
+dead-end hypotheses. Host-to-guest dragging (below) and window dragging
+remain as they were.
 
 **Guest to host: the session starts on metal, and no drop has completed.**
 Two attended rounds this day, on the rewritten lane rather than the v1
