@@ -433,6 +433,16 @@ final class MirrorContinuityController: ObservableObject,
     /// churn ownership, but a dead receive path cannot leave the UI active.
     private let acknowledgementTimeout: TimeInterval
     private let starvationAnnounceAfter: TimeInterval
+    /// The absolute cap on trusting resident liveness in place of the guest
+    /// application's own acknowledgements. Resident liveness is a TCP
+    /// connection, and a half-open one can answer "alive" long after the
+    /// machine underneath it is not — the same dead-man concern this
+    /// project already argues in docs/open-issues.md for other TCP-backed
+    /// liveness reads. Minutes-scale rather than seconds-scale: it must
+    /// outlast any ordinary held menu or modal a person is expected to
+    /// leave open, and exist only as the backstop for the case that
+    /// evidence is lying, not as a patience budget a real gesture can spend.
+    private let starvationBackstop: TimeInterval
     private weak var localNetworkAccess: LocalNetworkAccessController?
     private let accessibility: AccessibilityAuthorization
     private let runningCopy: RunningCopy
@@ -502,6 +512,12 @@ final class MirrorContinuityController: ObservableObject,
     /// tracking loop trips it; this is the second, louder tier, and it
     /// escalates only once so a two-minute modal is one notification.
     private var starvationAnnounced = false
+    /// The silence value at which the "tolerated" audit line last fired,
+    /// so an extended hold is narrated periodically — one line per
+    /// additional `acknowledgementTimeout` of patience spent — rather than
+    /// once at onset (already covered by the line above) or once per timer
+    /// tick, which at 60 Hz would flood the log with the same fact.
+    private var toleratedSilenceLogMark: TimeInterval = 0
     /// Told once, at `starvationAnnounceAfter`, that this Mac has stopped
     /// answering while the machine underneath it is still alive. Wired to
     /// the same notification-plus-flash seam as a drag refusal, because the
@@ -521,6 +537,7 @@ final class MirrorContinuityController: ObservableObject,
          runningCopy: RunningCopy = .current,
          acknowledgementTimeout: TimeInterval = 3,
          starvationAnnounceAfter: TimeInterval = 10,
+         starvationBackstop: TimeInterval = 300,
          audit: Audit? = nil) {
         let resolvedAudit = audit ?? {
             HostLog.shared.write($0, "continuity", $1)
@@ -534,6 +551,7 @@ final class MirrorContinuityController: ObservableObject,
         self.runningCopy = runningCopy
         self.acknowledgementTimeout = acknowledgementTimeout
         self.starvationAnnounceAfter = starvationAnnounceAfter
+        self.starvationBackstop = starvationBackstop
         self.audit = resolvedAudit
         localNetworkAccess?.onDirectAccessReady = { [weak self] in
             self?.localNetworkAccessBecameReady()
@@ -1115,11 +1133,41 @@ final class MirrorContinuityController: ObservableObject,
                     ?? self.listener.machineIsAnswering(sessionKey: key) {
                     if self.acknowledgementStarvedSince == nil {
                         self.acknowledgementStarvedSince = last
+                        self.toleratedSilenceLogMark = 0
                         self.audit(.warn, String(
                             format: "guest application acknowledgements starved for %.1f s; resident liveness is still answering and the independent lease clock remains armed",
                             silence))
                         self.status = "The Mac is busy in another interaction; "
                             + "pointer safety remains armed"
+                    }
+                    /* Resident liveness is a TCP read, and a half-open
+                       connection can keep answering "alive" long after the
+                       machine underneath it stopped being reachable. Trust
+                       it for the length of any real gesture, but not
+                       forever: past the backstop this stops being patience
+                       and becomes the dead-man fallback the seconds-scale
+                       watchdog already was before liveness was consulted
+                       at all. */
+                    guard silence < self.starvationBackstop else {
+                        self.audit(.error, String(
+                            format: "ack silence %.1f s exceeded the %.0f s "
+                                + "backstop despite resident liveness still "
+                                + "answering; treating as dead rather than "
+                                + "trusting a possibly half-open liveness "
+                                + "channel indefinitely",
+                            silence, self.starvationBackstop))
+                        self.guestEnded(reason: "UDP acknowledgements "
+                            + "stopped despite resident liveness "
+                            + "(backstop exceeded)")
+                        return
+                    }
+                    if silence - self.toleratedSilenceLogMark
+                        >= self.acknowledgementTimeout {
+                        self.toleratedSilenceLogMark = silence
+                        self.audit(.info, String(
+                            format: "ack silence %.1f s tolerated: resident "
+                                + "liveness answering (starvation, not death)",
+                            silence))
                     }
                     self.announceStarvationIfDue(silence: silence)
                 } else {
@@ -1268,6 +1316,7 @@ final class MirrorContinuityController: ObservableObject,
                                 format: "guest application acknowledgements recovered after %.1f s",
                                 ProcessInfo.processInfo.systemUptime - starved))
                             self.acknowledgementStarvedSince = nil
+                            self.toleratedSilenceLogMark = 0
                             self.starvationAnnounced = false
                             self.status = "direct pointer connected at "
                                 + "\(self.acceptedHz) Hz"
@@ -1583,6 +1632,7 @@ final class MirrorContinuityController: ObservableObject,
         validAcks = 0
         lastAcknowledgementUptime = nil
         acknowledgementStarvedSince = nil
+        toleratedSilenceLogMark = 0
         starvationAnnounced = false
         lastAuditedButtonGeneration = 0
         lastPrimaryDownUptime = nil
