@@ -85,20 +85,68 @@ final class ContinuityScreenCaptureKitSource: ContinuityHostScreenCapturing {
             }
         }
 
+        let image: CGImage
         if #available(macOS 14.0, *) {
-            return try await captureViaScreenshotManager(
+            image = try await captureViaScreenshotManager(
                 id: id, maxPixelWidth: maxPixelWidth)
+        } else {
+            /* macOS 13 has SCContentFilter but no one-shot still API to hand
+               it to, and standing up an SCStream to keep a single frame costs
+               more than this preview is worth. CGDisplayCreateImage is
+               TCC-gated the same way, so a denial is still a denial - it
+               just cannot drop the windows. */
+            plan = .wholeDisplay
+            guard let captured = CGDisplayCreateImage(id) else {
+                throw ContinuityPreviewError.captureFailed
+            }
+            image = Self.downscaled(captured, maxPixelWidth: maxPixelWidth)
         }
-        /* macOS 13 has SCContentFilter but no one-shot still API to hand it
-           to, and standing up an SCStream to keep a single frame costs more
-           than this preview is worth. CGDisplayCreateImage is TCC-gated the
-           same way, so a denial is still a denial - it just cannot drop the
-           windows. */
-        plan = .wholeDisplay
-        guard let image = CGDisplayCreateImage(id) else {
-            throw ContinuityPreviewError.captureFailed
+        /* The preflight above is not the whole story. Screen Recording,
+           like Accessibility (docs/open-issues.md, the 2026-08-15 arc), is
+           granted to a COPY on disk, not a bundle identifier — and macOS
+           re-checks it lazily, so a grant revoked mid-session, or a launch
+           from a copy TCC never approved, can leave `CGPreflightScreenCaptureAccess`
+           answering stale-true while the capture itself comes back a
+           legitimate CGImage full of nothing. That is indistinguishable
+           from a genuinely dark display by pixel content alone, EXCEPT
+           that a real desktop always carries a menu bar and wallpaper —
+           uniform black across the whole frame is the tell. Silently
+           drawing that black rectangle is the exact defect this preview
+           feature exists to not have, so it is treated as the same denial
+           the preflight would have caught if TCC had not lied about it. */
+        if Self.isEffectivelyBlack(image) {
+            throw ContinuityPreviewError.screenRecordingDenied
         }
-        return Self.downscaled(image, maxPixelWidth: maxPixelWidth)
+        return image
+    }
+
+    /// Whether a captured still is uniformly black — the tell for a capture
+    /// that "succeeded" (no thrown error) but delivered nothing, because the
+    /// TCC decision behind it was stale or belonged to a different copy of
+    /// this app. A real screen is never exactly (0,0,0) everywhere: even an
+    /// all-black desktop picture still carries a menu bar. Sampled on a
+    /// small grid rather than every pixel — this only needs to catch
+    /// "uniformly nothing", not measure the image.
+    static func isEffectivelyBlack(_ image: CGImage) -> Bool {
+        let side = 8
+        guard let context = CGContext(
+            data: nil, width: side, height: side, bitsPerComponent: 8,
+            bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+            let data = context.data else { return false }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        let buffer = data.bindMemory(to: UInt8.self, capacity: side * side * 4)
+        for pixel in 0 ..< (side * side) {
+            let base = pixel * 4
+            // Skip the alpha channel (index 3 of each RGBA pixel): a fully
+            // transparent black is a different fact from an opaque one, but
+            // either way the colour channels being all-zero is the signal.
+            if buffer[base] != 0 || buffer[base + 1] != 0
+                || buffer[base + 2] != 0 {
+                return false
+            }
+        }
+        return true
     }
 
     @available(macOS 14.0, *)
@@ -225,21 +273,48 @@ final class ContinuityDisplayPreviewStore: ObservableObject {
     /// be. Full-resolution captures are downscaled before they are kept.
     static let maxPreviewPixelWidth: CGFloat = 480
 
+    /// The Screen Recording pane of Privacy & Security — the same deep-link
+    /// idiom `SystemAccessibilityAuthorization.settingsURL` already uses for
+    /// Accessibility, so both permissions this feature depends on offer the
+    /// identical affordance rather than one having a button and the other
+    /// only a caption.
+    static let screenRecordingSettingsURL =
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+
     private static let enabledKey = "mirror.continuity.displayPreviews"
 
     private let hostSource: ContinuityHostScreenCapturing?
     private let guestSource: ContinuityGuestScreenCapturing?
     private let defaults: UserDefaults?
     private var refreshing = false
+    /// Where this executable is running from — read once, at construction,
+    /// the same way `ContinuityEdgeController` reads it for the
+    /// Accessibility row. A denied-Screen-Recording note names it when the
+    /// copy is somewhere a person would not have granted, for the identical
+    /// reason: the pane can say granted while THIS copy has nothing.
+    let runningCopy: RunningCopy
 
     init(hostSource: ContinuityHostScreenCapturing?
             = ContinuityScreenCaptureKitSource(),
          guestSource: ContinuityGuestScreenCapturing? = nil,
-         defaults: UserDefaults? = ProductIdentity.defaults) {
+         defaults: UserDefaults? = ProductIdentity.defaults,
+         runningCopy: RunningCopy = .current) {
         self.hostSource = hostSource
         self.guestSource = guestSource
         self.defaults = defaults
+        self.runningCopy = runningCopy
         self.enabled = defaults?.bool(forKey: Self.enabledKey) ?? false
+    }
+
+    /// The button's action. A URL open with no TCC state behind it, unlike
+    /// `AXIsProcessTrustedWithOptions` — it does the same thing every time
+    /// it is pressed, which is exactly why it is the affordance that always
+    /// works rather than a one-shot system prompt.
+    func openScreenRecordingSettings() {
+        guard let url = URL(string: Self.screenRecordingSettingsURL) else {
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 
     /// A store that captures nothing, for the offscreen render gates: those

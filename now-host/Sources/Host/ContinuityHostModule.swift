@@ -84,7 +84,9 @@ struct ContinuityModuleView: View {
                 edge: controller.edge,
                 previews: previews,
                 guestName: connectedMachineName(),
-                continuityRunning: controller.edgeModeActive)
+                continuityRunning: controller.edgeModeActive,
+                guestConnected: connected,
+                hasRememberedGuest: controller.hasRememberedGuest)
                 .padding(14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity,
                        alignment: .topLeading)

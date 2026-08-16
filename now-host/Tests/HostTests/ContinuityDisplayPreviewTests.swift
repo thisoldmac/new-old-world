@@ -170,6 +170,76 @@ final class ContinuityDisplayPreviewTests: XCTestCase {
                 .width, 100)
     }
 
+    // MARK: - The silent-black tell
+
+    /* The defect the black-frame check exists for: ScreenCaptureKit and
+       CGDisplayCreateImage are both TCC-gated the same way Accessibility is
+       (docs/open-issues.md, the 2026-08-15 arc) — bound to a COPY on disk,
+       re-checked lazily — so a grant revoked mid-session, or a launch from
+       a copy TCC never approved, can come back a perfectly valid CGImage
+       that is uniformly black, with no thrown error at all. That is the
+       exact silent-black rendering this whole preview feature exists to
+       never do, and it is the one failure mode `note.message` alone cannot
+       catch because nothing THROWS to produce a note. */
+    func testIsEffectivelyBlackDetectsAUniformlyBlackCapture() {
+        let black = Self.solidImage(width: 40, height: 30,
+                                    red: 0, green: 0, blue: 0)
+        XCTAssertTrue(ContinuityScreenCaptureKitSource.isEffectivelyBlack(black))
+    }
+
+    func testIsEffectivelyBlackIsFalseForAnOrdinaryCapture() {
+        // A real desktop is never uniformly (0,0,0) - wallpaper, icons and
+        // the menu bar all put SOME colour on screen.
+        let real = Self.solidImage(width: 40, height: 30,
+                                   red: 128, green: 64, blue: 200)
+        XCTAssertFalse(ContinuityScreenCaptureKitSource.isEffectivelyBlack(real))
+    }
+
+    /// A single stray non-black pixel is enough to disqualify "uniformly
+    /// black" — this is the check that would catch a mutation loosening
+    /// the sample loop to an early-exit-on-first-pixel or similar shortcut.
+    func testIsEffectivelyBlackIsFalseWhenOnlyOneCornerHasColour() {
+        let context = CGContext(
+            data: nil, width: 8, height: 8, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(red: 0, green: 0, blue: 0, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+        context.fill(CGRect(x: 7, y: 7, width: 1, height: 1))
+        let image = context.makeImage()!
+
+        XCTAssertFalse(ContinuityScreenCaptureKitSource.isEffectivelyBlack(image))
+    }
+
+    /// Black with full transparency is still the same tell: a fully
+    /// transparent capture is exactly as uninformative as an opaque black
+    /// one, and this asserts the alpha channel is deliberately excluded
+    /// from the "has colour" test rather than accidentally saving it.
+    func testIsEffectivelyBlackIgnoresAlphaAndOnlyLooksAtColour() {
+        let context = CGContext(
+            data: nil, width: 8, height: 8, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(red: 0, green: 0, blue: 0, alpha: 0)
+        context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        let image = context.makeImage()!
+
+        XCTAssertTrue(ContinuityScreenCaptureKitSource.isEffectivelyBlack(image))
+    }
+
+    private static func solidImage(width: Int, height: Int, red: UInt8,
+                                   green: UInt8, blue: UInt8) -> CGImage {
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(red: CGFloat(red) / 255, green: CGFloat(green) / 255,
+                             blue: CGFloat(blue) / 255, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()!
+    }
+
     private static func image(width: Int, height: Int) -> CGImage {
         let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8,

@@ -218,6 +218,16 @@ final class MirrorContinuityController: ObservableObject,
     var hasConnectedTarget: Bool {
         listener.activeContinuityTarget != nil
     }
+    /// Whether the host has EVER seen a machine at all — the same roster the
+    /// Connections module reads (`GuestRegistry.known`). The arrangement
+    /// page needs this distinction, separate from `hasConnectedTarget`, so
+    /// it can tell a genuinely empty roster — nothing has ever connected,
+    /// there is nothing to arrange — from a REMEMBERED machine that is
+    /// simply not connected right now, whose saved placement is still
+    /// legitimate to look at and edit.
+    var hasRememberedGuest: Bool {
+        !listener.registry.known.isEmpty
+    }
     @Published private(set) var phase: Phase = .idle {
         didSet {
             guard phase != oldValue else { return }
@@ -500,16 +510,18 @@ final class MirrorContinuityController: ObservableObject,
          runningCopy: RunningCopy = .current,
          acknowledgementTimeout: TimeInterval = 3,
          audit: Audit? = nil) {
+        let resolvedAudit = audit ?? {
+            HostLog.shared.write($0, "continuity", $1)
+        }
         self.listener = listener
         self.defaults = defaults
-        self.layout = ContinuityDisplayLayout(defaults: defaults)
+        self.layout = ContinuityDisplayLayout(defaults: defaults,
+                                              audit: resolvedAudit)
         self.localNetworkAccess = localNetworkAccess
         self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
         self.runningCopy = runningCopy
         self.acknowledgementTimeout = acknowledgementTimeout
-        self.audit = audit ?? {
-            HostLog.shared.write($0, "continuity", $1)
-        }
+        self.audit = resolvedAudit
         localNetworkAccess?.onDirectAccessReady = { [weak self] in
             self?.localNetworkAccessBecameReady()
         }
