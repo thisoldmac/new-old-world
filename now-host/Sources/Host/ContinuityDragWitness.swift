@@ -112,10 +112,28 @@ struct ContinuityDragWitnessReport: Equatable, Sendable {
     var endedAt: TimeInterval
     var hidHeldAtEnd: Bool
     var sessionHeldAtEnd: Bool
+    /// The hit test the ARM itself read, kept from the moment the synthetic
+    /// primary down went out. It is the answer `catchSurfaceAtSeed` always
+    /// claimed to be carrying and never was.
+    ///
+    /// Nil only when a session was seeded without ever going through the arm
+    /// — which is a fact worth its own word rather than a blank.
+    var catchSurfaceAtArm: ContinuityCatchHitTest?
     /// Whether the catch surface — the drag SOURCE's own window — was still
     /// the window at the seed point when the session ended. A source window
     /// that moved out from under a live drag is the other way a session ends
     /// without anybody releasing anything.
+    ///
+    /// SAMPLED AT THE END, at the seed POINT. Both halves of that sentence
+    /// matter and for one round only the second was in the label. On
+    /// 2026-08-16 17:22 the arm line said `ownsPoint=yes` and this field,
+    /// printed as `catchSurfaceAtSeed`, said `ownsPoint=no` for the same
+    /// gesture 900 ms later — two readers of what looked like one question,
+    /// and a reader had no way to know they were asking at different times.
+    /// They are BOTH true: the strip owns the point while it catches the
+    /// crossing, and by the end of the session it has been made
+    /// drop-through and the window underneath has the point back. So the
+    /// fix is a name and a second field, not a changed reading.
     var catchSurface: ContinuityCatchHitTest?
     var ownPID: Int64
 
@@ -167,7 +185,9 @@ struct ContinuityDragWitnessReport: Equatable, Sendable {
         "host drag session end witness: elapsed=\(elapsedMilliseconds)ms, "
             + "\(witness.counts), hidHeldAtEnd=\(hidHeldAtEnd ? 1 : 0), "
             + "sessionHeldAtEnd=\(sessionHeldAtEnd ? 1 : 0), "
-            + "catchSurfaceAtSeed="
+            + "catchSurfaceAtArm="
+            + (catchSurfaceAtArm?.summary ?? "never armed")
+            + ", catchSurfaceAtEnd="
             + (catchSurface?.summary ?? "not asked")
             + " — \(verdict)"
     }

@@ -24,13 +24,17 @@ final class ContinuityDragWitnessTests: XCTestCase {
     private static func report(
         _ witness: ContinuityDragWitness, seededAt: TimeInterval = 100,
         endedAt: TimeInterval = 102, hidHeldAtEnd: Bool = true,
-        sessionHeldAtEnd: Bool = false
+        sessionHeldAtEnd: Bool = false,
+        atArm: ContinuityCatchHitTest? = ContinuityCatchHitTest(
+            serverTopWindowNumber: 3089, panelWindowNumber: 3089),
+        atEnd: ContinuityCatchHitTest? = ContinuityCatchHitTest(
+            serverTopWindowNumber: 3089, panelWindowNumber: 3089)
     ) -> ContinuityDragWitnessReport {
         ContinuityDragWitnessReport(
             witness: witness, seededAt: seededAt, endedAt: endedAt,
             hidHeldAtEnd: hidHeldAtEnd, sessionHeldAtEnd: sessionHeldAtEnd,
-            catchSurface: ContinuityCatchHitTest(serverTopWindowNumber: 3089,
-                                                 panelWindowNumber: 3089),
+            catchSurfaceAtArm: atArm,
+            catchSurface: atEnd,
             ownPID: ourPID)
     }
 
@@ -143,9 +147,55 @@ final class ContinuityDragWitnessTests: XCTestCase {
         witness.record(Self.event(type: 6, at: 101))
         let summary = Self.report(witness).summary
         XCTAssertTrue(summary.contains("elapsed=2000ms"), summary)
-        XCTAssertTrue(summary.contains("catchSurfaceAtSeed=serverTopWindow"
+        XCTAssertTrue(summary.contains("catchSurfaceAtArm=serverTopWindow"
+                                       + "=3089"), summary)
+        XCTAssertTrue(summary.contains("catchSurfaceAtEnd=serverTopWindow"
                                        + "=3089"), summary)
         XCTAssertTrue(summary.contains("hidHeldAtEnd=1"), summary)
         XCTAssertTrue(summary.contains("sessionHeldAtEnd=0"), summary)
+    }
+
+    /// THE 2026-08-16 17:22 WITNESS INCONSISTENCY, pinned.
+    ///
+    /// That log carried, 900 ms apart for one gesture, an arm line saying
+    /// `ownsPoint=yes` and a witness field printed as `catchSurfaceAtSeed`
+    /// saying `ownsPoint=no`. Neither was wrong. The strip owns the seed
+    /// point while it is catching the crossing, and by the time the session
+    /// ends it has been made drop-through and the window underneath owns the
+    /// point again — so a report that prints only the second reading, under a
+    /// name that claims the first, makes two true answers look like a
+    /// contradiction a reader must resolve.
+    ///
+    /// The guard is that BOTH times appear and that neither is labelled with
+    /// the other's name. `catchSurfaceAtSeed` must not survive anywhere in
+    /// the sentence, or the ambiguity survives with it.
+    func testTheArmAndTheEndAreTwoReadingsWithTwoNames() {
+        var witness = ContinuityDragWitness(installed: true)
+        witness.record(Self.event(type: 6, at: 101))
+        let summary = Self.report(
+            witness,
+            atArm: ContinuityCatchHitTest(serverTopWindowNumber: 7810,
+                                          panelWindowNumber: 7810),
+            atEnd: ContinuityCatchHitTest(serverTopWindowNumber: 30,
+                                          panelWindowNumber: 7810)).summary
+        XCTAssertTrue(summary.contains("catchSurfaceAtArm=serverTopWindow"
+                                       + "=7810, panelWindow=7810, "
+                                       + "ownsPoint=yes"), summary)
+        XCTAssertTrue(summary.contains("catchSurfaceAtEnd=serverTopWindow"
+                                       + "=30, panelWindow=7810, "
+                                       + "ownsPoint=no"), summary)
+        XCTAssertFalse(summary.contains("catchSurfaceAtSeed"), summary)
+    }
+
+    /// A session that reached the drag without ever going through the arm is
+    /// a different fact from one whose arm read nothing, and the sentence
+    /// says which. `nil` here used to be indistinguishable from a hit test
+    /// that ran and found no owner.
+    func testASessionThatNeverArmedSaysSoRatherThanReadingBlank() {
+        var witness = ContinuityDragWitness(installed: true)
+        witness.record(Self.event(type: 6, at: 101))
+        let summary = Self.report(witness, atArm: nil).summary
+        XCTAssertTrue(summary.contains("catchSurfaceAtArm=never armed"),
+                      summary)
     }
 }

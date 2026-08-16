@@ -261,6 +261,9 @@ final class ContinuityEdgeController: ObservableObject {
     private var dragWitness: AnyObject?
     private var dragSeededAt: TimeInterval = 0
     private var dragSeedPoint: CGPoint = .zero
+    /// The arm's own catch-surface reading, kept past the pending state that
+    /// produced it so the end-of-session witness can print both times.
+    private var catchSurfaceAtArm: ContinuityCatchHitTest?
     private var announcedOwnDragRefusal = false
     private var heldGesture: HeldGestureCustody?
     /// The last button state any sample reported. The escape chord arrives
@@ -309,6 +312,10 @@ final class ContinuityEdgeController: ObservableObject {
         /// is the scarce thing, and what is late is the arm.
         var heldEvent: NSEvent?
         var armAttempts = 0
+        /// The hit test the arm actually succeeded on. Carried forward so the
+        /// end-of-session witness can print the arm's own reading beside a
+        /// fresh one instead of printing the fresh one under the arm's name.
+        var catchSurfaceAtArm: ContinuityCatchHitTest?
     }
 
     /// After this many samples without the window server handing the seed
@@ -1055,6 +1062,8 @@ final class ContinuityEdgeController: ObservableObject {
         }
         audit(.info, "the catch surface owns the seed point: \(verdict), "
             + "samples=\(waiting.armAttempts)")
+        waiting.catchSurfaceAtArm = hit
+        catchSurfaceAtArm = hit
         if environment.postSyntheticPrimaryButton(down: true,
                                                   at: waiting.returnPoint) {
             audit(.info, "session button state re-armed: synthetic primary "
@@ -1295,6 +1304,7 @@ final class ContinuityEdgeController: ObservableObject {
                 seededAt: dragSeededAt, endedAt: uptime(),
                 hidHeldAtEnd: physicalPrimaryButtonHeld(),
                 sessionHeldAtEnd: sessionPrimaryButtonHeld(),
+                catchSurfaceAtArm: catchSurfaceAtArm,
                 catchSurface: nil, ownPID: hostProcessIdentifier())
         }
         dragWitness = nil
@@ -1305,6 +1315,7 @@ final class ContinuityEdgeController: ObservableObject {
             seededAt: dragSeededAt, endedAt: uptime(),
             hidHeldAtEnd: physicalPrimaryButtonHeld(),
             sessionHeldAtEnd: sessionPrimaryButtonHeld(),
+            catchSurfaceAtArm: catchSurfaceAtArm,
             catchSurface: fileEdge.map {
                 environment.catchSurfaceHitTest($0, at: dragSeedPoint)
             },
