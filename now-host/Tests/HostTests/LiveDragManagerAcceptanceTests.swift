@@ -160,10 +160,14 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
                 + "\(outcome.text)", file: file, line: line)
     }
 
-    private func write(bytes: Int, label: String) throws -> URL {
+    /// `ext` is a PARAMETER because the extension decides the offer's
+    /// type and creator (`OutboundFile.classicType`), and that is a
+    /// property under test rather than a detail of the fixture.
+    private func write(bytes: Int, label: String,
+                       ext: String = "bin") throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(
-                "now-slice2-\(label)-\(UUID().uuidString).bin")
+                "now-slice2-\(label)-\(UUID().uuidString).\(ext)")
         try Data(repeating: 0x4E, count: bytes).write(to: url)
         return url
     }
@@ -512,13 +516,39 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
         }
 
         let control = AgentIntegrationContinuityOfferControl(listener: listener)
-        let small = try write(bytes: 4096, label: "drop")
+        // `.txt`, NOT `.bin`, AND THE DIFFERENCE IS THE OFFER'S IDENTITY.
+        // `OutboundFile.classicType` maps `.bin` to (nil, nil) — it is the
+        // one extension in that table with no type and no creator — so a
+        // `.bin` fixture publishes an offer the guest can only promise as
+        // '????'/'????'. Whether a Finder that cannot classify a promised
+        // file declines to ask for it is exactly the open question, and
+        // testing the drop with the one fixture that provokes it measures
+        // two things at once. A MacBinary offer legitimately carries no
+        // type either, and that case is owed its own test — but it is not
+        // the case this one is for.
+        let small = try write(bytes: 4096, label: "drop", ext: "txt")
         defer { try? FileManager.default.removeItem(at: small) }
-        guard case .published = control.publish(
+        guard case .published(let item) = control.publish(
             fileAt: small, epoch: 525_256, generation: 1) else {
             return XCTFail("publish failed")
         }
-        let expectedName = small.lastPathComponent
+        // THE GUEST'S OWN NAME FOR IT, not this Mac's. `OutboundFile.plan`
+        // projects every name through `ClassicName` — 31 MacRoman bytes,
+        // no colons, a fingerprint appended when truncation costs
+        // addressability — so a UUID-bearing fixture arrives as something
+        // like `now-slice2-drop-BE85C8#0A0E.txt`. Asserting the host's
+        // `lastPathComponent` against the guest's Desktop could never
+        // match: this case would have failed on a working drop, and its
+        // paired `before` check would have passed vacuously, which is a
+        // guard that reads as coverage while proving nothing either way.
+        let expectedName = item.name
+        print("=== offer published as \(expectedName) "
+              + "type=\(item.fileType ?? "nil") "
+              + "creator=\(item.creator ?? "nil") ===")
+        XCTAssertEqual(item.fileType, "TEXT",
+                       "the fixture must publish a REAL type, or this case "
+                           + "cannot distinguish an unclassifiable promise "
+                           + "from a Finder that never asks")
 
         // THE GUEST'S DESKTOP BEFORE, so what lands is what THIS test put
         // there. A file already present would otherwise read as a pass.
@@ -561,7 +591,15 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
             try await Task.sleep(nanoseconds: 30_000_000)
         }
 
-        let armed = await execLine("offer --drag")
+        // THE EXPERIMENT MASK, AND IT IS SCAFFOLD. `NOW_DRAG_X=N` appends
+        // the guest's diagnostic switch to this line so one booted guest
+        // answers several hypotheses in a row — a build/spin/boot cycle
+        // is ~20 minutes and reading one bit per cycle is how a slice
+        // like this eats a week. Unset, the line is the product's.
+        let mask = ProcessInfo.processInfo.environment["NOW_DRAG_X"]
+        let dragLine = mask.map { "offer --drag --x=\($0)" } ?? "offer --drag"
+        print("=== drag line: \(dragLine) ===")
+        let armed = await execLine(dragLine)
         assertConsoleSaid(armed, contains: "armed",
                           "the arm must be placed before the button moves, "
                               + "or this measures nothing")
@@ -597,7 +635,7 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
 
         let report = await execLine("offer")
         print("=== report after the drop: \(report.text) ===")
-        let log = await runCommand("tail", line: "30")
+        let log = await runCommand("tail", line: "50")
         print("=== guest log after the drop ===")
         print(String(describing: log.output))
 
