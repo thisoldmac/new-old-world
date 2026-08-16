@@ -7,6 +7,92 @@ search:
 
 # Open issues
 
+## UNVERIFIED, ENVIRONMENTAL: two host gates on this Mac make each other red (2026-08-16, `chore/recover-034-orphans`)
+
+`LoggingSpecTests.testALineMatchesTheFormatTheSpecDefines` failed once in
+this arc with `line did not match the spec's format: 19:04:26 cloud  #156
+photos: 16 rows` — a line the test never wrote. It writes one line to
+`HostLog.shared`'s file and asserts the LAST line of that file matches the
+format. The file is per-USER, not per-run, so any other process writing it
+between the write and the read supplies the line under test.
+
+The other process was named: an `xcodebuild` for the `hg-edge-custody`
+worktree's host scheme, running concurrently. The same test passes in
+isolation seconds later, and nothing in this branch touches host logging.
+
+It is the same shape as the rule that already governs metal — *a gate must
+check WHICH machine answered* — one layer down and inside one Mac: a gate
+whose oracle is a shared mutable file is answerable by a neighbour. Left
+open rather than fixed here, because the fix belongs to whoever owns that
+test: read back a line the test can identify as its own (the `#7` id is
+already there and already unique) rather than whichever line happens to be
+last.
+
+## FIXED, EMULATOR-VERIFIED: the receive windoid was owned by ONE lane, not by the RX protocol (2026-08-16, `chore/recover-034-orphans`)
+
+G11a's floating receive windoid (`receive_progress.c`, 6d3d74d7) says a file
+is landing whether or not the Workshop is open, and it is meant to belong to
+the receive protocol itself: *"any files it's receiving should show it."* It
+belonged to one lane.
+
+There are two inbound lanes on the PowerPC guest. `g_put` is the push lane —
+`file.offer`, which carries a host push, an update transfer, and a
+cloud.get's answer. `g_get` is the pull lane — `file.get`, which carries a
+page's own download **and a continuity grab**, because
+`now_wire_get_offer`'s own comment says everything past the send is the
+ordinary pull. `now_wire_receive_active` read `g_put` and nothing else.
+
+Every pull the Files and Cloud pages ask for is drawn by the page that asked,
+which is why nothing noticed: the only *un*attended pull is the one nobody
+asks for from a page — a person's drag from the Mac to the Macintosh.
+
+Measured before the fix, on this lane's own emulator (run 87665, base
+`now-mirror-stage.qcow2` sha256 `8db8ddc2…`, this tree's app and ext staged
+into a session-private clone, resident sourceManifest `0b83a0e1666b`):
+
+| path | how it was driven | windoid |
+|---|---|---|
+| host push | `file.offer` + bulk, 600 KB, no page open | **shown** — "Receiving / Windoid Push / 49 of 586 K (8%)", bar, Stop |
+| continuity grab | `continuity.offer` + `offer --take`, 600 KB | **not one pixel changed** for the whole transfer |
+| update transfer | not driven | *see below* |
+
+After the fix, same rig, app restaged and relaunched (build stamp moved
+`ec32cf2e` → `dfd037e7`), three grabs on fresh names: windoid shown every
+time — "Receiving / Diag File / 78 of 391 K (20%)" — and 2.5 s after
+`file.end` it still read "Received Second Grab - it is in Desktop Folder"
+with Stop dimmed, so the ending reaches a person too. The push path was
+re-run after the change and is unaffected.
+
+The fix is at the seam, not in a page, which is the design's whole point:
+`g_get` gains `unattended`, set at the two entry points (true for the grab,
+false for a page's pull); `now_wire_receive_active` answers for an
+unattended pull as well and reports `is_pull`, because the two lanes stop
+differently and a Stop button must send the right cancel; `get_note` feeds
+`rx_outcome` for an unattended pull only.
+`receive_windoid_owns_both_lanes_source_test.py` pins all four facts and was
+watched failing against each separately.
+
+### What this entry does NOT claim
+
+- **The update transfer was not driven.** It rides `g_put` through the same
+  `serve_file_offer` with `from_cloud_get` false, so `now_wire_receive_active`
+  cannot tell it from the push that was proven — but that is an argument from
+  code, not a measurement, and driving it would have installed an update over
+  the app under test. Unverified.
+- **The Drag Manager promise path was not changed and was not driven.** The
+  `offer --take` grab and a Finder drop send the same `continuity.grab` down
+  the same lane, but the drop's receive runs inside `drag_receive_promise`'s
+  nested loop, in a `SendDataProc` within `TrackDrag`, which pumps the wire
+  and dispatches no update events. A window opened there would show a frame
+  it never fills. Deliberately left alone; it needs its own attended pass.
+- **An unattended pull that fails BEFORE its first byte still says nothing.**
+  Reproduced twice: a grab whose name had already landed in the Desktop
+  Folder sent the `continuity.grab`, and the pull never began — no `get` line
+  in the ring at all. The control that isolates it is the same epoch with a
+  fresh name, which succeeds. The outcome now reaches `rx_outcome`, but the
+  windoid only opens for a receive that became *active*, so a refusal is
+  written to a window that never opens. Separate defect, separate fix.
+
 ## CORRECTED BY DERIVATION: the "17 TrackDrag cycles" anomaly is a misread counter (2026-08-16, `feat/hg-drag-edge-custody`)
 
 Addendum 2 of `plan-resident-drag-plane-2026-08-16.md` made settling this the
@@ -2073,6 +2159,40 @@ this lane gets tested success-first for exactly that reason.
 ## TESTED, THE ONE DELIBERATE REGRESSION UNWATCHED: Mirror consent is one switch on the Mac, planes on the host (2026-08-15, `claude/034w5-mirror`, closes plan 034 G-7)
 
 Mirror consent (plan 034 G-7, 2026-08-15). The guest's half of the two-key consent is now ONE master switch; the four per-plane guest gates retired and the host's plane policy is the sole granularity. Both sides must still permit — the guest's veto is untouched, only its granularity moved. Field fates, all decided explicitly: `policy.enabled` is new and required; `structure`/`finderComplements`/`content`/`foregroundCycle` are retired but STILL SENT by a current guest, all four set to the master, because a host built before this change declares them required and would fail to decode the entire facts object without them. A host reading a guest that predates `enabled` collapses the four by the guest's own migration rule (consent only when ALL FOUR were on), stated once per side because two sides guessing differently would grant a permission that Mac's own preferences deny, silently, since every plane would simply work. Prefs reach V29; the V22 slots stay and are written from the master, so the rule is its own inverse and a file round-trips through a format-28 build unchanged. UNVERIFIED, and it is the interesting half: the migration is conservative by design, so almost every existing preferences file collapses to consent OFF — only structure was ever on by default — meaning a person who upgrades finds mirroring refused until they tick one box, and nobody has watched that happen on a real machine. Also unverified on metal: the host's `content` plane default flipped to OFF to inherit the guest's old default (P3 is metal-proven to crash the Finder on the PB1400c), so a fresh pair of machines should behave exactly as before; that equivalence is argued from code, not observed. Neither guest page nor host page has been seen rendered — no emulator or metal pass ran for this change.
+
+## RESOLVED: the DMG assembler no longer uses the deprecated `hdiutil create` (2026-08-15, `build/dmg-diskutil-migration`)
+
+`scripts/assemble-release :: create_dmg` now shells out to `diskutil
+image create from --format UDZO --volumeName "New Old World" <source>
+<destination>`. The flags did map across after all: `UDZO` is one of
+`diskutil`'s own accepted format names, `-volname` becomes
+`--volumeName`, and the source folder and destination become positional.
+Both spellings were built from the same stub folder and compared on
+macOS 27 — UDIF read-only compressed (zlib), GUID partition scheme, APFS
+filesystem, symlinks carried across rather than dereferenced — so this
+is an equivalent image, not a similar one.
+
+The `tools/release-tests` mount-and-inspect case gained the assertion the
+swap actually needed: the drag-to-install `/Applications` alias is a
+symlink with that exact target. A builder that dereferenced it would
+still produce a DMG that mounts and passes every other assertion. Both
+halves were watched failing — a mutation that made the alias a real
+directory, and one that pointed it elsewhere.
+
+The gate clones `HEAD` rather than reading the worktree, which is worth
+knowing before trusting it: the first green run of this change tested
+the unmodified committed script and proved nothing. Commit, then run.
+
+Not closed by this: `tools/release/image.py` still calls `hdiutil
+create` for the generic classic-Mac setup image, and cannot move. It
+needs `-fs HFS+`, `-size` and `-layout NONE`; `diskutil image create
+from` has no equivalent of any of the three and produces APFS only.
+Worse, `diskutil listFilesystems` on macOS 27 no longer offers an HFS+
+personality at all, so the replacement tool has retired the capability
+the classic image depends on rather than merely not grown it yet. That
+is a different problem from this one, tracked as
+[issue #28](https://github.com/thisoldmac/new-old-world/issues/28), and
+it is unsolved rather than deferred.
 
 ## EMULATOR-OBSERVED AT BEST, METAL NOT AT ALL: 034 wave 4 — the Files cocktail, one name rule, files drop in from outside (2026-08-15, five lanes merged, gate green)
 

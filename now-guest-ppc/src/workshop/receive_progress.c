@@ -54,6 +54,11 @@ static Boolean g_dismissed;
 static long g_dismissed_seq;
 static unsigned long g_dwell_until;    /* 0 while the receive is live */
 static char g_name[64];
+/* Which lane this one is on, sampled with the receive itself: the Stop
+   button has to send the right cancel, and by the time it is pressed
+   the answer can only be re-read from a lane that may already be
+   somebody else's. */
+static Boolean g_is_pull;
 
 static void text_rect(Rect *out)
 {
@@ -280,7 +285,8 @@ Boolean now_receive_progress_click(const EventRecord *event, short part)
     {
         char why[128];
 
-        if (now_wire_put_cancel(why, sizeof why) != 0) {
+        if ((g_is_pull ? now_wire_get_cancel(why, sizeof why)
+                       : now_wire_put_cancel(why, sizeof why)) != 0) {
             /* It ended between the press and the release. Say so in the
                window rather than beeping at a person who did nothing
                wrong. */
@@ -302,12 +308,13 @@ void now_receive_progress_idle(void)
 {
     long received = 0, expected = 0;
     Boolean cloud_get = false;
+    Boolean is_pull = false;
     char name[64];
     char line[120];
     Boolean active;
 
     active = now_wire_receive_active(&received, &expected, &cloud_get,
-                                     name, (long)sizeof name);
+                                     name, (long)sizeof name, &is_pull);
     if (active && cloud_get) {
         /* The Cloud page already draws its own downloads, correlated to
            the cloud.get that asked for them. Drawing them here as well
@@ -324,6 +331,7 @@ void now_receive_progress_idle(void)
             return;                   /* still the one they closed */
         }
         g_dismissed = false;
+        g_is_pull = is_pull;
         /* Sampled BEFORE the window exists, so an outcome left over from
            an earlier transfer cannot be shown as this one's. */
         g_outcome_seq = now_wire_receive_outcome(NULL, 0);

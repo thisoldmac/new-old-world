@@ -3817,6 +3817,13 @@ static struct {
                                           landed in, resolved once at
                                           get_begin so get_end's outcome
                                           names the same place */
+    /* Nobody is watching this one. A pull a PAGE asked for is drawn by
+       that page (now_wire_get_active, and conn_set_get_note's hook); a
+       continuity grab is a person's drag with no page involved at all,
+       and until this flag existed it landed in total silence. Set at
+       the two entry points rather than inferred here, because "which
+       caller asked" is the fact and the lane's state is not. */
+    Boolean unattended;
     FileReceive rx;
     unsigned long deadline;
 } g_get;
@@ -3863,6 +3870,15 @@ static void get_note(const char *line)
 {
     if (g_get_note != NULL) {
         g_get_note(line);
+    }
+    /* An unattended pull has no page holding this hook, so its ending —
+       and especially its failure — would be said to nobody. Feeding the
+       same line into the receive lane's outcome is what lets the
+       windoid replace its bar with how it went, exactly as a push
+       already does. Attended pulls are left alone: their page is the
+       one place that ending belongs. */
+    if (g_get.unattended) {
+        rx_outcome(line);
     }
 }
 
@@ -3976,6 +3992,7 @@ int now_wire_get_host(const char *path, const char *name, char *err, long cap)
     ++g.offer_seq;
     g_get.id = g.offer_seq;
     g_get.expected = 0;
+    g_get.unattended = false;         /* a page asked; a page draws it */
     snprintf(g_get.name, sizeof g_get.name, "%.31s", name != NULL ? name : "");
     snprintf(json, sizeof json,
              "{\"type\":\"file.get\",\"id\":%ld,\"path\":\"%s\"}",
@@ -4031,6 +4048,10 @@ int now_wire_get_offer(long *id_out, char *err, long cap)
     ++g.offer_seq;
     g_get.id = g.offer_seq;
     g_get.expected = 0;
+    /* No page asked for this and none will draw it: the grab is a
+       person's drag (or `offer --take`), so the receive windoid is the
+       only thing that will say a file is landing. */
+    g_get.unattended = true;
     snprintf(g_get.name, sizeof g_get.name, "%.31s", offer->item.name);
     snprintf(json, sizeof json,
              "{\"type\":\"continuity.grab\",\"version\":%u,\"id\":%ld,"
@@ -4728,10 +4749,34 @@ Boolean now_wire_update_relaunch_required(void)
    show ITS download and ignore an unrelated push. */
 Boolean now_wire_receive_active(long *received, long *expected,
                                 Boolean *cloud_get,
-                                char *name, long name_cap)
+                                char *name, long name_cap,
+                                Boolean *is_pull)
 {
     if (!g_put.active) {
-        return false;
+        /* The other inbound lane. Answered here rather than by a second
+           entry point a caller must remember to also ask, because a
+           receive nobody is drawing is exactly the case that shipped
+           invisible once already — and it shipped invisible on THIS
+           side of the same question. */
+        if (!g_get.receiving || !g_get.unattended) {
+            return false;
+        }
+        if (received != NULL) {
+            *received = g_get.rx.received;
+        }
+        if (expected != NULL) {
+            *expected = g_get.expected;
+        }
+        if (cloud_get != NULL) {
+            *cloud_get = false;
+        }
+        if (name != NULL && name_cap > 0) {
+            snprintf(name, (size_t)name_cap, "%s", g_get.name);
+        }
+        if (is_pull != NULL) {
+            *is_pull = true;
+        }
+        return true;
     }
     if (received != NULL) {
         *received = g_put.rx.received;
@@ -4744,6 +4789,9 @@ Boolean now_wire_receive_active(long *received, long *expected,
     }
     if (name != NULL && name_cap > 0) {
         snprintf(name, (size_t)name_cap, "%s", g_put.name);
+    }
+    if (is_pull != NULL) {
+        *is_pull = false;
     }
     return true;
 }

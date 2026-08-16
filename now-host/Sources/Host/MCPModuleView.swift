@@ -433,7 +433,6 @@ struct MCPModuleView: View {
                     + "New Old World executable runs in a narrow stdio mode "
                     + "and reaches this app through its same-user socket.",
                 state: model.stdio,
-                startsAutomatically: $settings.stdioStartsAutomatically,
                 start: startStdio,
                 stop: stopStdio,
                 details: { endpoint in
@@ -448,7 +447,6 @@ struct MCPModuleView: View {
                     + "inside New Old World, binds only to loopback, and "
                     + "requires the private bearer token saved by this app.",
                 state: model.http,
-                startsAutomatically: $settings.httpStartsAutomatically,
                 start: startHTTP,
                 stop: stopHTTP,
                 details: { _ in
@@ -464,7 +462,6 @@ struct MCPModuleView: View {
         title: String,
         summary: String,
         state: MCPTransportState,
-        startsAutomatically: Binding<Bool>,
         start: (() -> Void)?,
         stop: (() -> Void)?,
         @ViewBuilder details: (String) -> Details,

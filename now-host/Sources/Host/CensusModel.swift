@@ -222,62 +222,6 @@ final class CensusModuleModel: ObservableObject, GuestScopedModel {
         return next
     }
 
-    /// Creates the image on the guest first, then uses the ordinary reverse
-    /// file stream to land it in Downloads. The ROM command owns only the
-    /// classic File Manager read; transfer, progress and integrity keep the
-    /// same contract as every other guest download.
-    func dumpROM() {
-        guard isConnected, !romDumpState.isRunning else { return }
-        romDumpState = .writing
-        listener.runScheduledCommand(
-            "romdump", typed: nil, purpose: .command("romdump"),
-            workClass: .humanInteractive, watchdogSeconds: 60
-        ) {
-            [weak self] result in
-            guard let self else { return }
-            guard result.ok else {
-                self.romDumpState = .failed(
-                    result.error?.message ?? "The Mac could not create its ROM dump.")
-                return
-            }
-            self.romDumpState = .transferring
-            self.listener.getFile(
-                path: "New Old World ROM.bin", container: "data",
-                stagingDirectory: self.romDumpDirectory) { [weak self] delivery in
-                    guard let self else { return }
-                    switch delivery {
-                    case .failure(let failure):
-                        self.romDumpState = .failed(failure.message)
-                    case .success(let file):
-                        do {
-                            let destination = self.uniqueROMDumpURL()
-                            try FileConverter.materialize(
-                                name: file.name, container: file.container,
-                                fileType: file.fileType, staged: file.staged,
-                                to: destination)
-                            self.romDumpState = .saved(destination)
-                        } catch {
-                            self.romDumpState = .failed(
-                                "Could not save the ROM dump: "
-                                + error.localizedDescription)
-                        }
-                    }
-                }
-        }
-    }
-
-    private func uniqueROMDumpURL() -> URL {
-        let base = "New Old World ROM"
-        var candidate = romDumpDirectory.appendingPathComponent(base + ".bin")
-        var suffix = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = romDumpDirectory.appendingPathComponent(
-                "\(base) (\(suffix)).bin")
-            suffix += 1
-        }
-        return candidate
-    }
-
     var isConnected: Bool {
         if case .connected = connection { return true }
         return false

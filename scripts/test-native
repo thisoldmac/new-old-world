@@ -398,6 +398,11 @@ run_py now-guest-ppc continuity_nested_pump_source_test.py
 # send-data UPP being made rather than cast, no DragRef left un-disposed
 # - plus the three-file agreement on which acts `offer` has.
 run_py now-guest-ppc continuity_dragmgr_source_test.py
+# One owner for every inbound file, both lanes. A continuity grab rides
+# the PULL lane, no page asked for it, and until 2026-08-16 the receive
+# windoid read only the push lane - measured on the emulator, 600 KB
+# landing without one pixel changing.
+run_py now-guest-ppc receive_windoid_owns_both_lanes_source_test.py
 # The Finder-selection poll's three gates and its caller. All four are
 # Toolbox or ordering properties a host cc cannot reach: no epoch means
 # no poll, a held button means no poll, and being called from

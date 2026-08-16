@@ -773,7 +773,7 @@ static void view_idle(const CloudLayout *r)
     int value = -1;
 
     if (now_wire_receive_active(&received, &expected, &from_get,
-                                NULL, 0)
+                                NULL, 0, NULL)
         && from_get) {
         value = cloud_dl_bar_value(received, expected);
         moving = value >= 0;
