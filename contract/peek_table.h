@@ -1414,6 +1414,18 @@ enum { kNowPeekDragObsContextCapacity = 8 };
    may be held would be a table whose silence means two things. */
 enum { kNowPeekDragObsRegCapacity = 8 };
 
+/* How many applications are counted by name. */
+enum { kNowPeekDragObsPumpCapacity = 8 };
+
+/* One application's traffic through the shim. 44 bytes flat, like the
+   registration row, so neither compiler has padding to disagree about. */
+typedef struct {
+    NowPeekU32 a5;
+    NowPeekU32 passes;            /* every pass, ungated */
+    NowPeekU32 armed_passes;      /* those with a plane armed */
+    unsigned char name[32];       /* CurApName, Pascal */
+} NowPeekDragObsPump;
+
 /* One registration, named. `name` is CurApName as the pumping process had
    it - Pascal, and 32 bytes so this struct is a flat 40 with no padding
    for either compiler to disagree about (the three-compiler rule). */
@@ -1596,6 +1608,21 @@ typedef struct {
        findings and the counters above cannot separate them. */
     NowPeekU32 reg_count;         /* attempts ever made, uncapped */
     NowPeekDragObsReg regs[kNowPeekDragObsRegCapacity];
+    /* ---- V17: WHO PUMPS, ungated, in two buckets --------------------
+       The attempt rows above are written only on an ARMED pass, so their
+       silence for an application has two readings: it never pumped, or it
+       pumped and the arm predicate was false in its context. Those are a
+       scheduling problem and a code problem respectively, and nothing
+       above can separate them.
+
+       So this table is written BEFORE the arm gate, on every pass, and
+       carries both totals. `passes` says the application reaches this
+       shim at all; `armed_passes` says it reached it while a plane was
+       armed. Finder rows with passes > 0 and armed_passes == 0 is the
+       predicate; passes == 0 is scheduling, and then the answer is not in
+       this plane at all. */
+    NowPeekU32 pump_count;        /* distinct applications seen, uncapped */
+    NowPeekDragObsPump pumps[kNowPeekDragObsPumpCapacity];
 } NowPeekDragObserve;
 
 /* V10's non-overwriting button timing chain. All times are guest TickCount
@@ -2779,7 +2806,9 @@ _Static_assert(offsetof(NowPeekDragObserve, reg_count) == 2156,
                "V16 registry is APPENDED: the V14+V15 halves must be unmoved");
 _Static_assert(sizeof(NowPeekDragObsReg) == 44,
                "V16 registration row layout (three-compiler rule)");
-_Static_assert(sizeof(NowPeekDragObserve) == 2512,
+_Static_assert(sizeof(NowPeekDragObsPump) == 44,
+               "V17 pump row layout (three-compiler rule)");
+_Static_assert(sizeof(NowPeekDragObserve) == 2868,
                "drag observer block ABI drift (V14 trap + V15 handler + V16 registry)");
 _Static_assert(offsetof(NowPeekDragObserve, file_name) == 136,
                "V14 drag observer name offset");
@@ -2787,7 +2816,7 @@ _Static_assert(offsetof(NowPeekDragObserve, samples) == 200,
                "V14 drag observer sample ring offset");
 _Static_assert(sizeof(((NowPeekDragObserve *)0)->file_name) == 64,
                "V14 drag observer name width");
-_Static_assert(sizeof(NowPeekContinuityCell) == 6964,
+_Static_assert(sizeof(NowPeekContinuityCell) == 7320,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");

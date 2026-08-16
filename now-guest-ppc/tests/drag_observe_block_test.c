@@ -155,6 +155,19 @@ int main(void)
               > offsetof(NowPeekDragObserve, tracks),
           "the registry is appended at the TAIL: every preceding offset "
           "must be unmoved by it");
+    check(sizeof(NowPeekDragObsPump) == 44,
+          "a pump row must be a flat 44 bytes");
+    check(offsetof(NowPeekDragObsPump, armed_passes)
+              == offsetof(NowPeekDragObsPump, passes) + 4,
+          "no padding between the two pass buckets");
+    check(offsetof(NowPeekDragObserve, pumps)
+              > offsetof(NowPeekDragObserve, regs),
+          "the pump table is appended after the registry: every preceding "
+          "offset must be unmoved by it");
+    check(sizeof(obs->pumps)
+              == (unsigned long)kNowPeekDragObsPumpCapacity
+                 * sizeof(NowPeekDragObsPump),
+          "the pump table holds exactly its declared capacity");
     check(sizeof(obs->regs)
               == (unsigned long)kNowPeekDragObsRegCapacity
                  * sizeof(NowPeekDragObsReg),

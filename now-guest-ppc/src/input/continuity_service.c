@@ -582,6 +582,40 @@ static void drain_drag_observe(const NowPeekContinuityCell *cell)
                         (long)reg->err, rname);
             }
         }
+        /* V17. WHO PUMPS, in two buckets. This is the line that says
+           whether an application reaches the plane at all and whether it
+           reached it while armed - a Finder row with passes>0 and
+           armed=0 is the predicate, passes=0 is scheduling. */
+        {
+            NowPeekU32 rows = obs->pump_count;
+            NowPeekU32 n;
+
+            if (rows > (NowPeekU32)kNowPeekDragObsPumpCapacity)
+                rows = (NowPeekU32)kNowPeekDragObsPumpCapacity;
+            for (n = 0; n < rows; ++n) {
+                const NowPeekDragObsPump *pm = &obs->pumps[n];
+                char pname[32];
+                unsigned len = (unsigned)pm->name[0];
+                unsigned i;
+
+                if (len > 30u)
+                    len = 30u;
+                for (i = 0; i < len; ++i) {
+                    unsigned char c = pm->name[i + 1u];
+
+                    pname[i] = (c < 0x20u || c > 0x7Eu) ? '.' : (char)c;
+                }
+                pname[len] = '\0';
+                now_log(kLogInfo, "mirror",
+                        "drag handler pump n=%lu/%lu a5=%08lx passes=%lu "
+                        "armed=%lu app=%s",
+                        (unsigned long)(n + 1u),
+                        (unsigned long)obs->pump_count,
+                        (unsigned long)pm->a5,
+                        (unsigned long)pm->passes,
+                        (unsigned long)pm->armed_passes, pname);
+            }
+        }
         gLastHandlerState = obs->handler_state;
         gLastHandlerInstalls = obs->handler_installs;
         gLastHandlerCalls = obs->handler_calls;

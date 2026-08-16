@@ -324,6 +324,56 @@ static void track_note(NowPeekDragObserve *block, NowPeekU32 a5, NowPeekI32 err)
     block->reg_count++;
 }
 
+/* V17. Count this pass against whatever application is pumping, BEFORE
+   any gate. See the contract: the attempt rows cannot tell "never pumped"
+   from "pumped while the predicate was false", and this can. */
+static void pump_note(NowPeekDragObserve *block, NowPeekU32 a5, int armed)
+{
+    NowPeekU32 i;
+    NowPeekDragObsPump *row = (NowPeekDragObsPump *)0;
+
+    for (i = 0; i < block->pump_count
+                && i < (NowPeekU32)kNowPeekDragObsPumpCapacity; ++i) {
+        if (block->pumps[i].a5 == a5) {
+            row = &block->pumps[i];
+            break;
+        }
+    }
+    if (row == (NowPeekDragObsPump *)0) {
+        if (block->pump_count >= (NowPeekU32)kNowPeekDragObsPumpCapacity) {
+            block->pump_count++;      /* uncapped, so overflow is visible */
+            return;
+        }
+        row = &block->pumps[block->pump_count];
+        {
+            /* Through a volatile: low memory is the SYSTEM's storage, not
+               an array the compiler declared. */
+            volatile unsigned long opaque = (unsigned long)LMGetCurApName();
+            const unsigned char *src = (const unsigned char *)opaque;
+            short len = 0;
+            short j;
+
+            row->a5 = a5;
+            row->passes = 0;
+            row->armed_passes = 0;
+            for (j = 0; j < 32; ++j)
+                row->name[j] = 0;
+            if (src != NULL) {
+                len = (short)src[0];
+                if (len > 30)
+                    len = 30;
+                for (j = 0; j <= len; ++j)
+                    row->name[j] = src[j];
+                row->name[0] = (unsigned char)len;
+            }
+        }
+        block->pump_count++;
+    }
+    row->passes++;
+    if (armed)
+        row->armed_passes++;
+}
+
 static void track_install(NowPeekDragObserve *block, NowPeekU32 a5)
 {
     OSErr err;
@@ -553,6 +603,12 @@ void now_ext_dragobs_gne(NowPeekTable *table, NowPeekU32 request)
     continuity_armed = cell->enabled
         && (cell->state == (NowPeekU32)kNowPeekContinuityStateArmed
             || cell->state == (NowPeekU32)kNowPeekContinuityStateActive);
+    /* V17, and it is BEFORE the gate on purpose - that is the whole
+       instrument. Counted for every application that reaches here,
+       whether or not anything is armed. */
+    pump_note(&cell->drag_observe, (NowPeekU32)LMGetCurrentA5(),
+              continuity_armed
+                  || (request & (NowPeekU32)kNowPeekTableCapAct) != 0);
     if (!continuity_armed
             && !(request & (NowPeekU32)kNowPeekTableCapAct)) {
         /* THE DISARM HALF, and it is the reason this function does not
