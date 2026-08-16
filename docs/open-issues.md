@@ -7,6 +7,156 @@ search:
 
 # Open issues
 
+## REPRODUCED IN THE EMULATOR, THE HOST NOW SAYS IT, SELF-RESCUE STILL DOES NOT WORK: a foreign application's modal alert stops Continuity dead (2026-08-16, attended metal + emulator, `fix/continuity-modal-starvation`)
+
+**What happened on metal.** Internet Explorer was launched on the guest
+with too small a memory partition. Its out-of-memory alert came up — an
+ordinary `Alert`/`ModalDialog` loop in **IE's** context. From that
+moment Continuity was dead: no pointer, no clicks, no wire service, and
+the person could not click the alert's own OK button over the wire to
+get out of it.
+
+### The mechanism, from the source
+
+Continuity V3 moved placement into the application deliberately
+(resident 1.17, after six PowerBook wedges — resident-components.md >
+P9), and `continuity_intake.c :: now_continuity_take_report` states it
+in a sentence that is now also the defect:
+
+> Every ordinary and nested wire pump services the resident from this
+> application's cooperative context. No Time Manager or global jGNE
+> path performs Continuity placement.
+
+So every link of the Continuity input chain except the first hangs off
+`now_continuity_service_invoke`, and every caller of that is NOW's own
+task time.
+
+### What was measured, and on what
+
+Emulator, `mac99` OS 9.1, session-private clone of the shared stage
+image (sha256 `8db8ddc2de99…`, receipt-accounted, volume clean), this
+checkout's app and resident staged and cold-booted: guest build
+`4e7f6404953a`, resident `sourceManifest d400b6ce0237` /
+`buildFingerprint b74b992f87a2`, capabilities 1023. Lane ports
+19080/19081, run dir `/private/tmp/nowvm-modalstarve`, guest-clean
+shutdown with the volume cleanly unmounted. Instrument:
+`tools/local-continuity-modal-starve.py`, artifacts under
+`modal-run1/` and `modal-run2/` beside the run's `provenance.md`.
+
+The foreign modal is the Finder's unknown-creator alert
+(docs/raising-the-unknown-creator-modal.md), which is a real
+application's real `ModalDialog` and not an instrument's loop.
+
+| | run 1 — alert raised with its owner ALREADY in front | run 2 — alert raised behind NOW, owner then brought forward |
+|---|---|---|
+| acknowledgements through a 30 s window | **42** of 788 sent | **1** of 818 sent |
+| the guest's own `wirestat pass max` | — | **30,060,017 µs**: the event loop did not run once |
+| the drawn pointer | followed the host (screendump: at the streamed point) | did not move |
+| a Continuity click on the alert's own OK | **did not dismiss it** | **did not dismiss it** |
+| how it was actually cleared | QMP `send-key ret` | QMP `send-key ret` |
+
+**The two runs are the same arrangement and they behaved differently**,
+which is worth recording rather than smoothing: raising the alert while
+NOW was frontmost, so the Notification Manager posted its "the Finder
+needs your attention" bar, and only then fronting its owner, is what
+produced the total wedge. Raised with the owner already frontmost it
+was a tax — twenty times slower, never silent, exactly the shape
+`local-modal-starve.py` measured for Date & Time on 2026-08-06. A third
+attempt at the tax arrangement wedged instead. **So the tax/wedge line
+is not the arrangement this lane thought it was**, and nothing here
+should be quoted as "a Finder modal taxes" or "a Finder modal wedges"
+without saying which run.
+
+**Self-rescue does not work today, in either regime.** That is the half
+that matters most and it is the clearest result: a press and a release
+addressed to the alert's own default button changed nothing, including
+in run 1 where the application had time and the pointer was visibly
+following. The verdict is a pixel comparison of the alert's own text
+region between two screendumps, because the first version of the
+instrument asked whether acknowledgements resumed after the click and
+answered *yes* while the screendump beside it showed the alert exactly
+where it had been — a question whose answer is the same when nothing
+happened is not a measurement.
+
+**One question this run did NOT answer, contrary to what its first
+draft claimed.** Whether the OT notifier keeps accepting datagrams
+while the application is starved is still open. The ACK's
+`arrivalTicks` looked like the instrument for it, but `prepare_ack`
+fills that field from `shared->last_arrival_ticks`, which the
+**resident** writes when it consumes a packet — not from
+`shared->arrival_ticks`, which the **notifier** writes when it accepts
+one. A stale stamp is equally consistent with a notifier that never ran
+and a notifier that published into a cell nobody read. Nothing that
+reaches the wire distinguishes them; answering it needs a
+notifier-side counter carried in `continuity.report`.
+
+### What was fixed, and at which layer
+
+**The host now says it.** `MirrorContinuityController` already knew this
+exact split — acknowledgements starved while resident liveness answers —
+and put one vague line on the Continuity page. It now escalates once, at
+ten seconds, through the same notification-and-flash seam a drag refusal
+uses (`CaptureNotifier.announce(continuityStarvation:)`,
+`HostAppState.announceContinuityStarvation`), with the status line and
+the notification handed the same string. Ten seconds rather than three,
+because the three-second line is short enough that an ordinary tracking
+loop trips it and a person trained to ignore it would ignore the one
+that matters. The sentence says what is known, and says plainly that
+Continuity cannot press the button for them — that last clause is the
+one that changes when the plane below does. Four mutations were watched
+failing for their own named reasons.
+
+**Nothing else was fixed, on purpose.** Every remaining layer is in
+`ext/`, which another lane holds.
+
+### The design for self-rescue, for whoever owns `ext/` next
+
+The chain is: host UDP → OT notifier (application, deferred-task) →
+shared cell → resident service → low-memory mouse globals +
+`PPostEvent` → the foreign modal's own `GetNextEvent`. Under starvation
+the two ends are alive and the middle is not, and **the missing link is
+priming, not capability**: the resident's Continuity button task is a
+Time Manager task (`now_ext_continuity_tm.S`), and a Time Manager task
+fires whoever is scheduled — but it is `PrimeTime`d from
+`now_ext_continuity_service`, which only NOW's task time calls. So the
+vehicle that would survive is switched off by the thing that does not.
+
+The shape of the fix is P6's, and P6 exists for this precise reason:
+*let the task re-prime itself while an epoch is armed and an unconsumed
+packet is pending, rather than only when the application asks.* P6's
+own rules carry over intact and are the reason it is a small change
+rather than a new plane — it must not consult the three-second writer
+lease (a starved application cannot renew one, so gating on it retires
+the vehicle at the moment it becomes the only thing running), and it
+must stand itself down on a long silence rather than on the
+application's health.
+
+Two things it deliberately would not buy, both worth stating before
+anyone builds it:
+
+- **The drawn cursor will not follow.** Moving the sprite is Cursor
+  Device Manager work that V3 moved into the application after it wedged
+  the machine six times from interrupt context; it stays there. But the
+  low-memory globals are what tracking loops and `FindWindow` read, so a
+  press can still land on the right control while the arrow sits
+  elsewhere. That is P8's finding read backwards, and it means
+  self-rescue would be a **blind** click — acceptable for dismissing an
+  alert, and it should be described that way rather than sold as
+  Continuity continuing to work.
+- **It does not restore the wire.** Full wire service during a foreign
+  modal is a deeper change than this and is not in scope for one lane;
+  the honest product behaviour meanwhile is the sentence above, which is
+  the thing this lane could finish.
+
+And one thing to establish before building any of it, because the
+evidence above cannot: **whether `PPostEvent` from the resident's
+interrupt-time task lands in the FOREIGN application's queue or in
+NOW's.** Run 1 is the reason to ask — the application had time, the
+pointer followed, and the click still did nothing, which is what posting
+into the wrong process's queue looks like. If that is the cause, the
+priming fix alone will not produce self-rescue, and the honest order is
+to answer that first.
+
 ## FIXED AND TESTED, NOT METAL-VERIFIED: the epoch teardown erased the settled release on SLOW drags only (2026-08-15 18:47 round, `fix/continuity-press-origin-loss`)
 
 **The snap-back worked, except when the person dragged slowly — then the

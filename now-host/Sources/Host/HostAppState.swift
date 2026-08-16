@@ -103,6 +103,16 @@ final class HostAppState: ObservableObject {
         notifier.announce(continuityDragRefusal: message)
         dragRefusalFeedback?(message)
     }
+
+    /// The starvation counterpart, through the same two surfaces. It is not
+    /// folded into `announceDragRefusal` because the two are different
+    /// facts — one drag was refused, versus the whole Mac has stopped
+    /// answering — and a notification titled "File drag refused" for the
+    /// second would be a third draft of neither.
+    private func announceContinuityStarvation(_ message: String) {
+        notifier.announce(continuityStarvation: message)
+        dragRefusalFeedback?(message)
+    }
     /// The guest whose saved continuity settings are currently loaded.
     /// Link events for another connected Mac must not reset active ownership.
     private var continuityGuestKey: GuestKey?
@@ -407,6 +417,9 @@ final class HostAppState: ObservableObject {
             refusal: { [weak self] message in
                 self?.announceDragRefusal(message)
             })
+        continuity.onStarvation = { [weak self] message in
+            self?.announceContinuityStarvation(message)
+        }
         if settings.listenAtLaunch {
             startListening()
         }

@@ -207,6 +207,60 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(rig.controller.phase, .arming)
     }
 
+    /* THE FOREIGN-MODAL SENTENCE. A guest inside another application's
+       modal alert stops acknowledging while the resident's Time Manager
+       liveness keeps answering — the exact split these two tests hold the
+       controller to. Reproduced on the emulator 2026-08-16 (guest
+       `4e7f6404953a`): `wirestat` reported `pass max 30,060,017 us` across a
+       30 s window, so the guest's event loop did not run once, and one
+       acknowledgement arrived out of 818 datagrams sent. */
+    func testProlongedStarvationIsAnnouncedOnceWithWhatToDo() async throws {
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.2, starvationAnnounceAfter: 0.6)
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+        var announced: [String] = []
+        rig.controller.onStarvation = { announced.append($0) }
+
+        try await waitUntil("the starvation announcement") {
+            !announced.isEmpty
+        }
+        let message = try XCTUnwrap(announced.first)
+        /* Not a spelling test: each clause is a separate promise the page
+           and the notification both make. What is known (the Mac is silent
+           but running), and what the person can do about it (dismiss it
+           themselves, because Continuity cannot). */
+        XCTAssertTrue(message.contains("has not answered"), message)
+        XCTAssertTrue(message.contains("still running"), message)
+        XCTAssertTrue(message.contains("Dismiss it at the Mac"), message)
+        XCTAssertEqual(message, rig.controller.status,
+                       "the status line and the notification must be the "
+                       + "same sentence, never two drafts of it")
+
+        try await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertEqual(announced.count, 1,
+                       "a two-minute modal is one notification, not sixty")
+    }
+
+    func testBriefStarvationIsNotAnnouncedAtAll() async throws {
+        /* The status line already changes at `acknowledgementTimeout`, which
+           is short enough that an ordinary tracking loop — a menu held down,
+           a window being dragged — trips it. Escalating there would train a
+           person to ignore the one that matters. */
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.2, starvationAnnounceAfter: 30)
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+        var announced: [String] = []
+        rig.controller.onStarvation = { announced.append($0) }
+
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        XCTAssertTrue(announced.isEmpty,
+                      "announced a one-second stall: \(announced)")
+        XCTAssertTrue(rig.controller.status.contains("busy in another"),
+                      rig.controller.status)
+    }
+
     private struct ArmingRig {
         let guest: FakeGuest
         let controller: MirrorContinuityController
@@ -219,6 +273,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         fastPump: Bool = false,
         deepClickLog: Bool = false,
         acknowledgementTimeout: TimeInterval = 3,
+        starvationAnnounceAfter: TimeInterval = 10,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
         let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
@@ -231,7 +286,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
 
         let controller = MirrorContinuityController(
             listener: listener, defaults: defaults,
-            acknowledgementTimeout: acknowledgementTimeout, audit: audit)
+            acknowledgementTimeout: acknowledgementTimeout,
+            starvationAnnounceAfter: starvationAnnounceAfter, audit: audit)
         controller.autoReconnect = autoReconnect
         controller.fastPump = fastPump
         controller.deepClickLog = deepClickLog
@@ -255,6 +311,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         autoReconnect: Bool = false,
         fastPump: Bool = false,
         acknowledgementTimeout: TimeInterval = 3,
+        starvationAnnounceAfter: TimeInterval = 10,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ActiveRig {
         let port = try XCTUnwrap(listener.boundPort)
@@ -264,7 +321,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         let rig = try await makeArmingRig(
             initial: initial, autoReconnect: autoReconnect,
             fastPump: fastPump,
-            acknowledgementTimeout: acknowledgementTimeout, audit: audit)
+            acknowledgementTimeout: acknowledgementTimeout,
+            starvationAnnounceAfter: starvationAnnounceAfter, audit: audit)
         try rig.guest.send(.continuityReport(.init(
             version: ContinuityContract.version,
             id: rig.arm.id, epoch: rig.arm.epoch, state: "armed",
