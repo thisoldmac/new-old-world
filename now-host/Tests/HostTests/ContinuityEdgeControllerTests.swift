@@ -1074,6 +1074,42 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .ready)
     }
 
+    /// The host→guest sibling of the grab-side refusal sink test: this Mac
+    /// dragging a file TOWARD the guest with no scene to resolve against
+    /// used to end at `audit(.warn, …)` alone — a line in the log and
+    /// nothing on screen, which a metal run on 2026-08-16 read as
+    /// "host→guest is not working". `refusal` is the seam
+    /// `HostAppState` wires to a system notification plus the menu-bar
+    /// flash; this pins that it fires, with the exact sentence the log
+    /// already carries.
+    func testNoSceneDropRefusalReachesTheRefusalClosureByName() throws {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        let listener = GuestListener(
+            identity: .init(version: "test", name: "Host"))
+        defer { listener.stop() }
+        let fileTransfer = MirrorFileTransferModel(listener: listener)
+        var refusals: [String] = []
+        ContinuityFileDrag.configure(
+            edge: controller,
+            fileTransfer: fileTransfer,
+            scene: { nil },
+            refusal: { refusals.append($0) })
+        controller.start()
+
+        let callbacks = try XCTUnwrap(environment.fileCallbacks)
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450)))
+        controller.transportPhaseChanged(.active)
+
+        XCTAssertFalse(callbacks.dropped(.init(name: .drag)))
+        XCTAssertEqual(refusals, [ContinuityFileDrag.noSceneReason],
+                       "the refusal closure must carry the exact sentence "
+                           + "the log already names — no second draft")
+    }
+
     /// The same claim against the REAL wiring: the app installs the seam on
     /// its own edge controller, with no module page touched. The test above
     /// proves the seam behaves; this proves somebody actually installs it,

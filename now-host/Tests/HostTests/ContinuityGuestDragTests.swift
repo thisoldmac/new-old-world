@@ -1530,6 +1530,91 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertEqual(sunk, [transfer.notice])
     }
 
+    /// `refusalSink` is the narrower sibling `ContinuityFileDrag.configure`
+    /// wires to a system notification plus the menu-bar flash — the two
+    /// surfaces a person mid-drag is actually looking at, not the
+    /// Continuity page's own status line. It must fire with the SAME
+    /// sentence `outcomeSink` gets, so a notification banner and the status
+    /// line can never disagree about why a drag ended.
+    func testAWrongFileRefusalReachesTheRefusalSinkTooWithTheSameSentence()
+        throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                completion(.failure(.init(code: "stale-selection",
+                                          message: "the selection changed")))
+            })
+        var refused: [String] = []
+        transfer.refusalSink = { refused.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        _ = fulfill(transfer, to: staging.appendingPathComponent("Read Me"),
+                   stub: stub)
+
+        XCTAssertEqual(refused, [transfer.notice],
+                       "the refusal sink must carry exactly the sentence "
+                           + "the status line got, never a second draft")
+    }
+
+    /// The negative half of the test above: a grab that SUCCEEDS must not
+    /// ring the refusal sink. Firing it on success would interrupt a
+    /// person with a notification for the ordinary case where their file
+    /// arrived exactly as asked — the opposite of what `refusalSink` exists
+    /// to be narrower than `outcomeSink` for.
+    func testACompletedGrabDoesNotReachTheRefusalSink() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let destination = staging.appendingPathComponent("Read Me")
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in completion(.success(delivery)) })
+        var refused: [String] = []
+        transfer.refusalSink = { refused.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        _ = fulfill(transfer, to: destination, stub: stub)
+
+        XCTAssertTrue(refused.isEmpty,
+                      "a completed grab must not ring the refusal sink")
+    }
+
+    /// The third way a grab ends badly: the wire honoured the redemption
+    /// but this Mac could not WRITE what arrived — a destination directory
+    /// that no longer exists is the easiest way to force `FileConverter
+    /// .materialize` to throw. This must reach `refusalSink` exactly like
+    /// a wire refusal does; a person watching for "did my drag fail" does
+    /// not care which half of the trip went wrong.
+    func testAWriteFailureAfterAHonouredGrabAlsoReachesTheRefusalSink()
+        throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        let vanished = staging.appendingPathComponent(
+            "gone-\(UUID().uuidString)", isDirectory: true)
+        let destination = vanished.appendingPathComponent("Read Me")
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in completion(.success(delivery)) })
+        var refused: [String] = []
+        transfer.refusalSink = { refused.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        let thrown = fulfill(transfer, to: destination, stub: stub)
+
+        XCTAssertNotNil(thrown,
+                        "writing into a directory that does not exist "
+                            + "must actually fail, or this test proves "
+                            + "nothing")
+        XCTAssertEqual(refused, [transfer.notice])
+    }
+
     /// The eager fetch (started at press time) and the promise-fallback
     /// redemption (started at drop time) can both reach the wire for the
     /// SAME generation when the eager fetch has not finished by drop —
