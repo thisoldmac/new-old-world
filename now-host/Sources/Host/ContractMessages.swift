@@ -313,12 +313,35 @@ struct ContinuitySelection: Codable, Equatable, Sendable {
     /* Optional at the decoder for the same reason every other Continuity
        message treats it so: a missing version must become a readable
        wrong-version answer, not an undecodable frame. */
+    /// Which gesture produced this generation. See the contract's `source`.
+    ///
+    /// `drag` is the item the Drag Manager handed the guest at drag begin,
+    /// with no selection consulted — a stronger fact than the poll can
+    /// produce, and one that may legitimately name a file the Finder does
+    /// not have selected.
+    enum Source: String, Codable, Sendable {
+        case selection
+        case drag
+    }
+
+    /* Optional at the decoder for the same reason every other Continuity
+       message treats it so: a missing version must become a readable
+       wrong-version answer, not an undecodable frame. */
     var version: Int?
     var epoch: UInt32
     var generation: UInt32
+    /// Absent means `selection`: a guest built before the field existed had
+    /// only the poll. Decoded as an optional rather than defaulted at the
+    /// property so an UNKNOWN value is an undecodable frame rather than a
+    /// silent demotion to `selection` — a future third source must not be
+    /// bound as if it were a poll.
+    var source: Source?
     /// Absent means nothing is selected — an instruction to drop whatever
     /// was cached, not a poll that found nothing to say.
     var item: Item?
+
+    /// What this generation is, with the contract's default applied once.
+    var resolvedSource: Source { source ?? .selection }
 }
 
 /// Serve the item one `ContinuitySelection` generation named — or, sent

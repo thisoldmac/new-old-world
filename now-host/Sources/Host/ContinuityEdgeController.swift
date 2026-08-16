@@ -676,6 +676,20 @@ final class ContinuityEdgeController: ObservableObject {
                    (mark.appliedAt - pressed.downSentAt) * 1_000)
         }
         switch verdict {
+        case .dragged(let mark):
+            /* THE RITUAL IS DEAD HERE. Not the press's selection, not an
+               inference from when something arrived — the item the Drag
+               Manager handed the Mac at the instant this drag began. It is
+               bound whatever the cache says, and the line names what it
+               replaced so that a disagreement is visible rather than
+               merely resolved: a stale cache and a fresh drag disagreeing
+               is the ORDINARY case for a file nobody selected first. */
+            audit(.info, "binding this cross to the drag itself: "
+                + "epoch=\(mark.epoch), generation=\(mark.generation), "
+                + "published \(age(mark)) by the Mac's drag plane, "
+                + "replacing "
+                + "\(pressed.mark.map { "generation \($0.generation)" } ?? "nothing")")
+            guestFileCandidate = guestSelectionItem()
         case .bound(let mark):
             audit(.info, "this cross carries the selection its press was "
                 + "made under: epoch=\(mark.epoch), "
