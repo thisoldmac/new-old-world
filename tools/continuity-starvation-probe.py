@@ -57,6 +57,10 @@ MENU_TITLE = (44, 8)
 # Far from any pulled-down menu. Releasing here selects nothing, which is the
 # difference between a probe and the incident it reproduces.
 SAFE_RELEASE = (600, 400)
+# The old notifier cap. A drain that never exceeded it is a drain that was
+# never behind, which means task time was never starved and the hold proved
+# nothing - see FOREIGN_APP below for the way that happens silently.
+SOFT_CAP = 8
 
 # Deliberately two patterns over two log lines: the guest truncates a log
 # line near 110 characters, and a regex spanning that edge would silently stop
@@ -150,8 +154,24 @@ def arrival_report(wire, epoch, pages=3):
     return None, "\n".join(seen)[-2000:]
 
 
-def hold_menu(udp, nonce_hi, nonce_lo, epoch, hold_s, hz, acks):
-    """Press a menu title, keep sending through the hold, release safely."""
+def hold_menu(udp, nonce_hi, nonce_lo, epoch, hold_s, hz, acks, burst):
+    """Press a menu title, keep sending through the hold, release safely.
+
+    WHY THE STREAM IS BURSTY, and why that is the faithful stimulus rather
+    than a cheat. The defect is not "a fast sender": it is a drain that ENDS
+    OWING WORK while task time is unreachable. On this emulator NOW's OT
+    notifier keeps up with a level 60 Hz stream one or two datagrams at a
+    time, so no drain ever reaches its bound, no debt is ever handed over,
+    and a five-second hold reads healthy from a build with the bug in it -
+    measured, twice, before this argument was written down.
+
+    A slower machine produces the pile-up from interrupt latency alone; the
+    PowerBook did. Here it is produced deliberately, by sending a group
+    back-to-back, which is also what a real host's coalesced position, button
+    and keepalive traffic looks like arriving after a network hiccup. What
+    the guest sees is identical either way: more datagrams queued than one
+    drain was allowed to take.
+    """
     seq = [0]
     generation = [0]
 
@@ -173,10 +193,16 @@ def hold_menu(udp, nonce_hi, nonce_lo, epoch, hold_s, hz, acks):
 
     generation[0] = 1
     press_at = time.time()
+    next_burst = press_at + 0.5
     while time.time() - press_at < hold_s:
         # A point or two of jitter inside the title: a live host never sends a
         # perfectly static stream, and a coalescing resident may ignore one.
         wobble = int((time.time() - press_at) * 4) % 3
+        if time.time() >= next_burst:
+            for step in range(burst):
+                send(MENU_TITLE[0] + (step % 3), MENU_TITLE[1], True, seq[0])
+            next_burst = time.time() + 0.5
+            continue
         send(MENU_TITLE[0] + wobble, MENU_TITLE[1], True, seq[0])
         time.sleep(1.0 / hz)
     held_for = time.time() - press_at
@@ -204,9 +230,22 @@ def main():
     ap.add_argument("--hold", type=float, default=5.0,
                     help="seconds to hold the menu; must exceed the lease")
     ap.add_argument("--hz", type=float, default=60.0)
+    ap.add_argument("--burst", type=int, default=24,
+                    help="datagrams sent back-to-back twice a second during "
+                         "the hold; must exceed the old cap of 8 or no drain "
+                         "ever ends owing work (see hold_menu)")
     ap.add_argument("--lease-ticks", type=int, default=90,
                     help="what the real host arms (90 ticks = 1.5s)")
     ap.add_argument("--artifacts", required=True)
+    ap.add_argument("--front", default="Finder",
+                    help="the FOREIGN application whose menu is held; NOW "
+                         "itself is not one, and using it makes the run "
+                         "vacuous")
+    ap.add_argument("--expect-build",
+                    help="prefix of the guest build hash this run is about. "
+                         "A restage can fail and leave the PREVIOUS build "
+                         "answering - it did here, and the old build passed "
+                         "the control run because it was never replaced.")
     ap.add_argument("--expect", choices=("survives", "freezes"),
                     default="survives",
                     help="'freezes' inverts the verdict, for watching a "
@@ -220,6 +259,10 @@ def main():
                              name="continuity-starvation-probe")
     wire.accept(wait=240)
     result["build"] = str(wire.hello.get("build") or "")
+    if args.expect_build and not result["build"].startswith(args.expect_build):
+        raise SystemExit(
+            f"wrong guest build: {result['build']!r} does not start with "
+            f"{args.expect_build!r}")
 
     ext = ((wire.command("mirror").get("output") or {}).get("mirror")
            or {}).get("extension") or {}
@@ -260,13 +303,38 @@ def main():
             "no acknowledgement arrived during warm-up: nothing was reaching "
             "the guest, so a later 'no lease expiry' would mean nothing")
 
+    # --- A FOREIGN APPLICATION MUST BE IN FRONT, AND THIS IS NOT A DETAIL ---
+    #
+    # The first run of this probe held a menu for five seconds and reported a
+    # healthy epoch from a build with the fix and, identically, from one
+    # without it. NOW was frontmost: its own nested loops pump the wire by
+    # design (pump.h), so the press opened NOW's menu and task time never
+    # stopped. The rig reproduced nothing and said "survives" both times.
+    #
+    # So the front process is asserted, by name, out of the guest's own `ps`.
+    ok, front_text = wire.exec_line(f"front {args.front}")
+    result["front"] = front_text.strip()[:200]
+    if not ok or "frontmost" not in front_text:
+        raise SystemExit(
+            f"could not bring {args.front} to the front: {front_text!r}; "
+            "a hold against NOW's own menu tests the pump, not the notifier")
+    time.sleep(1.0)
+    ok, ps_text = wire.exec_line("ps")
+    if not re.search(rf"{re.escape(args.front)}\s+\S+[^,]*, front", ps_text):
+        raise SystemExit(
+            f"{args.front} is not frontmost in the guest's own ps: {ps_text!r}")
+
     # --- the run itself ---
     epoch = 2
     acks = []
     exits = []
     arm(wire, nonce_hi, nonce_lo, epoch, args.lease_ticks)
+    if args.burst <= SOFT_CAP:
+        raise SystemExit(
+            f"--burst {args.burst} cannot outrun the old cap of {SOFT_CAP}; "
+            "no drain would end owing work and the hold would prove nothing")
     run = hold_menu(udp, nonce_hi, nonce_lo, epoch,
-                    args.hold, args.hz, acks)
+                    args.hold, args.hz, acks, args.burst)
     result.update(run)
     result["acks"] = len(acks)
     result["accepted_before_press"] = run["acks_before_press"]
@@ -296,6 +364,17 @@ def main():
              or result["lease_expired_in_ack"])
     result["froze"] = froze
     result["verdict"] = "freezes" if froze else "survives"
+    # WAS THERE ANYTHING TO SEE. A hold that never let a backlog build did not
+    # starve the application, and a healthy reading from it is the emptiness
+    # of the rig rather than the health of the endpoint. Either the notifier
+    # had to drain past the old cap, or the epoch had to die - anything else
+    # is an unarmed instrument reporting success.
+    result["rig_reproduced"] = bool(froze or report["burst"] > SOFT_CAP)
+    if not result["rig_reproduced"]:
+        raise SystemExit(
+            f"the hold never starved the application: burst-max="
+            f"{report['burst']} never passed the old cap of {SOFT_CAP} and "
+            "the epoch survived. This run says nothing about the fix.")
 
     out = os.path.join(args.artifacts, "continuity-starvation.json")
     with open(out, "w") as handle:

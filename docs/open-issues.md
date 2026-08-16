@@ -7,6 +7,93 @@ search:
 
 # Open issues
 
+## FIXED AND EMULATOR-VERIFIED: a held menu in a FOREIGN app froze `arrival_ticks` and the lease released the button (2026-08-16, `fix/continuity-arrival-starvation`)
+
+**A menu the person merely opened selected an item they never chose**
+(metal, 2026-08-16: it launched Internet Explorer). The
+`fix/continuity-deadman-liveness` diagnosis named the mechanism and this
+arc settled the evidence for it, then closed it application-side.
+
+**The evidence.** `~/Library/Logs/now-logs/2026-08-16 125237.log` is the
+incident session (wire connect to `10.91.5.47`, human-scale timing; the
+`131901.log` beside it is fixture traffic — every epoch is 1 and the
+reasons are control-version scenarios). Five epochs there end
+`guest ended Continuity: reason=UDP acknowledgements stopped`, and **two
+of them are followed by the guest's own
+`state=exited, reason=lease-expired`** — epoch 14 at 13:10:38/13:10:40 and
+epoch 23 at 13:13:48/13:13:50. Each follows a held press within about
+three seconds; four of the five follow a `menu=1` press on the guest's
+menu bar. So lease-expiry is CONFIRMED as a releasing mechanism.
+
+One correction to the reading it deserves: the host's ack-silence watchdog
+and the guest's lease are two independent verdicts on one cause, and the
+host's fires FIRST in the log only because the guest cannot send its
+report while starved. Both stop because ACK sending is task-time work
+(`try_send_ack` — `OTSndUData` is deliberately absent from the notifier),
+and task time is exactly what a foreign nested loop withholds.
+
+**The hole, and why the 2026-08-15 wedge fix did not cover it.** That fix
+drains the endpoint to `kOTNoDataErr` and hands any residue to a task-time
+poll from the pumps. Inside a foreign application's held-button nested
+loop NOW's cooperative context does not run at all, so the poll is
+unreachable for the length of the hold — and `T_DATA` is edge-triggered,
+so one capped or errored notifier drain silences the endpoint until the
+person lets go.
+
+**The fix is application-side and needs no resident change.** The drain's
+bound is now a question about the CALLING CONTEXT
+(`now-guest-ppc/src/input/continuity_drain_logic.h`): a drain may stop
+early only where somebody is guaranteed to finish it — task time, whose
+next event-loop pass resumes, or a notifier that preempted a running
+task-time drain. Otherwise it drains to quiet under a ceiling. Two error
+exits that could also leave data unread with no recovery — a bare
+`err != noErr`, and `clear_pending_event()` failing — now retry within a
+small budget instead of returning. Every epoch ends by reporting the
+arrival age the lease was deciding on, beside the drain endings, so a
+future misfire names its own starvation.
+
+**Emulator evidence, and the two ways the rig lied first.** Private mac99
+clone off the shared stage image, this checkout's ext and app, Finder
+frontmost, File menu held open 5.0s with the wire alive:
+
+| | fixed (`e6ebd5bf…`) | pre-fix control (`28e3f89b…`) |
+|---|---|---|
+| notifier drain high-water | **26** | **8** — the old cap, exactly |
+| drains that ended owing work with no finisher | 0 | **1** |
+| `arrival_ticks` age at disarm | **1 tick** | 5, and `owed=1` |
+| lease expiry in an ACK | no | **yes** (`exitReason=3`) |
+| datagrams delivered | 577 | 424 |
+
+Both readings are worth keeping, because the rig read healthy twice
+before it read anything true:
+
+- **NOW was frontmost.** Its own nested loops pump the wire by design, so
+  the press opened NOW's menu and task time never stopped. The probe now
+  asserts a foreign application is frontmost out of the guest's own `ps`.
+- **A level 60 Hz stream never starved anything.** This emulator's
+  notifier keeps up one or two datagrams at a time, so no drain reached
+  its bound and a build WITH the bug passed. The defect is a drain that
+  ends owing work, not a rate, so the probe now sends bursts; a run whose
+  high-water never passes the old cap REFUSES to report a verdict.
+- And a failed restage left the previous build answering the control run,
+  which is the "which build answered" rule collecting again — hence
+  `--expect-build`.
+
+`tools/continuity-starvation-probe.py`; artifacts and the rig table in
+`docs/local/continuity-starvation/`.
+
+**What is NOT fixed, and belongs to the resident/host batch.** ACKs still
+stop during a hold, because sending one is task-time work and moving
+`OTSndUData` into the notifier is the flow-controlled call that twice
+stopped the cooperative OS. So the host's ~3s ack-silence watchdog will
+still end a long hold even though the guest is now hearing perfectly —
+which is a milder failure than releasing the button into a menu, and a
+different one. Closing it needs either a resident-side ACK path or a
+host-side watchdog that can tell silence from starvation.
+
+**Unverified:** metal. Everything above is Tested + emulator-verified; no
+one has watched this on the PowerBook.
+
 ## FIXED AND TESTED, NOT METAL-VERIFIED: the epoch teardown erased the settled release on SLOW drags only (2026-08-15 18:47 round, `fix/continuity-press-origin-loss`)
 
 **The snap-back worked, except when the person dragged slowly — then the
