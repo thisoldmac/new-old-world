@@ -92,6 +92,17 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
 
     @Published private(set) var activity: Activity?
     @Published private(set) var notice: String?
+    /// Where a terminal FAILURE of a host→guest copy is said out loud
+    /// somewhere a person is actually looking.
+    ///
+    /// `notice` is not that place and was never wired to be: the detached
+    /// Mirror window renders no view observing it, so on 2026-08-16 a
+    /// name-collision refusal reached this object and stopped. Deliberately
+    /// the same shape as `ContinuityGrabTransfer.outcomeSink`, which exists
+    /// for the same reason in the opposite direction — a sink rather than a
+    /// binding, because the surface that must show it (a notification, the
+    /// menu-bar flash) is not a view of this model.
+    var outcomeSink: ((String) -> Void)?
     var connection: GuestConnectionState = .disconnected
 
     private let listener: GuestListener
@@ -199,6 +210,52 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
             receivePromisedHostFile(receiver, target: target)
         }
         return true
+    }
+
+    /// **THE HOST HALF OF THE SILENT COLLISION.** Metal, 2026-08-16: a file
+    /// dropped onto the guest whose name already existed there did nothing
+    /// and said nothing.
+    ///
+    /// The guest was never at fault and neither was the wire.
+    /// `now_files_receive_begin_at` returns `kFilesExists`, `wire.c` refuses
+    /// `code=exists` with a reason, and this Mac receives it. It died HERE,
+    /// twice over: the failure arm assigned `notice` and nothing else — no
+    /// `HostLog`, so a metal round had no line to find — and the detached
+    /// Mirror window renders no view that observes `notice`, so the sentence
+    /// reached no person either. Two independent routes to the same silence,
+    /// which is why neither showed up as a suspect.
+    ///
+    /// This closes the log half and hands the person half to `outcomeSink`,
+    /// the same seam `ContinuityGrabTransfer` already uses for exactly this
+    /// class of terminal outcome one edge over.
+    /// The sentence, as a pure function, so a test can read it without a
+    /// listener, a guest, or a log file — the seam this file already uses
+    /// for `wireTarget` and `wireSource`.
+    static func hostFileFailureAudit(code: String, name: String,
+                                     reason: String)
+        -> (level: HostLog.LogLevel, body: String) {
+        guard code == "exists" else {
+            return (.warn, "host file refused by the guest: code=\(code), "
+                + "name=\(name), reason=\(reason)")
+        }
+        /* NOT "cancelled", and not "replaced". Nobody was asked. That
+           vocabulary belongs to the replace dialog (docs/open-issues.md, the
+           collision ruling), and spending its words now on a refusal no
+           person authored would make the dialog's arrival invisible in the
+           log — the reader could not tell a person's decision from this
+           Mac's silence. The line is meant to read as a defect, because it
+           is one. */
+        return (.warn, "collision: refused-without-asking name=\(name) — the "
+            + "guest already has a file by this name and nobody was given "
+            + "the choice; the replace dialog is not built yet")
+    }
+
+    private func reportHostFileFailure(_ failure: GuestListener.FileFailure,
+                                       name: String) {
+        let line = Self.hostFileFailureAudit(code: failure.code, name: name,
+                                             reason: failure.message)
+        HostLog.shared.write(line.level, "continuity", line.body)
+        outcomeSink?(failure.message)
     }
 
     private func enqueueHostFiles(
@@ -511,6 +568,7 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
                         self.startNextHostFile()
                     case .failure(let failure):
                         self.notice = failure.message
+                        self.reportHostFileFailure(failure, name: plan.name)
                         self.discardQueuedHostFiles()
                     }
                 }

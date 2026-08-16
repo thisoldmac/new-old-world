@@ -72,6 +72,13 @@ enum ContinuityFileDrag {
         /// this seam without one keeps behaving exactly as before.
         refusal: ((String) -> Void)? = nil
     ) {
+        /* THE HOST→GUEST HALF OF THE SAME SEAM, and it is wired
+           unconditionally rather than inside the `selection`/`grab` pair
+           below, because a copy toward the guest fails on its own terms and
+           does not need either of those lanes to exist. Without it a
+           name-collision refusal reached MirrorFileTransferModel and stopped
+           there — see `reportHostFileFailure`. */
+        fileTransfer.outcomeSink = refusal
         if let selection, let grab {
             /* Every terminal grab outcome — refused or completed — becomes
                the status line a person is actually looking at. Without
