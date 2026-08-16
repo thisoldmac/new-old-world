@@ -80,6 +80,29 @@ final class HostAppState: ObservableObject {
     /// same reason the lane above is: the gesture it answers to happens at
     /// the shared edge, where no page need ever have been opened.
     let continuityGrab: ContinuityGrabTransfer
+    /// The second renderer for a Continuity file-drag refusal, set by
+    /// `AppDelegate` to flash the menu-bar title — the same pairing
+    /// `ScreenHostModuleRuntime` gives a screenshot outcome, and for the
+    /// same reason `CaptureNotifier` gives its own: an unsigned dev build
+    /// posts no banner at all, so the status item is what a person actually
+    /// sees. `announceDragRefusal` always fires the notification too;
+    /// this closure is additive, not a fallback the notifier depends on.
+    var dragRefusalFeedback: ((String) -> Void)?
+
+    func setDragRefusalFeedback(_ feedback: @escaping (String) -> Void) {
+        dragRefusalFeedback = feedback
+    }
+
+    /// The one place a Continuity file-drag refusal becomes visible outside
+    /// the Continuity page's own status line. Handed the exact sentence
+    /// `ContinuityEdgeController.reportFileGrabOutcome` already set as
+    /// `status` — never a second draft of it — so a system notification, a
+    /// menu-bar flash and the status line always agree about what just
+    /// happened.
+    private func announceDragRefusal(_ message: String) {
+        notifier.announce(continuityDragRefusal: message)
+        dragRefusalFeedback?(message)
+    }
     /// The guest whose saved continuity settings are currently loaded.
     /// Link events for another connected Mac must not reset active ownership.
     private var continuityGuestKey: GuestKey?
@@ -371,7 +394,10 @@ final class HostAppState: ObservableObject {
                 self?.continuity.bindableSelection() ?? .failure(.noSelection)
             },
             selectionMark: { [weak self] in self?.continuity.selectionMark },
-            grab: continuityGrab)
+            grab: continuityGrab,
+            refusal: { [weak self] message in
+                self?.announceDragRefusal(message)
+            })
         if settings.listenAtLaunch {
             startListening()
         }

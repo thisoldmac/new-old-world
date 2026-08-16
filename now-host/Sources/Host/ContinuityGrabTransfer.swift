@@ -73,6 +73,18 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     /// can watch it fire without constructing the whole edge stack.
     var outcomeSink: ((String) -> Void)?
 
+    /// The same terminal sentence `outcomeSink` carries, but only for the
+    /// two ways a grab can end badly — the wire refusing the redemption
+    /// (`stale-selection`, `grant-expired`, …) and this Mac failing to
+    /// write what arrived. `outcomeSink` already reaches every terminal
+    /// outcome, success included; this is a narrower promise for whoever
+    /// wants to interrupt a person ONLY when their drag did not work, the
+    /// same way `QuickCaptureOutcome` distinguishes `.copied` from
+    /// `.failed` rather than treating every capture alike. No new
+    /// sentence is written here — every call site hands this the exact
+    /// string it already gave `setNotice`.
+    var refusalSink: ((String) -> Void)?
+
     /// The wire, as one function. Named rather than reached through the
     /// listener so a test can watch a refusal arrive without a socket — the
     /// refusal paths are the half v1 shipped silent, and they must be
@@ -455,9 +467,11 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                     + "attempt=\(attempt) — this Mac does not retry a "
                     + "refused grab on its own; no further attempt for "
                     + "this generation is scheduled")
-                self.setNotice(GrabError.wire(code: failure.code,
-                                              message: failure.message)
-                    .localizedDescription)
+                let refusal = GrabError.wire(code: failure.code,
+                                             message: failure.message)
+                    .localizedDescription
+                self.setNotice(refusal)
+                self.refusalSink?(refusal)
                 completion.finish(GrabError.wire(code: failure.code,
                                                  message: failure.message))
             case .success(let file):
@@ -503,6 +517,7 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                 self.audit(.error, "grab arrived but could not be written: "
                     + "name=\(file.name), reason=\(error.localizedDescription)")
                 self.setNotice(error.localizedDescription)
+                self.refusalSink?(error.localizedDescription)
                 completion.finish(error)
             }
         }
