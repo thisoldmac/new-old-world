@@ -622,19 +622,30 @@ static void report_intake_starvation(const NowPeekContinuityCell *shared,
        absence - and calling that starvation would be a false alarm on every
        arm the person immediately cancelled. */
     stale = shared->arrival_ticks != 0 && lease != 0 && arrival_age > lease;
+    /* Three lines, not one. The guest's own log truncates a line near 110
+       characters, and the first version of this put the drain endings past
+       that edge - so the numbers that name the cause were the ones the
+       console could not show. A diagnostic that is cut off exactly where it
+       becomes useful is worse than none, because it reads as evidence. */
     now_log(stale ? kLogWarn : kLogInfo, "mirror",
             "continuity arrival epoch=%lu age=%lu lease=%lu ticks "
-            "(arrival=%lu applied=%lu now=%lu) delivered=%lu/%lu "
-            "drain: burst-max=%lu handoff=%lu starved=%lu owed=%u "
-            "rcv-err=%lu/%ld uderr=%lu look-other=%lu/%ld acks=%lu/%lu",
+            "(arrival=%lu applied=%lu now=%lu)",
             epoch, arrival_age, lease,
             (unsigned long)shared->arrival_ticks,
             (unsigned long)shared->last_arrival_ticks,
-            (unsigned long)now_ticks,
-            (unsigned long)gDeliveredEpoch, (unsigned long)gDeliveredEndpoint,
-            (unsigned long)gDrainMaxBurst, (unsigned long)gDrainHandoffs,
+            (unsigned long)now_ticks);
+    now_log(stale ? kLogWarn : kLogInfo, "mirror",
+            "continuity drain epoch=%lu burst-max=%lu handoff=%lu "
+            "starved=%lu owed=%u delivered=%lu/%lu",
+            epoch, (unsigned long)gDrainMaxBurst,
+            (unsigned long)gDrainHandoffs,
             (unsigned long)gDrainStarvedExits, (unsigned)gDrainOwed,
-            (unsigned long)gDrainRcvErrors, (long)gLastRcvError,
+            (unsigned long)gDeliveredEpoch,
+            (unsigned long)gDeliveredEndpoint);
+    now_log(stale ? kLogWarn : kLogInfo, "mirror",
+            "continuity intake epoch=%lu rcv-err=%lu/%ld uderr=%lu "
+            "look=%lu/%ld acks=%lu/%lu",
+            epoch, (unsigned long)gDrainRcvErrors, (long)gLastRcvError,
             (unsigned long)gUDErrsCleared,
             (unsigned long)gLookOther, (long)gLastLook,
             (unsigned long)gAckSends, (unsigned long)gAckErrors);

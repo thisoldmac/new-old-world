@@ -43,7 +43,6 @@ import time
 from pathlib import Path
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "scripts", "probes"))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import nowwire  # noqa: E402
 from continuity_contract import load as load_continuity_contract  # noqa: E402
@@ -59,11 +58,16 @@ MENU_TITLE = (44, 8)
 # difference between a probe and the incident it reproduces.
 SAFE_RELEASE = (600, 400)
 
+# Deliberately two patterns over two log lines: the guest truncates a log
+# line near 110 characters, and a regex spanning that edge would silently stop
+# matching the moment a counter grew a digit.
 ARRIVAL_LINE = re.compile(
     r"continuity arrival epoch=(?P<epoch>\d+) age=(?P<age>\d+) "
-    r"lease=(?P<lease>\d+) ticks .*?"
-    r"drain: burst-max=(?P<burst>\d+) handoff=(?P<handoff>\d+) "
-    r"starved=(?P<starved>\d+) owed=(?P<owed>\d+)")
+    r"lease=(?P<lease>\d+) ticks")
+DRAIN_LINE = re.compile(
+    r"continuity drain epoch=(?P<epoch>\d+) burst-max=(?P<burst>\d+) "
+    r"handoff=(?P<handoff>\d+) starved=(?P<starved>\d+) owed=(?P<owed>\d+) "
+    r"delivered=(?P<delivered>\d+)/(?P<delivered_endpoint>\d+)")
 
 
 def state(nonce_hi, nonce_lo, epoch, seq, h, v, generation, flags, stamp):
@@ -92,51 +96,61 @@ def drain_acks(udp, nonce_hi, nonce_lo, epoch, seen):
         seen.append(ack)
 
 
-def next_control(link, kind, ident, timeout=20):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        msg = link._pump(None, deadline)
-        if msg.get("type") == kind and msg.get("id") == ident:
-            return msg
-    raise TimeoutError(f"no {kind} id={ident}")
-
-
-def arm(link, ident, nonce_hi, nonce_lo, epoch, lease_ticks):
-    link._send({"type": "continuity.arm", "version": CONTINUITY.version,
-                "id": ident, "nonceHi": nonce_hi, "nonceLo": nonce_lo,
-                "epoch": epoch, "requestedHz": 60,
-                "leaseTicks": lease_ticks})
-    report = next_control(link, "continuity.report", ident)
+def arm(wire, nonce_hi, nonce_lo, epoch, lease_ticks):
+    report = wire.ask("continuity.arm", version=CONTINUITY.version,
+                      nonceHi=nonce_hi, nonceLo=nonce_lo, epoch=epoch,
+                      requestedHz=60, leaseTicks=lease_ticks)
     if report.get("state") not in ("armed", "active"):
         raise RuntimeError(f"arm refused: {report}")
     return report
 
 
-def disarm(link, ident, epoch):
-    link._send({"type": "continuity.disarm", "version": CONTINUITY.version,
-                "id": ident, "epoch": epoch, "reason": "disabled"})
-    return next_control(link, "continuity.report", ident)
+def disarm(wire, epoch):
+    return wire.ask("continuity.disarm", version=CONTINUITY.version,
+                    epoch=epoch, reason="disabled")
 
 
-def mirror_log(link, lines=40):
-    rows = link.command(f"tail {lines} mirror", timeout=30)
-    for key in ("tail", "log", "lines"):
-        if key in rows:
-            value = rows[key]
-            return value if isinstance(value, list) else [str(value)]
-    return [json.dumps(rows)]
+def arrival_report(wire, epoch, pages=3):
+    """The guest's own account, read out of its own log.
+
+    `tail` pages backwards, so walk back a few pages: a busy epoch can push
+    the line off the newest one, and reporting "no line" for a line that
+    merely scrolled would be the same class of mistake as reporting absence
+    and defect in the same words.
+    """
+    seen = []
+    before = None
+    for _ in range(pages):
+        line = f"tail 40 mirror" if before is None \
+            else f"tail 40 mirror before {before}"
+        ok, text = wire.exec_line(line)
+        if not ok:
+            break
+        seen.append(text)
+        for found in ARRIVAL_LINE.finditer(text):
+            if int(found.group("epoch")) != epoch:
+                continue
+            fields = {k: int(v) for k, v in found.groupdict().items()}
+            texts = [found.group(0)]
+            for drain in DRAIN_LINE.finditer(text):
+                if int(drain.group("epoch")) == epoch:
+                    fields.update({k: int(v)
+                                   for k, v in drain.groupdict().items()})
+                    texts.append(drain.group(0))
+            if "starved" not in fields:
+                # The pair is written together; seeing one without the other
+                # means the log rolled between them, and half an account is
+                # not an account.
+                continue
+            return fields, " | ".join(texts)
+        match = re.search(r"before (\d+)", text)
+        if not match:
+            break
+        before = match.group(1)
+    return None, "\n".join(seen)[-2000:]
 
 
-def arrival_report(link, epoch, lines=40):
-    for line in reversed(mirror_log(link, lines)):
-        text = line if isinstance(line, str) else json.dumps(line)
-        found = ARRIVAL_LINE.search(text)
-        if found and int(found.group("epoch")) == epoch:
-            return {k: int(v) for k, v in found.groupdict().items()}, text
-    return None, None
-
-
-def hold_menu(udp, link, nonce_hi, nonce_lo, epoch, hold_s, hz, acks):
+def hold_menu(udp, nonce_hi, nonce_lo, epoch, hold_s, hz, acks):
     """Press a menu title, keep sending through the hold, release safely."""
     seq = [0]
     generation = [0]
@@ -202,11 +216,13 @@ def main():
 
     result = {"expect": args.expect, "hold_requested_s": args.hold,
               "lease_ticks": args.lease_ticks}
-    link = nowwire.GuestLink.await_guest(args.port, timeout=180)
-    result["build"] = str(link.hello.get("build") or "")
+    wire = nowwire.GuestWire(args.port, host="0.0.0.0",
+                             name="continuity-starvation-probe")
+    wire.accept(wait=240)
+    result["build"] = str(wire.hello.get("build") or "")
 
-    ext = (link.command("mirror", timeout=30).get("mirror") or {}).get(
-        "extension") or {}
+    ext = ((wire.command("mirror").get("output") or {}).get("mirror")
+           or {}).get("extension") or {}
     caps = int(ext.get("capabilities") or 0)
     result["extension_capabilities"] = caps
     if not caps & 0x200:
@@ -224,15 +240,15 @@ def main():
     # Not "I deployed the right thing": the disarm line either appears or it
     # does not, and every number below is read out of that same line.
     acks = []
-    arm(link, 8101, nonce_hi, nonce_lo, 1, args.lease_ticks)
+    arm(wire, nonce_hi, nonce_lo, 1, args.lease_ticks)
     for seq in range(1, 31):
         udp.send(state(nonce_hi, nonce_lo, 1, seq, 300, 240, 0,
                        CONTINUITY.flag_inside, seq))
         drain_acks(udp, nonce_hi, nonce_lo, 1, acks)
         time.sleep(1.0 / args.hz)
-    disarm(link, 8102, 1)
+    disarm(wire, 1)
     time.sleep(0.5)
-    warmup, warmup_text = arrival_report(link, 1)
+    warmup, warmup_text = arrival_report(wire, 1)
     result["build_under_test_line"] = warmup_text
     if warmup is None:
         raise SystemExit(
@@ -248,8 +264,8 @@ def main():
     epoch = 2
     acks = []
     exits = []
-    arm(link, 8103, nonce_hi, nonce_lo, epoch, args.lease_ticks)
-    run = hold_menu(udp, link, nonce_hi, nonce_lo, epoch,
+    arm(wire, nonce_hi, nonce_lo, epoch, args.lease_ticks)
+    run = hold_menu(udp, nonce_hi, nonce_lo, epoch,
                     args.hold, args.hz, acks)
     result.update(run)
     result["acks"] = len(acks)
@@ -266,9 +282,9 @@ def main():
             "the epoch took no datagram before the press; the plane was not "
             "carrying anything and the hold proves nothing")
 
-    disarm(link, 8104, epoch)
+    disarm(wire, epoch)
     time.sleep(0.5)
-    report, text = arrival_report(link, epoch)
+    report, text = arrival_report(wire, epoch)
     result["arrival_line"] = text
     result["arrival"] = report
 
