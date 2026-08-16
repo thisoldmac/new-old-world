@@ -2060,6 +2060,109 @@ final class ContinuityGuestDragTests: XCTestCase {
                      staged: try sink.finish(expectedCRC32: nil),
                      transferMs: 1, crc32: nil, resumeToken: nil)
     }
+
+    // MARK: - Two features, one crossing
+
+    /// **THE 17:22 CONFLATION, AS IT HAPPENED.** Metal, 2026-08-16: Michelle
+    /// held a drag of a file on THIS Mac and carried it toward the guest.
+    /// The guest→host machinery ran backwards at her gesture — it bound the
+    /// guest's stale cached selection, sent a primary down the guest Finder
+    /// began dragging `main.c` under, started an AppKit session to bring
+    /// that file HERE, and refused its own grab `stale-selection`. A whole
+    /// pipeline's work, three refusals, and all of it about a file nobody
+    /// had picked up, while the file she was actually holding went nowhere.
+    ///
+    /// The mechanism is a race between two honest reporters of one gesture.
+    /// A held drag moves the pointer across the edge, so the sample stream
+    /// and the strip's own `draggingEntered` both see it arrive, by
+    /// different routes and in either order. When the samples win, the
+    /// controller is already `.active`, `hostFileEntered` declines to steer,
+    /// `hostFileDrag` stays false — and nothing left anywhere says a host
+    /// drag exists. This pins that the FACT is recorded regardless of who
+    /// won, and that the crossing then binds nothing and returns nothing.
+    func testACrossingUnderAHostDragBindsNothingAndReturnsNothing() throws {
+        let rig = Rig()
+        rig.controller.physicalPrimaryButtonHeld = { true }
+        rig.select(Self.file(name: "main.c"), generation: 3)
+        /* The samples win the race: Continuity is already active and
+           steering when the strip finally hears about the drag. */
+        rig.enterGuest()
+        XCTAssertEqual(rig.environment.fileCallbacks?
+            .entered(CGPoint(x: 1439, y: 450)), false,
+            "an active controller does not start steering a second time — "
+                + "and that refusal is exactly what used to lose the fact")
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.environment.fileDrags.isEmpty,
+                      "a crossing carrying a drag from THIS Mac must start "
+                        + "no return drag: it is travelling the other way")
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("press bound to the guest selection")
+        }, "nothing may be bound: the person's hand is on a host file")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("this cross carries a drag from this Mac")
+        }, "the suppression must say so, or the next report of this reads "
+            + "as a crossing that silently did nothing: \(rig.recorder.lines)")
+    }
+
+    /// **THE OTHER WAY, AND IT MUST STILL WORK.** A suppression that fires
+    /// on the ordinary guest→host gesture would trade one broken direction
+    /// for the other, and this is the direction that reached metal first
+    /// (2026-08-15 13:43, the first file to cross the edge). Identical to
+    /// the test above in every respect except the one that matters: no host
+    /// drag is over this Mac.
+    func testAnOrdinaryGuestCrossingIsUntouchedByTheSuppression() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "main.c"), generation: 3)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item,
+                                 "the guest→host direction must still bind "
+                                    + "and start its return drag")
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c")
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("this cross carries a drag from this Mac")
+        }, "no host drag exists here; suppressing this crossing would break "
+            + "the direction that already works")
+    }
+
+    /// **A SUPPRESSION FLAG THAT ONLY A FOREIGN CALLBACK CAN CLEAR IS ONE
+    /// THAT CAN STICK.** `draggingExited` belongs to a session in another
+    /// application — the one class of event this controller cannot make
+    /// arrive — and a stuck flag leaves the edge permanently deaf to real
+    /// guest presses. That is a worse failure than the one being fixed, and
+    /// a silent one. So the fact underneath clears it too.
+    func testTheSuppressionClearsItselfWhenTheButtonIsNoLongerHeld() throws {
+        let rig = Rig()
+        var held = true
+        rig.controller.physicalPrimaryButtonHeld = { held }
+        rig.enterGuest()
+        _ = rig.environment.fileCallbacks?.entered(CGPoint(x: 1439, y: 450))
+        /* The drag ends somewhere this app never hears about. */
+        held = false
+        rig.select(Self.file(name: "main.c"), generation: 3)
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertFalse(rig.environment.fileDrags.isEmpty,
+                       "the edge went deaf: a released host drag left the "
+                        + "suppression armed with nothing able to clear it")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("the host drag over the shared edge is over")
+        }, "self-healing must be audible, or a stuck flag and a healthy one "
+            + "look identical afterwards")
+    }
 }
 
 /// One ordered record of everything the two sides of a crossing do, because

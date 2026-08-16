@@ -264,6 +264,31 @@ final class ContinuityEdgeController: ObservableObject {
     /// The arm's own catch-surface reading, kept past the pending state that
     /// produced it so the end-of-session witness can print both times.
     private var catchSurfaceAtArm: ContinuityCatchHitTest?
+    /// **A drag belonging to some application on THIS Mac is in flight over
+    /// the shared edge right now.** Set the moment the strip sees a foreign
+    /// dragging session, cleared when that session leaves, drops, or ends.
+    ///
+    /// It is deliberately NOT `hostFileDrag`. That flag means "this
+    /// controller is steering the guest on behalf of a host drag", and it is
+    /// only ever set when `hostFileEntered` finds the controller `.ready`.
+    /// This one means "a host drag exists", full stop, and it is true even
+    /// when the ordinary pointer lane got to the crossing first.
+    ///
+    /// THAT RACE IS THE 2026-08-16 17:22 DEFECT. A held drag moves the
+    /// pointer across the edge, and the sample stream and the strip's own
+    /// `draggingEntered` are two independent reporters of the same gesture
+    /// arriving by different routes. When the samples win, the controller is
+    /// already `.active`, `hostFileEntered` returns false, `hostFileDrag`
+    /// stays false — and the ordinary lane treats a person's held HOST drag
+    /// as a press on the GUEST. On that round it bound a stale cached
+    /// selection, sent a primary down the guest Finder started dragging
+    /// `main.c` under, and ran the entire return pipeline backwards at a
+    /// gesture that was travelling the other way. Two features contending
+    /// for one crossing, and the loser was the one the person was making.
+    ///
+    /// So the suppression keys off the EXISTENCE of the host drag rather
+    /// than off which reporter won.
+    private var hostDragOverThisMac = false
     private var announcedOwnDragRefusal = false
     private var heldGesture: HeldGestureCustody?
     /// The last button state any sample reported. The escape chord arrives
@@ -572,9 +597,30 @@ final class ContinuityEdgeController: ObservableObject {
 
     private func driveGuest(with sample: HostPointerSample,
                             sourceEvent: NSEvent?) {
+        /* THE BACKSTOP, AND IT IS NOT OPTIONAL. The flag is cleared by
+           `draggingExited`/`performDragOperation`, which are AppKit's word
+           about a session belonging to another application — the one class
+           of event this controller cannot make arrive. A flag that only a
+           foreign callback can clear is a flag that can stick, and a stuck
+           one leaves this edge permanently deaf to real guest presses: a
+           worse failure than the one the flag exists to fix, and a silent
+           one. So it is also cleared by the fact underneath it. The HID is
+           asked rather than the sample, for the reason stated at
+           `physicalPrimaryButtonHeld` — this app's own tap starves the
+           session's button state on exactly this path. */
+        if hostDragOverThisMac, !physicalPrimaryButtonHeld() {
+            hostDragOverThisMac = false
+            audit(.info, "the host drag over the shared edge is over: the "
+                + "button is not held any more and no drag callback said so")
+        }
         guard var ownership else { return }
-        if hostFileDrag,
+        if hostFileDrag || hostDragOverThisMac,
            sample.kind == .primaryDown || sample.kind == .primaryUp {
+            /* SUPPRESSION, HALF ONE: the button. A held button that belongs
+               to a host drag is not a press on the guest, and applying it as
+               one is how the guest Finder came to be dragging a file of its
+               own under somebody else's gesture. `hostDragOverThisMac` is
+               the half that was missing; see its own comment. */
             return
         }
         if sample.kind == .primaryDown {
@@ -639,6 +685,27 @@ final class ContinuityEdgeController: ObservableObject {
                 + "\(Int(sample.delta.x)),\(Int(sample.delta.y)), host="
                 + "\(Int(sample.location.x)),\(Int(sample.location.y)), "
                 + "suppressedWarps=\(suppressedCursorWarps)")
+            /* SUPPRESSION, HALF TWO: the return pipeline. A crossing made
+               while a host drag is in flight over this Mac carries that
+               drag; it does not carry a guest file, and it must bind
+               nothing and return nothing. Without this the 17:22 round ran
+               resolveSelectionBindingAtCross against a cache from a previous
+               epoch, started an AppKit session for `main.c`, and refused its
+               own grab `stale-selection` — a whole pipeline's worth of work
+               and three refusals, all of it about a file nobody had picked
+               up.
+
+               The condition is deliberately the same flag as half one, not
+               a second reading of the gesture. Two conditions that must
+               agree about one fact are two places to disagree. */
+            if hostDragOverThisMac {
+                audit(.info, "this cross carries a drag from this Mac, not "
+                    + "the guest's: binding nothing and starting no return "
+                    + "— a held host drag is not a press over there")
+                returnToHost(ownership, reason: "shared edge crossed under a "
+                    + "host drag")
+                return
+            }
             if sample.buttonsDown { resolveSelectionBindingAtCross() }
             if sample.buttonsDown, let item = guestFileCandidate {
                 returnGuestFileToHost(item, from: ownership,
@@ -1585,6 +1652,9 @@ final class ContinuityEdgeController: ObservableObject {
            during our own guest→host handoff would steer the guest with the
            file that is on its way here. */
         if hostDragSessionLive || pendingReturnDrag != nil {
+            /* Our own handoff, not somebody's held file: this must NOT
+               arm the suppression, or the guest→host direction would
+               suppress itself at its own crossing. */
             if !announcedOwnDragRefusal {
                 announcedOwnDragRefusal = true
                 audit(.info, "the shared edge refused an incoming file: this "
@@ -1592,6 +1662,13 @@ final class ContinuityEdgeController: ObservableObject {
             }
             return false
         }
+        /* THE FACT, RECORDED BEFORE ANY DECISION ABOUT WHAT TO DO WITH IT.
+           Everything below can decline to steer the guest — the controller
+           may already be `.active`, or have no shared edge — and none of
+           those are reasons to forget that a person is holding a drag over
+           this edge right now. That forgetting is the 17:22 defect; see
+           `hostDragOverThisMac`. */
+        hostDragOverThisMac = true
         if hostFileDrag { return state == .arming || state == .active }
         guard state == .ready, let edge = layout.sharedEdge else {
             return false
@@ -1613,11 +1690,18 @@ final class ContinuityEdgeController: ObservableObject {
     }
 
     private func hostFileExited() {
+        /* Cleared FIRST and unconditionally, for the mirror image of the
+           reason it is set unconditionally: the drag is gone whether or not
+           this controller was steering anything on its behalf. A suppression
+           flag that outlives the gesture it describes turns one defect into
+           a permanently deaf edge. */
+        hostDragOverThisMac = false
         guard hostFileDrag, let current = ownership ?? pending else { return }
         returnToHost(current, reason: "host file left the shared edge")
     }
 
     private func hostFileDropped(_ pasteboard: NSPasteboard) -> Bool {
+        hostDragOverThisMac = false
         guard hostFileDrag, let current = ownership ?? pending,
               let hostFilesDropped else { return false }
         let accepted = hostFilesDropped(
