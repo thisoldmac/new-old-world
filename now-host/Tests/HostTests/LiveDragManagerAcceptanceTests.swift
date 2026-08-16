@@ -465,4 +465,163 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
                 + "named refusal exists to prevent. Report: " + after.text)
         _ = await execLine("offer --stop")
     }
+
+    /// WHERE THE POINTER IS WHEN THE BUTTON COMES UP IS THE WHOLE TEST.
+    ///
+    /// The run above holds the button at (300, 240) and ends `cancelled`.
+    /// A screen capture of that guest says why: the emulator's screen is
+    /// 800x600 and NOW's own Workshop window covers roughly x 20..785,
+    /// y 45..550, so (300, 240) is inside OUR window. NOW installs no drag
+    /// receive handler, the Drag Manager had nobody to give the drop to,
+    /// and `userCanceledErr` is the correct answer to a drop nothing
+    /// accepted. Nothing was broken; the pointer was never over a receiver.
+    ///
+    /// So put it over one. `kDesktopDrop` is in the strip of desktop below
+    /// the Workshop window and clear of both the Control Strip and the
+    /// icons at the bottom right. The Finder owns the desktop, speaks
+    /// promised HFS, and positions what it receives where it landed —
+    /// which is the fidelity this whole feature exists for.
+    ///
+    /// The move happens WHILE THE BUTTON IS HELD, in steps, because that
+    /// is what the plane is for: the resident's timer replaces the
+    /// published point with newer host points for the duration of a hold,
+    /// which is how a foreign application's nested tracking loop is driven
+    /// at all (continuity_intake.c). A single packet at the destination
+    /// would test teleportation, not a drag.
+    func testDropOnTheDesktopMaterialisesTheFile() async throws {
+        try await waitConnected()
+        let udpPort = try await arm(epoch: 525_256)
+        guard let udpPort else {
+            return XCTFail(
+                "no udpPort in the continuity report: the button plane "
+                    + "cannot be driven, so this case cannot run at all. "
+                    + "Opted in and unable to reach the guest is a FAILURE, "
+                    + "not a skip.")
+        }
+
+        let control = AgentIntegrationContinuityOfferControl(listener: listener)
+        let small = try write(bytes: 4096, label: "drop")
+        defer { try? FileManager.default.removeItem(at: small) }
+        guard case .published = control.publish(
+            fileAt: small, epoch: 525_256, generation: 1) else {
+            return XCTFail("publish failed")
+        }
+        let expectedName = small.lastPathComponent
+
+        // THE GUEST'S DESKTOP BEFORE, so what lands is what THIS test put
+        // there. A file already present would otherwise read as a pass.
+        let before = await execLine("ls Desktop")
+        print("=== guest Desktop before the drop: \(before.text) ===")
+        XCTAssertFalse(
+            before.text.contains(expectedName),
+            "the file this test is about to drop is already on the guest's "
+                + "Desktop; the run proves nothing. Before: " + before.text)
+
+        let connection = NWConnection(
+            host: .ipv4(.loopback),
+            port: NWEndpoint.Port(rawValue: udpPort)!, using: .udp)
+        connection.start(queue: .global())
+        defer { connection.cancel() }
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        var sequence: UInt32 = 1
+        var generation: UInt32 = 1
+        func send(h: Int, v: Int, down: Bool) {
+            sequence &+= 1
+            let packet = ContinuityStateDatagram(
+                nonceHi: 2, nonceLo: 2, epoch: 525_256,
+                positionSequence: sequence, h: Int16(h), v: Int16(v),
+                buttonGeneration: generation,
+                flags: down ? [.inside, .primaryDown] : [.inside],
+                requestedHz: 30, hostStamp: 0)
+            connection.send(content: ContinuityDatagramCodec.encode(packet),
+                            completion: .contentProcessed { _ in })
+        }
+
+        // Start inside NOW's window — a drag picked up where the offer is
+        // shown — and travel to the desktop, which is the crossing this
+        // slice is a stand-in for.
+        let startH = 300, startV = 240
+        let dropH = 300, dropV = 570
+
+        for _ in 0..<10 {
+            send(h: startH, v: startV, down: false)
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+
+        let armed = await execLine("offer --drag")
+        assertConsoleSaid(armed, contains: "armed",
+                          "the arm must be placed before the button moves, "
+                              + "or this measures nothing")
+
+        generation &+= 1
+        // Hold at the start point long enough for the arm to ripen and
+        // TrackDrag to be running before anything moves.
+        for _ in 0..<40 {
+            send(h: startH, v: startV, down: true)
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+        // Travel, held, in steps a tracking loop can follow.
+        for step in 1...30 {
+            let v = startV + (dropV - startV) * step / 30
+            send(h: dropH, v: v, down: true)
+            try await Task.sleep(nanoseconds: 40_000_000)
+        }
+        // Settle at the destination before letting go, so the drop point
+        // is the one this test names rather than a point in transit.
+        for _ in 0..<15 {
+            send(h: dropH, v: dropV, down: true)
+            try await Task.sleep(nanoseconds: 40_000_000)
+        }
+
+        generation &+= 1
+        for _ in 0..<20 {
+            send(h: dropH, v: dropV, down: false)
+            try await Task.sleep(nanoseconds: 40_000_000)
+        }
+        // The promise streams inside the Finder's drop handling; 4 KB is
+        // fast but the round trip is not instant.
+        try await Task.sleep(nanoseconds: 8_000_000_000)
+
+        let report = await execLine("offer")
+        print("=== report after the drop: \(report.text) ===")
+        let log = await runCommand("tail", line: "30")
+        print("=== guest log after the drop ===")
+        print(String(describing: log.output))
+
+        // THE BUILD UNDER TEST, ASSERTED FROM ITS OWN OUTPUT. The detail
+        // line is emitted by no earlier build, so its presence is what
+        // says this guest is running the code this test is about — the
+        // `requireTheBuildUnderTest()` rule, answered by a capability only
+        // this build has rather than by a version string.
+        let logText = String(describing: log.output)
+        XCTAssertTrue(
+            logText.contains("drag detail:"),
+            "no `drag detail:` line: this guest is not running the build "
+                + "under test, so nothing it says about the drop is "
+                + "evidence about this code. Log: " + logText)
+
+        // THE OUTCOME, FROM THE GUEST'S OWN STATE MACHINE.
+        XCTAssertTrue(
+            report.text.contains("Last drag                ok"),
+            "the drop did not settle. `cancelled` here means the pointer "
+                + "was over nothing that accepts a drop — check the "
+                + "`drag detail:` line's coordinates against the 800x600 "
+                + "screen. Report: " + report.text)
+
+        // AND FROM THE FILE SYSTEM, which is a different artifact than the
+        // state machine and the only one that can say a FILE exists. A
+        // state machine reporting success is exactly what a promise that
+        // handed back a stale FSSpec would also do.
+        let after = await execLine("ls Desktop")
+        print("=== guest Desktop after the drop: \(after.text) ===")
+        XCTAssertTrue(
+            after.text.contains(expectedName),
+            "the drag settled but no file named \(expectedName) is on the "
+                + "guest's Desktop: the promise reported success and "
+                + "materialised nothing, which is the one outcome worse "
+                + "than a refusal. Desktop: " + after.text)
+
+        _ = await execLine("offer --stop")
+    }
 }
