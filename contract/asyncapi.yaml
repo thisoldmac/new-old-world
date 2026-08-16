@@ -4401,6 +4401,27 @@ components:
           description: >
             Accepted bytes land under a temporary name in the destination
             folder and cannot appear under the final name before validation.
+        replacing:
+          type: boolean
+          description: >
+            True when accepting this offer will OVERWRITE an item the
+            receiver already had, and a person at the receiving machine
+            authorised it. Absent or false means nothing is being
+            replaced — never "the receiver declined to say".
+
+            It exists because the sender cannot otherwise tell a
+            first-time write from a replacement: both are one accept
+            followed by one stream, and the collision is knowable only on
+            the side that looked. A sender that has just overwritten
+            somebody's file and recorded it as an ordinary copy has
+            written down the least interesting half of what happened.
+
+            The consent is the RECEIVER'S and stays there. This field
+            reports a decision; it does not carry one, and a sender must
+            never send an offer whose acceptance it has pre-authorised —
+            the overwrite flag on file.offer is the sender's own
+            re-send after ITS person was asked, which is the same rule
+            read from the other end.
     FileDone:
       type: object
       required: [type, id, ok]
@@ -4461,8 +4482,10 @@ components:
         type: { const: file.refuse }
         id: { type: integer }
         code:
-          enum: [busy, exists, bad-path, not-found, io-error, too-big,
-                 changed, bad-source, project-file-unavailable,
+          enum: [busy, exists, declined, bad-path, not-found, io-error,
+                 too-big, changed, bad-source, project-file-unavailable,
+                 bad-target, not-requested, invalid-update,
+                 candidate-unavailable,
                  bad-epoch, stale-selection, no-selection, folder-not-yet,
                  grant-expired, offer-expired]
           description: >
@@ -4500,6 +4523,43 @@ components:
             a person to look at the wrong machine. Everything else about
             it is grant-expired's rule read from the other end: the epoch
             was right, the generation was right, the clock was not.
+
+            declined is `exists` AFTER SOMEBODY WAS ASKED, and the two
+            are separate words for the same reason grant-expired and
+            bad-epoch are. `exists` says a receiver found the name taken
+            and applied its own policy; `declined` says a PERSON at the
+            receiving machine was shown the collision and chose to keep
+            what they had. A sender cannot tell those apart from the
+            outcome — nothing arrives either way — and they are not the
+            same event: one is a receiver that never asked, which is a
+            gap worth closing, and the other is consent working exactly
+            as intended. A log that spells them the same way makes the
+            first invisible for as long as it survives.
+
+            It is deliberately NOT `cancelled`. That word is already
+            file.done's, for a transfer abandoned once bytes were
+            moving, and a refusal answers an offer before any byte
+            moves. Two clocks, two words.
+
+            THE NEXT FOUR WERE FOUND, NOT DESIGNED, and how says more
+            than what. bad-target, not-requested, invalid-update and
+            candidate-unavailable have been on the wire from the PowerPC
+            guest for as long as the Mirror-drop and update lanes have
+            existed, and no reader of this file could have known:
+            exactly the drift the bad-source sentence above describes,
+            still happening after somebody wrote that sentence. What
+            changed is that a gate now derives this list from the
+            guest's own `file_refuse` call sites
+            (`testEveryGuestRefusalCodeIsDeclaredInTheContract`), so the
+            enum is checked rather than remembered. It failed on its
+            first run and named all four.
+
+            bad-target: a mirrorDrop target arrived incomplete or
+            malformed. not-requested and invalid-update are the update
+            lane's two halves — an offer this guest never asked for, and
+            one whose identity did not match what it did ask for.
+            candidate-unavailable: the inactive Development candidate
+            could not be opened for writing.
         reason: { type: string }
     FileBegin:
       type: object
