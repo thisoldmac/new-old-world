@@ -254,6 +254,11 @@ hdrain = body(DRAIN, "    /* ---- V15, the registration route",
 check("drag handler state=" in hdrain and "drag track n=" in hdrain
       and "drag handler item seq=" in hdrain,
       "the registration route lost one of its three always-on lines")
+# The NAME gets its own line. kLogLineMax is 120 and the first emulator
+# round of this route printed a correct identity and cut it off two
+# characters into the creator code.
+check("drag handler file seq=" in hdrain and "name=%s" in hdrain,
+      "the dragged file's name went back on a line that truncates it")
 check("now_mirror_debug_on()" not in hdrain,
       "the targeting stream went behind the debug gate - it is the whole "
       "reason the route was tried")

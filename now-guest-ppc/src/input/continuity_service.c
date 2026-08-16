@@ -521,17 +521,25 @@ static void drain_drag_observe(const NowPeekContinuityCell *cell)
         hname[len] = '\0';
         /* THE IDENTITY, from a live DragRef the Drag Manager handed us,
            with no selection consulted anywhere. */
+        /* TWO lines because kLogLineMax is 120 and the NAME is the half
+           that matters - the first emulator round of this route printed
+           a complete, correct identity and cut it off two characters
+           into the creator code. The click probe already splits for
+           exactly this reason. */
         now_log(kLogInfo, "mirror",
                 "drag handler item seq=%lu a5=%08lx ref=%08lx tk=%lu "
-                "items=%lu what=%s err=%ld type=%08lx cr=%08lx "
-                "vref=%ld par=%lu name=%s",
+                "items=%lu what=%s err=%ld",
                 (unsigned long)obs->handler_begin_seq,
                 (unsigned long)obs->handler_a5,
                 (unsigned long)obs->handler_drag_ref,
                 (unsigned long)obs->handler_first_ticks,
                 (unsigned long)obs->hitem_count,
                 drag_item_status(obs->hitem_status),
-                (long)obs->hitem_err,
+                (long)obs->hitem_err);
+        now_log(kLogInfo, "mirror",
+                "drag handler file seq=%lu type=%08lx cr=%08lx "
+                "vref=%ld par=%lu name=%s",
+                (unsigned long)obs->handler_begin_seq,
                 (unsigned long)obs->hfile_type,
                 (unsigned long)obs->hfile_creator,
                 (long)obs->hfile_vrefnum,
