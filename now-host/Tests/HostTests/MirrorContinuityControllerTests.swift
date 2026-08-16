@@ -1036,8 +1036,16 @@ final class MirrorContinuityControllerTests: XCTestCase {
     }
 
     /// The withholding is scoped to a settled release, not to leaving.
+    ///
+    /// Asserted on the DECISION rather than on the packet's arrival. The
+    /// teardown datagram is sent one statement before `relinquish` cancels
+    /// the connection under it, so whether loopback delivers it is a race
+    /// this suite loses on a busy Mac — and a gate that fails for the
+    /// machine's reasons teaches nothing about this branch. The branch is
+    /// what a mutation flips, and the audit line names which one ran.
     func testAnOrdinaryReleaseStillEndsTheEpochOnTheWire() async throws {
-        let rig = try await makeActiveRig()
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig { audit.append(($0, $1)) }
         defer { rig.udp.stop() }
 
         XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 45, y: 55)))
@@ -1059,9 +1067,19 @@ final class MirrorContinuityControllerTests: XCTestCase {
         }
 
         rig.controller.pointerLeft()
-        try await waitUntil("the epoch-ending datagram") {
-            rig.udp.packets.contains { !$0.flags.contains(.inside) }
+        try await waitUntil("the reliable disarm") {
+            rig.guest.received.contains {
+                guard case .continuityDisarm(let disarm) = $0 else {
+                    return false
+                }
+                return disarm.epoch == rig.arm.epoch
+            }
         }
+        XCTAssertFalse(audit.contains {
+            $0.1.contains("epoch-ending datagram withheld")
+        }, "an ordinary release must leave the epoch ending on the wire; "
+            + "withholding it everywhere would silence a signal the guest "
+            + "uses to end an epoch it is not starved for")
     }
 
     func testLeavingV0DisarmsImmediately() async throws {
