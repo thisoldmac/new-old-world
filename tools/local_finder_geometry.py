@@ -106,7 +106,7 @@ def finder_windows(link, psn):
     return out
 
 
-def clear_spot(items, avoid, w, h, bounds, obstacles=()):
+def clear_spot(items, avoid, w, h, bounds, obstacles=(), min_travel=96):
     """A destination box that overlaps nothing the Finder reported.
 
     Refused rather than guessed: if the desktop is too full to find one,
@@ -121,10 +121,25 @@ def clear_spot(items, avoid, w, h, bounds, obstacles=()):
     folder, which is precisely the destructive outcome the rule about
     guessed drop targets exists to prevent, arriving through the one gap
     an icon-only check leaves. Every open window on the desk is an
-    obstacle here, the desktop's own excepted."""
+    obstacle here, the desktop's own excepted.
+
+    `min_travel` is the OTHER thing this had to learn, and it produced a
+    false defect report rather than a hazard. The subject is excluded from
+    the overlap test — it is the thing being picked up — which made the
+    subject's OWN CURRENT BOX a perfectly valid destination, and on
+    2026-08-16 it was the one chosen: the run aimed a drag from (488,76)
+    to (488,76), the item did not move, and the probe reported "the button
+    went down and DragGrayRgn did not follow" about a guest that had been
+    asked to move something nowhere. A probe whose failure text names the
+    guest for a property of the rig is worse than no probe, so a
+    destination must now be a real distance away."""
     for y in range(bounds["t"] + 40, bounds["b"] - h - 40, 24):
         for x in range(bounds["l"] + 40, bounds["r"] - w - 40, 24):
             box = (x, y, x + w, y + h)
+            if avoid is not None and (
+                    abs(box[0] - avoid["l"]) + abs(box[1] - avoid["t"])
+                    < min_travel):
+                continue
             if any(it is not avoid
                    and not (box[2] <= it["l"] or box[0] >= it["r"]
                             or box[3] <= it["t"] or box[1] >= it["b"])

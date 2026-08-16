@@ -57,7 +57,13 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "scripts", "probes"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# APPENDED, never inserted at the front. There are TWO modules named
+# `nowwire` in this tree - scripts/probes/nowwire.py, which has GuestLink,
+# and tools/nowwire.py, which does not - so putting tools/ ahead of
+# probes/ silently swaps the wire library underneath every instrument in
+# this directory. Watched here 2026-08-16: the only symptom was
+# "module 'nowwire' has no attribute 'GuestLink'".
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import nowwire  # noqa: E402
 
 ICON = 32
