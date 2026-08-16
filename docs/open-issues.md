@@ -125,20 +125,59 @@ misreading:
   route's own self-test control, and slice 1 already proved the trap route
   cannot see a DragLib drag, so it is silent on the question either way.
 
+### THE CAUSE, NAMED: the Finder never registers — only NOW does
+
+Third round, with a V16 registry that records WHICH applications took a
+registration rather than how many. Build `ce347c46…` / resident
+`cbf060f7…`, asserted from the guest's own hello — the guard fired on the
+first attempt when the rebuild moved the stamp, which is the guard
+working.
+
+Continuity armed (`state: armed`), a desktop document never selected,
+press and 180 px of held motion:
+
+    15:49:24  drag handler reg n=1/1 a5=1f1c6530 tk=8087 app=New Old World
+    15:49:24  drag handler state=1 err=0 inst=1 rem=1 ctx=0 calls=0 enter=0/0
+
+**The one registration is NOW itself.** `New Old World`, A5 `1f1c6530` —
+the same A5 `axsnap` reports for this application. The Finder never
+registered, so `calls=0` is fully explained without needing to know
+whether a drag ever began. That retires the second owed measurement: it
+was there to disambiguate "installed but never called" from "installed,
+with nothing to call it for", and the registry answers it upstream of
+both.
+
+**The mechanism is NOT what it looked like.** A reasonable candidate was
+that `now_ext_dragobs_gne` runs only in NOW's own context. It does not:
+its call site is `now_ext_gne_apply`, which IS the jGNE shim — "in
+whatever process is pumping" — so the registration already rides the true
+all-contexts boundary and there was nothing to move. The candidate was
+checked against the source and dropped rather than built on.
+
+What fits every observation instead: **a registration happens in the
+process the resident is actively DRIVING, plus NOW — and a bare arm of
+either kind does not reach the Finder.** The same round shows
+`spin-up`'s act-plane selftest, which targets NOW itself, also registering
+exactly one context and also naming `New Old World`. Slice 1B's five
+contexts and 67,502 calls came from `menuact` driving the FINDER, which
+is precisely when the resident is executing inside it. So the earlier
+reading of this branch — "the act plane reaches five contexts, Continuity
+reaches one" — was comparing an arm against a DRIVE, not two arms.
+
+That is the real finding, and it is a bigger one than the slice: the
+registration route has been riding the act plane's context-hopping as a
+side effect, and nothing yet puts a handler in the Finder for a gesture
+the Finder itself starts.
+
 ### What the next round must do first
 
-1. **Publish WHICH A5 worlds hold a registration**, not just how many.
-   `ctx` is a count, and a count cannot answer "was the Finder one of
-   them" — which is the whole question. The block already carries
-   `handler_a5`, but it is written at EnterHandler and EnterHandler never
-   happened, so the one context that registered is unidentifiable from
-   this round's evidence. This is the same shape as the standing rule that
-   a count you did not derive is not evidence.
-2. **Measure whether the Finder entered a drag at all**, with the Finder's
-   own `bounds of` before and after (`tools/local-finder-drag.py` is that
-   instrument). Until that exists beside the counters, "installed but
-   never called" and "installed, and there was nothing to call it for" are
-   the same three digits.
+Get the handler into the Finder's context under an ordinary arm. The jGNE
+boundary is already the right place; what is missing is a pass that
+actually runs there while armed. Whether that means the Finder does not
+reach our shim, or reaches it only when driven, is the next measurement —
+and it should be made by counting SHIM PASSES PER CurApName, which is one
+more field on the same registry and the same instrument. Do not add a
+second mechanism before that number exists.
 
 ### A correction to this branch's own earlier claim
 
