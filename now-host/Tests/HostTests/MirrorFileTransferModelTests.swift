@@ -82,6 +82,24 @@ final class MirrorFileTransferModelTests: XCTestCase {
         XCTAssertFalse(line.body.contains("replaced"), line.body)
     }
 
+    /// **`declined` IS CONSENT WORKING, NOT THE OLD DEFECT.** Once the guest
+    /// asks a Mirror-drag drop before refusing it (`now_wire_put_pending_replace`
+    /// / `now_wire_put_resolve_replace`), a person choosing to keep their file
+    /// answers with `file.refuse code=declined`, not `exists`. That line must
+    /// not read as the swallowed-dialog defect `exists` still reads as —
+    /// conflating the two would make the fixed defect invisible again, which
+    /// is exactly what the contract's own note about this pair warns against.
+    func testADeclinedReplaceIsLoggedAsConsentNotAsTheOldDefect() {
+        let line = MirrorFileTransferModel.hostFileFailureAudit(
+            code: "declined", name: "main.c",
+            reason: "somebody chose to keep the file already there")
+        XCTAssertEqual(line.level, .info)
+        XCTAssertTrue(line.body.contains("collision:"), line.body)
+        XCTAssertTrue(line.body.contains("declined"), line.body)
+        XCTAssertTrue(line.body.contains("name=main.c"), line.body)
+        XCTAssertFalse(line.body.contains("refused-without-asking"), line.body)
+    }
+
     /// A collision is not the only way a host→guest copy fails, and the
     /// others must not be dressed as one — they get the code they came with.
     func testAnOrdinaryRefusalKeepsItsOwnCodeAndIsNotCalledACollision() {

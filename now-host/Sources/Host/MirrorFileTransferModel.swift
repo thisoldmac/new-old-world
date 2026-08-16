@@ -228,26 +228,46 @@ final class MirrorFileTransferModel: NSObject, ObservableObject,
     /// This closes the log half and hands the person half to `outcomeSink`,
     /// the same seam `ContinuityGrabTransfer` already uses for exactly this
     /// class of terminal outcome one edge over.
+    ///
+    /// **The dialog now exists** (the guest asks a Mirror-drag drop before
+    /// refusing it — `now_wire_put_pending_replace` /
+    /// `now_wire_put_resolve_replace`, `wire.c`), which is why `exists` and
+    /// `declined` get two different sentences here rather than one. `exists`
+    /// still means nobody was asked — that arm survives for the lanes that
+    /// deliberately keep the old unconditional refusal (an automated put has
+    /// nobody standing at the machine to ask) — so it keeps reading as a
+    /// defect for those. `declined` means a person WAS shown the collision
+    /// and chose to keep their file; that is consent working, not a
+    /// swallowed dialog, so it gets an `.info` line instead of a `.warn`.
+    /// Conflating the two here would make the fixed defect invisible again
+    /// exactly the way the contract's own note about the pair warns against.
+    ///
     /// The sentence, as a pure function, so a test can read it without a
     /// listener, a guest, or a log file — the seam this file already uses
     /// for `wireTarget` and `wireSource`.
     static func hostFileFailureAudit(code: String, name: String,
                                      reason: String)
         -> (level: HostLog.LogLevel, body: String) {
-        guard code == "exists" else {
+        switch code {
+        case "declined":
+            return (.info, "collision: declined name=\(name) — the person "
+                + "at the guest was asked and chose to keep the file "
+                + "already there")
+        case "exists":
+            /* NOT "cancelled", and not "replaced". Nobody was asked. That
+               vocabulary belongs to the replace dialog (docs/open-issues.md,
+               the collision ruling), and spending its words now on a
+               refusal no person authored would make the dialog's arrival
+               invisible in the log — the reader could not tell a person's
+               decision from this Mac's silence. The line is meant to read
+               as a defect, because it is one. */
+            return (.warn, "collision: refused-without-asking name=\(name) "
+                + "— the guest already has a file by this name and nobody "
+                + "was given the choice")
+        default:
             return (.warn, "host file refused by the guest: code=\(code), "
                 + "name=\(name), reason=\(reason)")
         }
-        /* NOT "cancelled", and not "replaced". Nobody was asked. That
-           vocabulary belongs to the replace dialog (docs/open-issues.md, the
-           collision ruling), and spending its words now on a refusal no
-           person authored would make the dialog's arrival invisible in the
-           log — the reader could not tell a person's decision from this
-           Mac's silence. The line is meant to read as a defect, because it
-           is one. */
-        return (.warn, "collision: refused-without-asking name=\(name) — the "
-            + "guest already has a file by this name and nobody was given "
-            + "the choice; the replace dialog is not built yet")
     }
 
     private func reportHostFileFailure(_ failure: GuestListener.FileFailure,
