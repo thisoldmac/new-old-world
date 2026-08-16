@@ -332,6 +332,7 @@ static void drain_trace(const NowPeekContinuityCell *cell)
    `trackdrag_entries` - "patched, and nothing came through" is a
    measurement, and it must not read the same as silence. */
 static NowPeekU32 gLastDragInstall = 0xFFFFFFFFu;
+static NowPeekU32 gLastDragSelftest = 0xFFFFFFFFu;
 static NowPeekU32 gLastDragDispatches = 0;
 static NowPeekU32 gLastDragBeginSeq = 0;
 static NowPeekU32 gLastDragEndSeq = 0;
@@ -360,17 +361,22 @@ static void drain_drag_observe(const NowPeekContinuityCell *cell)
        something a reader is told rather than something they infer from
        an absence of drag lines. */
     if (obs->install_state != gLastDragInstall
+            || obs->selftest_state != gLastDragSelftest
             || (obs->dispatches != 0 && gLastDragDispatches == 0)) {
         now_log(kLogInfo, "mirror",
                 "drag obs install=%lu passes=%lu disp=%lu track=%lu "
-                "ret=%lu reent=%lu",
+                "ret=%lu reent=%lu control=%lu/%lu err=%ld",
                 (unsigned long)obs->install_state,
                 (unsigned long)obs->install_passes,
                 (unsigned long)obs->dispatches,
                 (unsigned long)obs->trackdrag_entries,
                 (unsigned long)obs->trackdrag_returns,
-                (unsigned long)obs->reentries);
+                (unsigned long)obs->reentries,
+                (unsigned long)obs->selftest_state,
+                (unsigned long)obs->selftest_seen,
+                (long)obs->selftest_err);
         gLastDragInstall = obs->install_state;
+        gLastDragSelftest = obs->selftest_state;
     }
     gLastDragDispatches = obs->dispatches;
 

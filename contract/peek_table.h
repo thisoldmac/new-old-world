@@ -1320,6 +1320,24 @@ enum {
     kNowPeekDragObsInstallNoTrap  = 2
 };
 
+/* `selftest_state`. What the resident's own 68K Drag Manager call did,
+   which is the only thing that gives `dispatches == 0` a meaning. */
+enum {
+    kNowPeekDragObsSelftestUntried = 0,
+    /* The control ran AND the shim saw it. So the shim is in the 68K
+       dispatch path, and a zero `dispatches` beside this means the
+       drags in this machine are not arriving through that path. */
+    kNowPeekDragObsSelftestSeen    = 1,
+    /* The control ran and the shim did NOT see it. The patch is in the
+       trap table by its own account and calls are not reaching it -
+       which is a defect in this plane, and must never be read as a
+       fact about anybody's Finder. */
+    kNowPeekDragObsSelftestBlind   = 2,
+    /* NewDrag refused; `selftest_err` says with what. Nothing is known
+       either way and this block says so rather than implying. */
+    kNowPeekDragObsSelftestRefused = 3
+};
+
 /* `item_status` - what the first dragged item turned out to be. The
    count is published separately and is never inferred from this. */
 enum {
@@ -1402,10 +1420,25 @@ typedef struct {
     NowPeekU32 file_creator;      /* HFSFlavor.fileCreator */
     NowPeekI32 file_vrefnum;      /* FSSpec.vRefNum, sign-extended */
     NowPeekU32 file_parid;        /* FSSpec.parID */
+    /* -- the control, and it is the point of the block ---------------- */
+    /* `dispatches == 0` has two meanings and they are opposites: the
+       shim is blind, or nothing called. The first emulator round hit
+       exactly that wall - `install=1 disp=0` after a harness-driven
+       Finder drag, with no way to tell a PowerPC Finder bypassing the
+       68K trap table from a Finder that never started a drag at all.
+       An instrument that reports absence and defect in the same words
+       is the failure AGENTS.md names, so the plane carries its own
+       control: ONE 68K NewDrag/DisposeDrag pair, made by the resident,
+       once per boot, on the first armed pass, OUTSIDE the re-entrancy
+       guard - so it must come back through the shim if the shim is in
+       the path at all.
+       A probe's control must be code you own. This is that code. */
+    NowPeekU32 selftest_state;    /* kNowPeekDragObsSelftest* */
+    NowPeekI32 selftest_err;      /* NewDrag's OSErr, when it refused */
+    NowPeekU32 selftest_seen;     /* dispatches the control itself caused */
     /* -- the sample ring ---------------------------------------------- */
     NowPeekU32 sample_count;      /* TOTAL ever taken; the ring index derives */
     NowPeekU32 sample_dropped;    /* entries the rolling window discarded */
-    NowPeekU32 reserved0;
     unsigned char file_name[64];  /* FSSpec.name, Pascal, fixed width */
     NowPeekDragObsSample samples[kNowPeekDragObsSampleCapacity];
 } NowPeekDragObserve;
@@ -2579,15 +2612,15 @@ _Static_assert(sizeof(NowPeekContinuityClickProbe) == 84,
                "continuity click probe ABI drift");
 _Static_assert(sizeof(NowPeekDragObsSample) == 56,
                "V14 drag observer sample ABI drift");
-_Static_assert(sizeof(NowPeekDragObserve) == 1088,
+_Static_assert(sizeof(NowPeekDragObserve) == 1096,
                "V14 drag observer block ABI drift");
-_Static_assert(offsetof(NowPeekDragObserve, file_name) == 128,
+_Static_assert(offsetof(NowPeekDragObserve, file_name) == 136,
                "V14 drag observer name offset");
-_Static_assert(offsetof(NowPeekDragObserve, samples) == 192,
+_Static_assert(offsetof(NowPeekDragObserve, samples) == 200,
                "V14 drag observer sample ring offset");
 _Static_assert(sizeof(((NowPeekDragObserve *)0)->file_name) == 64,
                "V14 drag observer name width");
-_Static_assert(sizeof(NowPeekContinuityCell) == 5540,
+_Static_assert(sizeof(NowPeekContinuityCell) == 5548,
                "continuity cell size");
 _Static_assert(offsetof(NowPeekContinuityCell, packet_seq) == 20,
                "continuity packet commit offset");

@@ -157,6 +157,26 @@ check("kNowPeekDragObsItemPromise" in OBS_CODE
 check("block->item_count = (NowPeekU32)count;" in OBS_CODE,
       "the item count stopped being the count the Drag Manager gave")
 
+# ------------------------------------------------------------- the control
+# `dispatches == 0` has two opposite meanings and only the control tells
+# them apart. It must be OUTSIDE the re-entrancy guard - a control that
+# our own guard swallowed would report Blind on a working shim - and it
+# must be able to fail three different ways.
+selftest = body(OBS, "static void dragobs_selftest(",
+                "/* WHICH ARM SWITCHES THIS ON")
+check("NewDrag(&probe)" in selftest and "DisposeDrag(probe)" in selftest,
+      "the control stopped being a Drag Manager call of our own")
+check("gInside" not in strip_comments(selftest),
+      "the control went inside the guard, so it can only report Blind")
+for outcome in ("kNowPeekDragObsSelftestSeen",
+                "kNowPeekDragObsSelftestBlind",
+                "kNowPeekDragObsSelftestRefused"):
+    check(outcome in selftest,
+          f"the control lost an outcome it must be able to report: {outcome}")
+check("block->selftest_state != (NowPeekU32)kNowPeekDragObsSelftestUntried"
+      in selftest,
+      "the control stopped being once-per-boot")
+
 # ------------------------------------------------------ install per pass
 # Once-per-boot is the act plane's measured mistake: the install lands in
 # NOW's own context and no foreign application ever calls it.

@@ -172,6 +172,57 @@ static void dragobs_install(NowPeekDragObserve *block)
     block->install_state = (NowPeekU32)kNowPeekDragObsInstallDone;
 }
 
+/* ---- the control ------------------------------------------------------
+ *
+ * WHY THIS EXISTS, in one sentence: without it `dispatches == 0` means
+ * either "nothing in this machine calls the Drag Manager through the 68K
+ * trap" or "our shim is not actually in anybody's path", and those are
+ * opposite conclusions about opposite systems.
+ *
+ * The first emulator round hit that wall exactly. A harness-driven
+ * Finder drag produced `install=1 disp=0`, and nothing in the reading
+ * distinguished a PowerPC Finder bypassing the 68K trap table from a
+ * Finder that never started a drag at all.
+ *
+ * So the plane makes ONE Drag Manager call of its own, from 68K code we
+ * compiled, once per boot, on the first armed pass, and OUTSIDE the
+ * re-entrancy guard - which is the whole trick: if the shim is in the
+ * path, this call must come back through it and `dispatches` must move.
+ *
+ * NewDrag/DisposeDrag is the pair chosen because it touches no drag
+ * anybody else owns, no window, no file and no foreign state: it asks
+ * the Drag Manager for a reference and hands it straight back. It runs
+ * at task time in whatever process is pumping, which is where the act
+ * plane's own selftest runs a real MenuSelect, for the same reason.
+ *
+ * A control that cannot fail proves nothing, so all three outcomes are
+ * recorded and `Blind` is a defect in THIS PLANE rather than a fact
+ * about anybody's Finder. */
+static void dragobs_selftest(NowPeekDragObserve *block)
+{
+    NowPeekU32 before;
+    DragRef probe = NULL;
+    OSErr err;
+
+    if (block->install_state != (NowPeekU32)kNowPeekDragObsInstallDone)
+        return;
+    if (block->selftest_state != (NowPeekU32)kNowPeekDragObsSelftestUntried)
+        return;                       /* once per boot, and only once */
+
+    before = block->dispatches;
+    err = NewDrag(&probe);
+    if (err != noErr || probe == NULL) {
+        block->selftest_state = (NowPeekU32)kNowPeekDragObsSelftestRefused;
+        block->selftest_err = (NowPeekI32)err;
+        return;
+    }
+    (void)DisposeDrag(probe);
+    block->selftest_seen = block->dispatches - before;
+    block->selftest_state = block->selftest_seen != 0
+        ? (NowPeekU32)kNowPeekDragObsSelftestSeen
+        : (NowPeekU32)kNowPeekDragObsSelftestBlind;
+}
+
 /* WHICH ARM SWITCHES THIS ON, and why it is two rather than one.
  *
  * The obvious answer is Continuity, and Continuity alone was the first
@@ -202,6 +253,7 @@ void now_ext_dragobs_gne(NowPeekTable *table, NowPeekU32 request)
         return;
     gTable = table;
     dragobs_install(&cell->drag_observe);
+    dragobs_selftest(&cell->drag_observe);
 }
 
 /* ---- reading a drag ---------------------------------------------------
