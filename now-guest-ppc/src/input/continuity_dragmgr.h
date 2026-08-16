@@ -57,6 +57,10 @@ Boolean now_continuity_dragmgr_busy(void);
    that carried it and neither can a drag of one. */
 void now_continuity_dragmgr_forget(void);
 
+/* SLICE-2 DIAGNOSTIC SCAFFOLD, not product. See the mask's meaning in
+   continuity_dragmgr.c. Comes out with the block it drives. */
+void now_continuity_dragmgr_diag(long mask);
+
 /* Disposes the send-data UPP. Call once at quit. */
 void now_continuity_dragmgr_shutdown(void);
 

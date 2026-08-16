@@ -999,6 +999,16 @@ static void run_offer(const char *request_json, long id, char *out, long cap)
        reporting a drag that has not started would be the apply race
        written into the console's own words. `offer` alone reports what
        became of it. */
+    /* SLICE-2 DIAGNOSTIC SCAFFOLD, not product, and it comes out with
+       the block it drives (continuity_dragmgr.c). `offer --drag --x=N`
+       sets the experiment mask so one boot answers several hypotheses;
+       a build/spin cycle is ~20 minutes and there are three left. */
+    if (strncmp(action, "--drag --x=", 11) == 0
+        && action[11] >= '0' && action[11] <= '9') {
+        now_continuity_dragmgr_diag((long)(action[11] - '0'));
+        action[6] = '\0';
+    }
+
     if (strcmp(action, "--drag") == 0) {
         char err[128];
         char esc_err[260];

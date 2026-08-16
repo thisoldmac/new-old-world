@@ -24,6 +24,39 @@
 static NowContinuityDragState g_drag;
 static DragSendDataUPP g_send_upp;
 
+/* ---- SLICE-2 DIAGNOSTIC SCAFFOLD. NOT PRODUCT. -------------------
+   Set from the console (`offer --drag --x=<mask>`) so one boot can run
+   the whole experiment matrix rather than one hypothesis per build,
+   which at ~20 minutes a build/spin cycle is the difference between an
+   afternoon and a week. Every bit here is a QUESTION, and whichever
+   one turns out to be the answer becomes ordinary code with a reason
+   attached; the rest, and this whole block, come out.
+
+     1  hold the DragRef after TrackDrag returns and dispose it from
+        the main loop instead, so a receiver that asks LATE can still
+        be answered. Tests whether the Finder defers.
+     2  omit the kFlavorTypeClippingName hint. Tests whether 'clnm'
+        diverts the Finder onto its clipping path, where a promised
+        HFS file is not what it is looking for. */
+static long g_diag_mask;
+/* Did the send-data callback arrive at all, and was it after TrackDrag
+   had already returned? Two different facts and the second one is the
+   whole point of bit 1. */
+static long g_diag_asks;
+static Boolean g_diag_tracking;
+static long g_diag_late_asks;
+
+/* Bit 1's held drag, disposed from now_continuity_dragmgr_service. */
+static DragRef g_held_drag;
+static RgnHandle g_held_region;
+static GWorldPtr g_held_image;
+static unsigned long g_held_until;
+
+void now_continuity_dragmgr_diag(long mask)
+{
+    g_diag_mask = mask;
+}
+
 /* The one drag item. The Drag Manager wants a reference number per item
    and this drag has exactly one, always: an offer holds one file (a
    folder is refused before we get here). */
@@ -194,6 +227,16 @@ static pascal OSErr drag_send_data(FlavorType type, void *refcon,
        that never asks, and until this line the two were one word. */
     now_log(kLogInfo, "mirror", "drag promise asked for '%.4s'",
             (const char *)&type);
+
+    /* DIAGNOSTIC. Which side of TrackDrag's return the ask arrived on is
+       the question bit 1 exists to answer, and it can only be recorded
+       here — afterwards, both look identical. */
+    g_diag_asks++;
+    if (!g_diag_tracking) {
+        g_diag_late_asks++;
+        now_log(kLogWarn, "mirror",
+                "drag promise asked AFTER TrackDrag returned");
+    }
 
     /* The only flavor promised. Anything else is a receiver asking for
        something this drag never offered. */
@@ -419,7 +462,7 @@ static void start_drag(void)
     /* The name the Finder should use, offered as a hint rather than
        imposed — the receiver remains free to uniquify it. */
     CopyCStringToPascal(g_drag.item.name, pname);
-    if (pname[0] > 0) {
+    if (pname[0] > 0 && (g_diag_mask & 2) == 0) {
         AddDragItemFlavor(drag, kOfferItemRef, kFlavorTypeClippingName,
                           &pname[1], (Size)pname[0], 0);
     }
@@ -493,7 +536,11 @@ static void start_drag(void)
         OSErr track;
         int verdict;
 
+        g_diag_asks = 0;
+        g_diag_late_asks = 0;
+        g_diag_tracking = true;
         track = TrackDrag(drag, &event, region);
+        g_diag_tracking = false;
         verdict = now_continuity_drag_ended(&g_drag, track == noErr,
                                             toolbox);
 
@@ -520,6 +567,45 @@ static void start_drag(void)
                 plane, toolbox, (int)where.h, (int)where.v,
                 (unsigned long)(entered - started),
                 (unsigned long)(TickCount() - entered));
+
+        /* WHERE THE DROP LANDED, ASKED OF THE DRAG ITSELF.
+           `promise-never-asked` says the callback did not run; it cannot
+           say whether anybody was there to run it. A receiver that took
+           the drop calls SetDropLocation on its way through, so the
+           descriptor type here separates "the Finder had it and declined
+           to ask" from "nothing ever received this at all" - two
+           diagnoses that have shared one sentence for this whole slice.
+           typeNull means nobody set one. */
+        {
+            AEDesc drop;
+            OSType kind = typeNull;
+            Point endp;
+
+            AECreateDesc(typeNull, NULL, 0, &drop);
+            if (GetDropLocation(drag, &drop) == noErr) {
+                kind = drop.descriptorType;
+            }
+            AEDisposeDesc(&drop);
+            GetMouse(&endp);
+            LocalToGlobal(&endp);
+            now_log(kLogInfo, "mirror",
+                    "drag drop: loc='%.4s' end=%d,%d mods=0x%04x asks=%ld",
+                    (const char *)&kind, (int)endp.h, (int)endp.v,
+                    (unsigned)event.modifiers, g_diag_asks);
+        }
+    }
+
+    /* DIAGNOSTIC bit 1: hand the DragRef to the main loop instead of
+       disposing it here, so a Finder that asks for the promise AFTER
+       its receive handler returns still has a live drag to ask on. */
+    if ((g_diag_mask & 1) != 0) {
+        g_held_drag = drag;
+        g_held_region = region;
+        g_held_image = image;
+        g_held_until = TickCount() + 60 * 8;
+        now_log(kLogInfo, "mirror",
+                "drag held for 8s after TrackDrag (diagnostic)");
+        return;
     }
 
     /* Torn down in every case, including the failures above: classic
@@ -601,6 +687,24 @@ int now_continuity_dragmgr_cancel(char *err, long cap)
 void now_continuity_dragmgr_service(void)
 {
     int action;
+
+    /* DIAGNOSTIC bit 1's teardown. The main loop is running by the time
+       this fires, so the Finder has had real time to come back and ask. */
+    if (g_held_drag != NULL && TickCount() > g_held_until) {
+        now_log(kLogInfo, "mirror",
+                "drag held drag disposed; late asks=%ld", g_diag_late_asks);
+        DisposeDrag(g_held_drag);
+        g_held_drag = NULL;
+        if (g_held_region != NULL) {
+            DisposeRgn(g_held_region);
+            g_held_region = NULL;
+        }
+        if (g_held_image != NULL) {
+            UnlockPixels(GetGWorldPixMap(g_held_image));
+            DisposeGWorld(g_held_image);
+            g_held_image = NULL;
+        }
+    }
 
     if (g_drag.state != kNowDragWaitingButton) {
         return;
