@@ -211,12 +211,21 @@ check("drain_drag_observe(cell);" not in DRAIN,
       "the drag drain went back inside the epoch-gated Continuity service")
 check("now_log_memory" not in drain and "now_log(" in drain,
       "the drag observer drain fell back to the never-uploaded memory log")
-# The lifecycle is always on; only the per-look ring is gated. A gate on
-# the counters line would hide the negative this slice exists to report.
-check(drain.index("drag obs install=") < drain.index("now_mirror_debug_on()")
-      and drain.index("drag begin seq=") < drain.index("now_mirror_debug_on()")
-      and "drag look n=" in drain.split("now_mirror_debug_on()")[1],
-      "the drag lifecycle went behind the debug gate, or the ring came out")
+# The lifecycle is ALWAYS ON and only the per-look ring is gated. Stated
+# as four separate properties, because the counters line now MENTIONS the
+# gate - extra Drag Manager traffic beyond the first is debug tier -
+# while not being behind it, and a pin that only checked ordering read
+# that as the lifecycle going dark.
+check("if (!now_mirror_debug_on())" not in drain,
+      "the whole drain went behind the debug gate")
+check(drain.index("obs->install_state != gLastDragInstall")
+      < drain.index("now_mirror_debug_on()"),
+      "the counters line no longer has an ungated reason to print")
+check(drain.index("drag begin seq=")
+      < drain.index("if (now_mirror_debug_on()"),
+      "a drag beginning went behind the debug gate")
+check("drag look n=" in drain.split("if (now_mirror_debug_on()")[1],
+      "the per-look ring came out from behind the debug gate")
 
 if failures:
     for message in failures:

@@ -7,6 +7,89 @@ search:
 
 # Open issues
 
+## MEASURED AND DECISIVE, AND IT CLOSES A ROUTE RATHER THAN OPENING ONE: the Mac OS 9 Finder drags a file without one call through the 68K Drag Manager trap (2026-08-16, `feat/resident-drag-observe`)
+
+Slice 1 of the resident drag plane
+(`docs/local/plan-resident-drag-plane-2026-08-16.md`) built the
+instrument the plan asked for and used it to answer the question slice 3
+was waiting on. The answer is a negative, it is earned rather than
+inferred, and it means the route the plan proposed does not exist.
+
+### What was built
+
+V14 of the shared table carries a drag observer: a shim on the 68K
+`_DragDispatch` trap (0xABED — the WHOLE Drag Manager is selectors on
+that one trap, and `TrackDrag` is selector 13), installed on every armed
+pass in the foreign application's own context, chaining unconditionally.
+At a TrackDrag it would record the item count, the first item's
+`flavorTypeHFS` FSSpec, what the Drag Manager was handed, and a bounded
+ring of samples pairing the Drag Manager's own reported mouse against
+the low-memory point this resident drives.
+
+### What the emulator said, and why it is believable
+
+One harness-driven Finder drag of a desktop file, the file never
+selected first, `now-mirror-stage.qcow2` clone with this tree's build
+staged and cold-booted (`/private/tmp/nowvm-dragobs4/provenance.md`,
+tableLength 11676, buildFingerprint `ae2e86dbbad9`):
+
+    drag obs install=1 passes=5 disp=2 track=0 ret=0 reent=0 control=1/2
+
+- `install=1` — the shim is in the trap table.
+- `control=1/2` — **the plane's own control**: one 68K
+  `NewDrag`/`DisposeDrag` pair made by the resident, outside the
+  re-entrancy guard, and the shim saw BOTH calls. So the shim is
+  genuinely in the 68K dispatch path.
+- `disp=2` — and those two dispatches are exactly the control's own.
+  Nothing else in the machine came through.
+- `track=0`, and **no `drag begin` line at all** — while the Finder
+  completed a real file drag: the icon moved from (620,560) to (300,568)
+  and the move is in the after-screendump.
+
+The control is the whole reason this reads as a measurement. The FIRST
+emulator round of the same day produced `install=1 disp=0` and could not
+distinguish a PowerPC Finder bypassing the trap table from a shim in
+nobody's path — absence and defect in the same words, which is the
+failure AGENTS.md names. The plane was given a control made of code we
+own before any conclusion was drawn from a zero.
+
+### What it means for slices 2 and 3
+
+**A 68K trap patch cannot see, and therefore cannot steer, a PowerPC
+application's drag on Mac OS 9.** The Drag Manager there is native
+PowerPC code reached through CFM; the 68K trap is an entry point for 68K
+callers and the Finder is not one. So:
+
+- Slice 2 ("bind the drag rather than the selection") cannot get its
+  identity from this route. The drag reference exists only inside the
+  Finder's own PowerPC world.
+- Slice 3's targeting question is not answerable by this instrument
+  either — `inwin=1` while GetMouse reads the true point remains
+  unexplained, and nothing in this plane will explain it.
+- The routes that remain are all on the CFM side rather than the trap
+  side: patching the Finder's own DragLib import connection, or getting
+  a `TrackingHandler`/`ReceiveHandler` registered into the Finder's
+  context, which is a different mechanism with a different charter
+  question. Neither has been attempted or costed.
+
+The observer itself is kept: it is cheap, it is honest about its own
+zeroes, and it is the instrument that will say immediately whether any
+future route reaches a drag.
+
+### Unverified
+
+- No metal round. Whether a PowerBook 1400c's Finder differs here is
+  unknown, and there is no reason to expect it does.
+- The sample ring, the HFS identity read and the TrackDrag return path
+  have **never executed** — no TrackDrag has ever reached them. They
+  build, they are pinned, and they are unexercised. A 68K application
+  making a drag would exercise them and none was tried.
+- The drain's counters line was widened after the emulator round so that
+  Drag Manager traffic arriving later cannot be a silence. That widening
+  is Tested, not emulator-verified.
+- No shared bake. Every commit here carries a written
+  `TBT_DEFER_EXT_BAKE` deferral, which comes due at `main`.
+
 ## FIXED AND TESTED, NOT METAL-VERIFIED: the epoch teardown erased the settled release on SLOW drags only (2026-08-15 18:47 round, `fix/continuity-press-origin-loss`)
 
 **The snap-back worked, except when the person dragged slowly — then the

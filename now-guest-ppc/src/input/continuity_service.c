@@ -333,6 +333,7 @@ static void drain_trace(const NowPeekContinuityCell *cell)
    measurement, and it must not read the same as silence. */
 static NowPeekU32 gLastDragInstall = 0xFFFFFFFFu;
 static NowPeekU32 gLastDragSelftest = 0xFFFFFFFFu;
+static NowPeekU32 gLastDragTracks = 0xFFFFFFFFu;
 static NowPeekU32 gLastDragDispatches = 0;
 static NowPeekU32 gLastDragBeginSeq = 0;
 static NowPeekU32 gLastDragEndSeq = 0;
@@ -360,9 +361,19 @@ static void drain_drag_observe(const NowPeekContinuityCell *cell)
        machine's life comes through, so "installed and never called" is
        something a reader is told rather than something they infer from
        an absence of drag lines. */
+    /* Printed on any state change AND on any new Drag Manager traffic
+       while the gate is on. The 0 -> nonzero edge alone was not enough:
+       the emulator round of 2026-08-16 could show that the FIRST two
+       dispatches were the control's own and could not show whether any
+       arrived later, which is the same counter being asked two
+       questions. `trackdrag_entries` is included because a drag is what
+       the whole plane is for and its arrival must never be a silence. */
     if (obs->install_state != gLastDragInstall
             || obs->selftest_state != gLastDragSelftest
-            || (obs->dispatches != 0 && gLastDragDispatches == 0)) {
+            || obs->trackdrag_entries != gLastDragTracks
+            || (obs->dispatches != 0 && gLastDragDispatches == 0)
+            || (now_mirror_debug_on()
+                && obs->dispatches != gLastDragDispatches)) {
         now_log(kLogInfo, "mirror",
                 "drag obs install=%lu passes=%lu disp=%lu track=%lu "
                 "ret=%lu reent=%lu control=%lu/%lu err=%ld",
@@ -377,6 +388,7 @@ static void drain_drag_observe(const NowPeekContinuityCell *cell)
                 (long)obs->selftest_err);
         gLastDragInstall = obs->install_state;
         gLastDragSelftest = obs->selftest_state;
+        gLastDragTracks = obs->trackdrag_entries;
     }
     gLastDragDispatches = obs->dispatches;
 
