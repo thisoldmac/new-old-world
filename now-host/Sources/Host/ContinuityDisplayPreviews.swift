@@ -57,6 +57,56 @@ protocol ContinuityHostScreenCapturing: AnyObject {
     /// reason for a 5120x2880 image to exist for that.
     func captureHostDisplay(id: CGDirectDisplayID,
                             maxPixelWidth: CGFloat) async throws -> CGImage
+    /// Fires the one-shot Screen Recording prompt, if TCC has no decision
+    /// recorded yet. Call this ONLY from the person's own act of turning
+    /// previews on (`ContinuityDisplayPreviewStore.setEnabled(true)`) —
+    /// never from a refresh, and never from page load, per the same rule
+    /// `AccessibilityAuthorization.promptForTrust` documents: a prompt
+    /// nobody asked for is as unhelpful as no prompt.
+    func requestAccessIfNeeded()
+}
+
+/// Seam over the two Screen Recording TCC calls, the same shape as
+/// `AccessibilityAuthorization` and for the same reason: the real calls
+/// have process-wide side effects (one shows a system dialog) a test must
+/// never invoke for real.
+protocol ScreenRecordingAuthorization: Sendable {
+    /// Whether this process currently holds Screen Recording access.
+    /// Never prompts, never has a side effect. THE authority for whether a
+    /// capture should even be attempted — see `SystemScreenRecordingAuthorization`
+    /// for why this, and not a capture's own content, is what gates the
+    /// attempt.
+    func isGranted() -> Bool
+    /// Asks macOS to show its Screen Recording prompt when the process has
+    /// no TCC decision yet. A one-shot the same way Accessibility's is:
+    /// once granted-and-reset even once, this returns silently forever and
+    /// no dialog appears again for the install.
+    func requestAccess()
+}
+
+/// `CGPreflightScreenCaptureAccess` / `CGRequestScreenCaptureAccess`,
+/// unwrapped from Core Graphics.
+///
+/// **Why preflight, and not the capture's own success or failure, is the
+/// authority.** The previous version of this file trusted
+/// `CGRequestScreenCaptureAccess()`'s return value to decide whether to
+/// even attempt a capture, and separately trusted a captured image's own
+/// pixel content (`ContinuityScreenCaptureKitSource.isEffectivelyBlack`)
+/// to catch what that missed. Both are documented to be unreliable in the
+/// same direction: `CGRequestScreenCaptureAccess()` can report `true`
+/// once an app merely APPEARS in the Screen Recording list, independent of
+/// whether the switch next to it is on, and a denied capture's "safe"
+/// placeholder image is not uniformly black — it still draws the menu bar
+/// and this app's own windows (self-capture is always allowed), which
+/// defeated the 8×8 sampling grid outright (Michelle, 2026-08-16: black
+/// host tile, menu bar visible). `CGPreflightScreenCaptureAccess()` is the
+/// one call in this pair documented to report the actual TCC decision with
+/// no side effect, so it is now the sole gate on whether a capture is
+/// attempted at all — checked fresh on every capture, not cached from
+/// whatever `requestAccess()` last returned.
+struct SystemScreenRecordingAuthorization: ScreenRecordingAuthorization {
+    func isGranted() -> Bool { CGPreflightScreenCaptureAccess() }
+    func requestAccess() { _ = CGRequestScreenCaptureAccess() }
 }
 
 @MainActor
@@ -72,18 +122,43 @@ final class ContinuityScreenCaptureKitSource: ContinuityHostScreenCapturing {
     /// The filter the still capture actually used, for the canvas to explain
     /// itself and for a person reading a bug report to know which they saw.
     private(set) var plan: ContinuityDesktopFilterPlan = .wholeDisplay
+    private let authorization: ScreenRecordingAuthorization
+    /// True once this instance has gone past the authorization gate in
+    /// `captureHostDisplay` and attempted a real capture. Exists for
+    /// `ContinuityDisplayPreviewTests.testCaptureRefusesImmediatelyWhenPreflightIsFalse`:
+    /// on a machine whose OWN Screen Recording state also happens to be
+    /// denied, a broken (removed) gate would still end up throwing
+    /// `screenRecordingDenied` — just later, from the real capture call
+    /// instead of the guard — and look identical to the correct behaviour
+    /// from the outside. This flag is the only way to prove the refusal
+    /// happened BEFORE any capture attempt, independent of what this
+    /// machine's actual TCC state is.
+    private(set) var attemptedRealCapture = false
+
+    init(authorization: ScreenRecordingAuthorization
+            = SystemScreenRecordingAuthorization()) {
+        self.authorization = authorization
+    }
+
+    func requestAccessIfNeeded() {
+        guard !authorization.isGranted() else { return }
+        authorization.requestAccess()
+    }
 
     func captureHostDisplay(id: CGDirectDisplayID,
                             maxPixelWidth: CGFloat) async throws -> CGImage {
-        /* Preflight rather than request: this asks TCC what we already have
-           WITHOUT prompting, so the prompt below happens only once the
-           arranger has genuinely asked for a picture. Nothing on the launch
-           path reaches here. */
-        if !CGPreflightScreenCaptureAccess() {
-            guard CGRequestScreenCaptureAccess() else {
-                throw ContinuityPreviewError.screenRecordingDenied
-            }
+        /* THE gate. Checked fresh here rather than trusted from whatever
+           `requestAccessIfNeeded()` last returned, because a grant can be
+           revoked mid-session and because `CGRequestScreenCaptureAccess`'s
+           own return value is not reliable evidence (see
+           `SystemScreenRecordingAuthorization`'s doc comment). A refusal
+           here means no ScreenCaptureKit or CGDisplayCreateImage call is
+           ever made — the note-plus-deep-link renders INSTEAD of a
+           thumbnail, not after one comes back suspicious. */
+        guard authorization.isGranted() else {
+            throw ContinuityPreviewError.screenRecordingDenied
         }
+        attemptedRealCapture = true
 
         let image: CGImage
         if #available(macOS 14.0, *) {
@@ -101,32 +176,34 @@ final class ContinuityScreenCaptureKitSource: ContinuityHostScreenCapturing {
             }
             image = Self.downscaled(captured, maxPixelWidth: maxPixelWidth)
         }
-        /* The preflight above is not the whole story. Screen Recording,
-           like Accessibility (docs/open-issues.md, the 2026-08-15 arc), is
-           granted to a COPY on disk, not a bundle identifier — and macOS
-           re-checks it lazily, so a grant revoked mid-session, or a launch
-           from a copy TCC never approved, can leave `CGPreflightScreenCaptureAccess`
-           answering stale-true while the capture itself comes back a
-           legitimate CGImage full of nothing. That is indistinguishable
-           from a genuinely dark display by pixel content alone, EXCEPT
-           that a real desktop always carries a menu bar and wallpaper —
-           uniform black across the whole frame is the tell. Silently
-           drawing that black rectangle is the exact defect this preview
-           feature exists to not have, so it is treated as the same denial
-           the preflight would have caught if TCC had not lied about it. */
+        /* SECONDARY guard, kept for the one gap preflight cannot close: a
+           grant revoked in System Settings mid-session, before this process
+           next calls `CGPreflightScreenCaptureAccess`, can still hand back
+           a "successful" capture with nothing real in it. This is NOT the
+           primary detector any more — the menu bar and this app's own
+           on-screen windows are visible even in a denied capture's "safe"
+           placeholder image (self-capture is always allowed), which is
+           exactly what defeated the old whole-frame version of this check
+           (Michelle, 2026-08-16). Sampling starts one row below the top of
+           the 8×8 grid so that always-lit menu-bar strip cannot mask an
+           otherwise-empty frame. */
         if Self.isEffectivelyBlack(image) {
             throw ContinuityPreviewError.screenRecordingDenied
         }
         return image
     }
 
-    /// Whether a captured still is uniformly black — the tell for a capture
-    /// that "succeeded" (no thrown error) but delivered nothing, because the
-    /// TCC decision behind it was stale or belonged to a different copy of
-    /// this app. A real screen is never exactly (0,0,0) everywhere: even an
-    /// all-black desktop picture still carries a menu bar. Sampled on a
-    /// small grid rather than every pixel — this only needs to catch
-    /// "uniformly nothing", not measure the image.
+    /// Whether a captured still is uniformly black BELOW its top eighth —
+    /// the tell for a capture that "succeeded" (no thrown error) but
+    /// delivered nothing but chrome, because the TCC decision behind it
+    /// went stale between the preflight check and the capture itself. A
+    /// real screen's body is never exactly (0,0,0) everywhere: even an
+    /// all-black desktop picture still carries icons or a dock. The menu
+    /// bar strip (this app's own windows are also always visible,
+    /// self-capture being exempt from Screen Recording) is EXCLUDED from
+    /// the sample on purpose: it is lit in both a genuine capture and in
+    /// the OS's own denied-capture placeholder, so including it makes this
+    /// check blind to exactly the failure it exists to catch.
     static func isEffectivelyBlack(_ image: CGImage) -> Bool {
         let side = 8
         guard let context = CGContext(
@@ -136,7 +213,9 @@ final class ContinuityScreenCaptureKitSource: ContinuityHostScreenCapturing {
             let data = context.data else { return false }
         context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
         let buffer = data.bindMemory(to: UInt8.self, capacity: side * side * 4)
-        for pixel in 0 ..< (side * side) {
+        // Row 0 is the top eighth of the frame - the menu-bar band on any
+        // ordinary display - and is skipped entirely.
+        for pixel in side ..< (side * side) {
             let base = pixel * 4
             // Skip the alpha channel (index 3 of each RGBA pixel): a fully
             // transparent black is a different fact from an opaque one, but
@@ -181,7 +260,26 @@ final class ContinuityScreenCaptureKitSource: ContinuityHostScreenCapturing {
 
         /* Excluding every running application leaves the desktop picture,
            the desktop icons and the menu bar. `exceptingWindows: []` means
-           no window earns its way back in. */
+           no window earns its way back in.
+
+           REVIEWED 2026-08-16, after Michelle reported the tile rendering
+           black with only the menu bar visible: is this filter itself
+           hiding the wallpaper? `SCContentFilter(display:excludingApplications:
+           exceptingWindows:)` operates on ON-SCREEN WINDOWS belonging to
+           the named applications; the desktop picture is compositied by
+           the display capture directly and is not owned by any
+           `SCRunningApplication`'s window list, so it survives this filter
+           regardless of which apps `content.applications` names — this is
+           Apple's own documented recipe for a windows-excluded desktop
+           still, not a narrower one this file invented. The black tile
+           Michelle saw is accounted for without a filter defect: a denied
+           capture returns the OS's own "safe" placeholder (chrome and this
+           app's self-capture-exempt windows only, everything else black),
+           which is exactly what the new preflight gate above now refuses
+           to even ask for. Filed as reviewed rather than fixed — there is
+           nothing here to fix unless a live permission-granted run shows
+           otherwise, which this change could not verify without a Mac to
+           grant Screen Recording on. */
         let filter = SCContentFilter(display: display,
                                      excludingApplications: content.applications,
                                      exceptingWindows: [])
@@ -335,7 +433,16 @@ final class ContinuityDisplayPreviewStore: ObservableObject {
         guard isEnabled != enabled else { return }
         enabled = isEnabled
         defaults?.set(isEnabled, forKey: Self.enabledKey)
-        if !isEnabled { clear() }
+        if isEnabled {
+            /* The ONE place the system prompt is allowed to fire: the
+               person's own act of turning previews on. `refresh` below
+               never requests, only preflights — so a launch that restores
+               `enabled == true` from a previous session, and whose `.task`
+               fires a refresh on page appearance, never re-prompts either. */
+            hostSource?.requestAccessIfNeeded()
+        } else {
+            clear()
+        }
     }
 
     /// Called when the arranger appears and when the display configuration

@@ -1,27 +1,31 @@
 import SwiftUI
 
 /// What the arrangement pane has to say about a guest before it draws
-/// anything: three states, not two. `.connected` is the ordinary case this
-/// page always drew. `.empty` is the defect this type exists to name — the
-/// pane used to draw the connected tile's exact rectangle even when NO
-/// guest had ever been seen, which is a phantom implying a machine that
-/// was never there. `.remembered` is the deliberate middle state: a
-/// machine the host has seen before, with a placement worth arranging,
-/// that simply is not on the wire right now — offline is not the same
-/// fact as never-existed, and the pane says which one it means.
+/// anything. Two states: `.connected` draws the tile, anything else draws
+/// the empty state — full stop.
+///
+/// **This shipped as three states for about a day, and was overruled in
+/// review the same day (2026-08-16).** The removed `.remembered` state kept
+/// an editable tile on screen for a machine the host had seen before but
+/// was not currently on the wire — dashed, secondary-tinted, labelled
+/// "remembered, not connected" — reasoned from the idiom other modules
+/// (`ConnectionsModuleView`'s `.known` presence) already use for exactly
+/// that distinction. Michelle's ruling was narrower than that idiom: "it
+/// should not show any guest display when no guest is connected," and the
+/// label undermined the design on its own terms besides — a dashed tile
+/// still reads as a machine that is there, and it named an absence rather
+/// than a remembered one. The persisted placement itself
+/// (`ContinuityDisplayLayout`'s `guestOrigin`/`guestScale`) is UNTOUCHED
+/// by this reversal — a reconnecting machine still comes back exactly
+/// where it was — only the RENDERING of an offline placement, and the
+/// `MirrorContinuityController.hasRememberedGuest` roster read that fed
+/// it, were removed.
 enum ContinuityArrangementPresence: Equatable {
     case connected
-    case remembered
     case empty
 
-    init(guestConnected: Bool, hasRememberedGuest: Bool) {
-        if guestConnected {
-            self = .connected
-        } else if hasRememberedGuest {
-            self = .remembered
-        } else {
-            self = .empty
-        }
+    init(guestConnected: Bool) {
+        self = guestConnected ? .connected : .empty
     }
 }
 
@@ -31,14 +35,11 @@ struct ContinuityDisplayLayoutView: View {
     @ObservedObject var previews: ContinuityDisplayPreviewStore
     let guestName: String
     let continuityRunning: Bool
-    /// Whether a guest is on the wire right now — distinct from
-    /// `hasRememberedGuest`, which only says the host has ever seen one.
+    /// Whether a guest is on the wire right now.
     let guestConnected: Bool
-    let hasRememberedGuest: Bool
 
     private var presence: ContinuityArrangementPresence {
-        ContinuityArrangementPresence(guestConnected: guestConnected,
-                                      hasRememberedGuest: hasRememberedGuest)
+        ContinuityArrangementPresence(guestConnected: guestConnected)
     }
 
     var body: some View {
@@ -67,9 +68,9 @@ struct ContinuityDisplayLayoutView: View {
                             .stroke(Color(nsColor: .separatorColor))
                     }
             } else {
+                // presence == .connected: the only other case there is.
                 ContinuityArrangementCanvas(
-                    layout: layout, previews: previews, guestName: guestName,
-                    guestConnected: presence == .connected)
+                    layout: layout, previews: previews, guestName: guestName)
                     .frame(minHeight: 280)
                     .background(Color(nsColor: .controlBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -140,12 +141,6 @@ struct ContinuityDisplayLayoutView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
-                    if presence == .remembered {
-                        Label("\(guestName) — remembered, not connected",
-                              systemImage: "circle")
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(.secondary)
-                    }
                     Label(layoutLine,
                           systemImage: layout.sharedEdge == nil
                             ? "rectangle.on.rectangle.slash"
@@ -273,15 +268,15 @@ struct ContinuityChoiceButtonStyle: ButtonStyle {
     }
 }
 
+/// This canvas only ever renders while a guest is CONNECTED —
+/// `ContinuityDisplayLayoutView` draws the empty state for every other
+/// case, so there is no "offline" styling to carry here. (There briefly
+/// was: see `ContinuityArrangementPresence`'s doc comment for the
+/// same-day reversal.)
 private struct ContinuityArrangementCanvas: View {
     @ObservedObject var layout: ContinuityDisplayLayout
     @ObservedObject var previews: ContinuityDisplayPreviewStore
     let guestName: String
-    /// False for a REMEMBERED machine's placement, edited while it is
-    /// offline. The tile stays on screen — editing a remembered placement
-    /// is legitimate — but is drawn differently so it never reads as a
-    /// live connection that is not there.
-    let guestConnected: Bool
     @State private var dragOrigin: CGPoint?
 
     var body: some View {
@@ -350,17 +345,9 @@ private struct ContinuityArrangementCanvas: View {
 
     private func guestTile(transform: ArrangementTransform) -> some View {
         let rect = transform.canvasRect(layout.guestFrame)
-        // Offline (remembered) reuses the Connections module's own dot
-        // vocabulary for "known, not connected": secondary rather than
-        // accent, a dashed rather than solid stroke. Never the same picture
-        // as a live guest, so a remembered placement can never be mistaken
-        // for one that is actually there.
-        let tint: Color = guestConnected ? .accentColor : .secondary
         return ZStack {
             RoundedRectangle(cornerRadius: 7)
-                .fill(tint.opacity(0.22))
-            // No guest connected is not a failure: the tile keeps the flat
-            // fill and the machine name, exactly as before previews existed.
+                .fill(Color.accentColor.opacity(0.22))
             if let preview = previews.guestPreview {
                 Image(decorative: preview, scale: 1)
                     .resizable()
@@ -369,14 +356,12 @@ private struct ContinuityArrangementCanvas: View {
                     .overlay(Color.black.opacity(0.2))
             }
             RoundedRectangle(cornerRadius: 7)
-                .stroke(tint, style: StrokeStyle(
-                    lineWidth: 2, dash: guestConnected ? [] : [5, 4]))
+                .stroke(Color.accentColor, lineWidth: 2)
             VStack(spacing: 3) {
                 Text(guestName)
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
-                Text(guestConnected ? "Guest · \(layout.scaleMode.label)"
-                     : "Offline · \(layout.scaleMode.label)")
+                Text("Guest · \(layout.scaleMode.label)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -398,9 +383,7 @@ private struct ContinuityArrangementCanvas: View {
                 layout.finishGuestMove()
             })
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(guestConnected
-            ? "Movable guest display \(guestName)"
-            : "Movable guest display \(guestName), remembered, offline")
+        .accessibilityLabel("Movable guest display \(guestName)")
         .accessibilityHint("Drag to a host display edge")
     }
 }
