@@ -94,10 +94,21 @@ final class LiveDragManagerAcceptanceTests: XCTestCase {
             }
             try await Task.sleep(nanoseconds: 200_000_000)
         }
+        // THROWS, RATHER THAN FAILING AND CARRYING ON. XCTFail is not a
+        // return: every `execLine` after it parks in a
+        // `withCheckedContinuation` that only the guest's reply resumes,
+        // and there is no guest — so the case does not fail, it HANGS,
+        // and a hang is the one outcome an opted-in gate can produce that
+        // nobody can read. Watched: a run sat past ten minutes with 65
+        // bytes of output while the guest answered `tools/askguest.py`
+        // perfectly well on the same port seconds later.
         XCTFail("no guest dialled in on \(port) within 180s — long enough "
                 + "to outlast the guest's redial backoff, so this is a "
                 + "guest that is not dialling rather than one that is slow")
+        throw NoGuest(port: port)
     }
+
+    private struct NoGuest: Error { let port: UInt16 }
 
     @discardableResult
     private func arm(epoch: UInt32) async throws -> UInt16? {

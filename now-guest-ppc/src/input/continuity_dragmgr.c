@@ -32,12 +32,19 @@ static DragSendDataUPP g_send_upp;
    one turns out to be the answer becomes ordinary code with a reason
    attached; the rest, and this whole block, come out.
 
-     1  hold the DragRef after TrackDrag returns and dispose it from
-        the main loop instead, so a receiver that asks LATE can still
-        be answered. Tests whether the Finder defers.
      2  omit the kFlavorTypeClippingName hint. Tests whether 'clnm'
         diverts the Finder onto its clipping path, where a promised
-        HFS file is not what it is looking for. */
+        HFS file is not what it is looking for.
+     4  install OUR OWN tracking and receive handlers on OUR OWN window,
+        so the drop has a receiver whose source is in this repository.
+
+   Bit 1 was here and is gone: it held the DragRef past TrackDrag on the
+   theory that the Finder asks late. Bit 4 killed that theory by showing
+   the ask arriving INSIDE TrackDrag, synchronously, the moment a
+   receiver exists at all - and holding the DragRef also broke a real
+   product guard (continuity_dragmgr_source_test: every return past a
+   successful NewDrag must DisposeDrag). A scaffold is not worth
+   weakening a gate that is right. */
 static long g_diag_mask;
 /* Did the send-data callback arrive at all, and was it after TrackDrag
    had already returned? Two different facts and the second one is the
@@ -45,12 +52,6 @@ static long g_diag_mask;
 static long g_diag_asks;
 static Boolean g_diag_tracking;
 static long g_diag_late_asks;
-
-/* Bit 1's held drag, disposed from now_continuity_dragmgr_service. */
-static DragRef g_held_drag;
-static RgnHandle g_held_region;
-static GWorldPtr g_held_image;
-static unsigned long g_held_until;
 
 void now_continuity_dragmgr_diag(long mask)
 {
@@ -743,19 +744,6 @@ static void start_drag(void)
         }
     }
 
-    /* DIAGNOSTIC bit 1: hand the DragRef to the main loop instead of
-       disposing it here, so a Finder that asks for the promise AFTER
-       its receive handler returns still has a live drag to ask on. */
-    if ((g_diag_mask & 1) != 0) {
-        g_held_drag = drag;
-        g_held_region = region;
-        g_held_image = image;
-        g_held_until = TickCount() + 60 * 8;
-        now_log(kLogInfo, "mirror",
-                "drag held for 8s after TrackDrag (diagnostic)");
-        return;
-    }
-
     /* Torn down in every case, including the failures above: classic
        Finder is unforgiving of a drag that never ends, and a DragRef
        leaked here is a drag that never does. */
@@ -835,24 +823,6 @@ int now_continuity_dragmgr_cancel(char *err, long cap)
 void now_continuity_dragmgr_service(void)
 {
     int action;
-
-    /* DIAGNOSTIC bit 1's teardown. The main loop is running by the time
-       this fires, so the Finder has had real time to come back and ask. */
-    if (g_held_drag != NULL && TickCount() > g_held_until) {
-        now_log(kLogInfo, "mirror",
-                "drag held drag disposed; late asks=%ld", g_diag_late_asks);
-        DisposeDrag(g_held_drag);
-        g_held_drag = NULL;
-        if (g_held_region != NULL) {
-            DisposeRgn(g_held_region);
-            g_held_region = NULL;
-        }
-        if (g_held_image != NULL) {
-            UnlockPixels(GetGWorldPixMap(g_held_image));
-            DisposeGWorld(g_held_image);
-            g_held_image = NULL;
-        }
-    }
 
     if (g_drag.state != kNowDragWaitingButton) {
         return;
