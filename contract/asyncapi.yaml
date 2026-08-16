@@ -2663,6 +2663,18 @@ components:
         the thing worth watching. The guest polls at ordinary task time
         at a bounded cadence and only while the epoch runs.
 
+        AND THEN THE DRAG BECAME WATCHABLE AFTER ALL, which is what
+        `source` below records. The paragraph above remains true of the
+        APPLICATION — it still gets no task time inside the Finder's drag
+        loop — but an optional resident component registered a Drag
+        Manager tracking handler from the dragging application's own
+        context, and that handler holds a live DragRef at drag begin. So
+        a generation can now name the item a person actually picked up,
+        published while the application is next scheduled, rather than
+        the item they had selected beforehand. The poll is not retired by
+        this: it is what a machine without the resident still has, and it
+        is the fallback whenever the drag plane says nothing.
+
         v1 SENDS THE FIRST ITEM ONLY. A multiple selection is reported as
         its first item, and the host is told nothing about the rest. That
         is a deliberate narrowing rather than a limit of the poll: a
@@ -2684,6 +2696,45 @@ components:
             It is the name a later continuity.grab uses, so it must move
             whenever the item behind it could differ — including to an
             empty selection, which gets a generation of its own.
+        source:
+          type: string
+          enum: [selection, drag]
+          default: selection
+          description: >
+            WHICH GESTURE PRODUCED THIS GENERATION, and therefore what a
+            host may conclude from it.
+
+            `selection` is the original and remains the default: a
+            bounded Apple Event poll of the Finder's selection, published
+            when it changes, from ordinary task time. Everything the
+            stub's own description says about the poll is about this
+            source.
+
+            `drag` is the item the Drag Manager itself handed the guest
+            at the moment a drag began — read from a live DragRef in the
+            dragging application's own context, with NO SELECTION
+            CONSULTED ANYWHERE. It is a stronger fact than the poll can
+            ever produce, and it is why this field exists rather than a
+            sibling message: the item shape, the generation space and the
+            grab that redeems it are identical, and splitting them would
+            have made a grab ambiguous about which space its generation
+            names.
+
+            THE TWO CAN LEGITIMATELY DISAGREE, and a host must not treat
+            that as a fault. Dragging a file that was never selected is
+            an ordinary Macintosh gesture: the Finder's selection is then
+            something else entirely, and both statements are true. A
+            drag-sourced generation therefore supersedes a cached
+            selection-sourced one for binding purposes without any clock
+            comparison — the gesture in flight is its own attribution —
+            and the guest's grab confirmation confirms a drag-sourced
+            generation against THE DRAG rather than against the
+            selection, for the same reason. Confirming a drag against the
+            selection would refuse exactly the gesture this source exists
+            to serve.
+
+            An absent field means `selection`: a guest built before this
+            field existed had only the poll.
         item:
           type: object
           additionalProperties: false

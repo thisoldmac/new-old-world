@@ -44,7 +44,35 @@ typedef struct {
     long rsrc_size;
     unsigned long modified;       /* classic seconds since 1904 */
     int is_folder;
+
+    /* WHICH GESTURE PRODUCED THIS, carried on the item rather than beside
+       it. The stub travels table -> grant hold -> the grab that redeems
+       it, and every one of those hops would have had to learn a second
+       field; a source that can be separated from the item it describes is
+       a source that will be, at exactly one of them.
+
+       THE SOURCE BELONGS TO THE GENERATION, NOT TO THE LAST LOOK AT IT.
+       A poll that re-observes an item the drag plane already published
+       must not quietly demote it: same item means no new generation, and
+       a generation's source cannot change without the generation moving.
+       now_continuity_stub_observe enforces that. */
+    int source;                   /* kNowStubSource* */
+    /* The resident's drag-begin sequence this identity came from. Zero
+       for a polled selection. It is what the grab confirmation checks:
+       the same drag, not merely the same file. */
+    unsigned long drag_seq;
 } NowContinuityStubItem;
+
+enum {
+    /* The Apple Event poll of the Finder's selection. The original, the
+       default, and what a machine without the resident still has. */
+    kNowStubSourceSelection = 0,
+    /* The item the Drag Manager handed a tracking handler at drag begin,
+       read from a live DragRef in the dragging application's own context.
+       No selection was consulted, so it may legitimately name a file the
+       Finder does not have selected — see the contract's `source`. */
+    kNowStubSourceDrag = 1
+};
 
 typedef struct {
     unsigned long epoch;
@@ -78,6 +106,23 @@ int now_continuity_stub_same(const NowContinuityStubItem *a,
    it by silence is indistinguishable from a poll that stopped running. */
 int now_continuity_stub_observe(NowContinuityStubTable *table,
                                 const NowContinuityStubItem *item);
+
+/* Fold in what the DRAG PLANE saw, and it is a different rule.
+
+   `drag_seq` is the resident's drag-begin sequence. A sequence already
+   recorded moves nothing (the drain is edge-triggered but the table must
+   be idempotent anyway); a NEW sequence always bumps the generation, even
+   when it names the item the table already held.
+
+   THAT IS THE DIFFERENCE FROM THE POLL, and it is the point rather than
+   an inconsistency. The poll suppresses an unchanged item because it is
+   sampling a standing state and a resample is not news. A drag is not a
+   state, it is an act: picking up the same file a second time is a second
+   consent, and a host that could not tell the two apart would bind the
+   first gesture's generation to the second gesture's cross. */
+int now_continuity_stub_observe_drag(NowContinuityStubTable *table,
+                                     const NowContinuityStubItem *item,
+                                     unsigned long drag_seq);
 
 /* --- the grant that outlives its epoch ------------------------------------
 
@@ -235,6 +280,35 @@ int now_continuity_grab_resolve(NowContinuityStubTable *table,
 int now_continuity_grab_confirm(const NowContinuityStubItem *serve,
                                 int read_ok,
                                 const NowContinuityStubItem *observed);
+
+/* THE SAME CHECK FOR A DRAG-SOURCED GENERATION, AGAINST A DIFFERENT
+   WITNESS — and asking the right witness is the whole content of it.
+
+   Confirming a drag against the Finder's SELECTION would refuse exactly
+   the gesture the drag source exists to serve. Dragging a file nobody
+   selected is an ordinary Macintosh act; the selection is then something
+   else, both facts are true, and the one that matches the consent is the
+   drag. The contract says this once, under `source`.
+
+   So the witness is the resident's own published drag identity, and the
+   question asked of it is sharper than "same file": `observed_seq` must
+   still be the drag-begin sequence this generation was minted from. A
+   second drag of the same file is a second consent with a generation of
+   its own (see now_continuity_stub_observe_drag), and serving it under
+   the first one's name would be the stale-generation hole reopened one
+   layer down.
+
+   `read_ok` 0 refuses, for the reason the selection confirmation refuses:
+   an unread witness says nothing, and "we could not check" is not a
+   reason to send somebody's file.
+
+   A serve that is NOT drag-sourced is a programming error rather than a
+   refusal case, and is reported as one — kNowGrabNoSelection — because
+   the caller chose the wrong witness for the stub in its hand. */
+int now_continuity_grab_confirm_drag(const NowContinuityStubItem *serve,
+                                     int read_ok,
+                                     const NowContinuityStubItem *observed,
+                                     unsigned long observed_seq);
 
 /* Whether two stubs name the same item, ignoring anything that can change
    without the item changing. See above for why the grab confirmation cannot
