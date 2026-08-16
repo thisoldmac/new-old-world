@@ -326,6 +326,142 @@ int main(void)
               == kNowGrabNoSelection);
     }
 
+    /* --- the drag source ---------------------------------------------
+       A generation minted by the Drag Manager rather than by the poll.
+       Three rules, and each one is a way the two sources could have been
+       collapsed into one and silently broken something. */
+    {
+        NowContinuityStubTable table;
+        NowContinuityStubItem dragged = item_named("main.c", 4, 1000, 0);
+        NowContinuityStubItem polled = item_named("hello.txt", 4, 900, 0);
+        NowContinuityStubItem observed;
+
+        now_continuity_stub_reset(&table, 7);
+
+        /* A file nobody selected. The poll never saw it and the table is
+           empty; the drag alone mints generation 1. */
+        CHECK(now_continuity_stub_observe_drag(&table, &dragged, 11) == 1);
+        CHECK(table.generation == 1);
+        CHECK(table.have_item == 1);
+        CHECK(table.item.source == kNowStubSourceDrag);
+        CHECK(table.item.drag_seq == 11);
+        CHECK(strcmp(table.item.name, "main.c") == 0);
+
+        /* IDEMPOTENT ON THE SEQUENCE. The drain is edge-triggered but the
+           table must not move if it is drained twice. */
+        CHECK(now_continuity_stub_observe_drag(&table, &dragged, 11) == 0);
+        CHECK(table.generation == 1);
+
+        /* A NEW DRAG OF THE SAME FILE IS A NEW GENERATION, which is where
+           the drag source parts company with the poll: the poll would
+           suppress an identical item, and a host that could not tell two
+           pick-ups apart would bind the first gesture to the second
+           gesture's cross. */
+        CHECK(now_continuity_stub_observe_drag(&table, &dragged, 12) == 1);
+        CHECK(table.generation == 2);
+        CHECK(table.item.drag_seq == 12);
+
+        /* A drag with no sequence is not a drag. */
+        CHECK(now_continuity_stub_observe_drag(&table, &dragged, 0) == 0);
+        CHECK(table.generation == 2);
+
+        /* THE SOURCE BELONGS TO THE GENERATION. The poll re-observing the
+           item the drag published must refresh the fields it is allowed to
+           refresh and leave the source alone: demoting it here would move
+           the witness the grab confirmation asks without moving the
+           generation the host bound. */
+        {
+            NowContinuityStubItem same = dragged;
+
+            same.data_size = 8192;       /* a field the poll may refresh */
+            CHECK(now_continuity_stub_observe(&table, &same) == 0);
+            CHECK(table.generation == 2);
+            CHECK(table.item.data_size == 8192);
+            CHECK(table.item.source == kNowStubSourceDrag);
+            CHECK(table.item.drag_seq == 12);
+        }
+
+        /* A poll that sees a DIFFERENT file is an ordinary new generation
+           and is selection-sourced again. Nothing about the drag route
+           makes the poll stop working. */
+        CHECK(now_continuity_stub_observe(&table, &polled) == 1);
+        CHECK(table.generation == 3);
+        CHECK(table.item.source == kNowStubSourceSelection);
+        CHECK(table.item.drag_seq == 0);
+
+        /* --- the confirmation, against the right witness --------------
+           The gesture this whole route exists to serve: the file being
+           dragged is NOT the file selected, and confirming the drag
+           against the selection would refuse it. */
+        {
+            NowContinuityStubItem serving = dragged;
+
+            serving.source = kNowStubSourceDrag;
+            serving.drag_seq = 12;
+
+            /* The selection confirmation would refuse it — same call, same
+               inputs, and this is the check that proves the two witnesses
+               are not interchangeable. */
+            CHECK(now_continuity_grab_confirm(&serving, 1, &polled)
+                  == kNowGrabStaleSelection);
+
+            /* The drag confirmation serves it. */
+            observed = dragged;
+            CHECK(now_continuity_grab_confirm_drag(&serving, 1, &observed, 12)
+                  == kNowGrabOK);
+
+            /* SAME FILE, DIFFERENT DRAG. Stricter than the selection
+               witness was ever asked to be: a second pick-up of the same
+               icon has a generation of its own and must not be served
+               under the first one's name. */
+            CHECK(now_continuity_grab_confirm_drag(&serving, 1, &observed, 13)
+                  == kNowGrabStaleSelection);
+
+            /* A different file under the same sequence — the plane moved on
+               between the mint and the grab. */
+            CHECK(now_continuity_grab_confirm_drag(&serving, 1, &polled, 12)
+                  == kNowGrabStaleSelection);
+
+            /* The plane could not be read. Refuses, for the reason the
+               Finder's silence refuses. */
+            CHECK(now_continuity_grab_confirm_drag(&serving, 0, &observed, 12)
+                  == kNowGrabStaleSelection);
+            CHECK(now_continuity_grab_confirm_drag(
+                      &serving, 1, (const NowContinuityStubItem *)0, 12)
+                  == kNowGrabNoSelection);
+
+            /* THE WRONG WITNESS FOR THIS STUB is a caller error, not a
+               refusal the person caused, and is reported as one. */
+            CHECK(now_continuity_grab_confirm_drag(&polled, 1, &polled, 12)
+                  == kNowGrabNoSelection);
+            {
+                NowContinuityStubItem seqless = serving;
+
+                seqless.drag_seq = 0;
+                CHECK(now_continuity_grab_confirm_drag(&seqless, 1,
+                                                       &observed, 0)
+                      == kNowGrabNoSelection);
+            }
+            CHECK(now_continuity_grab_confirm_drag(
+                      (const NowContinuityStubItem *)0, 1, &observed, 12)
+                  == kNowGrabNoSelection);
+        }
+
+        /* A drag-sourced generation survives into the grant hold with its
+           source and sequence intact — the cross ENDS the epoch, so this is
+           the path every real drag-sourced grab actually takes. */
+        {
+            NowContinuityGrantHold hold;
+
+            memset(&hold, 0, sizeof hold);
+            now_continuity_stub_reset(&table, 9);
+            CHECK(now_continuity_stub_observe_drag(&table, &dragged, 21) == 1);
+            now_continuity_grant_hold(&hold, &table, 100);
+            CHECK(hold.item.source == kNowStubSourceDrag);
+            CHECK(hold.item.drag_seq == 21);
+        }
+    }
+
     /* Every refusal has a contract code and success has none. */
     CHECK(now_continuity_grab_code(kNowGrabOK) == (const char *)0);
     CHECK(strcmp(now_continuity_grab_code(kNowGrabBadEpoch),
