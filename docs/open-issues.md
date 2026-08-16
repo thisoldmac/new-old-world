@@ -97,6 +97,159 @@ that can tell silence from starvation." This is the host-side half.
 **Unverified:** metal — nobody has watched an indefinitely held guest menu
 survive on the PowerBook with this change in place. Tested only.
 
+## FIXED AND EMULATOR-VERIFIED: a held menu in a FOREIGN app froze `arrival_ticks` and the lease released the button (2026-08-16, `fix/continuity-arrival-starvation`)
+
+**A menu the person merely opened selected an item they never chose**
+(metal, 2026-08-16: it launched Internet Explorer). The
+`fix/continuity-deadman-liveness` diagnosis named the mechanism and this
+arc settled the evidence for it, then closed it application-side.
+
+**The evidence.** `~/Library/Logs/now-logs/2026-08-16 125237.log` is the
+incident session (wire connect to `10.91.5.47`, human-scale timing; the
+`131901.log` beside it is fixture traffic — every epoch is 1 and the
+reasons are control-version scenarios). Five epochs there end
+`guest ended Continuity: reason=UDP acknowledgements stopped`, and **two
+of them are followed by the guest's own
+`state=exited, reason=lease-expired`** — epoch 14 at 13:10:38/13:10:40 and
+epoch 23 at 13:13:48/13:13:50. Each follows a held press within about
+three seconds; four of the five follow a `menu=1` press on the guest's
+menu bar. So lease-expiry is CONFIRMED as a releasing mechanism.
+
+One correction to the reading it deserves: the host's ack-silence watchdog
+and the guest's lease are two independent verdicts on one cause, and the
+host's fires FIRST in the log only because the guest cannot send its
+report while starved. Both stop because ACK sending is task-time work
+(`try_send_ack` — `OTSndUData` is deliberately absent from the notifier),
+and task time is exactly what a foreign nested loop withholds.
+
+**The hole, and why the 2026-08-15 wedge fix did not cover it.** That fix
+drains the endpoint to `kOTNoDataErr` and hands any residue to a task-time
+poll from the pumps. Inside a foreign application's held-button nested
+loop NOW's cooperative context does not run at all, so the poll is
+unreachable for the length of the hold — and `T_DATA` is edge-triggered,
+so one capped or errored notifier drain silences the endpoint until the
+person lets go.
+
+**The fix is application-side and needs no resident change.** The drain's
+bound is now a question about the CALLING CONTEXT
+(`now-guest-ppc/src/input/continuity_drain_logic.h`): a drain may stop
+early only where somebody is guaranteed to finish it — task time, whose
+next event-loop pass resumes, or a notifier that preempted a running
+task-time drain. Otherwise it drains to quiet under a ceiling. Two error
+exits that could also leave data unread with no recovery — a bare
+`err != noErr`, and `clear_pending_event()` failing — now retry within a
+small budget instead of returning. Every epoch ends by reporting the
+arrival age the lease was deciding on, beside the drain endings, so a
+future misfire names its own starvation.
+
+**Emulator evidence, and the two ways the rig lied first.** Private mac99
+clone off the shared stage image, this checkout's ext and app, Finder
+frontmost, File menu held open 5.0s with the wire alive:
+
+| | fixed (`e6ebd5bf…`) | pre-fix control (`28e3f89b…`) |
+|---|---|---|
+| notifier drain high-water | **26** | **8** — the old cap, exactly |
+| drains that ended owing work with no finisher | 0 | **1** |
+| `arrival_ticks` age at disarm | **1 tick** | 5, and `owed=1` |
+| lease expiry in an ACK | no | **yes** (`exitReason=3`) |
+| datagrams delivered | 577 | 424 |
+
+Both readings are worth keeping, because the rig read healthy twice
+before it read anything true:
+
+- **NOW was frontmost.** Its own nested loops pump the wire by design, so
+  the press opened NOW's menu and task time never stopped. The probe now
+  asserts a foreign application is frontmost out of the guest's own `ps`.
+- **A level 60 Hz stream never starved anything.** This emulator's
+  notifier keeps up one or two datagrams at a time, so no drain reached
+  its bound and a build WITH the bug passed. The defect is a drain that
+  ends owing work, not a rate, so the probe now sends bursts; a run whose
+  high-water never passes the old cap REFUSES to report a verdict.
+- And a failed restage left the previous build answering the control run,
+  which is the "which build answered" rule collecting again — hence
+  `--expect-build`.
+
+`tools/continuity-starvation-probe.py`; artifacts and the rig table in
+`docs/local/continuity-starvation/`.
+
+**What is NOT fixed, and belongs to the resident/host batch.** ACKs still
+stop during a hold, because sending one is task-time work and moving
+`OTSndUData` into the notifier is the flow-controlled call that twice
+stopped the cooperative OS. So the host's ~3s ack-silence watchdog will
+still end a long hold even though the guest is now hearing perfectly —
+which is a milder failure than releasing the button into a menu, and a
+different one. Closing it needs either a resident-side ACK path or a
+host-side watchdog that can tell silence from starvation.
+
+**Unverified:** metal. Everything above is Tested + emulator-verified; no
+one has watched this on the PowerBook.
+
+## FIXED AND TESTED, NOT METAL-VERIFIED: attachment made an invariant, an offline-tile design shipped and reversed same day, and a black host preview traced to the wrong detector (2026-08-16, `fix/continuity-arrange-invariants`)
+
+Three attended defects on the Continuity Arrange Displays pane, from one
+review session (Michelle, build `afc91eed`).
+
+**1. A guest display is never unattached — repaired at load, forced at
+release.** `attachToDefaultEdgeIfNeverPlaced` (2026-08-15) only fixed a
+virgin install; a placement persisted from before that fix stayed a
+genuine island, faithfully preserved by the very guard meant to stop
+that. `ContinuityDisplayGeometry.nearestEdgeOrigin` lifts `snappedOrigin`'s
+48pt magnetic threshold to none at all — nearest host edge wins
+regardless of distance — and is now called from two places:
+`ContinuityDisplayLayout.init` (a persisted-but-unattached placement is
+coerced to the nearest edge, logged as a repair, made durable) and
+`finishGuestMove` (a drag release that lands outside the ordinary 48pt
+snap no longer stays an island). `testFitLeavesAnUnattachedGuestWhereItWasPut`,
+which asserted the OLD contract, is rewritten to assert the new one.
+
+**2. An offline/remembered tile shipped, then was overruled the same
+day.** The first pass distinguished three presence states — connected,
+remembered-but-offline (an editable tile, dashed and secondary-tinted,
+labelled "remembered, not connected"), and empty — reasoning from the
+idiom `ConnectionsModuleView`'s `.known` presence already uses. Michelle's
+review was narrower: **"it should not show any guest display when no
+guest is connected,"** full stop, and separately noted the label
+undermined the design on its own terms — a dashed tile still reads as a
+machine that is there, and it named an absence rather than a remembered
+one. `ContinuityArrangementPresence` was simplified back to two states
+(`.connected` draws the tile, everything else draws the empty state), and
+`MirrorContinuityController.hasRememberedGuest` — the roster read that
+fed the removed state — was deleted as now-dead code. **The persisted
+placement data (`ContinuityDisplayLayout`'s `guestOrigin`/`guestScale`) was
+never touched by either version of this UI** — a reconnecting machine
+still comes back exactly where it was; only the RENDERING of an offline
+placement was added and then removed.
+
+**3. The black host preview was `CGRequestScreenCaptureAccess()`'s
+unreliable return value, defended by a detector the OS's own denial
+placeholder defeats.** The previous version threw a named error on
+outright capture failure, and separately sampled a captured image's
+pixels to catch a "successful" capture that came back with nothing — but
+trusted `CGRequestScreenCaptureAccess()`'s boolean to decide whether to
+even attempt a capture, and that boolean is documented to be unreliable
+in the same direction preflight is not. Michelle's screenshot showed the
+actual failure mode: black content with the menu bar (and this app's own
+self-capture-exempt windows) still visible — macOS's own denied-capture
+placeholder — which the whole-frame pixel sample could never catch,
+because a real menu bar is never all-zero either. `CGPreflightScreenCaptureAccess()`
+is now the sole, freshly-checked-per-capture authority
+(`ScreenRecordingAuthorization`/`SystemScreenRecordingAuthorization`,
+the same seam shape as `AccessibilityAuthorization`); a refusal renders
+the note and deep link BEFORE any ScreenCaptureKit or CGDisplayCreateImage
+call. `isEffectivelyBlack` is kept as a secondary guard for a grant
+revoked mid-session, now sampling below the top eighth of the frame so
+the always-lit menu-bar band cannot mask an otherwise-empty capture.
+`requestAccessIfNeeded()` moved to `ContinuityDisplayPreviewStore.setEnabled(true)`
+— the one place the system prompt may fire, never a refresh. The desktop
+capture's `SCContentFilter(display:excludingApplications:exceptingWindows:)`
+was reviewed against Apple's documented desktop-capture recipe and found
+to preserve the wallpaper regardless of which apps are excluded; no
+filter defect was found, though this could not be verified against a
+live Screen-Recording-granted run — recorded as reviewed, not proven.
+
+Tested: `scripts/test-all` green, `TBT_ALLOW_UNARMED_HOOKS=1` (this
+clone's hooks are locally unarmed). Not metal-verified.
+
 ## REPRODUCED IN THE EMULATOR, THE HOST NOW SAYS IT, SELF-RESCUE STILL DOES NOT WORK: a foreign application's modal alert stops Continuity dead (2026-08-16, attended metal + emulator, `fix/continuity-modal-starvation`)
 
 **What happened on metal.** Internet Explorer was launched on the guest
@@ -247,159 +400,174 @@ into the wrong process's queue looks like. If that is the cause, the
 priming fix alone will not produce self-rescue, and the honest order is
 to answer that first.
 
-## FIXED AND TESTED, NOT METAL-VERIFIED: attachment made an invariant, an offline-tile design shipped and reversed same day, and a black host preview traced to the wrong detector (2026-08-16, `fix/continuity-arrange-invariants`)
+## THE PROMISE WORKS AND THE DRAG NEVER LEAVES THIS APPLICATION: a receiver we wrote gets the file byte-for-byte; no other process is ever offered the drop (2026-08-15, `feat/hg-drag-dragmgr`)
 
-Three attended defects on the Continuity Arrange Displays pane, from one
-review session (Michelle, build `afc91eed`).
+Slice 2 of the host→guest crossing: `offer --drag` starts a real Drag
+Manager drag of the published item carrying `flavorTypePromiseHFS`,
+whose send-data callback pulls the bytes through the slice-1 lane into
+the folder the drop landed on and hands the receiver that file's FSSpec.
 
-**1. A guest display is never unattached — repaired at load, forced at
-release.** `attachToDefaultEdgeIfNeverPlaced` (2026-08-15) only fixed a
-virgin install; a placement persisted from before that fix stayed a
-genuine island, faithfully preserved by the very guard meant to stop
-that. `ContinuityDisplayGeometry.nearestEdgeOrigin` lifts `snappedOrigin`'s
-48pt magnetic threshold to none at all — nearest host edge wins
-regardless of distance — and is now called from two places:
-`ContinuityDisplayLayout.init` (a persisted-but-unattached placement is
-coerced to the nearest edge, logged as a repair, made durable) and
-`finishGuestMove` (a drag release that lands outside the ordinary 48pt
-snap no longer stays an island). `testFitLeavesAnUnattachedGuestWhereItWasPut`,
-which asserted the OLD contract, is rewritten to assert the new one.
+**This entry replaces one titled "the drop happens; the promise is never
+asked for", and that title was half right in a way that hid the defect.**
+The drop did not happen. `TrackDrag` returning `noErr` was read as "a
+receiver accepted", and it does not mean that.
 
-**2. An offline/remembered tile shipped, then was overruled the same
-day.** The first pass distinguished three presence states — connected,
-remembered-but-offline (an editable tile, dashed and secondary-tinted,
-labelled "remembered, not connected"), and empty — reasoning from the
-idiom `ConnectionsModuleView`'s `.known` presence already uses. Michelle's
-review was narrower: **"it should not show any guest display when no
-guest is connected,"** full stop, and separately noted the label
-undermined the design on its own terms — a dashed tile still reads as a
-machine that is there, and it named an absence rather than a remembered
-one. `ContinuityArrangementPresence` was simplified back to two states
-(`.connected` draws the tile, everything else draws the empty state), and
-`MirrorContinuityController.hasRememberedGuest` — the roster read that
-fed the removed state — was deleted as now-dead code. **The persisted
-placement data (`ContinuityDisplayLayout`'s `guestOrigin`/`guestScale`) was
-never touched by either version of this UI** — a reconnecting machine
-still comes back exactly where it was; only the RENDERING of an offline
-placement was added and then removed.
+### What is now PROVEN, on a live emulator guest
 
-**3. The black host preview was `CGRequestScreenCaptureAccess()`'s
-unreliable return value, defended by a detector the OS's own denial
-placeholder defeats.** The previous version threw a named error on
-outright capture failure, and separately sampled a captured image's
-pixels to catch a "successful" capture that came back with nothing — but
-trusted `CGRequestScreenCaptureAccess()`'s boolean to decide whether to
-even attempt a capture, and that boolean is documented to be unreliable
-in the same direction preflight is not. Michelle's screenshot showed the
-actual failure mode: black content with the menu bar (and this app's own
-self-capture-exempt windows) still visible — macOS's own denied-capture
-placeholder — which the whole-frame pixel sample could never catch,
-because a real menu bar is never all-zero either. `CGPreflightScreenCaptureAccess()`
-is now the sole, freshly-checked-per-capture authority
-(`ScreenRecordingAuthorization`/`SystemScreenRecordingAuthorization`,
-the same seam shape as `AccessibilityAuthorization`); a refusal renders
-the note and deep link BEFORE any ScreenCaptureKit or CGDisplayCreateImage
-call. `isEffectivelyBlack` is kept as a secondary guard for a grant
-revoked mid-session, now sampling below the top eighth of the frame so
-the always-lit menu-bar band cannot mask an otherwise-empty capture.
-`requestAccessIfNeeded()` moved to `ContinuityDisplayPreviewStore.setEnabled(true)`
-— the one place the system prompt may fire, never a refresh. The desktop
-capture's `SCContentFilter(display:excludingApplications:exceptingWindows:)`
-was reviewed against Apple's documented desktop-capture recipe and found
-to preserve the wallpaper regardless of which apps are excluded; no
-filter defect was found, though this could not be verified against a
-live Screen-Recording-granted run — recorded as reviewed, not proven.
+Lane block 210, `spin-up-ppc` onto a session-private clone, provenance in
+that run's own `provenance.md`. The build under test is asserted from a
+`drag drop:` line no earlier build emits.
 
-Tested: `scripts/test-all` green, `TBT_ALLOW_UNARMED_HOOKS=1` (this
-clone's hooks are locally unarmed). Not metal-verified.
+**The promise machinery is correct, end to end, including the bytes.**
+(Both control runs below; the second dropped OUTSIDE the window and is
+the one that names the real defect.)
+Under `--x=4` NOW installs its own Drag Manager tracking and receive
+handlers on its own window and the drop happens inside it — a control
+whose source is in this repository, which is the only kind of control
+that makes a negative mean anything. The guest's own log:
 
-## FIXED AND EMULATOR-VERIFIED: a held menu in a FOREIGN app froze `arrival_ticks` and the lease released the button (2026-08-16, `fix/continuity-arrival-starvation`)
+```
+mirror drag now-slice2-drop-DF955E#6B2B.txt ended: ok (TrackDrag 0)
+mirror drag drop: loc='fss ' err=0 end=500,400 mods=0x0000 asks=1
+mirror drag attrs: 0x00000006 left=0 inapp=1 inwin=1
+```
 
-**A menu the person merely opened selected an item they never chose**
-(metal, 2026-08-16: it launched Internet Explorer). The
-`fix/continuity-deadman-liveness` diagnosis named the mechanism and this
-arc settled the evidence for it, then closed it application-side.
+`asks=1` — the send-data callback ran. `loc='fss '` — a drop location was
+set and read back. And the file is really there, pulled back off the
+guest through the anchor and compared byte for byte:
 
-**The evidence.** `~/Library/Logs/now-logs/2026-08-16 125237.log` is the
-incident session (wire connect to `10.91.5.47`, human-scale timing; the
-`131901.log` beside it is fixture traffic — every epoch is 1 and the
-reasons are control-version scenarios). Five epochs there end
-`guest ended Continuity: reason=UDP acknowledgements stopped`, and **two
-of them are followed by the guest's own
-`state=exited, reason=lease-expired`** — epoch 14 at 13:10:38/13:10:40 and
-epoch 23 at 13:13:48/13:13:50. Each follows a held press within about
-three seconds; four of the five follow a `menu=1` press on the guest's
-menu bar. So lease-expiry is CONFIRMED as a releasing mechanism.
+```
+Macintosh HD:Desktop Folder:now-slice2-drop-DF955E#6B2B.txt
+  TEXT/ttxt, data 4096, rsrc 0
+  sha256 7824a27eb07f3e73a7d9948951e1f97c3deffa1958e7b1d370740b98fd5e7e0b
+  identical to the host's original
+```
 
-One correction to the reading it deserves: the host's ack-silence watchdog
-and the guest's lease are two independent verdicts on one cause, and the
-host's fires FIRST in the log only because the guest cannot send its
-report while starved. Both stop because ACK sending is task-time work
-(`try_send_ack` — `OTSndUData` is deliberately absent from the notifier),
-and task time is exactly what a foreign nested loop withholds.
+So every part of this slice below the drop is real: the flavor
+declaration, the send-data UPP, the drop-location resolution, the
+streaming pull through the slice-1 lane **inside somebody's drop
+handling**, the FSSpec handback, and the state machine's `ok`.
 
-**The hole, and why the 2026-08-15 wedge fix did not cover it.** That fix
-drains the endpoint to `kOTNoDataErr` and hands any residue to a task-time
-poll from the pumps. Inside a foreign application's held-button nested
-loop NOW's cooperative context does not run at all, so the poll is
-unreachable for the length of the hold — and `T_DATA` is edge-triggered,
-so one capped or errored notifier drain silences the endpoint until the
-person lets go.
+### What is BROKEN
 
-**The fix is application-side and needs no resident change.** The drain's
-bound is now a question about the CALLING CONTEXT
-(`now-guest-ppc/src/input/continuity_drain_logic.h`): a drain may stop
-early only where somebody is guaranteed to finish it — task time, whose
-next event-loop pass resumes, or a notifier that preempted a running
-task-time drain. Otherwise it drains to quiet under a ceiling. Two error
-exits that could also leave data unread with no recovery — a bare
-`err != noErr`, and `clear_pending_event()` failing — now retry within a
-small budget instead of returning. Every epoch ends by reporting the
-arrival age the lease was deciding on, beside the drain endings, so a
-future misfire names its own starvation.
+**No other application is ever offered this drag.** Three drops onto the
+Finder's desktop — the eighteen-pixel band under the default window, and
+twice onto a large exposed desktop after resizing NOW to 700x200 — all
+answer the same way:
 
-**Emulator evidence, and the two ways the rig lied first.** Private mac99
-clone off the shared stage image, this checkout's ext and app, Finder
-frontmost, File menu held open 5.0s with the wire alive:
+```
+mirror drag ... ended: promise-never-asked (TrackDrag 0)
+mirror drag drop: loc='null' end=300,450 mods=0x0000 asks=0
+```
 
-| | fixed (`e6ebd5bf…`) | pre-fix control (`28e3f89b…`) |
-|---|---|---|
-| notifier drain high-water | **26** | **8** — the old cap, exactly |
-| drains that ended owing work with no finisher | 0 | **1** |
-| `arrival_ticks` age at disarm | **1 tick** | 5, and `owed=1` |
-| lease expiry in an ACK | no | **yes** (`exitReason=3`) |
-| datagrams delivered | 577 | 424 |
+`loc='null'` is the load-bearing word: **nobody called
+`SetDropLocation`**, so no receive handler ran anywhere. The Finder is
+not declining this drag; it never sees it.
 
-Both readings are worth keeping, because the rig read healthy twice
-before it read anything true:
+### Four hypotheses died, and how
 
-- **NOW was frontmost.** Its own nested loops pump the wire by design, so
-  the press opened NOW's menu and task time never stopped. The probe now
-  asserts a foreign application is frontmost out of the guest's own `ps`.
-- **A level 60 Hz stream never starved anything.** This emulator's
-  notifier keeps up one or two datagrams at a time, so no drain reached
-  its bound and a build WITH the bug passed. The defect is a drain that
-  ends owing work, not a rate, so the probe now sends bursts; a run whose
-  high-water never passes the old cap REFUSES to report a verdict.
-- And a failed restage left the previous build answering the control run,
-  which is the "which build answered" rule collecting again — hence
-  `--expect-build`.
+Each is recorded because each was plausible and each cost something to
+kill.
 
-`tools/continuity-starvation-probe.py`; artifacts and the rig table in
-`docs/local/continuity-starvation/`.
+- **`PromiseHFSFlavor` packing.** Two compilers sharing a struct is this
+  project's own named hazard, and a `promisedFlavor` read at the wrong
+  offset would produce exactly the observed silence. `#pragma options
+  align=mac68k` IS honoured by this toolchain: static-asserted
+  `sizeof == 14` and `offsetof(promisedFlavor) == 10` against the real
+  Retro68 PPC headers. Cost: one compile, no machine.
+- **The UPP.** `NewDragSendDataUPP` resolves to `NewRoutineDescriptor`
+  here, not a cast. Cost: one grep.
+- **`'????'`/`'????'`.** The predecessor's leading suspect, that a Finder
+  cannot classify an untyped promised file and so declines to ask. The
+  offer was republished as `.txt`, crossed as `TEXT`/`ttxt`, and the
+  answer did not change by one word. Dead as an explanation — though see
+  the fixture note below, because it was never only a product question.
+- **The drop target.** `loc='null'` reads like a pointer that was over
+  the Control Strip rather than the desktop, and the default geometry
+  really does leave only eighteen pixels of desktop. Resized, aimed at
+  bare desktop, same answer.
 
-**What is NOT fixed, and belongs to the resident/host batch.** ACKs still
-stop during a hold, because sending one is task-time work and moving
-`OTSndUData` into the notifier is the flow-controlled call that twice
-stopped the cooperative OS. So the host's ~3s ack-silence watchdog will
-still end a long hold even though the guest is now hearing perfectly —
-which is a milder failure than releasing the button into a menu, and a
-different one. Closing it needs either a resident-side ACK path or a
-host-side watchdog that can tell silence from starvation.
+### WHERE IT POINTS, AND IT IS MEASURED RATHER THAN INFERRED
 
-**Unverified:** metal. Everything above is Tested + emulator-verified; no
-one has watched this on the PowerBook.
+The control was run twice: once dropping INSIDE NOW's window, once with
+the window resized to 700x200 and the drop at (300, 450), which is well
+outside it. Both times **our own receive handler ran** — the guest's log
+puts `drag ctrl: RECEIVE handler ran` immediately before
+`drag promise asked for 'fssP'` in each — and both times the file landed
+byte-identical. The second run is the one that says why:
 
+```
+drag ctrl: tracking msg=1      (EnterHandler)
+drag ctrl: tracking msg=2      (EnterWindow)
+drag ctrl: tracking msg=4      (LeaveWindow)
+   ... that cycle, 31423 messages, dozens of times a second ...
+drag ctrl: RECEIVE handler ran
+drag drop: loc='fss ' err=0 end=300,450 mods=0x0000 asks=1
+drag attrs: 0x00000005 left=1 inapp=0 inwin=1
+```
+
+**`inwin=1` while the pointer is at (300, 450), outside the window.**
+The Drag Manager still believed the drag was inside NOW's own window and
+handed the drop to NOW's own receive handler. Meanwhile `GetMouse`,
+called by this code microseconds later, reads (300, 450) correctly.
+
+So the two halves of the machine disagree about where the pointer is:
+
+- **`GetMouse` / `Button` follow the plane.** The resident writes the four
+  mouse low-memory globals (`MBState`, `MouseLocation`,
+  `RawMouseLocation`, `MTemp` — `ext/src/now_ext_drag.c`), which is what
+  every classic tracking loop reads, and it is why `TrackDrag` runs at
+  all and why the button-down/up edges work.
+- **The Drag Manager's own targeting does not.** It is deciding which
+  window the drag is over from something the plane is not driving — the
+  31423 enter/leave messages are that disagreement oscillating at
+  tracking frequency, not a drag moving.
+
+That is why no other application is ever offered the drop: as far as the
+Drag Manager is concerned, the drag never goes anywhere. **The earlier
+three failures are explained by the same fact** — with no receiver
+installed on NOW's own window, a drag the Drag Manager thinks never left
+NOW is a drag with nowhere to go, and `loc='null'` is the correct answer
+to it.
+
+**This is edge custody, and edge custody is slice 3's.** Making an
+applied pointer real enough that a foreign application's Drag Manager
+targeting follows it is the same problem as making a held button real,
+stated one layer up. Slice 2 must not grow a second implementation of
+it, and the fix does not belong in `continuity_dragmgr.c`.
+
+### Also unverified, and now for a different reason than before
+
+The pump rule — the named hazard of the whole slice — **has its first
+live evidence**: a 4 KB promise streamed to completion inside a nested
+drop handler with the wire pumped by hand, and the file arrived whole.
+That is not the same as the deliberate slow-serve test the plan asks
+for, which is still owed, and 4 KB is small enough that it proves the
+path rather than the pressure.
+
+Not attempted, on purpose: background fill above the size cap. v1
+refuses `too-large`.
+
+### Three test defects that were reading as coverage
+
+Worth carrying because two of them could never have gone green:
+
+- The fixture published `.bin` files, and `OutboundFile.classicType`
+  maps `.bin` to `(nil, nil)` — the one extension in that table with no
+  type and no creator. So the '????' suspicion above was partly a
+  property of the file the test chose.
+- The post-drop assertion compared the HOST's `lastPathComponent`
+  against the guest's Desktop. Every name crossing this wire is
+  projected by `ClassicName` into 31 MacRoman bytes with a fingerprint,
+  so that string could never appear — the assertion could not pass even
+  against a perfect promise, and its paired `before` check passed
+  vacuously for the same reason. A guard that cannot fail beside a guard
+  that cannot pass.
+- `waitConnected` called `XCTFail` and carried on. Every `execLine` after
+  it parks in a continuation only the guest can resume, so the case did
+  not fail, it HUNG — watched sitting past ten minutes while the guest
+  answered `tools/askguest.py` on the same port seconds later. It throws
+  now.
 ## FIXED AND TESTED, NOT METAL-VERIFIED: the epoch teardown erased the settled release on SLOW drags only (2026-08-15 18:47 round, `fix/continuity-press-origin-loss`)
 
 **The snap-back worked, except when the person dragged slowly — then the
@@ -485,6 +653,41 @@ Guest, in the same second:
 point while the host logged the origin, the withheld datagram did not help
 and the collapse is happening earlier than the teardown — read `reason=`:
 `1` would mean an `inside`-cleared packet still reached the guest first.
+
+## OPEN, DIAGNOSED BY MECHANISM ONLY, NOT FIXED: cross-edge drags leave drag-feedback ghosts on the guest desktop (2026-08-15 17:21, attended screenshot)
+
+After the 17:19–17:21 cross-edge rounds the guest desktop kept small
+icon-fragment smudges in a horizontal line around y≈418, plus a stray
+caret-like mark, surviving minutes until something forced a redraw. They sit
+on the desktop proper, not in a window, and did not exist before that day's
+cross-edge testing.
+
+**Mechanism, stated as a hypothesis and not as a finding.** The Finder's
+drag feedback is XOR imagery, erased by drawing it again at the SAME place.
+Two writers move the pointer during one of these drags — the resident's
+interrupt-time `LMSetMouseLocation` and the application's Cursor Device
+moves — and neither is synchronised with the Finder's draw/undraw pair. A
+teleport that lands between the two halves of that pair leaves the
+difference on screen. The origin-return settle is a teleport by
+construction, from the crossing point back to the press origin, which is why
+the fragments sit along the swept path.
+
+**Separable from the settle fix above, deliberately not folded into it.**
+The settle fix changes WHICH point the release is dispatched at; it does not
+give the Finder a chance to erase what it drew somewhere else. Two options
+when someone takes this, and they are not equivalent:
+
+- a bounded desktop invalidate after the release, through the plane we
+  already own — cheap, honest, and cosmetic-only: it repairs the damage
+  rather than avoiding it;
+- ordering that lets the Finder erase its own feedback — settle, give the
+  target one drag-loop pass at the settled point, then release. That avoids
+  the damage but spends real time inside a held drag and needs a bound of
+  its own, which is the same class of decision the exposure deadline was.
+
+Nothing here is measured: no round has yet correlated a ghost with a
+specific edge, and "did not exist before today" is a memory, not an
+instrument.
 
 ## FIXED AND EMULATOR-VERIFIED, THE HALF THAT REMAINS IS NAMED: a grab served the file the person had STOPPED holding (2026-08-15 17:19 round, `fix/continuity-selection-bind-race`)
 
@@ -645,67 +848,44 @@ Michelle's, and the lines it must read are the two new ones:
 `host drag session end witness: …` and `host drag seed event: …
 postedByThisApp=…`.
 
-## THE TRANSFER WORKED AND THE PRESENTATION DID NOT: this app posted a mouse-down into the Finder, and its own seed came back from it (2026-08-15 13:43 round, `fix/continuity-drag-image-frontness`)
+## DECLARED ONLY — NO MACHINE SERVES ANY OF IT: the host→guest crossing has a contract and nothing behind it (2026-08-15, `feat/hg-drag-contract`)
 
-The first successful guest→host file drag on metal: the grab completed and
-the file landed on the desktop (`~/Library/Logs/now-logs/2026-08-15
-134015.log`, `operation=1` after a 240 px session). Two attended defects
-came with it — a **rubber-band selection dragged across the Finder desktop**
-for the length of the handoff, and a **drag image frozen at the screen
-edge** while the session itself tracked correctly.
+`contract/asyncapi.yaml` now describes a person dragging a file from this
+Mac's Finder onto the Macintosh: `continuity.offer` publishes the item's
+identity at the edge, `continuity.grab` is answered by the HOST with the
+roles swapped, `continuity.report`'s `acceptsOffer` says whether a guest
+can take one at all, `offer-expired` names the host's own clock running
+out, and an `offer` console verb is declared in `x-commands`. The
+naming, type/creator and text-conversion policy is stated for BOTH
+directions in one place (`guestServesFiles`), written as the default
+Michelle owns and marked as open to review.
 
-**The log already named the cause and nobody read it that way.** The seed
-provenance line says `type=1, windowNumber=30, ourWindow=no` — and `type=1`
-is `leftMouseDown`, not a drag. There is only one `leftMouseDown` anywhere
-on that path: **the synthetic one this app posts itself** to re-arm the
-session's button state. The window server delivered it to the Finder
-desktop, which took it for a marquee AND handed it straight back through
-the global monitor as the "real" event the drag was then seeded from.
+**Every one of those is a sentence, not a behaviour.** No host code sends
+an offer, no guest decodes one, no guest answers the verb, and nothing
+has been run against a Macintosh. The debt is recorded where a gate can
+see it — `CommandRegistryTests.servedByNoGuestYet` carries `offer` with
+its reason and FAILS the day a guest answers it, which is how the
+exemption comes out rather than aging into a description of a verb that
+works. `docs/contract-coverage.md` marks `continuity.offer` served by
+nobody, and `docs/mcp-coverage.md` gives `continuity.grab` its first row
+because a second sender made it host-askable by that table's own
+derivation.
 
-Two measured causes, both local to this Mac, deterministic over three rounds
-each (probes, 2026-08-15; frontness and key state changed neither):
+What is NOT settled, and should be argued rather than discovered:
 
-- **A fully transparent window is not a catch surface.** The strip was
-  `backgroundColor = .clear` over a view that draws nothing — every pixel at
-  alpha zero — and the window server routes mouse events straight *through*
-  such a window. `NSWindow.windowNumber(at:)` never returned the panel, at
-  any delay. One part in 255 of background alpha fixes it.
-- **A widen reaches the window server 15–25 ms and several runloop turns
-  later.** No synchronous flush brings it forward — not `CATransaction.flush`,
-  `display`, `displayIfNeeded`, nor a zero-length runloop spin. The crossing
-  widened the strip and posted the down in one synchronous block.
-
-Both are the same standing rule one layer down: **"I armed it" is not the
-assertion, "the artifact carries it" is.** `panelCoversPoint` was
-`window.frame.contains(point)` — this process's own arithmetic, true the
-instant `setFrame` returns — and was read as though it meant the server
-would deliver events there. The seed now carries `serverTopWindow`,
-`serverOwnsPoint` and `appActive` beside it, and the post waits for the
-server's own answer rather than for its own intent.
-
-**Why it hid for a whole round: the two lanes route differently.** Foreign
-host→guest drags entered the same transparent strip perfectly well, because
-AppKit tracks registered drag destinations by window frame rather than by
-the mouse-event hit test. So the drop half worked and the click half did
-not, through one window, for the same geometry.
-
-**What is fixed and tested here.** The synthetic down is refused until the
-window server itself puts the catch surface under the seed point — this app
-does not press a button in another application's window — and the real event
-that arrives while the server catches up is held rather than dropped. Seven
-mutations, each watched failing against the guard that names it.
-
-**What remains unproven.** The *marquee* half is established: the routing
-was measured directly and matches the log exactly. The **frozen drag image**
-is a hypothesis consistent with every fact — the window server's actual
-press at the seed point belonged to the Finder, so nothing advanced imagery
-anchored to our panel while the session still ended where the release
-happened — but it was not reproduced, because a live `NSDraggingSession`
-needs a physically held mouse and a test process has none. `serverOwnsPoint`
-exists to settle it on the next metal round rather than infer it: an
-`ourWindow=yes, serverOwnsPoint=no` seed is now its own named error.
-Ceiling: **Tested**, plus locally-measured window-server behaviour. Not
-metal-verified.
+- **The size cap and what happens above it** is named in the plan
+  (`docs/local/plan-host-to-guest-drag-2026-08-15.md`) and deliberately
+  absent from the wire: the receiver's ceiling is its own policy. A
+  guest that fills a fork after the promise returns must mark the file
+  as still filling, or it has shipped a lie shaped like a file.
+- **Conversion by default on `container=data`** is now written down as a
+  default for the first time, in both directions at once. It was
+  previously settled by whatever each side happened to do. Writing it
+  down is not the same as deciding it, and the decision is Michelle's.
+- **The 68K seams are documented and deferred** until the Carbon guest
+  reaches public alpha. The message carries no Drag-Manager-shaped
+  field, so a guest that can only stage a file serves the whole of it;
+  that is the property to check before anyone adds a field to it.
 
 ## FIXED AND INSTRUMENTED, NOT REPRODUCED IN THE EMULATOR AND NOT METAL-VERIFIED: a button edge was applied before its own position was exposed (2026-08-15 13:43 round, `fix/continuity-snapback-race`)
 
@@ -901,247 +1081,72 @@ behaviour, not a defect). A surviving `expired` after a settle line whose
 `at=` was right would be the first genuine evidence of propagation lag at
 this bound.
 
-## OPEN, DIAGNOSED BY MECHANISM ONLY, NOT FIXED: cross-edge drags leave drag-feedback ghosts on the guest desktop (2026-08-15 17:21, attended screenshot)
+**Superseded in part — see the 18:47 round above** (`fix/continuity-press-origin-loss`):
+the "disagreeing `at=` means the wrong point is on the wire" reading above
+was half right. The host had already sent the right point; what the wire
+actually lost was the packet carrying it.
 
-After the 17:19–17:21 cross-edge rounds the guest desktop kept small
-icon-fragment smudges in a horizontal line around y≈418, plus a stray
-caret-like mark, surviving minutes until something forced a redraw. They sit
-on the desktop proper, not in a window, and did not exist before that day's
-cross-edge testing.
+## THE TRANSFER WORKED AND THE PRESENTATION DID NOT: this app posted a mouse-down into the Finder, and its own seed came back from it (2026-08-15 13:43 round, `fix/continuity-drag-image-frontness`)
 
-**Mechanism, stated as a hypothesis and not as a finding.** The Finder's
-drag feedback is XOR imagery, erased by drawing it again at the SAME place.
-Two writers move the pointer during one of these drags — the resident's
-interrupt-time `LMSetMouseLocation` and the application's Cursor Device
-moves — and neither is synchronised with the Finder's draw/undraw pair. A
-teleport that lands between the two halves of that pair leaves the
-difference on screen. The origin-return settle is a teleport by
-construction, from the crossing point back to the press origin, which is why
-the fragments sit along the swept path.
+The first successful guest→host file drag on metal: the grab completed and
+the file landed on the desktop (`~/Library/Logs/now-logs/2026-08-15
+134015.log`, `operation=1` after a 240 px session). Two attended defects
+came with it — a **rubber-band selection dragged across the Finder desktop**
+for the length of the handoff, and a **drag image frozen at the screen
+edge** while the session itself tracked correctly.
 
-**Separable from the settle fix above, deliberately not folded into it.**
-The settle fix changes WHICH point the release is dispatched at; it does not
-give the Finder a chance to erase what it drew somewhere else. Two options
-when someone takes this, and they are not equivalent:
+**The log already named the cause and nobody read it that way.** The seed
+provenance line says `type=1, windowNumber=30, ourWindow=no` — and `type=1`
+is `leftMouseDown`, not a drag. There is only one `leftMouseDown` anywhere
+on that path: **the synthetic one this app posts itself** to re-arm the
+session's button state. The window server delivered it to the Finder
+desktop, which took it for a marquee AND handed it straight back through
+the global monitor as the "real" event the drag was then seeded from.
 
-- a bounded desktop invalidate after the release, through the plane we
-  already own — cheap, honest, and cosmetic-only: it repairs the damage
-  rather than avoiding it;
-- ordering that lets the Finder erase its own feedback — settle, give the
-  target one drag-loop pass at the settled point, then release. That avoids
-  the damage but spends real time inside a held drag and needs a bound of
-  its own, which is the same class of decision the exposure deadline was.
+Two measured causes, both local to this Mac, deterministic over three rounds
+each (probes, 2026-08-15; frontness and key state changed neither):
 
-Nothing here is measured: no round has yet correlated a ghost with a
-specific edge, and "did not exist before today" is a memory, not an
-instrument.
+- **A fully transparent window is not a catch surface.** The strip was
+  `backgroundColor = .clear` over a view that draws nothing — every pixel at
+  alpha zero — and the window server routes mouse events straight *through*
+  such a window. `NSWindow.windowNumber(at:)` never returned the panel, at
+  any delay. One part in 255 of background alpha fixes it.
+- **A widen reaches the window server 15–25 ms and several runloop turns
+  later.** No synchronous flush brings it forward — not `CATransaction.flush`,
+  `display`, `displayIfNeeded`, nor a zero-length runloop spin. The crossing
+  widened the strip and posted the down in one synchronous block.
 
-## THE PROMISE WORKS AND THE DRAG NEVER LEAVES THIS APPLICATION: a receiver we wrote gets the file byte-for-byte; no other process is ever offered the drop (2026-08-15, `feat/hg-drag-dragmgr`)
+Both are the same standing rule one layer down: **"I armed it" is not the
+assertion, "the artifact carries it" is.** `panelCoversPoint` was
+`window.frame.contains(point)` — this process's own arithmetic, true the
+instant `setFrame` returns — and was read as though it meant the server
+would deliver events there. The seed now carries `serverTopWindow`,
+`serverOwnsPoint` and `appActive` beside it, and the post waits for the
+server's own answer rather than for its own intent.
 
-Slice 2 of the host→guest crossing: `offer --drag` starts a real Drag
-Manager drag of the published item carrying `flavorTypePromiseHFS`,
-whose send-data callback pulls the bytes through the slice-1 lane into
-the folder the drop landed on and hands the receiver that file's FSSpec.
+**Why it hid for a whole round: the two lanes route differently.** Foreign
+host→guest drags entered the same transparent strip perfectly well, because
+AppKit tracks registered drag destinations by window frame rather than by
+the mouse-event hit test. So the drop half worked and the click half did
+not, through one window, for the same geometry.
 
-**This entry replaces one titled "the drop happens; the promise is never
-asked for", and that title was half right in a way that hid the defect.**
-The drop did not happen. `TrackDrag` returning `noErr` was read as "a
-receiver accepted", and it does not mean that.
+**What is fixed and tested here.** The synthetic down is refused until the
+window server itself puts the catch surface under the seed point — this app
+does not press a button in another application's window — and the real event
+that arrives while the server catches up is held rather than dropped. Seven
+mutations, each watched failing against the guard that names it.
 
-### What is now PROVEN, on a live emulator guest
-
-Lane block 210, `spin-up-ppc` onto a session-private clone, provenance in
-that run's own `provenance.md`. The build under test is asserted from a
-`drag drop:` line no earlier build emits.
-
-**The promise machinery is correct, end to end, including the bytes.**
-(Both control runs below; the second dropped OUTSIDE the window and is
-the one that names the real defect.)
-Under `--x=4` NOW installs its own Drag Manager tracking and receive
-handlers on its own window and the drop happens inside it — a control
-whose source is in this repository, which is the only kind of control
-that makes a negative mean anything. The guest's own log:
-
-```
-mirror drag now-slice2-drop-DF955E#6B2B.txt ended: ok (TrackDrag 0)
-mirror drag drop: loc='fss ' err=0 end=500,400 mods=0x0000 asks=1
-mirror drag attrs: 0x00000006 left=0 inapp=1 inwin=1
-```
-
-`asks=1` — the send-data callback ran. `loc='fss '` — a drop location was
-set and read back. And the file is really there, pulled back off the
-guest through the anchor and compared byte for byte:
-
-```
-Macintosh HD:Desktop Folder:now-slice2-drop-DF955E#6B2B.txt
-  TEXT/ttxt, data 4096, rsrc 0
-  sha256 7824a27eb07f3e73a7d9948951e1f97c3deffa1958e7b1d370740b98fd5e7e0b
-  identical to the host's original
-```
-
-So every part of this slice below the drop is real: the flavor
-declaration, the send-data UPP, the drop-location resolution, the
-streaming pull through the slice-1 lane **inside somebody's drop
-handling**, the FSSpec handback, and the state machine's `ok`.
-
-### What is BROKEN
-
-**No other application is ever offered this drag.** Three drops onto the
-Finder's desktop — the eighteen-pixel band under the default window, and
-twice onto a large exposed desktop after resizing NOW to 700x200 — all
-answer the same way:
-
-```
-mirror drag ... ended: promise-never-asked (TrackDrag 0)
-mirror drag drop: loc='null' end=300,450 mods=0x0000 asks=0
-```
-
-`loc='null'` is the load-bearing word: **nobody called
-`SetDropLocation`**, so no receive handler ran anywhere. The Finder is
-not declining this drag; it never sees it.
-
-### Four hypotheses died, and how
-
-Each is recorded because each was plausible and each cost something to
-kill.
-
-- **`PromiseHFSFlavor` packing.** Two compilers sharing a struct is this
-  project's own named hazard, and a `promisedFlavor` read at the wrong
-  offset would produce exactly the observed silence. `#pragma options
-  align=mac68k` IS honoured by this toolchain: static-asserted
-  `sizeof == 14` and `offsetof(promisedFlavor) == 10` against the real
-  Retro68 PPC headers. Cost: one compile, no machine.
-- **The UPP.** `NewDragSendDataUPP` resolves to `NewRoutineDescriptor`
-  here, not a cast. Cost: one grep.
-- **`'????'`/`'????'`.** The predecessor's leading suspect, that a Finder
-  cannot classify an untyped promised file and so declines to ask. The
-  offer was republished as `.txt`, crossed as `TEXT`/`ttxt`, and the
-  answer did not change by one word. Dead as an explanation — though see
-  the fixture note below, because it was never only a product question.
-- **The drop target.** `loc='null'` reads like a pointer that was over
-  the Control Strip rather than the desktop, and the default geometry
-  really does leave only eighteen pixels of desktop. Resized, aimed at
-  bare desktop, same answer.
-
-### WHERE IT POINTS, AND IT IS MEASURED RATHER THAN INFERRED
-
-The control was run twice: once dropping INSIDE NOW's window, once with
-the window resized to 700x200 and the drop at (300, 450), which is well
-outside it. Both times **our own receive handler ran** — the guest's log
-puts `drag ctrl: RECEIVE handler ran` immediately before
-`drag promise asked for 'fssP'` in each — and both times the file landed
-byte-identical. The second run is the one that says why:
-
-```
-drag ctrl: tracking msg=1      (EnterHandler)
-drag ctrl: tracking msg=2      (EnterWindow)
-drag ctrl: tracking msg=4      (LeaveWindow)
-   ... that cycle, 31423 messages, dozens of times a second ...
-drag ctrl: RECEIVE handler ran
-drag drop: loc='fss ' err=0 end=300,450 mods=0x0000 asks=1
-drag attrs: 0x00000005 left=1 inapp=0 inwin=1
-```
-
-**`inwin=1` while the pointer is at (300, 450), outside the window.**
-The Drag Manager still believed the drag was inside NOW's own window and
-handed the drop to NOW's own receive handler. Meanwhile `GetMouse`,
-called by this code microseconds later, reads (300, 450) correctly.
-
-So the two halves of the machine disagree about where the pointer is:
-
-- **`GetMouse` / `Button` follow the plane.** The resident writes the four
-  mouse low-memory globals (`MBState`, `MouseLocation`,
-  `RawMouseLocation`, `MTemp` — `ext/src/now_ext_drag.c`), which is what
-  every classic tracking loop reads, and it is why `TrackDrag` runs at
-  all and why the button-down/up edges work.
-- **The Drag Manager's own targeting does not.** It is deciding which
-  window the drag is over from something the plane is not driving — the
-  31423 enter/leave messages are that disagreement oscillating at
-  tracking frequency, not a drag moving.
-
-That is why no other application is ever offered the drop: as far as the
-Drag Manager is concerned, the drag never goes anywhere. **The earlier
-three failures are explained by the same fact** — with no receiver
-installed on NOW's own window, a drag the Drag Manager thinks never left
-NOW is a drag with nowhere to go, and `loc='null'` is the correct answer
-to it.
-
-**This is edge custody, and edge custody is slice 3's.** Making an
-applied pointer real enough that a foreign application's Drag Manager
-targeting follows it is the same problem as making a held button real,
-stated one layer up. Slice 2 must not grow a second implementation of
-it, and the fix does not belong in `continuity_dragmgr.c`.
-
-### Also unverified, and now for a different reason than before
-
-The pump rule — the named hazard of the whole slice — **has its first
-live evidence**: a 4 KB promise streamed to completion inside a nested
-drop handler with the wire pumped by hand, and the file arrived whole.
-That is not the same as the deliberate slow-serve test the plan asks
-for, which is still owed, and 4 KB is small enough that it proves the
-path rather than the pressure.
-
-Not attempted, on purpose: background fill above the size cap. v1
-refuses `too-large`.
-
-### Three test defects that were reading as coverage
-
-Worth carrying because two of them could never have gone green:
-
-- The fixture published `.bin` files, and `OutboundFile.classicType`
-  maps `.bin` to `(nil, nil)` — the one extension in that table with no
-  type and no creator. So the '????' suspicion above was partly a
-  property of the file the test chose.
-- The post-drop assertion compared the HOST's `lastPathComponent`
-  against the guest's Desktop. Every name crossing this wire is
-  projected by `ClassicName` into 31 MacRoman bytes with a fingerprint,
-  so that string could never appear — the assertion could not pass even
-  against a perfect promise, and its paired `before` check passed
-  vacuously for the same reason. A guard that cannot fail beside a guard
-  that cannot pass.
-- `waitConnected` called `XCTFail` and carried on. Every `execLine` after
-  it parks in a continuation only the guest can resume, so the case did
-  not fail, it HUNG — watched sitting past ten minutes while the guest
-  answered `tools/askguest.py` on the same port seconds later. It throws
-  now.
-## DECLARED ONLY — NO MACHINE SERVES ANY OF IT: the host→guest crossing has a contract and nothing behind it (2026-08-15, `feat/hg-drag-contract`)
-
-`contract/asyncapi.yaml` now describes a person dragging a file from this
-Mac's Finder onto the Macintosh: `continuity.offer` publishes the item's
-identity at the edge, `continuity.grab` is answered by the HOST with the
-roles swapped, `continuity.report`'s `acceptsOffer` says whether a guest
-can take one at all, `offer-expired` names the host's own clock running
-out, and an `offer` console verb is declared in `x-commands`. The
-naming, type/creator and text-conversion policy is stated for BOTH
-directions in one place (`guestServesFiles`), written as the default
-Michelle owns and marked as open to review.
-
-**Every one of those is a sentence, not a behaviour.** No host code sends
-an offer, no guest decodes one, no guest answers the verb, and nothing
-has been run against a Macintosh. The debt is recorded where a gate can
-see it — `CommandRegistryTests.servedByNoGuestYet` carries `offer` with
-its reason and FAILS the day a guest answers it, which is how the
-exemption comes out rather than aging into a description of a verb that
-works. `docs/contract-coverage.md` marks `continuity.offer` served by
-nobody, and `docs/mcp-coverage.md` gives `continuity.grab` its first row
-because a second sender made it host-askable by that table's own
-derivation.
-
-What is NOT settled, and should be argued rather than discovered:
-
-- **The size cap and what happens above it** is named in the plan
-  (`docs/local/plan-host-to-guest-drag-2026-08-15.md`) and deliberately
-  absent from the wire: the receiver's ceiling is its own policy. A
-  guest that fills a fork after the promise returns must mark the file
-  as still filling, or it has shipped a lie shaped like a file.
-- **Conversion by default on `container=data`** is now written down as a
-  default for the first time, in both directions at once. It was
-  previously settled by whatever each side happened to do. Writing it
-  down is not the same as deciding it, and the decision is Michelle's.
-- **The 68K seams are documented and deferred** until the Carbon guest
-  reaches public alpha. The message carries no Drag-Manager-shaped
-  field, so a guest that can only stage a file serves the whole of it;
-  that is the property to check before anyone adds a field to it.
+**What remains unproven.** The *marquee* half is established: the routing
+was measured directly and matches the log exactly. The **frozen drag image**
+is a hypothesis consistent with every fact — the window server's actual
+press at the seed point belonged to the Finder, so nothing advanced imagery
+anchored to our panel while the session still ended where the release
+happened — but it was not reproduced, because a live `NSDraggingSession`
+needs a physically held mouse and a test process has none. `serverOwnsPoint`
+exists to settle it on the next metal round rather than infer it: an
+`ourWindow=yes, serverOwnsPoint=no` seed is now its own named error.
+Ceiling: **Tested**, plus locally-measured window-server behaviour. Not
+metal-verified.
 
 ## REPRODUCED IN THE EMULATOR AND FIXED, NOT METAL-VERIFIED: a retained UDP endpoint goes permanently deaf, and every status still says "armed" (2026-08-15, `fix/continuity-udp-endpoint-wedge`)
 
@@ -1205,6 +1210,40 @@ them is non-zero. Both were watched firing in the emulator.
 port-mismatch error line (a rebuild that binds somewhere else) is
 **Builds** only — no emulator run can force XTI to bind elsewhere.
 
+
+## RESOLVED: the DMG assembler no longer uses the deprecated `hdiutil create` (2026-08-15, `build/dmg-diskutil-migration`)
+
+`scripts/assemble-release :: create_dmg` now shells out to `diskutil
+image create from --format UDZO --volumeName "New Old World" <source>
+<destination>`. The flags did map across after all: `UDZO` is one of
+`diskutil`'s own accepted format names, `-volname` becomes
+`--volumeName`, and the source folder and destination become positional.
+Both spellings were built from the same stub folder and compared on
+macOS 27 — UDIF read-only compressed (zlib), GUID partition scheme, APFS
+filesystem, symlinks carried across rather than dereferenced — so this
+is an equivalent image, not a similar one.
+
+The `tools/release-tests` mount-and-inspect case gained the assertion the
+swap actually needed: the drag-to-install `/Applications` alias is a
+symlink with that exact target. A builder that dereferenced it would
+still produce a DMG that mounts and passes every other assertion. Both
+halves were watched failing — a mutation that made the alias a real
+directory, and one that pointed it elsewhere.
+
+The gate clones `HEAD` rather than reading the worktree, which is worth
+knowing before trusting it: the first green run of this change tested
+the unmodified committed script and proved nothing. Commit, then run.
+
+Not closed by this: `tools/release/image.py` still calls `hdiutil
+create` for the generic classic-Mac setup image, and cannot move. It
+needs `-fs HFS+`, `-size` and `-layout NONE`; `diskutil image create
+from` has no equivalent of any of the three and produces APFS only.
+Worse, `diskutil listFilesystems` on macOS 27 no longer offers an HFS+
+personality at all, so the replacement tool has retired the capability
+the classic image depends on rather than merely not grown it yet. That
+is a different problem from this one, tracked as
+[issue #28](https://github.com/thisoldmac/new-old-world/issues/28), and
+it is unsolved rather than deferred.
 
 ## EMULATOR-OBSERVED WHERE IT COUNTS: 035 fix wave — the Web proxy serves its first page ever, the footer joins the drop system, drags stop wedging (2026-08-15 overnight, four lanes merged, gate green)
 
@@ -1295,40 +1334,6 @@ this lane gets tested success-first for exactly that reason.
 ## TESTED, THE ONE DELIBERATE REGRESSION UNWATCHED: Mirror consent is one switch on the Mac, planes on the host (2026-08-15, `claude/034w5-mirror`, closes plan 034 G-7)
 
 Mirror consent (plan 034 G-7, 2026-08-15). The guest's half of the two-key consent is now ONE master switch; the four per-plane guest gates retired and the host's plane policy is the sole granularity. Both sides must still permit — the guest's veto is untouched, only its granularity moved. Field fates, all decided explicitly: `policy.enabled` is new and required; `structure`/`finderComplements`/`content`/`foregroundCycle` are retired but STILL SENT by a current guest, all four set to the master, because a host built before this change declares them required and would fail to decode the entire facts object without them. A host reading a guest that predates `enabled` collapses the four by the guest's own migration rule (consent only when ALL FOUR were on), stated once per side because two sides guessing differently would grant a permission that Mac's own preferences deny, silently, since every plane would simply work. Prefs reach V29; the V22 slots stay and are written from the master, so the rule is its own inverse and a file round-trips through a format-28 build unchanged. UNVERIFIED, and it is the interesting half: the migration is conservative by design, so almost every existing preferences file collapses to consent OFF — only structure was ever on by default — meaning a person who upgrades finds mirroring refused until they tick one box, and nobody has watched that happen on a real machine. Also unverified on metal: the host's `content` plane default flipped to OFF to inherit the guest's old default (P3 is metal-proven to crash the Finder on the PB1400c), so a fresh pair of machines should behave exactly as before; that equivalence is argued from code, not observed. Neither guest page nor host page has been seen rendered — no emulator or metal pass ran for this change.
-
-## RESOLVED: the DMG assembler no longer uses the deprecated `hdiutil create` (2026-08-15, `build/dmg-diskutil-migration`)
-
-`scripts/assemble-release :: create_dmg` now shells out to `diskutil
-image create from --format UDZO --volumeName "New Old World" <source>
-<destination>`. The flags did map across after all: `UDZO` is one of
-`diskutil`'s own accepted format names, `-volname` becomes
-`--volumeName`, and the source folder and destination become positional.
-Both spellings were built from the same stub folder and compared on
-macOS 27 — UDIF read-only compressed (zlib), GUID partition scheme, APFS
-filesystem, symlinks carried across rather than dereferenced — so this
-is an equivalent image, not a similar one.
-
-The `tools/release-tests` mount-and-inspect case gained the assertion the
-swap actually needed: the drag-to-install `/Applications` alias is a
-symlink with that exact target. A builder that dereferenced it would
-still produce a DMG that mounts and passes every other assertion. Both
-halves were watched failing — a mutation that made the alias a real
-directory, and one that pointed it elsewhere.
-
-The gate clones `HEAD` rather than reading the worktree, which is worth
-knowing before trusting it: the first green run of this change tested
-the unmodified committed script and proved nothing. Commit, then run.
-
-Not closed by this: `tools/release/image.py` still calls `hdiutil
-create` for the generic classic-Mac setup image, and cannot move. It
-needs `-fs HFS+`, `-size` and `-layout NONE`; `diskutil image create
-from` has no equivalent of any of the three and produces APFS only.
-Worse, `diskutil listFilesystems` on macOS 27 no longer offers an HFS+
-personality at all, so the replacement tool has retired the capability
-the classic image depends on rather than merely not grown it yet. That
-is a different problem from this one, tracked as
-[issue #28](https://github.com/thisoldmac/new-old-world/issues/28), and
-it is unsolved rather than deferred.
 
 ## EMULATOR-OBSERVED AT BEST, METAL NOT AT ALL: 034 wave 4 — the Files cocktail, one name rule, files drop in from outside (2026-08-15, five lanes merged, gate green)
 
