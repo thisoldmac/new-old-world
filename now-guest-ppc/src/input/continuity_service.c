@@ -334,6 +334,12 @@ static void drain_trace(const NowPeekContinuityCell *cell)
 static NowPeekU32 gLastDragInstall = 0xFFFFFFFFu;
 static NowPeekU32 gLastDragSelftest = 0xFFFFFFFFu;
 static NowPeekU32 gLastDragTracks = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerState = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerInstalls = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerCalls = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerRemoves = 0xFFFFFFFFu;
+static NowPeekU32 gLastHandlerBegin = 0;
+static NowPeekU32 gLastTracks = 0;
 static NowPeekU32 gLastDragDispatches = 0;
 static NowPeekU32 gLastDragBeginSeq = 0;
 static NowPeekU32 gLastDragEndSeq = 0;
@@ -468,6 +474,104 @@ static void drain_drag_observe(const NowPeekContinuityCell *cell)
                     (unsigned long)s->attributes, (long)s->err);
         }
         gLastDragSamples = total;
+    }
+
+    /* ---- V15, the registration route -------------------------------
+       Its counters are printed on ANY change, always on. `installs`
+       without `calls` is the registration route failing the same way
+       the trap route did, and that sentence has to be sayable. */
+    if (obs->handler_state != gLastHandlerState
+            || obs->handler_installs != gLastHandlerInstalls
+            || obs->handler_calls != gLastHandlerCalls
+            || obs->handler_removes != gLastHandlerRemoves) {
+        now_log(kLogInfo, "mirror",
+                "drag handler state=%lu err=%ld inst=%lu rem=%lu ctx=%lu "
+                "calls=%lu enter=%lu/%lu in=%lu leave=%lu/%lu reent=%lu",
+                (unsigned long)obs->handler_state,
+                (long)obs->handler_err,
+                (unsigned long)obs->handler_installs,
+                (unsigned long)obs->handler_removes,
+                (unsigned long)obs->handler_contexts,
+                (unsigned long)obs->handler_calls,
+                (unsigned long)obs->handler_enter_handler,
+                (unsigned long)obs->handler_enter_window,
+                (unsigned long)obs->handler_in_window,
+                (unsigned long)obs->handler_leave_window,
+                (unsigned long)obs->handler_leave_handler,
+                (unsigned long)obs->handler_reentries);
+        gLastHandlerState = obs->handler_state;
+        gLastHandlerInstalls = obs->handler_installs;
+        gLastHandlerCalls = obs->handler_calls;
+        gLastHandlerRemoves = obs->handler_removes;
+    }
+
+    if (obs->handler_begin_seq != gLastHandlerBegin
+            && (obs->handler_begin_seq & 1u) == 0) {
+        char hname[64];
+        unsigned len = (unsigned)obs->hfile_name[0];
+        unsigned i;
+
+        if (len > 62u)
+            len = 62u;
+        for (i = 0; i < len; ++i) {
+            unsigned char c = obs->hfile_name[i + 1u];
+
+            hname[i] = (c < 0x20u || c > 0x7Eu) ? '.' : (char)c;
+        }
+        hname[len] = '\0';
+        /* THE IDENTITY, from a live DragRef the Drag Manager handed us,
+           with no selection consulted anywhere. */
+        now_log(kLogInfo, "mirror",
+                "drag handler item seq=%lu a5=%08lx ref=%08lx tk=%lu "
+                "items=%lu what=%s err=%ld type=%08lx cr=%08lx "
+                "vref=%ld par=%lu name=%s",
+                (unsigned long)obs->handler_begin_seq,
+                (unsigned long)obs->handler_a5,
+                (unsigned long)obs->handler_drag_ref,
+                (unsigned long)obs->handler_first_ticks,
+                (unsigned long)obs->hitem_count,
+                drag_item_status(obs->hitem_status),
+                (long)obs->hitem_err,
+                (unsigned long)obs->hfile_type,
+                (unsigned long)obs->hfile_creator,
+                (long)obs->hfile_vrefnum,
+                (unsigned long)obs->hfile_parid, hname);
+        gLastHandlerBegin = obs->handler_begin_seq;
+        gLastTracks = 0;
+    }
+
+    /* THE TARGETING STREAM. What window the Drag Manager believes the
+       drag is over, beside the point this resident is driving, at the
+       instant it believed it. This is slice 3's question and it is
+       always on rather than debug tier - it is the whole reason the
+       route was tried. */
+    if (obs->track_count != gLastTracks) {
+        NowPeekU32 total = obs->track_count;
+        NowPeekU32 fresh;
+        NowPeekU32 n;
+
+        if (total < gLastTracks)
+            gLastTracks = 0;
+        fresh = total - gLastTracks;
+        if (fresh > (NowPeekU32)kNowPeekDragObsTrackCapacity)
+            fresh = (NowPeekU32)kNowPeekDragObsTrackCapacity;
+        for (n = total - fresh; n != total; ++n) {
+            const NowPeekDragObsTrack *t =
+                &obs->tracks[n % (NowPeekU32)kNowPeekDragObsTrackCapacity];
+
+            now_log(kLogInfo, "mirror",
+                    "drag track n=%lu msg=%lu win=%08lx tk=%lu "
+                    "dm=%ld,%ld pin=%ld,%ld raw=%ld,%ld lm=%ld,%ld "
+                    "attr=%lx err=%ld",
+                    (unsigned long)(n + 1u), (unsigned long)t->message,
+                    (unsigned long)t->window, (unsigned long)t->ticks,
+                    (long)t->dm_mouse_h, (long)t->dm_mouse_v,
+                    (long)t->dm_pinned_h, (long)t->dm_pinned_v,
+                    (long)t->lm_raw_h, (long)t->lm_raw_v,
+                    (long)t->lm_mouse_h, (long)t->lm_mouse_v,
+                    (unsigned long)t->attributes, (long)t->err);
+        }
+        gLastTracks = total;
     }
 
     if (end_seq != gLastDragEndSeq && (end_seq & 1u) == 0) {

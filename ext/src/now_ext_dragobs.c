@@ -52,6 +52,7 @@
  */
 #include <MacTypes.h>
 #include <Drag.h>
+#include <MixedMode.h>
 #include <Events.h>
 #include <Files.h>
 #include <LowMem.h>
@@ -94,6 +95,17 @@ static volatile int gReturnPending;
    and is only a DragRef for selector 13. */
 static DragRef gLiveDrag;
 static NowPeekU32 gLastSampleTicks;
+
+/* ONE identity reader behind TWO routes, declared here because the
+   registration route below is written before it. The trap route and the
+   handler route read the dragged file the same way and write into
+   different fields, so a disagreement between the two readings would be
+   a real finding rather than a difference in how they asked. */
+static void read_identity_into(NowPeekDragObserve *block, DragRef drag,
+                               NowPeekU32 *out_count, NowPeekU32 *out_status,
+                               NowPeekI32 *out_err, NowPeekU32 *out_type,
+                               NowPeekU32 *out_creator, NowPeekI32 *out_vref,
+                               NowPeekU32 *out_parid, unsigned char *out_name);
 
 static NowPeekContinuityCell *dragobs_cell(NowPeekTable *table)
 {
@@ -170,6 +182,260 @@ static void dragobs_install(NowPeekDragObserve *block)
     NSetTrapAddress((UniversalProcPtr)now_dragobs_patch,
                     kNowDragObsDispatchTrap, ToolTrap);
     block->install_state = (NowPeekU32)kNowPeekDragObsInstallDone;
+}
+
+/* ======================================================================
+   V15 - THE REGISTRATION ROUTE
+   ======================================================================
+
+   WHY THERE IS A SECOND ROUTE. The first one is measured and it does not
+   exist: a 68K patch on `_DragDispatch` is provably live (the control
+   above sees its own two calls) and a PowerPC Finder completes a whole
+   file drag without one dispatch through it. So this route stops
+   patching anything and uses the public door.
+
+   `InstallTrackingHandler` registers a handler FOR THE CALLING
+   APPLICATION. That is the whole reason it can work where the patch
+   could not, and also the whole reason it must be done from here: the
+   registration belongs to whichever process is current when the call is
+   made, and the jGNE armed pass is the only place this component is ever
+   inside somebody else's process.
+
+   THREE CHARTER QUESTIONS, ANSWERED IN CODE RATHER THAN IN A COMMENT.
+
+   1. THE UPP IS NOT A CAST. It is a real RoutineDescriptor, built by
+      `BUILD_ROUTINE_DESCRIPTOR` with the procInfo Universal Interfaces
+      declares for this callback. The Drag Manager on this machine is
+      native PowerPC and our handler is 68K, so it is reached through
+      Mixed Mode, and Mixed Mode needs a descriptor that says so.
+
+   2. NOTHING IS ALLOCATED, EVER. `NewDragTrackingHandlerUPP` allocates,
+      and it would allocate IN THE FOREIGN APPLICATION'S HEAP, which is
+      the one thing a resident may not do from a hook. So the descriptor
+      is a module global - the resident's own relocated storage, which
+      lives in the system heap and is reachable from every context, the
+      same property the trap trampolines already depend on. It is filled
+      in at runtime from a local initializer rather than being statically
+      initialised, because this INIT is RELOCATED at load
+      (RETRO68_RELOCATE) and a procedure address baked into static data
+      is the kind of thing that is either fixed up or is a jump into
+      nowhere. Assigning from a local makes the compiler load the
+      relocated address, and removes the question.
+
+   3. WHAT THE HANDLER TOUCHES. The cell is the resident's system-heap
+      table, addressed absolutely; the handler's own code and globals are
+      the resident's. Nothing it reads or writes belongs to the
+      application it is running inside. Its Drag Manager calls go back
+      out through our own trap shim, so they are inside the same
+      re-entrancy guard everything else here uses.
+
+   UN-REGISTRATION IS THE HARD HALF, and it is hard for a reason worth
+   stating: a registration is per-application, so it can only be REMOVED
+   from the same application it was made in - and a disarm arrives on
+   whatever process happens to be pumping, which is usually not that one.
+   A handler left behind in the Finder after the pass ends is exactly the
+   leak the per-pass rule exists to prevent, and it is worse than a
+   leaked patch, because the Drag Manager will go on calling into a
+   plane that has been told to stand down.
+
+   So the plane keeps the A5 of every context it registered in, and
+   removes the registration when it is next inside that context and the
+   arm is gone. `handler_installs` and `handler_removes` are published
+   so the pairing is a number a reader can check rather than a claim
+   this comment makes. */
+
+/* The handler. Runs in the DRAGGING APPLICATION's context, called by the
+   Drag Manager through Mixed Mode, at task time. Deliberately small: it
+   reads, it writes the cell, it returns noErr. It never declines, never
+   changes the drag, and never returns anything but noErr, because a
+   tracking handler's result is consulted and this plane observes. */
+static pascal OSErr now_dragobs_tracking(DragTrackingMessage message,
+                                         WindowRef theWindow,
+                                         void *refCon, DragRef theDrag);
+
+static RoutineDescriptor gTrackDesc;
+static Boolean gTrackDescReady;
+/* The A5 worlds currently holding one of our registrations. This is what
+   un-registration is driven from: a registration we have forgotten is
+   one we can never remove. */
+static NowPeekU32 gTrackContexts[kNowPeekDragObsContextCapacity];
+static int gTrackContextCount;
+
+static DragTrackingHandlerUPP track_upp(void)
+{
+    if (!gTrackDescReady) {
+        /* Built from a LOCAL initializer, not statically - see the
+           relocation argument above. No allocation on either path. */
+        RoutineDescriptor built = BUILD_ROUTINE_DESCRIPTOR(
+            uppDragTrackingHandlerProcInfo, now_dragobs_tracking);
+
+        gTrackDesc = built;
+        gTrackDescReady = true;
+    }
+    return (DragTrackingHandlerUPP)&gTrackDesc;
+}
+
+static int track_context_index(NowPeekU32 a5)
+{
+    int i;
+
+    for (i = 0; i < gTrackContextCount; ++i) {
+        if (gTrackContexts[i] == a5)
+            return i;
+    }
+    return -1;
+}
+
+/* Register in THIS context if we have not already. `theWindow` is NULL,
+   which the Drag Manager reads as "every window this application owns" -
+   the Finder's icons live on the desktop window and in folder windows
+   and we have no business enumerating either. */
+static void track_install(NowPeekDragObserve *block, NowPeekU32 a5)
+{
+    OSErr err;
+
+    if (track_context_index(a5) >= 0)
+        return;
+    if (gTrackContextCount >= kNowPeekDragObsContextCapacity) {
+        block->handler_state = (NowPeekU32)kNowPeekDragObsHandlerNoRoom;
+        return;
+    }
+    gInside = 1;                  /* the call itself is a _DragDispatch */
+    err = InstallTrackingHandler(track_upp(), NULL, NULL);
+    gInside = 0;
+    if (err != noErr) {
+        block->handler_state = (NowPeekU32)kNowPeekDragObsHandlerRefused;
+        block->handler_err = (NowPeekI32)err;
+        return;
+    }
+    gTrackContexts[gTrackContextCount++] = a5;
+    block->handler_installs++;
+    block->handler_contexts = (NowPeekU32)gTrackContextCount;
+    block->handler_state = (NowPeekU32)kNowPeekDragObsHandlerInstalled;
+}
+
+/* Give it back, and only from the context that took it. */
+static void track_remove(NowPeekDragObserve *block, NowPeekU32 a5)
+{
+    int index = track_context_index(a5);
+    int i;
+
+    if (index < 0)
+        return;
+    gInside = 1;
+    (void)RemoveTrackingHandler(track_upp(), NULL);
+    gInside = 0;
+    for (i = index; i + 1 < gTrackContextCount; ++i)
+        gTrackContexts[i] = gTrackContexts[i + 1];
+    gTrackContextCount--;
+    block->handler_removes++;
+    block->handler_contexts = (NowPeekU32)gTrackContextCount;
+}
+
+static void track_row(NowPeekDragObserve *block, NowPeekU32 message,
+                      WindowRef window, DragRef drag, NowPeekU32 a5,
+                      NowPeekU32 ticks)
+{
+    NowPeekDragObsTrack *row;
+    Point dm_mouse, dm_pinned, lm_raw, lm_mouse;
+    DragAttributes attrs = 0;
+    OSErr err;
+    NowPeekU32 index;
+
+    if (block->track_count >= (NowPeekU32)kNowPeekDragObsTrackCapacity)
+        block->track_dropped++;
+    index = block->track_count % (NowPeekU32)kNowPeekDragObsTrackCapacity;
+    row = &block->tracks[index];
+
+    dm_mouse.h = 0; dm_mouse.v = 0;
+    dm_pinned.h = 0; dm_pinned.v = 0;
+    row->err = 0;
+    err = GetDragMouse(drag, &dm_mouse, &dm_pinned);
+    if (err != noErr && row->err == 0)
+        row->err = (NowPeekI32)err;
+    err = GetDragAttributes(drag, &attrs);
+    if (err != noErr && row->err == 0)
+        row->err = (NowPeekI32)err;
+    lm_raw = LMGetRawMouseLocation();
+    lm_mouse = LMGetMouseLocation();
+
+    row->ticks = ticks;
+    row->message = message;
+    row->window = (NowPeekU32)window;
+    row->a5 = a5;
+    row->dm_mouse_h = (NowPeekI32)dm_mouse.h;
+    row->dm_mouse_v = (NowPeekI32)dm_mouse.v;
+    row->dm_pinned_h = (NowPeekI32)dm_pinned.h;
+    row->dm_pinned_v = (NowPeekI32)dm_pinned.v;
+    row->lm_raw_h = (NowPeekI32)lm_raw.h;
+    row->lm_raw_v = (NowPeekI32)lm_raw.v;
+    row->lm_mouse_h = (NowPeekI32)lm_mouse.h;
+    row->lm_mouse_v = (NowPeekI32)lm_mouse.v;
+    row->attributes = (NowPeekU32)attrs;
+    block->track_count++;         /* bumped LAST, as the ring rule needs */
+}
+
+static pascal OSErr now_dragobs_tracking(DragTrackingMessage message,
+                                         WindowRef theWindow,
+                                         void *refCon, DragRef theDrag)
+{
+    NowPeekDragObserve *block = shim_block();
+    NowPeekU32 ticks;
+    NowPeekU32 a5;
+
+    (void)refCon;
+    if (block == NULL)
+        return noErr;
+    if (gInside) {
+        block->handler_reentries++;
+        return noErr;
+    }
+    ticks = (NowPeekU32)LMGetTicks();
+    a5 = (NowPeekU32)LMGetCurrentA5();
+    block->handler_calls++;
+
+    switch (message) {
+    case kDragTrackingEnterHandler:
+        block->handler_enter_handler++;
+        block->handler_begin_seq++;          /* odd: mid-write */
+        block->handler_a5 = a5;
+        block->handler_drag_ref = (NowPeekU32)theDrag;
+        block->handler_first_ticks = ticks;
+        block->track_count = 0;
+        block->track_dropped = 0;
+        gInside = 1;
+        read_identity_into(block, theDrag, &block->hitem_count,
+                           &block->hitem_status, &block->hitem_err,
+                           &block->hfile_type, &block->hfile_creator,
+                           &block->hfile_vrefnum, &block->hfile_parid,
+                           block->hfile_name);
+        gInside = 0;
+        block->handler_begin_seq++;          /* even: whole */
+        break;
+    case kDragTrackingEnterWindow:
+        block->handler_enter_window++;
+        break;
+    case kDragTrackingInWindow:
+        block->handler_in_window++;
+        break;
+    case kDragTrackingLeaveWindow:
+        block->handler_leave_window++;
+        break;
+    case kDragTrackingLeaveHandler:
+        block->handler_leave_handler++;
+        break;
+    default:
+        break;
+    }
+    /* Every message gets a row, including the two handler-level ones:
+       the targeting question is about the SEQUENCE, and a ring that
+       recorded only the window messages could not show a drag that
+       entered the handler and never named a window at all. */
+    gInside = 1;
+    track_row(block, (NowPeekU32)message, theWindow, theDrag, a5, ticks);
+    gInside = 0;
+    /* noErr, always. A tracking handler's result is consulted. */
+    return noErr;
 }
 
 /* ---- the control ------------------------------------------------------
@@ -249,11 +515,26 @@ void now_ext_dragobs_gne(NowPeekTable *table, NowPeekU32 request)
         && (cell->state == (NowPeekU32)kNowPeekContinuityStateArmed
             || cell->state == (NowPeekU32)kNowPeekContinuityStateActive);
     if (!continuity_armed
-            && !(request & (NowPeekU32)kNowPeekTableCapAct))
+            && !(request & (NowPeekU32)kNowPeekTableCapAct)) {
+        /* THE DISARM HALF, and it is the reason this function does not
+           simply return when it has nothing to do. A registration is
+           per-application, so it can only be given back from the
+           application that took it - and this pass is the only time we
+           are ever inside that application again. A handler left behind
+           after the arm ends is worse than a leaked trap patch: the Drag
+           Manager would go on calling into a plane that has been told to
+           stand down. */
+        if (gTrackContextCount != 0)
+            track_remove(&cell->drag_observe,
+                         (NowPeekU32)LMGetCurrentA5());
         return;
+    }
     gTable = table;
     dragobs_install(&cell->drag_observe);
     dragobs_selftest(&cell->drag_observe);
+    /* The registration route, in whatever application is pumping. The
+       Finder registers itself the first time it pumps while armed. */
+    track_install(&cell->drag_observe, (NowPeekU32)LMGetCurrentA5());
 }
 
 /* ---- reading a drag ---------------------------------------------------
@@ -261,8 +542,13 @@ void now_ext_dragobs_gne(NowPeekTable *table, NowPeekU32 request)
  * Every function below runs with gInside already set by its caller, so
  * the Drag Manager calls it makes chain straight through the shim. */
 
-static void read_identity(NowPeekDragObserve *block, DragRef drag)
+static void read_identity_into(NowPeekDragObserve *block, DragRef drag,
+                               NowPeekU32 *out_count, NowPeekU32 *out_status,
+                               NowPeekI32 *out_err, NowPeekU32 *out_type,
+                               NowPeekU32 *out_creator, NowPeekI32 *out_vref,
+                               NowPeekU32 *out_parid, unsigned char *out_name)
 {
+    (void)block;
     HFSFlavor flavor;
     DragItemRef item = 0;
     UInt16 count = 0;
@@ -270,34 +556,34 @@ static void read_identity(NowPeekDragObserve *block, DragRef drag)
     OSErr err;
     int i;
 
-    block->item_status = (NowPeekU32)kNowPeekDragObsItemUnknown;
-    block->item_err = 0;
-    block->item_count = 0;
-    block->file_type = 0;
-    block->file_creator = 0;
-    block->file_vrefnum = 0;
-    block->file_parid = 0;
+    *out_status = (NowPeekU32)kNowPeekDragObsItemUnknown;
+    *out_err = 0;
+    *out_count = 0;
+    *out_type = 0;
+    *out_creator = 0;
+    *out_vref = 0;
+    *out_parid = 0;
     for (i = 0; i < 64; ++i)
-        block->file_name[i] = 0;
+        out_name[i] = 0;
 
     err = CountDragItems(drag, &count);
     if (err != noErr) {
-        block->item_status = (NowPeekU32)kNowPeekDragObsItemError;
-        block->item_err = (NowPeekI32)err;
+        *out_status = (NowPeekU32)kNowPeekDragObsItemError;
+        *out_err = (NowPeekI32)err;
         return;
     }
     /* The honest count, whatever it is. An over-count is reported as the
        number it is and never collapsed into the first item's identity:
        `item_status` describes ITEM ONE and says so in the contract. */
-    block->item_count = (NowPeekU32)count;
+    *out_count = (NowPeekU32)count;
     if (count == 0) {
-        block->item_status = (NowPeekU32)kNowPeekDragObsItemNoHFS;
+        *out_status = (NowPeekU32)kNowPeekDragObsItemNoHFS;
         return;
     }
     err = GetDragItemReferenceNumber(drag, 1, &item);
     if (err != noErr) {
-        block->item_status = (NowPeekU32)kNowPeekDragObsItemError;
-        block->item_err = (NowPeekI32)err;
+        *out_status = (NowPeekU32)kNowPeekDragObsItemError;
+        *out_err = (NowPeekI32)err;
         return;
     }
     size = (Size)sizeof(flavor);
@@ -311,24 +597,24 @@ static void read_identity(NowPeekDragObserve *block, DragRef drag)
 
         if (GetFlavorDataSize(drag, item, flavorTypePromiseHFS, &promise)
                 == noErr) {
-            block->item_status = (NowPeekU32)kNowPeekDragObsItemPromise;
+            *out_status = (NowPeekU32)kNowPeekDragObsItemPromise;
             return;
         }
-        block->item_status = (NowPeekU32)kNowPeekDragObsItemNoHFS;
-        block->item_err = (NowPeekI32)err;
+        *out_status = (NowPeekU32)kNowPeekDragObsItemNoHFS;
+        *out_err = (NowPeekI32)err;
         return;
     }
     if (size < (Size)sizeof(flavor)) {
         /* Short read: something answered, but not with an HFSFlavor. */
-        block->item_status = (NowPeekU32)kNowPeekDragObsItemError;
-        block->item_err = (NowPeekI32)size;
+        *out_status = (NowPeekU32)kNowPeekDragObsItemError;
+        *out_err = (NowPeekI32)size;
         return;
     }
-    block->item_status = (NowPeekU32)kNowPeekDragObsItemHFS;
-    block->file_type = (NowPeekU32)flavor.fileType;
-    block->file_creator = (NowPeekU32)flavor.fileCreator;
-    block->file_vrefnum = (NowPeekI32)flavor.fileSpec.vRefNum;
-    block->file_parid = (NowPeekU32)flavor.fileSpec.parID;
+    *out_status = (NowPeekU32)kNowPeekDragObsItemHFS;
+    *out_type = (NowPeekU32)flavor.fileType;
+    *out_creator = (NowPeekU32)flavor.fileCreator;
+    *out_vref = (NowPeekI32)flavor.fileSpec.vRefNum;
+    *out_parid = (NowPeekU32)flavor.fileSpec.parID;
     /* Copied by value into fixed width. A pointer into a foreign heap
        would be read after that heap may be gone - the same rule
        `guest_name` follows in the same table. Byte 0 is the Pascal
@@ -338,9 +624,9 @@ static void read_identity(NowPeekDragObserve *block, DragRef drag)
 
         if (len > 62)
             len = 62;
-        block->file_name[0] = (unsigned char)len;
+        out_name[0] = (unsigned char)len;
         for (i = 0; i < len; ++i)
-            block->file_name[i + 1] = flavor.fileSpec.name[i + 1];
+            out_name[i + 1] = flavor.fileSpec.name[i + 1];
     }
 }
 
@@ -486,7 +772,11 @@ int now_dragobs_enter(unsigned long selector, void *theEvent, void *theDrag)
         block->origin_v = (NowPeekI32)origin.v;
         block->entry_attributes = (NowPeekU32)attrs;
     }
-    read_identity(block, gLiveDrag);
+    read_identity_into(block, gLiveDrag, &block->item_count,
+                       &block->item_status, &block->item_err,
+                       &block->file_type, &block->file_creator,
+                       &block->file_vrefnum, &block->file_parid,
+                       block->file_name);
     block->begin_seq++;                   /* committed */
     gInside = 0;
 
