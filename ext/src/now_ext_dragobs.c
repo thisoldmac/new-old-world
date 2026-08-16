@@ -172,16 +172,33 @@ static void dragobs_install(NowPeekDragObserve *block)
     block->install_state = (NowPeekU32)kNowPeekDragObsInstallDone;
 }
 
-void now_ext_dragobs_gne(NowPeekTable *table)
+/* WHICH ARM SWITCHES THIS ON, and why it is two rather than one.
+ *
+ * The obvious answer is Continuity, and Continuity alone was the first
+ * one written. It is too narrow, and the reason is not a testing
+ * convenience: THE POINTER IS DRIVEN BY TWO PLANES. P9 drives it from a
+ * host's Continuity pass; P4/P7 drive it from an act request, and P7's
+ * vehicle is the one that can hold the button down through a Finder
+ * tracking loop. The whole question this observer exists to answer -
+ * what does Drag Manager targeting consult while a DRIVEN pointer moves
+ * - is a question about both of them, and an instrument armed for one
+ * would report an honest zero for every drag the other made.
+ *
+ * The charter property is unchanged either way: a machine that never
+ * opens the mirror and never sends an act arms neither, and its trap
+ * table is untouched. */
+void now_ext_dragobs_gne(NowPeekTable *table, NowPeekU32 request)
 {
     NowPeekContinuityCell *cell = dragobs_cell(table);
+    int continuity_armed;
 
     if (cell == NULL)
         return;
-    if (!cell->enabled
-            || (cell->state != (NowPeekU32)kNowPeekContinuityStateArmed
-                && cell->state
-                    != (NowPeekU32)kNowPeekContinuityStateActive))
+    continuity_armed = cell->enabled
+        && (cell->state == (NowPeekU32)kNowPeekContinuityStateArmed
+            || cell->state == (NowPeekU32)kNowPeekContinuityStateActive);
+    if (!continuity_armed
+            && !(request & (NowPeekU32)kNowPeekTableCapAct))
         return;
     gTable = table;
     dragobs_install(&cell->drag_observe);

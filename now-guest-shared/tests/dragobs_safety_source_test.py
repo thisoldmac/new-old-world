@@ -160,11 +160,12 @@ check("block->item_count = (NowPeekU32)count;" in OBS_CODE,
 # ------------------------------------------------------ install per pass
 # Once-per-boot is the act plane's measured mistake: the install lands in
 # NOW's own context and no foreign application ever calls it.
-gne = body(OBS, "void now_ext_dragobs_gne(", "/* ---- reading a drag")
+gne = body(OBS, "void now_ext_dragobs_gne(NowPeekTable *table,",
+           "/* ---- reading a drag")
 check("dragobs_install(&cell->drag_observe);" in gne
       and "static int" not in gne and "installed" not in gne,
       "the drag shim install became one-shot again")
-check("now_ext_dragobs_gne(table);" in CORE,
+check("now_ext_dragobs_gne(table, request);" in CORE,
       "the core stopped running the observer's armed pass")
 install = body(OBS, "static void dragobs_install(",
                "void now_ext_dragobs_gne(")

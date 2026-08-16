@@ -83,7 +83,8 @@ extern void now_ext_continuity_observe_event(EventRecord *event,
 /* V14, the drag observer. Declared rather than included for the same
    reason every plane above is: the core knows one entry point and
    nothing about how a drag is watched. */
-extern void now_ext_dragobs_gne(NowPeekTable *table);
+extern void now_ext_dragobs_gne(NowPeekTable *table,
+                                NowPeekU32 request);
 
 /* The content plane (now_content.c), P3. Two entry points rather than
    P4's one, and the split is the plane's own: boot allocates and
@@ -388,7 +389,7 @@ void now_ext_gne_apply(EventRecord *event)
        address, for the reason the act plane records - an install that
        happens once lands in NOW's context and no foreign application
        ever calls it. */
-    now_ext_dragobs_gne(table);
+    now_ext_dragobs_gne(table, request);
     now_content_gne(table);
     /* P5. Its own arm verdict, like P3's, because it also names an A5
        world. Disarmed it is a load, a null check and a return. */

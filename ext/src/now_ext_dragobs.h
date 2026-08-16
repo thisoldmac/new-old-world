@@ -17,6 +17,6 @@
    rollback path has already been taken or not - so this pointer cannot
    outlive a table an install failure disposed, because it is never set
    until long after one could. */
-void now_ext_dragobs_gne(NowPeekTable *table);
+void now_ext_dragobs_gne(NowPeekTable *table, NowPeekU32 request);
 
 #endif /* NOW_EXT_DRAGOBS_H */

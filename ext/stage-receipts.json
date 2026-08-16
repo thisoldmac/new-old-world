@@ -1014,6 +1014,18 @@
         "ext/src/now_ext_dragobs_patch.S"
       ],
       "reason": "slice-1 drag observer in development; shared bake due at main"
+    },
+    {
+      "at": "2026-08-16T13:08:26-0400",
+      "branch": "feat/resident-drag-observe",
+      "extDigest": "64c5f6d08fc490fbc2ef2368924300ea4d7847a5",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_dragobs.c",
+        "ext/src/now_ext_dragobs.h"
+      ],
+      "reason": "slice-1 drag observer in development; shared bake due at main"
     }
   ]
 }
