@@ -247,6 +247,38 @@ That last comment is the part worth flagging: it explains an invariant
 across a disconnect, and the merged function now has one more reason to run
 than the arc's version did. It is tested, not watched.
 
+## The failure no conflict marker announced
+
+Resolving all 118 conflicts left four **silent** defects, and they are worth
+a rule of their own.
+
+When both branches add the *same declaration* to the *same file* at
+different offsets, git does not conflict. It has no reason to: each side
+added text the other did not have, in a place the other did not touch, so a
+three-way merge legitimately keeps both. The result is a file with no
+markers, a clean `git status`, and two definitions of one symbol.
+
+    wire.c:6535: error: redefinition of 'serve_continuity_grab'
+    wire.c:6408: error: 'serve_continuity_grab' defined but not used
+
+That one was named by `scripts/build-guests` — **the only gate in this tree
+that invokes a cross-compiler**, and stages 1 through 5 had all read green
+above it. The other three were Swift and would have waited for the host
+build: `NavigationShelfMenuEntry` in `NavigationShelfTab.swift`,
+`romDumpStatus` in `CensusModuleView.swift`, and three test functions in
+`NavigationDragCoordinatorTests.swift` that still named the retired
+`development` module.
+
+The signature is worth knowing because it is cheap to test for: **the
+merged file equals one side's file plus an appended block that redefines
+something already in it.** `diff <(git show origin/main:F) F` showed
+exactly that for all three Swift files, which is how they were found before
+the compiler reached them. A duplicate-symbol scan over every conflicted
+`.c`/`.h` found `serve_continuity_grab` the same way.
+
+Each duplicate was resolved to the copy this merge had already ruled for
+the surrounding file.
+
 ## Flagged for Michelle
 
 1. **`ConnectionsModel.swift`'s union** (above). Both suites pass, but the
