@@ -1402,6 +1402,12 @@ struct FileAccept: Codable, Equatable, Sendable {
     var freeBytes: Int? = nil
     var reservedBytes: Int? = nil
     var staging: String? = nil
+    /// True when accepting this offer overwrites an item the receiver
+    /// already had, and a person over there authorised it. Absent means
+    /// nothing is being replaced — never "the receiver declined to say".
+    /// The sender cannot otherwise tell a first-time write from a
+    /// replacement: both are one accept and one stream.
+    var replacing: Bool? = nil
 }
 
 struct FileDone: Codable, Equatable, Sendable {
