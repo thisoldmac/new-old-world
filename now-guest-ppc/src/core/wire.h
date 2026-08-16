@@ -223,6 +223,30 @@ void conn_set_get_note(ConnGetNote fn);
 int now_wire_get_host(const char *path, const char *name,
                       char *err, long cap);
 
+/* The inverted crossing: ask for the item the host published via
+   continuity.offer, rather than a path this Mac names. Reuses the same
+   pull machinery above whole - same one-transfer-wide gate, same
+   progress, cancel and crc check - so a person watching the Files pane
+   cannot tell the two apart once bytes start moving. 0 once
+   continuity.grab is on the wire; -1 with a reason in err, including
+   "nothing is being held out right now" when no offer is live.
+
+   `id_out` (optional) receives the transfer id this ask started, for a
+   caller that must later prove the file which landed is the file IT
+   asked for rather than whatever the previous pull left behind — see
+   now_wire_get_landed. */
+int now_wire_get_offer(long *id_out, char *err, long cap);
+
+/* The FSSpec a pull landed under, for `id` and no other. False when
+   that transfer did not complete, or when the last one to complete was
+   somebody else's.
+
+   Every other caller is served by the get-note line, which says in
+   words that a file arrived and where. This exists for the one caller
+   that has to HAND THE FILE ON: the promise drag's send-data callback
+   owes the Finder an FSSpec, and a sentence is not one. */
+Boolean now_wire_get_landed(long id, FSSpec *spec_out);
+
 /* Where a PULL (file.get, the entry point above) actually lands.
    use=false (the default) means the downloads folder — byte-identical
    to every pull before this existed; use=true redirects it to the

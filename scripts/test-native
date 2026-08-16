@@ -209,6 +209,20 @@ run_py now-guest-shared continuity_lease_admission_source_test.py
 # refusals are watched here where no Macintosh is needed to try them.
 run_c now-guest-shared now_continuity_selection_test.c "" \
       src/now_continuity_selection.c
+# continuity.offer inverted: the host publishes, this table just applies
+# it. No refusal vocabulary of its own to test - the host answers a
+# continuity.grab's refusals - so this covers the two local decisions:
+# what a report says with nothing better to go on, and when a grab may
+# be sent. Deliberately runs no clock (see the header on why).
+run_c now-guest-shared now_continuity_offer_test.c "" \
+      src/now_continuity_offer.c
+# The promise drag over that table: the size line, the arm that ripens on
+# an APPLIED button rather than on wire arrival, and every way a drag
+# ends - the cancel path most of all, because classic Finder is
+# unforgiving of a drag that never ends and the Drag Manager half cannot
+# be tested here at all.
+run_c now-guest-shared now_continuity_drag_test.c "" \
+      src/now_continuity_drag.c src/now_continuity_offer.c
 run_c now-guest-shared now_continuity_keyboard_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
 run_py now-guest-shared continuity_keyboard_safety_source_test.py
@@ -357,6 +371,11 @@ run_py now-guest-ppc peek_self_init_source_test.py
 # The nested-loop half of the pump rule, which the wire's reentrancy guard
 # quietly exempted the cursor plane from.
 run_py now-guest-ppc continuity_nested_pump_source_test.py
+# The promise drag's Toolbox half: the rules no native test can reach -
+# the streaming promise pumping inside the Finder's own nested loop, the
+# send-data UPP being made rather than cast, no DragRef left un-disposed
+# - plus the three-file agreement on which acts `offer` has.
+run_py now-guest-ppc continuity_dragmgr_source_test.py
 # The Finder-selection poll's three gates and its caller. All four are
 # Toolbox or ordering properties a host cc cannot reach: no epoch means
 # no poll, a held button means no poll, and being called from

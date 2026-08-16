@@ -193,6 +193,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `continuity.arm` / `continuity.disarm` / `continuity.key` | ✅ | ❌ | the optional pointer/keyboard plane. Host-to-guest authority throughout: the PPC guest serves all three and answers `continuity.report` / `continuity.keyReport`, which it SENDS and never handles. NOW-68K has no Continuity plane at all - no resident, no UDP lane - so this is a subsystem asymmetry rather than three rows. `continuity.key` carries FOUR actions and the PPC guest names all four: `down`, `up`, `repeat`, and `modifiers` - a bare modifier change, which is served by holding the word rather than by queueing an event. Written out because the count above cannot see it: the row held at one while what the guest accepts grew, which is the shape-versus-count blindness the derived-doc block guards with a source digest |
 | `continuity.grab` | ✅ | ❌ | **The one place a guest reads outside the Files share on the host's word**, and it is inside the row above rather than beside it: a grab is valid only for a generation the guest itself published, during the live epoch, and dies with it. The host names no path, so the reachable set is exactly what a person selected by hand. Served by PPC through the ORDINARY file lane (`file.begin` / bulk / `file.end` / `file.refuse`), which is why a grabbed file cancels and reports progress like a Files pull. NOW-68K serves nothing of Continuity |
 | `continuity.selection` | — | — | The Finder-selection stub, SENT by the PPC guest while an epoch is live and handled by neither guest - a host never sends one. It exists because a drag cannot ask: the Finder holds its own nested Drag Manager loop for the whole gesture, so the facts a cross-the-edge drag needs must be on the wire before the press. v1 carries the FIRST item of a multiple selection only, declared in the contract |
+| `continuity.offer` | ✅ | ❌ | **Declared 2026-08-15, served by PPC the same day** — the selection stub INVERTED, sent by the HOST while an epoch is live so the guest can draw an honest drag before a byte moves. It carries no source identity at all (the host resolves an offer from its own generation table, and a host path on the wire would be the arbitrary read `continuity.grab` already refuses), and no Drag-Manager-shaped field, so a guest with no native drag can serve the whole message by staging the file. AN OFFER IS NOT ANSWERED — the PPC guest folds each one into a local table (`continuity_offer_intake.c`) and sends nothing back. `continuity.report`'s `acceptsOffer` is not yet wired to this table's readiness (declared, not implemented this slice); NOW-68K answers nothing because it has no Continuity plane, which is how the host degrades honestly here. The grab it leads to is `continuity.grab` with the roles swapped — same message, guest now sending (`now_wire_get_offer`), served down the ordinary file lane — refused `offer-expired` rather than `grant-expired` when the HOST's clock ran out |
 | `agent.access` | ❌ | ❌ | neither guest HANDLES one — it is guest-to-host only, and a host never sends it. PPC SENDS it when its consent tier changes; 68K has no tier to change |
 | `cloud.report` / `cloud.listing` / `cloud.card` / `cloud.refuse` | ✅ | ❌ | the ASKER's half: the PPC guest consumes these as answers for its iCloud page and SENDS `cloud.services` / `cloud.list` / `cloud.detail` / `cloud.get` / `cloud.preview`. No guest serves the family — its subject is the host's own iCloud (contract `guestAsksCloud`), so these rows can never grow guest ticks |
 | `chat.catalog` / `chat.delta` / `chat.status` / `chat.result` | ✅ | ❌ | the ASKER's half of the chat family (contract `guestAsksChat`): the PPC guest SENDS `chat.models` / `chat.send` / `chat.cancel` / `chat.reset` — from its Chat page and its console-only `chat` verb — and consumes these as answers; the host serves the family from its harness (`ChatWireService`). `chat.models` is TWO asks in one message and `chat.catalog` two answer shapes: without a provider it lists providers; with one it pages that provider's models (cursor/more, asked lazily on selection), each row carrying a HOST-MINTED `ref` that `chat.send` returns — a provider's model name never crosses the wire. Like cloud, its subject is the host's own model harness, so this row can never grow guest-SERVING ticks. 68K never asks, deliberately: the page is PPC-only and the family is a luxury a 384 KB partition does not buy |
@@ -200,7 +201,7 @@ What each guest does when the host sends it. ✅ served · ❌ not served.
 | `preview.begin` / `preview.end` | ✅ | ❌ | the photo preview's transfer bracket, answering the PPC guest's own `cloud.preview`: raw indexed rows the HOST already dithered, landed in the iCloud page's pane by one CopyBits. Asker's half again — no guest will ever serve it |
 | `update.offer` | ✅ | ❌ | the host-owned updater's publication half. PPC consumes the offer, compares release version and exact build, and may SEND `update.request`; it later SENDS `update.result` after the existing `file.*` transfer and local install. NOW-68K implements none of the family |
 
-PPC handles **54** inbound types; NOW-68K handles **25**. Both numbers
+PPC handles **58** inbound types; NOW-68K handles **25**. Both numbers
 are copied from the `derived-doc` block at the foot rather than counted
 here — the block is what `tools/derived-doc-gate` re-runs, and this
 sentence had drifted to 50 / 23 behind it, which is the third time this
@@ -282,6 +283,7 @@ number here has been found wrong by re-deriving it.
 | `quit` | ask an application to quit | ✅ | ✅ |
 | `front` | bring an application forward | ✅ | ✅ |
 | `hide` | hide or show an application, and read its visibility back | ✅ | ❌ — declared asymmetry, see below |
+| `offer` | take the file the host is holding out — report it, or `--take` it. **Declared 2026-08-15 ahead of any guest, served by PPC the same day**: the console fallback (its grammar is the raw line — `--take` or empty) and the wire's `command.request` are one implementation (`commands.c :: run_offer`), so `CommandRegistryTests.servedByNoGuestYet` emptied again | ✅ | ❌ — no Continuity plane |
 | `key` | post one keystroke, with no modifiers | ✅ | ❌ |
 | `net` | this Mac's link, address and network hardware | ✅ | ❌ |
 | `put` | send a file from the guest | console only | ✅ |
@@ -1367,18 +1369,18 @@ moved; the hash is the receipt, not the point.
 
 <!-- derived-doc v1
 sources: now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c contract/asyncapi.yaml now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c
-sources-sha1: 557a6833b52d4a1165f09e81466eeeb626271e33
-derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
+sources-sha1: 48349d1e52b14c2e2a2c0011a785be9c3b02535e
+derive ppc-inbound-types sha256=5c659300160d136813e618972ee666eff5313dfd50488d136938776328ffefb0 lines=58 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive x-commands-registry sha256=936c1bfca0c82db7b495e429023cc67cea89c3ea40334ae04887f2ba2479f8c6 lines=58 published
+derive x-commands-registry sha256=263d15ea9315a7980a187e7d1db31ceca7553416d8e6bb9e787608691c3ab032 lines=59 published
     awk '/^  x-commands:$/{f=1;next} f&&/^  [^ ]/{f=0} \
          f&&/^    [a-z][a-z0-9-]*:$/{gsub(/[ :]/,"");print}' \
         contract/asyncapi.yaml | sort -u
-derive ppc-verbs sha256=ead47d1af0629e7f214a2950f171cd4c47f063393e9f281374e09ae2a74bd337 lines=55 published
+derive ppc-verbs sha256=84d4edd5565a616bd8bd20b5cdd7b414e4ef4bceed9dc5c911a1135c91f4d87c lines=56 published
     grep -oE 'strcmp\(name, *"[a-z0-9-]+"\)' \
         now-guest-ppc/src/commands/commands.c \
       | grep -oE '"[a-z0-9-]+"' | tr -d '"' | sort -u
@@ -1558,4 +1560,16 @@ rederived: 2026-08-15T03:18:49-0400 2c7ff2a1 unchanged
 rederived: 2026-08-15T04:01:10-0400 b18a891c sources
 rederived: 2026-08-15T12:33:02-0400 eadb1784 sources
 rederived: 2026-08-15T13:22:24-0400 4e897bc6 unchanged
+rederived: 2026-08-15T14:24:06-0400 599da71e sources, x-commands-registry 58->59
+rederived: 2026-08-15T14:56:49-0400 4caf46ef sources
+rederived: 2026-08-15T15:01:58-0400 a06d9396 unchanged
+rederived: 2026-08-15T15:16:38-0400 cc0d429b sources
+rederived: 2026-08-15T15:19:22-0400 658719b4 sources
+rederived: 2026-08-15T15:25:06-0400 7949e13a sources
+rederived: 2026-08-15T16:00:09-0400 69217d7a sources, ppc-inbound-types 57->58, ppc-verbs 55->56
+rederived: 2026-08-15T16:06:08-0400 69217d7a unchanged
+rederived: 2026-08-15T16:43:47-0400 919bcc60 unchanged
+rederived: 2026-08-15T18:06:55-0400 feaa6945 sources
+rederived: 2026-08-15T19:13:28-0400 ce43eb74 unchanged
+rederived: 2026-08-15T22:25:51-0400 f627b5b4 sources
 -->

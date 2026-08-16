@@ -543,6 +543,213 @@ Nothing here is measured: no round has yet correlated a ghost with a
 specific edge, and "did not exist before today" is a memory, not an
 instrument.
 
+## THE PROMISE WORKS AND THE DRAG NEVER LEAVES THIS APPLICATION: a receiver we wrote gets the file byte-for-byte; no other process is ever offered the drop (2026-08-15, `feat/hg-drag-dragmgr`)
+
+Slice 2 of the host→guest crossing: `offer --drag` starts a real Drag
+Manager drag of the published item carrying `flavorTypePromiseHFS`,
+whose send-data callback pulls the bytes through the slice-1 lane into
+the folder the drop landed on and hands the receiver that file's FSSpec.
+
+**This entry replaces one titled "the drop happens; the promise is never
+asked for", and that title was half right in a way that hid the defect.**
+The drop did not happen. `TrackDrag` returning `noErr` was read as "a
+receiver accepted", and it does not mean that.
+
+### What is now PROVEN, on a live emulator guest
+
+Lane block 210, `spin-up-ppc` onto a session-private clone, provenance in
+that run's own `provenance.md`. The build under test is asserted from a
+`drag drop:` line no earlier build emits.
+
+**The promise machinery is correct, end to end, including the bytes.**
+(Both control runs below; the second dropped OUTSIDE the window and is
+the one that names the real defect.)
+Under `--x=4` NOW installs its own Drag Manager tracking and receive
+handlers on its own window and the drop happens inside it — a control
+whose source is in this repository, which is the only kind of control
+that makes a negative mean anything. The guest's own log:
+
+```
+mirror drag now-slice2-drop-DF955E#6B2B.txt ended: ok (TrackDrag 0)
+mirror drag drop: loc='fss ' err=0 end=500,400 mods=0x0000 asks=1
+mirror drag attrs: 0x00000006 left=0 inapp=1 inwin=1
+```
+
+`asks=1` — the send-data callback ran. `loc='fss '` — a drop location was
+set and read back. And the file is really there, pulled back off the
+guest through the anchor and compared byte for byte:
+
+```
+Macintosh HD:Desktop Folder:now-slice2-drop-DF955E#6B2B.txt
+  TEXT/ttxt, data 4096, rsrc 0
+  sha256 7824a27eb07f3e73a7d9948951e1f97c3deffa1958e7b1d370740b98fd5e7e0b
+  identical to the host's original
+```
+
+So every part of this slice below the drop is real: the flavor
+declaration, the send-data UPP, the drop-location resolution, the
+streaming pull through the slice-1 lane **inside somebody's drop
+handling**, the FSSpec handback, and the state machine's `ok`.
+
+### What is BROKEN
+
+**No other application is ever offered this drag.** Three drops onto the
+Finder's desktop — the eighteen-pixel band under the default window, and
+twice onto a large exposed desktop after resizing NOW to 700x200 — all
+answer the same way:
+
+```
+mirror drag ... ended: promise-never-asked (TrackDrag 0)
+mirror drag drop: loc='null' end=300,450 mods=0x0000 asks=0
+```
+
+`loc='null'` is the load-bearing word: **nobody called
+`SetDropLocation`**, so no receive handler ran anywhere. The Finder is
+not declining this drag; it never sees it.
+
+### Four hypotheses died, and how
+
+Each is recorded because each was plausible and each cost something to
+kill.
+
+- **`PromiseHFSFlavor` packing.** Two compilers sharing a struct is this
+  project's own named hazard, and a `promisedFlavor` read at the wrong
+  offset would produce exactly the observed silence. `#pragma options
+  align=mac68k` IS honoured by this toolchain: static-asserted
+  `sizeof == 14` and `offsetof(promisedFlavor) == 10` against the real
+  Retro68 PPC headers. Cost: one compile, no machine.
+- **The UPP.** `NewDragSendDataUPP` resolves to `NewRoutineDescriptor`
+  here, not a cast. Cost: one grep.
+- **`'????'`/`'????'`.** The predecessor's leading suspect, that a Finder
+  cannot classify an untyped promised file and so declines to ask. The
+  offer was republished as `.txt`, crossed as `TEXT`/`ttxt`, and the
+  answer did not change by one word. Dead as an explanation — though see
+  the fixture note below, because it was never only a product question.
+- **The drop target.** `loc='null'` reads like a pointer that was over
+  the Control Strip rather than the desktop, and the default geometry
+  really does leave only eighteen pixels of desktop. Resized, aimed at
+  bare desktop, same answer.
+
+### WHERE IT POINTS, AND IT IS MEASURED RATHER THAN INFERRED
+
+The control was run twice: once dropping INSIDE NOW's window, once with
+the window resized to 700x200 and the drop at (300, 450), which is well
+outside it. Both times **our own receive handler ran** — the guest's log
+puts `drag ctrl: RECEIVE handler ran` immediately before
+`drag promise asked for 'fssP'` in each — and both times the file landed
+byte-identical. The second run is the one that says why:
+
+```
+drag ctrl: tracking msg=1      (EnterHandler)
+drag ctrl: tracking msg=2      (EnterWindow)
+drag ctrl: tracking msg=4      (LeaveWindow)
+   ... that cycle, 31423 messages, dozens of times a second ...
+drag ctrl: RECEIVE handler ran
+drag drop: loc='fss ' err=0 end=300,450 mods=0x0000 asks=1
+drag attrs: 0x00000005 left=1 inapp=0 inwin=1
+```
+
+**`inwin=1` while the pointer is at (300, 450), outside the window.**
+The Drag Manager still believed the drag was inside NOW's own window and
+handed the drop to NOW's own receive handler. Meanwhile `GetMouse`,
+called by this code microseconds later, reads (300, 450) correctly.
+
+So the two halves of the machine disagree about where the pointer is:
+
+- **`GetMouse` / `Button` follow the plane.** The resident writes the four
+  mouse low-memory globals (`MBState`, `MouseLocation`,
+  `RawMouseLocation`, `MTemp` — `ext/src/now_ext_drag.c`), which is what
+  every classic tracking loop reads, and it is why `TrackDrag` runs at
+  all and why the button-down/up edges work.
+- **The Drag Manager's own targeting does not.** It is deciding which
+  window the drag is over from something the plane is not driving — the
+  31423 enter/leave messages are that disagreement oscillating at
+  tracking frequency, not a drag moving.
+
+That is why no other application is ever offered the drop: as far as the
+Drag Manager is concerned, the drag never goes anywhere. **The earlier
+three failures are explained by the same fact** — with no receiver
+installed on NOW's own window, a drag the Drag Manager thinks never left
+NOW is a drag with nowhere to go, and `loc='null'` is the correct answer
+to it.
+
+**This is edge custody, and edge custody is slice 3's.** Making an
+applied pointer real enough that a foreign application's Drag Manager
+targeting follows it is the same problem as making a held button real,
+stated one layer up. Slice 2 must not grow a second implementation of
+it, and the fix does not belong in `continuity_dragmgr.c`.
+
+### Also unverified, and now for a different reason than before
+
+The pump rule — the named hazard of the whole slice — **has its first
+live evidence**: a 4 KB promise streamed to completion inside a nested
+drop handler with the wire pumped by hand, and the file arrived whole.
+That is not the same as the deliberate slow-serve test the plan asks
+for, which is still owed, and 4 KB is small enough that it proves the
+path rather than the pressure.
+
+Not attempted, on purpose: background fill above the size cap. v1
+refuses `too-large`.
+
+### Three test defects that were reading as coverage
+
+Worth carrying because two of them could never have gone green:
+
+- The fixture published `.bin` files, and `OutboundFile.classicType`
+  maps `.bin` to `(nil, nil)` — the one extension in that table with no
+  type and no creator. So the '????' suspicion above was partly a
+  property of the file the test chose.
+- The post-drop assertion compared the HOST's `lastPathComponent`
+  against the guest's Desktop. Every name crossing this wire is
+  projected by `ClassicName` into 31 MacRoman bytes with a fingerprint,
+  so that string could never appear — the assertion could not pass even
+  against a perfect promise, and its paired `before` check passed
+  vacuously for the same reason. A guard that cannot fail beside a guard
+  that cannot pass.
+- `waitConnected` called `XCTFail` and carried on. Every `execLine` after
+  it parks in a continuation only the guest can resume, so the case did
+  not fail, it HUNG — watched sitting past ten minutes while the guest
+  answered `tools/askguest.py` on the same port seconds later. It throws
+  now.
+## DECLARED ONLY — NO MACHINE SERVES ANY OF IT: the host→guest crossing has a contract and nothing behind it (2026-08-15, `feat/hg-drag-contract`)
+
+`contract/asyncapi.yaml` now describes a person dragging a file from this
+Mac's Finder onto the Macintosh: `continuity.offer` publishes the item's
+identity at the edge, `continuity.grab` is answered by the HOST with the
+roles swapped, `continuity.report`'s `acceptsOffer` says whether a guest
+can take one at all, `offer-expired` names the host's own clock running
+out, and an `offer` console verb is declared in `x-commands`. The
+naming, type/creator and text-conversion policy is stated for BOTH
+directions in one place (`guestServesFiles`), written as the default
+Michelle owns and marked as open to review.
+
+**Every one of those is a sentence, not a behaviour.** No host code sends
+an offer, no guest decodes one, no guest answers the verb, and nothing
+has been run against a Macintosh. The debt is recorded where a gate can
+see it — `CommandRegistryTests.servedByNoGuestYet` carries `offer` with
+its reason and FAILS the day a guest answers it, which is how the
+exemption comes out rather than aging into a description of a verb that
+works. `docs/contract-coverage.md` marks `continuity.offer` served by
+nobody, and `docs/mcp-coverage.md` gives `continuity.grab` its first row
+because a second sender made it host-askable by that table's own
+derivation.
+
+What is NOT settled, and should be argued rather than discovered:
+
+- **The size cap and what happens above it** is named in the plan
+  (`docs/local/plan-host-to-guest-drag-2026-08-15.md`) and deliberately
+  absent from the wire: the receiver's ceiling is its own policy. A
+  guest that fills a fork after the promise returns must mark the file
+  as still filling, or it has shipped a lie shaped like a file.
+- **Conversion by default on `container=data`** is now written down as a
+  default for the first time, in both directions at once. It was
+  previously settled by whatever each side happened to do. Writing it
+  down is not the same as deciding it, and the decision is Michelle's.
+- **The 68K seams are documented and deferred** until the Carbon guest
+  reaches public alpha. The message carries no Drag-Manager-shaped
+  field, so a guest that can only stage a file serves the whole of it;
+  that is the property to check before anyone adds a field to it.
+
 ## REPRODUCED IN THE EMULATOR AND FIXED, NOT METAL-VERIFIED: a retained UDP endpoint goes permanently deaf, and every status still says "armed" (2026-08-15, `fix/continuity-udp-endpoint-wedge`)
 
 The host application was restarted at 12:15 on 2026-08-15 while the guest

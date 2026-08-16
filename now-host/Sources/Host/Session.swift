@@ -82,6 +82,11 @@ final class Session {
     private let onFileAccept: (FileAccept) -> Void
     private let onServeList: (FileList) -> Void
     private let onServeGet: (FileGet) -> Void
+    /// The inverted direction: a guest redeeming THIS host's published
+    /// offer. Same message the host sends to redeem the guest's
+    /// selection (`onFileDelivery` answers that one); this is the other
+    /// sender using it.
+    private let onServeContinuityGrab: (ContinuityGrab) -> Void
     private let onAcceptOffer: (FileOffer) -> Void
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onServeCloud: (GuestListener.CloudAsk) -> Void
@@ -231,6 +236,8 @@ final class Session {
          onFileAccept: @escaping (FileAccept) -> Void,
          onServeList: @escaping (FileList) -> Void,
          onServeGet: @escaping (FileGet) -> Void,
+         onServeContinuityGrab: @escaping (ContinuityGrab) -> Void
+             = { _ in },
          onAcceptOffer: @escaping (FileOffer) -> Void,
          onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
          onServeCloud: @escaping (GuestListener.CloudAsk) -> Void
@@ -286,6 +293,7 @@ final class Session {
         self.onFileAccept = onFileAccept
         self.onServeList = onServeList
         self.onServeGet = onServeGet
+        self.onServeContinuityGrab = onServeContinuityGrab
         self.onAcceptOffer = onAcceptOffer
         self.onServeChange = onServeChange
         self.onServeCloud = onServeCloud
@@ -544,15 +552,19 @@ final class Session {
             onContinuityKeyReport(report)
         case .continuitySelection(let selection):
             onContinuitySelection?(selection)
-        case .continuityArm, .continuityDisarm, .continuityKey,
-             .continuityGrab:
+        case .continuityArm, .continuityDisarm, .continuityKey:
             /* Declared asymmetry: authority is host-to-guest. A guest may
                report that its resident relinquished ownership, but it may
-               never arm the host's input lane or disarm another session -
-               nor grab from it, which is the same rule one layer on: a
-               grant is something the guest gives, never something it
-               collects. */
+               never arm the host's input lane or disarm another session. */
             break
+        case .continuityGrab(let grab):
+            /* THE INVERTED USE: the guest sends this too, to redeem an
+               offer THIS host published — `operations.guestReportsContinuity`
+               in the contract. It used to be lumped with the arm/disarm/key
+               family above under "a grant is something the guest gives,
+               never something it collects"; that rule stood only until the
+               offer direction existed to need the opposite of it. */
+            onServeContinuityGrab(grab)
         case .fileListing(let listing):
             onFileListing(listing)
         case .fileResult(let result):
@@ -868,6 +880,18 @@ final class Session {
                                    container: container)))
     }
 
+    /// Publishes what this Mac is carrying toward the guest — or, with
+    /// `item` nil, tears down whatever drag the guest was drawing under
+    /// the prior generation. Unlike every `sendFileGet`/`sendContinuityGrab`
+    /// sibling above, this arms nothing: it is a push, not a pull, so there
+    /// is no reply to await and no `activeFileGetID` to set.
+    func sendContinuityOffer(epoch: UInt32, generation: UInt32,
+                             item: ContinuityOffer.Item?) {
+        send(.continuityOffer(.init(version: ContinuityContract.version,
+                                    epoch: epoch, generation: generation,
+                                    item: item)))
+    }
+
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,
                                        path: String,
                                        stagingDirectory: URL) {
@@ -1095,6 +1119,15 @@ final class Session {
               "files", .warn)
         send(.fileRefuse(FileRefuse(id: id, code: fault.code,
                                     reason: fault.reason)))
+    }
+
+    /// The same refusal, for a caller that already has its own vocabulary
+    /// rather than a thrown `Error` — the offer family's `bad-epoch`,
+    /// `stale-selection`, `no-selection` and `offer-expired`, none of
+    /// which `HostShare.WireFault` (a filesystem's own words) can name.
+    func refuseFile(id: Int, code: String, reason: String) {
+        onLog("#\(id) refused: \(code) (\(reason))", "files", .warn)
+        send(.fileRefuse(FileRefuse(id: id, code: code, reason: reason)))
     }
 
     /// Serves a file we hold: begin, metered bulk, end — the same path
