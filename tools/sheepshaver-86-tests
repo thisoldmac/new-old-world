@@ -2,10 +2,82 @@
 # Mutation-shaped tests for the SheepShaver lab harness. No emulator boots.
 set -euo pipefail
 
+# The gate builds its own fixture desk and must describe it entirely. A desk's
+# real .env.lab exported into the shell used to leak in through the one
+# sub-case that runs the harness without run_harness's explicit assignments,
+# and the whole gate then exited 1 with no output — which read as a broken
+# tree to anyone who had sourced .env.lab, and stopped scripts/test-all before
+# five later gates. Isolate here, once, rather than per call site.
+unset NOW_SHEEPSHAVER_APP NOW_SHEEPSHAVER_VM NOW_HFSUTILS \
+      NOW_SHEEPSHAVER_TRANSFER NOW_SHEEPSHAVER_DISK NOW_SHEEPSHAVER_APPS_DIR \
+      NOW_SHEEPSHAVER_OPEN NOW_SHEEPSHAVER_LSOF NOW_SHEEPSHAVER_HDIUTIL \
+      NOW_SHEEPSHAVER_SOURCE NOW_CODEKITTEN_SOURCE \
+      NOW_SHEEPSHAVER_INPUT_SETTLE \
+      NOW_TEST_LOG NOW_TEST_LSOF_RESULT
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HARNESS="$REPO/scripts/sheepshaver-86"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/now-sheepshaver-tests.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
+
+# Every assertion names itself. A bare `grep -F … >/dev/null` under `set -e`
+# fails the gate with no output at all, which cannot be told apart from a gate
+# that never ran.
+fail () {
+    echo "FAILED: $*" >&2
+    exit 1
+}
+
+assert_contains () { # <what> <text> <substring>
+    printf '%s\n' "$2" | grep -F "$3" >/dev/null && return 0
+    printf 'output was:\n%s\n' "$2" >&2
+    fail "$1 (expected to contain: $3)"
+}
+
+assert_not_contains () { # <what> <text> <substring>
+    printf '%s\n' "$2" | grep -F "$3" >/dev/null || return 0
+    printf 'output was:\n%s\n' "$2" >&2
+    fail "$1 (expected NOT to contain: $3)"
+}
+
+assert_matches () { # <what> <text> <extended regex>
+    printf '%s\n' "$2" | grep -E "$3" >/dev/null && return 0
+    printf 'output was:\n%s\n' "$2" >&2
+    fail "$1 (expected to match: $3)"
+}
+
+assert_file_contains () { # <what> <path> <substring>
+    [ -f "$2" ] || fail "$1 (no such file: $2)"
+    grep -F "$3" "$2" >/dev/null && return 0
+    printf 'file %s was:\n' "$2" >&2
+    cat "$2" >&2
+    fail "$1 (expected $2 to contain: $3)"
+}
+
+assert_file_matches () { # <what> <path> <extended regex>
+    [ -f "$2" ] || fail "$1 (no such file: $2)"
+    grep -E "$3" "$2" >/dev/null && return 0
+    printf 'file %s was:\n' "$2" >&2
+    cat "$2" >&2
+    fail "$1 (expected $2 to match: $3)"
+}
+
+assert_file () { # <what> <path>
+    [ -f "$2" ] || fail "$1 (expected a file at: $2)"
+}
+
+assert_dir () { # <what> <path>
+    [ -d "$2" ] || fail "$1 (expected a directory at: $2)"
+}
+
+assert_absent () { # <what> <path>
+    [ ! -e "$2" ] || fail "$1 (expected nothing at: $2)"
+}
+
+assert_same () { # <what> <path a> <path b>
+    cmp -s "$2" "$3" && return 0
+    fail "$1 ($2 and $3 differ)"
+}
 
 APP="$TMP/SheepShaver.app"
 VM="$TMP/Mac OS 8.6.sheepvm"
@@ -57,12 +129,14 @@ run_harness () {
 }
 
 doctor_output="$(run_harness doctor)"
-printf '%s\n' "$doctor_output" | grep -F "Guest state: stopped" >/dev/null
+assert_contains "doctor did not report a stopped guest" \
+    "$doctor_output" "Guest state: stopped"
 
 missing_output="$(NOW_SHEEPSHAVER_APP="$TMP/missing.app" \
     NOW_SHEEPSHAVER_VM="$VM" NOW_HFSUTILS="$HFS" \
     NOW_SHEEPSHAVER_LSOF="$TMP/lsof" "$HARNESS" doctor 2>&1 || true)"
-printf '%s\n' "$missing_output" | grep -F "missing executable SheepShaver" >/dev/null
+assert_contains "doctor did not name a missing SheepShaver executable" \
+    "$missing_output" "missing executable SheepShaver"
 
 artifact="$TMP/New Old World.bin"
 kitten_artifact="$TMP/CodeKitten.bin"
@@ -98,21 +172,21 @@ hcopy <-m> <$artifact> <:>
 hls <-la> <:>
 humount"
 [ "$(cat "$LOG")" = "$expected" ] || {
-    echo "FAILED: stage did not preserve the HFS mount/copy/list/unmount sequence" >&2
+    printf 'calls were:\n' >&2
     cat "$LOG" >&2
-    exit 1
+    fail "stage did not preserve the HFS mount/copy/list/unmount sequence"
 }
 
 running_output="$(NOW_TEST_LSOF_RESULT=0 run_harness stage "$artifact" 2>&1 || true)"
-printf '%s\n' "$running_output" | grep -F "refusing to write an image SheepShaver has open" >/dev/null
-if printf '%s\n' "$running_output" | grep -F "staged" >/dev/null; then
-    echo "FAILED: running-guest mutation reached the write path" >&2
-    exit 1
-fi
+assert_contains "stage did not refuse while the guest holds the transfer disk" \
+    "$running_output" "refusing to write an image SheepShaver has open"
+assert_not_contains "running-guest mutation reached the write path" \
+    "$running_output" "staged"
 
 : > "$LOG"
 run_harness launch >/dev/null
-grep -F "open <-n> <$APP> <--args> <$VM>" "$LOG" >/dev/null
+assert_file_contains "launch did not open the app against the profile" \
+    "$LOG" "open <-n> <$APP> <--args> <$VM>"
 
 capture="$TMP/frame.bmp"
 (
@@ -125,7 +199,7 @@ capture_writer=$!
 NOW_TEST_LSOF_RESULT=0 run_harness capture "$capture" >/dev/null
 wait "$capture_writer"
 [ "$(cat "$capture")" = BMfixture ] \
-    || { echo "FAILED: capture did not publish the emulator response" >&2; exit 1; }
+    || fail "capture did not publish the emulator response"
 
 legacy_capture="$TMP/legacy-frame.bmp"
 # Watched failing 2026-08-11 by deleting the launcher's unversioned-response
@@ -139,16 +213,14 @@ legacy_writer=$!
 legacy_output="$(NOW_TEST_LSOF_RESULT=0 run_harness capture \
     "$legacy_capture" 2>&1 || true)"
 wait "$legacy_writer"
-printf '%s\n' "$legacy_output" \
-    | grep -F "returned an unversioned framebuffer" >/dev/null
-[ ! -e "$legacy_capture" ] \
-    || { echo "FAILED: unversioned capture reached its destination" >&2; exit 1; }
+assert_contains "capture did not refuse an unversioned framebuffer response" \
+    "$legacy_output" "returned an unversioned framebuffer"
+assert_absent "unversioned capture reached its destination" "$legacy_capture"
 
+input_request_seen="$TMP/input-request.txt"
 (
     while [ ! -f "$VM/.now-input-request" ]; do sleep 0.01; done
-    grep -Fx "move 320 200" "$VM/.now-input-request" >/dev/null
-    grep -Fx "down 0" "$VM/.now-input-request" >/dev/null
-    grep -Fx "up 0" "$VM/.now-input-request" >/dev/null
+    cp "$VM/.now-input-request" "$input_request_seen"
     mv "$VM/.now-input-request" "$VM/.now-input-processing"
     printf 'ok actions=3\n' > "$VM/.now-input-response"
     rm -f "$VM/.now-input-processing"
@@ -157,51 +229,67 @@ input_responder=$!
 NOW_TEST_LSOF_RESULT=0 run_harness input \
     "move 320 200" "down 0" "up 0" >/dev/null
 wait "$input_responder"
+input_request="$(cat "$input_request_seen")"
+assert_matches "input did not write the move action to the request file" \
+    "$input_request" '^move 320 200$'
+assert_matches "input did not write the button-down action to the request file" \
+    "$input_request" '^down 0$'
+assert_matches "input did not write the button-up action to the request file" \
+    "$input_request" '^up 0$'
 
 invalid_input="$(NOW_TEST_LSOF_RESULT=0 run_harness input "move nowhere" 2>&1 || true)"
-printf '%s\n' "$invalid_input" | grep -F "invalid oracle input action" >/dev/null
+assert_contains "input did not reject an unparseable action" \
+    "$invalid_input" "invalid oracle input action"
 
 invalid_settle="$(NOW_TEST_LSOF_RESULT=0 NOW_SHEEPSHAVER_INPUT_SETTLE=soon \
     run_harness input "move 0 0" 2>&1 || true)"
-printf '%s\n' "$invalid_settle" \
-    | grep -F "NOW_SHEEPSHAVER_INPUT_SETTLE must be a non-negative number" >/dev/null
+assert_contains "input did not reject a non-numeric settle interval" \
+    "$invalid_settle" "NOW_SHEEPSHAVER_INPUT_SETTLE must be a non-negative number"
 
 printf 'boot disk bytes' > "$VM/Mac OS 8.6.hfv"
 run_harness snapshot "post-carbonlib" >/dev/null
-cmp "$VM/Mac OS 8.6.hfv" "$VM/Snapshots/post-carbonlib.hfv"
+assert_same "snapshot did not copy the boot disk byte for byte" \
+    "$VM/Mac OS 8.6.hfv" "$VM/Snapshots/post-carbonlib.hfv"
 
 rig_output="$(run_harness rig)"
-printf '%s\n' "$rig_output" | grep -F "NOW_SHEEPSHAVER_RIG_V1" >/dev/null
-printf '%s\n' "$rig_output" | grep -E '^rom_sha256=[0-9a-f]{64}$' >/dev/null
-printf '%s\n' "$rig_output" | grep -E '^boot_disk_sha256=[0-9a-f]{64}$' >/dev/null
+assert_contains "rig did not stamp its version marker" \
+    "$rig_output" "NOW_SHEEPSHAVER_RIG_V1"
+assert_matches "rig did not report a ROM sha256" \
+    "$rig_output" '^rom_sha256=[0-9a-f]{64}$'
+assert_matches "rig did not report a boot-disk sha256" \
+    "$rig_output" '^boot_disk_sha256=[0-9a-f]{64}$'
 
 : > "$LOG"
 run_harness install-apps "$artifact" "$kitten_artifact" >/dev/null
 install_log="$(cat "$LOG")"
-printf '%s\n' "$install_log" \
-    | grep -F "hdiutil <attach> <-nobrowse>" >/dev/null
-printf '%s\n' "$install_log" | grep -F "hdiutil <detach>" >/dev/null
-[ -f "$VM/Installed Apps.rig" ]
-grep -F "NOW_SHEEPSHAVER_APPS_V1" "$VM/Installed Apps.rig" >/dev/null
-grep -E '^codekitten_artifact_sha256=[0-9a-f]{64}$' \
-    "$VM/Installed Apps.rig" >/dev/null
+assert_contains "install-apps did not attach the transfer image unbrowsed" \
+    "$install_log" "hdiutil <attach> <-nobrowse>"
+assert_contains "install-apps did not detach the transfer image" \
+    "$install_log" "hdiutil <detach>"
+assert_file "install-apps did not write the installed-apps receipt" \
+    "$VM/Installed Apps.rig"
+assert_file_contains "installed-apps receipt lost its version marker" \
+    "$VM/Installed Apps.rig" "NOW_SHEEPSHAVER_APPS_V1"
+assert_file_matches "installed-apps receipt did not record CodeKitten's sha256" \
+    "$VM/Installed Apps.rig" '^codekitten_artifact_sha256=[0-9a-f]{64}$'
 
 run_harness seal "os86-carbon16-now020" >/dev/null
-[ -f "$VM/Snapshots/os86-carbon16-now020.hfv" ]
-[ -f "$VM/Snapshots/os86-carbon16-now020.transfer.hfv" ]
-[ -f "$VM/Snapshots/os86-carbon16-now020.prefs" ]
-[ -f "$VM/Snapshots/os86-carbon16-now020.rom" ]
-[ -f "$VM/Snapshots/os86-carbon16-now020.apps.rig" ]
-[ -f "$VM/Snapshots/os86-carbon16-now020.rig" ]
-grep -F "profile_version=os86-carbon16-now020" \
-    "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
-grep -F "installed_apps_NOW_SHEEPSHAVER_APPS_V1" \
-    "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
-grep -F "versioned_transfer_disk_sha256=" \
-    "$VM/Snapshots/os86-carbon16-now020.rig" >/dev/null
+for part in hfv transfer.hfv prefs rom apps.rig rig; do
+    assert_file "seal did not write the $part member of the sealed profile" \
+        "$VM/Snapshots/os86-carbon16-now020.$part"
+done
+assert_file_contains "sealed rig did not record its profile version" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" \
+    "profile_version=os86-carbon16-now020"
+assert_file_contains "sealed rig did not carry the installed-apps receipt" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" \
+    "installed_apps_NOW_SHEEPSHAVER_APPS_V1"
+assert_file_contains "sealed rig did not record the transfer disk's sha256" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" \
+    "versioned_transfer_disk_sha256="
 duplicate_output="$(run_harness seal "os86-carbon16-now020" 2>&1 || true)"
-printf '%s\n' "$duplicate_output" \
-    | grep -F "versioned image already exists" >/dev/null
+assert_contains "seal did not refuse to overwrite an existing version" \
+    "$duplicate_output" "versioned image already exists"
 
 # Ordinary staging and preference changes must not invalidate an already
 # sealed oracle. These are the exact mutations the original implementation
@@ -213,37 +301,44 @@ printf 'later apps receipt' > "$VM/Installed Apps.rig"
 
 clone="$TMP/oracle-run.sheepvm"
 run_harness clone "os86-carbon16-now020" "$clone" >/dev/null
-[ -f "$clone/prefs" ]
-[ -f "$clone/Mac OS ROM" ]
-cmp "$VM/Snapshots/os86-carbon16-now020.hfv" "$clone/Mac OS 8.6.hfv"
-cmp "$VM/Snapshots/os86-carbon16-now020.transfer.hfv" \
+assert_file "clone did not write the profile preferences" "$clone/prefs"
+assert_file "clone did not write the ROM" "$clone/Mac OS ROM"
+assert_same "clone's boot disk is not the sealed one" \
+    "$VM/Snapshots/os86-carbon16-now020.hfv" "$clone/Mac OS 8.6.hfv"
+assert_same "clone's transfer disk is not the sealed one" \
+    "$VM/Snapshots/os86-carbon16-now020.transfer.hfv" \
     "$clone/CarbonLib 1.6 Transfer.hfv"
-cmp "$VM/Snapshots/os86-carbon16-now020.prefs" "$clone/prefs"
-cmp "$VM/Snapshots/os86-carbon16-now020.rom" "$clone/Mac OS ROM"
-cmp "$VM/Snapshots/os86-carbon16-now020.apps.rig" \
+assert_same "clone's preferences are not the sealed ones" \
+    "$VM/Snapshots/os86-carbon16-now020.prefs" "$clone/prefs"
+assert_same "clone's ROM is not the sealed one" \
+    "$VM/Snapshots/os86-carbon16-now020.rom" "$clone/Mac OS ROM"
+assert_same "clone's installed-apps receipt is not the sealed one" \
+    "$VM/Snapshots/os86-carbon16-now020.apps.rig" \
     "$clone/Installed Apps.rig"
-cmp "$VM/Snapshots/os86-carbon16-now020.rig" "$clone/Oracle Parent.rig"
-[ -d "$clone/Shared" ]
-[ -d "$clone/Snapshots" ]
+assert_same "clone did not record its sealed parent's rig" \
+    "$VM/Snapshots/os86-carbon16-now020.rig" "$clone/Oracle Parent.rig"
+assert_dir "clone is missing its Shared folder" "$clone/Shared"
+assert_dir "clone is missing its Snapshots folder" "$clone/Snapshots"
 duplicate_clone="$(run_harness clone "os86-carbon16-now020" "$clone" 2>&1 || true)"
-printf '%s\n' "$duplicate_clone" | grep -F "clone destination already exists" >/dev/null
+assert_contains "clone did not refuse an existing destination" \
+    "$duplicate_clone" "clone destination already exists"
 
 printf 'tampered' >> "$VM/Snapshots/os86-carbon16-now020.hfv"
 bad_clone="$(run_harness clone "os86-carbon16-now020" \
     "$TMP/tampered.sheepvm" 2>&1 || true)"
-printf '%s\n' "$bad_clone" \
-    | grep -F "sealed boot image does not match its rig receipt" >/dev/null
+assert_contains "clone did not detect a tampered sealed boot image" \
+    "$bad_clone" "sealed boot image does not match its rig receipt"
 
 printf 'boot disk bytes' > "$VM/Snapshots/os86-carbon16-now020.hfv"
 printf 'tampered prefs' >> "$VM/Snapshots/os86-carbon16-now020.prefs"
 bad_prefs="$(run_harness clone "os86-carbon16-now020" \
     "$TMP/tampered-prefs.sheepvm" 2>&1 || true)"
-printf '%s\n' "$bad_prefs" \
-    | grep -F "sealed profile preferences does not match its rig receipt" >/dev/null
+assert_contains "clone did not detect tampered sealed preferences" \
+    "$bad_prefs" "sealed profile preferences does not match its rig receipt"
 
 invalid_output="$(run_harness seal "../escape" 2>&1 || true)"
-printf '%s\n' "$invalid_output" \
-    | grep -F "version may contain only" >/dev/null
+assert_contains "seal did not reject a path-escaping version name" \
+    "$invalid_output" "version may contain only"
 
 desk_repo="$TMP/desk-repo"
 desk_lane="$TMP/desk-lane"
@@ -257,12 +352,17 @@ git -C "$desk_repo" commit -qm "fixture"
 printf 'NOW_SHEEPSHAVER_APP="%s"\nNOW_SHEEPSHAVER_VM="%s"\nNOW_HFSUTILS="%s"\nNOW_SHEEPSHAVER_LSOF="%s"\n' \
     "$APP" "$VM" "$HFS" "$TMP/lsof" > "$desk_repo/.env.lab"
 git -C "$desk_repo" worktree add -q -b lane "$desk_lane" main
+# No run_harness here on purpose: this case proves a lane worktree finds the
+# desk .env.lab through the git common dir. That also makes it the one case an
+# exported NOW_SHEEPSHAVER_VM can reach, which is why the gate unsets it above.
 lane_doctor="$(NOW_TEST_LOG="$LOG" "$desk_lane/scripts/sheepshaver-86" doctor)"
-printf '%s\n' "$lane_doctor" | grep -F "Mac OS 8.6 profile: $VM" >/dev/null
+assert_contains "a lane worktree did not read the desk .env.lab profile" \
+    "$lane_doctor" "Mac OS 8.6 profile: $VM"
 
 NOW_CODEKITTEN_SOURCE="$desk_lane" \
     run_harness install-apps "$artifact" "$kitten_artifact" >/dev/null
-grep -F "codekitten_revision=$(git -C "$desk_lane" rev-parse HEAD)" \
-    "$VM/Installed Apps.rig" >/dev/null
+assert_file_contains "install-apps did not record CodeKitten's source revision" \
+    "$VM/Installed Apps.rig" \
+    "codekitten_revision=$(git -C "$desk_lane" rev-parse HEAD)"
 
 echo "sheepshaver-86: 24 harness behaviors passed"
