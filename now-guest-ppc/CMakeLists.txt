@@ -289,6 +289,7 @@ add_application(now-guest-ppc
     src/input/continuity_service.c
     src/input/continuity_report_logic.c
     src/input/continuity_deaf_logic.c
+    src/input/continuity_drain_logic.c
     src/input/continuity_selection.c
     src/input/continuity_offer_intake.c
     src/input/continuity_dragmgr.c

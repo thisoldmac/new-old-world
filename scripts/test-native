@@ -853,6 +853,13 @@ run_c now-guest-ppc continuity_report_logic_test.c "" \
 # this watches.
 run_c now-guest-ppc continuity_deaf_logic_test.c "" \
       src/input/continuity_deaf_logic.c
+# How far one drain of that endpoint may go, and where it may NOT stop. The
+# cap of 8 was safe only because task time finished the job; inside a foreign
+# application's held-button loop task time never comes, so every early exit
+# became a permanent silence, arrival_ticks froze under a live host and the
+# resident's lease released the button into an open menu (metal, 2026-08-16).
+run_c now-guest-ppc continuity_drain_logic_test.c "" \
+      src/input/continuity_drain_logic.c
 run_py now-guest-ppc continuity_intake_lifecycle_source_test.py
 # `key`'s ordering, which the C test above cannot see: PostEvent is Toolbox
 # and does not exist on a host cc, so nothing there can observe whether the

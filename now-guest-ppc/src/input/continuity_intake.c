@@ -12,6 +12,7 @@
 
 #include "continuity_report_logic.h"
 #include "continuity_deaf_logic.h"
+#include "continuity_drain_logic.h"
 #include "continuity_cursor.h"
 #include "continuity_service.h"
 #include "arm_target.h"
@@ -22,7 +23,6 @@
 #include "ot_carbon.h"
 #include "peek.h"
 
-enum { kContinuityNotifierDrainMax = 8 };
 /* Five seconds of an armed epoch with not one datagram, on an endpoint that
    has already delivered. The host arms because the person moved the pointer
    into the guest, so the first position follows within a frame or two; five
@@ -61,6 +61,16 @@ static volatile NowCU32 gDeliveredEndpoint;
 static volatile NowCU32 gDeliveredEpoch;
 static volatile Boolean gDrainOwed;
 static volatile Boolean gDraining;
+/* What the drain did, kept apart because "owed" alone cannot distinguish the
+   two endings. gDrainHandoffs is an ordinary early stop with a running
+   task-time loop behind it; gDrainStarvedExits is a drain that stopped owing
+   work with nothing scheduled to finish - the 2026-08-16 shape - and a
+   nonzero one beside a frozen arrival_ticks names its own cause. */
+static volatile NowCU32 gDrainHandoffs;
+static volatile NowCU32 gDrainStarvedExits;
+static volatile NowCU32 gDrainMaxBurst;
+static volatile NowCU32 gDrainRcvErrors;
+static volatile OSStatus gLastRcvError;
 static NowCU32 gArmTicks;
 static int gRebuiltThisEpoch;
 static NowCU32 gRebuilds;
@@ -272,17 +282,33 @@ static int clear_pending_event(void)
    asynchronous event is queued ahead of the data, and which the old code
    could not tell from "nothing to read" because it tested `err != noErr`.
 
+   AND HANDING THE RESIDUE TO TASK TIME IS ONLY A FIX WHERE TASK TIME COMES.
+   Inside a foreign application's held-button nested loop it does not, and on
+   2026-08-16 that turned every early exit below back into a permanent
+   silence for the length of the hold: arrival_ticks froze under a live host,
+   the resident's lease expired, and the release landed in an open menu. So
+   the loop's bound is now a question about the CALLING CONTEXT rather than a
+   constant - continuity_drain_logic.h carries the rule, its argument and its
+   interrupt budget - and every exit that still owes work is counted by
+   whether anyone was left to pay it.
+
    Returns 1 when kOTNoDataErr was reached - the endpoint is quiet and the
    latch is released - and 0 when work is still owed. */
-static int drain_endpoint(void)
+static int drain_endpoint(int notifier_context)
 {
-    int drained;
+    NowContinuityDrainState progress;
 
-    for (drained = 0; drained < kContinuityNotifierDrainMax; ++drained) {
+    progress.notifier_context = notifier_context;
+    progress.task_drain_running = gDraining ? 1 : 0;
+    progress.iterations = 0;
+    progress.consecutive_errors = 0;
+
+    while (now_continuity_drain_may_continue(&progress)) {
         OTFlags flags = 0;
         NowContinuityStatePacket packet;
         OSStatus err;
 
+        progress.iterations++;
         gReceive.addr.buf = (UInt8 *)&gFrom;
         gReceive.addr.maxlen = sizeof gFrom;
         gReceive.addr.len = 0;
@@ -293,15 +319,32 @@ static int drain_endpoint(void)
         gReceive.udata.maxlen = sizeof gReceiveBytes;
         gReceive.udata.len = 0;
         err = gNowOT.rcvUData(gEndpoint, &gReceive, &flags);
-        if (err == kOTNoDataErr)
+        if (err == kOTNoDataErr) {
+            if (progress.iterations > gDrainMaxBurst)
+                gDrainMaxBurst = (NowCU32)progress.iterations;
             return 1;
+        }
         if (err == kOTLookErr) {
-            if (!clear_pending_event())
-                return 0;
+            /* A queued asynchronous event, not an empty endpoint. Clearing it
+               is progress; failing to clear it is the error budget's
+               business, because the old unconditional return here is one of
+               the exits that went silent under starvation. */
+            if (clear_pending_event())
+                progress.consecutive_errors = 0;
+            else
+                progress.consecutive_errors++;
             continue;
         }
-        if (err != noErr)
-            return 0;
+        if (err != noErr) {
+            /* The exit nobody named: a transient OT error left the queue
+               unread with no second T_DATA coming for it. Retry within the
+               budget rather than returning on the first one. */
+            gDrainRcvErrors++;
+            gLastRcvError = err;
+            progress.consecutive_errors++;
+            continue;
+        }
+        progress.consecutive_errors = 0;
         if (now_continuity_decode_state(
                 gReceiveBytes, (NowCU32)gReceive.udata.len, &packet)
                 != kNowContinuityWireOK) {
@@ -310,7 +353,17 @@ static int drain_endpoint(void)
         }
         accept_datagram(&packet);
     }
-    return 0;                        /* cap reached: more may still be queued */
+    if (progress.iterations > gDrainMaxBurst)
+        gDrainMaxBurst = (NowCU32)progress.iterations;
+    /* Owed work with nobody to pay it is the starvation shape, and it is a
+       different reading from an ordinary handoff to a running task-time
+       drain. Counting them apart is what lets a later misfire say which one
+       it was instead of leaving both as "owed". */
+    if (now_continuity_drain_stop_has_finisher(&progress))
+        gDrainHandoffs++;
+    else
+        gDrainStarvedExits++;
+    return 0;
 }
 
 static pascal void continuity_notifier(void *context, OTEventCode code,
@@ -325,7 +378,7 @@ static pascal void continuity_notifier(void *context, OTEventCode code,
            time, but not the reverse, so deferring here is safe and costs
            nothing: that loop is still running and will read this datagram
            itself before it stops. */
-        if (gDraining || !drain_endpoint())
+        if (gDraining || !drain_endpoint(1))
             gDrainOwed = true;
     } else if (code == T_GODATA) {
         gAckGoData++;
@@ -335,7 +388,7 @@ static pascal void continuity_notifier(void *context, OTEventCode code,
         /* A datagram queued behind the error was never delivered and no
            second T_DATA is coming for it. Drain again, or this endpoint is
            deaf from here on. */
-        if (gDraining || !drain_endpoint())
+        if (gDraining || !drain_endpoint(1))
             gDrainOwed = true;
     }
 }
@@ -357,7 +410,7 @@ static void task_time_drain(void)
         return;
     gDraining = true;
     gDrainOwed = false;
-    if (!drain_endpoint())
+    if (!drain_endpoint(0))
         gDrainOwed = true;
     gDraining = false;
 }
@@ -393,6 +446,8 @@ static void close_udp(const char *reason)
        watchdog - which is what stops one rebuild becoming a loop of them. */
     gDeliveredEndpoint = 0;
     gDrainOwed = false;
+    gDrainRcvErrors = 0;
+    gLastRcvError = 0;
 }
 
 static int open_udp(unsigned short port)
@@ -536,6 +591,55 @@ static void check_endpoint_deaf(void)
     now_log_flush();
 }
 
+/* THE AGE OF THE LAST ARRIVAL, SAID OUT LOUD AT EVERY EPOCH END.
+
+   The resident's lease decides on exactly one number - how long ago a
+   datagram last landed in the shared cell - and when that number is wrong the
+   consequence is a held button released into whatever the person had open. On
+   2026-08-16 it was wrong for a reason nothing printed: the notifier's drain
+   had stopped owing work, task time never came to pay it, and arrival_ticks
+   sat still while the host was alive and sending 0.5s keepalives.
+
+   So this reports the age the lease was deciding on, beside the drain endings
+   that are the only way it can freeze under a live host. An age past the
+   lease is warn, because it means this epoch either lost its host or was
+   starved, and the starved-exit count separates those two without anybody
+   having to reason about it afterwards. A quiet line here is the evidence
+   that the freeze did not happen; it is not a decoration. */
+static void report_intake_starvation(const NowPeekContinuityCell *shared,
+                                     unsigned long epoch)
+{
+    NowCU32 now_ticks = (NowCU32)TickCount();
+    unsigned long arrival_age;
+    unsigned long lease;
+    int stale;
+
+    if (shared == NULL)
+        return;
+    arrival_age = (unsigned long)(now_ticks - (NowCU32)shared->arrival_ticks);
+    lease = (unsigned long)shared->lease_ticks;
+    /* An epoch that never took a datagram has no age to report, only an
+       absence - and calling that starvation would be a false alarm on every
+       arm the person immediately cancelled. */
+    stale = shared->arrival_ticks != 0 && lease != 0 && arrival_age > lease;
+    now_log(stale ? kLogWarn : kLogInfo, "mirror",
+            "continuity arrival epoch=%lu age=%lu lease=%lu ticks "
+            "(arrival=%lu applied=%lu now=%lu) delivered=%lu/%lu "
+            "drain: burst-max=%lu handoff=%lu starved=%lu owed=%u "
+            "rcv-err=%lu/%ld uderr=%lu look-other=%lu/%ld acks=%lu/%lu",
+            epoch, arrival_age, lease,
+            (unsigned long)shared->arrival_ticks,
+            (unsigned long)shared->last_arrival_ticks,
+            (unsigned long)now_ticks,
+            (unsigned long)gDeliveredEpoch, (unsigned long)gDeliveredEndpoint,
+            (unsigned long)gDrainMaxBurst, (unsigned long)gDrainHandoffs,
+            (unsigned long)gDrainStarvedExits, (unsigned)gDrainOwed,
+            (unsigned long)gDrainRcvErrors, (long)gLastRcvError,
+            (unsigned long)gUDErrsCleared,
+            (unsigned long)gLookOther, (long)gLastLook,
+            (unsigned long)gAckSends, (unsigned long)gAckErrors);
+}
+
 /* Everything the transport owes task time, in the order it owes it: read
    whatever the notifier could not, then decide whether reading found an
    endpoint that has stopped answering at all. */
@@ -586,6 +690,11 @@ int now_continuity_arm(long id, unsigned short port,
     gAckGoData = 0;
     gAckRetrying = false;
     gDeliveredEpoch = 0;
+    /* Epoch-scoped, like the delivered count beside them: the question the
+       disarm line answers is whether THIS epoch was starved. */
+    gDrainHandoffs = 0;
+    gDrainStarvedExits = 0;
+    gDrainMaxBurst = 0;
     gRebuiltThisEpoch = 0;
     shared->apply_result_err = 0;
     shared->apply_result_seq = 0;
@@ -691,6 +800,7 @@ int now_continuity_disarm(long id, unsigned long epoch)
     gAckRetrying = false;
     (void)now_continuity_service_invoke(shared);
     now_log(kLogInfo, "mirror", "disarm epoch=%lu reset requested", epoch);
+    report_intake_starvation(shared, epoch);
     /* The counter dump below is the MIRROR PLANE's account of the epoch —
        ~25 lines per disarm, which at 18 epochs in a session was 97% of
        the ring and the reason mirror_debug.h exists. It answers "did the
