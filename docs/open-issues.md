@@ -7,6 +7,27 @@ search:
 
 # Open issues
 
+## UNVERIFIED, ENVIRONMENTAL: two host gates on this Mac make each other red (2026-08-16, `chore/recover-034-orphans`)
+
+`LoggingSpecTests.testALineMatchesTheFormatTheSpecDefines` failed once in
+this arc with `line did not match the spec's format: 19:04:26 cloud  #156
+photos: 16 rows` — a line the test never wrote. It writes one line to
+`HostLog.shared`'s file and asserts the LAST line of that file matches the
+format. The file is per-USER, not per-run, so any other process writing it
+between the write and the read supplies the line under test.
+
+The other process was named: an `xcodebuild` for the `hg-edge-custody`
+worktree's host scheme, running concurrently. The same test passes in
+isolation seconds later, and nothing in this branch touches host logging.
+
+It is the same shape as the rule that already governs metal — *a gate must
+check WHICH machine answered* — one layer down and inside one Mac: a gate
+whose oracle is a shared mutable file is answerable by a neighbour. Left
+open rather than fixed here, because the fix belongs to whoever owns that
+test: read back a line the test can identify as its own (the `#7` id is
+already there and already unique) rather than whichever line happens to be
+last.
+
 ## FIXED, EMULATOR-VERIFIED: the receive windoid was owned by ONE lane, not by the RX protocol (2026-08-16, `chore/recover-034-orphans`)
 
 G11a's floating receive windoid (`receive_progress.c`, 6d3d74d7) says a file
