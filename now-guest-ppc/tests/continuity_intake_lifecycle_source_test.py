@@ -418,7 +418,7 @@ if "kOTNoDataErr" not in drain:
     failures.append(
         "the drain no longer distinguishes an empty endpoint from an error, "
         "so it cannot know it released Open Transport's T_DATA latch")
-elif "if (err == kOTNoDataErr)\n            return 1;" not in drain:
+elif "return 1;" not in drain.split("kOTNoDataErr", 1)[1].split("\n    }", 1)[0]:
     failures.append(
         "an empty endpoint is no longer the drain's one success, so every "
         "quiet pass reads as work still owed and nothing ever settles")
@@ -434,7 +434,7 @@ if "gNowOT.look(" not in clear_pending or "gNowOT.rcvUDErr(" not in clear_pendin
     failures.append(
         "the pending-event path no longer identifies and consumes T_UDERR, "
         "which is what an ACK to a dead host queues")
-if notifier.count("drain_endpoint()") < 2:
+if notifier.count("drain_endpoint(1)") < 2:
     failures.append(
         "T_UDERR no longer re-drains: the datagram queued behind the error "
         "is delivered by no second T_DATA")
@@ -446,10 +446,51 @@ if "gDraining" not in notifier:
         "the shared receive buffers")
 if "gDrainOwed = false" not in task_drain \
         or task_drain.index("gDrainOwed = false") \
-        > task_drain.index("drain_endpoint()"):
+        > task_drain.index("drain_endpoint(0)"):
     failures.append(
         "the task-time drain clears its debt after draining, which erases a "
         "datagram that arrived inside the window")
+# --- ...and deferring to task time is only a fix where task time comes
+# (2026-08-16) ---
+#
+# The three guards above hand every notifier residue to a task-time poll. In a
+# FOREIGN application's held-button nested loop NOW's cooperative context does
+# not run at all, so that poll is unreachable for the length of the hold - and
+# because T_DATA is edge-triggered, one capped or errored notifier drain then
+# silences the endpoint until the person lets go. arrival_ticks froze under a
+# live host sending 0.5s keepalives, the resident's ~1.5s lease expired, and
+# the release landed in an open menu and launched an application the person
+# never chose (metal, 2026-08-16).
+#
+# So the drain's bound must depend on the CALLING CONTEXT: an early stop is
+# only safe where somebody is guaranteed to finish. The predicate itself is
+# watched in continuity_drain_logic_test.c; what this checks is that the
+# intake still ASKS it, because a drain that quietly reverts to a constant cap
+# passes every unit test in the tree.
+if "now_continuity_drain_may_continue(" not in drain:
+    failures.append(
+        "the drain no longer asks whether its context has a finisher, so a "
+        "notifier that stops early goes deaf for the whole of a held button")
+if "notifier_context" not in drain:
+    failures.append(
+        "the drain no longer knows which context it runs in, and task time's "
+        "bound is not safe at notifier time")
+if "now_continuity_drain_stop_has_finisher(" not in drain:
+    failures.append(
+        "a drain that ended owing work no longer records whether anyone was "
+        "left to pay it, which is the only line that separates starvation "
+        "from an ordinary handoff afterwards")
+for owed_return in ("if (err == kOTLookErr) {\n            if (!clear_pending_event())\n                return 0;",
+                    "if (err != noErr)\n            return 0;"):
+    if owed_return in drain:
+        failures.append(
+            "the drain again returns from an error path with data unread and "
+            "no recovery scheduled; under starvation that is permanent")
+if "report_intake_starvation(" not in disarm:
+    failures.append(
+        "the epoch no longer reports the arrival age the lease was deciding "
+        "on, so a future misfire cannot name its own starvation")
+
 if "task_time_drain()" not in service_transport \
         or "check_endpoint_deaf()" not in service_transport:
     failures.append("task time no longer both drains and watches the endpoint")
