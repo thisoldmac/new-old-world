@@ -7,6 +7,110 @@ search:
 
 # Open issues
 
+## CORRECTED BY DERIVATION: the "17 TrackDrag cycles" anomaly is a misread counter (2026-08-16, `feat/hg-drag-edge-custody`)
+
+Addendum 2 of `plan-resident-drag-plane-2026-08-16.md` made settling this the
+FIRST target of slice 3 — "a 17-cycle drag invalidates naive reads" — on the
+strength of `enter=17/17` against the Finder control's `enter=18/18` for a
+single clean drag. It needs no further measurement: the numbers already
+recorded refute it, and the arithmetic is exact.
+
+`enter=` is not a count of drags. `now_ext_dragobs.c` bumps a separate counter
+per tracking MESSAGE — `handler_enter_handler`, `handler_enter_window`,
+`handler_in_window`, `handler_leave_window`, `handler_leave_handler` — and the
+V15 line prints them as `enter=<enterHandler>/<enterWindow>` and
+`leave=<leaveWindow>/<leaveHandler>`. So the identity that must hold is
+`calls = in + 4 x enter`, and it holds on both tables to the unit:
+
+| table | calls | in | calls − in | 4 × enter |
+|---|---|---|---|---|
+| NOW-originated | 10389 | 10321 | 68 | 68 (enter=17) |
+| Finder control | 13894 | 13822 | 72 | 72 (enter=18) |
+
+The count of DRAGS is in the same tables and was read past: `drag begin seq=2`.
+Two drags had begun in that whole boot, not seventeen. And the guest source
+agrees — `start_drag()` calls `TrackDrag` exactly once, the state machine runs
+`Idle → WaitingButton → Tracking → Idle`, and a second arm while non-Idle is
+refused `busy` before it touches anything. There is no restart loop to find.
+
+**What is real, and it is the thing the addendum was reaching for:** 17
+enter/leave-handler cycles occurred WITHIN one drag — the pointer entering and
+leaving the sender window seventeen times where the Finder's own drag does it
+once. That is the same phenomenon as the 31,423 Enter/Leave oscillations
+already recorded under the `--x=4` control, two orders of magnitude smaller,
+and it is a targeting question rather than a lifecycle one. Slice 3's order
+therefore stands as Addendum 3 left it: the publish latency first, then the
+drop-time attribute settle. The lifecycle blocker was never there.
+
+The lesson is the ledger's own standing one, met from the other side: a count
+you did not derive is not evidence, and that includes a count somebody else
+derived correctly and then read under the wrong noun.
+
+## PRODUCT DECISION: a name collision gets the Finder's own replace dialog (2026-08-16, Michelle, `feat/hg-drag-edge-custody`)
+
+Michelle, on the silent-collision defect: **"should use a native overwrite
+prompt on file name collisions."** And, refining the timing: **"it shouldn't
+appear until the drag is released."**
+
+The defect it answers, measured on metal the same day: dropping a file whose
+name already exists on the guest does nothing and says nothing. The guest is
+not at fault and neither is the wire — `now_files_receive_begin_at` returns
+`kFilesExists`, `wire.c` refuses `code=exists` with a reason, and the host
+receives it. It dies host-side in two places: `MirrorFileTransferModel`'s
+failure arm assigns `self.notice` and nothing else (no `HostLog`, no sink, and
+`hostFilesDropped` is typed `-> Void`, so there is no return channel at all),
+and the detached Mirror window renders no view that observes `notice`. Silence
+by two independent routes.
+
+### The decided behaviour
+
+1. The drag runs to completion and the person RELEASES at the drop point. The
+   dialog is a consequence of the drop, never an interruption of the drag —
+   the real Finder's own sequencing.
+2. The collision is then detected before any byte streams. This falls out for
+   free: the identity and destination are both known at `file.offer`, which is
+   already where `kFilesExists` is raised today.
+3. A native classic dialog appears ON THE GUEST, in the Finder's idiom and
+   wording, with the genuine button set and default.
+4. **Cancel** — no transfer, no partial file, and the refusal is audited on
+   both sides. **Replace** — the overwrite proceeds.
+5. The host shows no prompt of its own. Its audit line records the outcome:
+   `collision: replaced|cancelled name=X`.
+
+### The constraint that shapes the implementation, found before it was built
+
+`pump.h` carries two rules, and this feature sits exactly on the second:
+
+> RULE: pumped code must never open a dialog. A modal opened from a network
+> callback nests inside the modal we are already in, and the guest becomes
+> unrecoverable. Wire code sets status strings; keep it that way.
+
+The collision is raised in `wire.c`, inside the offer handler — which is
+pumped network code. **Opening the dialog there is the forbidden pattern**,
+and it would be a plausible-looking implementation that wedges the guest.
+
+So the shape is: the offer handler records a PENDING COLLISION and answers
+nothing; the main event loop, on its next pass, opens the pump-aware dialog
+(`ModalDialog` with `now_pump_modal_filter()`, per the first rule) and only
+then answers the offer — accept-with-overwrite, or refuse `exists`. That
+satisfies both rules at once and keeps the wire alive throughout, which this
+feature specifically requires: the person answers the dialog with the
+Continuity-driven cursor, so a dialog that starved the wire would strand the
+very cursor that has to click its buttons.
+
+### Not built in this lane, and named rather than implied
+
+The dialog, its resources, the deferred-answer state machine and the host's
+outcome line are DESIGNED here and NOT IMPLEMENTED. What is settled and worth
+having written down before anyone starts: the ordering (release, dialog,
+bytes), the two swallow points to close host-side, and the pump constraint
+that rules out the obvious implementation. Also unresolved and Michelle's to
+call: whether Replace can be made atomic. The guest writes to a same-folder
+temp and renames on completion, so a write-then-swap is within reach and the
+original need never be truncated — but HFS gives no atomic exchange primitive
+here, and the honest ordering (receive to temp, then delete-and-rename) has a
+window that a power failure can land in.
+
 ## PRODUCT DECISION: no Continuity file path may require the Mirror (2026-08-16, Michelle, `feat/hg-drag-edge-custody`)
 
 Her wording, verbatim: **"the mirror required thing is weird. it shouldn't be
