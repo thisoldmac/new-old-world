@@ -196,26 +196,70 @@ this registry are reading the same boundary. So the difference is not
 WHERE the code sits; it is WHEN it runs — the probe captures on every
 pass, the registration only on an ARMED one.
 
-### The one question left, and it is now the only one
+### FRONTNESS WAS THE VARIABLE. The Finder registers when it is front.
 
-**Does the Finder pump at all during an armed window?** Two candidates
-remain and they are separated by one number:
+Fifth round, build `cfc5c1a1…`, two cells of one matrix, same gesture in
+both, only the frontmost application changed. The instrument is an
+UNGATED pass counter per CurApName with an armed bucket beside it, so
+"never pumped" and "pumped while the predicate was false" are different
+rows rather than the same silence.
 
-- the Finder is not scheduled during the ~30 s the arm is up — NOW is
-  frontmost and driving, classic Mac OS is cooperative, and a background
-  Finder with nothing pending may simply not run; or
-- it pumps, and the arm predicate evaluates false in its context.
+**Cell 1 — NOW front (every previous round's shape):**
 
-**Shim passes per CurApName** separates them, and it is one more field on
-the registry already built — a per-application pass counter written
-ungated, beside the attempt rows that are written armed. If the Finder
-shows passes but no attempt, it is the predicate. If it shows no passes,
-it is scheduling, and the fix is not in this plane at all.
+    pump n=1/1 a5=1f1c5d70 passes=382 armed=379 app=New Old World
 
-Do not add a second registration mechanism before that number exists. The
-V11 probe's rows were captured on metal with a person clicking, which is
-a machine being USED; every round here has been a machine being driven by
-a harness with nothing else running, and those are not the same guest.
+The Finder does not appear in the table AT ALL during the armed window.
+Zero passes, not zero armed passes. Its 790 passes earlier in the boot
+all predate the arm, when it was front and nothing was driving.
+
+**Cell 2 — the Finder brought front first (`front Finder`), nothing else
+changed:**
+
+    pump n=1/1 a5=1f50f550 passes=316 armed=309 app=Finder
+    reg  n=1/1 a5=1f50f550 tk=11993 err=0       app=Finder
+    state=1 err=0 inst=1 rem=1 ctx=0 calls=0
+
+**The Finder pumped, and the Finder REGISTERED** — the first time in this
+project that a handler has been taken in the Finder's context under a
+bare arm, with no act-plane drive anywhere in the round. NOW is now
+absent from the table, having become the background application.
+
+So the scheduling account is right and the predicate account is dead. The
+arm predicate was never wrong; under cooperative scheduling a background
+Finder, with NOW frontmost and driving at 60 Hz, simply never pumps — and
+a plane that can only register from a pass cannot register from a process
+that never runs. It also retires this branch's "act plane reaches five
+contexts" reading for good: `menuact` reached the Finder because it
+BRINGS THE FINDER FRONT, not because trap patching hops contexts.
+
+### Is frontness a rig requirement or a product constraint?
+
+**A rig requirement, and it is the natural case** — but it deserves the
+sentence. A person dragging a file out of a Finder window has the Finder
+front by the act of pointing at it; there is no gesture that starts in a
+background application. So the product does not need a new mechanism, and
+the harness needs one line it was missing.
+
+It is worth stating in the plan anyway, because it is a real precondition
+with a real failure mode: any future rig that arms and drives without
+fronting the target will measure a plane that registers nowhere, and will
+read exactly like a resident that does not work.
+
+### WHAT IS STILL BLOCKED, and it has moved one layer out
+
+`calls=0` in cell 2. The handler is registered in the Finder and was
+never called, which now means one thing only: **the drag never began.**
+The Continuity-driven press and 180 px of held motion did not put the
+Finder into a drag. `midGestureSelections` and `afterReleaseSelections`
+are both empty, so no drag-sourced generation was published and the
+acceptance did not run.
+
+That is not this slice's code and not the registration route. It is the
+press/event plane, and it is the question `tools/local-finder-drag.py`
+exists to answer with the Finder's own `bounds of` before and after. The
+next round is that instrument against a Finder-front armed pass — and it
+is now the ONLY thing between here and the acceptance, with everything
+upstream of it measured rather than assumed.
 
 ### A correction to this branch's own earlier claim
 
