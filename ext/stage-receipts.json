@@ -1000,6 +1000,20 @@
         "contract/peek_table.h"
       ],
       "reason": "slice-1 drag observer in development; shared bake due at main"
+    },
+    {
+      "at": "2026-08-16T12:59:13-0400",
+      "branch": "feat/resident-drag-observe",
+      "extDigest": "5cbc63f13bc0f6e3feb834a0a04f8259858dc750",
+      "kind": "deferral",
+      "paths": [
+        "ext/CMakeLists.txt",
+        "ext/src/now_ext.c",
+        "ext/src/now_ext_dragobs.c",
+        "ext/src/now_ext_dragobs.h",
+        "ext/src/now_ext_dragobs_patch.S"
+      ],
+      "reason": "slice-1 drag observer in development; shared bake due at main"
     }
   ]
 }
