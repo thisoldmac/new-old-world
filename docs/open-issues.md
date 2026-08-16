@@ -7,6 +7,120 @@ search:
 
 # Open issues
 
+## THE ROUTE EXISTS, AND IT ANSWERS BOTH QUESTIONS THE PLAN ASKED: a registered tracking handler sees every Finder drag, its file, and what targeting believes (2026-08-16, `feat/resident-drag-observe`)
+
+Slice 1B, taken after slice 1 measured that the trap route does not
+exist. It stops patching and uses the public door:
+`InstallTrackingHandler` registers per APPLICATION, and the act plane
+already runs code in the Finder's own context on every armed pass, which
+is the one place that registration can be made.
+
+### It fires, and there is no ambiguity left to resolve
+
+Two harness-driven Finder drags of a desktop file, never selected first,
+`now-mirror-stage.qcow2` clone with this tree's build staged and
+cold-booted (`docs/local/dragobs-slice1b-provenance-2026-08-16.md`,
+tableLength 12736):
+
+    drag handler state=1 err=0 inst=5 rem=5 ctx=0 calls=67502
+                enter=2/2 in=67494 leave=2/2 reent=0
+
+Two drags, two `EnterHandler`, two `LeaveHandler`, 67,494 `InWindow`
+messages between them. Both files moved on screen. **On the same machine
+across the same two drags the trap route recorded zero** — `dispatches`
+never left the 2 its own control put there. Two mechanisms, one drag,
+and the comparison is the finding.
+
+### The identity, with no selection anywhere
+
+    drag handler item seq=2 a5=1f50f550 ref=00b25200 tk=4554
+                items=1 what=hfs err=0
+    drag handler file seq=2 type=54455854 cr=3f3f3f3f vref=-1 par=19
+                name=From Claude.txt
+
+Read from the live `DragRef` the Drag Manager handed us at
+`EnterHandler`, in the Finder's own A5 world (`1f50f550`, matching what
+`observe` reports for the Finder). The file was never selected, never
+polled, never cached. `vref=-1 par=19` is the desktop folder on the boot
+volume. **This is what slice 2 needs and it is available at drag
+begin.**
+
+### The targeting answer, and it overturns the standing reading
+
+Every row states three things at one instant: the window the Drag
+Manager NAMES, where the Drag Manager thinks the mouse is, and the
+low-memory point this resident is driving.
+
+    drag track n=33622 msg=3 win=000d3610 dm=620,565 pin=620,565 raw=620,565 lm=620,565 attr=6
+    drag track n=33623 msg=3 win=000d3610 dm=620,565 pin=620,565 raw=250,568 lm=250,568 attr=6
+    drag track n=33624 msg=3 win=000d3610 dm=250,568 pin=250,568 raw=250,568 lm=250,568 attr=6
+    drag track n=33625 msg=4 win=000d3610 dm=250,568 ...
+    drag track n=33626 msg=5 win=00000000 dm=250,568 ...
+
+**Drag Manager targeting FOLLOWS the driven pointer.** `dm_mouse` equals
+the low-memory point on every row but the single one that spans the
+jump, and it catches up on the very next message — one iteration of lag,
+not a disagreement. The window is constant and correct for the whole
+drag, `attr=6` (`InsideSenderApplication|InsideSenderWindow`) is true of
+a desktop-to-desktop drag, and `enter/leave` are 1/1 per drag: **no
+oscillation at all.**
+
+That matters because it contradicts the reading this project has been
+carrying. `feat/hg-drag-dragmgr` recorded `inwin=1` while GetMouse read
+the true point, with "31k enter/leave oscillations", and the conclusion
+drawn was that targeting ignores a driven pointer. Two corrections:
+
+- Targeting does not ignore it. Measured here, it tracks it exactly.
+- The 31k was very probably not oscillation. The Drag Manager's tracking
+  loop calls a handler roughly 8,000 times a second on this machine —
+  33,000 messages in one four-second drag — so a raw count of that order
+  is the LOOP RATE, and reading it as enter/leave churn attributed a
+  defect to a number that was only a frequency. This lane's enter/leave
+  counters are 1 and 1.
+
+So slice 3's blocker is not what it was thought to be. Whatever went
+wrong in that lane is a property of a drag ORIGINATED by our own
+application, not of the Drag Manager's willingness to track a synthetic
+pointer, and it should be re-measured with this instrument before any
+more is built on the old reading.
+
+### Charter and un-registration
+
+- The handler runs in the dragging application's context at the Drag
+  Manager's pleasure, at task time, reached through Mixed Mode because a
+  PowerPC Drag Manager is calling 68K code. Its UPP is a real
+  `RoutineDescriptor` built by `BUILD_ROUTINE_DESCRIPTOR`, never a cast.
+- **Nothing is allocated.** `NewDragTrackingHandlerUPP` allocates, and
+  from a hook it would allocate in the FOREIGN application's heap. The
+  descriptor is a module global in the resident's own relocated
+  system-heap storage — reachable from every context, the same property
+  the trap trampolines depend on — filled from a LOCAL initializer,
+  because this INIT is relocated at load and a procedure address baked
+  into static data is either fixed up or a jump into nowhere.
+- The handler touches only the resident's own table and globals, and its
+  Drag Manager reads go back out through our own shim inside the same
+  re-entrancy guard (`reent=0` across 67,502 calls).
+- **Un-registration is paired and measured.** A registration belongs to
+  the application that made it and can only be removed there, while a
+  disarm arrives on whatever process is pumping — so the plane keeps the
+  A5 of every context it registered in and gives the registration back
+  when it is next inside that context unarmed. `inst=5 rem=5 ctx=0`
+  after five cycles; `ctx` returns to zero every time.
+
+### What is still not known
+
+- **No metal round.** Emulator only.
+- The `ReceiveHandler` half was not registered. Only tracking was
+  needed to answer these two questions, and a receive handler is a
+  behaviour change rather than an observation.
+- The trap route (V14) is retained, unexercised, and its sample ring and
+  TrackDrag return thunk have still never executed.
+- Whether a 68K application's drag would come through BOTH routes is
+  untested — no 68K drag was made. If the trap route only ever sees 68K
+  drags and the handler sees both, that split is worth a line and this
+  lane did not earn it.
+- No shared bake; every ext-touching commit carries a written deferral.
+
 ## MEASURED AND DECISIVE, AND IT CLOSES A ROUTE RATHER THAN OPENING ONE: the Mac OS 9 Finder drags a file without one call through the 68K Drag Manager trap (2026-08-16, `feat/resident-drag-observe`)
 
 Slice 1 of the resident drag plane
