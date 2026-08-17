@@ -555,6 +555,9 @@ final class MirrorContinuityController: ObservableObject,
         listener.onContinuitySelection = { [weak self] key, selection in
             self?.received(selection, from: key)
         }
+        listener.onContinuityDragBegin = { [weak self] key, begin in
+            self?.received(begin, from: key)
+        }
         loadSettingsForActiveGuest()
     }
 
@@ -944,11 +947,113 @@ final class MirrorContinuityController: ObservableObject,
         }
     }
 
+    /// The drag this Mac was told about while the button was still down, or
+    /// nil once the application's own frame has caught up with it.
+    ///
+    /// It is the JOIN KEY and nothing else: the resident names a file, the
+    /// application later names the same file WITH A GENERATION, and this is
+    /// how the two are known to be one gesture rather than two drags of the
+    /// same icon. Cleared when the join lands, so a second drag of the same
+    /// file cannot be joined to the first one's announcement.
+    private var announcedDragSeq: UInt32?
+
+    /// THE RESIDENT NAMING THE FILE MID-GESTURE.
+    ///
+    /// This is the arrival the whole drag plane was built to get: the
+    /// application publishes the same identity, but not until the Finder's
+    /// drag loop releases it — 462 ticks after the drag began, measured
+    /// 2026-08-16, which is after the crossing that needed it. This frame
+    /// comes off the resident's own channel while the loop is still running.
+    ///
+    /// IT BINDS AN IDENTITY AND NOT A GENERATION. The stub is cached with
+    /// generation 0, which every consumer reads as "no generation has been
+    /// minted for this gesture yet": the guest mints generations, a
+    /// `continuity.grab` names one, and the guest's own check refuses any
+    /// number it did not mint. So a drop that somehow beats the
+    /// application's frame is refused by name rather than served the wrong
+    /// file — and the application's frame arrives in the same fifth of a
+    /// second the crossing does, long before a human drop.
+    private func received(_ begin: ContinuityDragBegin, from key: GuestKey) {
+        guard target?.key == key else {
+            audit(.warn, "drag begin ignored: it came from "
+                + "\(key.machine.slug), which does not own this epoch")
+            return
+        }
+        guard begin.epoch == epoch, epoch != 0 else {
+            audit(.warn, "drag begin ignored: it names epoch "
+                + "\(begin.epoch) while this Mac owns epoch \(epoch)")
+            return
+        }
+        guard announcedDragSeq != begin.dragSeq else { return }
+        announcedDragSeq = begin.dragSeq
+        /* Folderness is UNKNOWN here and is recorded as false rather than
+           guessed at: the resident makes no File Manager call, by charter,
+           so nothing in this frame can say. A folder drag is refused when
+           the application's own frame arrives and says `isFolder`, one
+           gesture later — the slice folders were already deferred to. */
+        let synthesised = ContinuitySelection(
+            version: ContinuityContract.version,
+            epoch: begin.epoch,
+            generation: 0,
+            source: .drag,
+            dragSeq: begin.dragSeq,
+            item: .init(name: begin.item.name,
+                        volumeRef: begin.item.volumeRef,
+                        dirID: begin.item.dirID,
+                        fileType: begin.item.fileType,
+                        creator: begin.item.creator,
+                        dataSize: nil,
+                        resourceSize: nil,
+                        modifiedAt: nil,
+                        isFolder: false,
+                        icon: nil))
+        audit(.info, "drag begin from the resident: dragSeq="
+            + "\(begin.dragSeq), epoch=\(begin.epoch), "
+            + "name=\(begin.item.name), "
+            + "type=\(begin.item.fileType ?? "none"), "
+            + "guestTicks=\(begin.ticks.map(String.init) ?? "none") — the "
+            + "Mac is still holding this drag; the generation follows on "
+            + "the application's own frame")
+        selectionCache.apply(synthesised, activeEpoch: epoch)
+        if let mark = selectionCache.mark {
+            edge.noteSelectionPublished(mark)
+        }
+    }
+
     private func received(_ selection: ContinuitySelection, from key: GuestKey) {
         guard target?.key == key else {
             audit(.warn, "selection ignored: it came from "
                 + "\(key.machine.slug), which does not own this epoch")
             return
+        }
+        /* THE JOIN, AND WHICH SOURCE WON, said out loud. Two senders
+           reported one gesture; this is the second, and it carries the one
+           thing the first could not — the generation a grab must name. The
+           identity is expected to agree, and a disagreement is a finding
+           rather than a preference, so it is logged as one. */
+        if selection.resolvedSource == .drag, let seq = selection.dragSeq {
+            if seq == announcedDragSeq {
+                let announced = selectionCache.stub?.item.name
+                announcedDragSeq = nil
+                if let announced, announced != selection.item?.name {
+                    audit(.warn, "drag \(seq) joined and DISAGREED: the "
+                        + "resident named \(announced) mid-gesture and the "
+                        + "application named "
+                        + "\(selection.item?.name ?? "nothing") — the "
+                        + "application's frame wins, because it carries the "
+                        + "generation a grab must name")
+                } else {
+                    audit(.info, "drag \(seq) joined: the resident's "
+                        + "mid-gesture identity keeps its name and gains "
+                        + "generation \(selection.generation) from the "
+                        + "application")
+                }
+            } else if let announced = announcedDragSeq {
+                audit(.info, "drag \(seq) is not the drag this Mac was "
+                    + "announced (\(announced)) — a second gesture, bound "
+                    + "on its own")
+                announcedDragSeq = nil
+            }
         }
         selectionCache.apply(selection, activeEpoch: epoch)
         /* AND THE EDGE HEARS ABOUT IT EVEN IF IT ALREADY DECIDED. A
@@ -1649,6 +1754,10 @@ final class MirrorContinuityController: ObservableObject,
            is that rule made mechanical: the next epoch gets its own
            generation 1 and cannot redeem consent given in the last one. */
         selectionCache.clear(reason: "the Continuity epoch ended")
+        /* The announcement dies with the epoch it was made under. A join
+           key outliving its consent would let the NEXT epoch's application
+           frame claim a gesture from the last one. */
+        announcedDragSeq = nil
     }
 
     private enum ButtonResetScope {
