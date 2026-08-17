@@ -743,6 +743,21 @@ static DragSendDataUPP send_upp(void)
     return g_send_upp;
 }
 
+/* Does the plane say the button is held right now? The same reading the
+   drag's input proc will make on its first sample, asked one moment
+   earlier — which is the whole of the gate. */
+static int plane_button_held(void)
+{
+    short h = 0, v = 0;
+    int down = 0;
+    unsigned long seq = 0;
+
+    if (!now_continuity_latest_input(&h, &v, &down, &seq)) {
+        return 0;
+    }
+    return down ? 1 : 0;
+}
+
 static void start_drag(void)
 {
     DragRef drag = NULL;
@@ -970,16 +985,31 @@ static void start_drag(void)
        difference — and the reason the promise callback pumps by hand —
        is that the drop INSIDE this call is where bytes have to move. */
     {
-        /* TWO ARTIFACTS, ONE QUESTION, ASKED SEPARATELY.
-           `plane` is the resident's applied button — the one the arm
-           ripened on. `toolbox` is Button(), this Macintosh's own, and
-           it is the one TrackDrag actually tracks. They are sampled
-           HERE rather than at the tick that decided to start, because
-           everything between the two (NewDrag, three flavors, an
-           offscreen world with an icon plotted into it) costs ticks a
-           synthetic button can expire inside. `setup` is that cost,
+        /* THREE ARTIFACTS, THREE QUESTIONS, ASKED SEPARATELY — and the
+           first two used to share one word, which is exactly the
+           confusion this whole fix is about.
+
+             level    the CURSOR PLANE's button, the bit the input proc
+                      reads on every sample. Under a host-driven carry
+                      this is the only one that is ever set, and a drag
+                      entering TrackDrag with level=0 is the instant
+                      drop (F2 defect B, metal 2026-08-17).
+             applied  the RESIDENT's applied button — what the arm path
+                      ripens on. A carried level advances no generation,
+                      so applied=0 here is CORRECT for a host drag and
+                      is the D5 guarantee holding: no click was posted.
+                      It was printed as `plane` until 2026-08-17, and a
+                      reading of the plane it was not is how the level
+                      question went unasked for a whole slice.
+             toolbox  Button(), this Macintosh's own hardware.
+
+           Sampled HERE rather than at the tick that decided to start,
+           because everything between the two (NewDrag, three flavors,
+           an offscreen world with an icon plotted into it) costs ticks
+           a synthetic button can expire inside. `setup` is that cost,
            reported rather than assumed. */
-        int plane = now_continuity_button_is_down() ? 1 : 0;
+        int level = plane_button_held();
+        int applied = now_continuity_button_is_down() ? 1 : 0;
         int toolbox = Button() ? 1 : 0;
         unsigned long entered = TickCount();
         OSErr track;
@@ -998,7 +1028,7 @@ static void start_drag(void)
            characters loses its tail SILENTLY. The first version of this
            was one line and the live guest logged
 
-               ... (TrackDrag -128) button plane=1 toolbox=1 at
+               ... (TrackDrag -128) button level=1 applied=1 at
 
            - every measured fact after "at" cut off, with nothing saying
            so. An instrument whose reading is truncated reports the
@@ -1032,9 +1062,9 @@ static void start_drag(void)
             g_diag_promise_spec_valid = false;
         }
         now_log(kLogInfo, "mirror",
-                "drag detail: button plane=%d toolbox=%d at %d,%d "
-                "setup=%lu track=%lu ticks",
-                plane, toolbox, (int)where.h, (int)where.v,
+                "drag detail: button level=%d applied=%d toolbox=%d at "
+                "%d,%d setup=%lu track=%lu ticks",
+                level, applied, toolbox, (int)where.h, (int)where.v,
                 (unsigned long)(entered - started),
                 (unsigned long)(TickCount() - entered));
 
@@ -1236,21 +1266,6 @@ void now_continuity_dragmgr_host_request(const NowContinuityOfferItem *item,
 
 /* Begin the crossing that was held. Called from the service pass, on a
    stack the promise's pull can pump from. */
-/* Does the plane say the button is held right now? The same reading the
-   drag's input proc will make on its first sample, asked one moment
-   earlier — which is the whole of the gate. */
-static int plane_button_held(void)
-{
-    short h = 0, v = 0;
-    int down = 0;
-    unsigned long seq = 0;
-
-    if (!now_continuity_latest_input(&h, &v, &down, &seq)) {
-        return 0;
-    }
-    return down ? 1 : 0;
-}
-
 static void serve_host_request(void)
 {
     int verdict;

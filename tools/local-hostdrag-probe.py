@@ -246,8 +246,8 @@ def read_gesture(rows, entry, drop, floor, gesture="desktop"):
 
     out = {}
     detail, detail_line = find(
-        r"drag detail: button plane=(\d+) toolbox=(\d+) at (-?\d+),(-?\d+) "
-        r"setup=(\d+) track=(\d+) ticks")
+        r"drag detail: button level=(\d+) applied=(\d+) toolbox=(\d+) at "
+        r"(-?\d+),(-?\d+) setup=(\d+) track=(\d+) ticks")
     inputs, input_line = find(
         r"drag input: calls=(-?\d+) fed=(-?\d+) down=(-?\d+) up=(-?\d+)")
     dropline, drop_line = find(
@@ -257,9 +257,10 @@ def read_gesture(rows, entry, drop, floor, gesture="desktop"):
         r"(\d+) ticks")
     applied = [line for line in text if "button edge gen=" in line]
 
-    out["trackTicks"] = int(detail.group(6)) if detail else None
-    out["planeAtEntry"] = int(detail.group(1)) if detail else None
-    out["entryLogged"] = ([int(detail.group(3)), int(detail.group(4))]
+    out["trackTicks"] = int(detail.group(7)) if detail else None
+    out["levelAtEntry"] = int(detail.group(1)) if detail else None
+    out["appliedAtEntry"] = int(detail.group(2)) if detail else None
+    out["entryLogged"] = ([int(detail.group(4)), int(detail.group(5))]
                           if detail else None)
     out["inputDowns"] = int(inputs.group(3)) if inputs else None
     out["inputUps"] = int(inputs.group(4)) if inputs else None
@@ -286,9 +287,10 @@ def read_gesture(rows, entry, drop, floor, gesture="desktop"):
             out["trackTicks"] is not None and out["trackTicks"] >= floor,
             f"TrackDrag must have run >= {floor} ticks; one tick is the "
             "instant drop this fix is about"),
-        "planeHeldAtEntry": verdict(
-            out["planeAtEntry"], out["planeAtEntry"] == 1,
-            "the plane's button must read DOWN as TrackDrag is entered"),
+        "levelHeldAtEntry": verdict(
+            out["levelAtEntry"], out["levelAtEntry"] == 1,
+            "the cursor plane's button must read DOWN as TrackDrag is "
+            "entered — level=0 there is the instant drop itself"),
         "inputProcSawTheButtonDown": verdict(
             out["inputDowns"],
             out["inputDowns"] is not None and out["inputDowns"] > 0,
@@ -307,7 +309,8 @@ def read_gesture(rows, entry, drop, floor, gesture="desktop"):
              "the drop must land where the button was released, at a point "
              "published AFTER the begin and away from the entry point")),
         "residentAppliedNoButton": verdict(
-            out["appliedButtonEdges"], out["appliedButtonEdges"] == 0,
+            out["appliedButtonEdges"],
+            out["appliedButtonEdges"] == 0 and out["appliedAtEntry"] == 0,
             "a carried level must advance no generation, so the resident "
             "applies nothing and D5 survives the fix"),
         "beginRipenedOnTheLevel": verdict(
