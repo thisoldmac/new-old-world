@@ -1736,6 +1736,16 @@ final class ContinuityEdgeController: ObservableObject {
             },
             dragEnded: { [weak self] operation, point in
                 self?.hostDragSessionEnded(operation, at: point)
+            },
+            ghostBlanked: { [weak self] items in
+                guard let self else { return }
+                audit(.info, "host file drag: asked AppKit to draw this "
+                    + "destination's copy of the drag with no image "
+                    + "(items=\(items), gesture=\(hostFileDragGestureID)). "
+                    + "Whether the window server's ghost for a foreign "
+                    + "session actually goes with it is attended-only "
+                    + "evidence; items=0 would mean the enumeration found "
+                    + "nothing to touch")
             })
     }
 
