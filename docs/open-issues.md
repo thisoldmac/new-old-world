@@ -7,6 +7,103 @@ search:
 
 # Open issues
 
+## FIXED HOST-SIDE, ONE HALF STILL OPEN: the cross bound a generation nobody could redeem (2026-08-16, `fix/gh-drag-generation-join`)
+
+**What was refused, and by whom.** Every guest→host drag of the attended
+PowerBook round of 2026-08-16 was refused — six crossings, six refusals,
+zero bytes. Forensics D1 (`F1-metal-round-forensics.md`, against
+`feat/hg-drag-arc-candidate` @ `0447594c`, log
+`~/Library/Logs/now-logs/2026-08-16 221834.log`) established the shape with
+log evidence, and it is worth stating plainly: **the Macintosh refused
+nothing.** `GuestListener.grabContinuityFile` refused the grab HERE, before
+the wire, because the generation it was handed was 0.
+
+Three cooperating sites made a zero the thing the cross bound:
+
+- `MirrorContinuityController.received(_ begin:)` mints a resident
+  `dragBegin` into a `ContinuitySelection` at `generation: 0` — correctly:
+  the resident names a file from inside the Finder's drag loop and the
+  application mints generations.
+- `ContinuitySelectionCache.apply` wrote that stub straight over whatever
+  the cache held. Epoch 4 of the log is the case that hurts: generation 3
+  of `main 2.c` was cached with `dataSize=252`, its bytes had **already
+  been fetched onto this Mac** (`eager fetch completed … generation=3`),
+  and the identity-only announcement of THE SAME FILE displaced it.
+- `ContinuitySelectionBind.decide` then bound `.dragged` on that mark, and
+  every attempt after it — eager fetch and drop redemption both — spent
+  itself on `drag-not-yet-named`.
+
+**The three invariants now enforced.**
+
+1. **An identity-only stub may fill a slot or annotate one; it may not
+   empty one.** `ContinuitySelectionCache.apply` joins a generation-0
+   `.drag` frame to a cached stub naming the same file (volumeRef + dirID +
+   name): the generation, the sizes and the fetched bytes survive, and only
+   the witness, the `dragSeq` and the clock move. When the drag names a
+   DIFFERENT file the cache is stale and the drag still wins the name — but
+   not that other file's number, which would be the wrong-file bug wearing
+   a valid generation. `ContinuityDragBinding.revise` enforces the same rule
+   one layer down: a late zero cannot un-name a gesture that has a number.
+2. **No grab is ever asked with a zero.** The eager fetch declines to start
+   under generation 0 instead of spending the gesture's first attempt on a
+   certain refusal, and the drop HOLDS — one second, polled on the actor
+   the wire and the revision already run on — for the application's frame
+   to join by `dragSeq`. On timeout this Mac refuses by name
+   (`GrabError.notYetNamed`) and says how long it waited, rather than
+   reporting the wire's word for a request the wire never received.
+3. **The hold is not a retry, and the code says so where it happens.** No
+   grab has been sent for the gesture at the moment the hold begins;
+   when the mint lands, the grab that follows is the FIRST attempt for that
+   newly minted generation. The project's no-retry rule is about not asking
+   twice for a number the Macintosh already refused — it has nothing to say
+   about waiting for the number to exist.
+
+Every bind and revision line now names identity source, generation and
+`dragSeq`, so the `hello.txt` / `main 2.c` crossover the same log shows
+stays readable as what it was — cache LAG, not a surviving stub — rather
+than being masked by the merge.
+
+**STILL OPEN, and it is the other half: the application never publishes a
+generation for a gesture that CROSSES.** Cause found guest-side by reading,
+and it agrees exactly with the log:
+
+- `now_continuity_selection_note_drag`
+  (`now-guest-ppc/src/input/continuity_selection.c:313–327`) begins
+  `settle_to_epoch(live_epoch); if (live_epoch == 0) return 0;`. The
+  application drains the resident's drag observation only when it gets task
+  time, which is when the Finder's drag loop ends — and on a crossing
+  gesture the handback is what ends it, *after* the cross has already ended
+  the epoch. So the identity is discarded before it is ever observed into
+  the table, and nothing is published.
+- The second gate would drop it anyway: `now_continuity_selection_poll`
+  settles first, and `now_continuity_selection_settle` resets the table, so
+  the `g_drag_pending` publish finds `have_item` false.
+- The log is the control: the only two joins in the whole run
+  (`221834:135`, `:528`) are drags that ended on the guest **without**
+  crossing, with the epoch still live. There is no `selection ignored: it
+  names epoch …` line anywhere — the frame did not arrive and get rejected;
+  it was never sent.
+
+Not fixed here, and deliberately: publishing a generation for an epoch that
+has already ended needs (a) the guest to observe the drag into the table or
+the grant hold after the settle, (b) a wire path allowed to publish under
+the ended epoch, and (c) a host rule accepting it while a live binding for
+that epoch waits. That is a contract-shaped change across both halves —
+`contract/asyncapi.yaml` first, per this project's own rule — not a small
+host-observable fix. **Consequence to state honestly: on the attended metal
+shape, where the cross ends the epoch, the hold above will time out and the
+drag will still refuse.** What changes today is that it refuses by name
+instead of by symptom, and that the case where a generation for the same
+file already existed — epoch 4 of this very log, bytes already on the Mac —
+now transfers instead of being thrown away.
+
+**Tests** (`ContinuityGuestDragTests`, six new, written from the log and
+the contract rather than from the implementation): the epoch-4 discard as a
+regression case, the drag naming another file, the eager fetch that never
+starts under a zero, the drop that holds and then makes its first attempt
+with the joined generation, the drop that refuses by name when none
+arrives, and the late identity that cannot un-name a live generation.
+
 ## FIXED, EMULATOR-VERIFIED: the collision replace dialog landed on `refactor/mirror-continuity-split` (2026-08-16, `feat/hg-drag-collision-land`)
 
 `f74324a4` ("DECIDED AND BUILT, NOT METAL-VERIFIED" — see the entry below)
