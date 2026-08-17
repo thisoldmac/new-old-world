@@ -308,6 +308,11 @@ static Boolean gWedged;               /* a deadline has been exceeded and
                                          the driver has not yet handed the
                                          param block back */
 static Boolean gRedialPending;        /* the next dial follows a recovery */
+/* The drain saw the peer go. Set at the receive's completion and acted on
+   by the pump, because the abort belongs to the one-call-at-a-time state
+   machine and the drain is not part of it. */
+static Boolean gPeerGone;
+static NowPeekI32 gPeerGoneResult;
 static short gWedgeStreak;            /* consecutive wedges without an
                                          intervening healthy connection */
 
@@ -685,10 +690,26 @@ static void drain(void)
             return;                   /* still waiting for bytes */
         }
         gRcvInFlight = false;
-        /* Any error at all: the connection is gone or going, and the
-           control path will find out the same way on its next send.
-           Nothing to report here that is not reported better there. */
+        /* ANY ERROR AT ALL: the connection is gone or going, and THIS is
+           where the machine learns it first.
+           ------------------------------------------------------------
+           This used to say the control path would find out the same way
+           on its next send, and that was measured wrong on 2026-08-17:
+           a host process killed ungracefully was answering the
+           application again 2 s later, and the resident took 179.9 s to
+           follow - three times, to a tick. MacTCP will accept send after
+           send into a connection whose peer has gone and complete every
+           one of them, so the send path is nearly blind to a dead peer.
+           The receive is not: the peer's FIN completes this pending
+           TCPRcv within a second, and the error it carries is the fact
+           the whole channel was waiting three minutes to discover.
+           So it is not discarded any more - it is handed to the pump,
+           which owns what to do about it. */
         if (gRcvPB.ioResult != noErr) {
+            if (gConnected) {
+                gPeerGone = true;
+                gPeerGoneResult = (NowPeekI32)gRcvPB.ioResult;
+            }
             return;
         }
     }
@@ -951,6 +972,23 @@ void now_liveness_net_pump(NowPeekTable *table,
     }
     if (gInFlight != kInFlightNone) {
         return;                       /* one call at a time, by design */
+    }
+
+    /* THE DRAIN SAW THE PEER GO. Acted on here rather than there, because
+       the abort belongs to the one-call-at-a-time state machine above and
+       a drain that issued its own would be a second writer of `gCtlPB`.
+       The short backoff is deliberate and cannot spin: a host process
+       that closed its socket is very often one that is restarting, and a
+       dial with nobody listening FAILS, which takes the ordinary 60 s
+       backoff. So this trades a fast return when the host is coming back
+       for nothing at all when it is not. */
+    if (gPeerGone) {
+        gPeerGone = false;
+        table->channel_result = gPeerGoneResult;
+        table->channel_state = kNowPeekChannelFailed;
+        gRetryCountdown = kRedialTicks;
+        issue_abort();
+        return;
     }
 
     /* The application has withdrawn, or never published. Zero is an

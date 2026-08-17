@@ -1185,6 +1185,16 @@
         "ext/src/now_liveness_net.c"
       ],
       "reason": "fix/resident-net-redial lane: private bake to agent-stage/fix-resident-net-redial follows the second drill round"
+    },
+    {
+      "at": "2026-08-17T18:11:34-0400",
+      "branch": "fix/resident-net-redial",
+      "extDigest": "cad8364caeea0d67c3a4d30e923f859129ad75f3",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_liveness_net.c"
+      ],
+      "reason": "fix/resident-net-redial lane: private bake to agent-stage/fix-resident-net-redial follows the third drill round"
     }
   ]
 }

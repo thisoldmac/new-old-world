@@ -112,6 +112,24 @@ for name, floor in (("kInFlightWedgeTicks", 7), ("kAbortWedgeTicks", 3),
               f"{name} is tighter than the transport timeout it is "
               f"supposed to sit outside, so healthy calls will be aborted")
 
+# THE DRAIN DOES NOT THROW AWAY THE DEATH IT SEES FIRST. MacTCP accepts
+# send after send into a connection whose peer has gone and completes
+# every one of them, so the send path is nearly blind to a dead peer -
+# measured 179.9 s to notice, three times to a tick. The peer's FIN
+# completes the pending receive within a second. Discarding that error
+# is what made the resident three minutes slow.
+drain_fn = body(CODE, "static void drain", "\n}\n")
+check("gPeerGone = true;" in drain_fn,
+      "the drain discards the receive's error again, which is the fact "
+      "the whole channel otherwise waits three minutes to discover")
+check("if (gPeerGone)" in pump,
+      "nothing acts on the drain's report of a dead peer")
+# and it acts on it from the pump, not from the drain, because the abort
+# belongs to the one-call-at-a-time state machine.
+check("issue_abort" not in drain_fn,
+      "the drain issues its own abort, which makes it a second writer of "
+      "the param block the control state machine owns")
+
 # THE ACCOUNT. The resident does not log, so a number here is the only
 # story it can tell. One counter cannot separate "we noticed a wedge"
 # from "we got the machine back" from "it dialled again", and those are
