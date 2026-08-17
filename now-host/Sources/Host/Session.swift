@@ -1174,6 +1174,7 @@ final class Session {
                             source: .memory(plan.bytes),
                             sent: 0, cancelled: false,
                             crc32: TransferIdentity.crc32(plan.bytes))
+        outboundProgressAt = Date()
         onOutboundProgress(0, plan.bytes.count)
         sendNextOutboundChunk()
     }
@@ -1450,6 +1451,7 @@ final class Session {
                                           + "data: \(error)")
                     return
                 }
+                self.outboundProgressAt = Date()
                 self.onOutboundProgress(progress, total)
                 self.sendNextOutboundChunk()
             }
@@ -2129,12 +2131,34 @@ final class Session {
         })
     }
 
+    /// When an outbound transfer last had bytes taken by the socket. It is
+    /// this session's own evidence of a live peer, and it is a DIFFERENT
+    /// kind of evidence from an inbound frame: the guest said nothing, but
+    /// its TCP window kept opening, which a dead machine's does not.
+    ///
+    /// It exists for the promise pull. On the native drag lane the pull
+    /// happens INSIDE the guest's drop — a nested Toolbox loop, where the
+    /// application answers nothing on the control channel — so a multi-MB
+    /// file is minutes of one-way traffic with no frame coming back. The
+    /// idle clock read that as a dead guest and closed the connection out
+    /// from under the very transfer it was watching.
+    private var outboundProgressAt: Date?
+
     private func resetIdleClock() {
         idleTask?.cancel()
         let timeout = timing.idleTimeout
         idleTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1e9))
             guard !Task.isCancelled, let self else { return }
+            /* **A TRANSFER IN FLIGHT IS NOT SILENCE.** Asked before the
+               verdict below, because it is a stronger fact than any of the
+               reasoning there: bytes of ours are still being taken by this
+               connection, right now, for a file the guest asked for. */
+            if self.outbound != nil, let progress = self.outboundProgressAt,
+               Date().timeIntervalSince(progress) < timeout {
+                self.resetIdleClock()
+                return
+            }
             /* **Silence is not death, and this is the one place that used
                to assume it was.** A cooperatively-scheduled Macintosh
                starves every application while one blocks — measured

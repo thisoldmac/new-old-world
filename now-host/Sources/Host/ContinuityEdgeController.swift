@@ -1005,6 +1005,24 @@ final class ContinuityEdgeController: ObservableObject {
             endHostDragPresentation()
         }
         guard var ownership else { return }
+        if stagedCarryTimedOut, sample.kind == .primaryUp {
+            /* **NOT SILENCE.** The carry was let go on its own bound while
+               this gesture was still physically in flight, so the release
+               commits nothing — and a person waiting for a file that will
+               never arrive deserves the sentence rather than a guard that
+               quietly returns. */
+            stagedCarryTimedOut = false
+            audit(.warn, "host file drag: the person released on the guest, "
+                + "but this Mac had already let the carry go on the "
+                + "\(Int(Self.stagedCarryLifetime))s bound, so the release "
+                + "commits nothing (gesture=\(hostFileDragGestureID))")
+            endHostDragPresentation()
+            hostFileDrag = false
+            hostDragEndedAtCross = false
+            crossEndRefusal = nil
+            status = "The file was let go before it could be handed over"
+            return
+        }
         if stagedHostFiles != nil {
             /* **A STAGED CARRY OWNS THE BUTTON OUTRIGHT.** Everything the
                primary button does between the crossing and the drop is this
@@ -2610,19 +2628,7 @@ final class ContinuityEdgeController: ObservableObject {
     /// crossing has ended the host drag.
     private func completeStagedHostDrop(at ownership: Ownership,
                                         release: String) {
-        guard let staged = stagedHostFiles else {
-            /* Not silence. A release arriving after the carry was let go is
-               the timeout's own consequence, and it has to read as one. */
-            if stagedCarryTimedOut {
-                stagedCarryTimedOut = false
-                audit(.warn, "host file drag: \(release), but this Mac had "
-                    + "already let the carry go on the "
-                    + "\(Int(Self.stagedCarryLifetime))s bound, so the "
-                    + "release commits nothing "
-                    + "(gesture=\(hostFileDragGestureID))")
-            }
-            return
-        }
+        guard let staged = stagedHostFiles else { return }
         stagedHostFiles = nil
         let carry = stagedCarry
         stagedCarry = .init()

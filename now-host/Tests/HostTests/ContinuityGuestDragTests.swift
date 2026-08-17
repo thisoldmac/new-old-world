@@ -2993,6 +2993,176 @@ final class ContinuityGuestDragTests: XCTestCase {
                         + "which is the only place that can say so once")
     }
 
+    // MARK: - The handoff: the guest's own drag, with a promise
+
+    /// One staged carry, one handoff, at the point the crossing computed.
+    ///
+    /// **The acceptance sentence, from this side (plan `2026-08-17-036`):
+    /// after the handoff the recipient sees a normal drag with a promise.**
+    /// So what crosses here is a starting state and a skeleton and nothing
+    /// else — no target, no window, no collision. The strip is asked again
+    /// on every motion of the drag, and none of those is a second handoff:
+    /// one gesture is one drag over there.
+    func testTheStagingPointHandsTheDragOverExactlyOnce() throws {
+        let rig = Rig()
+        var handoffs: [MirrorKit.Point] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, point, _ in handoffs.append(point); return true },
+            abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.handoff.once"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        XCTAssertEqual(handoffs, [],
+                       "reaching the edge is not the handoff; the host's own "
+                        + "drag has not ended yet")
+        _ = callbacks.dropped(Self.fileDrag(url))
+        XCTAssertEqual(handoffs, [Rig.pressOrigin],
+                       "the handoff happens at the staging point, at the "
+                        + "guest entry point the crossing already computed")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 460), Self.fileDrag(url))
+        _ = callbacks.entered(CGPoint(x: 1439, y: 470), Self.fileDrag(url))
+        XCTAssertEqual(handoffs.count, 1,
+                       "every draggingUpdated is not a new drag on the "
+                        + "Macintosh")
+    }
+
+    /// **THE GUEST'S DROP IS THE COMMIT, AND THIS MAC ADDS NOTHING TO IT.**
+    ///
+    /// Once the gesture belongs to the other machine's Drag Manager, a
+    /// physical release is that machine's button-up: its Finder resolves the
+    /// drop and asks for the promise, inside the drop. So this side must not
+    /// start a transfer of its own — and must not let the promise go, which
+    /// is the one thing the pull still needs.
+    func testAReleaseUnderTheHandoffCommitsThroughTheGuestNotThisMac() throws {
+        let rig = Rig()
+        var abandons: [String] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true },
+            abandon: { reason, _ in abandons.append(reason) }))
+        var hostSideTransfers = 0
+        rig.controller.configureFileDragging(
+            guestFileAtPoint: { _ in nil },
+            hostFilesDropped: { _, _ in hostSideTransfers += 1; return true })
+        let staged = NSPasteboard(name: .init("now.test.handoff.commit"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        rig.releaseOnGuest()
+
+        XCTAssertEqual(hostSideTransfers, 0,
+                       "a second transfer beside the promise pull would be "
+                        + "this Mac copying the file the guest is already "
+                        + "asking for")
+        XCTAssertEqual(abandons, [],
+                       "the promise must still be serveable: the pull "
+                        + "happens INSIDE the drop, after this instant")
+    }
+
+    /// The abort, and it is native on both sides. Over there `TrackDrag`
+    /// returns `userCanceledErr` and the Manager plays its own snap-back;
+    /// here the whole of the abort is letting the promise go, with a reason
+    /// on the record.
+    func testCrossingBackReleasesThePromiseWithAReason() throws {
+        let rig = Rig()
+        var abandons: [String] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true },
+            abandon: { reason, _ in abandons.append(reason) }))
+        let staged = NSPasteboard(name: .init("now.test.handoff.abort"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        rig.crossBackHolding()
+
+        XCTAssertEqual(abandons.count, 1, "\(abandons)")
+        XCTAssertFalse(abandons[0].isEmpty,
+                       "a promise that stopped being served with no sentence "
+                        + "saying why is unauditable")
+    }
+
+    /// **THE PLAN'S NAMED FAILURE MODE, FROM THIS SIDE.** The skeleton never
+    /// arrives, or the guest never starts the drag, and it times out into a
+    /// native non-drop over there — where nothing on this Mac can observe
+    /// it. Without a bound of its own this side keeps a staged file and a
+    /// live promise for a gesture that ended minutes ago.
+    func testAStagedCarryNobodyResolvesIsLetGoOnItsOwnBound() throws {
+        let rig = Rig()
+        var abandons: [String] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true },
+            abandon: { reason, _ in abandons.append(reason) }))
+        var hostSideTransfers = 0
+        rig.controller.configureFileDragging(
+            guestFileAtPoint: { _ in nil },
+            hostFilesDropped: { _, _ in hostSideTransfers += 1; return true })
+        let staged = NSPasteboard(name: .init("now.test.handoff.timeout"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        XCTAssertEqual(rig.deadlines.armed.map(\.delay),
+                       [ContinuityEdgeController.stagedCarryLifetime],
+                       "the handoff arms exactly one bound")
+
+        rig.deadlines.fireAll()
+        XCTAssertEqual(abandons.count, 1, "\(abandons)")
+        XCTAssertTrue(abandons[0].contains("180"),
+                      "the reason names the bound: \(abandons[0])")
+
+        /* And a release that turns up afterwards commits nothing — quietly
+           doing nothing would leave a person watching a file that never
+           arrives with no line to read. */
+        rig.releaseOnGuest()
+        XCTAssertEqual(hostSideTransfers, 0)
+        XCTAssertEqual(abandons.count, 1, "let go twice")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("already let the carry go")
+        }, "the late release says why it commits nothing")
+    }
+
+    /// A handoff that could not cross is honest degradation, not a broken
+    /// gesture: the file is still staged and the release still transfers it
+    /// through the lane that predates this one.
+    func testAHandoffThatCannotCrossLeavesTheOlderLaneCommitting() throws {
+        let rig = Rig()
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in false }, abandon: { _, _ in }))
+        var transfers = 0
+        rig.controller.configureFileDragging(
+            guestFileAtPoint: { _ in nil },
+            hostFilesDropped: { _, _ in transfers += 1; return true })
+        let staged = NSPasteboard(name: .init("now.test.handoff.refused"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        XCTAssertTrue(rig.deadlines.armed.isEmpty,
+                      "nothing was handed off, so there is no handoff to bound")
+        rig.releaseOnGuest()
+
+        XCTAssertEqual(transfers, 1,
+                       "the crossing still transfers on release exactly as it "
+                        + "did before the native lane")
+    }
+
     // MARK: - Two features, one crossing
 
     /// **THE 17:22 CONFLATION, AS IT HAPPENED.** Metal, 2026-08-16: Michelle
@@ -3131,6 +3301,19 @@ private final class Rig {
     let driver: Driver
     let ledger = Ledger()
     let recorder = AuditRecorder()
+    /// Every bound the controller armed, unfired. A deadline a test cannot
+    /// make elapse is a deadline nobody has tested.
+    final class Deadlines {
+        var armed: [(delay: TimeInterval, fire: @MainActor () -> Void)] = []
+
+        @MainActor
+        func fireAll() {
+            let due = armed
+            armed = []
+            for deadline in due { deadline.fire() }
+        }
+    }
+    let deadlines = Deadlines()
     private let cache: ContinuitySelectionCache
     private let listener: GuestListener
     private let fileTransfer: MirrorFileTransferModel
@@ -3173,9 +3356,13 @@ private final class Rig {
                 completion(.failure(.init(code: "disconnected",
                                           message: "no Mac in this test")))
             }, audit: audit)
+        let deadlines = self.deadlines
         controller = ContinuityEdgeController(
             layout: layout, driver: driver, environment: environment,
-            audit: audit)
+            audit: audit,
+            schedule: { delay, body in
+                deadlines.armed.append((delay, body))
+            })
         let cache = self.cache
         let epoch = self.epoch
         ContinuityFileDrag.configure(

@@ -133,6 +133,79 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(begin.item.creator, "ttxt")
     }
 
+    /// **THE HANDOFF FRAME, INVERTED — and this one is OURS to write.**
+    ///
+    /// The fixtures above pin bytes the guest emits; this pins the bytes
+    /// this host emits, for the same reason and against the same risk. The
+    /// guest half of `continuity.hostDragBegin` is being built tonight
+    /// against the declared shape, and the two halves meet only here until
+    /// they meet on a wire.
+    ///
+    /// NOTE WHAT IS NOT IN IT. No target, no window, no container, no
+    /// volume, no directory: after this frame the receiving Drag Manager
+    /// owns the gesture, and where the file lands is its business. A field
+    /// answering "which window" would be re-invented targeting.
+    func testHostDragBeginIsEncodedAsTheHandoffShape() throws {
+        let message = ControlMessage.continuityHostDragBegin(.init(
+            version: ContinuityContract.version, dragSeq: 3,
+            pos: .init(h: 24, v: 450),
+            item: .init(name: "main.c", type: "TEXT", creator: "ttxt",
+                        dataSize: 4096, rsrcSize: 0)))
+        let encoded = try ControlMessageCodec.encode(message)
+        let text = String(decoding: encoded, as: UTF8.self)
+        XCTAssertTrue(text.contains("\"type\":\"continuity.hostDragBegin\""),
+                      text)
+        for field in ["\"dragSeq\"", "\"pos\"", "\"h\"", "\"v\"", "\"item\"",
+                      "\"name\"", "\"type\"", "\"creator\"", "\"dataSize\"",
+                      "\"rsrcSize\""] {
+            XCTAssertTrue(text.contains(field), "\(field) missing from \(text)")
+        }
+        XCTAssertFalse(text.contains("container"),
+                       "the handoff names no container: the promise is "
+                        + "pulled over the offer lane, which names its own")
+        XCTAssertEqual(try ControlMessageCodec.decode(encoded), message,
+                       "and it reads back as what it was")
+    }
+
+    /// The skeleton says what will ARRIVE, not what is on this Mac. A plan
+    /// that sends the data fork alone claims no resource fork, and a
+    /// MacBinary plan splits the two out of the header that is about to
+    /// travel rather than measuring the file again.
+    func testThePromiseSkeletonDescribesTheForksAsTheyWillArrive() throws {
+        let data = OutboundFile.Plan(
+            name: "Notes", container: "data",
+            bytes: Data(repeating: 0x41, count: 66),
+            fileType: "TEXT", creator: "ttxt", modified: nil, note: nil)
+        let plain = ContinuityHostDragSkeleton.item(for: data)
+        XCTAssertEqual(plain.dataSize, 66)
+        XCTAssertEqual(plain.rsrcSize, 0,
+                       "the data lane sends one fork, so promising two would "
+                        + "be a promise this Mac cannot keep")
+
+        var header = Data(repeating: 0, count: 128)
+        header[83] = 0; header[84] = 0; header[85] = 0x01; header[86] = 0x00
+        header[87] = 0; header[88] = 0; header[89] = 0; header[90] = 0x20
+        var both = header
+        both.append(Data(repeating: 0x42, count: 0x120))
+        let binary = ContinuityHostDragSkeleton.item(for: OutboundFile.Plan(
+            name: "App", container: "macbinary", bytes: both,
+            fileType: nil, creator: nil, modified: nil, note: nil))
+        XCTAssertEqual(binary.dataSize, 256)
+        XCTAssertEqual(binary.rsrcSize, 32)
+
+        /* A header claiming more than the file holds is corrupt, and a
+           Finder that reserved from it would fail the copy for a reason
+           nobody could see. */
+        var lying = header
+        lying[85] = 0xFF
+        lying.append(Data(repeating: 0x42, count: 16))
+        let refused = ContinuityHostDragSkeleton.item(for: OutboundFile.Plan(
+            name: "App", container: "macbinary", bytes: lying,
+            fileType: nil, creator: nil, modified: nil, note: nil))
+        XCTAssertEqual(refused.dataSize, lying.count)
+        XCTAssertEqual(refused.rsrcSize, 0)
+    }
+
     /// The same gesture's OTHER account, from the application, with the
     /// number that joins them. `dragSeq` rides beside `source` exactly
     /// where service_continuity_selection() splices its fragment in.
