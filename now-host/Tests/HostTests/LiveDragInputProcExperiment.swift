@@ -538,7 +538,17 @@ final class LiveDragInputProcExperiment: XCTestCase {
         let stamp = Int(Date().timeIntervalSince1970) % 100000
         let name = "Collide\(stamp).txt"
         let big = receipts.appendingPathComponent(name)
-        try Data(repeating: 0x4E, count: 600 * 1024).write(to: big)
+        // SIZE IS A DIAL, because the first ask of these questions used
+        // 600 KB and the pull answered `transfer-failed` before a single
+        // screendump could catch it mid-stream — which makes the
+        // progress question unanswerable AND the collision question
+        // unaskable in one stroke. 4 KB is the size proven to land, so
+        // the collision half can still be had; NOW_DRAG_FIXTURE_BYTES
+        // raises it for the progress half without a rebuild.
+        let bytes = ProcessInfo.processInfo
+            .environment["NOW_DRAG_FIXTURE_BYTES"].flatMap { Int($0) } ?? 4096
+        try Data(repeating: 0x4E, count: bytes).write(to: big)
+        say("fixture \(name) is \(bytes) bytes")
 
         let (ep1, udp1) = try await freshEpoch()
         let first = try await drag(
@@ -548,10 +558,10 @@ final class LiveDragInputProcExperiment: XCTestCase {
             holdSeconds: 2.4, shotDuringPull: true)
         let size1 = await runCommand(
             "script",
-            line: "tell application \"Finder\" to return (size of file "
+            line: "tell application \"Finder\" to return (size of item "
                 + "\"\(name)\" of desktop) as string")
         say("[B1] size on the guest: \(String(describing: size1.output)) "
-            + "(host wrote \(600 * 1024))")
+            + "(host wrote \(bytes))")
 
         guard first.landedAfter else {
             say("[B2] skipped: B1 materialised nothing, so there is no "
