@@ -156,6 +156,25 @@ claim holds and needs **no cancel channel**; the plan's predicted error
 code should be corrected to `userCanceledErr` for a drop with no
 receiver, with `dragNotAcceptedErr` still unobserved.
 
+### A NEW defect this slice found, unrelated to Route A′: 600 KB does not survive the pull
+
+Every landing above is a **4096-byte** file. A 614400-byte promise,
+dropped by the same scripted gesture at the same point on the same boot,
+answered `Last drag  transfer-failed` and created nothing
+(`run3/`, fixture `Collide46490.txt`). The screendump taken at the
+moment the pull should have been streaming shows no ghost, no progress
+panel and the drag already over, so it failed early rather than stalling
+— and the guest's log page came back `nil` for that gesture, so the
+reason is not yet known.
+
+It is under `kNowContinuityDragPromiseCapBytes` (1 MB) and the arm was
+accepted, so it is not the declared cap refusing. **Unverified, not
+diagnosed**, and it belongs to the slice that ships the lane rather than
+to this experiment: a promise drag that only works for small files is
+not the feature. It also means the plan's copy-progress question stays
+**unanswered** — 4 KB crosses too fast for a progress window to be
+meaningful, and the size that would be slow enough does not land.
+
 ### What this changes for slices 1–3
 
 - **Slice 1 (`continuity.hostDragBegin`) is unblocked**, and its
