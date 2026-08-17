@@ -156,6 +156,49 @@ claim holds and needs **no cancel channel**; the plan's predicted error
 code should be corrected to `userCanceledErr` for a drop with no
 receiver, with `dragNotAcceptedErr` still unobserved.
 
+### The plan's slice-2 observations, captured opportunistically
+
+**The drag demonstrably leaves NOW.** Gesture B2's attributes are the
+cleanest single line this whole arc has produced, and they are the exact
+inverse of the 2026-08-17 reading:
+
+```
+drag attrs: 0x00000001 left=1 inapp=0 inwin=0     (2026-08-17 slice 0)
+drag attrs: 0x00000005 left=1 inapp=0 inwin=1     (2026-08-17, the wall)
+```
+
+`inwin=0` — the drag did not end inside the sender window — with
+`inapp=0` and `TrackDrag` returning `noErr`. There is no longer any
+reading on which this drag stayed home.
+
+**Same-name-twice: the Finder shows NO dialog, and creates nothing.**
+Run 4 dropped `Collide46699.txt` (4096 bytes) onto exposed desktop
+twice, on one boot, at the same point:
+
+| | verdict | files matching the name afterwards |
+|---|---|---|
+| B1, fresh name | `Last drag  ok` | created |
+| B2, same name | `Last drag  transfer-failed` | **1** |
+
+No replace prompt, no uniquified `copy` sibling, no second file — the
+screendumps through the whole second gesture show an unchanged desktop
+(`run4/shot-B2-during-pull-0/1/2.ppm`, `-settled.ppm`). The Finder
+asked for the promise, our send proc could not deliver into a name that
+already existed, and the drop simply failed. Run 2 reproduced the same
+shape by accident when its `P` fixture survived run 1
+(`Finder before: "true"` → `transfer-failed`).
+
+**What that means for the kill list, stated carefully:** on this
+evidence the OS 9 Finder does **not** raise a native replace dialog for
+a promised-HFS drop, so deleting `now_confirm` from the drag lane would
+leave the collision case with *no* surface at all rather than with the
+OS's own. That is a design decision for slice 3, not a fact this run
+settles — and the honest reading is that the imitation's *replacement*
+is a fixed send proc (uniquify, or overwrite deliberately), not a
+different dialog.
+
+**Copy progress: still UNANSWERED**, for the reason in the next section.
+
 ### A NEW defect this slice found, unrelated to Route A′: 600 KB does not survive the pull
 
 Every landing above is a **4096-byte** file. A 614400-byte promise,
@@ -187,6 +230,14 @@ meaningful, and the size that would be slow enough does not land.
   resident's low-memory writes to agree), and must include the
   Finder-window drop the geometry defect cost this run.
 - **Slice 3's abort** is `userCanceledErr`, not `dragNotAcceptedErr`.
+- **Slice 2's collision question is answered and its answer is
+  awkward**: there is no native dialog to inherit, so the drag lane's
+  `now_confirm` cannot simply be deleted — the same-name case needs a
+  decision (uniquify in the send proc, or overwrite) before anything is
+  removed.
+- **Slice 1 or 2 must fix the 600 KB pull first.** A lane that only
+  carries 4 KB is not the feature, and every landing measured here is at
+  that size.
 - The V15 tracking stream is now an active hazard to any measurement of
   this lane: a four-second drag accumulates ~9400 handler passes and the
   idle drain buries the ring, so `drag drop:`/`drag attrs:` survive
