@@ -61,7 +61,11 @@ void now_continuity_dragmgr_forget(void);
    continuity_dragmgr.c. Comes out with the block it drives. */
 void now_continuity_dragmgr_diag(long mask);
 
-/* Disposes the send-data UPP. Call once at quit. */
+/* Where a bit-16 scripted (input-proc) drag is told to go, in global
+   coordinates. Slice-0 spike; comes out with the block it drives. */
+void now_continuity_dragmgr_diag_target(short h, short v);
+
+/* Disposes the send-data and input UPPs. Call once at quit. */
 void now_continuity_dragmgr_shutdown(void);
 
 #endif /* NOW_CONTINUITY_DRAGMGR_H */

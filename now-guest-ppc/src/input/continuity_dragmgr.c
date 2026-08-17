@@ -37,6 +37,16 @@ static DragSendDataUPP g_send_upp;
         HFS file is not what it is looking for.
      4  install OUR OWN tracking and receive handlers on OUR OWN window,
         so the drop has a receiver whose source is in this repository.
+     8  SLICE-0 ROUTE A': attach a SetDragInputProc that reports the
+        continuity plane's latest point and button to the Drag Manager,
+        so the drag is steered by the host's reported pointer rather
+        than by a Cursor Device this application's blocked task time
+        cannot move.
+    16  the same input proc, but replaying an IN-APP scripted ramp to a
+        baked target instead of reading the plane - the deterministic
+        control for bit 8, so "the proc is never called" and "the plane
+        is stale inside TrackDrag" cannot share one frozen coordinate.
+        Wins over 8 when both are set.
 
    Bit 1 was here and is gone: it held the DragRef past TrackDrag on the
    theory that the Finder asks late. Bit 4 killed that theory by showing
@@ -53,9 +63,22 @@ static long g_diag_asks;
 static Boolean g_diag_tracking;
 static long g_diag_late_asks;
 
+/* Where a bit-16 scripted drag is told to go, and how long it takes to
+   get there. Set beside the mask (`offer --drag --x=16@10,300`) so one
+   boot can aim at the desktop, at a Finder window and at nowhere at all
+   without three builds. */
+static short g_diag_script_h = 10;
+static short g_diag_script_v = 300;
+
 void now_continuity_dragmgr_diag(long mask)
 {
     g_diag_mask = mask;
+}
+
+void now_continuity_dragmgr_diag_target(short h, short v)
+{
+    g_diag_script_h = h;
+    g_diag_script_v = v;
 }
 
 /* The one drag item; see the note at its original home below. */
@@ -144,6 +167,130 @@ static void diag_install_handlers(void)
     now_log(kLogInfo, "mirror", "drag ctrl: handlers installed t=%d r=%d",
             (int)InstallTrackingHandler(g_diag_track_upp, win, NULL),
             (int)InstallReceiveHandler(g_diag_recv_upp, win, NULL));
+}
+
+/* ---- DIAGNOSTIC bits 8 and 16: ROUTE A', THE MANAGER'S OWN SEAM ------
+   The 2026-08-17 measurement found that a NOW-originated drag cannot
+   leave NOW because the POINTER never leaves: Continuity applies Cursor
+   Device motion at task time only, and a drag source's TrackDrag
+   consumes this application's task time for the whole drag, so the pump
+   starves. SetDragInputProc is the Drag Manager's published answer to
+   exactly that - the source hands the Manager a mouse sample every time
+   the Manager wants one, from inside TrackDrag, in our own context. The
+   header says CarbonLib 1.0 and later (Drag.h, `SetDragInputProc`), so
+   the CarbonLib 1.6 floor this application already requires carries it.
+
+   THIS PROC DOES BOUNDED WORK AND NOTHING ELSE. It is called at the
+   Manager's sampling rate inside a nested Toolbox loop: no allocation,
+   no Toolbox call that can move memory, no logging. Counters here, and
+   one line about them after TrackDrag has returned.
+
+   The button lives in `*modifiers`, not in a parameter of its own:
+   classic Event Manager `btnState` is SET when the button is UP, so
+   reporting a held button means CLEARING it. That inversion is the one
+   thing about this contract easy to get backwards, and getting it
+   backwards would present as a drag that drops instantly. */
+static DragInputUPP g_diag_input_upp;
+static long g_diag_input_calls;      /* the Manager sampled us            */
+static long g_diag_input_fed;        /* ...and we had something to say    */
+static unsigned long g_diag_input_first_seq;
+static unsigned long g_diag_input_last_seq;
+static short g_diag_input_first_h, g_diag_input_first_v;
+static short g_diag_input_last_h, g_diag_input_last_v;
+static long g_diag_input_downs, g_diag_input_ups;
+static unsigned long g_diag_input_started;
+
+/* The bit-16 script: hold at the press point for a beat, ramp to the
+   baked target, dwell there, then report the button up. Ticks rather
+   than sample counts, because the Manager's sampling rate is exactly
+   what this experiment does not get to assume. */
+enum {
+    kScriptHoldTicks = 30,     /* 0.5 s at the press point   */
+    kScriptRampTicks = 120,    /* 2 s of motion              */
+    kScriptDwellTicks = 90,    /* 1.5 s at the target, held  */
+    kScriptReleaseTicks = 60   /* 1 s reported button-up     */
+};
+
+static void script_sample(unsigned long elapsed, Point origin,
+                          short *h, short *v, int *down)
+{
+    *down = 1;
+    if (elapsed < (unsigned long)kScriptHoldTicks) {
+        *h = origin.h;
+        *v = origin.v;
+        return;
+    }
+    elapsed -= (unsigned long)kScriptHoldTicks;
+    if (elapsed < (unsigned long)kScriptRampTicks) {
+        long span = (long)kScriptRampTicks;
+
+        *h = (short)(origin.h
+                     + ((long)(g_diag_script_h - origin.h) * (long)elapsed)
+                       / span);
+        *v = (short)(origin.v
+                     + ((long)(g_diag_script_v - origin.v) * (long)elapsed)
+                       / span);
+        return;
+    }
+    *h = g_diag_script_h;
+    *v = g_diag_script_v;
+    elapsed -= (unsigned long)kScriptRampTicks;
+    if (elapsed >= (unsigned long)kScriptDwellTicks) {
+        *down = 0;
+    }
+}
+
+static Point g_diag_input_origin;
+
+static pascal OSErr diag_input(Point *mouse, SInt16 *modifiers, void *refcon,
+                               DragRef drag)
+{
+    short h = 0, v = 0;
+    int down = 0;
+    unsigned long seq = 0;
+    int have = 0;
+
+    (void)refcon;
+    (void)drag;
+
+    g_diag_input_calls++;
+
+    if ((g_diag_mask & 16) != 0) {
+        script_sample((unsigned long)(TickCount() - g_diag_input_started),
+                      g_diag_input_origin, &h, &v, &down);
+        seq = (unsigned long)g_diag_input_calls;
+        have = 1;
+    } else {
+        have = now_continuity_latest_input(&h, &v, &down, &seq);
+    }
+
+    if (!have) {
+        /* Nothing to report is not the same as reporting nothing: leave
+           the Manager's own sample alone and let it do what it would
+           have done without us. */
+        return noErr;
+    }
+
+    mouse->h = h;
+    mouse->v = v;
+    if (down) {
+        *modifiers = (SInt16)(*modifiers & ~btnState);
+        g_diag_input_downs++;
+    } else {
+        *modifiers = (SInt16)(*modifiers | btnState);
+        g_diag_input_ups++;
+    }
+
+    if (g_diag_input_fed == 0) {
+        g_diag_input_first_seq = seq;
+        g_diag_input_first_h = h;
+        g_diag_input_first_v = v;
+    }
+    g_diag_input_fed++;
+    g_diag_input_last_seq = seq;
+    g_diag_input_last_h = h;
+    g_diag_input_last_v = v;
+    return noErr;
 }
 
 /* The one drag item. The Drag Manager wants a reference number per item
@@ -558,8 +705,38 @@ static void start_drag(void)
                           &pname[1], (Size)pname[0], 0);
     }
 
+    /* SLICE-0 ROUTE A'. Attached before the bounds are taken so the
+       origin the script ramps from is the same point the drag image is
+       built around. A refusal is LOUD and not fatal: a drag that ran
+       without the proc would otherwise answer the experiment's question
+       with the old wall's answer and look like a result. */
+    if ((g_diag_mask & 24) != 0) {
+        if (g_diag_input_upp == NULL) {
+            /* A UPP IS NOT A CAST on this runtime; same rule as the
+               send proc above. */
+            g_diag_input_upp = NewDragInputUPP(diag_input);
+        }
+        g_diag_input_calls = 0;
+        g_diag_input_fed = 0;
+        g_diag_input_downs = 0;
+        g_diag_input_ups = 0;
+        g_diag_input_first_seq = 0;
+        g_diag_input_last_seq = 0;
+        if (g_diag_input_upp == NULL
+            || SetDragInputProc(drag, g_diag_input_upp, NULL) != noErr) {
+            now_log(kLogError, "mirror",
+                    "drag input: SetDragInputProc REFUSED; not Route A'");
+        } else {
+            now_log(kLogInfo, "mirror",
+                    "drag input: proc attached (mask=%ld target=%d,%d)",
+                    g_diag_mask, (int)g_diag_script_h, (int)g_diag_script_v);
+        }
+    }
+
     GetMouse(&where);
     LocalToGlobal(&where);
+    g_diag_input_origin = where;
+    g_diag_input_started = TickCount();
     drag_bounds(where, &bounds);
     SetDragItemBounds(drag, kOfferItemRef, &bounds);
 
@@ -741,6 +918,34 @@ static void start_drag(void)
                         "drag ctrl: tracking messages seen = %ld",
                         g_diag_track_msgs);
             }
+            /* THE INPUT PROC'S OWN READING, and it is three separate
+               questions asked in three separate fields, because they
+               have three different cures.
+
+                 calls  the Manager sampled us at all. Zero says
+                        SetDragInputProc is not the seam we think it is
+                        on this system, and nothing else here matters.
+                 fed    we had a sample to give. calls>0 with fed=0 is a
+                        LIVE plane question, not a Manager question.
+                 seq    the plane's own position sequence, first and
+                        last. Equal seq across a whole drag is a plane
+                        that froze inside TrackDrag - the 2026-08-17
+                        wall in a different costume - and is exactly
+                        what bit 16's script exists to rule out.
+
+               Two lines: nowlog truncates a body at 99 characters and
+               the tail is where the coordinates are. */
+            if ((g_diag_mask & 24) != 0) {
+                now_log(kLogInfo, "mirror",
+                        "drag input: calls=%ld fed=%ld down=%ld up=%ld",
+                        g_diag_input_calls, g_diag_input_fed,
+                        g_diag_input_downs, g_diag_input_ups);
+                now_log(kLogInfo, "mirror",
+                        "drag input: seq %lu..%lu pt %d,%d..%d,%d",
+                        g_diag_input_first_seq, g_diag_input_last_seq,
+                        (int)g_diag_input_first_h, (int)g_diag_input_first_v,
+                        (int)g_diag_input_last_h, (int)g_diag_input_last_v);
+            }
         }
     }
 
@@ -863,5 +1068,9 @@ void now_continuity_dragmgr_shutdown(void)
     if (g_send_upp != NULL) {
         DisposeDragSendDataUPP(g_send_upp);
         g_send_upp = NULL;
+    }
+    if (g_diag_input_upp != NULL) {
+        DisposeDragInputUPP(g_diag_input_upp);
+        g_diag_input_upp = NULL;
     }
 }

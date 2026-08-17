@@ -1124,6 +1124,50 @@ int now_continuity_button_is_down(void)
     return shared != NULL && shared->button_down != 0;
 }
 
+/* SLICE-0 SPIKE SUPPORT, and it is a READ of what the notifier already
+   wrote - no new plane, no new state, nothing this call can change.
+
+   The Drag Manager's input proc runs INSIDE TrackDrag, in this
+   application's own context, at whatever cadence the Manager samples the
+   mouse; the whole point of Route A' is that the point it hands back is
+   fresher than this application's starved task time. `want_h`/`want_v`
+   and `flags` are written by accept_datagram at OT NOTIFIER time, which
+   is exactly the context TrackDrag does not block, so a bounded read of
+   them here is the freshest position this machine holds.
+
+   `seq` is the datagram's own position sequence, returned so the caller
+   can tell "the proc ran and the plane was stale" from "the proc ran and
+   the plane advanced" - two readings that would otherwise share one
+   frozen coordinate. Returns 0 when there is no epoch, no cell, or no
+   datagram has ever arrived, and writes nothing in that case. */
+int now_continuity_latest_input(short *h, short *v, int *down,
+                                unsigned long *seq)
+{
+    NowPeekContinuityCell *shared;
+
+    if (gEpoch == 0) {
+        return 0;
+    }
+    shared = cell();
+    if (shared == NULL || shared->packet_seq == 0) {
+        return 0;
+    }
+    if (h != NULL) {
+        *h = (short)shared->want_h;
+    }
+    if (v != NULL) {
+        *v = (short)shared->want_v;
+    }
+    if (down != NULL) {
+        *down = (shared->flags & (NowPeekU32)kNowPeekContinuityPrimaryDown)
+            ? 1 : 0;
+    }
+    if (seq != NULL) {
+        *seq = (unsigned long)shared->position_seq;
+    }
+    return 1;
+}
+
 /* THE CURSOR PLANE'S PUMP, SEPARATE FROM THE WIRE'S.
 
    now_continuity_take_report() is the only other caller of the service
