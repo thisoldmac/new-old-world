@@ -7,6 +7,199 @@ search:
 
 # Open issues
 
+## THE DRAG NEVER LEAVES BECAUSE THE POINTER NEVER LEAVES: the standing `inwin=1` reading survives a clean rig, and the cause is cursor authority, not targeting (2026-08-17, `test/hg-drag-native-track`)
+
+Go/no-go for the native-drag direction, run against the integrated drag
+candidate (`feat/hg-drag-arc-candidate` @ `6604b842`) with V15 armed.
+**Verdict: NO.** A NOW-originated Drag Manager promise drag does not
+track the resident-driven pointer out of NOW's process, and no drop into
+the Finder has ever completed. The 2026-08-15 reading is **not** a rig
+defect of the `dragobs calls=0` class — it is reproduced with the rig
+hazards removed — but its *explanation* was wrong, and the correct one
+is one layer down from targeting.
+
+### The rig, and what differed from both earlier measurements
+
+One emulator session, one boot: `spin-up-ppc` onto a session-private
+clone, base `now-mirror-stage.qcow2` (sha256 `8db8ddc2de99…`, receipted),
+resident and app staged from this tree — `sourceManifest 1df8e014ab79`,
+`buildFingerprint 5410aeef3706`, resident `active`, capabilities `1023`.
+Rig table: `/private/tmp/nowvm-remeasure/provenance.md`. The instrument
+is `now-host/Tests/HostTests/LiveDragNativeTrackExperiment.swift`
+(opt-in, `NOW_DRAG_NATIVE_TRACK=1`), which drives the same gesture the
+slice-2 live case does and captures the guest's screen through **QMP**
+rather than through the wire under measurement. Log pager:
+`tools/local-drag-log.py`.
+
+Four gestures in one session, each differing from its neighbour in one
+thing:
+
+| | NOW's state | drop point | outcome |
+|---|---|---|---|
+| **A** | fronted, visible | 300,570 (the 18-px band under the window, shared with the Control Strip) | `promise-never-asked`, `loc='null'`, `asks=0`, attrs `0x5` |
+| **A2** | fronted, visible, SECOND gesture | 10,300 — the exposed desktop band down the left edge | **identical**: `promise-never-asked`, `loc='null'`, `asks=0`, attrs `0x5` |
+| **B** | HIDDEN, Finder fronted | 10,300 | `button-never-came` — the drag never begins |
+| **F** | visible but NOT frontmost | 10,300 | `button-never-came` — the drag never begins |
+
+### 1. The rig-defect hypothesis is REFUTED, and A2 is why
+
+A2 aims at desktop that is genuinely uncovered — the left band is
+outside the Workshop's default geometry at every height, so it is
+neither the Control Strip nor a window of ours — and it answers exactly
+as the 2026-08-15 drops did:
+
+```
+drag NativeTrackA2.txt ended: promise-never-asked (TrackDrag 0)
+drag detail: button plane=1 toolbox=1 at 300,240 setup=0 track=201 ticks
+drag drop: loc='null' err=0 end=10,300 mods=0x0000 asks=0
+drag attrs: 0x00000005 left=1 inapp=0 inwin=1
+```
+
+So `inwin=1` is not an artifact of a widened, fronted NOW window sitting
+under the pointer. The wall is real.
+
+### 2. The control the hypothesis asked for CANNOT BE RUN, and that is a finding
+
+"NOW hidden, Finder fronted" is not a stricter version of this
+measurement — it is a different measurement, because **the drag does not
+start at all** unless NOW is frontmost. B and F both expire
+`button-never-came` before `TrackDrag` is ever reached, and F is the one
+that names the reason: NOW is fully visible there, so what B measured
+was never hiddenness. The synthetic button is applied into the FRONT
+process's context, so a background NOW sees no button and its arm
+expires. For the NOW-originated direction this is not a defect — a
+person picks a file up *in* NOW — but it does mean the forensics rig
+rule "NOW hidden, Finder fronted" belongs to Finder-originated gestures
+only, and cannot be applied to this one.
+
+### 3. What is actually broken, measured rather than inferred
+
+The V15 table for A2, and the screendumps taken while the button was
+still held:
+
+```
+drag track n=1 msg=1 win=00000000 dm=10,300 pin=300,240 raw=300,240 lm=10,300 attr=5
+drag track n=2 msg=2 win=1ecd7190 dm=10,300 pin=300,240 raw=300,240 lm=10,300 attr=5
+drag track n=3 msg=3 win=1ecd7190 dm=10,300 pin=10,300  raw=300,240 lm=10,300 attr=5
+drag track n=4 msg=4 win=1ecd7190 dm=10,300 pin=10,300  raw=300,240 lm=10,300 attr=5
+drag track n=5 msg=5 win=00000000 dm=10,300 pin=10,300  raw=300,240 lm=10,300 attr=5
+```
+
+- `win` is **NOW's own window (`1ecd7190`) at every message that names
+  one**, for a pointer at (10, 300) that is outside it. Window tracking
+  never changes to another application's window at any point in the
+  gesture — the answer to "does window tracking EVER change" is no.
+- `raw` (`LMGetRawMouseLocation`) is **frozen at the press point for the
+  whole drag**, while `lm` and `dm` (`GetDragMouse`) reach the driven
+  point. That is the same asymmetry the 2026-08-16 re-measure found, now
+  with a mechanism attached to it.
+- **The drawn cursor and the drag image never move.** The screendump
+  taken while the button is held at (10, 300) shows the arrow and the
+  grey drag rectangle still at (300, 240) inside NOW's window
+  (`shot-A2-held-at-target.ppm`); the screendump after `TrackDrag`
+  returns shows the cursor at (10, 300) (`shot-A2-settled.ppm`), and the
+  guest's own `button edge … applied=10,300 exposed=10,300 … settled`
+  line agrees. The pointer catches up **after** the drag, never during
+  it.
+
+That is the whole defect, and it is a consequence of a boundary this
+project set deliberately. Continuity's safety contract puts **Cursor
+Device and QuickDraw work at task time only** — the Time Manager
+callback touches nothing but low memory (continuity-mode.md, the 1.11
+falsification). During a NOW-originated `TrackDrag` the application is
+inside a nested Toolbox loop, so its task time never comes: nothing
+moves the Cursor Device record, and the Drag Manager — which resolves
+the window under the pointer upstream of the cooked low-memory globals
+this plane does drive — keeps correctly answering "still in the sender's
+window". `GetMouse` follows the plane; the pointer the *system* believes
+in does not.
+
+So the earlier framing, "targeting ignores the driven pointer", had it
+backwards. Targeting is reading the pointer correctly. **The pointer is
+the thing that is not moving**, and only for the duration of our own
+blocking drag.
+
+### 4. What this means for the native-drag direction
+
+The fix is not in `continuity_dragmgr.c`, and it is not a targeting
+patch. Making a NOW-originated `TrackDrag` cross the process edge
+requires the pointer to keep moving while NOW's task time is
+unavailable — which means moving the Cursor Device from the resident's
+timer context, and that is precisely the operation resident 1.14/1.16
+was revoked for after six PowerBook wedges. Any slice that proposes to
+reopen it inherits that safety argument in full and cannot be judged on
+an emulator.
+
+Two directions remain honest, and both should be costed before more is
+spent here:
+
+- **Do not block.** Drive the crossing without occupying NOW's task time
+  inside `TrackDrag` — a non-blocking drag construction, or handing the
+  gesture to a Finder-originated drag the plane is already proven to
+  track (slice 1B).
+- **Move the pointer from below.** Re-open timer-context cursor
+  movement under a new safety argument and metal evidence. This is the
+  expensive one and it is not an emulator question.
+
+### 5. The Finder-native questions are STILL UNANSWERED
+
+Deliberately recorded as unanswered rather than as absent behaviour: no
+drop ever completed, so this run saw **no Finder copy-progress window**
+and **no collision dialog**, and it cannot say whether either exists.
+The same-name-twice control was written and never reached its
+precondition. The fate of the fake dialogs does not get to be decided by
+this measurement.
+
+### 6. Four defects the instrument found in ITSELF, all rig
+
+Recorded because each read exactly like a product failure, and one of
+them is the shape of the very reading this experiment was sent to check:
+
+- The state datagram's `positionSequence` restarted per gesture, so the
+  second gesture was never seen — indistinguishable from a plane that
+  refuses to drive a hidden application.
+- Each gesture opened its own UDP socket and gave itself its own button
+  generation base (1, 10, 20); every gesture after the first reported
+  `button-never-came`. Only a second FRONTED gesture (A2) separated
+  "the second one failed" from "the hidden one failed".
+- `tail` returned 46 of the 111 rows the guest said it held, and the two
+  lines the whole measurement turns on (`drag drop:`, `drag attrs:`)
+  were among the missing ones. `tools/local-drag-log.py` pages the whole
+  ring.
+- `ls Desktop Folder` answers "no such folder in the share" on this rig,
+  so the slice-2 live case's filesystem check can neither confirm nor
+  deny a drop. This run asks the **Finder** instead, over `script`, and
+  reads the answer field rather than matching the word `true` anywhere
+  in the reply envelope — which the first version did, and so read every
+  failed drop as a landing.
+
+### Receipts, and one of them did not survive its own teardown
+
+The run directory was `/private/tmp/nowvm-remeasure`, and **a
+guest-clean teardown removes it**: `tools/lane-ports reclaim` shuts the
+guest down through the Finder and then deletes `$NOW_SPIN_RUN`, which on
+this run took `provenance.md`, both receipt directories, the paged logs
+and every screendump with it. That is correct behaviour for a session
+clone and a trap for a measurement that stored its evidence inside one —
+**write receipts outside the run directory**, which is the rule this run
+paid for.
+
+What survives: the transcript, salvaged to
+`/private/tmp/now-drag-native-track-receipts/native-track-transcript-run6.txt`,
+and the guest lines quoted above, which were copied out before the
+teardown. The rig facts are restated here rather than pointed at:
+base `now-mirror-stage.qcow2` sha256 `8db8ddc2de99…` (receipted, volume
+clean), staged `sourceManifest 1df8e014ab79`, `buildFingerprint
+5410aeef3706`, resident `active`, capabilities `1023`, ports 12904/12905.
+The screendumps described in §3 are **gone**; the two facts they carried
+(cursor and drag image still at the press point while held, cursor at
+the driven point once `TrackDrag` returned) are independently carried by
+the guest's own `button edge … applied=10,300 exposed=10,300 … settled`
+line and the frozen `raw` column, and a re-run reproduces them in about
+four minutes.
+
+Emulator only; no metal round, and none of this is a metal claim.
+
 ## BUILT, NOT METAL-VERIFIED: the carried file's release now commits (2026-08-16, `fix/hg-drag-release-rearm`)
 
 Host-only. Fixes D2, D5 and D4 of the F1 forensics ledger for the attended
