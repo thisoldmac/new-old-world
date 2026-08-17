@@ -54,8 +54,11 @@ green, `scripts/test-all` green.
 Rig: `run 99532`, base `now-mirror-stage.qcow2` sha256 `8db8ddc2…`, this tree's
 app and ext staged into a session-private clone (sourceManifest `0b83a0e1666b`,
 guest build `dfd037e7…`), NOW hidden and the Finder fronted, stepped motion with
-dwell. Receipts: `run/arc3/drag-source-1.json`, `run/arc3/drain-grab-1.json`,
-rig table `/private/tmp/nowvm-arc3/provenance.md`.
+dwell. Receipts: `run/arc3/drag-source-1.json`, `run/arc3/drain-grab-1.json`, and the
+instrument that drained the bytes, `run/arc3/drain-grab.py` — all under the
+gitignored `run/`, so they live with the session that made them and the rig
+facts above are restated here rather than pointed at (the run directory is
+removed by `tools/lane-ports reclaim` at teardown).
 
 | | run 1 (`From Claude.txt`) | run 2 (`HELLO_CLAUDE.txt`) |
 |---|---|---|
