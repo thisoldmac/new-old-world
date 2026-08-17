@@ -7,6 +7,134 @@ search:
 
 # Open issues
 
+## FIXED, EMULATOR-MEASURED: the promised file was PLACED by us instead of staged for the receiver, so NOW adjudicated a collision in the Finder's house (2026-08-17, `test/hg-drag-input-proc`, slice 2)
+
+Slice 2 of the blessed-path drag plan
+(`docs/plans/2026-08-17-036-feat-blessed-path-drag-plan.md`). Slice 0 saw a
+second same-name promised drop produce `transfer-failed` — our own verdict
+string — with nothing created and no dialog anywhere, and could not name the
+layer that refused. Michelle's invariant of the same day says a collision
+failure on this lane is by definition a NOW protocol bug, because the
+receiver owns the destination. It was one, and it is gone.
+
+### THE VIOLATION, by name
+
+The send proc materialised the promised file **directly in the folder the
+receiver named, under its final name**, and NOW's own pull policy then
+answered the second drop:
+
+| where | what |
+|---|---|
+| `now-guest-ppc/src/files/fileshare.c:1704` | `FSMakeFSSpec(final name) == noErr && !overwrite` → `kFilesExists` (-6), before a single byte |
+| `now-guest-ppc/src/core/wire.c` (`get_begin`, the pull's `file.begin`) | passes `overwrite=false` and turns `kFilesExists` into a silent refusal — "this machine keeps what it has" |
+| `now-guest-ppc/src/input/continuity_dragmgr.c` (`stream_promise`) | reads "nothing landed" and answers the Drag Manager `cantGetFlavorErr`; the drag reports `transfer-failed` |
+
+Measured on the guest, drop 2 of 2 (`run1-ring.txt`):
+
+```
+mirror drag promise name check: FSMakeFSSpec('Collide49622.txt') -> 0 (0 = already there)
+mirror ? drag promise #2 did not land: now_files_receive_begin_at kFilesExists=-6
+```
+
+No File Manager error was ever raised: the refusal is a **pre-check**, so
+`dupFNErr` never happened, and the Finder never learned there was a
+collision. The catalogue confirms why it could not: after the FIRST drop,
+
+```
+mirror drag promise after: 'Collide49622.txt' in dir 19 -> 0 (0 = still where we put it)
+```
+
+— the receiver left our file exactly where we created it. A file already at
+its destination gives the receiver nothing to place, so its own duplicate
+machinery can never run.
+
+### THE FIX (`88a5dd68`)
+
+The promise is **staged, not placed**: `drag_send_data` materialises into
+`Temporary Items` on the drop's own volume (`FindFolder(vref,
+kTemporaryFolderType, kCreateFolder)`) and hands the receiver *that*
+`FSSpec`. It clears only its own leftover of the same name in that scratch
+folder, and refuses outright if there is no Temporary Items rather than
+falling back to the drop folder — the one destination this function must not
+choose. **No uniquify, no overwrite, no dialog, no collision branch of ours
+anywhere on the lane.**
+
+### THE FINDER'S OWN COLLISION BEHAVIOUR, measured (not inferred)
+
+With the fix, both drops report `Last drag ok` from NOW, and on the second
+the **Finder raises its own ask**, unprompted:
+
+> "An older item named "Collide51129.txt" already exists in this location.
+> Do you want to replace it with the one you're moving?" — **Cancel / OK**
+
+Screendumps: `/private/tmp/now-slice2-receipts/shot-fixed-finder-ask.png`
+(the trophy, default build) and `shot-finder-ask.png` (the same ask under the
+diagnostic staging bit, one build earlier). The ask arrives while NOW is
+frontmost as the OS's own background notification ("The Finder needs your
+attention"), `shot-after-run2.png` — it is a Finder-modal alert, not an
+application-modal one. Both buttons were exercised: **Cancel** leaves the
+older item and the staged copy untouched (`shot-after-cancel.png`); **OK**
+replaces, leaving exactly one file on the desktop — `count of every file of
+desktop whose name contains "Collide51129"` → `1` (`shot-fixed-after-ok.png`).
+So the Finder's behaviour is *ask, then obey*, and NOW ships none of it.
+
+### Byte-compare of a completed pull
+
+The 4 KB fixture, read back through the guest's own File Manager after the
+promise pull and the Finder's move:
+
+```
+read file "Macintosh HD:Desktop Folder:Collide51129.txt" -> length 4096, equal to the host's bytes: true
+```
+
+Full identity, not a sample (the fixture is 4096 × `N`, rebuilt in the script
+and compared whole). Slice 0's `-1753` size query was a **phrasing** defect,
+now fixed: `size of item "X" of desktop as string` errors `-1753`; `get size
+of file "X" of desktop` answers `4096.0`.
+
+### 600 KB: still fails, and it is NOT this class of bug
+
+Retested on the fixed build, same boot (`run4.log`, `run4-ring-get.txt`):
+
+```
+get    #3 Collide51642.txt, 614400 bytes, into Temporary Items
+mirror ? drag promise #3 did not land: pull timed out, phase pending/receiving=1
+```
+
+The destination opens and `file.begin` is accepted; the bytes then stop and
+the pull's own silence timeout fires ~46 s later. **No File Manager call
+refuses anything** — this is the wire being starved inside the drop's nested
+loop, a different defect from the one above, and it is left open rather than
+chased here.
+
+### Instruments added (`7183bf7b`)
+
+`now_wire_get_last_failure` records the refusing call and its code where the
+refusal happens, so a lane with no page can name it; the send proc logs the
+folder the receiver named and whether that name is already taken; and after
+`TrackDrag` returns the catalogue is asked what the receiver did with the
+`FSSpec` we handed it. The first two are what made this diagnosis possible in
+one boot; the third is what proved whose house the collision was in.
+
+### The rig
+
+Three boots of `scripts/spin-up-ppc` onto session-private clones of
+`now-mirror-stage.qcow2` (sha256
+`8db8ddc2de99c4221ba563ab095ebcb24190a4d3e7ef69ef0720edbdbba199d4`, volume
+clean, provenance ACCOUNTED FOR), lane block 955, ports 19640/19641, OS 9.1 on
+`Power Mac G4`; instrument
+`now-host/Tests/HostTests/LiveDragInputProcExperiment.swift`
+(`NOW_DRAG_INPUT_PROC=1`, and now `NOW_DRAG_MASK` as a dial for the same
+reason its fixture size became one). All three guests were shut down through
+the Finder's own Special > Shut Down — volume cleanly unmounted each time.
+**Receipts are outside the run directory**, at
+`/private/tmp/now-slice2-receipts/` (`lane-ports reclaim` deletes
+`$NOW_SPIN_RUN`).
+
+`corpus_impact: none` — NOW's own drag lane, not a TimBotTu topic-corpus
+claim; the durable statement lives in this ledger and in the plan's slice
+table.
+
 ## THE WALL IS DOWN: `SetDragInputProc` drives a NOW-originated promise drag out of NOW and the Finder pulls the bytes (2026-08-17, `test/hg-drag-input-proc`)
 
 Slice 0 of the blessed-path drag plan
