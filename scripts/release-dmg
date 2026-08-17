@@ -9,7 +9,8 @@
 # first signed DMG from this desk was produced by hand-hunting those
 # inputs across an app bundle, a keychain, and a prior run's manifest.
 # This wrapper is that hunt, formalized: the three desk facts live in
-# .env.lab (gitignored, one desk's description), and a missing key stops
+# .env.lab (gitignored, one desk's description; a linked worktree without
+# its own falls back to the main checkout's), and a missing key stops
 # the run NAMING the key, because the failure this pattern exists to
 # prevent is a build that quietly went out signed by whatever a stale
 # default named. See docs/lab-setup.md.
@@ -32,10 +33,21 @@ set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 
-if [ -f "$root/.env.lab" ]; then
+# A linked worktree has no .env.lab of its own; the desk fact lives beside
+# the main checkout. Fall back to the main working tree's copy so a release
+# can be assembled from any worktree, worktree file winning when both exist.
+env_lab="$root/.env.lab"
+if [ ! -f "$env_lab" ]; then
+    common=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+    case $common in
+        */.git) env_lab="${common%/.git}/.env.lab" ;;
+    esac
+fi
+
+if [ -f "$env_lab" ]; then
     set -a
     # shellcheck disable=SC1091
-    . "$root/.env.lab"
+    . "$env_lab"
     set +a
 fi
 
