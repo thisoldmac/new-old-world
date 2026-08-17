@@ -437,10 +437,26 @@ static Boolean stream_promise(short vref, long dir, FSSpec *out)
        behind and hand the Finder a stale file with total confidence. */
     landed = now_wire_get_landed(id, out);
     if (!landed) {
-        now_log(kLogWarn, "mirror", "drag promise #%ld did not land", id);
+        char why[96];
+
+        /* THE REFUSING CALL, BY NAME. Slice 0 could say only that the
+           second same-name drop produced nothing; the layer that said
+           no was never identified, and a verdict string of ours was
+           read as the Finder's behaviour. */
+        now_wire_get_last_failure(why, sizeof why);
+        now_log(kLogWarn, "mirror", "drag promise #%ld did not land: %.60s",
+                id, why[0] != '\0' ? why : "(no reason recorded)");
     }
     return landed;
 }
+
+/* DIAGNOSTIC. The FSSpec this drag handed the receiver, kept so that
+   after TrackDrag returns we can ask the catalogue what the receiver
+   DID with it — left it where we put it, moved it, renamed it, or threw
+   it away. That answer is the whole "who owns the destination"
+   question, and it cannot be asked from inside the drop. */
+static FSSpec g_diag_promise_spec;
+static Boolean g_diag_promise_spec_valid;
 
 static pascal OSErr drag_send_data(FlavorType type, void *refcon,
                                    DragItemRef item, DragRef drag)
@@ -492,12 +508,36 @@ static pascal OSErr drag_send_data(FlavorType type, void *refcon,
 
     now_log(kLogInfo, "mirror", "drag promise streaming %.31s into dir %ld",
             g_drag.item.name, dir);
+    /* WHOSE FOLDER THE RECEIVER NAMED, and whether the name it is about
+       to be handed is already taken there. Both are facts about the
+       RECEIVER's house, and the collision diagnosis cannot proceed
+       without them: a staging folder the Finder empties afterwards and
+       the final destination itself are different protocols wearing the
+       same directory id. */
+    {
+        char path[192];
+        FSSpec probe;
+        Str255 pname;
+        OSErr taken;
+
+        if (now_files_dir_path(vref, dir, path, sizeof path) != kFilesOK) {
+            snprintf(path, sizeof path, "(dir %ld, path unresolved)", dir);
+        }
+        CopyCStringToPascal(g_drag.item.name, pname);
+        taken = FSMakeFSSpec(vref, dir, pname, &probe);
+        now_log(kLogInfo, "mirror", "drag promise dest: %.60s", path);
+        now_log(kLogInfo, "mirror",
+                "drag promise name check: FSMakeFSSpec('%.31s') -> %d "
+                "(0 = already there)", g_drag.item.name, (int)taken);
+    }
     if (!stream_promise(vref, dir, &spec)) {
         now_continuity_drag_promise_end(&g_drag, 0);
         return cantGetFlavorErr;
     }
     /* The file exists, whole, at the place the person dropped it. The
        Finder positions it from here. */
+    g_diag_promise_spec = spec;
+    g_diag_promise_spec_valid = true;
     if (SetDragItemFlavorData(drag, item, kDragPromisedFlavor, &spec,
                               (Size)sizeof spec, 0) != noErr) {
         now_continuity_drag_promise_end(&g_drag, 0);
@@ -854,6 +894,27 @@ static void start_drag(void)
                 "mirror", "drag %.31s ended: %s (TrackDrag %d)",
                 g_drag.item.name, now_continuity_drag_code(verdict),
                 (int)track);
+        /* WHAT THE RECEIVER DID WITH THE FILE WE HANDED IT. Asked of
+           the catalogue, once, after the drop is over: still at the
+           spec we returned means the receiver accepted our placement
+           and owns nothing; gone means it moved or renamed it, and the
+           destination is the receiver's after all. */
+        if (g_diag_promise_spec_valid) {
+            FSSpec after;
+            char shown[32];
+            OSErr still = FSMakeFSSpec(g_diag_promise_spec.vRefNum,
+                                       g_diag_promise_spec.parID,
+                                       g_diag_promise_spec.name, &after);
+
+            /* A Str255 is not a C string; printing its body directly
+               runs off the end of the name into whatever follows. */
+            CopyPascalStringToC(g_diag_promise_spec.name, shown);
+            now_log(kLogInfo, "mirror",
+                    "drag promise after: '%.31s' in dir %ld -> %d "
+                    "(0 = still where we put it)",
+                    shown, g_diag_promise_spec.parID, (int)still);
+            g_diag_promise_spec_valid = false;
+        }
         now_log(kLogInfo, "mirror",
                 "drag detail: button plane=%d toolbox=%d at %d,%d "
                 "setup=%lu track=%lu ticks",
