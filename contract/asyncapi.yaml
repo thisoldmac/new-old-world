@@ -332,6 +332,8 @@ channels:
       continuityDragBegin: { $ref: "#/components/messages/continuityDragBegin" }
       continuityGrab: { $ref: "#/components/messages/continuityGrab" }
       continuityOffer: { $ref: "#/components/messages/continuityOffer" }
+      continuityHostDragBegin:
+        { $ref: "#/components/messages/continuityHostDragBegin" }
       cloudServices: { $ref: "#/components/messages/cloudServices" }
       cloudReport: { $ref: "#/components/messages/cloudReport" }
       cloudList: { $ref: "#/components/messages/cloudList" }
@@ -1364,6 +1366,7 @@ operations:
       - $ref: "#/channels/control/messages/continuityKey"
       - $ref: "#/channels/control/messages/continuityGrab"
       - $ref: "#/channels/control/messages/continuityOffer"
+      - $ref: "#/channels/control/messages/continuityHostDragBegin"
     description: >
       Reliable session ownership for the optional Continuity input plane.
       The host arms before sending UDP state and disarms on disable,
@@ -1691,6 +1694,9 @@ components:
     continuityOffer:
       name: continuity.offer
       payload: { $ref: "#/components/schemas/ContinuityOffer" }
+    continuityHostDragBegin:
+      name: continuity.hostDragBegin
+      payload: { $ref: "#/components/schemas/ContinuityHostDragBegin" }
     cloudServices:
       name: cloud.services
       payload: { $ref: "#/components/schemas/CloudServices" }
@@ -3252,6 +3258,160 @@ components:
                 drag image is honest before any wire round-trip; until it
                 is sent a guest draws from fileType/creator, and a host
                 must treat its absence as ordinary.
+    ContinuityHostDragBegin:
+      type: object
+      required: [type, version, epoch, dragSeq, pos, item]
+      additionalProperties: false
+      description: >
+        THE EDGE HAS HANDED OFF: START A REAL DRAG, HERE, NOW.
+
+        The mirror of continuity.dragBegin, and the two are deliberately
+        NOT one message. continuity.dragBegin is the guest's resident
+        ANNOUNCING a drag a person already started over there;
+        continuity.hostDragBegin is the host INSTRUCTING this Macintosh
+        to begin one of its own, because the person's hand crossed the
+        edge and the AppKit session ended at the crossing. One announces,
+        one commands, and a receiver that read them as one word would
+        have no way to tell an observation from an order.
+
+        THE OWNERSHIP TOGGLE. Exactly one machine's drag machinery is
+        live at a time — the one that owns the cursor — and this frame is
+        the moment it becomes this one's. On arrival the guest
+        synthesises the starting mouse-down EventRecord itself (a struct
+        parameter to TrackDrag; no event is delivered and none is
+        needed), builds a Drag Manager drag carrying
+        flavorTypePromiseHFS from the skeleton below, and enters
+        TrackDrag. From that instant the ORDINARY Continuity position
+        datagrams carry the gesture — the drag's input proc reads the
+        latest of them every time the Manager samples the mouse — so
+        this frame states the STARTING state and nothing else. There is
+        no second frame, no drag-move message and no drag-end message:
+        the drag ends the way any drag ends, when the reported button
+        goes up.
+
+        WHAT THE GUEST DOES NOT DO WITH IT. It does not choose a
+        destination, ask whether a point is over a Finder window, or
+        adjudicate a same-name collision. Where the file lands is the
+        Drag Manager's and the receiving application's business
+        entirely; code here that asked those questions would be
+        re-invented targeting and would break the one property the whole
+        lane is for — that the receiver cannot tell this from a drag its
+        own user started.
+
+        THE PROMISE IS SERVED BACK OVER THIS SAME CONNECTION. The
+        skeleton names an item the HOST is holding; when the receiver
+        asks for the promised flavor, the guest pulls those bytes down
+        the ordinary file lane (the continuity.grab exchange) from
+        inside the receiver's drop, and hands back an FSSpec of a file
+        staged where the receiver can take it from. So the wire is
+        SILENT between this frame and that pull, for as long as the
+        gesture lasts: a liveness monitor on either side must read that
+        silence as a native drag in flight rather than as a wedge.
+
+        A GUEST THAT HAS NEVER HEARD OF IT ignores one control frame and
+        keeps the connection, per the unreadable-frame rule — and the
+        host learns it can expect a native drag from
+        continuity.report's `acceptsOffer`, which already gates whether
+        this guest can take an offer at all. There is no separate
+        capability word, because a guest that can take an offer and a
+        guest that can be told to drag one are the same guest.
+      properties:
+        type: { const: continuity.hostDragBegin }
+        version:
+          const: 4
+          description: The Continuity control-contract version, as elsewhere.
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            The live Continuity epoch. A hostDragBegin naming any other
+            epoch is refused: the cursor authority this drag is steered
+            by belongs to one epoch, and a drag begun under a dead one
+            would read a plane nobody is writing.
+        dragSeq:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            The gesture id, minted by the host, monotonic within the
+            epoch. It is the join key for everything this crossing later
+            says about itself, and it is the SAME field name
+            continuity.dragBegin uses for the mirrored direction on
+            purpose — one gesture has one number whichever side started
+            it.
+        pos:
+          type: object
+          additionalProperties: false
+          required: [h, v]
+          description: >
+            Where the drag starts, in the GUEST's global screen
+            coordinates — the point the host's crossing put the cursor
+            at, already mapped by the host exactly as the ordinary
+            Continuity position datagrams are. The guest builds the
+            starting EventRecord and the drag image's bounds around it
+            and does not re-derive it from GetMouse: the pointer this
+            application can read is the one that cannot move while
+            TrackDrag holds it, which is the whole reason this lane
+            exists.
+          properties:
+            h: { type: integer, minimum: -32768, maximum: 32767 }
+            v: { type: integer, minimum: -32768, maximum: 32767 }
+        item:
+          type: object
+          additionalProperties: false
+          required: [name, dataSize]
+          description: >
+            THE SKELETON, AND ONLY THE SKELETON. Everything the guest
+            needs to draw an honest drag and declare an honest promise
+            before a byte moves, and nothing else. The field names are
+            continuity.offer's, verbatim, because it is the same stub
+            said at a different moment — a second spelling of one item
+            is the drift this file exists to refuse.
+
+            NO FOLDERS. `isFolder` is absent here rather than declared
+            false: a folder crossing is refused by the offer that
+            published it, one message earlier, and a second refusal
+            point would be a second policy.
+          properties:
+            name:
+              type: string
+              maxLength: 31
+              description: >
+                The name the item will have on the guest — already
+                converted and truncated by the host, HFS's own 31-byte
+                limit, continuity.offer's rule verbatim. The guest
+                offers it to the receiver as a naming HINT and the
+                receiver stays free to uniquify it.
+            fileType:
+              type: string
+              maxLength: 4
+              description: >
+                Four-byte OSType the host mapped. Absent when the host
+                declined to guess; the guest then promises '????' and
+                the drag image falls back to the generic document icon.
+                That is a legitimate answer, not a gap to fill from the
+                name.
+            creator:
+              type: string
+              maxLength: 4
+              description: Four-byte creator, mapped and absent on the same terms.
+            dataSize:
+              type: integer
+              minimum: 0
+              description: >
+                Bytes the data fork will carry. Known BEFORE the drag is
+                drawn so the guest can refuse an item it cannot serve
+                inside a drop while the person can still change their
+                mind. The ceiling is the guest's own policy and is not
+                on this wire.
+            resourceSize:
+              type: integer
+              minimum: 0
+              description: >
+                Bytes the resource fork will carry. Absent means none.
+                Summed with dataSize against the guest's own cap,
+                because both forks stream through one lane.
     MirrorInvalidate:
       type: object
       required: [type, generation, domains, quality]
