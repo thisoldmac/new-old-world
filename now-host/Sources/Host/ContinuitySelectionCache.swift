@@ -21,8 +21,25 @@ struct ContinuityDragStub: Equatable, Sendable {
     /// `dragSeq` and supplies the number.
     var generation: UInt32
     var item: ContinuitySelection.Item
+    /// WHICH GESTURE THIS IDENTITY CAME FROM, when a gesture named it.
+    ///
+    /// Carried on the stub rather than only on the mark because it is the
+    /// join key, and the join is the thing every log line about a late
+    /// generation has to be readable against: "generation 0" alone cannot
+    /// say whether the number that arrives next belongs to this drag or
+    /// the next one. Nil for a poll, which has no drag behind it.
+    var dragSeq: UInt32?
 
     var isFolder: Bool { item.isFolder }
+
+    /// Whether two accounts name the same file, by the identity the File
+    /// Manager itself uses. The resident and the application describe one
+    /// gesture from two places; a name alone would call two files in two
+    /// folders the same one.
+    static func sameItem(_ a: ContinuitySelection.Item,
+                         _ b: ContinuitySelection.Item) -> Bool {
+        a.name == b.name && a.volumeRef == b.volumeRef && a.dirID == b.dirID
+    }
 
     /// The name macOS should show while the promise is unfulfilled, and the
     /// name the file lands under. Classic names use HFS rules.
@@ -92,6 +109,10 @@ struct ContinuitySelectionMark: Equatable, Sendable {
     /// clock comparison to be attributed to the gesture in flight — see
     /// `ContinuitySelectionBind.decide`.
     var source: ContinuitySelection.Source = .selection
+    /// The gesture that minted this generation, when one did. Same join key
+    /// as `ContinuityDragStub.dragSeq`, carried here so every bind decision
+    /// can say which drag it is deciding about.
+    var dragSeq: UInt32?
 
     /// The same published selection, whenever either side heard about it.
     func isSameSelection(as other: ContinuitySelectionMark) -> Bool {
@@ -176,7 +197,18 @@ enum ContinuitySelectionBind: Equatable {
            purpose: a drag that happens to name the same generation the
            press was made under is still a drag, and saying so is what lets
            one audit line distinguish the ritual working from the ritual
-           being unnecessary. */
+           being unnecessary.
+
+           IT WINS THE NAME, NOT A NUMBER IT DOES NOT HAVE. A drag mark
+           reaching here at generation 0 is one the cache could not join to
+           anything it held — a different file, or nothing at all — so it
+           binds an identity and no grant. That is deliberately not a
+           refusal: the identity is the fact the whole plane exists to get
+           across, and `ContinuityGrabTransfer` holds the grab until the
+           application mints the number rather than spending it on a zero.
+           The case where a generation DID survive is settled one layer
+           up, in `ContinuitySelectionCache.apply`, because only the cache
+           can see whether the two accounts name the same file. */
         if current.source == .drag {
             return .dragged(current)
         }
@@ -268,16 +300,67 @@ final class ContinuitySelectionCache {
                 + "on the Mac")
             return
         }
+        /* AN IDENTITY-ONLY DRAG MAY FILL A SLOT OR ANNOTATE ONE. IT MAY NOT
+           EMPTY ONE.
+
+           The resident names the file in the hand and cannot name a
+           generation, so its stub arrives at generation 0. Written straight
+           through, that stub OVERWRITES a generation this Mac already has —
+           and on metal 2026-08-16 (epoch 4 of `221834`) it overwrote
+           generation 3 of the very same file, whose bytes were already
+           fetched onto this Mac, leaving a stub nothing could redeem. The
+           drag is still the better account of WHAT is being dragged; it is
+           never a reason to lose the number a grab must ask for.
+
+           So when the drag names the file already cached, the generation
+           survives and only the source, the sequence and the clock move.
+           When it names a DIFFERENT file the cache is stale and the drag
+           wins — but it wins with its own generation of 0, because the
+           cached number belongs to the other file and serving it under this
+           name would be the wrong-file bug wearing a valid generation. */
+        if selection.resolvedSource == .drag, selection.generation == 0,
+           let held = stub, held.epoch == selection.epoch,
+           held.generation != 0 {
+            if ContinuityDragStub.sameItem(held.item, item) {
+                stub = ContinuityDragStub(epoch: held.epoch,
+                                          generation: held.generation,
+                                          item: held.item,
+                                          dragSeq: selection.dragSeq)
+                mark = ContinuitySelectionMark(epoch: held.epoch,
+                                               generation: held.generation,
+                                               appliedAt: now(),
+                                               source: .drag,
+                                               dragSeq: selection.dragSeq)
+                audit(.info, "the drag names the file this Mac already "
+                    + "holds: epoch=\(held.epoch), source=drag, "
+                    + "dragSeq=\(selection.dragSeq.map(String.init) ?? "none"), "
+                    + "name=\(item.name) — keeping generation "
+                    + "\(held.generation), which is what a grab must ask "
+                    + "for, and binding this gesture to the drag")
+                return
+            }
+            audit(.warn, "the drag names \(item.name) while this Mac had "
+                + "generation \(held.generation) cached for "
+                + "\(held.item.name): epoch=\(selection.epoch), "
+                + "source=drag, "
+                + "dragSeq=\(selection.dragSeq.map(String.init) ?? "none") — "
+                + "the drag is the better account of what is in the hand, "
+                + "so the name wins and the generation does not travel with "
+                + "it; this gesture has none until the application mints one")
+        }
         stub = ContinuityDragStub(epoch: selection.epoch,
                                   generation: selection.generation,
-                                  item: item)
+                                  item: item,
+                                  dragSeq: selection.dragSeq)
         mark = ContinuitySelectionMark(epoch: selection.epoch,
                                        generation: selection.generation,
                                        appliedAt: now(),
-                                       source: selection.resolvedSource)
+                                       source: selection.resolvedSource,
+                                       dragSeq: selection.dragSeq)
         audit(.info, "selection cached: epoch=\(selection.epoch), "
             + "generation=\(selection.generation), "
             + "source=\(selection.resolvedSource.rawValue), "
+            + "dragSeq=\(selection.dragSeq.map(String.init) ?? "none"), "
             + "name=\(item.name), "
             + "type=\(item.fileType ?? "none"), "
             + "creator=\(item.creator ?? "none"), "
