@@ -135,6 +135,87 @@ the Finder's own Special > Shut Down — volume cleanly unmounted each time.
 claim; the durable statement lives in this ledger and in the plan's slice
 table.
 
+## BUILT, UNIT-TESTED ONLY — the host half of the blessed-path handoff: this Mac hands the gesture over and then only serves the promise (2026-08-17, `feat/hg-native-drag-host`, slice 3)
+
+Slice 3 of `docs/plans/2026-08-17-036-feat-blessed-path-drag-plan.md`, host
+side. Slice 0 proved a NOW-originated promise drag can leave the application
+and slice 2 proved the receiver raises its OWN replace dialog. What was
+missing was the EDGE: the host still published a carry *illustration* and
+asked the guest to draw it. It now hands over a drag.
+
+**The acceptance sentence governs and this half is built to it:** after the
+handoff the guest sees a normal drag with a promise, and nothing on this side
+knows anything about targeting, windows, or collisions. There is no field on
+the new message, and no parameter on the new seam, that could answer "which
+window" — that is the design, not an omission.
+
+### What happens now, in order
+
+| beat | this Mac |
+|---|---|
+| the drag reaches the shared edge | unchanged — the strip catches it, the crossing aims the guest pointer |
+| the crossing | unchanged — a synthetic HID release ends **this** Mac's own `NSDraggingSession` onto our own strip, and the file is STAGED |
+| **the staging point** | **new** — the promise skeleton is derived from the staged file and `continuity.hostDragBegin` is sent at the guest entry point; the offer is published in the same act, because the offer IS the promise |
+| the guest-owned segment | position and button ride the ordinary Continuity datagrams, already shipping. Nothing else crosses |
+| the person releases | **new** — the guest's drop is the commit. This Mac starts no transfer of its own and does **not** clear the offer: the pull happens *inside* that drop |
+| the pull | `continuity.grab` → `ContinuityOfferService` → `Session.serveFile`, the lane slices 0 and 2 already streamed through |
+| cross-back, or any other abort | the promise is released at once with a named reason (`endHostDragOffer`); the abort itself is native on both sides |
+
+### What was retired, and what was kept
+
+- **Retired on the drag lane:** the carry-presentation arm — `offer --drag` /
+  `offer --stop` (`startGuestPresentationDrag` / `stopGuestPresentationDrag`,
+  now deleted) and the `presentation:` wiring in `HostAppState`. A guest
+  drawing an illustration underneath its own live `TrackDrag` would be two
+  machines owning one gesture.
+- **Kept:** the offer publish/clear pair itself (`AgentIntegrationContinuity
+  OfferControl`, the agent and console faces), `ContinuityFileDrag`'s
+  `Presentation` seam and `configureHostDragPresentation` — still wired when
+  no handoff is (honest degradation, and several existing gates drive it) —
+  and the epoch-correctness fix from `fix/hg-drag-offer-epoch`, which the
+  handoff reads through `continuity.currentEpoch` exactly as the carry did.
+
+### The promise's life, audited (the multi-MB mid-drag pull)
+
+The pull may now be large and may happen while the guest is inside a nested
+Toolbox loop answering nothing. Host-side timeouts on that lane, read out:
+
+| clock | value | verdict |
+|---|---|---|
+| `Session.timing.idleTimeout` | 75 s of no INBOUND traffic | **was a real killer, now fixed** — a one-way serve of a few MB at PowerBook rates is minutes of silence, and the session closed under its own transfer. It now treats outbound progress as evidence of a live peer (`outboundProgressAt`) and re-arms instead |
+| `ContinuityOfferService.offerLifetimeSeconds` | 30 s | not in play during a drag: the window starts when the EPOCH ends, and the epoch is live for the whole gesture |
+| `MirrorContinuityController.starvationBackstop` | 300 s of ack silence with resident liveness answering | already the "native drag in flight" allowance the plan asks for; the new staged-carry bound sits deliberately inside it |
+| `ContinuityEdgeController.stagedCarryLifetime` | **new**, 180 s | the plan's named failure mode from this side: a skeleton that never arrives, or a guest that never starts the drag, ends over there as a native non-drop this Mac cannot observe. The staged file is let go with a reason rather than held forever, and a release that turns up afterwards says why it commits nothing |
+
+### Auditable from the host log alone
+
+Every line is tagged with the gesture: `handed the drag OVER to the Macintosh
+at x,y`, `drag handoff #N: NAME type/creator data/rsrc at h,v`, `#id drag
+handoff #N: serving offered NAME, N bytes` (the pull), the commit line
+naming the guest's drop as the commit, `releasing the promise the Macintosh
+was handed — REASON`, and the bound's own warning.
+
+### What is NOT verified
+
+- **Nothing end to end.** This is the host half only; the guest half of
+  `continuity.hostDragBegin` was written the same night by a sibling lane and
+  the two have never met. Evidence here is unit and fixture level:
+  `ContinuityGuestDragTests` (handoff once, at the crossing's own point; the
+  release commits through the guest and leaves the promise serveable; the
+  abort releases it; the bound fires and the late release says so; a refused
+  handoff leaves the older lane committing) and `GuestWireFixtureTests`
+  (the encoded frame, and the skeleton's fork arithmetic).
+- **The idle-clock fix is not unit-tested** — `Session` needs a live
+  `NWConnection` and this repository has no rig for one. It is a reasoned fix
+  against a read timeout, not a measured one.
+- **`contract/asyncapi.yaml` is not edited here** (a sibling agent owns it
+  tonight); this encoder is built against the declared shape and the two must
+  be reconciled at the merge. `docs/contract-coverage.md` owes a
+  `continuity.hostDragBegin` row once the guest actually serves it — a row
+  written before that would claim service nobody has.
+- No metal. No emulator round. The Route-A pump's pointer writes from the
+  Finder-context class remain the attended PowerBook gate (plan slice 5).
+
 ## THE WALL IS DOWN: `SetDragInputProc` drives a NOW-originated promise drag out of NOW and the Finder pulls the bytes (2026-08-17, `test/hg-drag-input-proc`)
 
 Slice 0 of the blessed-path drag plan
