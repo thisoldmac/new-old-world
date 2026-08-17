@@ -269,6 +269,13 @@ gate is untouched.
 
 ## THE DRAG NEVER LEAVES BECAUSE THE POINTER NEVER LEAVES: the standing `inwin=1` reading survives a clean rig, and the cause is cursor authority, not targeting (2026-08-17, `test/hg-drag-native-track`)
 
+> **Its measurements stand; its conclusion does not.** The entry above
+> (slice 0, same day) drove the same drag out of NOW and completed a
+> drop through `SetDragInputProc`. Everything below about the pointer
+> remains true — the pointer still does not move during a
+> NOW-originated `TrackDrag`. What changed is that the Drag Manager
+> never needed it to.
+
 Go/no-go for the native-drag direction, run against the integrated drag
 candidate (`feat/hg-drag-arc-candidate` @ `6604b842`) with V15 armed.
 **Verdict: NO.** A NOW-originated Drag Manager promise drag does not
