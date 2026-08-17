@@ -942,6 +942,165 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(controller.state, .ready)
     }
 
+    // MARK: - The staged carry owns the button
+
+    /* All six tests below describe ONE moment: a person holding a file over
+       the guest after this Mac ended their Finder drag at the crossing.
+       Every expectation is taken from the contract the 2026-08-16 attended
+       round found broken (F1 ledger, D2/D4/D5), not from the code that now
+       implements it. */
+
+    /// **THE PHYSICAL RELEASE COMMITS.** This Mac posts a `leftMouseUp` at
+    /// the HID level to end Finder's session at the crossing, which sets the
+    /// system's global button state UP while the person's finger is still
+    /// down — so their real lift produces no transition, no event, and the
+    /// commit never fires. Six of seven metal carries died there. The fix is
+    /// the guest→host lane's own mechanism pointed the other way: a
+    /// synthetic DOWN that re-arms the button, posted only once the
+    /// consuming tap is in front of it.
+    func testThePhysicalReleaseAfterTheSyntheticUpCommitsTheStagedFile()
+        throws {
+        let carry = try Carry(layout: makeLayout())
+
+        XCTAssertEqual(carry.environment.syntheticHIDButtonPosts.map(\.down),
+                       [false, true],
+                       "the release that ENDS the host drag, then the down "
+                        + "that re-arms the button it lied about")
+        XCTAssertEqual(carry.environment.syntheticHIDButtonPosts.last?.point,
+                       CGPoint(x: 1439, y: 450),
+                       "posted where the crossing ended the drag — this "
+                        + "Mac's own catch surface")
+        let armed = try XCTUnwrap(carry.firstIndex(of: "consuming tap armed"))
+        let rearmed = try XCTUnwrap(carry.firstIndex(of: "button re-armed"))
+        XCTAssertLessThan(armed, rearmed,
+                          "a synthetic press with nothing in front of it is "
+                            + "this app pressing a button in another "
+                            + "application: the tap comes first")
+
+        carry.releaseOnGuest()
+
+        XCTAssertEqual(carry.dropped.count, 1,
+                       "the person's own release commits the staged file — "
+                        + "without pressing the button a second time")
+    }
+
+    /// Without a consuming tap there is no re-arm at all, and the log says
+    /// so. The rule this protects is older than the defect: this app does
+    /// not press a button in another application, and a degraded carry is a
+    /// better answer than a synthetic down landing on the Finder desktop.
+    func testTheButtonReArmIsDeclinedWhenNothingWouldSwallowIt() throws {
+        let carry = try Carry(layout: makeLayout(), captureAvailable: false)
+
+        XCTAssertEqual(carry.environment.syntheticHIDButtonPosts.map(\.down),
+                       [false],
+                       "no tap, no synthetic press")
+        XCTAssertTrue(carry.lines(containing: "button re-arm DECLINED")
+            .contains { $0.contains("another application") },
+            "and the reason is named, with the consequence for the carry: "
+                + "\(carry.recorder.lines)")
+    }
+
+    /// **NO CLICK REACHES THE GUEST WHILE A FILE IS STAGED.** On metal three
+    /// bursts of forwarded presses landed on the guest desktop inside its
+    /// own double-click window, which is how a drag came to open Classilla.
+    /// A press during a carry is the person completing a drop, and the only
+    /// thing that decides anything is the release.
+    func testAPressDuringAStagedCarryIsNeverForwardedToTheGuest() throws {
+        let carry = try Carry(layout: makeLayout())
+
+        carry.pressOnGuest()
+        carry.pressOnGuest()
+
+        XCTAssertTrue(carry.driver.downPoints.isEmpty,
+                      "a forwarded press is a click on the guest, and two "
+                        + "inside its double-click window open whatever is "
+                        + "under the pointer")
+        XCTAssertEqual(carry.dropped.count, 0, "and none of them commits")
+        XCTAssertFalse(carry.lines(containing: "button forwarding suppressed")
+                        .isEmpty,
+                       "the suppression is audited, or the next report of "
+                        + "this reads as a carry that silently did nothing")
+
+        carry.releaseOnGuest()
+        XCTAssertEqual(carry.dropped.count, 1)
+        XCTAssertTrue(carry.driver.upPoints.isEmpty,
+                      "the guest-side release is ours to synthesise at the "
+                        + "commit — the drop is the transfer, not a click")
+    }
+
+    /// The backstop, for the release the window server may yet decline to
+    /// emit as an event. It reads the hardware rather than waiting, and it
+    /// is armed only once the HID has confirmed the re-arm took — before
+    /// that, "not held" is this Mac's own synthetic release answering.
+    func testTheHIDBackstopCommitsWhenNoReleaseEventEverArrives() throws {
+        let carry = try Carry(layout: makeLayout())
+
+        carry.moveOnGuest()
+        XCTAssertEqual(carry.dropped.count, 0,
+                       "held, so nothing has been let go of yet")
+
+        carry.buttonHeld = false
+        carry.moveOnGuest()
+
+        XCTAssertEqual(carry.dropped.count, 1,
+                       "the hardware says the button went up and no event "
+                        + "carried it; the carry still commits")
+    }
+
+    /// **A DEPARTURE NEEDS MOTION, NOT A BUTTON STATE.** Every failed metal
+    /// carry was reported as "crossed back to this Mac without a release on
+    /// the guest" while `buttonsDown=0`. A staged carry must not be
+    /// abandoned by samples that merely claim the button is up — that field
+    /// is derived from event state this app's own tap starves — and only a
+    /// real crossing ends it.
+    func testAStagedCarryIsNotAbandonedByAButtonStateWithoutACrossing()
+        throws {
+        let carry = try Carry(layout: makeLayout())
+
+        for _ in 0..<3 {
+            carry.environment.emitCaptured(
+                .init(kind: .moved, location: CGPoint(x: 1439, y: 450),
+                      delta: CGPoint(x: 4, y: 1), buttonsDown: false))
+        }
+
+        XCTAssertEqual(carry.controller.state, .active,
+                       "the pass is still carrying the file")
+        XCTAssertTrue(carry.lines(containing: "let go without a transfer")
+                        .isEmpty,
+                      "no crossing happened, so nothing was let go of")
+        carry.releaseOnGuest()
+        XCTAssertEqual(carry.dropped.count, 1,
+                       "and the release still commits afterwards")
+    }
+
+    /// **CUSTODY SPEAKS, ON EVERY TRANSITION.** The attended round's
+    /// lockup window was unreadable because hide, detach, park and the tap
+    /// wrote nothing at all. This is a deliverable, so it is pinned: one
+    /// line each, in and out, and every one carrying the position that pairs
+    /// it with the gesture a person remembers making.
+    func testEveryCustodyTransitionIsAudited() throws {
+        let carry = try Carry(layout: makeLayout())
+        carry.releaseOnGuest()
+        carry.controller.transportEnded(reason: "test")
+
+        for transition in ["host cursor hidden",
+                           "pointer detached from the mouse",
+                           "cursor parked at the anchor",
+                           "consuming tap armed",
+                           "button re-armed",
+                           "consuming tap disarmed",
+                           "host cursor restored",
+                           "pointer re-attached to the mouse"] {
+            let lines = carry.lines(containing: transition)
+            XCTAssertFalse(lines.isEmpty,
+                           "\(transition) is silent: \(carry.recorder.lines)")
+            XCTAssertTrue(lines.allSatisfy { $0.contains("host=") },
+                          "\(transition) says nothing about where it "
+                            + "happened, which is the one question a wild "
+                            + "cursor asks")
+        }
+    }
+
     /// The visible-layer hide, which still exists for the instants between
     /// the crossing and the host drag actually ending, and which is still
     /// balanced by a show on the way out. The hide/show COUNTS now include
@@ -1100,7 +1259,13 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertEqual(environment.shown.count, 4)
         XCTAssertEqual(dropped, 2, "and each gesture commits once, at its "
                         + "own release on the guest")
-        XCTAssertEqual(environment.syntheticHIDButtonPosts.count, 2)
+        XCTAssertEqual(environment.syntheticHIDButtonPosts.map(\.down),
+                       [false, true, false, true],
+                       "each gesture posts a release to END the host drag "
+                        + "and then a down to RE-ARM the button, so the "
+                        + "person's own lift is a real HID transition again "
+                        + "— and the pair balances per gesture the same way "
+                        + "the hides do")
         XCTAssertEqual(environment.associationChanges,
                        [false, true, false, true])
     }
@@ -1756,6 +1921,93 @@ final class ContinuityEdgeControllerTests: XCTestCase {
 }
 
 private extension ContinuityEdgeControllerTests {
+    final class AuditRecorder {
+        var lines: [(HostLog.LogLevel, String)] = []
+    }
+
+    /// **One carried gesture, taken to the moment the person is holding a
+    /// staged file over the guest** — the crossing has ended their Finder
+    /// drag, this Mac has custody, and the only thing left is where they let
+    /// go. Every gesture in the 2026-08-16 attended round was in exactly
+    /// this state when it failed, so every test about that round starts
+    /// here rather than rebuilding the approach six times.
+    @MainActor
+    final class Carry {
+        let driver = Driver()
+        let environment = Environment()
+        let controller: ContinuityEdgeController
+        let recorder = AuditRecorder()
+        var dropped: [(NSPasteboard, MirrorKit.Point)] = []
+        var departed = 0
+        /// What the HARDWARE says about the primary button. True by
+        /// default: the person is holding a file, which is the whole
+        /// premise of a carry.
+        var buttonHeld = true
+
+        init(layout: ContinuityDisplayLayout,
+             captureAvailable: Bool = true) throws {
+            environment.captureAvailable = captureAvailable
+            let recorder = self.recorder
+            controller = ContinuityEdgeController(
+                layout: layout, driver: driver, environment: environment,
+                audit: { recorder.lines.append(($0, $1)) })
+            let staged = NSPasteboard(
+                name: .init("now.test.carry.\(UUID().uuidString)"))
+            controller.stageHostFiles = { _ in staged }
+            controller.physicalPrimaryButtonHeld = { [weak self] in
+                self?.buttonHeld ?? false
+            }
+            controller.configureFileDragging(
+                guestFileAtPoint: { _ in nil },
+                hostFilesDropped: { [weak self] board, point in
+                    self?.dropped.append((board, point))
+                    return true
+                })
+            controller.configureHostDragPresentation(
+                arrived: { _ in },
+                departed: { [weak self] in self?.departed += 1 })
+            controller.start()
+
+            let callbacks = try XCTUnwrap(environment.fileCallbacks)
+            XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450),
+                                            .init(name: .drag)))
+            XCTAssertTrue(callbacks.dropped(.init(name: .drag)),
+                          "the release this Mac posted comes back as a drop "
+                            + "on its own strip: the file is staged")
+            controller.transportPhaseChanged(.active)
+        }
+
+        /// The release the person makes on the guest, delivered through the
+        /// consuming tap — which is where it arrives once the button has
+        /// been re-armed and the physical lift is a real transition again.
+        func releaseOnGuest() {
+            environment.emitCaptured(
+                .init(kind: .primaryUp, location: CGPoint(x: 1439, y: 450),
+                      delta: .zero, buttonsDown: false))
+        }
+
+        func pressOnGuest() {
+            environment.emitCaptured(
+                .init(kind: .primaryDown, location: CGPoint(x: 1439, y: 450),
+                      delta: .zero, buttonsDown: true))
+        }
+
+        /// Held motion on the guest, well short of the boundary.
+        func moveOnGuest() {
+            environment.emitCaptured(
+                .init(kind: .moved, location: CGPoint(x: 1439, y: 450),
+                      delta: CGPoint(x: 6, y: 2), buttonsDown: true))
+        }
+
+        func lines(containing text: String) -> [String] {
+            recorder.lines.map(\.1).filter { $0.contains(text) }
+        }
+
+        func firstIndex(of text: String) -> Int? {
+            recorder.lines.firstIndex { $0.1.contains(text) }
+        }
+    }
+
     final class Driver: ContinuityEdgeDriving {
         var keyboardForwardingEnabled = true
         var escapeShortcut = ContinuityEscapeShortcut.controlOptionEscape
