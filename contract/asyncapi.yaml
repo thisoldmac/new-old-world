@@ -2785,6 +2785,48 @@ components:
             the resident's own send — in which case the application's
             frame is the only account of the gesture and binds as it
             always did.
+        afterEpoch:
+          type: boolean
+          default: false
+          description: >
+            THE EPOCH NAMED ABOVE HAS ALREADY ENDED, and this frame is
+            sent anyway — deliberately, and only for a gesture that began
+            inside it.
+
+            THE MEASUREMENT THAT FORCED IT. A drag that crosses the edge
+            is the drag this whole plane exists for, and it is exactly
+            the one that could not be published: the crossing is what
+            ends the epoch, the crossing's own release is what ends the
+            Finder's drag loop, and the application gets no task time
+            until that loop ends. So the identity is drained with no live
+            epoch to publish under. Measured on metal 2026-08-16
+            (`221834`): six crossings, six refusals, zero bytes, and no
+            `continuity.selection` for any of them — the frame was never
+            sent rather than sent and rejected.
+
+            THE RULE, AND IT IS THE GRANT'S RULE ONE STEP EARLIER. This
+            contract already lets a grab be served under an epoch that
+            ended, for one in-flight gesture, inside a bounded window
+            (see `continuity.grab`). `afterEpoch` says the same thing
+            about the MINT: the generation was minted for a gesture that
+            began in `epoch`, under the same window, and it is grantable
+            the instant it is published. Nothing else about consent
+            moves — the item is the one the person picked up, the number
+            is one this guest minted, and a grab must still name it.
+
+            WHAT A HOST MAY DO WITH IT, and what it may not. It may join
+            the frame to a crossing it is already carrying, by `dragSeq`,
+            exactly as it joins a live one, and redeem a drop that is
+            waiting for the number. It may NOT cache it as the current
+            selection: no epoch is running, so nothing may be bound to a
+            press that has not happened. A frame arriving after the host
+            stopped waiting is refused with a line naming the gesture it
+            missed, rather than redeemed late.
+
+            `true` only ever accompanies `source: drag`: a poll cannot
+            run without a live epoch, so a selection-sourced frame naming
+            a dead one is a fault rather than this case. Absent means
+            false — the ordinary frame, naming the epoch that is running.
         item:
           type: object
           additionalProperties: false

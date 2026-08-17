@@ -13,6 +13,17 @@ static NowContinuityStubTable g_table;
    now_continuity_selection.h for the rule and why the epoch is already
    over by the time the drag is released. */
 static NowContinuityGrantHold g_hold;
+/* The table the POST-EPOCH mint publishes from, and the record of the
+   epoch it publishes under. Separate from g_table because the settle has
+   already moved that one onto the live epoch (or onto none) by the time a
+   crossing gesture's identity is drained — see
+   now_continuity_stub_publish_post_epoch. */
+static NowContinuityStubTable g_post;
+static NowContinuityEndedEpoch g_ended;
+static int g_post_pending;
+/* Which table the last change published, so the wire asks one question and
+   gets the epoch, generation and item of ONE frame. It is never NULL. */
+static const NowContinuityStubTable *g_published = &g_table;
 static unsigned long g_table_epoch;
 static unsigned long g_next_poll;
 static int g_poll_seeded;
@@ -25,7 +36,12 @@ static int g_drag_pending;
 
 const NowContinuityStubTable *now_continuity_selection_table(void)
 {
-    return &g_table;
+    return g_published;
+}
+
+int now_continuity_selection_published_after_epoch(void)
+{
+    return g_published == &g_post;
 }
 
 /* The table alone. The epoch ending is not the grant ending, so the two
@@ -50,11 +66,27 @@ static void forget_table(void)
 static void settle_to_epoch(unsigned long live_epoch)
 {
     unsigned long was = g_table_epoch;
+    /* READ BEFORE THE RESET, because after it this number exists nowhere.
+       It is the floor the post-epoch mint counts on from, and a mint that
+       reused a generation the host already cached would be the wrong file
+       wearing a valid number. */
+    unsigned long was_generation = g_table.generation;
+    unsigned long now_ticks = (unsigned long)TickCount();
 
     if (!now_continuity_selection_settle(&g_table, &g_hold, &g_table_epoch,
-                                         live_epoch,
-                                         (unsigned long)TickCount())) {
+                                         live_epoch, now_ticks)) {
         return;
+    }
+    /* WHICH EPOCH A LATE DRAIN BELONGS TO. The identity of a crossing
+       gesture is drained after this point, so without the record there is
+       nothing left to say which consent that gesture was made under. A new
+       epoch clears it: a drag drained under a running epoch is that
+       epoch's, and publishing it under a dead one would be a consent
+       resurrected. */
+    if (live_epoch != 0) {
+        now_continuity_epoch_ended_release(&g_ended);
+    } else {
+        now_continuity_epoch_ended(&g_ended, was, was_generation, now_ticks);
     }
     /* A fresh table has nothing polled into it yet, so the next pass must
        ask the Finder rather than wait out a cadence set under the old
@@ -74,6 +106,12 @@ void now_continuity_selection_forget(void)
     /* The link, not the epoch. A grant is consent given to ONE host over
        ONE connection, so nothing survives a disconnect. */
     now_continuity_grant_release(&g_hold);
+    /* Including the mint made for a gesture whose epoch had ended: it is a
+       grant like any other, and its host is gone. */
+    now_continuity_stub_reset(&g_post, 0);
+    now_continuity_epoch_ended_release(&g_ended);
+    g_post_pending = 0;
+    g_published = &g_table;
 }
 
 /* --- the Apple Event ------------------------------------------------------
@@ -318,13 +356,12 @@ int now_continuity_selection_note_drag(const NowContinuityDragIdentity *ident)
     if (ident == NULL || ident->seq == 0 || !ident->is_hfs) {
         return 0;
     }
-    /* No epoch, no publish. The observer is armed by the act plane too, so
-       this drain runs when no host is driving anything - and a drag seen
-       then is a person using their own Macintosh, not a consent. */
+    /* The settle runs FIRST and unconditionally, as it always did — but it
+       is no longer allowed to be the end of the story. It records which
+       epoch just ended (see settle_to_epoch), and the crossing case below
+       reads that record, so the reset it performs cannot take the gesture's
+       consent with it. */
     settle_to_epoch(live_epoch);
-    if (live_epoch == 0) {
-        return 0;
-    }
     if (stub_from_drag(ident, &item) != noErr) {
         /* The Drag Manager named something the File Manager will not
            describe. Refusing beats publishing a stub whose grab could only
@@ -339,6 +376,34 @@ int now_continuity_selection_note_drag(const NowContinuityDragIdentity *ident)
            than published so the refusal happens here, once, instead of at
            the host's bind and again at the guest's grab. */
         return 0;
+    }
+    if (live_epoch == 0) {
+        /* THE CROSSING GESTURE, and it is the ordinary one rather than the
+           corner: crossing back is what ends the epoch, and the crossing's
+           own release is what ends the Finder's drag loop and lets this
+           drain run at all. There is no live epoch to publish under and
+           nothing left in the table to hold, so the mint is made under the
+           epoch the gesture BEGAN in — bounded by the grant's own window,
+           grantable at once, and announced on the wire as what it is.
+
+           A drag drained while nothing is armed still publishes nothing:
+           g_ended is empty then, and the mint refuses. */
+        if (!now_continuity_stub_publish_post_epoch(
+                &g_post, &g_hold, &g_ended, &item, ident->seq,
+                (unsigned long)TickCount())) {
+            if (g_ended.epoch != 0) {
+                now_log(kLogWarn, "mirror",
+                        "drag not published seq=%lu: the window on epoch "
+                        "%lu has closed", ident->seq, g_ended.epoch);
+            }
+            return 0;
+        }
+        g_post_pending = 1;
+        now_log(kLogInfo, "mirror",
+                "selection after epoch=%lu gen=%lu seq=%lu %.31s (drag)",
+                g_post.epoch, g_post.generation, ident->seq,
+                g_post.item.name);
+        return 1;
     }
     if (!now_continuity_stub_observe_drag(&g_table, &item, ident->seq)) {
         return 0;
@@ -366,6 +431,18 @@ int now_continuity_selection_poll(unsigned long live_epoch)
        through the same function — but it is still the backstop for the
        endings no frame announces. */
     settle_to_epoch(live_epoch);
+    /* THE POST-EPOCH MINT GOES OUT BEFORE THE EPOCH GATE, because by
+       construction there is no live epoch when it exists: the gesture that
+       minted it is the gesture that ended the epoch. Gating it would be
+       this function refusing to say the one thing only it can say. */
+    if (g_post_pending) {
+        g_post_pending = 0;
+        if (g_post.have_item) {
+            g_published = &g_post;
+            return 1;
+        }
+    }
+    g_published = &g_table;
     if (live_epoch == 0) {
         return 0;                  /* no epoch, no poll */
     }

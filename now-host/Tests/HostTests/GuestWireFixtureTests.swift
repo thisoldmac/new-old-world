@@ -168,6 +168,50 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertNil(poll.dragSeq)
     }
 
+    /// THE CROSSING GESTURE'S OWN FRAME, as service_continuity_selection()
+    /// writes it when the epoch it names has already ended.
+    ///
+    /// The fragment rides beside `dragSeq` because both mean something on
+    /// one kind of frame only. This fixture is what stops the two halves
+    /// disagreeing about a field whose whole job is to make a dead epoch
+    /// readable rather than ignorable: without it the host's only honest
+    /// answer to an epoch it does not own is to drop the frame, which is
+    /// what it did through the attended round of 2026-08-16.
+    func testContinuitySelectionMintedAfterItsEpochEnded() throws {
+        let json = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":4,"source":"drag","dragSeq":2,"afterEpoch":true,\
+        "item":{"name":"HELLO_CLAUDE.txt","volumeRef":-1,"dirID":2,\
+        "fileType":"TEXT","creator":"ttxt","dataSize":42,\
+        "resourceSize":0,"modifiedAt":3400000000,"isFolder":false}}
+        """
+        guard case .continuitySelection(let selection) = try decode(json)
+        else { return XCTFail("not a continuity selection") }
+        XCTAssertTrue(selection.namesEndedEpoch,
+                      "a frame naming an ended epoch must survive the "
+                        + "decoder saying so, or the host reads the one "
+                        + "gesture it exists for as a mistake")
+        XCTAssertEqual(selection.epoch, 7)
+        XCTAssertEqual(selection.generation, 4)
+        XCTAssertEqual(selection.dragSeq, 2)
+        XCTAssertEqual(selection.item?.name, "HELLO_CLAUDE.txt")
+
+        /* An ordinary frame says nothing, and a guest too old to have the
+           field says nothing in exactly the same way — both mean the epoch
+           named is the one that is running. */
+        let live = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":5,"source":"drag","dragSeq":3,\
+        "item":{"name":"main.c","volumeRef":-1,"dirID":2,\
+        "fileType":"TEXT","creator":"ttxt","dataSize":5,\
+        "resourceSize":0,"modifiedAt":3400000000,"isFolder":false}}
+        """
+        guard case .continuitySelection(let ordinary) = try decode(live)
+        else { return XCTFail("not a continuity selection") }
+        XCTAssertNil(ordinary.afterEpoch)
+        XCTAssertFalse(ordinary.namesEndedEpoch)
+    }
+
     /// send_scene_same() in now-guest-ppc/src/core/wire.c, built across
     /// several snprintf calls because its phases block loops over the
     /// phase table. This is the answer a guest gives when the machine did

@@ -94,7 +94,7 @@ state, and publishes only when the generation set is coherent and current.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
-sources-sha1: 874a2d794cae32fd166f3e8499f30654d26a2d97
+sources-sha1: 32e40f88b09f5ef0d6b4d89a99cd72c3055606b2
 derive contract-summary sha256=6d33dded4bda9f42dce1aca6c3db8be6b10bbe3d2aeb9b5f266e286631b2ce59 lines=6
     scripts/docs-source-group contract
 rederived: pending
@@ -262,4 +262,5 @@ rederived: 2026-08-16T18:52:31-0400 51558682 sources
 rederived: 2026-08-16T19:17:53-0400 0c75216b unchanged
 rederived: 2026-08-16T21:38:02-0400 9e1756d6 sources, contract-summary 6->6
 rederived: 2026-08-16T22:00:22-0400 c578fc99 sources
+rederived: 2026-08-16T23:39:05-0400 eecd0c30 sources
 -->

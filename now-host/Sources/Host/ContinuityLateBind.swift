@@ -161,6 +161,15 @@ enum ContinuityLateBind {
         var gesture: () -> UInt64?
         /// Apply a generation that arrived after the cross.
         var revise: (ContinuitySelectionMark) -> Outcome
+        /// Apply a generation the Mac minted for a gesture whose EPOCH had
+        /// already ended — the crossing case, and the only one that carries
+        /// a whole stub rather than a mark.
+        ///
+        /// It takes the stub because there is no cache to look it up in: an
+        /// ended epoch has no bindable selection by construction, so the
+        /// frame itself is the only account, and joining it by `dragSeq` is
+        /// what stands in for the agreement the cache would have provided.
+        var reviseAfterEpoch: (ContinuityDragStub) -> Outcome
     }
 
     enum Outcome: Equatable {

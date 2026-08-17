@@ -343,12 +343,30 @@ struct ContinuitySelection: Codable, Equatable, Sendable {
     /// Absent for a poll, and absent from a guest older than the resident's
     /// send, which is then the only account there is.
     var dragSeq: UInt32?
+    /// THE EPOCH THIS FRAME NAMES HAS ALREADY ENDED, and the Mac sent it
+    /// anyway — for a gesture that began inside that epoch.
+    ///
+    /// The crossing drag is the case: crossing back is what ends the epoch,
+    /// and the crossing's own release is what frees the Macintosh's
+    /// application from the Finder's drag loop, so the generation for the
+    /// file in the hand can only be minted afterwards. The guest's grant
+    /// window keeps it redeemable; this field is how a host tells that
+    /// frame apart from one naming an epoch nobody owns any more.
+    ///
+    /// It may be joined to a crossing already in flight, by `dragSeq`. It
+    /// may NOT be cached as the current selection: no epoch is running, and
+    /// nothing may be bound to a press that has not happened.
+    var afterEpoch: Bool?
     /// Absent means nothing is selected — an instruction to drop whatever
     /// was cached, not a poll that found nothing to say.
     var item: Item?
 
     /// What this generation is, with the contract's default applied once.
     var resolvedSource: Source { source ?? .selection }
+
+    /// Whether this frame names an epoch that has already ended, with the
+    /// contract's default applied once. An older guest never sends it.
+    var namesEndedEpoch: Bool { afterEpoch ?? false }
 }
 
 /// THE FILE IN THE HAND, SAID WHILE THE HAND IS STILL MOVING.
