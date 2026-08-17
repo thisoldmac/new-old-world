@@ -4,6 +4,7 @@
 
 #include <Carbon.h>
 
+#include "continuity_dragmgr.h"
 #include "continuity_intake.h"
 #include "nowlog.h"
 #include "pump.h"
@@ -458,6 +459,34 @@ int now_continuity_selection_poll(unsigned long live_epoch)
                 && g_table.item.source == kNowStubSourceDrag) {
             return 1;
         }
+    }
+    /* NOT WHILE THIS MACHINE IS THE DRAG SOURCE, and this is the one
+       gate whose absence cost a 600 KB file.
+     *
+       The poll asks the Finder a question with AESend(kAEWaitReply). A
+       NOW-originated promise drag reaches its send proc INSIDE the
+       Finder's own drop handling — the Finder is sitting in
+       GetFlavorData waiting for us — and the send proc pumps the wire by
+       hand so the promised bytes can arrive. Every one of those pumped
+       passes ran a full conn_service, and conn_service reaches this
+       poll. So we asked a process that could not answer, waited the
+       whole 120-tick timeout, and did it again on the next pass, with
+       the AE's own idle hook bounced (it is a nested now_wire_pump).
+       Two-second blackouts, back to back, on the reader of a stream
+       whose sender does not wait: the collapse in
+       docs/large-transfers.md, entered on purpose.
+     *
+       The button gate below does not cover it. That gate reads the
+       PLANE's button, and the drop happens after the host has released
+       — the release is what produced the drop.
+     *
+       Refusing here also costs nothing that was ever worth having: the
+       poll's own header says a selection read is worthless while the
+       Finder holds a Drag Manager loop, and the drag plane's own
+       generation (g_drag_pending, above) is the fact this gesture
+       actually produces. */
+    if (now_continuity_drag_in_flight()) {
+        return 0;
     }
     if (now_continuity_button_is_down()) {
         /* Mid-gesture. Do not touch the deadline: the next pass after the
