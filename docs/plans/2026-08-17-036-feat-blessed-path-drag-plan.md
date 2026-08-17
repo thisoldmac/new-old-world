@@ -92,37 +92,72 @@ entry 2026-08-17):
   exact fate of the fake dialogs and MUST be captured in the first slice
   that completes a drop.
 
+## The ownership toggle (design invariant, 2026-08-17)
+
+Michelle's framing, adopted as the model: **exactly one OS's drag
+machinery is live at any moment — the one that owns the cursor — and the
+edge toggles it.** Host→guest: the AppKit session ends at the cross (the
+synthetic release that already ships) and the guest's `TrackDrag` begins
+there. Guest→host: the Finder's `TrackDrag` ends at the cross (the press
+release, already the design) and the host's
+`NSDraggingSession`/`NSFilePromiseProvider` begins there. Consequences:
+
+- The `TrackDrag`-blocks-NOW window shrinks to the guest-owned segment of
+  the gesture — the watchdog/lease allowances cover that, not a whole
+  human drag.
+- **Abort is native.** Cross-back mid-drag: report the position somewhere
+  no target accepts, then report button-up — `TrackDrag` returns
+  `dragNotAcceptedErr`, the promise is never asked, the Manager's own
+  snap-back plays. No cancel channel to invent. (Mirrored on the host by
+  round 2's staged/never-committed semantics.)
+- There is a beat at the edge where neither drag exists, while the
+  skeleton crosses the wire (~hundreds of ms). Invisible if the guest
+  draws nothing until `TrackDrag` starts. Guard the failure mode: a
+  skeleton that never arrives leaves the guest holding a pressed cursor
+  with no drag — time that out into the same native non-drop.
+
 ## Routes past the wall
 
-The pointer pump needs task time *while `TrackDrag` runs*. Three routes,
-ordered by preference:
+The pointer pump needs task time *while `TrackDrag` runs*. We are both
+halves of the problem — the drag source and the pointer authority — so we
+can cooperate with ourselves. Routes, ordered by preference:
 
-**Route A — ride the Drag Manager's own callbacks (preferred, unproven,
-cheap to test).** The Drag Manager calls registered tracking handlers
-repeatedly during a drag, at task time, in the context of the process
-under the pointer — this is the exact context class in which the
-resident's `dragObs` EnterHandler ran and in which the resident's
-`dragBegin` MacTCP send survived a real PowerBook (2026-08-16, 10 frames,
-no wedge). If the resident (or the app) registers a tracking handler for
-NOW's own drag and applies the pending Cursor Device move from inside it,
-the pump rides the drag's own heartbeat: task time, blessed context, fires
-continuously while the button is down. **Decisive experiment (slice 0,
-emulator-only, ~one session):** instrument whether tracking-handler
-callbacks fire during a NOW-originated `TrackDrag` at a useful rate, apply
-the Cursor Device move from one, and watch whether the pointer (and the
-ghost) actually track. Everything downstream gates on this.
+**Route A′ — `SetDragInputProc` (primary; the Manager's own seam for
+exactly this).** The drag *source* attaches an input proc to its own
+`DragRef`; the Drag Manager calls it — inside `TrackDrag`, at task time,
+in our context — every time it samples the mouse, and the proc supplies
+position and button state. It exists precisely so a drag can be driven by
+something other than the physical mouse. That is the `setState({pos,
+mouse_down})` entry point as a published API, not a hack. Freshness works
+because continuity positions arrive via the OT notifier at deferred-task
+time, independent of NOW's blocked task time — the input proc does a
+bounded read of the latest point, squarely inside the 1.11 contract.
+**Slice 0 questions:** (1) does the ghost track the reported position;
+(2) does the cursor sprite follow, or only the ghost (if only the ghost,
+the resident's proven low-memory writes can keep the sprite in agreement,
+or ghost-only is accepted); (3) does the drop resolve and target at the
+reported point (`inwin`/`loc` flip to the Finder, promise asked); (4)
+does abort-by-non-acceptance return `dragNotAcceptedErr` cleanly.
+
+**Route A — tracking-handler relay (fallback).** NOW's own tracking
+handler pumps while the drag is over NOW's windows; the resident's
+Finder-context handler (installed and metal-proven for the `dragBegin`
+send) takes over once the drag crosses onto the desktop. Two of our
+components cooperating across the gap. Costlier and only needed if the
+input proc is not called continuously or its samples don't steer the
+drag.
 
 **Route B — timer-context Cursor Device movement.** Would work by
 construction and is the reason it is not preferred: it re-opens the
 six-wedge PowerBook safety argument in full. Emulator evidence cannot
-retire that risk (the wedges were metal-only). Only on the table if Route
-A's callbacks don't fire or fire too slowly; requires its own safety
-design and Michelle's explicit sign-off before any metal contact.
+retire that risk (the wedges were metal-only). Only on the table if A′
+and A both fail; requires its own safety design and Michelle's explicit
+sign-off before any metal contact.
 
 **Route C — another process's task time.** A faceless background helper
 as the drag source, keeping NOW's loop free. Costs a new guest component
 and its lifecycle for an architectural dodge; recorded for completeness,
-pursued only if A and B both die.
+pursued only if everything above dies.
 
 ## The inducible entry point
 
@@ -163,7 +198,7 @@ Contract-declared verb (name to settle at declaration time):
 
 | # | slice | gate |
 |---|---|---|
-| 0 | Route-A experiment: do tracking callbacks give the pump task time inside `TrackDrag`? | emulator; go/no-go for everything below |
+| 0 | Route-A′ experiment: `SetDragInputProc` drives an induced drag — ghost tracks, sprite question answered, drop targets at the reported point, abort-by-non-acceptance clean | emulator; go/no-go for everything below |
 | 1 | `continuity.hostDragBegin` contract + guest verb + probe induction | emulator: induced drag tracks, drops in a Finder window, promise pulls byte-identical |
 | 2 | Observe the Finder's native collision + progress on a real promise drop (same-name-twice, screendumps) | decides the kill list's exact scope |
 | 3 | Wire the edge handoff to it; delete carry illustration + drag-lane windoid/confirm per slice-2 findings | emulator round + attended metal round |
