@@ -99,6 +99,13 @@ before: Macintosh HD`). Receipt: `run/fixD-cross-2026-08-16/`.
 | `continuity.grab` for epoch 1 / generation 2 | served: `file.begin` 42 bytes |
 | the bytes | drained whole to `FLAG_END`, sha256 `9ee02d9589c4…` — the round's regression digest, unchanged |
 
+The guest's own log agrees from the other side: `mirror grab granted
+#7202 epoch=1 gen=2 HELLO_CLAUDE.txt: file.begin sent xfer=1`, read back
+off the machine afterwards (`run/fixD-cross-2026-08-16/guest-log-3.json`
+— the mint's own line had already rolled out of the `mirror` ring by
+then, so this is the last surviving line of the sequence rather than all
+of it).
+
 `midGestureSelections` is empty, as always: the application publishes
 nothing while the Finder holds its drag loop. What changed is what happens
 after — the frame exists, it names the ended epoch out loud, and a grab
