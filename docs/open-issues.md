@@ -7,6 +7,117 @@ search:
 
 # Open issues
 
+## BUILT, NOT METAL-VERIFIED: the carried file's release now commits (2026-08-16, `fix/hg-drag-release-rearm`)
+
+Host-only. Fixes D2, D5 and D4 of the F1 forensics ledger for the attended
+PowerBook 1400c round of 2026-08-16 (host log
+`~/Library/Logs/now-logs/2026-08-16 221834.log`; the ledger's `file:line`
+readings are against `feat/hg-drag-arc-candidate` @ `0447594c`, this
+branch's base). D1 and D3 are other people's; nothing here touches the
+guest or the extension.
+
+### D2 — the physical release was invisible, so nothing ever committed
+
+**Root cause, as the ledger states it.** `endHostDragAtCross` posts a
+synthetic `leftMouseUp` at **`.cghidEventTap`** to end Finder's session at
+the crossing. That sets the system's global primary-button state to UP
+while the person's finger is still down, so when they physically lift,
+IOHIDSystem sees no transition and the window server emits no
+`leftMouseUp` at all. The commit was gated on a `.primaryUp` **sample**
+(`ContinuityEdgeController.swift:831`), so it could never fire. Seven
+carried gestures in that round, one commit — and that one only because
+Michelle pressed the button **again** mid-carry (`221834:65–90`). The
+previous entry for `fix/hg-drag-edge-park` asserted the opposite ("the
+consuming tap swallows the eventual physical `leftMouseUp`"); the metal
+round refutes it. A tap cannot swallow an event that is never emitted.
+
+**What changed.** The button bookkeeping is now re-armed symmetrically with
+the guest→host lane, which has always handled the mirror image of this
+desync: its consuming tap swallows the physical **down**, so it posts a
+synthetic down to correct the session's belief before an
+`NSDraggingSession` may begin (`armSessionButtonIfSurfaceIsReady`,
+`session button state re-armed`). `rearmStagedCarryButton` is that
+mechanism pointed the other way — a synthetic **down at the HID level**,
+because the HID level is what our release lied to — so the person's lift is
+a real transition again and arrives as the `.primaryUp` the commit already
+wanted.
+
+It borrows the older lane's safety rule as well as its mechanism: **this
+app does not press a button in another application.** The re-arm is posted
+only once custody has armed the consuming tap (`convergeAfterCrossDrop`,
+or `transportPhaseChanged(.active)` when the converge was deferred), at the
+crossing point, with the catch surface still widened — `acceptCrossDrop`
+now narrows the strip *after* the converge rather than before. Without a
+tap it is **declined outright and logged**, and the carry is degraded
+rather than the desktop pressed.
+
+**And a backstop, because one desync of this shape is enough.**
+`stagedCarryReleasedAtHID` reads the hardware in the drive loop and commits
+on the held→released edge. It arms only after the HID has confirmed the
+re-arm took: before that, "not held" is this Mac's own synthetic release
+coming back as an answer.
+
+### D5 — forwarded presses on the guest desktop (the Classilla open)
+
+While a carry was staged, button samples were still forwarded to the guest
+as **real clicks** — the suppression at `:839` asked only about a live
+foreign session, and there is none after `acceptCrossDrop`. Three forwarded
+click bursts at near-identical guest points, two of them 488 ms and 487 ms
+apart, i.e. inside classic Mac OS's default `GetDblTime()` of 0.5 s
+(`221834:105–120, 330–340, 431–440`). That is how a drag came to open a
+desktop alias.
+
+A staged carry now **owns the button outright**: `.primaryDown` is refused
+and counted for as long as `stagedHostFiles != nil`, and the count is
+reported on the commit and on the abandon. Motion keeps flowing. The
+guest-side release is synthesised by us at the commit and only there —
+which is also what keeps the D2 re-arm's own synthetic down from becoming a
+click.
+
+### D4 — the lockup window was unreadable
+
+`hideHostCursor`, `restoreHostCursor`, `reassociateHostCursor`, the
+detach/re-attach, the park, and the tap arm/disarm wrote **no log lines at
+all**, so the host log went silent exactly where "the cursor started going
+wild" was reported and the forensics could rule out none of its three
+candidate mechanisms. Every custody transition now emits one audited line
+through `custodyAudit`, carrying the gesture id and the pointer position;
+parks are counted rather than logged per sample and reported at the
+restore beside `suppressedWarps`. Treated as a deliverable and pinned by a
+test, not as a garnish.
+
+### Verified here
+
+Host unit tests only. `ContinuityEdgeControllerTests` gained six tests over
+one shared `Carry` fixture — the release commits without a second press and
+the HID posts read release-then-re-arm in that order, after the tap; the
+re-arm is declined with a reason when nothing would swallow it; no press
+reaches the guest while a file is staged; the HID backstop commits when no
+event carries the release; a staged carry is not abandoned by a button
+state without a crossing; and every custody transition is audited with a
+position. The consecutive-gesture balance test now asserts the whole post
+sequence (`false, true, false, true`) rather than a count. `scripts/test-all`
+otherwise unchanged.
+
+### What only the next attended run can prove
+
+- **That the physical release commits on real hardware.** No fake can prove
+  this: the test environment delivers a `.primaryUp` sample whatever the
+  HID state is, which is precisely the fiction that hid D2 for a build.
+  What to look for: `custody: button re-armed`, then `custody: button
+  re-arm confirmed`, then `host file drag: the person released on the
+  guest … accepted` **without** an intervening `primary down sent`.
+- **That no drag opens anything on the guest again.** `custody: button
+  forwarding suppressed` should appear at most once per carry, and the
+  commit line's `suppressedPresses=` count should be small and match what
+  the person remembers doing.
+- **That the custody log is now readable** end to end across a carry —
+  hidden, detached, parked, tap armed, re-armed, restored, re-attached —
+  and, if the cursor misbehaves again, which of those it happened between.
+- Whether the HID backstop ever fires in practice (`the HID says the button
+  went up and no event carried it`). If it does, the re-arm is not
+  sufficient on metal and the event path needs a second look.
+
 ## FIXED, EMULATOR-VERIFIED: the collision replace dialog landed on `refactor/mirror-continuity-split` (2026-08-16, `feat/hg-drag-collision-land`)
 
 `f74324a4` ("DECIDED AND BUILT, NOT METAL-VERIFIED" — see the entry below)
