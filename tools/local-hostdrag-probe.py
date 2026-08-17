@@ -398,20 +398,29 @@ def main():
         guest.script('tell application "Finder"\nactivate\n'
                      'open startup disk\nend tell', on_message=serve)
         time.sleep(2)
+        # ONE PHRASING THAT ANSWERS, and it is the desktop listing's:
+        # `(bounds of front window) as string` errors -1753 on this
+        # AppleScript, and slice 0's fallback parser then read
+        # `timeoutMs 15000` as a window rectangle. Building the string
+        # item by item is the form the Finder actually answers.
         raw = guest.script(
-            'tell application "Finder" to return (bounds of front window) '
-            'as string', on_message=serve)
+            'tell application "Finder"\nset q to bounds of front window\n'
+            'return ((item 1 of q) & "," & (item 2 of q) & "," & '
+            '(item 3 of q) & "," & (item 4 of q)) as string\nend tell',
+            on_message=serve)
         nums = [int(n) for n in raw.replace(",", " ").split() if
                 n.lstrip("-").isdigit()]
+        if len(nums) != 4:
+            raise RuntimeError(
+                "the Finder's front window has no readable bounds "
+                f"({raw!r}); refusing to drop at a guessed point - that is "
+                "how slice 0 aimed a gesture at timeoutMs")
         if len(nums) == 4:
             window_bounds = nums
             args.drop_x = (nums[0] + nums[2]) // 2
             args.drop_y = (nums[1] + nums[3]) // 2 + 20
             print(f"[probe] Finder window {nums}, dropping at "
                   f"{args.drop_x},{args.drop_y}", flush=True)
-        else:
-            print(f"[probe] could not read the window's bounds: {raw!r}",
-                  file=sys.stderr, flush=True)
 
     before = guest.script(
         'tell application "Finder" to return (count of (every file of '
@@ -544,10 +553,15 @@ def main():
     # a real gap in a verb whose whole subject is full HFS paths.
     verify = None
     if args.verify:
-        path = f"Macintosh HD:Desktop Folder:{fixture_name}"
+        # WHERE THE RECEIVER PUT IT, not where we assume. A window drop
+        # lands in that window's folder; the desktop drop lands on the
+        # desktop. Reading back from the wrong one reports a missing file
+        # for a drag that worked.
+        path = (f"Macintosh HD:{fixture_name}" if args.gesture == "window"
+                else f"Macintosh HD:Desktop Folder:{fixture_name}")
         size_raw = guest.script(
-            'tell application "Finder" to get size of file '
-            f'"{fixture_name}" of desktop', on_message=serve)
+            f'tell application "Finder" to get size of file "{path}"',
+            on_message=serve)
         landed = bytearray()
         offset = 0
         trouble = None

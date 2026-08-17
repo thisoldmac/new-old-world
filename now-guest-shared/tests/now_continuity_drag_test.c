@@ -611,6 +611,33 @@ static int test_host_begin_refusals(void)
     return 0;
 }
 
+/* THE NATIVE ABORT, AND THE WORD IT GETS. Cross back mid-drag: the
+   position goes somewhere no target accepts and the button is reported
+   up, TrackDrag returns userCanceledErr, the promise is never asked.
+   That is `cancelled` — and it must NOT be `button-not-real`, which is
+   what the 2026-08-17 emulator run reported. For a host-driven drag this
+   machine's own Button() is up by construction, so the test that makes
+   that verdict specific answers the same way every time. */
+static int test_host_drag_aborts_as_a_cancel(void)
+{
+    NowContinuityDragState st;
+    NowContinuityOfferItem it = file_of(4096L);
+    NowContinuityOfferTable table;
+
+    now_continuity_drag_reset(&st);
+    CHECK(now_continuity_drag_host_begin(&st, &it, 9, 9, 5) == kNowDragOK);
+    CHECK(now_continuity_drag_ended(&st, 0, 0) == kNowDragCancelled);
+
+    /* And the verdict still works where it means something: a CONSOLE
+       drag ripened on a plane button this Macintosh never had. */
+    publish(&table, &it);
+    now_continuity_drag_reset(&st);
+    CHECK(now_continuity_drag_request(&st, &table, 9, 10) == kNowDragOK);
+    CHECK(now_continuity_drag_tick(&st, 1, 20) == kNowDragTickStart);
+    CHECK(now_continuity_drag_ended(&st, 0, 0) == kNowDragButtonNotReal);
+    return 0;
+}
+
 /* A console drag after a host drag must not inherit its gesture id. The
    state struct lives for the life of the application, and a stale
    dragSeq would join one crossing's log lines to another's. */
@@ -651,6 +678,7 @@ int main(void)
     if (test_null_is_inert()) return 1;
     if (test_host_begin_starts_without_an_arm()) return 1;
     if (test_host_begin_refusals()) return 1;
+    if (test_host_drag_aborts_as_a_cancel()) return 1;
     if (test_console_drag_carries_no_gesture()) return 1;
 
     printf("ok\n");

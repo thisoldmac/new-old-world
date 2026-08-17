@@ -242,7 +242,7 @@ int now_continuity_drag_ended(NowContinuityDragState *st, int track_ok,
            before the not-asked case so a promise that began and broke
            can never be reported as a receiver that stayed silent. */
         verdict = kNowDragTransferFailed;
-    } else if (!track_ok && !toolbox_button_at_start) {
+    } else if (!track_ok && !toolbox_button_at_start && !st->host_driven) {
         /* No drop, and this Mac's own button was up when tracking began.
            Ranked BELOW the three above on purpose: a settled promise, a
            cancel we asked for, and a stream that broke are all things we
@@ -250,7 +250,17 @@ int now_continuity_drag_ended(NowContinuityDragState *st, int track_ok,
            not evidence against them. It outranks plain `cancelled` for
            the opposite reason - once nothing else is known, "the button
            was never real" is the more specific of the two, and the less
-           specific word is what made the first live run unreadable. */
+           specific word is what made the first live run unreadable.
+
+           AND IT IS REFUSED OUTRIGHT FOR A HOST-DRIVEN DRAG. There, the
+           machine's own Button() is up BY CONSTRUCTION - nobody is
+           touching this Macintosh's mouse, the button lives on the
+           Continuity plane and reaches the Manager through the input
+           proc - so the test that makes this verdict specific answers
+           the same way every time and stops being evidence. The
+           2026-08-17 emulator abort measured exactly that: a clean
+           native cancel, correctly a cancel, reported as a defect. A
+           diagnosis that cannot come out false is not a diagnosis. */
         verdict = kNowDragButtonNotReal;
     } else if (!track_ok) {
         verdict = kNowDragCancelled;
