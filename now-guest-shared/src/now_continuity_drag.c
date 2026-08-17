@@ -72,11 +72,69 @@ int now_continuity_drag_request(NowContinuityDragState *st,
     st->epoch = epoch;
     st->generation = generation;
     st->armed_at = now_ticks;
+    /* Cleared, not left: this state struct is reused for the life of the
+       application, and a stale gesture id from an earlier host-driven
+       drag would join a console drag to a crossing that has nothing to
+       do with it. */
+    st->drag_seq = 0;
+    st->host_driven = 0;
     st->cancel_requested = 0;
     st->promise_asked = 0;
     st->promise_settled = 0;
     st->last_verdict = kNowDragOK;
     st->state = kNowDragWaitingButton;
+    return kNowDragOK;
+}
+
+int now_continuity_drag_host_begin(NowContinuityDragState *st,
+                                   const NowContinuityOfferItem *item,
+                                   unsigned long epoch,
+                                   unsigned long live_epoch,
+                                   unsigned long drag_seq)
+{
+    if (st == NULL || item == NULL) {
+        return kNowDragNoOffer;
+    }
+    /* Busy first, for request()'s reason: a second beginning must not be
+       able to overwrite the identity copy the drag in flight is
+       promising against. */
+    if (st->state != kNowDragIdle) {
+        return kNowDragBusy;
+    }
+    /* THE EPOCH IS CHECKED AGAINST THE LIVE ONE, not merely for being
+       non-zero. This drag is steered by the Continuity plane, and the
+       plane belongs to an epoch: a drag begun under a dead epoch would
+       enter TrackDrag with an input proc reading a cell nobody is
+       writing, and would hang on the Manager's own sample of a mouse
+       that never moves. That is the 2026-08-17 wall, re-entered
+       voluntarily. */
+    if (epoch == 0 || live_epoch == 0 || epoch != live_epoch) {
+        return kNowDragBadEpoch;
+    }
+    if (item->is_folder) {
+        return kNowDragFolder;
+    }
+    if (!now_continuity_drag_size_ok(item)) {
+        return kNowDragTooLarge;
+    }
+
+    st->item = *item;
+    st->epoch = epoch;
+    /* NO GENERATION. A hostDragBegin does not mint one and does not
+       carry one: the bytes are fetched from whatever the host's offer
+       table holds for this epoch, which is the same authority
+       `offer --take` already reads. Inventing a number here would be a
+       second name for one item — the drift continuity.dragBegin's
+       schema refuses in the mirrored direction. */
+    st->generation = 0;
+    st->armed_at = 0;
+    st->drag_seq = drag_seq;
+    st->host_driven = 1;
+    st->cancel_requested = 0;
+    st->promise_asked = 0;
+    st->promise_settled = 0;
+    st->last_verdict = kNowDragOK;
+    st->state = kNowDragTracking;
     return kNowDragOK;
 }
 
@@ -268,6 +326,8 @@ const char *now_continuity_drag_code(int verdict)
         return "promise-never-asked";
     case kNowDragButtonNotReal:
         return "button-not-real";
+    case kNowDragBadEpoch:
+        return "bad-epoch";
     default:
         break;
     }

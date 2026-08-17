@@ -19,6 +19,7 @@
 #include "continuity_intake.h"
 #include "continuity_selection.h"
 #include "continuity_offer_intake.h"
+#include "continuity_hostdrag_intake.h"
 #include "continuity_dragmgr.h"
 #include "json.h"
 #include "loopstat.h"
@@ -4801,6 +4802,19 @@ Boolean now_wire_receive_active(long *received, long *expected,
         if (!g_get.receiving || !g_get.unattended) {
             return false;
         }
+        /* NOT ON THE DRAG LANE, AND SAID RATHER THAN LEFT TO LUCK.
+           A promise pull runs inside the receiver's drop, so the event
+           loop that opens the windoid is not running and it has never
+           in fact appeared there. That is an accident of scheduling,
+           not a decision, and the blessed path makes it one: while a
+           native drag is in flight the OS's own drop is the progress
+           surface, and a windoid of ours beside it would be the second
+           imitation this slice exists to delete. The wire-offer and MCP
+           put lanes keep the windoid untouched — nobody is dragging
+           there. */
+        if (now_continuity_drag_in_flight()) {
+            return false;
+        }
         if (received != NULL) {
             *received = g_get.rx.received;
         }
@@ -7851,6 +7865,20 @@ static int handle_frame(const char *reply)
            ANSWERED" - so this just folds it into the table the `offer`
            command and now_wire_get_offer both read. */
         now_continuity_offer_intake(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.hostDragBegin")) {
+        /* THE EDGE HANDED OFF. No answer is owed and none is sent: the
+           only honest report on an instruction is what the drag does,
+           and the drag's own log says that, joined to the host's account
+           by dragSeq.
+
+           Note what this does NOT do — start the drag. It is held for
+           the service pass one statement after this one returns, because
+           now_wire_pump() bounces every nested entry and the promise's
+           byte pull happens inside the drop. See
+           now_continuity_dragmgr_host_request. */
+        now_continuity_hostdrag_intake(reply);
         return 1;
     }
     if (now_json_type_is(reply, "capture.request")) {

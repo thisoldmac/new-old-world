@@ -292,6 +292,7 @@ add_application(now-guest-ppc
     src/input/continuity_drain_logic.c
     src/input/continuity_selection.c
     src/input/continuity_offer_intake.c
+    src/input/continuity_hostdrag_intake.c
     src/input/continuity_dragmgr.c
     ../now-guest-shared/src/now_continuity_selection.c
     ../now-guest-shared/src/now_continuity_offer.c

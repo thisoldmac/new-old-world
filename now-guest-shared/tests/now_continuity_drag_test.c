@@ -479,7 +479,7 @@ static int test_vocabulary(void)
         kNowDragOK, kNowDragNoOffer, kNowDragFolder, kNowDragTooLarge,
         kNowDragBusy, kNowDragButtonNeverCame, kNowDragDragFailed,
         kNowDragTransferFailed, kNowDragCancelled, kNowDragNotDragging,
-        kNowDragPromiseNeverAsked, kNowDragButtonNotReal
+        kNowDragPromiseNeverAsked, kNowDragButtonNotReal, kNowDragBadEpoch
     };
     int i, j;
     int n = (int)(sizeof verdicts / sizeof verdicts[0]);
@@ -533,6 +533,104 @@ static int test_null_is_inert(void)
     return 0;
 }
 
+/* THE EDGE HANDED OFF. continuity.hostDragBegin's decision half: it
+   starts rather than arms, it refuses an epoch that is not the live one,
+   and it carries the host's gesture id so one crossing has one number.
+
+   The arm is the difference under test. A console `offer --drag` names
+   an intention with no gesture behind it and must wait for the applied
+   button; a hostDragBegin arrives BECAUSE a person's hand crossed the
+   edge, so waiting would spend the beat where neither machine's drag
+   exists drawing nothing. State goes straight to Tracking here, and
+   these cases are what stops that from being quietly re-armed later. */
+static int test_host_begin_starts_without_an_arm(void)
+{
+    NowContinuityDragState st;
+    NowContinuityOfferItem it = file_of(4096L);
+
+    now_continuity_drag_reset(&st);
+    CHECK(now_continuity_drag_host_begin(&st, &it, 9, 9, 77) == kNowDragOK);
+    CHECK(st.state == kNowDragTracking);
+    CHECK(st.drag_seq == 77);
+    CHECK(st.host_driven);
+    CHECK(st.epoch == 9);
+    /* No generation is minted; the bytes come from the host's own offer
+       table for this epoch. A number here would be a second name for one
+       item. */
+    CHECK(st.generation == 0);
+    CHECK(strcmp(st.item.name, "Report") == 0);
+
+    /* And it is a real drag from the Drag Manager's point of view: the
+       promise may be asked for, and TrackDrag's return settles it. */
+    CHECK(now_continuity_drag_promise_begin(&st) == 1);
+    now_continuity_drag_promise_end(&st, 1);
+    CHECK(now_continuity_drag_ended(&st, 1, 1) == kNowDragOK);
+    CHECK(st.state == kNowDragIdle);
+    return 0;
+}
+
+static int test_host_begin_refusals(void)
+{
+    NowContinuityDragState st;
+    NowContinuityOfferItem it = file_of(4096L);
+    NowContinuityOfferItem big = file_of(kNowContinuityDragPromiseCapBytes + 1L);
+    NowContinuityOfferItem folder = file_of(0L);
+
+    folder.is_folder = 1;
+
+    /* A dead epoch is its own word. Three shapes of it, because all
+       three would otherwise enter TrackDrag with an input proc reading a
+       cell nobody is writing. */
+    now_continuity_drag_reset(&st);
+    CHECK(now_continuity_drag_host_begin(&st, &it, 9, 10, 1)
+          == kNowDragBadEpoch);
+    CHECK(now_continuity_drag_host_begin(&st, &it, 0, 9, 1)
+          == kNowDragBadEpoch);
+    CHECK(now_continuity_drag_host_begin(&st, &it, 9, 0, 1)
+          == kNowDragBadEpoch);
+    CHECK(st.state == kNowDragIdle);
+
+    CHECK(now_continuity_drag_host_begin(&st, &folder, 9, 9, 1)
+          == kNowDragFolder);
+    CHECK(now_continuity_drag_host_begin(&st, &big, 9, 9, 1)
+          == kNowDragTooLarge);
+    CHECK(st.state == kNowDragIdle);
+
+    /* Busy is asked before anything else, and a refusal leaves the drag
+       in flight — and its identity — untouched. */
+    CHECK(now_continuity_drag_host_begin(&st, &it, 9, 9, 5) == kNowDragOK);
+    CHECK(now_continuity_drag_host_begin(&st, &big, 9, 9, 6) == kNowDragBusy);
+    CHECK(now_continuity_drag_host_begin(&st, &it, 3, 9, 6) == kNowDragBusy);
+    CHECK(st.drag_seq == 5);
+    CHECK(st.item.data_size == 4096L);
+
+    CHECK(now_continuity_drag_host_begin((NowContinuityDragState *)0, &it,
+                                         9, 9, 1) == kNowDragNoOffer);
+    CHECK(now_continuity_drag_host_begin(&st, (const NowContinuityOfferItem *)0,
+                                         9, 9, 1) == kNowDragNoOffer);
+    return 0;
+}
+
+/* A console drag after a host drag must not inherit its gesture id. The
+   state struct lives for the life of the application, and a stale
+   dragSeq would join one crossing's log lines to another's. */
+static int test_console_drag_carries_no_gesture(void)
+{
+    NowContinuityDragState st;
+    NowContinuityOfferTable table;
+    NowContinuityOfferItem it = file_of(4096L);
+
+    now_continuity_drag_reset(&st);
+    CHECK(now_continuity_drag_host_begin(&st, &it, 9, 9, 42) == kNowDragOK);
+    CHECK(now_continuity_drag_ended(&st, 0, 1) == kNowDragCancelled);
+
+    publish(&table, &it);
+    CHECK(now_continuity_drag_request(&st, &table, 9, 10) == kNowDragOK);
+    CHECK(st.drag_seq == 0);
+    CHECK(!st.host_driven);
+    return 0;
+}
+
 int main(void)
 {
     if (test_size_line()) return 1;
@@ -551,6 +649,9 @@ int main(void)
     if (test_forget()) return 1;
     if (test_vocabulary()) return 1;
     if (test_null_is_inert()) return 1;
+    if (test_host_begin_starts_without_an_arm()) return 1;
+    if (test_host_begin_refusals()) return 1;
+    if (test_console_drag_carries_no_gesture()) return 1;
 
     printf("ok\n");
     return 0;
