@@ -194,6 +194,7 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     private(set) var liveBinding: ContinuityDragBinding?
     private var gestureSerial: UInt64 = 0
 
+    @discardableResult
     private func newBinding(for stub: ContinuityDragStub?,
                             provider: NSFilePromiseProvider)
         -> ContinuityDragBinding {
@@ -251,7 +252,7 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
         let bytes = ContinuityFileDragPolicy.totalBytes(
             dataSize: stub.item.dataSize, resourceSize: stub.item.resourceSize)
         let promiseWriter = promise(for: stub)
-        let binding = newBinding(for: stub, provider: promiseWriter)
+        newBinding(for: stub, provider: promiseWriter)
         let image = NSWorkspace.shared.icon(for: stub.utType)
         guard let fetch = beginEagerFetch(for: stub, bytes: bytes) else {
             audit(.info, "drag payload: " + ContinuityFileDragPolicy.summary(
