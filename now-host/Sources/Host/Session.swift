@@ -911,12 +911,13 @@ final class Session {
     /// follows is the guest's own `continuity.grab` against the offer this
     /// message's skeleton describes.
     func sendContinuityHostDragBegin(
-        dragSeq: UInt32, pos: ContinuityHostDragBegin.Position,
+        epoch: UInt32, dragSeq: UInt32,
+        pos: ContinuityHostDragBegin.Position,
         item: ContinuityHostDragBegin.Item
     ) {
         send(.continuityHostDragBegin(
-            .init(version: ContinuityContract.version, dragSeq: dragSeq,
-                  pos: pos, item: item)))
+            .init(version: ContinuityContract.version, epoch: epoch,
+                  dragSeq: dragSeq, pos: pos, item: item)))
     }
 
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,

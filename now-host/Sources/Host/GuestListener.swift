@@ -1231,12 +1231,12 @@ final class GuestListener: ObservableObject {
         }
         let item = ContinuityHostDragSkeleton.item(for: plan)
         note("drag handoff #\(dragSeq): \(item.name) "
-             + "type=\(item.type ?? "-") creator=\(item.creator ?? "-") "
-             + "data=\(item.dataSize) rsrc=\(item.rsrcSize) at "
+             + "type=\(item.fileType ?? "-") creator=\(item.creator ?? "-") "
+             + "data=\(item.dataSize) rsrc=\(item.resourceSize) at "
              + "\(pos.h),\(pos.v) — the Macintosh's Drag Manager owns the "
              + "gesture from here", area: "continuity", session: guestKey)
-        session.sendContinuityHostDragBegin(dragSeq: dragSeq, pos: pos,
-                                            item: item)
+        session.sendContinuityHostDragBegin(epoch: epoch, dragSeq: dragSeq,
+                                            pos: pos, item: item)
         return item
     }
 

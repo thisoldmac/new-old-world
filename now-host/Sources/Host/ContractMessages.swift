@@ -446,20 +446,27 @@ struct ContinuityHostDragBegin: Codable, Equatable, Sendable {
     struct Item: Codable, Equatable, Sendable {
         var name: String
         /// Classic four-character type/creator, the same pair
-        /// `ContinuityOffer.Item` carries for the same file.
-        var type: String?
+        /// `ContinuityOffer.Item` carries for the same file. Named
+        /// `fileType` on the wire — `continuity.offer`'s own spelling,
+        /// verbatim, per the schema's "same skeleton" rule.
+        var fileType: String?
         var creator: String?
         /// The forks AS THEY WILL ARRIVE, not as they sit on this Mac: a
-        /// plan that sends data only says `rsrcSize: 0` rather than
+        /// plan that sends data only says `resourceSize: 0` rather than
         /// reporting a resource fork the receiver will never see.
         var dataSize: Int
-        var rsrcSize: Int
+        var resourceSize: Int
     }
 
     /* Optional at the decoder for the reason every Continuity message
        treats it so: a missing version must be readable enough to be
        refused by name. */
     var version: Int?
+    /// The live Continuity epoch this drag is steered under — the same
+    /// number the ordinary position datagrams carry. A hostDragBegin
+    /// naming any other epoch is refused guest-side: the cursor authority
+    /// this drag reads belongs to one epoch.
+    var epoch: UInt32
     /// One host→guest carry, so a log line on either side can be paired
     /// with the other's without guessing from timestamps.
     var dragSeq: UInt32

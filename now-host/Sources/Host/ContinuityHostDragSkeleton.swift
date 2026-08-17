@@ -30,8 +30,8 @@ enum ContinuityHostDragSkeleton {
         -> ContinuityHostDragBegin.Item {
         let forks = forkSizes(for: plan)
         return ContinuityHostDragBegin.Item(
-            name: plan.name, type: plan.fileType, creator: plan.creator,
-            dataSize: forks.data, rsrcSize: forks.rsrc)
+            name: plan.name, fileType: plan.fileType, creator: plan.creator,
+            dataSize: forks.data, resourceSize: forks.rsrc)
     }
 
     /// Exposed for the gate next door: the fork arithmetic is the part of

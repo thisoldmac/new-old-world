@@ -147,17 +147,17 @@ final class GuestWireFixtureTests: XCTestCase {
     /// answering "which window" would be re-invented targeting.
     func testHostDragBeginIsEncodedAsTheHandoffShape() throws {
         let message = ControlMessage.continuityHostDragBegin(.init(
-            version: ContinuityContract.version, dragSeq: 3,
+            version: ContinuityContract.version, epoch: 7, dragSeq: 3,
             pos: .init(h: 24, v: 450),
-            item: .init(name: "main.c", type: "TEXT", creator: "ttxt",
-                        dataSize: 4096, rsrcSize: 0)))
+            item: .init(name: "main.c", fileType: "TEXT", creator: "ttxt",
+                        dataSize: 4096, resourceSize: 0)))
         let encoded = try ControlMessageCodec.encode(message)
         let text = String(decoding: encoded, as: UTF8.self)
         XCTAssertTrue(text.contains("\"type\":\"continuity.hostDragBegin\""),
                       text)
-        for field in ["\"dragSeq\"", "\"pos\"", "\"h\"", "\"v\"", "\"item\"",
-                      "\"name\"", "\"type\"", "\"creator\"", "\"dataSize\"",
-                      "\"rsrcSize\""] {
+        for field in ["\"epoch\"", "\"dragSeq\"", "\"pos\"", "\"h\"", "\"v\"",
+                      "\"item\"", "\"name\"", "\"fileType\"", "\"creator\"",
+                      "\"dataSize\"", "\"resourceSize\""] {
             XCTAssertTrue(text.contains(field), "\(field) missing from \(text)")
         }
         XCTAssertFalse(text.contains("container"),
@@ -178,7 +178,7 @@ final class GuestWireFixtureTests: XCTestCase {
             fileType: "TEXT", creator: "ttxt", modified: nil, note: nil)
         let plain = ContinuityHostDragSkeleton.item(for: data)
         XCTAssertEqual(plain.dataSize, 66)
-        XCTAssertEqual(plain.rsrcSize, 0,
+        XCTAssertEqual(plain.resourceSize, 0,
                        "the data lane sends one fork, so promising two would "
                         + "be a promise this Mac cannot keep")
 
@@ -191,7 +191,7 @@ final class GuestWireFixtureTests: XCTestCase {
             name: "App", container: "macbinary", bytes: both,
             fileType: nil, creator: nil, modified: nil, note: nil))
         XCTAssertEqual(binary.dataSize, 256)
-        XCTAssertEqual(binary.rsrcSize, 32)
+        XCTAssertEqual(binary.resourceSize, 32)
 
         /* A header claiming more than the file holds is corrupt, and a
            Finder that reserved from it would fail the copy for a reason
@@ -203,7 +203,7 @@ final class GuestWireFixtureTests: XCTestCase {
             name: "App", container: "macbinary", bytes: lying,
             fileType: nil, creator: nil, modified: nil, note: nil))
         XCTAssertEqual(refused.dataSize, lying.count)
-        XCTAssertEqual(refused.rsrcSize, 0)
+        XCTAssertEqual(refused.resourceSize, 0)
     }
 
     /// The same gesture's OTHER account, from the application, with the
