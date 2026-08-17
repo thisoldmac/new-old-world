@@ -26937,3 +26937,124 @@ neighbours).
 the ghost actually disappears, and whether Finder's own tracking stays
 sane while it is hidden. Both need an attended metal pass; the emulator
 has no real window-server drag-image compositor to test this against.
+
+## ATTENDED EVIDENCE + DESIGN CHANGE: the host's own drag now ENDS at the crossing (2026-08-16, `fix/hg-drag-edge-park`)
+
+**The attended evidence, from Michelle, on real hardware, 2026-08-16**, on
+the branch above's parent (`fix/hg-drag-cursor-hide`, which hides the host
+cursor's visible layer for the length of a host→guest file drag):
+
+- the green `+` badge is **gone** — so `CGDisplayHideCursor` does suppress
+  that part of the drag decoration, which the previous entry could not say;
+- the **host drag ghost and the real cursor still catch and clamp at the
+  physical screen edge**, exactly as before the hide;
+- **resting at that edge mid-drag triggers macOS Spaces switching** to an
+  adjacent desktop — the window server's own edge behaviour, fired by a
+  cursor parked on the boundary.
+
+The previous entry's open question is therefore half answered (badge yes,
+ghost no) and a new hazard is named (the Spaces switch), both from an
+attended host observation rather than from source.
+
+**The design decision, Michelle's, and its rationale.** Neither half is
+fixable while a foreign `NSDraggingSession` is still in flight: the ghost is
+anchored to a real cursor that has nowhere further to go, and a cursor at
+the boundary is what the Spaces trigger watches. So the session is not
+hidden — **it is ended at the handoff, by each side's OS**, the way the
+guest→host direction already releases the guest press at the cross. That
+symmetry is the point: a crossing is a handoff, and a handoff ends the
+gesture on the machine being left.
+
+**How.** At the once-per-gesture crossing, `endHostDragAtCross` posts a
+synthetic `leftMouseUp` at the **HID** level
+(`postSyntheticPrimaryButtonAtHID`, beneath every session tap including this
+app's own) while the cursor is over this app's own catch strip, which is
+widened first. The OS then performs the drop **onto us** — the legitimate
+destination for this gesture — rather than onto whatever window lies under
+an arbitrary point, and Finder's session ends completely: ghost, badge and
+edge-parking hazard go with it. From that instant the pass **converges with
+an ordinary crossing**: the old `if !hostFileDrag` guards asked the wrong
+question and now ask `hostDragSessionOverEdgeIsLive`, so the cursor is
+hidden, detached, pinned and its input captured exactly as for any other
+guest pass.
+
+**The drop at the edge is a STAGING, not the transfer.** The person has not
+chosen a place on the guest yet. `ContinuityHostFileStaging.snapshot` copies
+the file URLs onto a private pasteboard that outlives the dying session; the
+release the person makes **on the guest** is the commit
+(`completeStagedHostDrop` → the existing `hostFilesDropped` seam →
+`copyHostPasteboard`), and a cross back without one is an abort
+(`abandonStagedHostFiles`) that copies nothing. **The transport needed no
+new staging seam of its own**: `copyHostPasteboard` is only ever called at
+the commit, so an abort cannot leave a partial file on the guest — there is
+nothing to cancel because nothing was started. What *changed* is when that
+call happens, not what it does.
+
+**Declined, per gesture, with the reason logged**, in two cases, both of
+which fall back to the pre-change behaviour end to end (ghost and all): a
+drag carrying nothing nameable past its own session (a **promise-only**
+drag, where the promise receiver is tied to the live session and nothing
+here can hold it), and a window server that refuses the post.
+
+**Hazards handled, and how.**
+
+1. *The physical button is still down after the synthetic up.* The
+   convergence starts the consuming tap, so the eventual physical
+   `leftMouseUp` is swallowed and delivered here as the guest drop rather
+   than reaching a host window. The HID button state reads UP from the
+   moment of the post, so the release backstop in `driveGuest` is guarded
+   with `!expectingCrossDrop` — without it, this Mac would read its own
+   synthetic release as the end of a gesture the person is still making.
+   **The one gap is named rather than closed:** between the post and the
+   transport confirming ownership (`.arming` → `.active`) the tap is not up
+   yet, so a physical release inside that window reaches this Mac
+   unconsumed; it is an up with no matching down, and it is logged.
+2. *A cross back aborts a drop this app already accepted.* Handled by the
+   staging rule above.
+
+**Ghost blanking, kept as a second lever.** The strip also asks AppKit to
+draw its own copy of the dragging items with no image
+(`enumerateDraggingItems` → empty `imageComponentsProvider`) on every
+entered/updated for a foreign session, covering the instants before the
+synthetic release lands and any gesture where ending the drag is declined.
+Nothing is restored on exit and nothing needs to be — the items are this
+destination's copies. **Its visual effect is attended-only evidence**:
+whether a destination-side image replacement reaches the ghost the window
+server composites for a Finder-owned session is exactly the sort of claim
+that fails in practice, so the enumeration logs how many items it touched
+(`items=0` would mean it found nothing), once per session, beside the
+gesture id.
+
+**Verified here:** host unit tests only —
+`ContinuityEdgeControllerTests` (the synthetic release is posted once, at
+the crossing point, strip widened first; the drop stages and does not end
+the presentation; the guest release commits at the pointer's guest
+position; a cross back transfers nothing; an unstageable drag and a refused
+post both fall back; hide/show and detach/re-attach balance across single
+and consecutive gestures) and `ContinuityGuestDragTests`' departure list.
+The balance tests from `fix/hg-drag-cursor-hide` that asserted
+`associationChanges` stays EMPTY were **changed on purpose**, not repaired:
+that rule described a live foreign session, and there no longer is one.
+
+**What only the next attended run can prove:**
+
+- that the host ghost and badge are actually gone from the crossing onward,
+  and that the real cursor no longer clamps visibly at the edge;
+- that the Spaces edge-switch no longer fires, since the cursor is now
+  hidden, detached and pinned inboard rather than parked on the boundary;
+- that the synthetic release genuinely ends Finder's session — and if it
+  does not, WHICH way it failed: the log distinguishes "posted and came back
+  as a drop on our own strip" from "posted and AppKit reported the drag
+  leaving instead" from "refused by the window server";
+- that the drop at the park/crossing lands on us rather than on a host
+  window, i.e. that no file is copied anywhere on the host;
+- that the file lands where the person releases **on the guest**, and that a
+  cross back without releasing leaves nothing behind on either machine;
+- that the physical release inside the arming window (hazard 1's named gap)
+  does not reach a host window in practice;
+- that Finder is not left in a strange state by having its drag ended
+  underneath it (stale badge, wrong end-of-drag animation, a stuck item).
+- **A fallback exists if the route is blocked:** parking the hidden cursor a
+  comfortable margin inboard of the edge, inside our own destination view,
+  instead of ending the drag. It is not implemented here; the failure mode
+  logged above is what would justify it.
