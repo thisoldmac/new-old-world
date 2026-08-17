@@ -573,6 +573,11 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                whose bytes are already being asked for. */
             let stub: ContinuityDragStub?
             var heldMs: Int?
+            /* Named here rather than read back off `liveBinding` at the
+               refusal: a second crossing may have replaced it during the
+               hold, and a refusal line that names the WRONG gesture is
+               worse than one that names none. */
+            var heldGesture: UInt64?
             if let binding = self.liveBinding,
                binding.providerID == providerID {
                 /* THE HOLD, AND IT HAPPENS BEFORE THE WINDOW SHUTS. A
@@ -583,6 +588,7 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                    after it — one gesture, one attempt, made when there is
                    something to attempt with. */
                 if binding.grabbable == nil {
+                    heldGesture = binding.gesture
                     let started = DispatchTime.now()
                     _ = await self.holdForMintedGeneration(binding)
                     heldMs = Int(Double(DispatchTime.now().uptimeNanoseconds
@@ -617,7 +623,7 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
             guard stub.generation != 0 else {
                 let waited = heldMs ?? 0
                 self.audit(.error, "grab refused: gesture "
-                    + "\(self.liveBinding?.gesture.description ?? "none") "
+                    + "\(heldGesture?.description ?? "none") "
                     + "waited \(waited) ms and the Macintosh never minted a "
                     + "generation for \(stub.item.name) (dragSeq="
                     + "\(stub.dragSeq.map(String.init) ?? "none")) — the "
