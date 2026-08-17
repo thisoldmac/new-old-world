@@ -2109,12 +2109,20 @@ final class ContinuityGuestDragTests: XCTestCase {
     /// failure classic Finder punishes hardest, so every departure path
     /// tears the presentation down — and each does it exactly once.
     func testEveryDeparturePathEndsThePresentationExactlyOnce() throws {
-        for departure in ["exit", "drop"] {
+        /* "drop" is gone from this list ON PURPOSE (2026-08-16). The drop at
+           the edge is now the release this Mac posts to END the host's own
+           drag, and the person is still carrying the file afterwards — on
+           the guest, which must keep drawing it. The departures are the ways
+           that carry actually ends. */
+        for departure in ["exit", "release on the guest", "cross back"] {
             let rig = Rig()
             var carried = 0
             var released = 0
             rig.controller.configureHostDragPresentation(
                 arrived: { _ in carried += 1 }, departed: { released += 1 })
+            let staged = NSPasteboard(
+                name: .init("now.test.presentation.\(UUID().uuidString)"))
+            rig.controller.stageHostFiles = { _ in staged }
             let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
             let url = URL(fileURLWithPath: "/tmp/x/main.c")
 
@@ -2122,8 +2130,18 @@ final class ContinuityGuestDragTests: XCTestCase {
                                   Self.fileDrag(url))
             XCTAssertEqual(carried, 1, departure)
             switch departure {
-            case "exit": callbacks.exited()
-            default: _ = callbacks.dropped(Self.fileDrag(url))
+            case "exit":
+                callbacks.exited()
+            case "release on the guest":
+                _ = callbacks.dropped(Self.fileDrag(url))
+                rig.controller.transportPhaseChanged(.active)
+                XCTAssertEqual(released, 0,
+                               "the edge drop is a staging, not a departure")
+                rig.releaseOnGuest()
+            default:
+                _ = callbacks.dropped(Self.fileDrag(url))
+                rig.controller.transportPhaseChanged(.active)
+                rig.crossBackHolding()
             }
             XCTAssertEqual(released, 1,
                            "the guest is still drawing a drag after \(departure)")
@@ -2461,6 +2479,14 @@ private final class Rig {
     }
 
     /// The crossing itself, through the consuming tap — which has no NSEvent.
+    /// The release a person makes on the GUEST, which is what commits a
+    /// carried host file now that the host's own drag ended at the crossing.
+    func releaseOnGuest() {
+        environment.emitCaptured(.init(kind: .primaryUp,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: .zero, buttonsDown: false))
+    }
+
     func crossBackHolding() {
         environment.emitCaptured(.init(kind: .moved,
                                        location: CGPoint(x: 1439, y: 450),
