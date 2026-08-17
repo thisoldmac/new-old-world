@@ -97,6 +97,38 @@ instead of by symptom, and that the case where a generation for the same
 file already existed — epoch 4 of this very log, bytes already on the Mac —
 now transfers instead of being thrown away.
 
+**Emulator round, 2026-08-16, session-private clone.** `scripts/spin-up-ppc`
+with `NOW_SPIN_RUN=/private/tmp/nowvm-fixB` (the worktree's own path is too
+deep for a UNIX socket), base `now-mirror-stage.qcow2` sha256 `8db8ddc2…`,
+this tree's app and resident staged (sourceManifest `1df8e014ab79`,
+buildFingerprint `5410aeef3706`, guest confirmed `lifecycle=active
+capabilities=1023`), lane block 600. Then
+`tools/continuity-resident-drag-probe.py --port 16801 --pick
+HELLO_CLAUDE.txt`, a single-gesture drag of a file the Finder did NOT have
+selected (`selection before: Macintosh HD`). Receipts:
+`run/fixB-resident-drag-2026-08-16/`.
+
+| fact | measured |
+| --- | --- |
+| `continuity.dragBegin` from the resident | +0.257 s, **button still down**, `dragSeq=2`, name `HELLO_CLAUDE.txt` |
+| release | +9.249 s (the probe holds deliberately) |
+| the application's `continuity.selection` | +9.534 s — `source=drag`, `dragSeq=2`, **generation 3**, same name |
+| the join | `joinedOnDragSeq: true`, `sameNameFromBothSenders: true` |
+| the grab for generation 3 | served: `file.begin` 42 bytes, drained whole to `FLAG_END`, sha256 `9ee02d9589c4…` — the round's regression digest, unchanged |
+
+Two things this round is honest about. It proves the GUEST half end to end
+on this tree's build — identity mid-gesture, join by `dragSeq`, bytes — and
+it exercises none of the Swift above: the probe *is* the host, so the cache
+merge and the hold were verified by the suite, not by this guest. And it
+confirms the open half by construction: the probe never crosses an edge, so
+the epoch stays 1 for the whole gesture — which is exactly the condition
+under which the application's frame arrives at all. `midGestureSelections`
+is empty, as expected: the application publishes nothing while the Finder
+holds its drag loop.
+
+Teardown was guest-clean (`tools/lane-ports reclaim` → Finder Special >
+Shut Down, volume cleanly unmounted), not a QMP `quit`.
+
 **Tests** (`ContinuityGuestDragTests`, six new, written from the log and
 the contract rather than from the implementation): the epoch-4 discard as a
 regression case, the drag naming another file, the eager fetch that never
