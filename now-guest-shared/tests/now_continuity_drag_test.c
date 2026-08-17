@@ -569,6 +569,50 @@ static int test_host_begin_starts_without_an_arm(void)
     return 0;
 }
 
+/* **THE GATE THE 2026-08-17 METAL ROUND WENT WITHOUT** (F2 defect B).
+   A begin served while the plane's button level is still up starts a
+   TrackDrag whose first sample reads button-UP, and the Drag Manager
+   returns at the entry point — the file lands where the person crossed
+   rather than where they let go. The host raises the level before the
+   begin crosses; this is that invariant checked on the receiving side,
+   with a bound so a host that never raises it is a named refusal
+   instead of a cursor holding a drag nobody started. */
+static int test_host_begin_ripens_on_the_plane_level(void)
+{
+    /* The ordinary case: the level is already in the plane when the
+       begin is served, so the very first service pass starts the drag
+       and nothing waits. */
+    CHECK(now_continuity_drag_host_ripen(500, 500, 1) == kNowDragTickStart);
+
+    /* No level yet: wait, up to the bound and not past it. */
+    CHECK(now_continuity_drag_host_ripen(500, 500, 0) == kNowDragTickWait);
+    CHECK(now_continuity_drag_host_ripen(
+              500, 500 + kNowContinuityHostBeginRipenTicks - 1, 0)
+          == kNowDragTickWait);
+    CHECK(now_continuity_drag_host_ripen(
+              500, 500 + kNowContinuityHostBeginRipenTicks, 0)
+          == kNowDragTickExpire);
+
+    /* A level that arrives late still starts the drag — right up to the
+       last tick of the window. The bound is for a host that never
+       raises it, not a slow one. */
+    CHECK(now_continuity_drag_host_ripen(
+              500, 500 + kNowContinuityHostBeginRipenTicks - 1, 1)
+          == kNowDragTickStart);
+
+    /* It is BOUNDED BY THE PLANE, not by the arm: the arm's two seconds
+       would expire a carry the person is still making. */
+    CHECK(kNowContinuityHostBeginRipenTicks > kNowContinuityDragArmTicks);
+
+    /* And a TickCount wrap under a held crossing reads as a small
+       elapsed, not an instant expiry — the same masked arithmetic the
+       arm's own tick is written with, and the same reason: this file is
+       watched failing on a 64-bit host cc. */
+    CHECK(now_continuity_drag_host_ripen(0xFFFFFFF0UL, 0x00000005UL, 0)
+          == kNowDragTickWait);
+    return 0;
+}
+
 static int test_host_begin_refusals(void)
 {
     NowContinuityDragState st;
@@ -677,6 +721,7 @@ int main(void)
     if (test_vocabulary()) return 1;
     if (test_null_is_inert()) return 1;
     if (test_host_begin_starts_without_an_arm()) return 1;
+    if (test_host_begin_ripens_on_the_plane_level()) return 1;
     if (test_host_begin_refusals()) return 1;
     if (test_host_drag_aborts_as_a_cancel()) return 1;
     if (test_console_drag_carries_no_gesture()) return 1;

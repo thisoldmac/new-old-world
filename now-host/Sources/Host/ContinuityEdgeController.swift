@@ -342,6 +342,12 @@ final class ContinuityEdgeController: ObservableObject {
     /// decision of this lifecycle's, and so the clears can be idempotent —
     /// several exit paths legitimately run for one carry.
     private var carriedButtonHeld = false
+    /// Whether that level actually reached the wire. A raise made before the
+    /// guest confirms ownership sets the field and sends nothing, and the
+    /// difference is what decides whether the confirming pass has anything
+    /// to re-assert — a second datagram carrying a level already on the
+    /// plane is noise, and noise in this lane reads as a second gesture.
+    private var carriedButtonOnWire = false
     /// The staged carry outlived `stagedCarryLifetime` and was let go. Kept
     /// past the staging it describes so a physical release arriving
     /// afterwards is answered with the reason it commits nothing, rather
@@ -928,7 +934,7 @@ final class ContinuityEdgeController: ObservableObject {
                    is part of that custody rather than a step beside it. */
                 rearmStagedCarryButton()
             }
-            if carriedButtonHeld {
+            if carriedButtonHeld, !carriedButtonOnWire {
                 /* The level was raised against a transport that had nothing
                    to send it on. This is the first datagram it can ride, and
                    the guest's drag reads the plane, not the history. */
@@ -2593,6 +2599,7 @@ final class ContinuityEdgeController: ObservableObject {
         carriedButtonHeld = held
         let onWire = driver?.setCarriedButtonLevel(
             held, gesture: hostFileDragGestureID, reason: reason) ?? false
+        carriedButtonOnWire = held && onWire
         guard held, !onWire else { return }
         /* NOT SILENCE: a raise nobody could send is a carry whose drag will
            read an unheld button over there and drop where it entered — the

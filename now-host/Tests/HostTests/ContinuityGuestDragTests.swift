@@ -3066,6 +3066,155 @@ final class ContinuityGuestDragTests: XCTestCase {
                         + "happens INSIDE the drop, after this instant")
     }
 
+    /// **THE CARRY HOLDS A BUTTON THE GUEST'S DRAG READS AND THE GUEST'S
+    /// RESIDENT NEVER SEES** (F2 defect B, attended metal 2026-08-17).
+    ///
+    /// The staged carry suppresses every press — it must, or a forwarded
+    /// click opens what is under the cursor (D5) — so this Mac used to hand
+    /// the other machine a drag with no button behind it, and its
+    /// `TrackDrag` first-sampled a released button and dropped the file at
+    /// the entry point. The level is the fix and the ORDER is the invariant:
+    /// it is in the plane before the begin crosses, because a first sample
+    /// reading UP is the whole defect.
+    func testTheCarriedButtonIsHeldBeforeTheBeginAndClearedAtTheRelease()
+        throws {
+        let rig = Rig()
+        var levelsWhenTheBeginCrossed: [Bool] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in
+                levelsWhenTheBeginCrossed =
+                    rig.driver.carriedLevels.map(\.held)
+                return true
+            },
+            abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.level.commit"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+
+        XCTAssertEqual(levelsWhenTheBeginCrossed, [true],
+                       "the begin crossed with no button held in the plane: "
+                        + "the Macintosh's TrackDrag samples that on its "
+                        + "first pass and returns at the entry point")
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true],
+                       "one raise, and nothing else until the person lets go")
+        XCTAssertNotEqual(rig.driver.carriedLevels[0].gesture, 0,
+                          "an unattributable level cannot be audited against "
+                            + "the gesture that raised it")
+        XCTAssertFalse(rig.driver.carriedLevels[0].reason.isEmpty)
+
+        rig.releaseOnGuest()
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true, false],
+                       "the physical release IS the other machine's "
+                        + "button-up; without the clear its drag never ends")
+        XCTAssertEqual(rig.driver.carriedLevels[1].gesture,
+                       rig.driver.carriedLevels[0].gesture,
+                       "the clear belongs to the carry that raised it")
+        /* AND THE PRESS WAS NEVER FORWARDED. The level is not a click: if
+           this ever becomes one, the guest's Finder gets a synthetic press
+           on the desktop under the gesture — D5, in the costume of a fix. */
+        XCTAssertFalse(rig.ledger.steps.contains(.guestPrimaryDown),
+                       "\(rig.ledger.steps)")
+    }
+
+    /// Every way out of a carry clears the level. A raised one that is never
+    /// cleared leaves the other machine inside a drag nobody is making — a
+    /// worse failure than the instant drop, and a silent one.
+    func testEveryCarryExitClearsTheCarriedButtonExactlyOnce() throws {
+        /* The abort at the edge. */
+        let back = try carryRig(named: "abort")
+        back.rig.crossBackHolding()
+        XCTAssertEqual(back.rig.driver.carriedLevels.map(\.held),
+                       [true, false], "cross-back: \(back.rig.driver.carriedLevels)")
+
+        /* The bound: nobody dropped it and nobody released. */
+        let bound = try carryRig(named: "bound")
+        bound.rig.deadlines.fireAll()
+        XCTAssertEqual(bound.rig.driver.carriedLevels.map(\.held),
+                       [true, false], "the bound: \(bound.rig.driver.carriedLevels)")
+        bound.rig.releaseOnGuest()
+        XCTAssertEqual(bound.rig.driver.carriedLevels.count, 2,
+                       "a late release must not clear a level twice")
+
+        /* Ownership ending some other way — transport idle, `stop()`, a
+           return under a host drag — all funnel through the same abandon. */
+        let ended = try carryRig(named: "ended")
+        ended.rig.controller.transportPhaseChanged(.idle)
+        XCTAssertEqual(ended.rig.driver.carriedLevels.map(\.held),
+                       [true, false],
+                       "ownership ended: \(ended.rig.driver.carriedLevels)")
+    }
+
+    /// A handoff that never crossed has no drag over there to hold a button
+    /// for, and a level asserted into that plane is this Mac pressing
+    /// something nobody is reading.
+    func testARefusedHandoffLetsTheCarriedButtonGoAgain() throws {
+        let rig = Rig()
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in false }, abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.level.refused"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true, false],
+                       "\(rig.driver.carriedLevels)")
+    }
+
+    /// A raise the transport could not carry is re-asserted when ownership
+    /// is confirmed, and said out loud in between. The handoff happens at
+    /// the staging point, which can be reached before the guest has
+    /// confirmed the epoch — the same gap `convergeAfterCrossDrop` names.
+    func testALevelRaisedBeforeOwnershipIsReassertedWhenItArrives() throws {
+        let rig = Rig()
+        rig.driver.carriedLevelReachesTheWire = false
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true }, abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.level.deferred"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("carried button level could not reach")
+        }, "a level that never reached the plane must not pass silently")
+
+        rig.driver.carriedLevelReachesTheWire = true
+        rig.controller.transportPhaseChanged(.active)
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true, true],
+                       "the level is re-asserted on the first datagram it "
+                        + "can ride: \(rig.driver.carriedLevels)")
+    }
+
+    /// One carry, staged and handed over, sitting at the point every exit
+    /// path leaves from.
+    private func carryRig(named: String) throws
+        -> (rig: Rig, callbacks: ContinuityFileEdge.Callbacks) {
+        let rig = Rig()
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true }, abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.level.\(named)"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true],
+                       "the carry starts with the button held")
+        return (rig, callbacks)
+    }
+
     /// The abort, and it is native on both sides. Over there `TrackDrag`
     /// returns `userCanceledErr` and the Manager plays its own snap-back;
     /// here the whole of the abort is letting the promise go, with a reason

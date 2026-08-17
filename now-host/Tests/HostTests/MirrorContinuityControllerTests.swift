@@ -595,6 +595,89 @@ final class MirrorContinuityControllerTests: XCTestCase {
                 + "the guest's host-fed lease would have expired")
     }
 
+    /// **THE LEVEL AND THE EDGE ARE ONE BIT AND TWO CONSUMERS, TOLD APART
+    /// BY THE GENERATION** (F2 defect B, attended metal 2026-08-17).
+    ///
+    /// The guest's drag input proc reads the LEVEL out of the datagram
+    /// flags; the resident applies a press only on a NEWER
+    /// `button_generation` (`now_continuity_logic.c:47-49`). So a carried
+    /// button must appear in the flags and must NOT move the generation —
+    /// that is what lets a host→guest drag hold a button for the length of a
+    /// human gesture while no synthetic click ever reaches the guest's
+    /// Finder, which is the D5 guarantee this fix was not allowed to break.
+    func testTheCarriedButtonIsALevelWithNoGenerationBehindIt() async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+        let before = try await awaitPacket(in: rig.udp, "a settled datagram") {
+            !$0.flags.contains(.primaryDown)
+        }
+
+        XCTAssertTrue(rig.controller.setCarriedButtonLevel(
+            true, gesture: 4, reason: "a file is being carried"))
+        let held = try await awaitPacket(in: rig.udp, "the carried level") {
+            $0.flags.contains(.primaryDown)
+        }
+        XCTAssertEqual(held.buttonGeneration, before.buttonGeneration,
+                       "a carried level that advances the generation is a "
+                        + "click the resident will apply — D5, and the "
+                        + "reason a drag opened Classilla")
+        XCTAssertEqual(held.previousButtonGeneration,
+                       before.previousButtonGeneration,
+                       "nor may it disturb the pair the resident reads")
+
+        XCTAssertTrue(rig.controller.setCarriedButtonLevel(
+            false, gesture: 4, reason: "the person let the file go"))
+        let released = try await awaitPacket(
+            in: rig.udp, "the cleared level", timeout: 5
+        ) { $0.positionSequence >= held.positionSequence
+            && !$0.flags.contains(.primaryDown) }
+        XCTAssertEqual(released.buttonGeneration, before.buttonGeneration,
+                       "and the clear is a level too: the guest's TrackDrag "
+                        + "reads it and returns, and nothing was posted")
+
+        /* AND THE CLICK CYCLE IS UNTOUCHED. The level is not
+           `wireButtonDown`; an ordinary press after a carry must still mint
+           its own generation. */
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 45, y: 55)))
+        let click = try await awaitPacket(in: rig.udp, "an ordinary press") {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        }
+        XCTAssertNotEqual(click.buttonGeneration, before.buttonGeneration)
+    }
+
+    /// A level cannot outlive the epoch it was raised in: the next epoch's
+    /// guest holds nothing, and a stale level would hand its first drag a
+    /// button nobody is pressing.
+    func testAnEndingEpochDropsTheCarriedLevel() async throws {
+        var lines: [String] = []
+        let rig = try await makeActiveRig(audit: { _, line in
+            lines.append(line)
+        })
+        defer { rig.udp.stop() }
+        XCTAssertTrue(rig.controller.setCarriedButtonLevel(
+            true, gesture: 9, reason: "a file is being carried"))
+        _ = try await awaitPacket(in: rig.udp, "the carried level") {
+            $0.flags.contains(.primaryDown)
+        }
+
+        rig.controller.cancel(reason: "the pointer left")
+        try await waitUntil("the epoch to end") {
+            rig.controller.phase == .idle
+        }
+
+        /* Asked by RAISING it again: a level the teardown dropped is a
+           transition and says so, while a level still held would make this
+           call a silent no-op. That difference is the whole assertion —
+           there is no wire left to read the answer off. */
+        lines.removeAll()
+        _ = rig.controller.setCarriedButtonLevel(
+            true, gesture: 10, reason: "a second carry")
+        XCTAssertTrue(lines.contains { $0.contains("carried button level "
+            + "RAISED") },
+                      "the epoch's teardown left the level standing: "
+                        + "\(lines)")
+    }
+
     func testDirectClickStreamsReleaseWithoutWaitingForPressAck()
         async throws {
         let rig = try await makeActiveRig()
