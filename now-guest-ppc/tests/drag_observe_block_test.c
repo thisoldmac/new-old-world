@@ -68,8 +68,16 @@ int main(void)
     /* ---- the length gate ------------------------------------------- */
     block_end = (unsigned long)(offsetof(NowPeekTable, continuity)
                                 + sizeof(NowPeekContinuityCell));
-    check(block_end == (unsigned long)sizeof(NowPeekTable),
-          "the continuity cell is no longer the table's tail");
+    /* The continuity cell is no longer the TAIL — U15's drag-send
+       counters append behind it — but this block's own arithmetic is
+       about where the cell ENDS, and that must not have moved. Stated as
+       the counters' offset so the two facts stay separable: an append
+       behind the cell is legal, an append INSIDE it is not. */
+    check(block_end
+              == (unsigned long)offsetof(NowPeekTable, drag_send_format),
+          "the continuity cell no longer ends where U15's counters begin");
+    check(block_end < (unsigned long)sizeof(NowPeekTable),
+          "the drag-send counters left the table's tail");
     check((unsigned long)(offsetof(NowPeekTable, continuity)
                           + offsetof(NowPeekContinuityCell, drag_observe))
               < block_end,

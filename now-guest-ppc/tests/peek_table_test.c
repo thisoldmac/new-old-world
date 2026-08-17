@@ -290,9 +290,19 @@ int main(void)
               == offsetof(NowPeekTable, continuity_format)
                    + sizeof(NowPeekU32),
           "the continuity cell follows its format word");
-    check(offsetof(NowPeekTable, continuity)
-              + sizeof(NowPeekContinuityCell) == sizeof(NowPeekTable),
-          "the continuity cell is the tail, so shorter means absent");
+    /* U15 takes the tail from it, which is the append rule working
+       rather than a check going stale: the continuity cell has not
+       moved, and an application built against U14 reads a shorter
+       `length`, never looks past the cell, and is right not to. */
+    check(offsetof(NowPeekTable, drag_send_format)
+              == offsetof(NowPeekTable, continuity)
+                   + sizeof(NowPeekContinuityCell),
+          "the drag-send counters follow the continuity cell");
+    /* Six words, and the LAST of them is the tail. Stated as the size so
+       a seventh added without moving this check cannot go unnoticed. */
+    check(offsetof(NowPeekTable, drag_send_last_seq)
+              + sizeof(NowPeekU32) == sizeof(NowPeekTable),
+          "the drag-send sequence is the tail, so shorter means absent");
     /* The bits are the contract and must not collide, because a reader
        that mistook "the trap table is patched" for "the block is
        allocated" would report the wrong durable fact about a machine. */

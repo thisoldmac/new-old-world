@@ -329,6 +329,7 @@ channels:
       continuityKey: { $ref: "#/components/messages/continuityKey" }
       continuityKeyReport: { $ref: "#/components/messages/continuityKeyReport" }
       continuitySelection: { $ref: "#/components/messages/continuitySelection" }
+      continuityDragBegin: { $ref: "#/components/messages/continuityDragBegin" }
       continuityGrab: { $ref: "#/components/messages/continuityGrab" }
       continuityOffer: { $ref: "#/components/messages/continuityOffer" }
       cloudServices: { $ref: "#/components/messages/cloudServices" }
