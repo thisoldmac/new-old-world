@@ -3579,6 +3579,19 @@ private final class Rig {
             ledger.steps.append(.guestPrimaryUp(point))
             return true
         }
+        /// **The carry's button level, and every reason given for it.** A
+        /// level with no clear is a guest stuck in a drag, so the tests
+        /// assert the SEQUENCE rather than the final value: a raise, and
+        /// then exactly one clear, whichever way the carry ended.
+        var carriedLevels: [(held: Bool, gesture: UInt64, reason: String)] = []
+        /// A transport with no epoch to send on. The raise still happens;
+        /// what the controller must then do is say so and re-assert.
+        var carriedLevelReachesTheWire = true
+        func setCarriedButtonLevel(_ held: Bool, gesture: UInt64,
+                                   reason: String) -> Bool {
+            carriedLevels.append((held, gesture, reason))
+            return carriedLevelReachesTheWire
+        }
         func keyboardEvent(_ sample: HostKeySample) -> Bool {
             _ = sample
             return true

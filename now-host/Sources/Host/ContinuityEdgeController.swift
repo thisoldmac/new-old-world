@@ -173,6 +173,19 @@ protocol ContinuityEdgeDriving: AnyObject {
     /// first, on the wire, as its own fact.
     func settleHeldPosition(to point: MirrorKit.Point) -> Bool
     func primaryUp(at point: MirrorKit.Point) -> Bool
+    /// Holds the primary button as a LEVEL in the pointer plane for the life
+    /// of a staged carry, without minting a button generation.
+    ///
+    /// It is not a press and must never become one. A staged carry suppresses
+    /// every `.primaryDown` (D5), so the press half of this controller is
+    /// deliberately silent while a file is being carried — and the guest's
+    /// Drag Manager still needs to read a held button, or its `TrackDrag`
+    /// first-samples UP and drops at the entry point (F2 defect B, attended
+    /// metal 2026-08-17). The generation is what separates the two readers;
+    /// see `MirrorContinuityController.setCarriedButtonLevel`.
+    @discardableResult
+    func setCarriedButtonLevel(_ held: Bool, gesture: UInt64,
+                               reason: String) -> Bool
     func keyboardEvent(_ sample: HostKeySample) -> Bool
 }
 
@@ -323,6 +336,12 @@ final class ContinuityEdgeController: ObservableObject {
     /// every later path that could reach it (a re-arm, a converge) must
     /// find the question already answered.
     private var hostDragHandedOff = false
+    /// Whether this Mac is currently holding the primary button as a LEVEL in
+    /// the guest's pointer plane on this carry's behalf. Mirrored here rather
+    /// than asked of the driver so every raise and every clear is one
+    /// decision of this lifecycle's, and so the clears can be idempotent —
+    /// several exit paths legitimately run for one carry.
+    private var carriedButtonHeld = false
     /// The staged carry outlived `stagedCarryLifetime` and was let go. Kept
     /// past the staging it describes so a physical release arriving
     /// afterwards is answered with the reason it commits nothing, rather
@@ -908,6 +927,14 @@ final class ContinuityEdgeController: ObservableObject {
                    ownership takes its custody here, and the button re-arm
                    is part of that custody rather than a step beside it. */
                 rearmStagedCarryButton()
+            }
+            if carriedButtonHeld {
+                /* The level was raised against a transport that had nothing
+                   to send it on. This is the first datagram it can ride, and
+                   the guest's drag reads the plane, not the history. */
+                holdCarriedButton(true, reason: "ownership is confirmed, so "
+                    + "the carried button reaches the plane the Macintosh's "
+                    + "drag is reading", reassert: true)
             }
         case .idle:
             guard state == .arming || state == .active else { return }
@@ -2515,8 +2542,27 @@ final class ContinuityEdgeController: ObservableObject {
             return
         }
         let point = mirrorPoint(current.guestPoint)
+        /* **THE BUTTON IS HELD BEFORE THE BEGIN CROSSES, AND THE ORDER IS
+           THE INVARIANT.** The guest's `TrackDrag` samples its input proc
+           immediately, and a first sample reading button-UP returns at the
+           entry point — the drag that dropped instantly on metal (F2 defect
+           B). The correct invariant is not "the begin arrives after a press"
+           but "the level is already in the plane when the begin is sent",
+           and this Mac writes both, so it can simply guarantee it: the
+           datagram plane is UDP and written at the guest's notifier time,
+           the begin is TCP and served on a later service pass. */
+        holdCarriedButton(true, reason: "a file is being carried on the "
+            + "Macintosh, and its Drag Manager reads this level for as long "
+            + "as the person holds it")
         let sent = handoff.begin(staged, point, hostFileDragGestureID)
         hostDragHandedOff = sent
+        if !sent {
+            /* Nothing over there is reading the level, so holding it would
+               be this Mac asserting a button into a plane with no drag
+               behind it. */
+            holdCarriedButton(false, reason: "the handoff never crossed, so "
+                + "there is no drag over there to hold a button for")
+        }
         let verb = sent ? "handed the drag OVER to"
                         : "could NOT hand the drag over to"
         audit(sent ? .info : .warn,
@@ -2525,6 +2571,37 @@ final class ContinuityEdgeController: ObservableObject {
                 + "the gesture and this Mac only serves the promise "
                 + "(gesture=\(hostFileDragGestureID))")
         if sent { armStagedCarryDeadline() }
+    }
+
+    /// **The carry's button, as a level the guest's drag reads and the
+    /// guest's resident ignores.**
+    ///
+    /// Raised once at the handoff and cleared on every path out of a carry:
+    /// the commit (the person's release, so the drop lands where they let
+    /// go), the abort (cross-back, the bound, a refused handoff), and the
+    /// epoch's own teardown underneath all of them
+    /// (`clearTransportState`). A level left raised is a guest stuck in a
+    /// drag nobody is making, which is why the clears outnumber the raise
+    /// and why they are idempotent.
+    ///
+    /// `reassert` re-sends a level already held: raising one before the
+    /// transport is active sets the field with nothing on the wire, and the
+    /// pass that confirms ownership is where it becomes a fact.
+    private func holdCarriedButton(_ held: Bool, reason: String,
+                                   reassert: Bool = false) {
+        guard carriedButtonHeld != held || reassert else { return }
+        carriedButtonHeld = held
+        let onWire = driver?.setCarriedButtonLevel(
+            held, gesture: hostFileDragGestureID, reason: reason) ?? false
+        guard held, !onWire else { return }
+        /* NOT SILENCE: a raise nobody could send is a carry whose drag will
+           read an unheld button over there and drop where it entered — the
+           exact defect this level exists to end. It is re-asserted when the
+           transport confirms; this line is what says the gap happened. */
+        audit(.warn, "host file drag: the carried button level could not "
+            + "reach the Macintosh yet (no active pointer epoch) — it is "
+            + "re-asserted when ownership is confirmed "
+            + "(gesture=\(hostFileDragGestureID))")
     }
 
     /// Bounds the staged carry. See `stagedCarryLifetime` for why the bound
@@ -2634,6 +2711,15 @@ final class ContinuityEdgeController: ObservableObject {
         stagedCarry = .init()
         /* THE DEADLINE DIES WITH THE CARRY IT BOUNDED. */
         stagedCarryDeadlineID &+= 1
+        /* **THE PHYSICAL RELEASE IS THE BUTTON-UP THE OTHER MACHINE'S DRAG
+           IS WAITING FOR**, and clearing the level is the whole of sending
+           it: the input proc's next sample reports the button released,
+           `TrackDrag` returns, and the drop lands where the person let go
+           rather than where they crossed. Cleared BEFORE the branch below,
+           because it is true of both — the commit ends the carry whether or
+           not the gesture was ever handed over. */
+        holdCarriedButton(false, reason: "the person let the file go, and "
+            + "the release is what the Macintosh's drag drops on")
         let point = mirrorPoint(ownership.guestPoint)
         if hostDragHandedOff {
             /* **THE GUEST'S DROP IS THE COMMIT, AND THIS MAC ADDS NOTHING
@@ -2685,6 +2771,14 @@ final class ContinuityEdgeController: ObservableObject {
         let carry = stagedCarry
         stagedCarry = .init()
         stagedCarryDeadlineID &+= 1
+        /* **AND THE ABORT IS A RELEASE TOO, over there.** The guest's input
+           proc reports a point nothing accepts and then this cleared level;
+           `TrackDrag` returns `userCanceledErr` and the Manager plays its
+           own snap-back. Covers every abort this funnel serves — the
+           cross-back, the bound, a teardown — because they all arrive
+           here. */
+        holdCarriedButton(false, reason: "the carry ended without a drop — "
+            + "\(reason)")
         audit(.info, "host file drag: the staged file was let go without a "
             + "transfer — \(reason). Nothing was copied "
             + "(gesture=\(hostFileDragGestureID), "

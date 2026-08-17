@@ -2046,6 +2046,16 @@ private extension ContinuityEdgeControllerTests {
             upPoints.append(point)
             return true
         }
+        /// Every raise and clear, in order. See `Rig.Driver` in
+        /// `ContinuityGuestDragTests`, which is where the carry lifecycle
+        /// this feeds is actually asserted.
+        var carriedLevels: [Bool] = []
+        func setCarriedButtonLevel(_ held: Bool, gesture: UInt64,
+                                   reason: String) -> Bool {
+            _ = (gesture, reason)
+            carriedLevels.append(held)
+            return true
+        }
         func keyboardEvent(_ sample: HostKeySample) -> Bool {
             keys.append(sample)
             return true

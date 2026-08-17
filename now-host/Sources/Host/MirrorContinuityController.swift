@@ -460,6 +460,28 @@ final class MirrorContinuityController: ObservableObject,
     private var lastForwardedModifiers: UInt16 = 0
     private var buttonCycleActive = false
     private var wireButtonDown = false
+    /// **The button as a LEVEL, held for the life of a staged carry, with no
+    /// generation behind it.**
+    ///
+    /// One bit in the datagram serves two consumers with different
+    /// semantics, and that is the whole of defect B (F2 forensics,
+    /// 2026-08-17). The guest's Drag Manager input proc reads the LEVEL —
+    /// `flags & primaryDown` — every time the Manager samples it, and a
+    /// `TrackDrag` whose first sample reads button-UP returns at once, which
+    /// is the drag that dropped at the entry point on metal. The resident
+    /// applies a press only on a NEWER `button_generation`
+    /// (`now_continuity_logic.c:47-49`), so a level raised without touching
+    /// `buttonGeneration` reaches the input proc and reaches nothing else:
+    /// no Event Manager click is posted on the guest, and the D5 suppression
+    /// that stopped forwarded presses opening Classilla stays exactly as it
+    /// is.
+    ///
+    /// It is deliberately NOT `wireButtonDown`. That field is the click
+    /// cycle's own state — acknowledgement, timeout, deferred point, epoch
+    /// teardown all hang off it — and a carry has none of those; it has one
+    /// question, "is the person still holding the file", answered by the
+    /// edge controller's carry lifecycle.
+    private var carriedButtonLevel = false
     private var pressAcknowledged = false
     private var deferredButtonPoint: MirrorKit.Point?
     /// The point the last `settleHeldPosition` asked for, held only until the
@@ -798,6 +820,42 @@ final class MirrorContinuityController: ObservableObject,
            press acknowledgement serialized cycles against guest scheduling
            and is what a starved target turned into held drags. */
         sendPrimaryRelease()
+        return true
+    }
+
+    /// **Raise or clear the carried button LEVEL. It mints no generation,
+    /// and that is the entire mechanism.**
+    ///
+    /// Defect B, attended metal 2026-08-17: a host→guest carry suppresses
+    /// every `.primaryDown` for the life of the staging (the D5 fix, which
+    /// must stay), so `wireButtonDown` never became true, the datagram never
+    /// carried `.primaryDown`, and the guest's `TrackDrag` first-sampled a
+    /// released button and returned at the entry point. This is the button
+    /// the drag needs and the press the guest must never receive, told
+    /// apart: the level goes on the wire, `buttonGeneration` does not move,
+    /// so `now_continuity_button_action` answers `Nothing` and the resident
+    /// posts no click.
+    ///
+    /// Returns whether the level is on the wire — false while there is no
+    /// active epoch to carry it, which the caller reports rather than
+    /// assumes. The field is still set: an epoch armed later sends it with
+    /// the next datagram, and `clearTransportState` drops it with the epoch.
+    @discardableResult
+    func setCarriedButtonLevel(_ held: Bool, gesture: UInt64,
+                               reason: String) -> Bool {
+        guard carriedButtonLevel != held else { return phase == .active }
+        carriedButtonLevel = held
+        let live = phase == .active
+        audit(live ? .info : .warn,
+              "carried button level \(held ? "RAISED" : "cleared"): "
+                + "\(reason) (gesture=\(gesture), "
+                + "generation=\(buttonGeneration) — NOT advanced, so the "
+                + "Macintosh's resident applies nothing and only the drag's "
+                + "input proc reads this)"
+                + (live ? "" : "; no epoch is active, so nothing is on the "
+                   + "wire yet"))
+        guard live else { return false }
+        sendState(inside: true, keepalive: false)
         return true
     }
 
@@ -1452,7 +1510,13 @@ final class MirrorContinuityController: ObservableObject,
     private func encodedState(inside: Bool, keepalive: Bool) -> Data {
         var flags: ContinuityStateDatagram.Flags = []
         if inside { flags.insert(.inside) }
-        if wireButtonDown { flags.insert(.primaryDown) }
+        /* LEVEL OR EDGE, ONE BIT. `wireButtonDown` is the click cycle's
+           edge, `carriedButtonLevel` the carry's held level; the guest's
+           input proc cannot tell them apart and must not — it wants to know
+           whether the button is down, which under a carry it is. What
+           separates them is `buttonGeneration`, which only the cycle
+           advances. See `carriedButtonLevel`. */
+        if wireButtonDown || carriedButtonLevel { flags.insert(.primaryDown) }
         if keepalive { flags.insert(.keepalive) }
         let packet = ContinuityStateDatagram(
             nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
@@ -1826,6 +1890,12 @@ final class MirrorContinuityController: ObservableObject,
         buttonTransitionSourceUptime = nil
         previousButtonGeneration = 0
         previousButtonDown = false
+        /* THE LEVEL DIES WITH THE EPOCH IT WAS HELD IN. The carry's own
+           lifecycle clears it on every exit path (see
+           `ContinuityEdgeController.setCarriedButtonLevel` callers); this is
+           the floor under those, because a level surviving into the next
+           epoch would hand the next drag a button nobody is holding. */
+        carriedButtonLevel = false
         resetButtonState(.transport, reason: "authority epoch ended")
         keyGeneration = 0
         lastForwardedModifiers = 0
