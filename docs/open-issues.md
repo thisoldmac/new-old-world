@@ -114,6 +114,211 @@ tick`, `plane=0`, drop at the entry point.
   4394-tick (73 s) drag was measured again here.
 
 
+## F2 DEFECT A: the resident's liveness channel had no deadline on an in-flight MacTCP call, so a host that died mid-operation silenced it until reboot (2026-08-17, `fix/resident-net-redial`)
+
+Attended metal, 2026-08-17: the whole session produced **zero resident
+frames** — no `Connected: resident`, no `drag begin from the resident`,
+every `selection cached` line `dragSeq=none` — so the guest→host drag lane
+had no source at all, and the selection fallback is a designed dead end for
+a crossing gesture (F2 recon, § A-1/A-2). The same metal with the same
+extension binary had worked at 00:01 the same day. The 1400c needed a
+reboot to revive. That reboot is the defect: a resident whose host vanishes
+must dial again on its own.
+
+### The wedge states, enumerated from `ext/src/now_liveness_net.c`
+
+The pump is one call at a time (`if (gInFlight != kInFlightNone) return;`,
+`:668`) and `reap()` returns while `gCtlPB.ioResult > 0` (`:568`) **with no
+deadline**. Every state below is a state the resident could not leave.
+
+| # | state | who holds it | cleared before this fix? |
+|---|---|---|---|
+| W1 | `kInFlightOpen` — `TCPActiveOpen` the driver never completes | `gCtlPB` | **no** — and the guard sits *above* the `want == NULL` and epoch-change branches, so not even the application withdrawing its endpoint can move the machine |
+| W2 | `kInFlightSend` — `TCPSend` the driver never completes | `gCtlPB` | **no** — same guard. The forensics' named suspect |
+| W3 | `kInFlightAbort` — the *recovery* itself never completing | `gCtlPB` | **no** — the nastiest of the three: `reap()`'s own failure branches call `issue_abort()`, so the code that exists to recover from a dead host is the code that can latch |
+| W4 | `gRcvInFlight` — `TCPRcv` issued with `commandTimeoutValue = 0` (infinite by design) that outlives its connection | `gRcvPB` | **no** — and it does not block the pump directly; it blocks the *re-open*, because MacTCP refuses an `ActiveOpen` on a stream with a receive pending. Presents as an infinite failing-redial loop (`channel_state=failed` re-written every 60 s) rather than as silence |
+| W5 | `gConnected` true against a TCP the peer has already closed | — | **bounded by design, not a wedge**: nothing polls `TCPStatus`, death is discovered when the next ping send fails, i.e. within the 30 s ping cadence. Stated so the new deadline is not set tighter than the design's own detection floor |
+| W6 | `gDragInFlight` across a host death | `gDragPB` | lazily — `drag_reap()` is called only from `now_liveness_net_send_drag`, never from the pump. Harmless today; it becomes a hazard for any recovery that touches the stream, which is why the fix reaps it |
+
+W1–W4 are reachable and were never cleared. W1/W2/W3 all present as the
+observed signature exactly: `channel_state` frozen at `opening` or
+`failed`, `channel_sends` static, no frame ever again, no path back
+without a reboot.
+
+### The fix
+
+**A deadline on every in-flight call, and a recovery that does not touch
+the param block the driver still owns.** `wedge_watch` counts the ticks
+the pump spends returning at its own guard - which costs nothing and needs
+no clock - and past the deadline declares the call wedged, reports
+`kNowPeekChannelWedged`, and aborts the **stream** on a param block of its
+own (`gWedgeAbortPB`, the third one in the file, for the reason `gDragPB`
+is the second). An abort is the call that makes MacTCP complete the
+pending work on a stream, which is what hands `gCtlPB` and `gRcvPB` back
+so the ordinary reap can run again.
+
+**The stream is never released and recreated.** `TCPRelease` against a
+driver that still holds a param block is the teardown class that has cost
+this project real machines, it needs a context this component only has at
+boot, and it buys nothing a repeated abort does not: every buffer here is
+a static that lives for the boot, so a stream nobody can free costs no
+memory, only patience. A channel whose abort does not free the call stays
+honestly `wedged`, re-aborts on a slow cadence, and recovers the moment
+the driver ever completes.
+
+W4 is closed separately and directly: `issue_open` now refuses to dial
+over a pending receive, because MacTCP refuses that `ActiveOpen` anyway
+and dialling into the refusal is the endless-retry shape of the same
+defect.
+
+### The bounds, and why these numbers
+
+Every call already carries `ulpTimeoutValue = 30` with
+`ulpTimeoutAction = 1` (abort), so a call MacTCP is honestly working on is
+abandoned by the driver itself within 30 s. **These deadlines are
+therefore not a second network timeout - they are the point past which the
+transport's own timeout has demonstrably not fired**, which is a stuck
+driver rather than a slow peer. Tick is 5 s.
+
+| bound | value | why |
+|---|---|---|
+| `kInFlightWedgeTicks` | 8 (~40 s) | the transport's own 30 s, plus one tick because the poll granularity IS a tick, plus one so an early-landing tick cannot convict a call the driver was about to complete |
+| `kAbortWedgeTicks` | 4 (~20 s) | an abort waits on no remote party - it puts an RST on the wire and completes locally - so it has no 30 s to be given the benefit of. It gets its own number because the abort is the RECOVERY, and a latched recovery must not be the slowest thing here to notice |
+| `kRcvSettleTicks` | 6 (~30 s) | only runs while `gConnected` is false; a receive waiting for bytes on a live connection is a receive doing its job (`commandTimeoutValue` is deliberately 0/infinite) |
+| `kRedialTicks` | 2 (~10 s) | after a cleared wedge the machine has already been off the wire for the ~40 s the deadline cost, and the likely cause is a host that is listening again. A second consecutive wedge falls back to the ordinary 12 |
+| `kWedgeAbortRetryTicks` | 12 (~60 s) | an abort that did not work is retried, not spun on |
+
+So the promise the deadline buys: **from a stuck call to a dial is at most
+~55 s (40 + one tick to abort + 10), and never a reboot.**
+
+### THE DEFECT THE DRILL FOUND, and it was the one that mattered: the resident was watching the wrong half of the connection
+
+The deadline above closes the state the resident cannot leave. It is not
+what made the resident slow, and the drill said so by measuring 179.9 s
+three times to a tick with `channelWedges` at **0** - the deadline never
+fired, because nothing was ever stuck.
+
+**MacTCP accepts send after send into a connection whose peer has gone
+and completes every one of them.** The send path is therefore nearly
+blind to a dead peer, and the send path was the resident's only detector:
+`reap()` learns of a dead host from a failing `TCPSend`, and the pings are
+30 s apart. The receive is not blind at all - the peer's FIN completes the
+pending `TCPRcv` within a second, carrying the error - and `drain()` was
+throwing that error away, under a comment saying the control path would
+find out the same way on its next send. It does, three minutes later.
+
+So the drain now reports it (`gPeerGone`), and the pump acts on it: the
+abort belongs to the one-call-at-a-time state machine, and a drain
+issuing its own would be a second writer of `gCtlPB`. The short backoff
+after a peer close cannot spin - a dial with nobody listening FAILS, which
+takes the ordinary 60 s.
+
+### A third, smaller one: the backoff outlived its reason
+
+The 60 s `kRetryTicks` backoff exists to be polite to a host that is not
+up - a Macintosh booted before the Mac it talks to is the normal case. But
+an **endpoint epoch only moves when this machine's own application has
+just completed a hello with a host**, so a new epoch is positive evidence
+from inside the machine that somebody is listening on that address right
+now. The pump only consulted it while `gConnected`; once the connection
+had failed it sat out the timer against a host it could see was up. It now
+clears the countdown on a new epoch, and cannot spin: `issue_open` records
+the epoch it dialled, so a dial that fails backs off normally.
+
+### Drill results — emulator, 2026-08-17
+
+`scripts/probes/resident-redial-drill.py`, mac99 lane guest
+(`/private/tmp/nowvm-rdl`, resident 1.4 staged from this tree). The
+listener runs as a child process and is **SIGKILLed** mid-conversation: a
+politely closed socket is a FIN, which is the case that already worked.
+
+Round 1 (deadline only), receipts `/private/tmp/now-rdl-receipts/round1-*`:
+
+| cycle | app hello after the kill | resident hello | pings on the new link |
+|---|---|---|---|
+| 0 (cold) | 24.8 s | 34.8 s | 1 |
+| 1 | 2.1 s | **179.9 s** | 1 |
+| 2 | 2.1 s | **180.0 s** | 1 |
+| 3 | 2.2 s | **179.6 s** | 1 |
+
+**3 kills, 3 redials, no cycle lost** - and reproducible to a tick, which
+is what named the second defect: the application was back in 2 s every
+time and the resident took three minutes to follow.
+
+Round 2 (deadline + the epoch clearing the backoff), receipts
+`round2-*`: `179.9 s` again. **The epoch change alone bought nothing**,
+which is the measurement that sent the search to the receive side rather
+than another guess at the dial. The change is kept because it is correct
+and cannot hurt, not because this round justified it.
+
+Round 3 (all three), receipts `round3-*`, resident 1.4 cold-booted from
+this tree:
+
+| cycle | app hello after the kill | resident hello |
+|---|---|---|
+| 0 (cold) | 4.4 s | 14.4 s |
+| 1 | 2.1 s | **24.8 s** |
+| 2 | 2.0 s | **25.0 s** |
+| 3 | 2.1 s | **24.8 s** |
+| 4 | 2.1 s | **24.5 s** |
+
+**4 kills, 4 redials, 24.5-25.0 s — 180 s down to 25 s**, and flat across
+four consecutive kill/reconnect cycles, so nothing latches on the second
+one. Every reconnect is a full fresh conversation: hello gated, `pong`
+answered, the channel back to `up`, which is exactly the state
+`now_liveness_net_send_drag` gates a `continuity.dragBegin` frame on
+(`gStreamReady && gConnected && gHelloSent`).
+
+**`channelWedges` = 0, `channelWedgeReaps` = 0, `channelRedials` = 0** at
+the end of BOTH runs (read through the mirror facts the resident now
+publishes), including the four-kill round 3. That is the honest reading of
+two things at once:
+
+- **no spurious wedges under normal latency** - the deadline never fired
+  on a healthy or an ordinarily-failing channel, which is the regression
+  this bound had to avoid;
+- **and the emulator did not reproduce W1-W3.** A host process dying is a
+  clean TCP failure that MacTCP completes; a driver that never completes a
+  call is a driver-level fault this rig cannot induce. So the deadline is
+  proven correct-by-source and inert-in-practice here, and its *firing* is
+  owed to metal.
+
+### The lane image
+
+Private bake, nothing shared touched:
+`~/Lab/Assets/os91-qemu/agent-stage/now-stage-fix-resident-net-redial.qcow2`,
+sha256 `874f6ddb3f1f…`, guest-verified, volume clean. Every commit on this
+branch carries a `TBT_DEFER_EXT_BAKE` deferral naming it. **Promotion to
+the shared oracle is Michelle's sign-off, not this lane's.**
+
+### What metal owes
+
+1. **The 1400c self-heal is the attended proof.** The resident that can
+   heal is the one being installed, so today's machine still needs one
+   more reboot/install pass before it can demonstrate not needing one.
+   After that install, an ungraceful host death should be followed by a
+   `Connected: resident` line without touching the machine.
+2. **`channelWedges` on the PowerBook is the number to read.** If defect A
+   recurs there and this counter is still 0, the wedge is somewhere other
+   than the four states above and the enumeration is incomplete. If it is
+   non-zero with `channelWedgeReaps` behind it, the abort is not freeing
+   the driver and the second tier (a stream rebuild from a non-interrupt
+   context) becomes the work.
+3. **Do not conflate this with the overnight dead-WiFi class.** A
+   PowerBook that boots with its card unassociated has no transport at
+   all; this defect is a transport that answered once and then stopped.
+4. **Whether MacTCP on the 1400c delivers the peer's FIN the way it does
+   under QEMU.** The 25 s recovery rests on the receive completing
+   promptly; if the PowerBook's stack sits on it, the deadline is what
+   catches the machine instead and the number to read is again
+   `channelWedges`.
+5. **A crossing drag after a reconnect has not been driven end to end.**
+   The drill proves the channel is `up` with its hello sent, which is
+   exactly the precondition `now_liveness_net_send_drag` gates the frame
+   on; a `continuity.dragBegin` also needs an armed Continuity epoch and
+   a real Finder drag, which is the slice-1 rig's job and is the natural
+   next round.
+
 ## SLICE 1 DONE, EMULATOR-MEASURED: `continuity.hostDragBegin` starts a real OS 9 drag from a BACKGROUND process, the sprite follows for free, and 1 MB completes byte-identical (2026-08-17, `feat/gh-native-drag-guest`)
 
 Slice 1 of the blessed-path drag plan

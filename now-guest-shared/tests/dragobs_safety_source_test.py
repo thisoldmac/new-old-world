@@ -389,9 +389,15 @@ for counter in ("drag_send_sends", "drag_send_dropped",
     check(f"NowPeekU32 {counter};" in CONTRACT and counter in send_code,
           f"the drag send lost the counter that names one of its "
           f"outcomes: {counter}")
-check("_Static_assert(sizeof(NowPeekTable)\n                   == offsetof("
-      "NowPeekTable, drag_send_format) + 24," in CONTRACT,
-      "the drag-send counters moved without their tail assert following")
+# The drag-send block is six words wide and something else now holds the
+# tail (U16's wedge counters), so what is pinned here is the BLOCK's own
+# boundary rather than the table's end: a seventh drag-send word added
+# without moving this cannot go unnoticed, and a later append taking the
+# tail is the accretive rule working rather than this check going stale.
+check("_Static_assert(offsetof(NowPeekTable, channel_wedge_format)\n"
+      "                   == offsetof(NowPeekTable, drag_send_format) + 24,"
+      in CONTRACT,
+      "the drag-send counters moved without their boundary assert following")
 
 # THE RESIDENT DOES NOT LOG, AND DOES NOT REACH THE FILE MANAGER. The
 # frame carries what a live DragRef already knew and nothing that would

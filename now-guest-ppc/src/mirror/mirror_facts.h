@@ -178,6 +178,23 @@ typedef struct MirrorFacts {
     unsigned long channel_state;
     long channel_result;
     unsigned long channel_sends;
+    /* And whether that channel has ever had to save itself.
+       ------------------------------------------------------------------
+       The resident polls its MacTCP calls, so a call the driver never
+       completes is a channel that goes quiet and stays quiet. It now
+       deadlines them and aborts the stream to get the machine back; these
+       are the numbers that say whether it ever had to, whether it worked,
+       and whether the connection that followed was one it dialled itself.
+       `has_channel_wedges` separates a resident too old to have kept this
+       account from one keeping it and reporting zeros — the second is the
+       healthy machine and the first is no answer, and defaulting would
+       make the reassuring claim about a machine that never spoke. */
+    unsigned long has_channel_wedges;
+    unsigned long channel_wedges;
+    unsigned long channel_wedge_reaps;
+    unsigned long channel_redials;
+    unsigned long channel_wedge_op;
+    unsigned long channel_wedge_ticks;
     /* WHAT THE RESIDENT IS STILL HOLDING, which is a third question from
        `capabilities` and `active_bits` and was for a long time answered by
        neither.

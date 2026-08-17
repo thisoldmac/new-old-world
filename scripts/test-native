@@ -232,6 +232,12 @@ run_py now-guest-shared continuity_keyboard_safety_source_test.py
 # the observer itself makes, no allocation in a foreign application's
 # context, and no mutator anywhere.
 run_py now-guest-shared dragobs_safety_source_test.py
+# The resident's own connection reaps its MacTCP calls by polling, so the
+# deadline that makes the poll terminate is a source property too: a
+# channel with no deadline behaves exactly like a channel with one until
+# the day a driver stops answering, and that day cost an attended metal
+# session and a reboot (F2 defect A).
+run_py now-guest-shared liveness_net_deadline_source_test.py
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
 run_py now-guest-shared act_inflight_wiring_source_test.py
 # The gestaltSystemVersion decode `hello.os` carries since 2026-08-07.

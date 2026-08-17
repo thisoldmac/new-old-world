@@ -180,7 +180,7 @@ struct HostShown: Codable, Equatable, Sendable {
 enum ContinuityContract {
     static let version = Int(ContinuityStateDatagram.version)
     static let residentTableVersion = 15
-    static let residentVersion = "1.3"
+    static let residentVersion = "1.4"
 }
 
 /// Reliable authority for the lossy UDP lane. A datagram with these values

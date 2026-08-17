@@ -1163,6 +1163,50 @@
         "ext/src/now_liveness_net.c"
       ],
       "reason": "merge commit; this exact resident source (4de96980) is baked+census-verified in this lane's private image now-stage-feat-hg-drag-arc-candidate.qcow2 (sidecar receipt beside it); shared-oracle promotion is Michelle's call at RC time"
+    },
+    {
+      "at": "2026-08-17T17:39:34-0400",
+      "branch": "fix/resident-net-redial",
+      "extDigest": "e7eaeee3a3408e8f118fffd90f562c953ff8ed94",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "contract/resident_version.h",
+        "ext/src/now_liveness_net.c"
+      ],
+      "reason": "fix/resident-net-redial lane: iterating on the liveness channel's wedge deadline; baking privately to agent-stage/fix-resident-net-redial for the host-death drill, shared bake is Michelle's sign-off"
+    },
+    {
+      "at": "2026-08-17T18:00:33-0400",
+      "branch": "fix/resident-net-redial",
+      "extDigest": "83fd30f2796709a6b4b955fdd9a40b7fc415f06e",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_liveness_net.c"
+      ],
+      "reason": "fix/resident-net-redial lane: private bake to agent-stage/fix-resident-net-redial follows the second drill round"
+    },
+    {
+      "at": "2026-08-17T18:11:34-0400",
+      "branch": "fix/resident-net-redial",
+      "extDigest": "cad8364caeea0d67c3a4d30e923f859129ad75f3",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_liveness_net.c"
+      ],
+      "reason": "fix/resident-net-redial lane: private bake to agent-stage/fix-resident-net-redial follows the third drill round"
+    },
+    {
+      "at": "2026-08-17T18:50:32-0400",
+      "branch": "feat/hg-drag-arc-candidate",
+      "extDigest": "cad8364caeea0d67c3a4d30e923f859129ad75f3",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "contract/resident_version.h",
+        "ext/src/now_liveness_net.c"
+      ],
+      "reason": "merge; resident 1.4 source (redial) baked+drilled in lane image now-stage-fix-resident-net-redial.qcow2 with sidecar receipt; shared-oracle promotion awaits Michelle"
     }
   ]
 }

@@ -298,11 +298,26 @@ int main(void)
               == offsetof(NowPeekTable, continuity)
                    + sizeof(NowPeekContinuityCell),
           "the drag-send counters follow the continuity cell");
-    /* Six words, and the LAST of them is the tail. Stated as the size so
-       a seventh added without moving this check cannot go unnoticed. */
-    check(offsetof(NowPeekTable, drag_send_last_seq)
+    /* Six words, and U16 takes the tail from behind the last of them. */
+    check(offsetof(NowPeekTable, channel_wedge_format)
+              == offsetof(NowPeekTable, drag_send_last_seq)
+                   + sizeof(NowPeekU32),
+          "the wedge counters follow the drag-send sequence");
+    /* U16: the channel's wedge account. Six words, and the LAST of them
+       is the tail. Stated as the size so a seventh added without moving
+       this check cannot go unnoticed. */
+    check(offsetof(NowPeekTable, channel_wedge_ticks)
               + sizeof(NowPeekU32) == sizeof(NowPeekTable),
-          "the drag-send sequence is the tail, so shorter means absent");
+          "the wedge gauge is the tail, so shorter means absent");
+    /* The op values are the resident's own kInFlight* constants under
+       another name, and a reader that mistook a stuck send for a stuck
+       open would name the wrong defect. */
+    check(kNowPeekChannelOpOpen == 1 && kNowPeekChannelOpSend == 2
+              && kNowPeekChannelOpAbort == 3
+              && kNowPeekChannelOpReceive == 4,
+          "the wedge op values are the contract and must not renumber");
+    check(kNowPeekChannelWedged == 5,
+          "wedged appends behind no-transport rather than renumbering");
     /* The bits are the contract and must not collide, because a reader
        that mistook "the trap table is patched" for "the block is
        allocated" would report the wrong durable fact about a machine. */
