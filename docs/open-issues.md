@@ -7,6 +7,110 @@ search:
 
 # Open issues
 
+## FIXED (host only), EMULATOR-MEASURED: the bind was not wrong, it was early — a crossing may now be revised until the drop (2026-08-16, `feat/gh-drag-late-bind`)
+
+Guest→host file drag needed two gestures: click the icon, let go, press again,
+drag. The host has had the right decision for a while —
+`ContinuitySelectionBind.decide` ranks a `source=drag` generation above every
+cache case — and the guest has had the fact: the resident's Drag Manager
+tracking handler reads the dragged file's identity in the Finder's own
+context, with no selection consulted. What was missing was the CARRIER, and
+its cost is a fifth of a second: the application publishes the identity, and
+it gets no task time while the Finder sits in `TrackDrag`, so the generation
+arrives after the gesture the host needed it for.
+
+**The crossing is what ends the drag loop.** `returnGuestFileToHost` begins
+with `releaseGuestPressAtOrigin`, the Finder's loop ends, NOW runs, and the
+generation lands ~150–200 ms later — into an `NSDraggingSession` with seconds
+of human time left in it. So the bind is allowed ONE revision after the cross:
+
+- `ContinuityDragBinding` holds what a crossing carries. The promise's
+  `writePromiseTo` does not run until the drop and reads the binding then;
+  `userInfo` follows every revision so nothing reads a stale identity.
+- A cross that binds NOTHING now starts the session anyway, carrying an
+  unfilled promise (`pendingDragItem`). That is the single-gesture case: an
+  unselected icon has no cache entry to inherit. If nothing ever names a file,
+  the drop refuses by name and no byte moves — an empty promise is a
+  placeholder, never a guess.
+- Only a `source=drag` generation may revise. A late `selection` is refused
+  out loud; a cross under a **host** drag (`hostDragOverThisMac`, `37241007`)
+  revises nothing; a `superseded` cross keeps refusing, because widening the
+  window in which a bind may be REVISED is not licence to reopen one this Mac
+  declined to make.
+- The window shuts at redemption, once, in `filePromiseProvider(_:writePromiseTo:)`.
+  An arrival after it is a warn line naming the gesture it missed.
+- One cost, kept rather than hidden: a drag whose eager fetch WON its race
+  carries real bytes, and a pasteboard cannot be revised once a session
+  exists. That binding is pinned and says so; the head start is worth more
+  than the revision, because a promise-only pasteboard reads as
+  nothing-droppable to every application that never adopted
+  `NSFilePromiseReceiver` (metal, 2026-08-15).
+
+Host-only: no guest, resident or contract change. Gates: `scripts/build-host-app`
+green, `scripts/test-all` green.
+
+### What the emulator round measured
+
+Rig: `run 99532`, base `now-mirror-stage.qcow2` sha256 `8db8ddc2…`, this tree's
+app and ext staged into a session-private clone (sourceManifest `0b83a0e1666b`,
+guest build `dfd037e7…`), NOW hidden and the Finder fronted, stepped motion with
+dwell. Receipts: `run/arc3/drag-source-1.json`, `run/arc3/drain-grab-1.json`,
+rig table `/private/tmp/nowvm-arc3/provenance.md`.
+
+| | run 1 (`From Claude.txt`) | run 2 (`HELLO_CLAUDE.txt`) |
+|---|---|---|
+| Finder's selection before | `Macintosh HD` | `From Claude.txt` — **a different file** |
+| published while the button was held | none | none |
+| drag begin → drag end | tk 6305 → 6755 (450) | tk 15526 → 16072 (546) |
+| drag-sourced generation published | tk ≈ 6764 — **+9 ticks (~150 ms) after the drag ENDED** | tk ≈ 16084 — **+12 ticks (~200 ms)** |
+| grab of the stale selection | `file.refuse stale-selection` | not asked |
+| grab of the drag generation | `file.begin` `From Claude.txt`, 499 bytes | `file.begin` `HELLO_CLAUDE.txt`, 42 bytes |
+| **bytes drained** | not attempted | **42 of 42, to `FLAG_END`** — sha256 `9ee02d95…`, reads `Hello, Claude! \rI'm just a little old Mac.` |
+
+Two facts that decide the design: **nothing at all crosses the wire while the
+button is held** (`midGestureSelections` empty in both runs, as in every round
+before), and the drag-sourced generation lands ~150–200 ms after the release —
+comfortably inside a host drag session's life. R3's 462-tick figure and this
+one are the same measurement read from two ends: 459/558 ticks after drag
+BEGIN, 9/12 ticks after drag END.
+
+The **bytes had never been drained anywhere**, on emulator or metal — the
+transfer was announced and not read. They have been now, and the drained
+length agrees with the anchor's own `stat` (dataSize 42, rsrcSize 332).
+
+### What this entry does NOT claim
+
+- **The host bind log was not watched on the emulator. SKIPPED AND
+  UNVERIFIED.** Driving the host app against this guest needs a real pointer,
+  Accessibility and the human's screen; this session cannot drive that and
+  must not. The revision, its three refusals and the redemption are pinned by
+  host tests only — measurement (2) of the round is unmet, and the emulator
+  half proves the WIRE side of it: the generation exists, arrives late, and
+  redeems the right file.
+- **The drained bytes were not byte-compared against an independent copy.**
+  The anchor worker serves no `get`, so the comparison available was length
+  and type against its `stat`, plus legible content. A true byte compare wants
+  a second read path.
+- **No metal round, for any of this.** The whole drag plane has never had one
+  (R3 §5), and this change does not create the need for one — it is host-side
+  Swift — but the acceptance it serves (single press-and-drag of an unselected
+  icon, byte-identical file) is still unmeasured on a real Macintosh.
+- **The Finder's own `bounds` did not move in run 1** ("SELECTED, NOT
+  DRAGGED" by that oracle) while the drag plane recorded a complete
+  begin/item/end. The gesture is a real Drag Manager drag by the plane's
+  account and lands the icon back where it started by the Finder's; nothing
+  here depends on the icon moving, but it is not the same statement and is
+  left open.
+
+### If late bind proves insufficient
+
+R3 Rank 1 is the reserve and is unchanged by this: move the PUBLISH into the
+resident's own MacTCP channel (`ext/src/now_liveness_net.c`, the P6 lane), so
+the identity crosses DURING the drag rather than after it. That is what
+anything needing a mid-gesture fact — live drop-target feedback on the host —
+will require, and it is a contract change plus attended metal. Late bind buys
+the single gesture without either.
+
 ## UNVERIFIED, ENVIRONMENTAL: two host gates on this Mac make each other red (2026-08-16, `chore/recover-034-orphans`)
 
 `LoggingSpecTests.testALineMatchesTheFormatTheSpecDefines` failed once in
