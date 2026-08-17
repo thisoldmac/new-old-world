@@ -2489,10 +2489,57 @@ typedef struct {
        the application's own publish carries as `dragSeq`, which is what
        lets a host join the two accounts of one gesture. */
     NowPeekU32 drag_send_last_seq;
+    /* U16 append. **The channel's own wedge account.**
+       ------------------------------------------------------------------
+       The liveness channel issues one MacTCP call at a time and reaps it
+       by polling `ioResult`. Until 2026-08-17 that poll had no deadline,
+       so a call the driver never completed left the pump returning at its
+       one-call-at-a-time guard forever: no ping, no redial, no drag-begin
+       frame, and no way back without rebooting the machine. A whole
+       attended metal session was lost to it (F2 defect A).
+
+       These are the numbers that tell the three questions apart, because
+       a single "the channel is unhappy" reading cannot:
+       `channel_wedges` counts deadlines exceeded — an in-flight call that
+       outlived its own transport timeout; `channel_wedge_reaps` counts the
+       ones our abort actually freed, so a wedge that CLEARED and a wedge
+       that is still held look different; `channel_redials` counts dials
+       issued after a recovery, which is the only positive proof the
+       machine returned to the wire by itself. `channel_wedge_op` carries
+       which call was stuck at the last wedge (a `kInFlight*` value, or
+       `kNowPeekChannelOpReceive` for the drain), and `channel_wedge_ticks`
+       is a live gauge of how long the current call has been in flight, so
+       a reader watches a deadline approach rather than only its aftermath.
+
+       Written by the RESIDENT and by nothing else.
+       `channel_wedge_format` is the written-ness word the accretive rule
+       needs. */
+    NowPeekU32 channel_wedge_format;   /* kNowPeekChannelWedgeFormat* */
+    NowPeekU32 channel_wedges;
+    NowPeekU32 channel_wedge_reaps;
+    NowPeekU32 channel_redials;
+    NowPeekU32 channel_wedge_op;
+    NowPeekU32 channel_wedge_ticks;
 } NowPeekTable;
 
 enum {
     kNowPeekDragSendFormatV1 = 1
+};
+
+enum {
+    kNowPeekChannelWedgeFormatV1 = 1
+};
+
+/* Which call `channel_wedge_op` names. The first four are the resident's
+   own `kInFlight*` values and must keep agreeing with them; the fifth has
+   no `kInFlight*` counterpart because the drain runs on its own param
+   block, outside the one-call-at-a-time state machine. */
+enum {
+    kNowPeekChannelOpNone    = 0,
+    kNowPeekChannelOpOpen    = 1,
+    kNowPeekChannelOpSend    = 2,
+    kNowPeekChannelOpAbort   = 3,
+    kNowPeekChannelOpReceive = 4
 };
 
 /* What the resident currently HAS INSTALLED. A bitmask rather than a
@@ -2563,7 +2610,14 @@ enum {
     kNowPeekChannelFailed    = 3,
     /* No transport at all — the driver never opened, or the stream could
        not be created. This one IS terminal for the boot. */
-    kNowPeekChannelNoTransport = 4
+    kNowPeekChannelNoTransport = 4,
+    /* A MacTCP call outlived its own transport timeout and the driver
+       still owns the param block. Distinct from `failed`, which is a
+       call that COMPLETED with an error and is therefore already
+       recovering: this is a call that has not completed at all, and the
+       resident is aborting the stream to make the driver hand it back.
+       `channel_wedge_op` says which call. */
+    kNowPeekChannelWedged    = 5
 };
 
 /* What the resident found when it reached for a transport. The values
@@ -2927,8 +2981,16 @@ _Static_assert(offsetof(NowPeekTable, drag_send_format)
 _Static_assert(offsetof(NowPeekTable, drag_send_last_seq)
                    == offsetof(NowPeekTable, drag_send_format) + 20,
                "the drag-send sequence is the tail of its own block");
-_Static_assert(sizeof(NowPeekTable)
+_Static_assert(offsetof(NowPeekTable, channel_wedge_format)
                    == offsetof(NowPeekTable, drag_send_format) + 24,
-               "the drag-send counters are the new tail");
+               "the wedge counters append behind the drag-send block");
+/* U16. Six words behind the drag-send block, so every offset a deployed
+   resident depends on is unchanged. */
+_Static_assert(offsetof(NowPeekTable, channel_wedge_ticks)
+                   == offsetof(NowPeekTable, channel_wedge_format) + 20,
+               "the wedge gauge is the tail of its own block");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, channel_wedge_format) + 24,
+               "the wedge counters are the new tail");
 
 #endif /* NOW_PEEK_TABLE_H */
