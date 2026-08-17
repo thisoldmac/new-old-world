@@ -7,6 +7,126 @@ search:
 
 # Open issues
 
+## FIXED, EMULATOR-VERIFIED ACROSS A REAL CROSS: the gesture that crossed now publishes its generation (2026-08-16, `feat/gh-drag-post-epoch-publish`)
+
+**The last gap in the guest→host single-gesture arc, and it was the one
+the arc exists for.** The entry below establishes the cause with log
+evidence: on a CROSSING gesture the application never published a
+generation at all. `now_continuity_selection_note_drag` drains the
+resident's drag observation only when the Finder's drag loop yields task
+time — which on a crossing gesture is *after* the cross has already ended
+the epoch — and then discarded it, twice over: `if (live_epoch == 0)
+return 0`, and behind that a settle that had already reset the table out
+from under the pending publish.
+
+**The mechanism, and it is the grant's own rule one step earlier.** This
+project already lets a GRAB be served under an epoch that ended, for one
+in-flight gesture, inside a bounded window — "the grant survives the epoch
+its gesture began in". The mint now survives it too:
+
+- `settle_to_epoch` records what it is about to destroy: the epoch that
+  ended and its last generation, read BEFORE
+  `now_continuity_selection_settle` resets the table. Without that number
+  a post-epoch mint would count on from zero and hand the host a
+  generation it may already hold for another file. A new epoch clears the
+  record — a drag drained under a running epoch is that epoch's.
+- `now_continuity_stub_publish_post_epoch` (shared, native-tested) mints
+  under the ended epoch into a table of its own, at `lastGeneration + 1`,
+  and — in the same call — makes it GRANTABLE by writing the grant hold.
+  Publishing a number this guest would refuse to serve is the same defect
+  in different clothes. Same window as the grant's
+  (`kNowContinuityGrantTicks`, 30 s), idempotent on `dragSeq`, folders
+  and sequence-less drains refused at the source.
+- The poll reports it BEFORE the zero-epoch gate, which is the
+  settle-ordering bug fixed rather than worked around: by construction
+  there is never a live epoch when a post-epoch mint exists, because the
+  gesture that minted it is the gesture that ended the epoch.
+- The frame says so. `afterEpoch: true` is declared in
+  `contract/asyncapi.yaml` beside `dragSeq`, spliced by the same fragment
+  mechanism in `service_continuity_selection`, and pinned by a codec
+  fixture on the host side (`GuestWireFixtureTests`) and a source gate on
+  the guest side (`continuity_selection_gates_source_test.py`).
+
+**Host-side: joined by `dragSeq`, and by nothing else.** The frame names
+an epoch this Mac no longer owns, so on the old path *every* guard
+dropped it — including the ownership guard, because the epoch's own
+ending cleared `target`. So `MirrorContinuityController` keeps one epoch's
+worth of memory (which epoch ended, whose it was, which gesture had been
+announced), routes an `afterEpoch` frame past the selection cache — it may
+NOT be cached, because nothing may be bound to a press that has not
+happened — and hands it to the crossing in flight.
+`ContinuityAfterEpochAdmission.decide` is pure and holds the admission
+rules; `ContinuityGrabTransfer.joinAfterEpoch` does the join. A crossing
+carrying no `dragSeq` identity is REFUSED rather than filled in on
+timing, a second gesture's number is refused by name, and a frame arriving
+with no crossing left is a warning-level MISS — no zombie redemptions.
+
+**The hold window decision.** `mintWaitSeconds` stays 1.0 s for a crossing
+nobody promised anything about. A crossing carrying a `dragSeq` — the
+resident announced it mid-gesture, so a mint is genuinely owed — waits
+`mintWaitWithIdentitySeconds`, **3.0 s**, and the number is a ratio rather
+than a taste: the mint's measured arrival is 0.459 s after the cross in
+the round below and 230 ms after the drag ended on metal, so this is
+roughly six to ten times the measurement, and it stays far inside the
+guest's own 30 s grant — the ceiling that matters, since a wait outliving
+the grant would stall for nothing. Both are settable, and the log line
+names the wait it actually took.
+
+### The emulator round, 2026-08-16 — and this one CROSSES
+
+The entry below is honest that its probe never crossed an edge, which is
+exactly the condition under which the old code could publish at all. The
+probe now can: `--cross` sends `continuity.disarm` **while the button is
+still down**, which is not an approximation of crossing back — it is what
+crossing back does. The disarm then sits in the guest's TCP buffer until
+the release unwinds the Finder's drag loop, so the epoch is already over
+by the first instruction the drain runs.
+
+Rig: `scripts/spin-up-ppc`, `NOW_SPIN_RUN=/private/tmp/nowvm-fixD`,
+session-private clone of `now-mirror-stage.qcow2` sha256 `8db8ddc2…`,
+this tree's app and resident staged (sourceManifest `1df8e014ab79`,
+buildFingerprint `5410aeef3706`, guest confirmed `lifecycle=active
+capabilities=1023`), lane block 128 (wire 13025). Gesture: one press on
+`HELLO_CLAUDE.txt`, an icon the Finder did NOT have selected (`selection
+before: Macintosh HD`). Receipt: `run/fixD-cross-2026-08-16/`.
+
+| fact | measured |
+| --- | --- |
+| `continuity.dragBegin` from the resident | +0.242 s, **button still down**, `dragSeq=2`, `epoch=1` |
+| the cross (disarm, button still down) | +7.237 s |
+| release | +7.237 s |
+| the application's `continuity.selection` | **+7.696 s — 0.459 s after the cross — `afterEpoch: true`, `epoch: 1` (ENDED), `generation: 2`, `dragSeq: 2`, `HELLO_CLAUDE.txt`** |
+| `continuity.grab` for epoch 1 / generation 2 | served: `file.begin` 42 bytes |
+| the bytes | drained whole to `FLAG_END`, sha256 `9ee02d9589c4…` — the round's regression digest, unchanged |
+
+`midGestureSelections` is empty, as always: the application publishes
+nothing while the Finder holds its drag loop. What changed is what happens
+after — the frame exists, it names the ended epoch out loud, and a grab
+under that ended epoch still serves the file.
+
+**What this round proves, and what it does not.** It proves the GUEST half
+of the crossing end to end: identity mid-gesture, a mint after the epoch
+ended, the frame that declares it, and bytes served under a dead epoch's
+grant. It exercises **none of the Swift**: the probe *is* the host, so the
+ended-epoch admission, the `dragSeq` join, the stretched hold and the
+named miss are verified by the suite (`ContinuityGuestDragTests`,
+`GuestWireFixtureTests`), not by this guest.
+
+**The metal question that remains.** The one link no emulator round can
+close is whether the mint arrives inside the host's hold on a real
+PowerBook carrying a real gesture. The emulator says 0.459 s after the
+cross; metal's own measurement of the same publish (against the release
+rather than the cross) was 230 ms. The hold is 3 s. If a slower machine or
+a busier Finder pushes the drain past that, the symptom is a *named*
+refusal saying how long it waited — `grab refused: gesture N waited 3000
+ms and the Macintosh never minted a generation` — which is the line to
+look for in the next attended round, and `mintWaitWithIdentitySeconds` is
+the single number to move. Also untested anywhere: a host that RE-ARMS a
+new epoch before the guest drains the crossing gesture. The guest then
+publishes under the live epoch instead (the record is cleared on a new
+epoch, deliberately, so a dead consent cannot be resurrected) and the host
+would bind it as an ordinary live drag; nobody has watched that happen.
+
 ## FIXED HOST-SIDE, ONE HALF STILL OPEN: the cross bound a generation nobody could redeem (2026-08-16, `fix/gh-drag-generation-join`)
 
 **What was refused, and by whom.** Every guest→host drag of the attended
