@@ -117,6 +117,15 @@ whose source is in this repository (the bit-4 control).
 Gesture P did the same thing from the scripted proc in run 1
 (`Finder after: "true"`, `Last drag  ok`).
 
+**What is NOT established: byte identity.** Every landing here is
+attested by the Finder answering `exists file … of desktop` → `true`,
+and by the guest's own `Last drag  ok`. The size query
+(`size of item "…" of desktop`) answered `-1753` on both phrasings
+tried, so nothing in this run compared a byte. The in-process lane was
+proven byte-identical by slice 2; the **out-of-process** pull is proven
+only to have completed. Slice 1's gate must compare the bytes, not the
+existence.
+
 **The Finder-window sub-case is NOT answered.** Gesture W aimed at
 (250, 232), the measured interior of a Finder window the Finder itself
 opened at `{48, 103, 452, 321}` — and that window was **entirely behind
