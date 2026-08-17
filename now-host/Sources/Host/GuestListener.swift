@@ -1174,7 +1174,8 @@ final class GuestListener: ObservableObject {
     /// know or care whether a person's hand is on a mouse.
     @discardableResult
     func publishContinuityOffer(guestKey: GuestKey, epoch: UInt32,
-                                generation: UInt32, fileAt url: URL)
+                                generation: UInt32, fileAt url: URL,
+                                handoffDragSeq: UInt32? = nil)
         throws -> ContinuityOffer.Item {
         guard let session = sessions[guestKey] else {
             throw HostShare.ShareError.notFound
@@ -1191,12 +1192,51 @@ final class GuestListener: ObservableObject {
             icon: nil)
         continuityOfferService.publish(guestKey: guestKey, epoch: epoch,
                                        generation: generation, url: url,
-                                       plan: plan, item: item)
+                                       plan: plan, item: item,
+                                       handoffDragSeq: handoffDragSeq)
         note("offer #\(epoch)/\(generation) published: \(item.name), "
              + "\(item.dataSize) bytes", area: "continuity",
              session: guestKey)
         session.sendContinuityOffer(epoch: epoch, generation: generation,
                                     item: item)
+        return item
+    }
+
+    /// **THE HANDOFF, AS ONE ACT: publish the promise, then start the
+    /// guest's own drag on it.**
+    ///
+    /// Publishing and handing off are one call because they are one fact —
+    /// the skeleton the guest advertises and the bytes a later
+    /// `continuity.grab` serves are derived from a single
+    /// `OutboundFile.Plan` (`ContinuityHostDragSkeleton`). Two calls would
+    /// be two reads of the file and a window in which the guest could
+    /// promise something this Mac is not holding.
+    ///
+    /// After this returns, the host's remaining duty is exactly one thing:
+    /// keep serving that offer until the guest's send proc asks for it.
+    /// Position and button ride the ordinary datagrams; where the file
+    /// lands is not this side's business.
+    @discardableResult
+    func beginHostDrag(guestKey: GuestKey, epoch: UInt32,
+                       generation: UInt32, fileAt url: URL,
+                       dragSeq: UInt32,
+                       pos: ContinuityHostDragBegin.Position)
+        throws -> ContinuityHostDragBegin.Item {
+        try publishContinuityOffer(guestKey: guestKey, epoch: epoch,
+                                   generation: generation, fileAt: url,
+                                   handoffDragSeq: dragSeq)
+        guard let session = sessions[guestKey],
+              let plan = continuityOfferService.current?.plan else {
+            throw HostShare.ShareError.notFound
+        }
+        let item = ContinuityHostDragSkeleton.item(for: plan)
+        note("drag handoff #\(dragSeq): \(item.name) "
+             + "type=\(item.type ?? "-") creator=\(item.creator ?? "-") "
+             + "data=\(item.dataSize) rsrc=\(item.rsrcSize) at "
+             + "\(pos.h),\(pos.v) — the Macintosh's Drag Manager owns the "
+             + "gesture from here", area: "continuity", session: guestKey)
+        session.sendContinuityHostDragBegin(dragSeq: dragSeq, pos: pos,
+                                            item: item)
         return item
     }
 
@@ -1209,6 +1249,29 @@ final class GuestListener: ObservableObject {
         guard let session = sessions[guestKey] else { return }
         session.sendContinuityOffer(epoch: epoch, generation: generation,
                                     item: nil)
+    }
+
+    /// **The host→guest carry ended without a drop: let the promise go.**
+    ///
+    /// The abort half of `beginHostDrag`. The guest's own drag has already
+    /// ended natively over there (its input proc reports a point nothing
+    /// accepts, then button-up, and the Drag Manager plays its own
+    /// snap-back) — so nothing is holding this promise and it stops being
+    /// serveable this instant, rather than after `endEpoch`'s window.
+    ///
+    /// Named `reason` because every one of these lines has to be readable
+    /// on its own in an attended run: a promise that stopped being served
+    /// and no sentence saying why is the shape of defect this lane keeps
+    /// paying for.
+    func endHostDragOffer(dragSeq: UInt32, reason: String) {
+        guard let offer = continuityOfferService.release() else {
+            note("drag handoff #\(dragSeq) ended with no promise still "
+                 + "held (\(reason))", area: "continuity")
+            return
+        }
+        note("drag handoff #\(dragSeq): the promise for \(offer.item.name) "
+             + "was let go without a pull — \(reason). Nothing was copied",
+             area: "continuity", level: .warn)
     }
 
     /// Continuity ended while an item was still carried: starts the
@@ -1235,7 +1298,14 @@ final class GuestListener: ObservableObject {
                  area: "continuity", level: .warn, session: key)
             session.refuseFile(id: grab.id, code: code, reason: reason)
         case .serve(let plan):
-            note("#\(grab.id) serving offered \(plan.name), "
+            /* THE PROMISE PULL, and on the native lane it happens INSIDE
+               the guest's drop — the one moment this Mac's only remaining
+               duty is being discharged. Tagged with the handoff it belongs
+               to so an attended run can read the whole gesture off this
+               log alone: handoff sent, pull served, and how much. */
+            let handoff = continuityOfferService.handoffDragSeq
+                .map { "drag handoff #\($0): " } ?? ""
+            note("#\(grab.id) \(handoff)serving offered \(plan.name), "
                  + "\(plan.bytes.count) bytes", area: "continuity",
                  session: key)
             session.serveFile(id: grab.id, plan: plan,

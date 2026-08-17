@@ -43,6 +43,12 @@ final class ContinuityOfferService {
     }
 
     private(set) var current: Offer?
+    /// Which host→guest drag handoff this offer is the promise for, when it
+    /// is one at all (an agent- or console-published offer is not). Carried
+    /// beside the offer rather than inside it because it identifies the
+    /// GESTURE, not the item — and its only job is to let the pull's log
+    /// line pair with the handoff's.
+    private(set) var handoffDragSeq: UInt32?
     private let clock: () -> Date
 
     init(clock: @escaping () -> Date = Date.init) {
@@ -54,10 +60,12 @@ final class ContinuityOfferService {
     /// publishes an offer under a new epoch, whichever comes first").
     func publish(guestKey: GuestKey, epoch: UInt32, generation: UInt32,
                 url: URL, plan: OutboundFile.Plan,
-                item: ContinuityOffer.Item) {
+                item: ContinuityOffer.Item,
+                handoffDragSeq: UInt32? = nil) {
         current = Offer(guestKey: guestKey, epoch: epoch,
                         generation: generation, url: url, plan: plan,
                         item: item, endedAt: nil)
+        self.handoffDragSeq = handoffDragSeq
     }
 
     /// The epoch ended (Continuity disarmed) while an item was still
@@ -70,12 +78,29 @@ final class ContinuityOfferService {
         current?.endedAt = date ?? clock()
     }
 
+    /// **The carry was abandoned: stop serving at once, with no window.**
+    ///
+    /// `endEpoch`'s bounded window exists because a guest Finder may still
+    /// be holding a promise it has every right to redeem. An abort is the
+    /// opposite fact — the drag ended without a drop, nothing over there is
+    /// holding anything, and a promise left serveable after that is this
+    /// Mac offering a file nobody asked for. Returns what was let go, so
+    /// the caller's log can name it.
+    @discardableResult
+    func release() -> Offer? {
+        let offer = current
+        current = nil
+        handoffDragSeq = nil
+        return offer
+    }
+
     /// The connection carrying this offer closed. Ends it immediately —
     /// "consent was given to one Macintosh over one connection" — no
     /// window at all, and only for the guest whose link it was.
     func linkDropped(guestKey: GuestKey) {
         guard current?.guestKey == guestKey else { return }
         current = nil
+        handoffDragSeq = nil
     }
 
     enum GrabOutcome {
@@ -107,6 +132,7 @@ final class ContinuityOfferService {
         if let endedAt = offer.endedAt,
            clock().timeIntervalSince(endedAt) > Self.offerLifetimeSeconds {
             current = nil
+            handoffDragSeq = nil
             return .refuse(code: "offer-expired",
                            reason: "This Mac stopped carrying that item "
                                + "more than \(Int(Self.offerLifetimeSeconds))s "

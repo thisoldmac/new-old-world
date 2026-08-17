@@ -48,6 +48,48 @@ final class AgentIntegrationContinuityOfferControl {
         }
     }
 
+    /// **The blessed-path handoff: publish the promise and start the
+    /// guest's own Drag Manager drag on it, at `pos`.**
+    ///
+    /// Same seam, one beat later in the gesture than `publish` — and it
+    /// supersedes the carry-presentation arm (`offer --drag`) on the drag
+    /// lane, which asked the guest to DRAW something. This asks it to
+    /// begin a real drag, which is a different request with a different
+    /// acceptance test: after it, nothing on the guest can tell the
+    /// gesture from one its own user started.
+    func beginDrag(fileAt url: URL, epoch: UInt32, generation: UInt32,
+                   dragSeq: UInt32,
+                   pos: ContinuityHostDragBegin.Position)
+        -> HandoffOutcome {
+        guard let key = listener.activeKey else {
+            return .guestUnavailable
+        }
+        do {
+            let item = try listener.beginHostDrag(
+                guestKey: key, epoch: epoch, generation: generation,
+                fileAt: url, dragSeq: dragSeq, pos: pos)
+            return .handedOff(item)
+        } catch {
+            audit(.error, "drag handoff #\(dragSeq) failed: "
+                + "\(url.lastPathComponent) (\(error))")
+            return .failed(reason: "\(error)")
+        }
+    }
+
+    enum HandoffOutcome {
+        case handedOff(ContinuityHostDragBegin.Item)
+        case guestUnavailable
+        case failed(reason: String)
+    }
+
+    /// The abort half: the promise stops being serveable now, with the
+    /// reason on the record. Safe to call when no handoff is outstanding —
+    /// every teardown path in the controller runs through it, and a
+    /// double-abort must be a no-op rather than a second story.
+    func endDrag(dragSeq: UInt32, reason: String) {
+        listener.endHostDragOffer(dragSeq: dragSeq, reason: reason)
+    }
+
     /// Tears down whatever the guest was drawing, under a fresh
     /// generation carrying no item.
     func clear(epoch: UInt32, generation: UInt32) -> Bool {
