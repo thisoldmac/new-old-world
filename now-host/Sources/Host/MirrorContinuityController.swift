@@ -1892,7 +1892,7 @@ final class MirrorContinuityController: ObservableObject,
         previousButtonDown = false
         /* THE LEVEL DIES WITH THE EPOCH IT WAS HELD IN. The carry's own
            lifecycle clears it on every exit path (see
-           `ContinuityEdgeController.setCarriedButtonLevel` callers); this is
+           `ContinuityEdgeController.holdCarriedButton` callers); this is
            the floor under those, because a level surviving into the next
            epoch would hand the next drag a button nobody is holding. */
         carriedButtonLevel = false
