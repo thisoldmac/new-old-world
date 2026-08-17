@@ -1051,50 +1051,35 @@ final class MirrorContinuityController: ObservableObject,
     /// case uses, `dragSeq`.
     private func receivedAfterEpoch(_ selection: ContinuitySelection,
                                     from key: GuestKey) {
-        guard selection.version == ContinuityContract.version else {
-            audit(.warn, "selection after the epoch ignored: the Mac "
-                + "reported Continuity version "
-                + "\(selection.version.map(String.init) ?? "none") and this "
-                + "Mac speaks \(ContinuityContract.version)")
+        /* WHOSE it is stays here, because a GuestKey is this object's own
+           notion of who it was talking to; WHETHER it may be used is pure
+           and lives in ContinuityAfterEpochAdmission, where every refusal
+           can be watched without a machine. */
+        guard let ended = endedEpoch, ended.key == key else {
+            audit(.warn, "selection after the epoch ignored: it came from "
+                + "\(key.machine.slug), and this Mac's last epoch belonged "
+                + "to \(endedEpoch.map { $0.key.machine.slug } ?? "nobody")")
             return
         }
-        guard let ended = endedEpoch, ended.key == key,
-              ended.epoch == selection.epoch else {
-            audit(.warn, "selection after the epoch ignored: it names epoch "
-                + "\(selection.epoch) from \(key.machine.slug), and this "
-                + "Mac's last epoch was "
-                + "\(endedEpoch.map { "\($0.epoch) from \($0.key.machine.slug)" } ?? "none")")
-            return
+        switch ContinuityAfterEpochAdmission.decide(selection,
+                                                    lastEpoch: ended.epoch) {
+        case .refused(let reason):
+            audit(.warn, "selection after the epoch ignored: \(reason)")
+        case .join(let stub):
+            if let announced = ended.dragSeq,
+               announced != stub.dragSeq {
+                audit(.info, "drag \(stub.dragSeq.map(String.init) ?? "none") "
+                    + "is not the drag this Mac was announced (\(announced)) "
+                    + "before epoch \(ended.epoch) ended — the join below "
+                    + "decides it, not this line")
+            }
+            audit(.info, "drag \(stub.dragSeq.map(String.init) ?? "none") "
+                + "joined AFTER its epoch: epoch \(stub.epoch) ended at the "
+                + "cross and the Mac minted generation \(stub.generation) "
+                + "for \(stub.item.name) once its Finder let the application "
+                + "run again")
+            edge.noteSelectionPublishedAfterEpoch(stub)
         }
-        guard selection.resolvedSource == .drag, selection.generation != 0,
-              let seq = selection.dragSeq, let item = selection.item else {
-            audit(.warn, "selection after the epoch ignored: only a "
-                + "drag-sourced generation may name an epoch that ended "
-                + "(source=\(selection.resolvedSource.rawValue), "
-                + "generation=\(selection.generation), dragSeq="
-                + "\(selection.dragSeq.map(String.init) ?? "none"), "
-                + "item=\(selection.item?.name ?? "none"))")
-            return
-        }
-        guard !item.isFolder else {
-            audit(.warn, "selection after the epoch ignored: \(item.name) is "
-                + "a folder, and folders cross in a later slice")
-            return
-        }
-        if let announced = ended.dragSeq, announced != seq {
-            audit(.info, "drag \(seq) is not the drag this Mac was announced "
-                + "(\(announced)) before epoch \(ended.epoch) ended — the "
-                + "join below decides it, not this line")
-        }
-        audit(.info, "drag \(seq) joined AFTER its epoch: epoch "
-            + "\(selection.epoch) ended at the cross and the Mac minted "
-            + "generation \(selection.generation) for \(item.name) once its "
-            + "Finder let the application run again")
-        edge.noteSelectionPublishedAfterEpoch(
-            ContinuityDragStub(epoch: selection.epoch,
-                               generation: selection.generation,
-                               item: item,
-                               dragSeq: seq))
     }
 
     private func received(_ selection: ContinuitySelection, from key: GuestKey) {

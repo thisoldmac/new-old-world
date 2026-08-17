@@ -786,6 +786,224 @@ final class ContinuityGuestDragTests: XCTestCase {
         })
     }
 
+    // MARK: - The generation minted after its epoch ended
+
+    /// **THE CROSSING GESTURE, END TO END ON THIS SIDE.** The shape metal
+    /// produced six times on 2026-08-16 and this Mac refused six times: an
+    /// icon nobody selected is pressed, the resident names it mid-gesture,
+    /// the pointer crosses — which ENDS the epoch — and the Macintosh's own
+    /// generation for the file in the hand cannot exist until afterwards.
+    /// It now arrives naming that ended epoch, and the crossing takes it.
+    func testACrossingTakesTheGenerationMintedAfterItsEpochEnded() throws {
+        let rig = Rig()
+        rig.residentAnnounces(Self.file(name: "HELLO_CLAUDE.txt"), dragSeq: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        XCTAssertEqual(
+            (provider.userInfo as? ContinuityDragStub)?.generation, 0,
+            "the crossing carries an identity and no grant, as it must")
+
+        /* The cross ended the epoch — the cache goes, exactly as it does on
+           metal — and only THEN does the application publish. */
+        rig.endEpochDroppingTheCache()
+        rig.mintsAfterTheEpoch(Self.file(name: "HELLO_CLAUDE.txt"),
+                               generation: 4, dragSeq: 2)
+
+        let carried = try XCTUnwrap(
+            provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(carried.generation, 4,
+                       "the number a grab must ask for reached the crossing "
+                        + "that was waiting for it")
+        XCTAssertEqual(carried.epoch, 7,
+                       "and it names the epoch the gesture BEGAN in, which "
+                        + "is the epoch the guest's grant still honours")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("late bind after the epoch")
+                && $0.1.contains("which has ENDED")
+        }, "a redemption nobody can read is how this arc lost two rounds")
+    }
+
+    /// **THE JOIN IS THE WHOLE SAFETY ARGUMENT.** No epoch is running, so
+    /// there is no cache to agree with; what says this frame is about the
+    /// gesture this Mac is carrying is `dragSeq` and nothing else. A second
+    /// drag's number is refused rather than adopted.
+    func testAPostEpochGenerationFromAnotherGestureIsRefused() throws {
+        let rig = Rig()
+        rig.residentAnnounces(Self.file(name: "HELLO_CLAUDE.txt"), dragSeq: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+        rig.endEpochDroppingTheCache()
+
+        rig.mintsAfterTheEpoch(Self.file(name: "notes.txt"),
+                               generation: 9, dragSeq: 3)
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        XCTAssertEqual(
+            (provider.userInfo as? ContinuityDragStub)?.generation, 0,
+            "a generation from another gesture may not fill this one in")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn && $0.1.contains("dragSeq 3 is not the gesture")
+        })
+    }
+
+    /// A crossing that nobody announced has nothing to join TO. Filling it
+    /// in on timing alone is precisely the wrong-file bug the join key was
+    /// added to end, so it refuses and says so.
+    func testAPostEpochGenerationRefusesACrossingWithNoIdentity() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, _ in }, audit: { audits.append(($0, $1)) })
+        _ = transfer.pendingDragItem()
+
+        let outcome = transfer.joinAfterEpoch(
+            ContinuityDragStub(epoch: 4, generation: 6,
+                               item: Self.file(name: "main 2.c"),
+                               dragSeq: 4))
+
+        guard case .unusable(let reason) = outcome else {
+            return XCTFail("a crossing with no identity must refuse")
+        }
+        XCTAssertTrue(reason.contains("no drag identity"))
+        XCTAssertNil(transfer.liveBinding?.grabbable)
+    }
+
+    /// And with no crossing at all it is a MISS, at warning level: the
+    /// gesture it belonged to has already refused or already taken its
+    /// answer, and nothing is redeemed on its account.
+    func testAPostEpochGenerationWithNoCrossingIsANamedMiss() {
+        let rig = Rig()
+        rig.mintsAfterTheEpoch(Self.file(name: "HELLO_CLAUDE.txt"),
+                               generation: 4, dragSeq: 2)
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn && $0.1.contains("no crossing of this Mac's left")
+        }, "a frame arriving after the hold gave up must name the miss")
+    }
+
+    /// The admission rules themselves, watched without a machine. Each of
+    /// these would otherwise be a silent drop indistinguishable from a
+    /// Macintosh that never published — which is the state this whole arc
+    /// spent two attended rounds inside.
+    func testTheAfterEpochAdmissionRefusesEverythingButTheGesture() {
+        let item = Self.file(name: "HELLO_CLAUDE.txt")
+        func frame(epoch: UInt32 = 4, generation: UInt32 = 5,
+                   source: ContinuitySelection.Source = .drag,
+                   dragSeq: UInt32? = 2, afterEpoch: Bool? = true,
+                   item: ContinuitySelection.Item? = item)
+            -> ContinuitySelection {
+            .init(version: ContinuityContract.version, epoch: epoch,
+                  generation: generation, source: source, dragSeq: dragSeq,
+                  afterEpoch: afterEpoch, item: item)
+        }
+
+        guard case .join(let stub) = ContinuityAfterEpochAdmission
+            .decide(frame(), lastEpoch: 4) else {
+            return XCTFail("the crossing gesture's own frame must be joined")
+        }
+        XCTAssertEqual(stub.generation, 5)
+        XCTAssertEqual(stub.dragSeq, 2)
+
+        /* An epoch that is not the one that just ended is a consent this
+           Mac has already let go of. */
+        XCTAssertEqual(
+            ContinuityAfterEpochAdmission.decide(frame(epoch: 3),
+                                                 lastEpoch: 4),
+            .refused(reason: "it names epoch 3 and this Mac's last epoch "
+                + "was 4"))
+        XCTAssertEqual(
+            ContinuityAfterEpochAdmission.decide(frame(), lastEpoch: nil),
+            .refused(reason: "it names epoch 4 and this Mac's last epoch "
+                + "was none"))
+
+        /* A poll cannot run without a live epoch, a zero is an identity
+           this Mac already has, and a frame with no join key cannot be
+           attributed to any gesture at all. */
+        for refused in [frame(source: .selection), frame(generation: 0),
+                        frame(dragSeq: nil), frame(item: nil),
+                        frame(item: Self.folder(name: "Projects"))] {
+            guard case .refused = ContinuityAfterEpochAdmission
+                .decide(refused, lastEpoch: 4) else {
+                return XCTFail("admitted a frame that names no usable "
+                                + "gesture: \(refused)")
+            }
+        }
+
+        /* And a live-epoch frame does not belong on this path at all. */
+        guard case .refused = ContinuityAfterEpochAdmission
+            .decide(frame(afterEpoch: nil), lastEpoch: 4) else {
+            return XCTFail("a frame naming a live epoch must not be "
+                            + "admitted here")
+        }
+    }
+
+    /// **THE HOLD STRETCHES WHEN A MINT IS OWED.** A crossing carrying a
+    /// `dragSeq` was announced by the resident mid-gesture, so the
+    /// application's frame is coming — and on a crossing gesture it cannot
+    /// be sent until the cross has ended the epoch. The bare second is for
+    /// a crossing nobody promised anything about.
+    func testTheHoldWaitsLongerWhenTheGestureWasAnnounced() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let seen = Asked()
+        let asked = expectation(description: "the grab reached the wire")
+        var audits: [(HostLog.LogLevel, String)] = []
+        let transfer = ContinuityGrabTransfer(
+            grab: { epoch, generation, _, _, completion in
+                seen.epoch = epoch
+                seen.generation = generation
+                asked.fulfill()
+                completion(.failure(.init(
+                    code: "test", message: "no bytes cross in this test")))
+            }, audit: { audits.append(($0, $1)) })
+        /* Far too short for the join below; the identity is what buys the
+           time, and this test fails if it does not. */
+        transfer.mintWaitSeconds = 0.05
+        transfer.mintWaitWithIdentitySeconds = 2.0
+        let item = transfer.dragItem(
+            for: ContinuityDragStub(epoch: 4, generation: 0,
+                                    item: Self.file(name: "HELLO_CLAUDE.txt"),
+                                    dragSeq: 2))
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+
+        let done = expectation(description: "the promise answered")
+        transfer.filePromiseProvider(
+            provider,
+            writePromiseTo: staging.appendingPathComponent("HELLO_CLAUDE.txt")
+        ) { _ in done.fulfill() }
+        /* The application's frame, minted after the cross ended epoch 4 and
+           naming that epoch. */
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            MainActor.assumeIsolated {
+                _ = transfer.joinAfterEpoch(
+                    ContinuityDragStub(epoch: 4, generation: 4,
+                                       item: Self.file(
+                                           name: "HELLO_CLAUDE.txt"),
+                                       dragSeq: 2))
+            }
+        }
+        wait(for: [asked, done], timeout: 10)
+
+        XCTAssertEqual(seen.generation, 4,
+                       "the drop asked with the number that joined after "
+                        + "the epoch, and asked exactly once")
+        XCTAssertEqual(seen.epoch, 4,
+                       "under the epoch the gesture began in — the one the "
+                        + "guest's grant still honours")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("grab held:") && $0.1.contains("waiting up to 2000 ms")
+        }, "the announced gesture must buy the longer wait, out loud")
+    }
+
     /// The binding's own half of the same invariant: an identity-only
     /// revision arriving after a real one may not un-name the gesture.
     func testALateIdentityCannotUnnameALiveGeneration() {
@@ -3025,6 +3243,30 @@ private final class Rig {
                           item: item),
                     activeEpoch: epoch)
         notePublished()
+    }
+
+    /// The resident naming the file in the hand while the button is still
+    /// down: an identity, a gesture, and NO generation — the application
+    /// mints those and it is not running yet.
+    func residentAnnounces(_ item: ContinuitySelection.Item,
+                           dragSeq: UInt32) {
+        cache.apply(.init(version: ContinuityContract.version, epoch: epoch,
+                          generation: 0, source: .drag, dragSeq: dragSeq,
+                          item: item),
+                    activeEpoch: epoch)
+        notePublished()
+    }
+
+    /// The application's own frame for a gesture that CROSSED: minted after
+    /// the cross ended the epoch, naming that ended epoch, joined by the
+    /// sequence the resident announced.
+    func mintsAfterTheEpoch(_ item: ContinuitySelection.Item,
+                            generation: UInt32, dragSeq: UInt32,
+                            epoch: UInt32? = nil) {
+        controller.noteSelectionPublishedAfterEpoch(
+            ContinuityDragStub(epoch: epoch ?? self.epoch,
+                               generation: generation, item: item,
+                               dragSeq: dragSeq))
     }
 
     /// What `MirrorContinuityController` does with every arrival: hand it to

@@ -32,6 +32,17 @@ THREE THINGS IT REPORTS, and it reports absence as absence:
      with a sha256 — because an announced transfer that is never read
      proves the announcement and nothing else.
 
+AND THE CROSSING, WITH `--cross`. The three above measure a drag that
+ends on the guest, which is the shape the epoch survives — and it is NOT
+the shape a person makes when they carry a file to the Mac. Crossing back
+is what ends the epoch, so on a real cross the disarm reaches the guest
+BEFORE its application has had one instruction of task time, and the
+generation for the file in the hand can only be minted afterwards. `--cross`
+sends the disarm while the button is still down, exactly as a host does at
+the edge, and then asks the three questions that shape raises: does the
+application publish at all, does the frame say `afterEpoch`, and does a
+grab under the ENDED epoch still serve the bytes.
+
 Not a test and not in any gate: it needs a booted guest, a Finder, and a
 point on the screen where an UNSELECTED icon is. scripts/spin-up-ppc
 boots one.
@@ -195,6 +206,10 @@ def main():
     parser.add_argument("--dy", type=int, default=40)
     parser.add_argument("--hold", type=float, default=8.0,
                         help="seconds the button stays down after the drag")
+    parser.add_argument("--cross", action="store_true",
+                        help="end the epoch WHILE the button is held, the "
+                             "way crossing back to the host does, and "
+                             "measure the post-epoch publish")
     parser.add_argument("--require-build", default=None)
     parser.add_argument("--wait", type=float, default=240)
     parser.add_argument("--timeout", type=float, default=10)
@@ -391,7 +406,24 @@ def main():
                                              since=baseline_at))
     mid_gesture = rig.app.of_type("continuity.selection", since=baseline_at)
 
-    # 4. Release at the press origin, the way the host's cross does. The
+    # 4. THE CROSS, when asked for: the disarm goes out while the button
+    #    is STILL DOWN. That is not an approximation of crossing back, it
+    #    is what crossing back does — host ownership ends at the edge, and
+    #    the guest's application is still inside the Finder's drag loop
+    #    with no task time to notice. The frame therefore sits in the
+    #    guest's TCP buffer until the release below unwinds that loop, so
+    #    the epoch is already over by the first instruction the drain
+    #    runs. Everything the crossing case turns on follows from that
+    #    ordering, which is why it is made here rather than described.
+    crossed_at = None
+    if args.cross:
+        crossed_at = time.monotonic()
+        rig.app.send({"type": "continuity.disarm",
+                      "version": CONTINUITY.version, "id": 7300,
+                      "epoch": epoch, "reason": "disabled"})
+        note("epoch disarmed with the button still down (the cross)")
+
+    # 5. Release at the press origin, the way the host's cross does. The
     #    release is what ends the Finder's drag loop, so this is the
     #    instant the APPLICATION becomes able to speak at all.
     previous = button_generation
@@ -399,7 +431,7 @@ def main():
     released_at = time.monotonic()
     state(args.x, args.y, False, previous_generation=previous,
           previous_flags=CONTINUITY.flag_primary_down)
-    rig.pump(4.0, udp=udp)
+    rig.pump(6.0 if args.cross else 4.0, udp=udp)
     after_release = rig.app.of_type("continuity.selection", since=baseline_at)
 
     # 5. THE JOIN, and then the bytes. The generation a grab must name is
@@ -433,9 +465,11 @@ def main():
                 "text": body.decode("mac-roman", "replace")[:120],
             }
 
-    rig.app.send({"type": "continuity.disarm", "version": CONTINUITY.version,
-                  "id": 7301, "epoch": epoch, "reason": "disabled"})
-    rig.pump(2.0, udp=udp)
+    if not args.cross:
+        rig.app.send({"type": "continuity.disarm",
+                      "version": CONTINUITY.version, "id": 7301,
+                      "epoch": epoch, "reason": "disabled"})
+        rig.pump(2.0, udp=udp)
     rig.app.send({"type": "bye"})
 
     def since_press(stamp):
@@ -462,6 +496,7 @@ def main():
                 (late_begin["_at"] if late_begin else None)),
             "applicationDragArrived": since_press(
                 joined["_at"] if joined else None),
+            "crossedAt": since_press(crossed_at),
         },
         "dragBegin": begin or late_begin,
         "baselineSelections": baseline,
@@ -481,6 +516,14 @@ def main():
                 begin and joined
                 and begin.get("item", {}).get("name")
                 == (joined.get("item") or {}).get("name")),
+            # THE CROSSING'S OWN QUESTION. A frame that names the ended
+            # epoch and says so is the whole of what was missing; without
+            # `afterEpoch` a host can only read it as a mistake.
+            "publishedAfterTheEpochEnded": bool(
+                args.cross and joined and joined.get("afterEpoch") is True),
+            "postEpochGenerationServed": bool(
+                args.cross and grab
+                and grab.get("type") == "file.begin"),
             "bytesDrainedWhole": bool(
                 drained and drained["reachedEnd"]
                 and drained["drainedBytes"] == drained["announcedBytes"]),
