@@ -81,6 +81,27 @@ final class AppKitContinuityPointerEnvironment:
         return true
     }
 
+    func postSyntheticPrimaryButtonAtHID(down: Bool,
+                                         at screenPoint: CGPoint) -> Bool {
+        let flipHeight = NSScreen.screens.first?.frame.maxY ?? 0
+        let point = CGPoint(x: screenPoint.x,
+                            y: flipHeight - screenPoint.y)
+        guard let event = CGEvent(
+            mouseEventSource: nil,
+            mouseType: down ? .leftMouseDown : .leftMouseUp,
+            mouseCursorPosition: point, mouseButton: .left) else {
+            return false
+        }
+        /* The HID tap, not the session one, and the difference is who gets
+           to see it. This release has to reach the window server's own drag
+           machinery to END a live session; posted at the session level it
+           enters in FRONT of nothing and BEHIND every head-inserted tap on
+           this Mac — this app's own consuming tap among them, which
+           swallows exactly this event type by design. */
+        event.post(tap: .cghidEventTap)
+        return true
+    }
+
     func hideCursor(on displayID: UInt32) {
         CGDisplayHideCursor(CGDirectDisplayID(displayID))
     }

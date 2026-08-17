@@ -111,6 +111,43 @@ struct ContinuityCatchHitTest: Equatable, Sendable {
     }
 }
 
+/// **What a host drag was carrying, kept past the death of the session that
+/// carried it.**
+///
+/// The host→guest cross ends the Finder-owned drag AT the edge (see
+/// `ContinuityEdgeController.endHostDragAtCross`), which means the drop this
+/// app accepts there is a STAGING, not the transfer: the person has not
+/// chosen where on the guest it lands yet. An `NSDraggingInfo`'s pasteboard
+/// is only valid for the length of that session, so what it named has to be
+/// copied somewhere that outlives it before the session ends.
+///
+/// **Only real file URLs stage.** A drag carrying nothing but file PROMISES
+/// names files that do not exist yet and are redeemed through a receiver
+/// tied to the live session; nothing here can hold one past the drop. That
+/// is why `snapshot` returns nil rather than an empty pasteboard, and why
+/// the caller treats nil as "do not end this drag early" — a promise-only
+/// drag keeps the pre-existing behaviour end to end.
+@MainActor
+enum ContinuityHostFileStaging {
+    /// A private pasteboard, not the drag pasteboard: the drag one dies with
+    /// the session this app is about to end.
+    static let name = NSPasteboard.Name("net.shelbel.now.continuity.staged")
+
+    static func snapshot(_ pasteboard: NSPasteboard) -> NSPasteboard? {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true,
+        ]
+        let urls = (pasteboard.readObjects(forClasses: [NSURL.self],
+                                           options: options) ?? [])
+            .compactMap { $0 as? NSURL }
+        guard !urls.isEmpty else { return nil }
+        let staged = NSPasteboard(name: name)
+        staged.clearContents()
+        guard staged.writeObjects(urls) else { return nil }
+        return staged
+    }
+}
+
 /// The AppKit half of Continuity file traversal. The controller owns gesture
 /// state and guest coordinates; this object owns the real macOS drag source
 /// and destination which must exist at the physical display boundary.
@@ -135,6 +172,14 @@ final class ContinuityFileEdge: NSObject {
         /// silence — which is exactly the symptom the first metal round
         /// could not name.
         var dragEnded: (NSDragOperation, CGPoint) -> Void = { _, _ in }
+        /// How many dragging items this destination replaced the image
+        /// components of, once per foreign session. Reported rather than
+        /// assumed: whether a destination-side image replacement actually
+        /// reaches a FINDER-owned session's ghost is attended-only
+        /// evidence, and a zero here says the enumeration found nothing to
+        /// touch, which is a different failure from "it ran and the ghost
+        /// stayed". See `EdgeView.blankDragGhost`.
+        var ghostBlanked: (Int) -> Void = { _ in }
     }
 
     private final class EdgePanel: NSPanel {
@@ -179,9 +224,58 @@ final class ContinuityFileEdge: NSObject {
             (sender.draggingSource as AnyObject?) === self
         }
 
+        /// Which foreign session's ghost has already been reported blanked,
+        /// so the log carries one line per gesture rather than one per
+        /// `draggingUpdated` (which arrives on every motion).
+        private var blankedSequence: Int?
+
+        /// **Ask AppKit to draw this destination's copy of the drag with no
+        /// image at all.**
+        ///
+        /// A destination cannot move, cancel or reposition a session it does
+        /// not own — see `ContinuityEdgeController`'s "PRESENTATION, NOT
+        /// TRANSPORT" note — but it IS handed its own `NSDraggingItem`s
+        /// through `enumerateDraggingItems(options:for:classes:searchOptions:)`
+        /// and may replace their image components while the drag is over it.
+        /// An empty component array is the documented way to say "nothing".
+        ///
+        /// Nothing is restored on exit and nothing needs to be: these items
+        /// are the destination's own copies, valid for the length of this
+        /// destination's involvement, and the source's session keeps its own
+        /// components untouched. There is therefore no original provider to
+        /// put back — capturing and restoring one would be restoring a value
+        /// this side never owned.
+        ///
+        /// **Its visual effect is attended-only evidence.** Image
+        /// replacement is documented for destinations, and whether it
+        /// reaches the ghost the window server composites for a FINDER-owned
+        /// session is exactly the sort of claim that fails in practice. So
+        /// the count is reported out (`Callbacks.ghostBlanked`) and audited:
+        /// a run where the ghost stayed visible can at least be read for
+        /// whether the enumeration ran at all and how many items it touched.
+        ///
+        /// Scoped to foreign sessions by the `isOwnSession` guard at every
+        /// call site: this app's own guest→host drag draws a real image on
+        /// purpose.
+        private func blankDragGhost(_ sender: any NSDraggingInfo) {
+            var touched = 0
+            sender.enumerateDraggingItems(
+                options: [], for: self, classes: [NSPasteboardItem.self],
+                searchOptions: [:]) { item, _, _ in
+                item.imageComponentsProvider = { [] }
+                touched += 1
+            }
+            guard blankedSequence != sender.draggingSequenceNumber else {
+                return
+            }
+            blankedSequence = sender.draggingSequenceNumber
+            callbacks.ghostBlanked(touched)
+        }
+
         override func draggingEntered(_ sender: any NSDraggingInfo)
             -> NSDragOperation {
             guard !isOwnSession(sender) else { return [] }
+            blankDragGhost(sender)
             return callbacks.entered(screenPoint(sender),
                                      sender.draggingPasteboard) ? .copy : []
         }
@@ -189,6 +283,11 @@ final class ContinuityFileEdge: NSObject {
         override func draggingUpdated(_ sender: any NSDraggingInfo)
             -> NSDragOperation {
             guard !isOwnSession(sender) else { return [] }
+            /* Re-applied on every update rather than only on entry: the
+               replacement is scoped to this destination's involvement, and
+               a session that re-enters after leaving gets its components
+               back from the source in between. */
+            blankDragGhost(sender)
             return callbacks.entered(screenPoint(sender),
                                      sender.draggingPasteboard) ? .copy : []
         }
