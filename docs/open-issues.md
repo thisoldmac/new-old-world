@@ -7,6 +7,41 @@ search:
 
 # Open issues
 
+## F2 DEFECT A: the resident's liveness channel had no deadline on an in-flight MacTCP call, so a host that died mid-operation silenced it until reboot (2026-08-17, `fix/resident-net-redial`)
+
+Attended metal, 2026-08-17: the whole session produced **zero resident
+frames** — no `Connected: resident`, no `drag begin from the resident`,
+every `selection cached` line `dragSeq=none` — so the guest→host drag lane
+had no source at all, and the selection fallback is a designed dead end for
+a crossing gesture (F2 recon, § A-1/A-2). The same metal with the same
+extension binary had worked at 00:01 the same day. The 1400c needed a
+reboot to revive. That reboot is the defect: a resident whose host vanishes
+must dial again on its own.
+
+### The wedge states, enumerated from `ext/src/now_liveness_net.c`
+
+The pump is one call at a time (`if (gInFlight != kInFlightNone) return;`,
+`:668`) and `reap()` returns while `gCtlPB.ioResult > 0` (`:568`) **with no
+deadline**. Every state below is a state the resident could not leave.
+
+| # | state | who holds it | cleared before this fix? |
+|---|---|---|---|
+| W1 | `kInFlightOpen` — `TCPActiveOpen` the driver never completes | `gCtlPB` | **no** — and the guard sits *above* the `want == NULL` and epoch-change branches, so not even the application withdrawing its endpoint can move the machine |
+| W2 | `kInFlightSend` — `TCPSend` the driver never completes | `gCtlPB` | **no** — same guard. The forensics' named suspect |
+| W3 | `kInFlightAbort` — the *recovery* itself never completing | `gCtlPB` | **no** — the nastiest of the three: `reap()`'s own failure branches call `issue_abort()`, so the code that exists to recover from a dead host is the code that can latch |
+| W4 | `gRcvInFlight` — `TCPRcv` issued with `commandTimeoutValue = 0` (infinite by design) that outlives its connection | `gRcvPB` | **no** — and it does not block the pump directly; it blocks the *re-open*, because MacTCP refuses an `ActiveOpen` on a stream with a receive pending. Presents as an infinite failing-redial loop (`channel_state=failed` re-written every 60 s) rather than as silence |
+| W5 | `gConnected` true against a TCP the peer has already closed | — | **bounded by design, not a wedge**: nothing polls `TCPStatus`, death is discovered when the next ping send fails, i.e. within the 30 s ping cadence. Stated so the new deadline is not set tighter than the design's own detection floor |
+| W6 | `gDragInFlight` across a host death | `gDragPB` | lazily — `drag_reap()` is called only from `now_liveness_net_send_drag`, never from the pump. Harmless today; it becomes a hazard for any recovery that touches the stream, which is why the fix reaps it |
+
+W1–W4 are reachable and were never cleared. W1/W2/W3 all present as the
+observed signature exactly: `channel_state` frozen at `opening` or
+`failed`, `channel_sends` static, no frame ever again, no path back
+without a reboot.
+
+### The fix, and the bound
+
+Recorded with the drill results below once measured.
+
 ## SLICE 1 DONE, EMULATOR-MEASURED: `continuity.hostDragBegin` starts a real OS 9 drag from a BACKGROUND process, the sprite follows for free, and 1 MB completes byte-identical (2026-08-17, `feat/gh-native-drag-guest`)
 
 Slice 1 of the blessed-path drag plan
