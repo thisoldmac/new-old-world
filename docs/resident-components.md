@@ -166,6 +166,27 @@ process. This is the single most important line in this note.
 Also never resident: protocol, logging, UI, allocation on the hot
 path, anything that can be polled from the main loop instead.
 
+**The last clause is load-bearing, and it is what admits the two
+exceptions rather than a taste for them.** P6's liveness channel is
+resident because the application cannot answer for a machine whose
+scheduler it is not getting — the fact is *about* the starvation. The
+drag-begin frame (2026-08-16) is resident for the same reason and no
+other: the dragged file's identity is known inside the Finder's own drag
+loop, and the application that would publish it gets no task time until
+that loop ends. Measured: the application's account of the gesture
+reached the host 462 ticks after the drag began and 14 ticks after it
+ENDED — after the crossing it was needed for. There is no cadence, no
+priority and no polling arrangement that fixes that, because nothing of
+the application's runs at all.
+
+So the test to apply to a proposed third exception is not "is this
+urgent" but **"is the thing that would state it scheduled?"** If some
+main loop could say it, however late or however awkwardly, it is not
+resident. Both exceptions send one bounded, pre-built frame, at task
+time, on the resident's own connection, fire-and-forget; neither reads a
+reply for meaning, and a resident that parsed one would be the second
+command lane the host refuses by name.
+
 ## Discovery and degradation
 
 `now-guest-ppc/src/peek/peek.h` is the application's view; the four states exist
