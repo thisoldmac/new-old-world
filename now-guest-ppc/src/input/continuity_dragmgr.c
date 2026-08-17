@@ -1198,6 +1198,8 @@ static unsigned long g_host_epoch;
 static unsigned long g_host_seq;
 static short g_host_h, g_host_v;
 static Boolean g_host_pending;
+/* When the crossing arrived, so the ripen below is bounded. */
+static unsigned long g_host_pending_since;
 
 void now_continuity_dragmgr_host_request(const NowContinuityOfferItem *item,
                                          unsigned long epoch,
@@ -1222,10 +1224,26 @@ void now_continuity_dragmgr_host_request(const NowContinuityOfferItem *item,
     g_host_h = h;
     g_host_v = v;
     g_host_pending = true;
+    g_host_pending_since = TickCount();
 }
 
 /* Begin the crossing that was held. Called from the service pass, on a
    stack the promise's pull can pump from. */
+/* Does the plane say the button is held right now? The same reading the
+   drag's input proc will make on its first sample, asked one moment
+   earlier — which is the whole of the gate. */
+static int plane_button_held(void)
+{
+    short h = 0, v = 0;
+    int down = 0;
+    unsigned long seq = 0;
+
+    if (!now_continuity_latest_input(&h, &v, &down, &seq)) {
+        return 0;
+    }
+    return down ? 1 : 0;
+}
+
 static void serve_host_request(void)
 {
     int verdict;
@@ -1272,10 +1290,44 @@ void now_continuity_dragmgr_service(void)
 {
     int action;
 
-    /* The held crossing first, and unconditionally: it is not an arm and
-       has no button to ripen on. */
+    /* THE HELD CROSSING FIRST, AND IT RIPENS ON THE PLANE'S BUTTON.
+       Not on the applied button the arm below waits for — a carried
+       gesture's button is a LEVEL the host holds in the plane without
+       minting a generation, so nothing is ever applied for it and the
+       resident stays out of the way (host
+       `MirrorContinuityController.setCarriedButtonLevel`).
+
+       This gate does not FIX anything: the host raises the level before
+       the begin crosses, so the ordinary case ripens on this very pass.
+       It makes the invariant CHECKED. Serving a begin with the level
+       still up meant TrackDrag first-sampled a released button and
+       returned at the entry point, which is the drag that dropped
+       instantly on metal on 2026-08-17 and looked to the person like a
+       file thrown at the edge. */
     if (g_host_pending) {
-        serve_host_request();
+        unsigned long now_ticks = TickCount();
+
+        action = now_continuity_drag_host_ripen(g_host_pending_since,
+                                                now_ticks,
+                                                plane_button_held());
+        if (action == kNowDragTickStart) {
+            now_log(kLogInfo, "mirror",
+                    "drag hostDragBegin seq=%lu ripened: plane button held "
+                    "after %lu ticks",
+                    g_host_seq,
+                    (unsigned long)(now_ticks - g_host_pending_since));
+            serve_host_request();
+        } else if (action == kNowDragTickExpire) {
+            /* THE NATIVE NON-DROP, and it is the whole of the failure
+               handling: no drag was ever started, so there is nothing to
+               cancel, nothing drawn, and nothing to tell the host that
+               its own carry bound does not already cover. */
+            g_host_pending = false;
+            now_log(kLogWarn, "mirror",
+                    "drag hostDragBegin seq=%lu expired: the plane never "
+                    "held the button within %ld ticks; no drag started",
+                    g_host_seq, (long)kNowContinuityHostBeginRipenTicks);
+        }
         return;
     }
     if (g_drag.state != kNowDragWaitingButton) {

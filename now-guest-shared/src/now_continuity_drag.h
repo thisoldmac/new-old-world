@@ -84,6 +84,21 @@
    than looking wedged. */
 #define kNowContinuityDragArmTicks 120L
 
+/* How long a held continuity.hostDragBegin waits for the PLANE's button
+   level before it gives up, in ticks.
+
+   Five seconds, and deliberately several times the arm's two: this one
+   is not waiting on a local apply cadence but on a datagram from
+   another machine, over UDP, whose raise the host sends before the
+   begin crosses on TCP. It is a wait for something that is normally
+   already there — the ordinary case ripens on the first service pass —
+   so the bound exists for the abnormal one: a host that died between
+   the two messages, or a plane that never armed. Its expiry is the
+   plan's named failure mode ("a skeleton that never arrives leaves the
+   guest holding a pressed cursor with no drag"), answered the native
+   way: no drag is started at all. */
+#define kNowContinuityHostBeginRipenTicks 300L
+
 enum {
     /* Nothing in flight. */
     kNowDragIdle = 0,
@@ -251,6 +266,30 @@ int now_continuity_drag_host_begin(NowContinuityDragState *st,
    Tracking, Expire returns it to Idle with kNowDragButtonNeverCame. */
 int now_continuity_drag_tick(NowContinuityDragState *st, int button_down,
                              unsigned long now_ticks);
+
+/* Ripen a held hostDragBegin against the PLANE's button LEVEL.
+
+   `plane_button_down` is the level the cursor plane carries — the same
+   bit the drag's input proc will read once TrackDrag is running — and
+   NOT the applied button the arm path waits on: the host holds this
+   level for the life of the carry precisely so its resident applies
+   nothing (host `MirrorContinuityController.setCarriedButtonLevel`).
+
+   Why gate at all, when the host raises the level before it sends the
+   begin: because a first sample reading button-UP makes TrackDrag
+   return at the entry point, and that is what shipped and was measured
+   on metal on 2026-08-17 (F2 defect B). The host-side fix makes the
+   ordering correct; this makes it CHECKED, so a future ordering slip is
+   a bounded wait and a named line rather than a file dropped where the
+   person crossed.
+
+   Stateless on purpose — a held crossing is one pending record in the
+   caller, not a second state machine. Returns kNowDragTickStart when
+   the level is held, kNowDragTickExpire once the bound has passed, and
+   kNowDragTickWait meanwhile. */
+int now_continuity_drag_host_ripen(unsigned long pending_since,
+                                   unsigned long now_ticks,
+                                   int plane_button_down);
 
 /* The Drag Manager refused to start after all. Back to Idle, named. */
 void now_continuity_drag_start_failed(NowContinuityDragState *st);

@@ -175,6 +175,24 @@ int now_continuity_drag_tick(NowContinuityDragState *st, int button_down,
     return kNowDragTickWait;
 }
 
+int now_continuity_drag_host_ripen(unsigned long pending_since,
+                                   unsigned long now_ticks,
+                                   int plane_button_down)
+{
+    if (plane_button_down) {
+        return kNowDragTickStart;
+    }
+    /* The same masked unsigned subtraction as the arm above, for the
+       same reason: TickCount is 32 bits on the machine this runs on and
+       64 on the host cc that watches this file fail, and a wrap must
+       read as a small elapsed in BOTH. */
+    if (((now_ticks - pending_since) & 0xFFFFFFFFUL)
+        >= (unsigned long)kNowContinuityHostBeginRipenTicks) {
+        return kNowDragTickExpire;
+    }
+    return kNowDragTickWait;
+}
+
 void now_continuity_drag_start_failed(NowContinuityDragState *st)
 {
     if (st == NULL) {
