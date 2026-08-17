@@ -107,7 +107,8 @@ release, already the design) and the host's
   human drag.
 - **Abort is native.** Cross-back mid-drag: report the position somewhere
   no target accepts, then report button-up — `TrackDrag` returns
-  `dragNotAcceptedErr`, the promise is never asked, the Manager's own
+  `userCanceledErr` (-128, measured slice 0; the plan first predicted
+  `dragNotAcceptedErr`), the promise is never asked, the Manager's own
   snap-back plays. No cancel channel to invent. (Mirrored on the host by
   round 2's staged/never-committed semantics.)
 - There is a beat at the edge where neither drag exists, while the
@@ -198,9 +199,9 @@ Contract-declared verb (name to settle at declaration time):
 
 | # | slice | gate |
 |---|---|---|
-| 0 | Route-A′ experiment: `SetDragInputProc` drives an induced drag — ghost tracks, sprite question answered, drop targets at the reported point, abort-by-non-acceptance clean | emulator; go/no-go for everything below |
-| 1 | `continuity.hostDragBegin` contract + guest verb + probe induction | emulator: induced drag tracks, drops in a Finder window, promise pulls byte-identical |
-| 2 | Observe the Finder's native collision + progress on a real promise drop (same-name-twice, screendumps) | decides the kill list's exact scope |
+| 0 | **DONE 2026-08-17 — GO** (`test/hg-drag-input-proc`, 16 commits, receipts `/private/tmp/now-slice0-receipts/`): the Manager sampled the input proc 12786/12786 times, ghost tracked the scripted ramp, `inwin=0` out of process, desktop drop completed the **first out-of-process promise pull**, abort clean (`userCanceledErr`, asks=0). Sprite does NOT follow (ghost-only; slice 1 decides). `SetDragInputProc` confirmed CarbonLib 1.0+. | passed |
+| 1 | `continuity.hostDragBegin` carrying only the *starting* state (ordinary Continuity datagrams carry the rest — transport settled). Gates inherited from slice 0's gaps: a true Finder-**window** drop (rig geometry fixed), real byte-compare, and the **600 KB promise pull fixed** (fails today where 4 KB succeeds, under the 1 MB cap, undiagnosed). Sprite decision made deliberately (resident low-mem chase vs ghost-only). | emulator |
+| 2 | ~~Observe the Finder's native collision~~ **Answered early by slice 0: the Finder shows NO dialog for a promised-drop collision — it silently fails and creates nothing.** The drag-lane replacement for `now_confirm` is therefore a fixed *send-proc policy* (uniquify or overwrite — Michelle's pick), not any dialog. Copy-progress observation still open (every completed pull was 4 KB; re-observe with a large file once the 600 KB defect falls). | policy decision + large-file observation |
 | 3 | Wire the edge handoff to it; delete carry illustration + drag-lane windoid/confirm per slice-2 findings | emulator round + attended metal round |
 | 4 | Host reconciliation: `ChangeConfirmation` → `.confirmationDialog`; verify attended that the host lane's native claims hold on hardware | attended |
 | 5 | Metal: the Route-A pump in the Finder-context class is the same class that survived 2026-08-16, but pointer *writes* from that context are new — attended PowerBook gate before anything ships | Michelle |
