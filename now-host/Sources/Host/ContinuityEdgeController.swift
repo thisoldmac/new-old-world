@@ -257,6 +257,15 @@ final class ContinuityEdgeController: ObservableObject {
     private var inputCapture: AnyObject?
     @Published private(set) var captureFailureReason: CaptureFailureReason?
     private var cursorDissociated = false
+    /// Where the last sample put the host pointer, carried only so every
+    /// custody line can say WHERE the transition happened. Custody is the
+    /// one subsystem whose failures are reported as "the cursor went wild",
+    /// and a position-free line cannot answer that.
+    private var lastHostSampleLocation: CGPoint = .zero
+    /// How many times the cursor has been parked at the anchor since it was
+    /// hidden. Counted rather than logged per park: the pin runs on every
+    /// sample, and a line each would bury everything else in this log.
+    private var cursorParks: UInt32 = 0
     private var keyboardMonitor: AnyObject?
     private var pendingCursorWarp: PendingCursorWarp?
     private var suppressedCursorWarps: UInt32 = 0
@@ -751,6 +760,7 @@ final class ContinuityEdgeController: ObservableObject {
     private func received(_ sample: HostPointerSample,
                           sourceEvent: NSEvent?) {
         hostButtonsDown = sample.buttonsDown
+        lastHostSampleLocation = sample.location
         if hostDragSessionLive {
             /* Counted rather than logged per sample: a burst would bury the
                line that matters, and the count at the end is the evidence
@@ -1746,11 +1756,34 @@ final class ContinuityEdgeController: ObservableObject {
             + "layer (gesture=\(hostFileDragGestureID))")
     }
 
+    /// **One audited line per custody transition, in one shape.**
+    ///
+    /// Custody — hiding the cursor, detaching it from the mouse, parking it,
+    /// arming and disarming the consuming tap, re-arming the button — used
+    /// to write nothing at all. The 2026-08-16 attended round reported a
+    /// carry that "locked in" while "the cursor went wild", and the host log
+    /// was SILENT across exactly that window: the forensics could name three
+    /// candidate mechanisms and rule out none of them. A transition nobody
+    /// can see is a transition nobody can diagnose, so this is a deliverable
+    /// rather than a garnish, and every call below carries the gesture id and
+    /// the pointer position because those are the two facts that pair a line
+    /// with the gesture a person remembers making.
+    private func custodyAudit(_ level: HostLog.LogLevel, _ event: String,
+                              _ detail: String) {
+        audit(level, "custody: \(event) — \(detail) "
+            + "(gesture=\(hostFileDragGestureID), host="
+            + "\(Int(lastHostSampleLocation.x)),"
+            + "\(Int(lastHostSampleLocation.y)))")
+    }
+
     private func hideHostCursor(for ownership: Ownership) {
         let id = ownership.edge.host.id
         guard cursorHiddenOn == nil else { return }
         environment.hideCursor(on: id)
         cursorHiddenOn = id
+        cursorParks = 0
+        custodyAudit(.info, "host cursor hidden",
+                     "display=\(id), the pass now speaks for the pointer")
         beginHostInputCapture()
         pinHostCursor(for: ownership)
     }
@@ -1768,9 +1801,12 @@ final class ContinuityEdgeController: ObservableObject {
                load. */
             if environment.setCursorMovementAssociated(false) {
                 cursorDissociated = true
+                custodyAudit(.info, "pointer detached from the mouse",
+                             "the hardware no longer moves the cursor; this "
+                                + "pass does")
             } else {
-                audit(.warn, "could not detach the host cursor from the "
-                    + "mouse; warp-echo suppression is carrying this pass")
+                custodyAudit(.warn, "pointer NOT detached from the mouse",
+                             "warp-echo suppression is carrying this pass")
             }
         }
         startConsumingTap()
@@ -1799,6 +1835,9 @@ final class ContinuityEdgeController: ObservableObject {
                     + "\(reason); re-enabled immediately")
             })
         if inputCapture != nil {
+            custodyAudit(.info, "consuming tap armed",
+                         "host input is captured; no other application sees "
+                            + "these events")
             if captureFailureReason != nil, !hostFileDrag {
                 /* Only touched on RECOVERY, not on every ordinary successful
                    start: a plain first-time success has nothing degraded to
@@ -1861,7 +1900,12 @@ final class ContinuityEdgeController: ObservableObject {
     }
 
     private func endHostInputCapture() {
-        if let inputCapture { environment.stopInputCapture(inputCapture) }
+        if let inputCapture {
+            environment.stopInputCapture(inputCapture)
+            custodyAudit(.info, "consuming tap disarmed",
+                         "host input reaches this Mac's own applications "
+                            + "again")
+        }
         inputCapture = nil
     }
 
@@ -1869,11 +1913,15 @@ final class ContinuityEdgeController: ObservableObject {
         guard cursorDissociated else { return }
         if environment.setCursorMovementAssociated(true) {
             cursorDissociated = false
+            custodyAudit(.info, "pointer re-attached to the mouse",
+                         "the hardware moves the cursor again")
         } else {
             /* Leave the flag set so the next exit tries again: the worst
                failure this whole change can produce is a mouse the human
                cannot move. */
-            audit(.error, "could not re-attach the host cursor to the mouse")
+            custodyAudit(.error, "could NOT re-attach the host cursor to the "
+                + "mouse", "the next exit will try again; until one succeeds "
+                + "the hardware does not move the cursor")
         }
     }
 
@@ -1882,6 +1930,17 @@ final class ContinuityEdgeController: ObservableObject {
         let point = CGPoint(x: ownership.hostAnchor.x - host.minX,
                             y: host.maxY - ownership.hostAnchor.y)
         expectCursorWarp(to: ownership.hostAnchor)
+        /* The first park of a pass, and only the first: this runs on every
+           sample, and the count is reported at the restore. What the first
+           line is for is the "cursor went wild" report — it names the anchor
+           every subsequent park aims at, so a wild cursor is either wild
+           AROUND a stated point or the anchor itself is moving. */
+        cursorParks &+= 1
+        if cursorParks == 1 {
+            custodyAudit(.info, "cursor parked at the anchor",
+                         "anchor=\(Int(ownership.hostAnchor.x)),"
+                            + "\(Int(ownership.hostAnchor.y))")
+        }
         environment.moveCursor(on: ownership.edge.host.id, to: point)
     }
 
@@ -1907,6 +1966,10 @@ final class ContinuityEdgeController: ObservableObject {
             }
             environment.showCursor(on: id)
             cursorHiddenOn = nil
+            custodyAudit(.info, "host cursor restored",
+                         "display=\(id), parks=\(cursorParks), "
+                            + "suppressedWarps=\(suppressedCursorWarps)")
+            cursorParks = 0
         }
         /* Last, so the return warp above lands while the cursor is still
            detached and cannot echo back as motion. */
