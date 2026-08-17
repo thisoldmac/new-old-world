@@ -83,10 +83,13 @@ final class HostAppState: ObservableObject {
     /// The one path that publishes a `continuity.offer`, shared with the
     /// agent and console faces rather than duplicated for the gesture.
     let continuityOfferControl: AgentIntegrationContinuityOfferControl
-    /// The offer epoch for carried drags. One per app lifetime is honest
-    /// here: the contract scopes an offer by epoch AND generation, and it is
-    /// the generation that must move per carried item.
-    private let hostDragOfferEpoch: UInt32 = 1
+    /// The generation for carried drags. Monotonic per carried item, per
+    /// the contract. The epoch is NOT tracked here — it is
+    /// `continuity.currentEpoch`, read fresh at publish/clear time. An
+    /// app-lifetime constant here once stood in for it and only ever
+    /// agreed with the guest's own live epoch at the very first crossing
+    /// of a session (`now_continuity_offer.c` closes the offer the moment
+    /// `table.epoch != live_epoch`) — see docs/open-issues.md, forensics D3.
     private var hostDragOfferGeneration: UInt32 = 0
     /// The second renderer for a Continuity file-drag refusal, set by
     /// `AppDelegate` to flash the menu-bar title — the same pairing
@@ -439,7 +442,7 @@ final class HostAppState: ObservableObject {
                     guard let self else { return }
                     self.hostDragOfferGeneration &+= 1
                     switch self.continuityOfferControl.publish(
-                        fileAt: url, epoch: self.hostDragOfferEpoch,
+                        fileAt: url, epoch: self.continuity.currentEpoch,
                         generation: self.hostDragOfferGeneration) {
                     case .published:
                         self.startGuestPresentationDrag()
@@ -467,7 +470,7 @@ final class HostAppState: ObservableObject {
                        the offer, and a guest that missed either should not
                        be left holding the other. */
                     _ = self.continuityOfferControl.clear(
-                        epoch: self.hostDragOfferEpoch,
+                        epoch: self.continuity.currentEpoch,
                         generation: self.hostDragOfferGeneration &+ 1)
                     self.hostDragOfferGeneration &+= 1
                 }))
@@ -506,11 +509,18 @@ final class HostAppState: ObservableObject {
                drop; what is lost is the picture, and a person who sees
                nothing follow their pointer deserves the reason to exist
                somewhere. */
+            /* Both halves of the guest's answer, not just the code: a
+               refusal code alone repeats as the same literal ("refused")
+               across every distinct reason, while `message` names which
+               one — this line was one string away from self-diagnosing
+               forensics D3 (docs/open-issues.md). */
             HostLog.shared.write(
                 .warn, "continuity",
                 "the Macintosh would not pick up the carried file "
-                    + "(\(result.error?.code ?? "no reason given")): the drag "
-                    + "crosses unillustrated and the drop still decides")
+                    + "(\(result.error?.code ?? "no reason given")"
+                    + (result.error.map { ": \($0.message)" } ?? "")
+                    + "): the drag crosses unillustrated and the drop "
+                    + "still decides")
         }
     }
 

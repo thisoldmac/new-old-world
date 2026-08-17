@@ -1085,6 +1085,15 @@ final class MirrorContinuityController: ObservableObject,
     /// undraggable.
     var selectionMark: ContinuitySelectionMark? { selectionCache.mark }
 
+    /// The live Continuity epoch, exposed for the one caller outside this
+    /// object that must agree with it: a host→guest offer's epoch field.
+    /// The guest's own offer table checks `table.epoch != live_epoch`
+    /// (`now_continuity_offer.c`) — that live epoch is THIS number, not a
+    /// namespace of the offer's own. Publishing under anything else (a
+    /// constant, a separately-counted offer epoch) can only ever agree with
+    /// the guest by coincidence, once, at epoch 1.
+    var currentEpoch: UInt32 { epoch }
+
     private func openUDP(host: String, port: UInt16) {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             guestEnded(reason: "invalid UDP port", retryable: false)
