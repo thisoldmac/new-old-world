@@ -3914,6 +3914,24 @@ Boolean now_wire_get_landed(long id, FSSpec *spec_out)
     return true;
 }
 
+/* DIAGNOSTIC. The refusing call and its code, written where the refusal
+   happens rather than reconstructed from the sentence a page would have
+   shown. See now_wire_get_last_failure in wire.h. */
+static char g_get_fail[96];
+
+static void get_failed(const char *what, long code)
+{
+    snprintf(g_get_fail, sizeof g_get_fail, "%.60s=%ld", what, code);
+}
+
+void now_wire_get_last_failure(char *out, long cap)
+{
+    if (out == NULL || cap <= 0) {
+        return;
+    }
+    snprintf(out, (size_t)cap, "%s", g_get_fail);
+}
+
 static void get_cleanup(Boolean keep_file)
 {
     if (g_get.receiving && !keep_file) {
@@ -4048,6 +4066,9 @@ int now_wire_get_offer(long *id_out, char *err, long cap)
     ++g.offer_seq;
     g_get.id = g.offer_seq;
     g_get.expected = 0;
+    /* This pull's own record starts empty: a caller reading it after a
+       failure must not be handed the previous pull's reason. */
+    g_get_fail[0] = '\0';
     /* No page asked for this and none will draw it: the grab is a
        person's drag (or `offer --take`), so the receive windoid is the
        only thing that will say a file is landing. */
@@ -4156,6 +4177,7 @@ static void get_begin(const char *reply)
     if (rc == kFilesExists) {
         /* Not an error and not a silent overwrite: the file is already
            there, and this machine keeps what it has. */
+        get_failed("now_files_receive_begin_at kFilesExists", (long)rc);
         get_cleanup(false);
         snprintf(line, sizeof line, "%.31s is already in %.48s",
                  g_get.name, g_get.dest_name);
@@ -4163,6 +4185,7 @@ static void get_begin(const char *reply)
         return;
     }
     if (rc != kFilesOK) {
+        get_failed("now_files_receive_begin_at", (long)rc);
         get_cleanup(false);
         get_note(rc == kFilesTooBig ? "Not enough room on the disk"
                                     : "Could not create the file");
@@ -4192,6 +4215,7 @@ static void get_end(const char *reply)
 
         now_log(kLogWarn, "get", "#%ld ended early at %ld of %ld bytes",
                 g_get.id, g_get.rx.received, g_get.expected);
+        get_failed("file.end ok=false", g_get.rx.received);
         get_cleanup(false);
         conn_peer_label(peer, sizeof peer);
         snprintf(line, sizeof line, "%s stopped sending", peer);
@@ -4209,11 +4233,13 @@ static void get_end(const char *reply)
                 "#%ld checksum failed: wanted %08lX, got %08lX, %ld bytes "
                 "discarded", g_get.id, want_crc, g_get.rx.crc,
                 g_get.rx.received);
+        get_failed("crc32 mismatch", (long)g_get.rx.received);
         get_cleanup(false);
         get_note("The checksum did not match - nothing was kept");
         return;
     }
     if (now_files_receive_finish(&g_get.rx) != kFilesOK) {
+        get_failed("now_files_receive_finish", -1);
         get_cleanup(false);
         get_note("Could not finish writing the file");
         return;
@@ -4244,6 +4270,8 @@ static void service_get(void)
         char peer[40];
         char line[64];
 
+        get_failed("pull timed out, phase pending/receiving",
+                   g_get.receiving ? 1 : 0);
         get_cleanup(false);
         conn_peer_label(peer, sizeof peer);
         snprintf(line, sizeof line, "%s stopped answering", peer);

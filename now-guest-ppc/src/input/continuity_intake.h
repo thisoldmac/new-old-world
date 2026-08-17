@@ -73,6 +73,14 @@ unsigned long now_continuity_live_epoch(void);
    nested Drag Manager loop and an Apple Event to it will not be answered
    until the button comes up. False when there is no epoch or no resident. */
 int now_continuity_button_is_down(void);
+/* The host's latest REPORTED point and button, straight off the notifier's
+   write, for a caller that cannot wait for this application's task time.
+   `seq` is the datagram's position sequence, so a stale plane and an
+   absent one are distinguishable. Returns 0 (writing nothing) when no
+   epoch is live or no datagram has arrived. Slice-0 spike support; see
+   continuity_dragmgr.c's input proc. */
+int now_continuity_latest_input(short *h, short *v, int *down,
+                                unsigned long *seq);
 unsigned short now_continuity_udp_port(void);
 int now_continuity_wants_fast_pump(void);
 /* The apply handshake and owner-lease renewal on their own, for the nested

@@ -7,6 +7,605 @@ search:
 
 # Open issues
 
+## FIXED, EMULATOR-MEASURED: the promised file was PLACED by us instead of staged for the receiver, so NOW adjudicated a collision in the Finder's house (2026-08-17, `test/hg-drag-input-proc`, slice 2)
+
+Slice 2 of the blessed-path drag plan
+(`docs/plans/2026-08-17-036-feat-blessed-path-drag-plan.md`). Slice 0 saw a
+second same-name promised drop produce `transfer-failed` — our own verdict
+string — with nothing created and no dialog anywhere, and could not name the
+layer that refused. Michelle's invariant of the same day says a collision
+failure on this lane is by definition a NOW protocol bug, because the
+receiver owns the destination. It was one, and it is gone.
+
+### THE VIOLATION, by name
+
+The send proc materialised the promised file **directly in the folder the
+receiver named, under its final name**, and NOW's own pull policy then
+answered the second drop:
+
+| where | what |
+|---|---|
+| `now-guest-ppc/src/files/fileshare.c:1704` | `FSMakeFSSpec(final name) == noErr && !overwrite` → `kFilesExists` (-6), before a single byte |
+| `now-guest-ppc/src/core/wire.c` (`get_begin`, the pull's `file.begin`) | passes `overwrite=false` and turns `kFilesExists` into a silent refusal — "this machine keeps what it has" |
+| `now-guest-ppc/src/input/continuity_dragmgr.c` (`stream_promise`) | reads "nothing landed" and answers the Drag Manager `cantGetFlavorErr`; the drag reports `transfer-failed` |
+
+Measured on the guest, drop 2 of 2 (`run1-ring.txt`):
+
+```
+mirror drag promise name check: FSMakeFSSpec('Collide49622.txt') -> 0 (0 = already there)
+mirror ? drag promise #2 did not land: now_files_receive_begin_at kFilesExists=-6
+```
+
+No File Manager error was ever raised: the refusal is a **pre-check**, so
+`dupFNErr` never happened, and the Finder never learned there was a
+collision. The catalogue confirms why it could not: after the FIRST drop,
+
+```
+mirror drag promise after: 'Collide49622.txt' in dir 19 -> 0 (0 = still where we put it)
+```
+
+— the receiver left our file exactly where we created it. A file already at
+its destination gives the receiver nothing to place, so its own duplicate
+machinery can never run.
+
+### THE FIX (`88a5dd68`)
+
+The promise is **staged, not placed**: `drag_send_data` materialises into
+`Temporary Items` on the drop's own volume (`FindFolder(vref,
+kTemporaryFolderType, kCreateFolder)`) and hands the receiver *that*
+`FSSpec`. It clears only its own leftover of the same name in that scratch
+folder, and refuses outright if there is no Temporary Items rather than
+falling back to the drop folder — the one destination this function must not
+choose. **No uniquify, no overwrite, no dialog, no collision branch of ours
+anywhere on the lane.**
+
+### THE FINDER'S OWN COLLISION BEHAVIOUR, measured (not inferred)
+
+With the fix, both drops report `Last drag ok` from NOW, and on the second
+the **Finder raises its own ask**, unprompted:
+
+> "An older item named "Collide51129.txt" already exists in this location.
+> Do you want to replace it with the one you're moving?" — **Cancel / OK**
+
+Screendumps: `/private/tmp/now-slice2-receipts/shot-fixed-finder-ask.png`
+(the trophy, default build) and `shot-finder-ask.png` (the same ask under the
+diagnostic staging bit, one build earlier). The ask arrives while NOW is
+frontmost as the OS's own background notification ("The Finder needs your
+attention"), `shot-after-run2.png` — it is a Finder-modal alert, not an
+application-modal one. Both buttons were exercised: **Cancel** leaves the
+older item and the staged copy untouched (`shot-after-cancel.png`); **OK**
+replaces, leaving exactly one file on the desktop — `count of every file of
+desktop whose name contains "Collide51129"` → `1` (`shot-fixed-after-ok.png`).
+So the Finder's behaviour is *ask, then obey*, and NOW ships none of it.
+
+### Byte-compare of a completed pull
+
+The 4 KB fixture, read back through the guest's own File Manager after the
+promise pull and the Finder's move:
+
+```
+read file "Macintosh HD:Desktop Folder:Collide51129.txt" -> length 4096, equal to the host's bytes: true
+```
+
+Full identity, not a sample (the fixture is 4096 × `N`, rebuilt in the script
+and compared whole). Slice 0's `-1753` size query was a **phrasing** defect,
+now fixed: `size of item "X" of desktop as string` errors `-1753`; `get size
+of file "X" of desktop` answers `4096.0`.
+
+### 600 KB: still fails, and it is NOT this class of bug
+
+Retested on the fixed build, same boot (`run4.log`, `run4-ring-get.txt`):
+
+```
+get    #3 Collide51642.txt, 614400 bytes, into Temporary Items
+mirror ? drag promise #3 did not land: pull timed out, phase pending/receiving=1
+```
+
+The destination opens and `file.begin` is accepted; the bytes then stop and
+the pull's own silence timeout fires ~46 s later. **No File Manager call
+refuses anything** — this is the wire being starved inside the drop's nested
+loop, a different defect from the one above, and it is left open rather than
+chased here.
+
+### Instruments added (`7183bf7b`)
+
+`now_wire_get_last_failure` records the refusing call and its code where the
+refusal happens, so a lane with no page can name it; the send proc logs the
+folder the receiver named and whether that name is already taken; and after
+`TrackDrag` returns the catalogue is asked what the receiver did with the
+`FSSpec` we handed it. The first two are what made this diagnosis possible in
+one boot; the third is what proved whose house the collision was in.
+
+### The rig
+
+Three boots of `scripts/spin-up-ppc` onto session-private clones of
+`now-mirror-stage.qcow2` (sha256
+`8db8ddc2de99c4221ba563ab095ebcb24190a4d3e7ef69ef0720edbdbba199d4`, volume
+clean, provenance ACCOUNTED FOR), lane block 955, ports 19640/19641, OS 9.1 on
+`Power Mac G4`; instrument
+`now-host/Tests/HostTests/LiveDragInputProcExperiment.swift`
+(`NOW_DRAG_INPUT_PROC=1`, and now `NOW_DRAG_MASK` as a dial for the same
+reason its fixture size became one). All three guests were shut down through
+the Finder's own Special > Shut Down — volume cleanly unmounted each time.
+**Receipts are outside the run directory**, at
+`/private/tmp/now-slice2-receipts/` (`lane-ports reclaim` deletes
+`$NOW_SPIN_RUN`).
+
+`corpus_impact: none` — NOW's own drag lane, not a TimBotTu topic-corpus
+claim; the durable statement lives in this ledger and in the plan's slice
+table.
+
+## THE WALL IS DOWN: `SetDragInputProc` drives a NOW-originated promise drag out of NOW and the Finder pulls the bytes (2026-08-17, `test/hg-drag-input-proc`)
+
+Slice 0 of the blessed-path drag plan
+(`docs/plans/2026-08-17-036-feat-blessed-path-drag-plan.md`), the go/no-go
+for everything below it. **Verdict: GO on Route A′.** The entry that
+follows this one ("THE DRAG NEVER LEAVES…", same day) is not retracted
+— the pointer still does not move during a
+NOW-originated `TrackDrag` — but it is no longer the wall, because the
+Drag Manager does not need the pointer to move. It needs a mouse
+*sample*, and `SetDragInputProc` is where the source gives it one.
+
+Four questions were asked. Three are answered YES, one is answered with
+a different error code than predicted and is still clean, and one
+sub-case (a drop into a Finder *window* rather than onto the desktop) was
+NOT answered — for a rig reason with a screendump attached, not a wall.
+
+### The rig
+
+One emulator session, one boot: `scripts/spin-up-ppc` onto a
+session-private clone of `now-mirror-stage.qcow2`, sha256
+`8db8ddc2de99c4221ba563ab095ebcb24190a4d3e7ef69ef0720edbdbba199d4`
+(volume clean, provenance ACCOUNTED FOR), resident and app staged from
+this tree — `sourceManifest 1df8e014ab79`, `buildFingerprint
+5410aeef3706`, resident `active`, capabilities `1023`, guest build
+`fc56abbcb6eb`, OS 9.1 on `Power Mac G4`, lane block 955, ports
+19640/19641. Four runs on one boot. The instrument is
+`now-host/Tests/HostTests/LiveDragInputProcExperiment.swift` (opt-in,
+`NOW_DRAG_INPUT_PROC=1`), which captures the guest's screen through
+**QMP** rather than through the wire under measurement.
+
+**Receipts are outside the run directory**, at
+`/private/tmp/now-slice0-receipts/` (`run1/` … `run4/`, each with its
+transcript and screendumps, plus `provenance.md`/`provenance.json`/
+`staged.json` copied out of the run dir before teardown, and
+`spin-up.log`). That is the rule the 2026-08-17 run paid for, applied —
+and the run directory has since been removed by `lane-ports reclaim`
+exactly as it was last time, with the evidence unaffected.
+
+### The spike
+
+`offer --drag --x=<mask>[@H,V]` gained two bits in
+`continuity_dragmgr.c`: **8** attaches an input proc fed from the
+Continuity plane's notifier-written latest point
+(`now_continuity_latest_input`, a bounded read of `want_h`/`want_v`/
+`flags`), **16** attaches the same proc replaying an in-app scripted
+ramp to a baked target. The proc allocates nothing, calls no Toolbox,
+and logs nothing; it writes `*mouse` and clears or sets `btnState` in
+`*modifiers` — the classic inversion, where `btnState` SET means the
+button is UP. Availability was confirmed against the toolchain's own
+`Drag.h`: `SetDragInputProc` is *CarbonLib 1.0 and later*, under this
+application's CarbonLib 1.6 floor.
+
+Bit 16 exists so that "the proc is never called" and "the plane froze
+inside `TrackDrag`" cannot share one frozen coordinate. Both were needed.
+
+### 1. Does the ghost track the reported position? YES
+
+Gesture **P**, scripted, with the host driving **no** UDP path at all —
+every point the Manager saw came from the input proc:
+
+```
+drag input: calls=12786 fed=12786 down=12785 up=1
+drag input: seq 1..12786 pt 300,240..10,300
+```
+
+The Manager sampled the proc 12786 times in a four-second drag and took
+a point from it every single time. Three screendumps taken while the
+button was still reported down show the drag image at roughly (80, 290),
+(45, 300) and finally (10, 320) — walking the scripted ramp from the
+press point to the target (`run1/shot-P-held-0.ppm`, `-held-2.ppm`,
+`-held-at-target.ppm`).
+
+### 2. Does the cursor sprite follow? NO — GHOST ONLY, and it snaps back afterwards
+
+The same three screendumps show the **arrow still at the press point
+(300, 268)** while the ghost is three-quarters of the way across the
+screen. The sprite catches up only after `TrackDrag` returns, when the
+plane's ordinary task-time apply lands it at the drop point
+(`run1/shot-P-settled.ppm`, arrow at (10, 300)).
+
+So the honest observation is **ghost-only**, and it is exactly the case
+the plan named: the drag image is the OS's, it tracks, and the sprite
+disagrees with it for the drag's duration. The resident's low-memory
+writes were NOT armed to chase it in this run, so whether they can bring
+the sprite along is untested here — the plan's fallback ("or ghost-only
+is accepted") is what this measurement supports, and slice 1 should
+decide deliberately rather than inherit it.
+
+### 3. Does the drop resolve and target at the reported point? YES on exposed desktop, out of process
+
+Gesture **L**, the **plane-fed** variant (`--x=8`) — the shape slice 1
+inherits, driven over the existing Continuity UDP plane with no script:
+
+```
+drag input: proc attached (mask=8 target=300,240)
+drag carries: items=1 flavors=3 'phfs' 'fssP' 'clnm'
+drag promise asked for 'fssP'
+drag promise streaming InputProcL.txt into dir 19
+offer report: Last drag  ok
+Finder before: "false"   Finder after: "true"
+```
+
+The Finder asked for the promised flavour, our send proc streamed the
+bytes over the file lane inside the drop, and the Finder created the
+file on its desktop. **This is the first out-of-process promise pull
+this project has ever completed** — every prior ask came from a receiver
+whose source is in this repository (the bit-4 control).
+
+Gesture P did the same thing from the scripted proc in run 1
+(`Finder after: "true"`, `Last drag  ok`).
+
+**What is NOT established: byte identity.** Every landing here is
+attested by the Finder answering `exists file … of desktop` → `true`,
+and by the guest's own `Last drag  ok`. The size query
+(`size of item "…" of desktop`) answered `-1753` on both phrasings
+tried, so nothing in this run compared a byte. The in-process lane was
+proven byte-identical by slice 2; the **out-of-process** pull is proven
+only to have completed. Slice 1's gate must compare the bytes, not the
+existence.
+
+**The Finder-window sub-case is NOT answered.** Gesture W aimed at
+(250, 232), the measured interior of a Finder window the Finder itself
+opened at `{48, 103, 452, 321}` — and that window was **entirely behind
+NOW's own window**, which spans roughly (22, 45)–(780, 555) at its
+default size. The screendump `run2/shot-01-window-open.ppm` shows the
+Finder window is not visible at all. The drag was therefore correctly
+told it had never left:
+
+```
+drag drop: loc='null' err=0 end=300,240 mods=0x0000 asks=0
+drag attrs: 0x00000006 left=0 inapp=1 inwin=1
+drag end seq=2 err=-128
+```
+
+`left=0` is the tell: this is not the old `inwin=1` reading returning,
+it is a drop onto NOW because NOW was what was there. The cure is
+geometry, not product — shrink NOW's window (`winact` resolves
+self-windows) or place the Finder window in exposed screen — and it
+belongs to slice 1, which needs the case anyway.
+
+### 4. Abort by non-acceptance: CLEAN, but the code is `userCanceledErr`
+
+Gesture **N**, reported back over NOW's own window and then released:
+
+```
+drag detail: button plane=1 toolbox=1 at 300,240 setup=0 track=255 ticks
+drag drop: loc='null' err=0 end=300,240 mods=0x0000 asks=0
+drag attrs: 0x00000006 left=0 inapp=1 inwin=1
+drag end seq=2 err=-128
+offer report: Last drag  cancelled
+Finder after: "false"
+```
+
+`TrackDrag` returned **-128 (`userCanceledErr`)**, not -1857
+(`dragNotAcceptedErr`). `asks=0` — the promise was never asked. Nothing
+was created. The product's own verdict is `cancelled`, which is the
+state the abort path already expects. So the plan's "abort is native"
+claim holds and needs **no cancel channel**; the plan's predicted error
+code should be corrected to `userCanceledErr` for a drop with no
+receiver, with `dragNotAcceptedErr` still unobserved.
+
+### The plan's slice-2 observations, captured opportunistically
+
+**The drag demonstrably leaves NOW.** Gesture B2's attributes are the
+cleanest single line this whole arc has produced, and they are the exact
+inverse of the 2026-08-17 reading:
+
+```
+drag attrs: 0x00000005 left=1 inapp=0 inwin=1     the wall, earlier today
+drag attrs: 0x00000001 left=1 inapp=0 inwin=0     gesture B2, this run
+```
+
+`inwin=0` — the drag did not end inside the sender window — with
+`inapp=0` and `TrackDrag` returning `noErr`. There is no longer any
+reading on which this drag stayed home. Note this is the gesture whose
+*bytes* failed: the drop reached the Finder and the promise was asked;
+only the delivery into an existing name did not happen.
+
+**Same-name-twice: the Finder shows NO dialog, and creates nothing.**
+Run 4 dropped `Collide46699.txt` (4096 bytes) onto exposed desktop
+twice, on one boot, at the same point:
+
+| | verdict | files matching the name afterwards |
+|---|---|---|
+| B1, fresh name | `Last drag  ok` | created |
+| B2, same name | `Last drag  transfer-failed` | **1** |
+
+No replace prompt, no uniquified `copy` sibling, no second file — the
+screendumps through the whole second gesture show an unchanged desktop
+(`run4/shot-B2-during-pull-0/1/2.ppm`, `-settled.ppm`). The Finder
+asked for the promise, our send proc could not deliver into a name that
+already existed, and the drop simply failed. Run 2 reproduced the same
+shape by accident when its `P` fixture survived run 1
+(`Finder before: "true"` → `transfer-failed`).
+
+**What that means for the kill list, stated carefully:** on this
+evidence the OS 9 Finder does **not** raise a native replace dialog for
+a promised-HFS drop, so deleting `now_confirm` from the drag lane would
+leave the collision case with *no* surface at all rather than with the
+OS's own. That is a design decision for slice 3, not a fact this run
+settles — and the honest reading is that the imitation's *replacement*
+is a fixed send proc (uniquify, or overwrite deliberately), not a
+different dialog.
+
+**Copy progress: still UNANSWERED.** No screendump in any run shows a
+Finder progress window, but every completed pull was 4 KB and finished
+inside a single frame, so their silence is not evidence of absence. The
+size that would be slow enough to answer the question is the size that
+does not land — see the next section.
+
+### A NEW defect this slice found, unrelated to Route A′: 600 KB does not survive the pull
+
+Every landing above is a **4096-byte** file. A 614400-byte promise,
+dropped by the same scripted gesture at the same point on the same boot,
+answered `Last drag  transfer-failed` and created nothing
+(`run3/`, fixture `Collide46490.txt`). The screendump taken at the
+moment the pull should have been streaming shows no ghost, no progress
+panel and the drag already over, so it failed early rather than stalling
+— and the guest's log page came back `nil` for that gesture, so the
+reason is not yet known.
+
+It is under `kNowContinuityDragPromiseCapBytes` (1 MB) and the arm was
+accepted, so it is not the declared cap refusing. **Unverified, not
+diagnosed**, and it belongs to the slice that ships the lane rather than
+to this experiment: a promise drag that only works for small files is
+not the feature. It also means the plan's copy-progress question stays
+**unanswered** — 4 KB crosses too fast for a progress window to be
+meaningful, and the size that would be slow enough does not land.
+
+### What this changes for slices 1–3
+
+- **Slice 1 (`continuity.hostDragBegin`) is unblocked**, and its
+  transport question is already answered: bit 8 proves the
+  notifier-written plane point is fresh enough to steer the Manager
+  while `TrackDrag` holds the application, so the contract verb supplies
+  a *starting* state and the ordinary Continuity datagrams carry the
+  rest. No new transport.
+- **Slice 1 must own the sprite decision** (ghost-only, or arm the
+  resident's low-memory writes to agree), and must include the
+  Finder-window drop the geometry defect cost this run.
+- **Slice 3's abort** is `userCanceledErr`, not `dragNotAcceptedErr`.
+- **Slice 2's collision question is answered and its answer is
+  awkward**: there is no native dialog to inherit, so the drag lane's
+  `now_confirm` cannot simply be deleted — the same-name case needs a
+  decision (uniquify in the send proc, or overwrite) before anything is
+  removed.
+- **Slice 1 or 2 must fix the 600 KB pull first.** A lane that only
+  carries 4 KB is not the feature, and every landing measured here is at
+  that size.
+- The V15 tracking stream is now an active hazard to any measurement of
+  this lane: a four-second drag accumulates ~9400 handler passes and the
+  idle drain buries the ring, so `drag drop:`/`drag attrs:` survive
+  about a second. Page immediately or lose the reading.
+
+### Three rig defects, all instrument, recorded because each read as product
+
+- Paging the log eight seconds after the release found `drag input:` as
+  the OLDEST surviving line — every line the measurement turns on had
+  already been pushed out by the tracking stream.
+- With one epoch for the whole session, every gesture after the first
+  reported `button-never-came`: the plane's button edge stopped being
+  applied once a long `TrackDrag` had held it. A stuck plane and a
+  refused drag wear one word. Each gesture re-arms its own epoch now.
+- The Finder-window gesture first aimed at a guess, because one phrasing
+  of the bounds question answered `-1753` and the fallback parser then
+  read `timeoutMs 15000` as a window rectangle.
+
+Emulator only. Nothing here is a metal claim, and the plan's slice 5
+gate is untouched.
+
+## THE DRAG NEVER LEAVES BECAUSE THE POINTER NEVER LEAVES: the standing `inwin=1` reading survives a clean rig, and the cause is cursor authority, not targeting (2026-08-17, `test/hg-drag-native-track`)
+
+> **Its measurements stand; its conclusion does not.** The entry that
+> precedes this one ("THE WALL IS DOWN", slice 0, same day) drove the
+> same drag out of NOW and completed a
+> drop through `SetDragInputProc`. Everything below about the pointer
+> remains true — the pointer still does not move during a
+> NOW-originated `TrackDrag`. What changed is that the Drag Manager
+> never needed it to.
+
+Go/no-go for the native-drag direction, run against the integrated drag
+candidate (`feat/hg-drag-arc-candidate` @ `6604b842`) with V15 armed.
+**Verdict: NO.** A NOW-originated Drag Manager promise drag does not
+track the resident-driven pointer out of NOW's process, and no drop into
+the Finder has ever completed. The 2026-08-15 reading is **not** a rig
+defect of the `dragobs calls=0` class — it is reproduced with the rig
+hazards removed — but its *explanation* was wrong, and the correct one
+is one layer down from targeting.
+
+### The rig, and what differed from both earlier measurements
+
+One emulator session, one boot: `spin-up-ppc` onto a session-private
+clone, base `now-mirror-stage.qcow2` (sha256 `8db8ddc2de99…`, receipted),
+resident and app staged from this tree — `sourceManifest 1df8e014ab79`,
+`buildFingerprint 5410aeef3706`, resident `active`, capabilities `1023`.
+Rig table: `/private/tmp/nowvm-remeasure/provenance.md`. The instrument
+is `now-host/Tests/HostTests/LiveDragNativeTrackExperiment.swift`
+(opt-in, `NOW_DRAG_NATIVE_TRACK=1`), which drives the same gesture the
+slice-2 live case does and captures the guest's screen through **QMP**
+rather than through the wire under measurement. Log pager:
+`tools/local-drag-log.py`.
+
+Four gestures in one session, each differing from its neighbour in one
+thing:
+
+| | NOW's state | drop point | outcome |
+|---|---|---|---|
+| **A** | fronted, visible | 300,570 (the 18-px band under the window, shared with the Control Strip) | `promise-never-asked`, `loc='null'`, `asks=0`, attrs `0x5` |
+| **A2** | fronted, visible, SECOND gesture | 10,300 — the exposed desktop band down the left edge | **identical**: `promise-never-asked`, `loc='null'`, `asks=0`, attrs `0x5` |
+| **B** | HIDDEN, Finder fronted | 10,300 | `button-never-came` — the drag never begins |
+| **F** | visible but NOT frontmost | 10,300 | `button-never-came` — the drag never begins |
+
+### 1. The rig-defect hypothesis is REFUTED, and A2 is why
+
+A2 aims at desktop that is genuinely uncovered — the left band is
+outside the Workshop's default geometry at every height, so it is
+neither the Control Strip nor a window of ours — and it answers exactly
+as the 2026-08-15 drops did:
+
+```
+drag NativeTrackA2.txt ended: promise-never-asked (TrackDrag 0)
+drag detail: button plane=1 toolbox=1 at 300,240 setup=0 track=201 ticks
+drag drop: loc='null' err=0 end=10,300 mods=0x0000 asks=0
+drag attrs: 0x00000005 left=1 inapp=0 inwin=1
+```
+
+So `inwin=1` is not an artifact of a widened, fronted NOW window sitting
+under the pointer. The wall is real.
+
+### 2. The control the hypothesis asked for CANNOT BE RUN, and that is a finding
+
+"NOW hidden, Finder fronted" is not a stricter version of this
+measurement — it is a different measurement, because **the drag does not
+start at all** unless NOW is frontmost. B and F both expire
+`button-never-came` before `TrackDrag` is ever reached, and F is the one
+that names the reason: NOW is fully visible there, so what B measured
+was never hiddenness. The synthetic button is applied into the FRONT
+process's context, so a background NOW sees no button and its arm
+expires. For the NOW-originated direction this is not a defect — a
+person picks a file up *in* NOW — but it does mean the forensics rig
+rule "NOW hidden, Finder fronted" belongs to Finder-originated gestures
+only, and cannot be applied to this one.
+
+### 3. What is actually broken, measured rather than inferred
+
+The V15 table for A2, and the screendumps taken while the button was
+still held:
+
+```
+drag track n=1 msg=1 win=00000000 dm=10,300 pin=300,240 raw=300,240 lm=10,300 attr=5
+drag track n=2 msg=2 win=1ecd7190 dm=10,300 pin=300,240 raw=300,240 lm=10,300 attr=5
+drag track n=3 msg=3 win=1ecd7190 dm=10,300 pin=10,300  raw=300,240 lm=10,300 attr=5
+drag track n=4 msg=4 win=1ecd7190 dm=10,300 pin=10,300  raw=300,240 lm=10,300 attr=5
+drag track n=5 msg=5 win=00000000 dm=10,300 pin=10,300  raw=300,240 lm=10,300 attr=5
+```
+
+- `win` is **NOW's own window (`1ecd7190`) at every message that names
+  one**, for a pointer at (10, 300) that is outside it. Window tracking
+  never changes to another application's window at any point in the
+  gesture — the answer to "does window tracking EVER change" is no.
+- `raw` (`LMGetRawMouseLocation`) is **frozen at the press point for the
+  whole drag**, while `lm` and `dm` (`GetDragMouse`) reach the driven
+  point. That is the same asymmetry the 2026-08-16 re-measure found, now
+  with a mechanism attached to it.
+- **The drawn cursor and the drag image never move.** The screendump
+  taken while the button is held at (10, 300) shows the arrow and the
+  grey drag rectangle still at (300, 240) inside NOW's window
+  (`shot-A2-held-at-target.ppm`); the screendump after `TrackDrag`
+  returns shows the cursor at (10, 300) (`shot-A2-settled.ppm`), and the
+  guest's own `button edge … applied=10,300 exposed=10,300 … settled`
+  line agrees. The pointer catches up **after** the drag, never during
+  it.
+
+That is the whole defect, and it is a consequence of a boundary this
+project set deliberately. Continuity's safety contract puts **Cursor
+Device and QuickDraw work at task time only** — the Time Manager
+callback touches nothing but low memory (continuity-mode.md, the 1.11
+falsification). During a NOW-originated `TrackDrag` the application is
+inside a nested Toolbox loop, so its task time never comes: nothing
+moves the Cursor Device record, and the Drag Manager — which resolves
+the window under the pointer upstream of the cooked low-memory globals
+this plane does drive — keeps correctly answering "still in the sender's
+window". `GetMouse` follows the plane; the pointer the *system* believes
+in does not.
+
+So the earlier framing, "targeting ignores the driven pointer", had it
+backwards. Targeting is reading the pointer correctly. **The pointer is
+the thing that is not moving**, and only for the duration of our own
+blocking drag.
+
+### 4. What this means for the native-drag direction
+
+The fix is not in `continuity_dragmgr.c`, and it is not a targeting
+patch. Making a NOW-originated `TrackDrag` cross the process edge
+requires the pointer to keep moving while NOW's task time is
+unavailable — which means moving the Cursor Device from the resident's
+timer context, and that is precisely the operation resident 1.14/1.16
+was revoked for after six PowerBook wedges. Any slice that proposes to
+reopen it inherits that safety argument in full and cannot be judged on
+an emulator.
+
+Two directions remain honest, and both should be costed before more is
+spent here:
+
+- **Do not block.** Drive the crossing without occupying NOW's task time
+  inside `TrackDrag` — a non-blocking drag construction, or handing the
+  gesture to a Finder-originated drag the plane is already proven to
+  track (slice 1B).
+- **Move the pointer from below.** Re-open timer-context cursor
+  movement under a new safety argument and metal evidence. This is the
+  expensive one and it is not an emulator question.
+
+### 5. The Finder-native questions are STILL UNANSWERED
+
+Deliberately recorded as unanswered rather than as absent behaviour: no
+drop ever completed, so this run saw **no Finder copy-progress window**
+and **no collision dialog**, and it cannot say whether either exists.
+The same-name-twice control was written and never reached its
+precondition. The fate of the fake dialogs does not get to be decided by
+this measurement.
+
+### 6. Four defects the instrument found in ITSELF, all rig
+
+Recorded because each read exactly like a product failure, and one of
+them is the shape of the very reading this experiment was sent to check:
+
+- The state datagram's `positionSequence` restarted per gesture, so the
+  second gesture was never seen — indistinguishable from a plane that
+  refuses to drive a hidden application.
+- Each gesture opened its own UDP socket and gave itself its own button
+  generation base (1, 10, 20); every gesture after the first reported
+  `button-never-came`. Only a second FRONTED gesture (A2) separated
+  "the second one failed" from "the hidden one failed".
+- `tail` returned 46 of the 111 rows the guest said it held, and the two
+  lines the whole measurement turns on (`drag drop:`, `drag attrs:`)
+  were among the missing ones. `tools/local-drag-log.py` pages the whole
+  ring.
+- `ls Desktop Folder` answers "no such folder in the share" on this rig,
+  so the slice-2 live case's filesystem check can neither confirm nor
+  deny a drop. This run asks the **Finder** instead, over `script`, and
+  reads the answer field rather than matching the word `true` anywhere
+  in the reply envelope — which the first version did, and so read every
+  failed drop as a landing.
+
+### Receipts, and one of them did not survive its own teardown
+
+The run directory was `/private/tmp/nowvm-remeasure`, and **a
+guest-clean teardown removes it**: `tools/lane-ports reclaim` shuts the
+guest down through the Finder and then deletes `$NOW_SPIN_RUN`, which on
+this run took `provenance.md`, both receipt directories, the paged logs
+and every screendump with it. That is correct behaviour for a session
+clone and a trap for a measurement that stored its evidence inside one —
+**write receipts outside the run directory**, which is the rule this run
+paid for.
+
+What survives: the transcript, salvaged to
+`/private/tmp/now-drag-native-track-receipts/native-track-transcript-run6.txt`,
+and the guest lines quoted above, which were copied out before the
+teardown. The rig facts are restated here rather than pointed at:
+base `now-mirror-stage.qcow2` sha256 `8db8ddc2de99…` (receipted, volume
+clean), staged `sourceManifest 1df8e014ab79`, `buildFingerprint
+5410aeef3706`, resident `active`, capabilities `1023`, ports 12904/12905.
+The screendumps described in §3 are **gone**; the two facts they carried
+(cursor and drag image still at the press point while held, cursor at
+the driven point once `TrackDrag` returned) are independently carried by
+the guest's own `button edge … applied=10,300 exposed=10,300 … settled`
+line and the frozen `raw` column, and a re-run reproduces them in about
+four minutes.
+
+Emulator only; no metal round, and none of this is a metal claim.
+
 ## BUILT, NOT METAL-VERIFIED: the carried file's release now commits (2026-08-16, `fix/hg-drag-release-rearm`)
 
 Host-only. Fixes D2, D5 and D4 of the F1 forensics ledger for the attended

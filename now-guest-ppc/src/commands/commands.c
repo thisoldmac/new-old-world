@@ -947,7 +947,12 @@ static void run_offer(const char *request_json, long id, char *out, long cap)
 {
     const NowContinuityOfferTable *offer = now_continuity_offer_table();
     unsigned long live = now_continuity_live_epoch();
-    char action[16];
+    /* 16 UNTIL SLICE 0. The scaffold's own grammar is the longest thing
+       this buffer ever holds - `--drag --x=24@420,180` is 21 characters
+       and would have been silently truncated into `--drag --x=24@420` -
+       so it is sized for the scaffold and comes back down with it. The
+       verb's real actions are all under ten. */
+    char action[48];
     char esc_name[80];
 
     action[0] = '\0';
@@ -992,10 +997,46 @@ static void run_offer(const char *request_json, long id, char *out, long cap)
     /* SLICE-2 DIAGNOSTIC SCAFFOLD, not product, and it comes out with
        the block it drives (continuity_dragmgr.c). `offer --drag --x=N`
        sets the experiment mask so one boot answers several hypotheses;
-       a build/spin cycle is ~20 minutes and there are three left. */
+       a build/spin cycle is ~20 minutes and there are three left.
+
+       SLICE 0 WIDENED IT, twice over. The mask was one DIGIT, which
+       cannot express bit 8 beside bit 4, and Route A' needs `--x=24` to
+       run the plane-fed proc under our own receiver. And the scripted
+       control needs somewhere to aim, so an optional `@H,V` follows:
+
+           offer --drag --x=8            plane-fed input proc
+           offer --drag --x=16@10,300    scripted ramp to the desktop
+           offer --drag --x=24@420,180   scripted, with our own receiver
+
+       Everything after `--x=` is parsed here rather than by the arg
+       reader, because `action` is the whole rest of the line and this
+       grammar is a scaffold's, not the verb's. */
     if (strncmp(action, "--drag --x=", 11) == 0
         && action[11] >= '0' && action[11] <= '9') {
-        now_continuity_dragmgr_diag((long)(action[11] - '0'));
+        const char *p = action + 11;
+        long mask = 0;
+
+        while (*p >= '0' && *p <= '9') {
+            mask = mask * 10 + (*p++ - '0');
+        }
+        now_continuity_dragmgr_diag(mask);
+        if (*p == '@') {
+            long h = 0, v = 0;
+            int neg = 0;
+
+            p++;
+            if (*p == '-') { neg = 1; p++; }
+            while (*p >= '0' && *p <= '9') { h = h * 10 + (*p++ - '0'); }
+            if (neg) { h = -h; }
+            if (*p == ',') {
+                neg = 0;
+                p++;
+                if (*p == '-') { neg = 1; p++; }
+                while (*p >= '0' && *p <= '9') { v = v * 10 + (*p++ - '0'); }
+                if (neg) { v = -v; }
+                now_continuity_dragmgr_diag_target((short)h, (short)v);
+            }
+        }
         action[6] = '\0';
     }
 

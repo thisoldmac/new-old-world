@@ -277,6 +277,17 @@ int now_wire_get_offer(long *id_out, char *err, long cap);
    owes the Finder an FSSpec, and a sentence is not one. */
 Boolean now_wire_get_landed(long id, FSSpec *spec_out);
 
+/* DIAGNOSTIC. Why the last pull stopped, in the pull's OWN words: the
+   call that refused and the code it returned.
+
+   A pull that fails says so to a page, in a sentence written for a
+   person ("X is already in Y"). The promise drag has no page: its
+   caller sees only that nothing landed, and the slice-0 collision
+   measurement spent a whole run unable to name the refusing layer
+   because of it. This is that name, kept next to the failure rather
+   than reconstructed from a note. Empty when the last pull completed. */
+void now_wire_get_last_failure(char *out, long cap);
+
 /* Where a PULL (file.get, the entry point above) actually lands.
    use=false (the default) means the downloads folder — byte-identical
    to every pull before this existed; use=true redirects it to the
