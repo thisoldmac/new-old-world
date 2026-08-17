@@ -44,6 +44,14 @@ cases for free. That is agent-created debt, and it has been created twice
 in this repository (a styled `now_confirm` replace dialog and a styled
 transfer windoid, both delivered against an explicit ask for native).
 
+This binds **both machines equally**. On the guest the blessed path is
+the Toolbox's: a real `DragRef`, the Finder's own dialogs, the Drag
+Manager's ghost. On the host it is AppKit's: a real `NSDraggingSession`
+begun the way AppKit begins one, `NSFilePromiseProvider` delivering the
+file so macOS shows its own drag image and copy behavior — not an
+asserted seed into a borderless panel, not an eager fetch that writes
+the file itself and leaves the promise as decoration.
+
 If you cannot reach the blessed path, **stop and report the wall** with
 evidence (the way slice 2 reported `inwin=1`), so the wall itself becomes
 the work. Do not ship the imitation.
