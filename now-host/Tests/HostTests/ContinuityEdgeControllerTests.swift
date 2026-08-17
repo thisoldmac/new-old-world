@@ -1589,6 +1589,21 @@ private extension ContinuityEdgeControllerTests {
             syntheticButtonPosts.append((down, screenPoint))
             return true
         }
+        /// The HID-level release that ENDS a host drag at the crossing,
+        /// recorded apart from the session-level one above: the two answer
+        /// different questions and a test that confused them would prove
+        /// nothing.
+        var syntheticHIDButtonPosts: [(down: Bool, point: CGPoint)] = []
+        /// Set false to stand in for a window server that refused the post,
+        /// which is one of the two ways ending the drag at the cross
+        /// declines.
+        var syntheticHIDPostsSucceed = true
+
+        func postSyntheticPrimaryButtonAtHID(down: Bool,
+                                             at screenPoint: CGPoint) -> Bool {
+            syntheticHIDButtonPosts.append((down, screenPoint))
+            return syntheticHIDPostsSucceed
+        }
         /// Every call in, whether or not it succeeded — `captureStarts`
         /// only counts the ones that did, so a test proving a RETRY was
         /// attempted (and refused again) needs this instead.

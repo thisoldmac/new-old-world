@@ -111,6 +111,43 @@ struct ContinuityCatchHitTest: Equatable, Sendable {
     }
 }
 
+/// **What a host drag was carrying, kept past the death of the session that
+/// carried it.**
+///
+/// The host→guest cross ends the Finder-owned drag AT the edge (see
+/// `ContinuityEdgeController.endHostDragAtCross`), which means the drop this
+/// app accepts there is a STAGING, not the transfer: the person has not
+/// chosen where on the guest it lands yet. An `NSDraggingInfo`'s pasteboard
+/// is only valid for the length of that session, so what it named has to be
+/// copied somewhere that outlives it before the session ends.
+///
+/// **Only real file URLs stage.** A drag carrying nothing but file PROMISES
+/// names files that do not exist yet and are redeemed through a receiver
+/// tied to the live session; nothing here can hold one past the drop. That
+/// is why `snapshot` returns nil rather than an empty pasteboard, and why
+/// the caller treats nil as "do not end this drag early" — a promise-only
+/// drag keeps the pre-existing behaviour end to end.
+@MainActor
+enum ContinuityHostFileStaging {
+    /// A private pasteboard, not the drag pasteboard: the drag one dies with
+    /// the session this app is about to end.
+    static let name = NSPasteboard.Name("net.shelbel.now.continuity.staged")
+
+    static func snapshot(_ pasteboard: NSPasteboard) -> NSPasteboard? {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true,
+        ]
+        let urls = (pasteboard.readObjects(forClasses: [NSURL.self],
+                                           options: options) ?? [])
+            .compactMap { $0 as? NSURL }
+        guard !urls.isEmpty else { return nil }
+        let staged = NSPasteboard(name: name)
+        staged.clearContents()
+        guard staged.writeObjects(urls) else { return nil }
+        return staged
+    }
+}
+
 /// The AppKit half of Continuity file traversal. The controller owns gesture
 /// state and guest coordinates; this object owns the real macOS drag source
 /// and destination which must exist at the physical display boundary.

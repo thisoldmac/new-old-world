@@ -2563,6 +2563,17 @@ private final class Rig {
             return syntheticPostsSucceed
         }
 
+        /// The HID-level sibling, kept apart in the ledger for the same
+        /// reason it is a separate call: one corrects what the session
+        /// believes, the other ends a real gesture.
+        var syntheticHIDButtonPosts: [(down: Bool, point: CGPoint)] = []
+
+        func postSyntheticPrimaryButtonAtHID(down: Bool,
+                                             at screenPoint: CGPoint) -> Bool {
+            syntheticHIDButtonPosts.append((down, screenPoint))
+            return syntheticPostsSucceed
+        }
+
         func start(_ handler: @escaping ContinuityPointerEnvironment
                     .SampleHandler) -> AnyObject {
             self.handler = handler

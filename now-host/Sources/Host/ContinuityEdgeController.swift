@@ -60,6 +60,19 @@ protocol ContinuityPointerEnvironment: AnyObject {
     /// with the button still held").
     func postSyntheticPrimaryButton(down: Bool,
                                     at screenPoint: CGPoint) -> Bool
+    /// The same transition posted at the **HID** level instead — beneath
+    /// every session tap, including this app's own.
+    ///
+    /// The session-level sibling above exists to correct what the session
+    /// BELIEVES. This one exists to end a real gesture: a drag session
+    /// belonging to another application is terminated by a release the
+    /// window server itself routes, and a release inserted at the session
+    /// level can be swallowed by a tap sitting in front of the drag loop —
+    /// including ours. See `endHostDragAtCross`, which uses it to end a
+    /// Finder-owned drag at the shared edge, over this app's own
+    /// destination, so the OS performs the drop onto us.
+    func postSyntheticPrimaryButtonAtHID(down: Bool,
+                                         at screenPoint: CGPoint) -> Bool
     func hideCursor(on displayID: UInt32)
     func showCursor(on displayID: UInt32)
     func moveCursor(on displayID: UInt32, to point: CGPoint)
@@ -248,6 +261,50 @@ final class ContinuityEdgeController: ObservableObject {
     private var pendingCursorWarp: PendingCursorWarp?
     private var suppressedCursorWarps: UInt32 = 0
     private var hostFileDrag = false
+    /// **The host's own drag session is over, and this Mac ended it.**
+    ///
+    /// Set the instant the synthetic release posted at the crossing is
+    /// accepted as a drop by this app's own strip (`hostFileDropped`'s
+    /// cross-drop branch). From then on `hostFileDrag` still means "this
+    /// controller is steering the guest on behalf of a host file", but there
+    /// is no longer a foreign `NSDraggingSession` in flight — so every
+    /// restraint this file observes on behalf of one is lifted, and the pass
+    /// converges with an ordinary pointer crossing. See
+    /// `hostDragSessionOverEdgeIsLive`, which is what the old `!hostFileDrag`
+    /// guards now ask instead.
+    private var hostDragEndedAtCross = false
+    /// A synthetic release has been posted and the drop it should produce has
+    /// not arrived yet. Distinguishes the drop this Mac caused from a real
+    /// one a person made on the strip.
+    private var expectingCrossDrop = false
+    /// Why ending the host drag at the crossing was declined for this
+    /// gesture, so it is attempted once rather than on every
+    /// `draggingUpdated`, and so the log says which fallback is running.
+    private var crossEndRefusal: String?
+    /// What the ended host drag was carrying, held until the person releases
+    /// on the guest. **The drop this Mac accepted at the edge is a staging,
+    /// not the transfer** — see `ContinuityHostFileStaging` and
+    /// `completeStagedHostDrop`.
+    private var stagedHostFiles: NSPasteboard?
+    /// Snapshots a live drag pasteboard into something that outlives the
+    /// session. Injectable because no test has a real drag pasteboard, and
+    /// because whether a given drag CAN be staged is the one fact that
+    /// decides between ending the host drag at the cross and leaving it
+    /// alone.
+    var stageHostFiles: @MainActor (NSPasteboard) -> NSPasteboard? =
+        ContinuityHostFileStaging.snapshot
+    /// Whether a drag session belonging to another application is still in
+    /// flight over the shared edge on this Mac's behalf.
+    ///
+    /// This is the question every `!hostFileDrag` guard in this file was
+    /// really asking: not "is a host file crossing" but "is there a foreign
+    /// session whose cursor, association and warps are not ours to touch".
+    /// Once the crossing has ended that session (`hostDragEndedAtCross`) the
+    /// answer is no, and the pass takes the ordinary custody it always
+    /// should have had.
+    private var hostDragSessionOverEdgeIsLive: Bool {
+        hostFileDrag && !hostDragEndedAtCross
+    }
     private var guestFileCandidate: HostFileDragItem?
     /// Where on the guest the held gesture began. The cross returns the
     /// pointer here before releasing, so the Finder completes its move where
@@ -582,7 +639,12 @@ final class ContinuityEdgeController: ObservableObject {
             status = hostFileDrag
                 ? "Dragging a host file on the guest display"
                 : "Pointer is on the guest display"
-            if !hostFileDrag {
+            /* The question is whether a FOREIGN session is live, not whether
+               a file is crossing: a pass whose host drag this Mac already
+               ended at the edge owns the cursor exactly like an ordinary
+               crossing does, and withholding custody from it is what left
+               the real pointer visible and clamped at the boundary. */
+            if !hostDragSessionOverEdgeIsLive {
                 hideHostCursor(for: pending)
                 startKeyboardCapture()
             }
@@ -664,7 +726,14 @@ final class ContinuityEdgeController: ObservableObject {
            asked rather than the sample, for the reason stated at
            `physicalPrimaryButtonHeld` — this app's own tap starves the
            session's button state on exactly this path. */
-        if hostDragOverThisMac, !physicalPrimaryButtonHeld() {
+        /* `!expectingCrossDrop` is not a mood: this Mac has just posted a
+           synthetic release at the HID level, so the HID button state reads
+           UP while the person's finger is still down. Without this the
+           backstop would read its own release as the end of the gesture and
+           tell the guest to stop drawing a drag the person is still
+           making. */
+        if hostDragOverThisMac, !expectingCrossDrop,
+           !physicalPrimaryButtonHeld() {
             hostDragOverThisMac = false
             audit(.info, "the host drag over the shared edge is over: the "
                 + "button is not held any more and no drag callback said so")
@@ -674,7 +743,15 @@ final class ContinuityEdgeController: ObservableObject {
             endHostDragPresentation()
         }
         guard var ownership else { return }
-        if hostFileDrag || hostDragOverThisMac,
+        if sample.kind == .primaryUp, stagedHostFiles != nil {
+            /* THE RELEASE THE PERSON ACTUALLY MADE, and the only one that
+               decides anything. The release this Mac posted at the edge
+               ended Finder's session and staged the file; this one says
+               where on the guest it goes. */
+            completeStagedHostDrop(at: ownership)
+            return
+        }
+        if hostDragSessionOverEdgeIsLive || hostDragOverThisMac,
            sample.kind == .primaryDown || sample.kind == .primaryUp {
             /* SUPPRESSION, HALF ONE: the button. A held button that belongs
                to a host drag is not a press on the guest, and applying it as
@@ -758,6 +835,18 @@ final class ContinuityEdgeController: ObservableObject {
                The condition is deliberately the same flag as half one, not
                a second reading of the gesture. Two conditions that must
                agree about one fact are two places to disagree. */
+            if stagedHostFiles != nil {
+                /* THE GUEST DROP IS THE COMMIT, so a cross back without one
+                   is an abort — not a transfer aimed at the edge. Nothing
+                   has been copied: the staging is a pasteboard, and letting
+                   it go is the whole of the undo. */
+                abandonStagedHostFiles(
+                    reason: "the drag crossed back to this Mac without a "
+                        + "release on the guest")
+                returnToHost(ownership, reason: "the carried file came back "
+                    + "without a drop on the guest")
+                return
+            }
             if hostDragOverThisMac {
                 audit(.info, "this cross carries a drag from this Mac, not "
                     + "the guest's: binding nothing and starting no return "
@@ -787,7 +876,9 @@ final class ContinuityEdgeController: ObservableObject {
         } else {
             driver?.pointerMoved(to: point)
         }
-        if !hostFileDrag { pinHostCursor(for: ownership) }
+        /* Same widening as `transportPhaseChanged`: only a LIVE foreign
+           session is a reason not to pin. */
+        if !hostDragSessionOverEdgeIsLive { pinHostCursor(for: ownership) }
     }
 
     /// Decide, at the cross, what this held press is carrying.
@@ -893,11 +984,18 @@ final class ContinuityEdgeController: ObservableObject {
             + "\(Int(ownership.guestPoint.x)),\(Int(ownership.guestPoint.y)), "
             + "suppressedWarps=\(suppressedCursorWarps), "
             + "buttonsDown=\(hostButtonsDown ? 1 : 0)")
-        /* A held button is nobody's until the human lets go. `hostFileDrag`
-           is excluded because there the held gesture is a foreign app's drag
-           session which this app never captured and must not interrupt. */
-        let held = hostButtonsDown && !hostFileDrag
-        if held, pressOrigin == nil {
+        /* A held button is nobody's until the human lets go. A LIVE foreign
+           drag session is the exception: that held gesture is another
+           application's, this app never captured it and must not interrupt
+           it. A host drag this Mac already ended at the crossing is not that
+           — the button is held and belongs to nobody, which is exactly the
+           case custody exists for. */
+        let held = hostButtonsDown && !hostDragSessionOverEdgeIsLive
+        /* The guest was never pressed on a carried-file pass: this lane only
+           ever sends `pointerMoved`. Saying a press origin was "lost" there
+           would report an absence that is by design as a defect. */
+        let guestWasNeverPressed = hostFileDrag || hostDragEndedAtCross
+        if held, pressOrigin == nil, !guestWasNeverPressed {
             /* Silence here reads as "there was nothing to do". There was: the
                button is still down on the guest and this return sends no
                release at all, so the Mac keeps the press. Say so. */
@@ -979,12 +1077,19 @@ final class ContinuityEdgeController: ObservableObject {
            relying on AppKit's own `draggingExited` to arrive after). None
            of those should be able to leave the host cursor hidden. */
         endHostDragPresentation()
+        /* The same defensive reasoning one line up, for the staging: an
+           ownership that ends any other way than a guest release must not
+           leave a file staged for a gesture nobody is making any more. */
+        abandonStagedHostFiles(reason: "guest pointer ownership ended")
         restoreHostCursor(from: ownership ?? pending,
                           keepInputCapture: keepInputCapture)
         stopKeyboardCapture()
         pending = nil
         ownership = nil
         hostFileDrag = false
+        hostDragEndedAtCross = false
+        expectingCrossDrop = false
+        crossEndRefusal = nil
         guestFileCandidate = nil
         pressedSelection = nil
         pressOrigin = nil
@@ -1820,6 +1925,7 @@ final class ContinuityEdgeController: ObservableObject {
             /* Every `draggingUpdated` lands here too — the strip is asked on
                every motion — so the arrival is announced ONCE per gesture
                and the rest are steering. */
+            endHostDragAtCross(pasteboard, at: hostPoint)
             return state == .arming || state == .active
         }
         guard state == .ready, let edge = layout.sharedEdge else {
@@ -1838,7 +1944,164 @@ final class ContinuityEdgeController: ObservableObject {
         state = .arming
         status = "Connecting the guest file target…"
         driver?.pointerMoved(to: mirrorPoint(guest))
+        /* Last, and only once the guest has been aimed from the REAL
+           crossing point: the release posted below lands wherever the
+           cursor is, and the arm above is the last thing that needs the
+           crossing to still be in progress. */
+        endHostDragAtCross(pasteboard, at: hostPoint)
         return true
+    }
+
+    /// **End the host's own drag AT the handoff, by releasing it onto this
+    /// app's own destination.**
+    ///
+    /// Michelle's ruling, attended, 2026-08-16: each side's OS should end
+    /// its own drag at the crossing, the way the guest→host direction
+    /// already releases the guest press at the cross. Hiding the host cursor
+    /// removed the green `+` badge and nothing else — the native ghost and
+    /// the real pointer still caught at the physical screen edge, and
+    /// resting there triggered the window server's own edge behaviour
+    /// (switching Spaces). None of that is fixable while a foreign
+    /// `NSDraggingSession` is still in flight, because the ghost is anchored
+    /// to a real cursor that has nowhere further to go. So the session is
+    /// not hidden, it is ENDED.
+    ///
+    /// **The release is posted while the cursor is over our own strip, and
+    /// that is the safety property, not an implementation detail.** A
+    /// `leftMouseUp` at the HID level terminates the drag wherever it lands;
+    /// landing it on the strip means the OS performs the drop onto the
+    /// legitimate destination for this gesture — this app, which is already
+    /// carrying the file to the guest — rather than onto whatever window
+    /// happens to be under an arbitrary point. The strip is widened first
+    /// for the same reason: the drop needs room to land on us in the
+    /// milliseconds between the post and the window server routing it.
+    ///
+    /// **What this app accepts there is a STAGING, not the transfer.** The
+    /// person has not chosen a place on the guest yet; the guest release is
+    /// still the commit. See `hostFileDropped`'s cross-drop branch,
+    /// `completeStagedHostDrop`, and `abandonStagedHostFiles`.
+    ///
+    /// Declined, once per gesture and with the reason logged, when the drag
+    /// carries nothing that can outlive its own session (a promise-only
+    /// drag) or when the window server refuses the post. The gesture then
+    /// runs exactly as it did before this change — ghost, badge and all —
+    /// which is a worse presentation, not a broken transfer.
+    private func endHostDragAtCross(_ pasteboard: NSPasteboard,
+                                    at hostPoint: CGPoint) {
+        guard hostFileDrag, !hostDragEndedAtCross, !expectingCrossDrop,
+              crossEndRefusal == nil else { return }
+        guard let staged = stageHostFiles(pasteboard) else {
+            crossEndRefusal = "this drag carries no file this Mac can still "
+                + "name once the session ends (a promise-only drag)"
+            audit(.warn, "host file drag: NOT ending the host drag at the "
+                + "crossing — \(crossEndRefusal ?? ""). The Finder's own "
+                + "drag stays in flight for this gesture, ghost and all "
+                + "(gesture=\(hostFileDragGestureID))")
+            return
+        }
+        stagedHostFiles = staged
+        expectingCrossDrop = true
+        /* Widened before the post, not after: the drop has to have a
+           surface of ours to land on at the instant the window server
+           routes the release. */
+        setFileEdgeCatching(true)
+        let posted = environment.postSyntheticPrimaryButtonAtHID(
+            down: false, at: hostPoint)
+        audit(posted ? .info : .error,
+              "host file drag: \(posted ? "posted" : "could not post") a "
+                + "synthetic release at the HID level over this Mac's own "
+                + "catch surface to END the host drag at the crossing "
+                + "(gesture=\(hostFileDragGestureID), at="
+                + "\(Int(hostPoint.x)),\(Int(hostPoint.y)), "
+                + "inputCapture=\(inputCapture == nil ? "none" : "live")). "
+                + "The file is staged; the guest release is still the commit")
+        guard posted else {
+            stagedHostFiles = nil
+            expectingCrossDrop = false
+            setFileEdgeCatching(false)
+            crossEndRefusal = "the window server refused the synthetic "
+                + "release"
+            return
+        }
+    }
+
+    /// The drop this Mac caused, as opposed to one a person made on the
+    /// strip. Nothing is transferred here — see `endHostDragAtCross`.
+    private func acceptCrossDrop(_ pasteboard: NSPasteboard) -> Bool {
+        expectingCrossDrop = false
+        hostDragEndedAtCross = true
+        _ = pasteboard
+        setFileEdgeCatching(false)
+        audit(.info, "host file drag: the host drag ENDED at the crossing — "
+            + "this Mac's own strip took the drop, so nothing of the "
+            + "Finder's is still in flight and the pass now takes ordinary "
+            + "pointer custody (gesture=\(hostFileDragGestureID))")
+        convergeAfterCrossDrop()
+        return true
+    }
+
+    /// Takes the custody an ordinary crossing would already have had.
+    ///
+    /// Withheld until now for one reason only — a foreign session this app
+    /// could not safely detach the cursor out from under — and that reason
+    /// died with the session. From here the real cursor is hidden, detached
+    /// and pinned exactly like any other guest pass, which is also what
+    /// stops the physical pointer sitting on the screen edge triggering the
+    /// window server's own edge behaviours.
+    ///
+    /// **It is also what consumes the person's eventual physical release.**
+    /// The consuming tap `hideHostCursor` starts is what turns that release
+    /// into a sample this controller sees (`completeStagedHostDrop`) rather
+    /// than an event some host window under the pointer inherits.
+    private func convergeAfterCrossDrop() {
+        guard let current = ownership else {
+            /* Still `.arming`: the transport has not confirmed. Custody is
+               armed by `transportPhaseChanged(.active)`, whose guard now
+               asks the same widened question. Named here because the gap
+               between the synthetic release and that confirmation is the
+               one window in which a physical release reaches this Mac. */
+            audit(.info, "host file drag: the host drag ended at the "
+                + "crossing before the guest confirmed ownership; custody "
+                + "is armed when it does (gesture=\(hostFileDragGestureID))")
+            return
+        }
+        hideHostCursor(for: current)
+        startKeyboardCapture()
+        status = "Carrying the file on the guest display"
+    }
+
+    /// The person released on the guest: the staged file lands there, and
+    /// this is the only place a host→guest transfer is ever started once the
+    /// crossing has ended the host drag.
+    private func completeStagedHostDrop(at ownership: Ownership) {
+        guard let staged = stagedHostFiles else { return }
+        stagedHostFiles = nil
+        let point = mirrorPoint(ownership.guestPoint)
+        let accepted = hostFilesDropped?(staged, point) ?? false
+        audit(accepted ? .info : .warn,
+              "host file drag: the person released on the guest at "
+                + "\(point.x),\(point.y) and the staged file was "
+                + "\(accepted ? "accepted" : "refused") "
+                + "(gesture=\(hostFileDragGestureID))")
+        endHostDragPresentation()
+        hostFileDrag = false
+        hostDragEndedAtCross = false
+        crossEndRefusal = nil
+        status = accepted
+            ? "Copying the file to the guest"
+            : "The guest refused the file"
+    }
+
+    /// The undo, and it is a small one BY DESIGN: nothing has been copied
+    /// while a file is merely staged, so letting the staging go is the whole
+    /// of the abort — no partial file on the guest, and no presentation left
+    /// running (its own teardown funnel runs beside this one).
+    private func abandonStagedHostFiles(reason: String) {
+        guard stagedHostFiles != nil else { return }
+        stagedHostFiles = nil
+        audit(.info, "host file drag: the staged file was let go without a "
+            + "transfer — \(reason). Nothing was copied "
+            + "(gesture=\(hostFileDragGestureID))")
     }
 
     private func hostFileExited() {
@@ -1848,6 +2111,20 @@ final class ContinuityEdgeController: ObservableObject {
            flag that outlives the gesture it describes turns one defect into
            a permanently deaf edge. */
         hostDragOverThisMac = false
+        if expectingCrossDrop {
+            /* THE FALLBACK OBSERVATION, AND IT IS WORTH AS MUCH AS THE
+               SUCCESS. The release was posted and AppKit reported the drag
+               LEAVING rather than dropping on us — the drop landed
+               somewhere else, or the session ended without one. Nothing was
+               staged into a transfer, so the abort below is complete; what
+               matters is that the log says which of the two happened. */
+            expectingCrossDrop = false
+            setFileEdgeCatching(false)
+            audit(.warn, "host file drag: the synthetic release did NOT come "
+                + "back as a drop on this Mac's own strip — AppKit reported "
+                + "the drag leaving instead (gesture="
+                + "\(hostFileDragGestureID)). Nothing was transferred")
+        }
         endHostDragPresentation()
         guard hostFileDrag, let current = ownership ?? pending else { return }
         returnToHost(current, reason: "host file left the shared edge")
@@ -1870,6 +2147,13 @@ final class ContinuityEdgeController: ObservableObject {
 
     private func hostFileDropped(_ pasteboard: NSPasteboard) -> Bool {
         hostDragOverThisMac = false
+        if expectingCrossDrop {
+            /* Handled BEFORE the teardown below, because this drop is not
+               the end of anything a person is doing: they are still
+               carrying the file, on the guest, and the presentation must
+               keep running. */
+            return acceptCrossDrop(pasteboard)
+        }
         /* Torn down BEFORE the transfer is handed off, not after. The drop
            is the end of the gesture a person is watching, and a guest still
            drawing a drag while its file is being written is the shape of lie
