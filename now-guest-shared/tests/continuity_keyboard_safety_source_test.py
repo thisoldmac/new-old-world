@@ -8,6 +8,7 @@ KEYBOARD = (ROOT / "ext/src/now_ext_continuity_keyboard.c").read_text()
 SERVICE = (ROOT / "ext/src/now_ext_continuity.c").read_text()
 INTAKE = (ROOT / "now-guest-ppc/src/input/continuity_intake.c").read_text()
 LOGIC = (ROOT / "now-guest-shared/src/now_continuity_keyboard_logic.c").read_text()
+WIRE = (ROOT / "now-guest-ppc/src/core/wire.c").read_text()
 
 
 def check(condition: bool, message: str) -> None:
@@ -63,5 +64,28 @@ check("keymap_costamp(0);" in KEYBOARD
       "an epoch end no longer clears the stamped modifier bits")
 check("0x0080 | (cell->host_modifiers" in SERVICE,
       "the synthetic mouse-up lost live modifiers or its btnState bit")
+
+# Forensics D3/D6 (docs/open-issues.md, 2026-08-16 metal round): a
+# `continuity.key` frame with `action: "modifiers"` was refused
+# `malformed`. The contract (contract/asyncapi.yaml ContinuityKey.action)
+# declares `modifiers` legal and additive, and this repo's own answer is
+# NOT to teach the PostEvent queue above a fourth action - `modifiers`
+# "IS NOT A KEY" by the contract's own words and must never be posted as
+# one (see `test_modifiers_is_not_a_queue_action` in
+# now_continuity_keyboard_logic_test.c). The dispatcher must instead
+# recognise the action BEFORE it ever reaches that queue and answer it
+# over the separate host-modifiers side channel these two checks name.
+check('strcmp(action_name, "modifiers") == 0' in WIRE
+      and "is_modifier_state = 1" in WIRE,
+      "the wire dispatcher must recognise a modifiers action before the "
+      "key-queue validation, not fall through to it")
+check("now_continuity_modifiers(epoch, generation, modifiers)" in WIRE,
+      "a modifiers action must be answered over the host-modifiers side "
+      "channel, never now_continuity_key's PostEvent queue")
+check("action < (unsigned long)kNowPeekContinuityKeyDown" in INTAKE
+      and "action > (unsigned long)kNowPeekContinuityKeyRepeat" in INTAKE,
+      "now_continuity_key's own range check must still exclude anything "
+      "past down/up/repeat, modifiers included, as its last line of "
+      "defence")
 
 print("continuity_keyboard_safety_source_test: ok")
