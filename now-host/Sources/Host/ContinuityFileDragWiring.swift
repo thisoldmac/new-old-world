@@ -171,20 +171,12 @@ enum ContinuityFileDrag {
                         audit(.info, unusable.message)
                         return nil
                     case .success(let stub):
-                        /* A candidate the SELECTION lane named can still be
-                           replaced by the drag plane after the cross, so it
-                           travels as a promise and fetches nothing eagerly;
-                           one the drag plane named has nothing left to
-                           revise. See `dragItem(for:revisable:)`. */
-                        let revisable =
-                            (selectionMark?()?.source ?? .selection) != .drag
                         audit(.info, "press bound to the guest selection: "
                             + "epoch=\(stub.epoch), "
                             + "generation=\(stub.generation), "
                             + "name=\(stub.item.name), "
-                            + "type=\(stub.utType.identifier), "
-                            + "revisable=\(revisable ? 1 : 0)")
-                        return grab.dragItem(for: stub, revisable: revisable)
+                            + "type=\(stub.utType.identifier)")
+                        return grab.dragItem(for: stub)
                     }
                 },
                 /* THE LATE-BIND LANE. Wired from the same two halves as the

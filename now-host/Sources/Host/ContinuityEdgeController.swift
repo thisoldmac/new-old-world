@@ -244,6 +244,13 @@ final class ContinuityEdgeController: ObservableObject {
     /// cross. Nil where the lane is not wired, which is every caller that
     /// predates late bind. See `ContinuityLateBind.Lane`.
     private var lateBind: ContinuityLateBind.Lane?
+    /// This cross held two candidates and could not say which the hand
+    /// chose, so it refused (`ContinuitySelectionBind.superseded`). A
+    /// refusal is a product outcome — a snap-back and a line naming both —
+    /// and late bind must not quietly turn it into a session: widening the
+    /// window in which a bind may be REVISED is not licence to re-open one
+    /// this Mac already declined to make.
+    private var crossRefusedAsAmbiguous = false
     /// What the selection lane knew when the press went out, kept until the
     /// cross decides what to bind. See `ContinuitySelectionBind`.
     private struct PressedSelection {
@@ -762,6 +769,7 @@ final class ContinuityEdgeController: ObservableObject {
                the wrong file on 2026-08-15. The cross re-decides against
                what arrived in between; see resolveSelectionBindingAtCross. */
             pressedSelection = nil
+            crossRefusedAsAmbiguous = false
             guestFileCandidate = guestSelectionItem != nil
                 ? guestSelectionItem?()
                 : guestFileAtPoint?(point)
@@ -830,7 +838,7 @@ final class ContinuityEdgeController: ObservableObject {
             }
             if sample.buttonsDown { resolveSelectionBindingAtCross() }
             if sample.buttonsDown, guestFileCandidate == nil,
-               pressedSelection != nil,
+               pressedSelection != nil, !crossRefusedAsAmbiguous,
                let pending = lateBind?.pendingItem() {
                 /* THE SINGLE GESTURE, AND THE ONLY MOMENT IT CAN BE SERVED.
                    Nothing is bound because nothing could be: an icon nobody
@@ -936,6 +944,9 @@ final class ContinuityEdgeController: ObservableObject {
                 + "\(age(currentMark)) — too early to be this press's own "
                 + "doing, so which file is being dragged is not knowable "
                 + "from here")
+            /* And no late bind may reopen it: see
+               `crossRefusedAsAmbiguous`. */
+            crossRefusedAsAmbiguous = true
             guestFileCandidate = nil
         case .nothing:
             audit(.info, "no guest file is bound to this cross: the Mac "

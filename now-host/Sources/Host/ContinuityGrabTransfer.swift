@@ -247,30 +247,12 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     /// come at a Finder window. See `ContinuityFileDragPolicy` for the cap
     /// and `EagerFetch` for how the two outcomes are reconciled at drag
     /// start.
-    ///
-    /// `revisable` is the late-bind half: a candidate that came from the
-    /// SELECTION cache may still be replaced by a drag-sourced generation
-    /// arriving after the cross, and bytes fetched eagerly under the old
-    /// identity would then be pinned onto the pasteboard as the wrong file —
-    /// a promise can be revised and a `file://` URL cannot. It also keeps
-    /// the single wire lane free, so the drop's own redemption is never
-    /// refused `busy` by a head start it no longer wants. A drag-sourced
-    /// candidate has nothing left to revise and keeps the head start.
-    func dragItem(for stub: ContinuityDragStub,
-                  revisable: Bool = false) -> HostFileDragItem {
+    func dragItem(for stub: ContinuityDragStub) -> HostFileDragItem {
         let bytes = ContinuityFileDragPolicy.totalBytes(
             dataSize: stub.item.dataSize, resourceSize: stub.item.resourceSize)
         let promiseWriter = promise(for: stub)
         let binding = newBinding(for: stub, provider: promiseWriter)
         let image = NSWorkspace.shared.icon(for: stub.utType)
-        if revisable {
-            audit(.info, "drag payload: keeping this drag on its promise "
-                + "(gesture \(binding.gesture)): it is bound to the "
-                + "SELECTION cache, and the Mac can still name a different "
-                + "file for this gesture up to the drop — fetched bytes "
-                + "cannot be revised, a promise can")
-            return HostFileDragItem(writer: promiseWriter, image: image)
-        }
         guard let fetch = beginEagerFetch(for: stub, bytes: bytes) else {
             audit(.info, "drag payload: " + ContinuityFileDragPolicy.summary(
                 bytes: bytes, eager: false))
@@ -317,6 +299,13 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                 bytes: bytes, eager: true,
                 elapsedMs: Int(fetch.elapsedMs ?? 0))
                 + " — using a real file URL, not a promise")
+            /* AND THE LATE-BIND WINDOW CLOSES WITH IT. The bytes are on the
+               pasteboard now; nothing arriving afterwards can change which
+               file this drag is carrying, so the binding says so out loud
+               instead of accepting a revision that would be cosmetic. */
+            if let liveBinding, liveBinding.stub?.generation == stub.generation {
+                liveBinding.pin()
+            }
             return url as NSURL
         case .failure(let error):
             audit(.warn, "drag payload: eager fetch failed; falling back to "
@@ -506,12 +495,12 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
             if let binding = self.liveBinding,
                binding.providerID == providerID {
                 stub = binding.redeem()
-                if let stub, stub.generation != frozen?.generation {
+                if let stub, stub.generation != binding.seed?.generation {
                     self.audit(.info, "grab redeems a LATE bind: gesture "
                         + "\(binding.gesture), name=\(stub.item.name), "
                         + "generation=\(stub.generation), replacing the "
                         + "generation this crossing started with "
-                        + "(\(frozen.map { String($0.generation) } ?? "none"))")
+                        + "(\(binding.seed.map { String($0.generation) } ?? "none"))")
                 }
             } else {
                 stub = frozen

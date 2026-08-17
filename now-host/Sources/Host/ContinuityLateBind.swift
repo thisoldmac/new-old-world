@@ -48,15 +48,30 @@ final class ContinuityDragBinding {
     /// What the drop will ask the Mac for, or nil while this gesture is
     /// still waiting to be told.
     private(set) var stub: ContinuityDragStub?
+    /// What the crossing STARTED with, kept for the redemption's own line.
+    /// The provider's `userInfo` follows every revision, so it cannot answer
+    /// "was this a late bind" at the drop — and that is the one question the
+    /// next wrong-file report will ask.
+    let seed: ContinuityDragStub?
     /// The drop has taken its answer. Nothing may revise the binding after
     /// this: a file already being fetched under one identity cannot become
     /// a different file, and a generation arriving late enough to try is a
     /// generation about the NEXT gesture.
     private(set) var redeemed = false
+    /// The pasteboard already carries this file's BYTES, not a promise.
+    ///
+    /// An eager fetch that wins its race hands AppKit a real `file://` URL,
+    /// because a promise-only pasteboard reads as nothing-droppable to every
+    /// application that never adopted `NSFilePromiseReceiver` (metal,
+    /// 2026-08-15). That is worth keeping — but a pasteboard cannot be
+    /// revised once a session exists, so a drag that took the head start has
+    /// spent its right to a late bind and says so rather than pretending.
+    private(set) var pinned = false
 
     init(gesture: UInt64, stub: ContinuityDragStub?) {
         self.gesture = gesture
         self.stub = stub
+        seed = stub
     }
 
     func attach(_ provider: NSFilePromiseProvider) {
@@ -65,8 +80,18 @@ final class ContinuityDragBinding {
         provider.userInfo = stub
     }
 
+    /// The eager fetch won: this drag carries bytes, and bytes cannot be
+    /// revised.
+    func pin() { pinned = true }
+
     /// Applies a late `.dragged` verdict, or says why it could not.
     func revise(to next: ContinuityDragStub) -> ContinuityLateBind.Outcome {
+        guard !pinned else {
+            return .unusable(reason: "this drag already carries the file's "
+                + "own bytes — an eager fetch won the race before the Mac "
+                + "named anything else, and a pasteboard cannot be revised "
+                + "once a session exists")
+        }
         guard !redeemed else {
             return .refusedRedeemed(gesture: gesture,
                                     generation: next.generation)
