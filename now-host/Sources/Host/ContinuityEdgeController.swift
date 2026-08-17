@@ -967,6 +967,18 @@ final class ContinuityEdgeController: ObservableObject {
     /// `pointerLeft` or removing the observation monitor.
     private func endOwnership(nextState: State, status nextStatus: String?,
                               keepInputCapture: Bool = false) {
+        /* The defensive half of the hide/show balance, not the ordinary
+           one: `hostFileExited`/`hostFileDropped` already call
+           `endHostDragPresentation` on the paths that go through them, and
+           this repeats there as a no-op (the `announcedHostDragArrival`
+           guard). What this line actually catches is every OTHER way
+           ownership can end while a host file drag is still announced —
+           transport idle, transport ended, `stop()`, and a pointer
+           crossing back to host under `hostDragOverThisMac` (which returns
+           through `returnToHost` without visiting `hostFileExited` first,
+           relying on AppKit's own `draggingExited` to arrive after). None
+           of those should be able to leave the host cursor hidden. */
+        endHostDragPresentation()
         restoreHostCursor(from: ownership ?? pending,
                           keepInputCapture: keepInputCapture)
         stopKeyboardCapture()
@@ -1483,6 +1495,45 @@ final class ContinuityEdgeController: ObservableObject {
         }
     }
 
+    /// Hides the host cursor's VISIBLE LAYER — nothing else — for the
+    /// length of a host file drag. Deliberately narrower than
+    /// `hideHostCursor`: that call also detaches and pins the real cursor,
+    /// and that machinery stays off for a host file drag on purpose (see
+    /// the `!hostFileDrag` guards throughout this file) because the drag
+    /// session belongs to Finder, not this app, and this app cannot safely
+    /// warp or detach the cursor out from under someone else's live
+    /// `NSDraggingSession`.
+    ///
+    /// KNOWN OPEN QUESTION, recorded rather than resolved here: whether
+    /// `CGDisplayHideCursor` also suppresses AppKit's drag-image
+    /// compositing layer (the native ghost + green `+` badge this call
+    /// exists to hide) or only the arrow cursor itself is metal/attended
+    /// evidence this change does not have — see docs/open-issues.md. This
+    /// makes the attempt; it does not claim the visual defect fixed.
+    ///
+    /// Idempotent per gesture and independent of `cursorHiddenOn` — see
+    /// `hostDragCursorHiddenOn`.
+    private func hideHostDragCursor(on displayID: UInt32) {
+        guard hostDragCursorHiddenOn == nil else { return }
+        environment.hideCursor(on: displayID)
+        hostDragCursorHiddenOn = displayID
+        audit(.info, "host file drag: hid the host cursor's visible layer "
+            + "(gesture=\(hostFileDragGestureID), display=\(displayID))")
+    }
+
+    /// The only place that clears `hostDragCursorHiddenOn`. Safe to call
+    /// whether or not the cursor is currently hidden by this path — every
+    /// exit funnels through here (directly via `endHostDragPresentation`,
+    /// or defensively via `endOwnership`/`deinit`) so a hide can never
+    /// outlive the gesture that requested it.
+    private func showHostDragCursor() {
+        guard let id = hostDragCursorHiddenOn else { return }
+        environment.showCursor(on: id)
+        hostDragCursorHiddenOn = nil
+        audit(.info, "host file drag: restored the host cursor's visible "
+            + "layer (gesture=\(hostFileDragGestureID))")
+    }
+
     private func hideHostCursor(for ownership: Ownership) {
         let id = ownership.edge.host.id
         guard cursorHiddenOn == nil else { return }
@@ -1740,7 +1791,20 @@ final class ContinuityEdgeController: ObservableObject {
            drawing it either way. */
         if !announcedHostDragArrival {
             announcedHostDragArrival = true
+            hostFileDragGestureID &+= 1
             hostDragArrived?(pasteboard)
+            /* The guest is now drawing its own honest carried-file image
+               (the call just above). Hide the host's real cursor layer so
+               the two don't read as competing cursors — see
+               `hideHostDragCursor`'s doc comment for what this is and is
+               not proven to suppress. */
+            if let id = layout.sharedEdge?.host.id {
+                hideHostDragCursor(on: id)
+            } else {
+                audit(.warn, "host file drag arrived with no shared edge "
+                    + "display to hide the cursor on (gesture="
+                    + "\(hostFileDragGestureID))")
+            }
         }
         if hostFileDrag {
             /* Every `draggingUpdated` lands here too — the strip is asked on
@@ -1785,6 +1849,12 @@ final class ContinuityEdgeController: ObservableObject {
     private func endHostDragPresentation() {
         guard announcedHostDragArrival else { return }
         announcedHostDragArrival = false
+        /* Restore the visible cursor layer before telling the guest to
+           drop its presentation, not after: the moment this Mac stops
+           speaking for the gesture is the moment the human's own cursor
+           should be theirs again, not whenever the guest gets around to
+           it. */
+        showHostDragCursor()
         hostDragDeparted?()
     }
 
@@ -1850,6 +1920,7 @@ final class ContinuityEdgeController: ObservableObject {
             if let keyboardMonitor { keyboardEnvironment.stop(keyboardMonitor) }
             if let fileEdge { environment.hideFileEdge(fileEdge) }
             if let id = cursorHiddenOn { environment.showCursor(on: id) }
+            if let id = hostDragCursorHiddenOn { environment.showCursor(on: id) }
             /* The last chance to give the mouse back, and unlike the audited
                paths above there is nobody left to report a failure to. */
             if cursorDissociated {
