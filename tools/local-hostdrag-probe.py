@@ -217,6 +217,108 @@ def tail_pages(guest, max_pages=25, page_lines=40, area="mirror", udp=None):
     return flat
 
 
+def read_gesture(rows, entry, drop, floor, gesture="desktop"):
+    """WHAT THE GUEST'S OWN LOG SAYS THE GESTURE WAS — the five readings
+    the slice-1 rig could not make.
+
+    That rig verified the promise protocol and the byte path and NOTHING
+    about the gesture: it published the drop point and the button-up
+    before the guest's service pass ran the held begin, so a TrackDrag
+    that returned on its first sample still dropped the file at the
+    intended target and the byte-compare passed. `plane=0` was printed in
+    every passing receipt and read as noise.
+
+    Each reading is reported with its own evidence line and its own
+    verdict, and a MISSING line is reported as missing rather than as a
+    failure: absence and defect must not share a word (AGENTS.md).
+    """
+    import re as _re
+
+    text = [str(r) for r in rows]
+
+    def find(pattern):
+        rx = _re.compile(pattern)
+        for line in reversed(text):
+            m = rx.search(line)
+            if m:
+                return m, line
+        return None, None
+
+    out = {}
+    detail, detail_line = find(
+        r"drag detail: button plane=(\d+) toolbox=(\d+) at (-?\d+),(-?\d+) "
+        r"setup=(\d+) track=(\d+) ticks")
+    inputs, input_line = find(
+        r"drag input: calls=(-?\d+) fed=(-?\d+) down=(-?\d+) up=(-?\d+)")
+    dropline, drop_line = find(
+        r"drag drop: loc='(.{0,4})' err=(-?\d+) end=(-?\d+),(-?\d+)")
+    ripe, ripe_line = find(
+        r"drag hostDragBegin seq=(\d+) ripened: plane button held after "
+        r"(\d+) ticks")
+    applied = [line for line in text if "button edge gen=" in line]
+
+    out["trackTicks"] = int(detail.group(6)) if detail else None
+    out["planeAtEntry"] = int(detail.group(1)) if detail else None
+    out["entryLogged"] = ([int(detail.group(3)), int(detail.group(4))]
+                          if detail else None)
+    out["inputDowns"] = int(inputs.group(3)) if inputs else None
+    out["inputUps"] = int(inputs.group(4)) if inputs else None
+    out["inputCalls"] = int(inputs.group(1)) if inputs else None
+    out["dropEnd"] = ([int(dropline.group(3)), int(dropline.group(4))]
+                      if dropline else None)
+    out["dropLoc"] = dropline.group(1) if dropline else None
+    out["ripenTicks"] = int(ripe.group(2)) if ripe else None
+    out["appliedButtonEdges"] = len(applied)
+    out["evidence"] = [line for line in
+                       (detail_line, input_line, drop_line, ripe_line)
+                       if line]
+
+    def verdict(value, ok, why):
+        return {"value": value,
+                "verdict": "absent" if value is None else
+                           ("pass" if ok else "FAIL"),
+                "why": why}
+
+    end = out["dropEnd"]
+    checks = {
+        "trackRanForAGesture": verdict(
+            out["trackTicks"],
+            out["trackTicks"] is not None and out["trackTicks"] >= floor,
+            f"TrackDrag must have run >= {floor} ticks; one tick is the "
+            "instant drop this fix is about"),
+        "planeHeldAtEntry": verdict(
+            out["planeAtEntry"], out["planeAtEntry"] == 1,
+            "the plane's button must read DOWN as TrackDrag is entered"),
+        "inputProcSawTheButtonDown": verdict(
+            out["inputDowns"],
+            out["inputDowns"] is not None and out["inputDowns"] > 0,
+            "the Manager must have sampled a held button through our proc"),
+        # An abort has no drop by design — the Manager returns
+        # userCanceledErr and plays its own snap-back — so it is asked the
+        # question it HAS: did the gesture end where the pointer was
+        # driven, having travelled there first.
+        "droppedAtTheRelease": verdict(
+            end,
+            end is not None
+            and abs(end[0] - drop[0]) <= 8 and abs(end[1] - drop[1]) <= 8
+            and (abs(end[0] - entry[0]) > 8 or abs(end[1] - entry[1]) > 8),
+            ("the gesture must end where the button was released, away "
+             "from the entry point" if gesture == "abort" else
+             "the drop must land where the button was released, at a point "
+             "published AFTER the begin and away from the entry point")),
+        "residentAppliedNoButton": verdict(
+            out["appliedButtonEdges"], out["appliedButtonEdges"] == 0,
+            "a carried level must advance no generation, so the resident "
+            "applies nothing and D5 survives the fix"),
+        "beginRipenedOnTheLevel": verdict(
+            out["ripenTicks"], out["ripenTicks"] is not None,
+            "the guest must have gated its begin on the plane's level"),
+    }
+    out["checks"] = checks
+    out["passed"] = all(c["verdict"] == "pass" for c in checks.values())
+    return out
+
+
 class Shots:
     """QMP screendumps: the guest's screen from OUTSIDE the guest. The
     `screenshot` verb travels the wire under measurement; QMP does not."""
@@ -292,6 +394,16 @@ def main():
     ap.add_argument("--wait", type=float, default=300)
     ap.add_argument("--timeout", type=float, default=20)
     ap.add_argument("--hold", type=float, default=3.0)
+    ap.add_argument("--button-edges", action="store_true",
+                    help="drive the button as generation EDGES, the way "
+                         "this rig did before 2026-08-17. The product "
+                         "holds a level with no generation behind it; this "
+                         "reproduces the older shape, in which the "
+                         "resident applies a real press and the rig cannot "
+                         "see an instant drop.")
+    ap.add_argument("--track-floor", type=int, default=30,
+                    help="ticks TrackDrag must have run for the gesture to "
+                         "have been a gesture rather than an instant drop")
     ap.add_argument("--verify", action="store_true",
                     help="read the landed file back through the guest's own "
                          "File Manager and compare it whole")
@@ -474,12 +586,21 @@ def main():
                     "epoch": epoch, "generation": 1, "item": item})
         guest.pump(0.5, udp=udp, on_message=serve)
 
-        # THE BUTTON IS DOWN BEFORE THE INSTRUCTION, and the generation is
-        # bumped for the edge. The guest synthesises its own starting
-        # EventRecord, but the input proc reads THIS plane from its first
-        # sample — a plane still reporting button-up would end the drag on
-        # the Manager's first look.
-        state["generation"] += 1
+        # THE BUTTON IS A LEVEL, NOT AN EDGE, AND THAT IS THE PRODUCT
+        # SEQUENCING. The host holds `.primaryDown` in the plane for the
+        # life of a staged carry WITHOUT advancing buttonGeneration, so
+        # the guest's resident applies nothing (it acts only on a newer
+        # generation) while the drag's input proc reads a held button.
+        # Bumping the generation here is what made this rig disagree with
+        # the product: the resident applied a real press, and the
+        # release-at-the-target that followed was applied before the
+        # guest's service pass had run the held begin — so an instantly
+        # returning TrackDrag produced a drop at the intended target and
+        # every assertion passed (F2, "the rig blind spot"). `--button-
+        # edges` restores that older shape for comparison, and is not the
+        # product.
+        if args.button_edges:
+            state["generation"] += 1
         for _ in range(20):
             send_state(args.start_x, args.start_y, True)
             guest.pump(0.02, udp=udp, on_message=serve)
@@ -514,7 +635,11 @@ def main():
             guest.pump(0.05, udp=udp, on_message=serve)
         shots.take(f"r{attempt}-02-held")
 
-        state["generation"] += 1
+        # And the release is a cleared LEVEL for the same reason: over
+        # there it is the input proc's next sample, which is what ends
+        # TrackDrag where the person let go.
+        if args.button_edges:
+            state["generation"] += 1
         for _ in range(25):
             send_state(drop_x, drop_y, False)
             guest.pump(0.04, udp=udp, on_message=serve)
@@ -527,6 +652,10 @@ def main():
         report = guest.ask("offer", timeout=60, udp=udp, on_message=serve)
         rows = tail_pages(guest, udp=udp)
         results.append({"epoch": epoch, "report": report,
+                        "gesture": read_gesture(
+                            rows, [args.start_x, args.start_y],
+                            [drop_x, drop_y], args.track_floor,
+                            args.gesture),
                         "logRows": rows[-160:]})
         guest.send({"type": "continuity.disarm",
                     "version": CONTINUITY.version, "id": 7301 + attempt,
@@ -617,6 +746,8 @@ def main():
         "desktopCountBefore": before,
         "desktopCountAfter": after,
         "served": {"grabs": served["grabs"], "bytesSent": served["sent"]},
+        "buttonMode": "edges" if args.button_edges else "level",
+        "gestureChecksPassed": all(r["gesture"]["passed"] for r in results),
         "rounds": results,
         "verify": verify,
         "screendumps": shots.taken,

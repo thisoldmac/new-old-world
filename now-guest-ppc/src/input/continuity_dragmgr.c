@@ -1112,7 +1112,14 @@ static void start_drag(void)
 
                Two lines: nowlog truncates a body at 99 characters and
                the tail is where the coordinates are. */
-            if ((g_diag_mask & 24) != 0) {
+            /* PRINTED ALWAYS, no longer behind a diagnostic bit. These
+               three fields are what tell an instant drop from a gesture
+               — `down=0` beside `track=1 ticks` is the 2026-08-17 metal
+               defect, and it was invisible in every passing receipt
+               because the bit that would have shown it was off. A
+               reading the artifact does not carry is a reading nobody
+               has. */
+            {
                 now_log(kLogInfo, "mirror",
                         "drag input: calls=%ld fed=%ld down=%ld up=%ld",
                         g_diag_input_calls, g_diag_input_fed,
