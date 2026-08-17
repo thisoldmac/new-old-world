@@ -31,16 +31,18 @@ session-private clone of `now-mirror-stage.qcow2`, sha256
 this tree — `sourceManifest 1df8e014ab79`, `buildFingerprint
 5410aeef3706`, resident `active`, capabilities `1023`, guest build
 `fc56abbcb6eb`, OS 9.1 on `Power Mac G4`, lane block 955, ports
-19640/19641. Three runs. The instrument is
+19640/19641. Four runs on one boot. The instrument is
 `now-host/Tests/HostTests/LiveDragInputProcExperiment.swift` (opt-in,
 `NOW_DRAG_INPUT_PROC=1`), which captures the guest's screen through
 **QMP** rather than through the wire under measurement.
 
 **Receipts are outside the run directory**, at
-`/private/tmp/now-slice0-receipts/` (`run1/`, `run2/`, `run3/`, each
-with its transcript and screendumps, plus `provenance.md` copied out of
-the run dir before teardown). That is the rule the 2026-08-17 run paid
-for, applied.
+`/private/tmp/now-slice0-receipts/` (`run1/` … `run4/`, each with its
+transcript and screendumps, plus `provenance.md`/`provenance.json`/
+`staged.json` copied out of the run dir before teardown, and
+`spin-up.log`). That is the rule the 2026-08-17 run paid for, applied —
+and the run directory has since been removed by `lane-ports reclaim`
+exactly as it was last time, with the evidence unaffected.
 
 ### The spike
 
@@ -163,13 +165,15 @@ cleanest single line this whole arc has produced, and they are the exact
 inverse of the 2026-08-17 reading:
 
 ```
-drag attrs: 0x00000001 left=1 inapp=0 inwin=0     (2026-08-17 slice 0)
-drag attrs: 0x00000005 left=1 inapp=0 inwin=1     (2026-08-17, the wall)
+drag attrs: 0x00000005 left=1 inapp=0 inwin=1     the wall, earlier today
+drag attrs: 0x00000001 left=1 inapp=0 inwin=0     gesture B2, this run
 ```
 
 `inwin=0` — the drag did not end inside the sender window — with
 `inapp=0` and `TrackDrag` returning `noErr`. There is no longer any
-reading on which this drag stayed home.
+reading on which this drag stayed home. Note this is the gesture whose
+*bytes* failed: the drop reached the Finder and the promise was asked;
+only the delivery into an existing name did not happen.
 
 **Same-name-twice: the Finder shows NO dialog, and creates nothing.**
 Run 4 dropped `Collide46699.txt` (4096 bytes) onto exposed desktop
@@ -197,7 +201,11 @@ settles — and the honest reading is that the imitation's *replacement*
 is a fixed send proc (uniquify, or overwrite deliberately), not a
 different dialog.
 
-**Copy progress: still UNANSWERED**, for the reason in the next section.
+**Copy progress: still UNANSWERED.** No screendump in any run shows a
+Finder progress window, but every completed pull was 4 KB and finished
+inside a single frame, so their silence is not evidence of absence. The
+size that would be slow enough to answer the question is the size that
+does not land — see the next section.
 
 ### A NEW defect this slice found, unrelated to Route A′: 600 KB does not survive the pull
 
