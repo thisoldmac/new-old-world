@@ -178,6 +178,63 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
         return provider
     }
 
+    // MARK: - Late bind
+    //
+    // The measured shape this serves: the crossing RELEASES the guest press,
+    // the Finder's drag loop ends, and only then does the Mac get task time
+    // to publish what was in the hand — 14 ticks (~230 ms) later, per the
+    // 2026-08-16 round. The AppKit session started at the cross outlives that
+    // by seconds, and its promise is not asked for a file until the drop. So
+    // the identity a drop redeems is held in a box that one late
+    // drag-sourced generation may revise. See `ContinuityDragBinding`.
+
+    /// The binding for the crossing this Mac is currently carrying, if any.
+    /// One at a time, for the same reason `grabInFlight` is: there is one
+    /// wire and one gesture.
+    private(set) var liveBinding: ContinuityDragBinding?
+    private var gestureSerial: UInt64 = 0
+
+    private func newBinding(for stub: ContinuityDragStub?,
+                            provider: NSFilePromiseProvider)
+        -> ContinuityDragBinding {
+        gestureSerial &+= 1
+        let binding = ContinuityDragBinding(gesture: gestureSerial, stub: stub)
+        binding.attach(provider)
+        liveBinding = binding
+        return binding
+    }
+
+    /// A drag that crosses with NOTHING named yet.
+    ///
+    /// The single-gesture case reaches the edge before the Mac has said one
+    /// word about the file: an icon nobody selected first has no cache entry
+    /// to inherit, and the drag-sourced generation is still stuck behind the
+    /// Finder's own loop. Refusing there is what forced the select-then-drag
+    /// ritual — so the session starts anyway, carrying a promise nobody has
+    /// filled in, and the generation that arrives a fifth of a second later
+    /// fills it. If none ever does, the drop refuses by name and no byte
+    /// moves; an empty promise is not a guess, it is a placeholder that can
+    /// only ever be redeemed by something the Mac itself said.
+    func pendingDragItem() -> HostFileDragItem {
+        let provider = NSFilePromiseProvider(
+            fileType: UTType.data.identifier, delegate: self)
+        let binding = newBinding(for: nil, provider: provider)
+        audit(.info, "drag payload: nothing is named yet (gesture "
+            + "\(binding.gesture)); this drag carries an unfilled promise "
+            + "until the Mac publishes what was in the hand — the drop is "
+            + "what redeems it, and it refuses if nothing ever arrives")
+        return HostFileDragItem(
+            writer: provider,
+            image: NSWorkspace.shared.icon(for: .data))
+    }
+
+    /// Applies a late drag-sourced generation to the live crossing.
+    func reviseLiveBinding(to stub: ContinuityDragStub)
+        -> ContinuityLateBind.Outcome {
+        guard let liveBinding else { return .noGesture }
+        return liveBinding.revise(to: stub)
+    }
+
     /// The drag image. Stub icon extraction from the guest's desktop
     /// database is declared by the contract and deliberately unsent, so this
     /// is the generic icon for the type the OSType named — honest about
@@ -190,11 +247,30 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     /// come at a Finder window. See `ContinuityFileDragPolicy` for the cap
     /// and `EagerFetch` for how the two outcomes are reconciled at drag
     /// start.
-    func dragItem(for stub: ContinuityDragStub) -> HostFileDragItem {
+    ///
+    /// `revisable` is the late-bind half: a candidate that came from the
+    /// SELECTION cache may still be replaced by a drag-sourced generation
+    /// arriving after the cross, and bytes fetched eagerly under the old
+    /// identity would then be pinned onto the pasteboard as the wrong file —
+    /// a promise can be revised and a `file://` URL cannot. It also keeps
+    /// the single wire lane free, so the drop's own redemption is never
+    /// refused `busy` by a head start it no longer wants. A drag-sourced
+    /// candidate has nothing left to revise and keeps the head start.
+    func dragItem(for stub: ContinuityDragStub,
+                  revisable: Bool = false) -> HostFileDragItem {
         let bytes = ContinuityFileDragPolicy.totalBytes(
             dataSize: stub.item.dataSize, resourceSize: stub.item.resourceSize)
         let promiseWriter = promise(for: stub)
+        let binding = newBinding(for: stub, provider: promiseWriter)
         let image = NSWorkspace.shared.icon(for: stub.utType)
+        if revisable {
+            audit(.info, "drag payload: keeping this drag on its promise "
+                + "(gesture \(binding.gesture)): it is bound to the "
+                + "SELECTION cache, and the Mac can still name a different "
+                + "file for this gesture up to the drop — fetched bytes "
+                + "cannot be revised, a promise can")
+            return HostFileDragItem(writer: promiseWriter, image: image)
+        }
         guard let fetch = beginEagerFetch(for: stub, bytes: bytes) else {
             audit(.info, "drag payload: " + ContinuityFileDragPolicy.summary(
                 bytes: bytes, eager: false))
@@ -413,17 +489,38 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
         writePromiseTo url: URL,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        let stub = provider.userInfo as? ContinuityDragStub
+        let frozen = provider.userInfo as? ContinuityDragStub
+        let providerID = ObjectIdentifier(provider)
         let completion = GrabCompletion(completionHandler)
         Task { @MainActor [weak self] in
             guard let self else {
                 completion.finish(GrabError.noStub)
                 return
             }
+            /* THE REVISION WINDOW CLOSES HERE, and this is the only place it
+               closes. Redeeming is what makes the identity final: from this
+               line on a late generation is about the next gesture, and the
+               binding says so out loud rather than quietly swapping a file
+               whose bytes are already being asked for. */
+            let stub: ContinuityDragStub?
+            if let binding = self.liveBinding,
+               binding.providerID == providerID {
+                stub = binding.redeem()
+                if let stub, stub.generation != frozen?.generation {
+                    self.audit(.info, "grab redeems a LATE bind: gesture "
+                        + "\(binding.gesture), name=\(stub.item.name), "
+                        + "generation=\(stub.generation), replacing the "
+                        + "generation this crossing started with "
+                        + "(\(frozen.map { String($0.generation) } ?? "none"))")
+                }
+            } else {
+                stub = frozen
+            }
             guard let stub else {
-                self.audit(.error, "grab refused: the dropped promise carried "
-                    + "no selection stub, so there is nothing to ask the Mac "
-                    + "for")
+                self.audit(.error, "grab refused: this drag crossed with "
+                    + "nothing named and the Mac never published a "
+                    + "drag-sourced generation for it, so there is nothing "
+                    + "to ask for — no file is guessed at")
                 completion.finish(GrabError.noStub)
                 return
             }

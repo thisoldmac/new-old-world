@@ -171,14 +171,44 @@ enum ContinuityFileDrag {
                         audit(.info, unusable.message)
                         return nil
                     case .success(let stub):
+                        /* A candidate the SELECTION lane named can still be
+                           replaced by the drag plane after the cross, so it
+                           travels as a promise and fetches nothing eagerly;
+                           one the drag plane named has nothing left to
+                           revise. See `dragItem(for:revisable:)`. */
+                        let revisable =
+                            (selectionMark?()?.source ?? .selection) != .drag
                         audit(.info, "press bound to the guest selection: "
                             + "epoch=\(stub.epoch), "
                             + "generation=\(stub.generation), "
                             + "name=\(stub.item.name), "
-                            + "type=\(stub.utType.identifier)")
-                        return grab.dragItem(for: stub)
+                            + "type=\(stub.utType.identifier), "
+                            + "revisable=\(revisable ? 1 : 0)")
+                        return grab.dragItem(for: stub, revisable: revisable)
                     }
-                })
+                },
+                /* THE LATE-BIND LANE. Wired from the same two halves as the
+                   stub lane above and for the same reason: a crossing this
+                   Mac can revise but never redeem would be a promise nobody
+                   can fill. See `ContinuityLateBind`. */
+                lateBind: ContinuityLateBind.Lane(
+                    pendingItem: { [weak grab] in grab?.pendingDragItem() },
+                    gesture: { [weak grab] in grab?.liveBinding?.gesture },
+                    revise: { [weak grab] mark in
+                        guard let grab else { return .noGesture }
+                        switch selection() {
+                        case .failure(let unusable):
+                            return .unusable(reason: unusable.message)
+                        case .success(let stub):
+                            guard stub.epoch == mark.epoch,
+                                  stub.generation == mark.generation else {
+                                return .unusable(reason: "the Mac's cache no "
+                                    + "longer names generation "
+                                    + "\(mark.generation)")
+                            }
+                            return grab.reviseLiveBinding(to: stub)
+                        }
+                    }))
         }
         edge.configureFileDragging(
             guestFileAtPoint: { [weak fileTransfer] point in

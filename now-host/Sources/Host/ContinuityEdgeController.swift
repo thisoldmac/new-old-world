@@ -240,6 +240,10 @@ final class ContinuityEdgeController: ObservableObject {
     private var guestFileAtPoint: ((MirrorKit.Point) -> HostFileDragItem?)?
     private var guestSelectionItem: (() -> HostFileDragItem?)?
     private var guestSelectionMark: (() -> ContinuitySelectionMark?)?
+    /// Starting a crossing with nothing bound, and revising one after the
+    /// cross. Nil where the lane is not wired, which is every caller that
+    /// predates late bind. See `ContinuityLateBind.Lane`.
+    private var lateBind: ContinuityLateBind.Lane?
     /// What the selection lane knew when the press went out, kept until the
     /// cross decides what to bind. See `ContinuitySelectionBind`.
     private struct PressedSelection {
@@ -483,12 +487,86 @@ final class ContinuityEdgeController: ObservableObject {
     /// transferred `hello.txt` while `main.c` was being dragged. The press
     /// records what the cache held; the cross compares and decides. See
     /// `ContinuitySelectionBind`.
+    ///
+    /// AND THE CROSS IS NOT FINAL EITHER. The drag-sourced generation — the
+    /// one fact that names an unselected icon — cannot reach this Mac before
+    /// the cross, because the Finder's drag loop starves the guest
+    /// application of task time and the cross is what ends that loop by
+    /// releasing the press. Measured 2026-08-16: it arrives ~230 ms AFTER
+    /// the crossing, into an AppKit session with seconds left to live. So
+    /// `lateBind.pendingItem` lets a cross with nothing bound start a
+    /// session anyway, and `lateBind.revise` lets that one generation replace
+    /// what it carries, up to the drop. See `ContinuityDragBinding`.
     func configureSelectionDragging(
         guestSelectionMark: @escaping () -> ContinuitySelectionMark?,
-        guestSelectionItem: @escaping () -> HostFileDragItem?
+        guestSelectionItem: @escaping () -> HostFileDragItem?,
+        lateBind: ContinuityLateBind.Lane? = nil
     ) {
         self.guestSelectionMark = guestSelectionMark
         self.guestSelectionItem = guestSelectionItem
+        self.lateBind = lateBind
+    }
+
+    /// The Mac published a selection. Called for EVERY arrival, and almost
+    /// every one of them is none of this lane's business — the interesting
+    /// case is the one that arrives after this Mac has already committed a
+    /// crossing.
+    ///
+    /// Three refusals, each said out loud rather than returned silently:
+    ///
+    /// - **A cross under a HOST drag binds nothing**, and late bind must not
+    ///   be the way that gets undone. `hostDragOverThisMac` is the same flag
+    ///   the cross itself keys off (`37241007`); widening the window in
+    ///   which a bind can be revised must not widen the window in which a
+    ///   refused one can come back.
+    /// - **Only a drag-sourced generation may revise.** Everything else is a
+    ///   cache of what was selected, and a cache that arrives after the
+    ///   crossing has no claim on the gesture at all — `decide` already
+    ///   ranks it below a drag, and after the cross it is simply late news.
+    /// - **After redemption, nothing.** The drop has asked the Mac for a
+    ///   specific generation; a file arriving under one name and being
+    ///   swapped for another mid-fetch is the wrong-file bug wearing a new
+    ///   hat.
+    func noteSelectionPublished(_ mark: ContinuitySelectionMark) {
+        guard let lateBind else { return }
+        guard pendingReturnDrag != nil || hostDragSessionLive else { return }
+        let gesture = lateBind.gesture().map(String.init) ?? "none"
+        if hostDragOverThisMac {
+            audit(.info, "not revising this crossing (gesture "
+                + "\(gesture)): it carries a drag from this Mac, not "
+                + "the guest's, and a cross under a host drag binds nothing "
+                + "— generation \(mark.generation) changes nothing here")
+            return
+        }
+        guard mark.source == .drag else {
+            audit(.info, "not revising this crossing (gesture "
+                + "\(gesture)): generation \(mark.generation) is a "
+                + "selection, published after the cross — only the drag "
+                + "plane names the file in the hand, and a cache arriving "
+                + "late has no claim on a gesture already in flight")
+            return
+        }
+        switch lateBind.revise(mark) {
+        case .revised(let gesture, let from, let to):
+            audit(.info, "late bind: this crossing now carries \(to) "
+                + "(gesture \(gesture), source=drag, epoch=\(mark.epoch)), "
+                + "replacing \(from ?? "nothing at all") — the Mac could "
+                + "not say what was in the hand until its own drag loop "
+                + "ended, and the drop is what redeems this")
+        case .refusedRedeemed(let gesture, let generation):
+            audit(.warn, "late bind refused: generation \(generation) "
+                + "(source=drag) arrived after the drop redeemed gesture "
+                + "\(gesture); the file being fetched is already decided "
+                + "and this Mac does not swap one mid-transfer")
+        case .unchanged(let gesture, let generation):
+            audit(.info, "late bind: gesture \(gesture) already carries "
+                + "generation \(generation); nothing to revise")
+        case .unusable(let reason):
+            audit(.info, "late bind not applied: \(reason)")
+        case .noGesture:
+            audit(.info, "late bind not applied: no crossing of this Mac's "
+                + "is waiting for one")
+        }
     }
 
     /// Whether the file seam has an owner at all. Both callbacks are a
@@ -751,7 +829,25 @@ final class ContinuityEdgeController: ObservableObject {
                 return
             }
             if sample.buttonsDown { resolveSelectionBindingAtCross() }
-            if sample.buttonsDown, let item = guestFileCandidate {
+            if sample.buttonsDown, guestFileCandidate == nil,
+               pressedSelection != nil,
+               let pending = lateBind?.pendingItem() {
+                /* THE SINGLE GESTURE, AND THE ONLY MOMENT IT CAN BE SERVED.
+                   Nothing is bound because nothing could be: an icon nobody
+                   selected first leaves no cache entry, and the fact that
+                   names it is stuck behind the Finder's drag loop, which
+                   THIS handback is about to end. Refusing here is what made
+                   a person click the file before dragging it. The session
+                   starts carrying an unfilled promise instead, and the
+                   generation that arrives ~230 ms from now fills it — or
+                   the drop refuses by name and no byte moves. */
+                audit(.info, "no file is bound to this cross; starting the "
+                    + "drag pending a late bind: the Mac cannot name what is "
+                    + "in the hand until this release ends its drag loop, "
+                    + "and the drop is what redeems whatever it then says")
+                returnGuestFileToHost(pending, from: ownership,
+                                      sourceEvent: sourceEvent)
+            } else if sample.buttonsDown, let item = guestFileCandidate {
                 returnGuestFileToHost(item, from: ownership,
                                       sourceEvent: sourceEvent)
             } else {

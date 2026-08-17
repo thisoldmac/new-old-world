@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import MirrorKitUI
 
 /// WHICH FILE THIS GESTURE IS CARRYING, kept answerable until the drop asks.
 ///
@@ -39,6 +40,11 @@ final class ContinuityDragBinding {
     /// asks a provider what it carries — sees the CURRENT answer rather
     /// than the seed.
     private(set) weak var provider: NSFilePromiseProvider?
+    /// The same provider's identity, kept separately because the promise
+    /// delegate's `writePromiseTo` is nonisolated: under Swift 6 the
+    /// provider itself cannot be carried into a main-actor closure, but a
+    /// plain identity can, and identity is the whole question there.
+    private(set) var providerID: ObjectIdentifier?
     /// What the drop will ask the Mac for, or nil while this gesture is
     /// still waiting to be told.
     private(set) var stub: ContinuityDragStub?
@@ -55,6 +61,7 @@ final class ContinuityDragBinding {
 
     func attach(_ provider: NSFilePromiseProvider) {
         self.provider = provider
+        providerID = ObjectIdentifier(provider)
         provider.userInfo = stub
     }
 
@@ -93,7 +100,21 @@ final class ContinuityDragBinding {
 /// that is not audited is indistinguishable, from a log, from the wrong file
 /// simply having been bound in the first place — which is the confusion the
 /// whole drag plane exists to end.
-enum ContinuityLateBind: Equatable {
+enum ContinuityLateBind {
+    /// The three calls the late-bind lane needs, named together because a
+    /// controller holding only some of them could start a crossing it can
+    /// never fill in. Same shape, and the same reason, as
+    /// `ContinuityFileDrag.Presentation`.
+    @MainActor
+    struct Lane {
+        /// A drag to start when the cross binds nothing at all.
+        var pendingItem: () -> HostFileDragItem?
+        /// Which crossing is live, for the log. Nil when none is.
+        var gesture: () -> UInt64?
+        /// Apply a generation that arrived after the cross.
+        var revise: (ContinuitySelectionMark) -> Outcome
+    }
+
     enum Outcome: Equatable {
         /// The bound candidate was replaced. `from` is nil when the crossing
         /// started with nothing at all — the single-gesture case.
