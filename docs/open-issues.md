@@ -11,8 +11,9 @@ search:
 
 Slice 0 of the blessed-path drag plan
 (`docs/plans/2026-08-17-036-feat-blessed-path-drag-plan.md`), the go/no-go
-for everything below it. **Verdict: GO on Route A′.** The entry above
-this one is not retracted — the pointer still does not move during a
+for everything below it. **Verdict: GO on Route A′.** The entry that
+follows this one ("THE DRAG NEVER LEAVES…", same day) is not retracted
+— the pointer still does not move during a
 NOW-originated `TrackDrag` — but it is no longer the wall, because the
 Drag Manager does not need the pointer to move. It needs a mouse
 *sample*, and `SetDragInputProc` is where the source gives it one.
@@ -278,8 +279,9 @@ gate is untouched.
 
 ## THE DRAG NEVER LEAVES BECAUSE THE POINTER NEVER LEAVES: the standing `inwin=1` reading survives a clean rig, and the cause is cursor authority, not targeting (2026-08-17, `test/hg-drag-native-track`)
 
-> **Its measurements stand; its conclusion does not.** The entry above
-> (slice 0, same day) drove the same drag out of NOW and completed a
+> **Its measurements stand; its conclusion does not.** The entry that
+> precedes this one ("THE WALL IS DOWN", slice 0, same day) drove the
+> same drag out of NOW and completed a
 > drop through `SetDragInputProc`. Everything below about the pointer
 > remains true — the pointer still does not move during a
 > NOW-originated `TrackDrag`. What changed is that the Drag Manager
