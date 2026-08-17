@@ -528,6 +528,83 @@ final class ContinuityGuestDragTests: XCTestCase {
         })
     }
 
+    /// **THE RESIDENT'S MID-GESTURE ANNOUNCEMENT, AND THE JOIN THAT
+    /// FINISHES IT.**
+    ///
+    /// The resident names the dragged file from inside the Finder's drag
+    /// loop and cannot name a generation — the application mints those and
+    /// is not running. So the cache holds an identity under generation 0,
+    /// which is enough to bind `.dragged` at the cross and NOT enough to
+    /// grab with; the application's own frame arrives moments later with
+    /// the same file and the real number, and the binding revises to it.
+    ///
+    /// This is the whole point of the plane in four assertions: identity
+    /// early, generation late, one gesture, no flip.
+    func testTheResidentsDragBindsBeforeTheApplicationNamesItsGeneration() {
+        let cache = ContinuitySelectionCache(audit: { _, _ in },
+                                             now: { 1_000 })
+        /* What MirrorContinuityController synthesises from a
+           continuity.dragBegin: source drag, no generation yet, and none
+           of the three fields only the File Manager could answer. */
+        let announced = ContinuitySelection(
+            version: 4, epoch: 7, generation: 0, source: .drag, dragSeq: 2,
+            item: .init(name: "HELLO_CLAUDE.txt", volumeRef: -1, dirID: 2,
+                        fileType: "TEXT", creator: "ttxt", dataSize: nil,
+                        resourceSize: nil, modifiedAt: nil, isFolder: false,
+                        icon: nil))
+        cache.apply(announced, activeEpoch: 7)
+
+        let announcedMark = try? XCTUnwrap(cache.mark)
+        XCTAssertEqual(announcedMark?.source, .drag)
+        XCTAssertEqual(announcedMark?.generation, 0,
+                       "the resident names a file, never a generation")
+        /* The cross decides on the mark, and a drag outranks every cache
+           case without any clock comparison. */
+        XCTAssertEqual(
+            ContinuitySelectionBind.decide(pressed: nil,
+                                           current: announcedMark,
+                                           downSentAt: 1_000.5),
+            .dragged(announcedMark!),
+            "the bind is already source=drag before the application has "
+            + "said anything at all")
+        /* And the identity is usable immediately — that is what was bought.
+           What it is NOT is grabbable: see the generation-0 refusal in
+           GuestListener.grabContinuityFile. */
+        guard case .success(let earlyStub) = cache.bindable(activeEpoch: 7)
+        else { return XCTFail("the announced identity is not bindable") }
+        XCTAssertEqual(earlyStub.item.name, "HELLO_CLAUDE.txt")
+        XCTAssertEqual(earlyStub.generation, 0)
+        XCTAssertNil(earlyStub.item.dataSize,
+                     "a size the resident cannot know must stay absent "
+                     + "rather than arriving as a zero")
+
+        let binding = ContinuityDragBinding(gesture: 9, stub: earlyStub)
+
+        /* THE APPLICATION'S OWN ACCOUNT OF THE SAME GESTURE, joined by
+           dragSeq: same file, real generation, and now the metadata. */
+        let published = ContinuitySelection(
+            version: 4, epoch: 7, generation: 4, source: .drag, dragSeq: 2,
+            item: Self.file(name: "HELLO_CLAUDE.txt"))
+        cache.apply(published, activeEpoch: 7)
+        guard case .success(let joined) = cache.bindable(activeEpoch: 7)
+        else { return XCTFail("the joined stub is not bindable") }
+        XCTAssertEqual(joined.generation, 4)
+        XCTAssertEqual(joined.item.dataSize, 5)
+        XCTAssertEqual(binding.revise(to: joined),
+                       .revised(gesture: 9,
+                                from: "HELLO_CLAUDE.txt (generation 0)",
+                                to: "HELLO_CLAUDE.txt (generation 4)"),
+                       "the join supplies a number, not a different file")
+        XCTAssertEqual(binding.redeem()?.generation, 4)
+
+        /* THE DEDUPE. The application's frame for a gesture already joined
+           names the same generation, so a second delivery of it revises
+           nothing rather than binding twice. */
+        let repeated = ContinuityDragBinding(gesture: 10, stub: joined)
+        XCTAssertEqual(repeated.revise(to: joined),
+                       .unchanged(gesture: 10, generation: 4))
+    }
+
     /// The box itself, where the two rules live: one revision at a time is
     /// fine, and none at all after the drop has taken its answer.
     func testTheRevisionWindowClosesAtRedemptionAndNotBefore() {
