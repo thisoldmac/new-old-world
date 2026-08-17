@@ -7649,12 +7649,25 @@ static void service_continuity_selection(void)
        duplicating both item templates to say so would double the number
        of places a field can go missing from. */
     char drag_seq[32];
+    /* `,"afterEpoch":true` or nothing, spliced beside the join key for the
+       same reason it is: the field means something on one kind of frame
+       only, and a false on every other one would be a value where the
+       contract wants a silence. */
+    const char *after_epoch;
     const char *source;
 
     if (!now_continuity_selection_poll(now_continuity_live_epoch())) {
         return;
     }
     table = now_continuity_selection_table();
+    /* THE EPOCH ON THIS FRAME HAS ALREADY ENDED, said out loud rather than
+       left for the host to work out. A crossing gesture is drained after
+       the cross ended its epoch, so its generation is minted under the
+       epoch it began in; without this field the host's only honest reading
+       of an epoch it no longer owns is "ignore it", which is exactly what
+       it did through the whole attended round of 2026-08-16. */
+    after_epoch = now_continuity_selection_published_after_epoch()
+                  ? ",\"afterEpoch\":true" : "";
     /* WHICH GESTURE MADE THIS GENERATION. Sent on every stub rather than
        only on a drag: a host that sees the field only sometimes cannot
        tell an old guest from a quiet one, and the contract's default
@@ -7697,13 +7710,14 @@ static void service_continuity_selection(void)
            a host would have to know to ignore. */
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.selection\",\"version\":%u,"
-                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\"%s,"
+                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\"%s%s,"
                  "\"item\":{"
                  "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
                  "\"dataSize\":0,\"resourceSize\":0,"
                  "\"modifiedAt\":%lu,\"isFolder\":true}}",
                  (unsigned)NOW_CONTINUITY_VERSION,
                  table->epoch, table->generation, source, drag_seq,
+                 after_epoch,
                  esc_name, (int)table->item.volume_ref, table->item.dir_id,
                  table->item.modified);
     } else {
@@ -7720,7 +7734,7 @@ static void service_continuity_selection(void)
         now_json_escape(creator, esc_creator, sizeof esc_creator);
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.selection\",\"version\":%u,"
-                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\"%s,"
+                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\"%s%s,"
                  "\"item\":{"
                  "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
                  "\"fileType\":\"%s\",\"creator\":\"%s\","
@@ -7728,6 +7742,7 @@ static void service_continuity_selection(void)
                  "\"modifiedAt\":%lu,\"isFolder\":false}}",
                  (unsigned)NOW_CONTINUITY_VERSION,
                  table->epoch, table->generation, source, drag_seq,
+                 after_epoch,
                  esc_name, (int)table->item.volume_ref, table->item.dir_id,
                  esc_type, esc_creator,
                  table->item.data_size, table->item.rsrc_size,

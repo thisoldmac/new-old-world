@@ -82,8 +82,20 @@ int now_continuity_selection_poll(unsigned long live_epoch);
    their Macintosh. */
 int now_continuity_selection_note_drag(const NowContinuityDragIdentity *ident);
 
-/* What the last change published. Never NULL. */
+/* What the last change published. Never NULL.
+
+   IT IS NOT ALWAYS THE LIVE TABLE. A gesture that crosses the edge is
+   drained after the cross has ended its epoch, so its generation is minted
+   under the epoch it BEGAN in and published from a table of its own — see
+   now_continuity_stub_publish_post_epoch. Ask
+   now_continuity_selection_published_after_epoch which one this is; the
+   wire must say so on the frame, because a host that could not tell would
+   have to read a frame naming a dead epoch as a mistake. */
 const NowContinuityStubTable *now_continuity_selection_table(void);
+
+/* Whether the table above names an epoch that has already ENDED. 1 only
+   for a post-epoch mint, and only until the next change. */
+int now_continuity_selection_published_after_epoch(void);
 
 /* Resolve a grab to a file. Returns a kNowGrab* verdict; `out` is filled
    only on kNowGrabOK. The identity triple is turned back into an FSSpec

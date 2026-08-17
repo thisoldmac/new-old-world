@@ -446,6 +446,64 @@ if poll.index("g_drag_pending") > poll.index("now_continuity_button_is_down"):
         "route reads as a resident that never published."
     )
 
+# --- 8b. the gesture whose epoch ended ----------------------------------
+#
+# THE CROSSING CASE, which published nothing at all until 2026-08-16. The
+# cross ends the epoch and the cross's own release ends the Finder's drag
+# loop, so this drain runs with no live epoch: `live_epoch == 0` above is no
+# longer permission to discard the identity, it is the branch that mints
+# under the epoch the gesture BEGAN in.
+if "now_continuity_stub_publish_post_epoch" not in note:
+    raise SystemExit(
+        "the drag publish discards a gesture whose epoch has ended. That "
+        "is every crossing drag - the cross is what ends the epoch - and "
+        "the host then holds an identity no generation ever joins."
+    )
+if "g_ended" not in note:
+    raise SystemExit(
+        "the post-epoch publish no longer names the epoch it publishes "
+        "under. A mint with no recorded ended epoch is a consent invented "
+        "after the fact; a drag seen while nothing was ever armed must "
+        "still publish nothing."
+    )
+
+settle = function_body(
+    POLL_C,
+    "static void settle_to_epoch(unsigned long live_epoch)",
+    "continuity_selection.c",
+)
+if "now_continuity_epoch_ended" not in settle:
+    raise SystemExit(
+        "the settle no longer records which epoch ended. It RESETS the "
+        "table, so after it nothing else remembers - and the drain that "
+        "arrives next is the crossing gesture's."
+    )
+if settle.index("g_table.generation") > settle.index(
+        "now_continuity_selection_settle"):
+    raise SystemExit(
+        "the ended epoch's last generation is read AFTER the settle that "
+        "resets it, so the post-epoch mint would count on from zero and "
+        "hand the host a number it may already hold for another file."
+    )
+
+# THE SETTLE ORDERING, which is the half that made the discard invisible:
+# the poll settles first and the settle resets the table, so a publish that
+# waits for the table finds nothing there. The post-epoch mint keeps its own
+# table and must be answered before the epoch gate - by construction there
+# is no live epoch when it exists.
+if "g_post_pending" not in poll:
+    raise SystemExit(
+        "the poll no longer reports the post-epoch mint, so the frame "
+        "that carries it is never sent and the crossing drag refuses."
+    )
+if poll.index("g_post_pending") > poll.index("live_epoch == 0"):
+    raise SystemExit(
+        "the post-epoch mint is checked AFTER the zero-epoch gate. There "
+        "is never a live epoch when it exists - the gesture that minted "
+        "it is the gesture that ended the epoch - so that ordering "
+        "swallows every crossing drag."
+    )
+
 # --- 9. the source crosses the wire -------------------------------------
 selection_send = function_body(
     WIRE, "static void service_continuity_selection(void)", "wire.c")
@@ -460,6 +518,14 @@ if selection_send.count('\\"source\\"') != 3:
         "`source` is not on all three continuity.selection templates "
         "(empty, folder, file). A field sent only sometimes cannot be "
         "distinguished by a host from a guest too old to have it."
+    )
+
+if '\\"afterEpoch\\":true' not in selection_send:
+    raise SystemExit(
+        "continuity.selection no longer says when it names an epoch that "
+        "has ended. The host's only honest reading of an epoch it does "
+        "not own is then to ignore the frame, which is the defect this "
+        "field exists to end."
     )
 
 print("continuity selection gates ok")
