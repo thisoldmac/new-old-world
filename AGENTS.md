@@ -28,6 +28,26 @@ without it. The family charter is
 The product is human-facing. Both halves are meant to feel native to
 their own machine — not to each other, and not to the web.
 
+## THE BLESSED PATH
+
+> **Force the code through the blessed OS path so the OS's behavior,
+> not ours, is what ships.**
+
+When Michelle asks for a **native** dialog, drag, progress window, or any
+OS-owned surface, that is an *architectural instruction*, not a styling
+target. The acceptance test is that **our code draws nothing and the OS's
+own component appears** — a real `DragRef` in flight, the Finder raising
+its own replace dialog, a genuine copy-progress window. A hand-composed
+lookalike passes a screenshot while silently discarding the one property
+that was requested: the OS's machinery carrying the behavior and its edge
+cases for free. That is agent-created debt, and it has been created twice
+in this repository (a styled `now_confirm` replace dialog and a styled
+transfer windoid, both delivered against an explicit ask for native).
+
+If you cannot reach the blessed path, **stop and report the wall** with
+evidence (the way slice 2 reported `inwin=1`), so the wall itself becomes
+the work. Do not ship the imitation.
+
 ## The contract is the source of truth
 
 `contract/asyncapi.yaml` defines every message. Two rules follow:
