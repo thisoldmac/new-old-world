@@ -430,49 +430,61 @@ final class HostAppState: ObservableObject {
             refusal: { [weak self] message in
                 self?.announceDragRefusal(message)
             },
-            /* THE PRESENTATION HALF, bound to the SAME two calls the agent
-               and console faces already drive — `AgentIntegrationContinuity
-               OfferControl` exists precisely so the gesture lane would not
-               grow a third path beside them, and its own comment says so.
-               The generation is monotonic per carried gesture, which is what
-               the contract asks of an offer: it must move whenever the item
-               behind it could differ, including to no offer at all. */
-            presentation: .init(
-                carry: { [weak self] url in
-                    guard let self else { return }
+            /* THE HANDOFF, bound to the SAME seam the agent and console
+               faces already drive — `AgentIntegrationContinuityOfferControl`
+               exists precisely so the gesture lane would not grow a third
+               path beside them, and its own comment says so. The generation
+               is monotonic per carried gesture, which is what the contract
+               asks of an offer: it must move whenever the item behind it
+               could differ.
+
+               IT REPLACES THE CARRY PRESENTATION on this lane. That pair
+               published an offer at the EDGE and asked the guest to draw
+               the carried file; this publishes at the STAGING POINT and
+               asks the guest to begin a real drag on it. The offer is still
+               published because the offer IS the promise — what changed is
+               that nothing over there is drawing an illustration of a drag
+               any more, because a drag is happening. */
+            handoff: .init(
+                begin: { [weak self] staged, point, gesture in
+                    guard let self else { return false }
+                    guard let url = ContinuityFileDrag.firstFile(on: staged) else {
+                        HostLog.shared.write(
+                            .warn, "continuity",
+                            "drag handoff #\(gesture): the staged carry "
+                                + "names no file this Mac can read, so the "
+                                + "Macintosh starts no drag")
+                        return false
+                    }
                     self.hostDragOfferGeneration &+= 1
-                    switch self.continuityOfferControl.publish(
+                    switch self.continuityOfferControl.beginDrag(
                         fileAt: url, epoch: self.continuity.currentEpoch,
-                        generation: self.hostDragOfferGeneration) {
-                    case .published:
-                        self.startGuestPresentationDrag()
+                        generation: self.hostDragOfferGeneration,
+                        dragSeq: UInt32(truncatingIfNeeded: gesture),
+                        pos: .init(h: Int(point.x), v: Int(point.y))) {
+                    case .handedOff:
+                        return true
                     case .guestUnavailable:
                         HostLog.shared.write(
                             .info, "continuity",
-                            "no Macintosh is listening; the crossing carries "
-                                + "the file but nothing over there can draw "
-                                + "it")
+                            "drag handoff #\(gesture): no Macintosh is "
+                                + "listening, so the crossing keeps the file "
+                                + "staged and the release still decides")
+                        return false
                     case .failed(let reason):
                         HostLog.shared.write(
                             .warn, "continuity",
-                            "the offer for \(url.lastPathComponent) would not "
-                                + "publish (\(reason)); the drag crosses "
-                                + "unillustrated and the drop still decides")
+                            "drag handoff #\(gesture) for "
+                                + "\(url.lastPathComponent) failed "
+                                + "(\(reason)); the crossing keeps the file "
+                                + "staged and the release still decides")
+                        return false
                     }
                 },
-                release: { [weak self] in
-                    guard let self else { return }
-                    self.stopGuestPresentationDrag()
-                    /* The contract's own instruction to tear down whatever
-                       the guest was drawing: an ABSENT item under a FRESH
-                       generation. Sent after the stop rather than instead of
-                       it — one ends the Drag Manager drag, the other ends
-                       the offer, and a guest that missed either should not
-                       be left holding the other. */
-                    _ = self.continuityOfferControl.clear(
-                        epoch: self.continuity.currentEpoch,
-                        generation: self.hostDragOfferGeneration &+ 1)
-                    self.hostDragOfferGeneration &+= 1
+                abandon: { [weak self] reason, gesture in
+                    self?.continuityOfferControl.endDrag(
+                        dragSeq: UInt32(truncatingIfNeeded: gesture),
+                        reason: reason)
                 }))
         continuity.onStarvation = { [weak self] message in
             self?.announceContinuityStarvation(message)
@@ -480,59 +492,6 @@ final class HostAppState: ObservableObject {
         if settings.listenAtLaunch {
             startListening()
         }
-    }
-
-    /// Asks the guest to pick up what the offer just published — the
-    /// `offer --drag` verb slice 2 built, driven from the gesture instead of
-    /// from a console.
-    ///
-    /// It ARMS; the drag itself begins on the guest when its own applied
-    /// button says so, which is a fact about the pointer plane rather than
-    /// about this call. That is deliberate and is the guest's rule, not a
-    /// limitation here: starting from wire arrival races the apply and
-    /// tracks nothing (`continuity_dragmgr.h`).
-    private func startGuestPresentationDrag() {
-        /* SCHEDULED, not direct. `GuestWorkSourceCensusTests` refuses a
-           bare `runCommand` outside an already-admitted act adapter, and it
-           is right to: this is product work driven by a person's hand, so it
-           belongs in the same queue as every other gesture rather than
-           jumping it. `humanInteractive` because a person is watching the
-           pointer for it, and a coalescing key because a fast in-and-out at
-           the edge must not stack arms behind each other. */
-        listener.runScheduledCommand(
-            "offer", args: ["action": "--drag"],
-            purpose: .interaction("carry a file to the guest"),
-            workClass: .humanInteractive,
-            coalescingKey: "continuity.carry") { result in
-            guard !result.ok else { return }
-            /* Not fatal and not silent. The crossing still transfers on the
-               drop; what is lost is the picture, and a person who sees
-               nothing follow their pointer deserves the reason to exist
-               somewhere. */
-            /* Both halves of the guest's answer, not just the code: a
-               refusal code alone repeats as the same literal ("refused")
-               across every distinct reason, while `message` names which
-               one — this line was one string away from self-diagnosing
-               forensics D3 (docs/open-issues.md). */
-            HostLog.shared.write(
-                .warn, "continuity",
-                "the Macintosh would not pick up the carried file "
-                    + "(\(result.error?.code ?? "no reason given")"
-                    + (result.error.map { ": \($0.message)" } ?? "")
-                    + "): the drag crosses unillustrated and the drop "
-                    + "still decides")
-        }
-    }
-
-    /// Ends the guest's presentation drag. Safe to send when nothing is
-    /// armed — the guest answers "No drag to stop" and that is not worth a
-    /// line, because this is called on every departure path by design.
-    private func stopGuestPresentationDrag() {
-        listener.runScheduledCommand(
-            "offer", args: ["action": "--stop"],
-            purpose: .interaction("stop carrying a file to the guest"),
-            workClass: .humanInteractive,
-            coalescingKey: "continuity.carry") { _ in }
     }
 
     /// Bind the MCP page to the delegate-owned transport lifecycles.

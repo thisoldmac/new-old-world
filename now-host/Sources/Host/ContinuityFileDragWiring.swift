@@ -108,7 +108,19 @@ enum ContinuityFileDrag {
         /// an AppKit object with a lifetime tied to a live session, and
         /// everything downstream of here wants one file's identity. The
         /// extraction and its refusals live in this file, once.
-        presentation: ContinuityFileDrag.Presentation? = nil
+        presentation: ContinuityFileDrag.Presentation? = nil,
+        /// **The host→guest HANDOFF, which supersedes the presentation pair
+        /// above on the drag lane.**
+        ///
+        /// The presentation asked the guest to DRAW what was being carried
+        /// — an honest picture, but a picture: an illustration of a drag
+        /// rather than a drag. This asks it to START ONE, promise and all,
+        /// which is the blessed path (AGENTS.md, "THE BLESSED PATH"; plan
+        /// `2026-08-17-036`). When a handoff is wired, the drag lane uses
+        /// it and the presentation pair is not wired beside it — two
+        /// machines cannot both own one gesture, and a guest drawing a
+        /// carry underneath its own live `TrackDrag` would be exactly that.
+        handoff: ContinuityEdgeController.HostDragHandoff? = nil
     ) {
         /* THE HOST→GUEST HALF OF THE SAME SEAM, and it is wired
            unconditionally rather than inside the `selection`/`grab` pair
@@ -117,7 +129,10 @@ enum ContinuityFileDrag {
            name-collision refusal reached MirrorFileTransferModel and stopped
            there — see `reportHostFileFailure`. */
         fileTransfer.outcomeSink = refusal
-        if let presentation {
+        if let handoff {
+            edge.configureHostDragHandoff(handoff)
+        }
+        if let presentation, handoff == nil {
             edge.configureHostDragPresentation(
                 arrived: { pasteboard in
                     guard let url = firstFile(on: pasteboard) else {

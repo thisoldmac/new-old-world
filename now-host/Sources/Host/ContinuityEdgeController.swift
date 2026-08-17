@@ -232,6 +232,8 @@ final class ContinuityEdgeController: ObservableObject {
     let runningCopy: RunningCopy
     private let audit: Audit
     private let uptime: () -> TimeInterval
+    private let schedule: (TimeInterval, @escaping @MainActor () -> Void)
+        -> Void
     private var monitor: AnyObject?
     private var fileEdge: AnyObject?
     private var layoutSubscription: AnyCancellable?
@@ -313,6 +315,22 @@ final class ContinuityEdgeController: ObservableObject {
         var suppressedPresses: UInt32 = 0
     }
     private var stagedCarry = StagedCarryButton()
+    /// See `HostDragHandoff`. Nil until wired, and a nil one is a crossing
+    /// that stages and transfers exactly as it did before this lane.
+    private var hostDragHandoff: HostDragHandoff?
+    /// Whether this gesture's skeleton has already crossed. The handoff is
+    /// ONE act per staged carry — the staging point is reached once, but
+    /// every later path that could reach it (a re-arm, a converge) must
+    /// find the question already answered.
+    private var hostDragHandedOff = false
+    /// The staged carry outlived `stagedCarryLifetime` and was let go. Kept
+    /// past the staging it describes so a physical release arriving
+    /// afterwards is answered with the reason it commits nothing, rather
+    /// than with the silence of a guard that simply returns.
+    private var stagedCarryTimedOut = false
+    /// Distinguishes one armed deadline from the next, so a timer fired for
+    /// a carry that has since ended cannot let go of the one after it.
+    private var stagedCarryDeadlineID: UInt64 = 0
     /// Where the host drag was ended at the crossing. The re-arm is posted
     /// there — the one point on this Mac known to have been over this app's
     /// own catch surface a moment ago.
@@ -529,6 +547,16 @@ final class ContinuityEdgeController: ObservableObject {
          audit: Audit? = nil,
          uptime: @escaping () -> TimeInterval = {
              ProcessInfo.processInfo.systemUptime
+         },
+         /// How the staged-carry deadline is armed. Injectable for the same
+         /// reason `uptime` is: a bound nobody can make elapse in a test is
+         /// a bound nobody has tested.
+         schedule: @escaping (TimeInterval,
+                              @escaping @MainActor () -> Void) -> Void = {
+             delay, body in
+             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                 MainActor.assumeIsolated(body)
+             }
          }) {
         self.layout = layout
         self.driver = driver
@@ -540,6 +568,7 @@ final class ContinuityEdgeController: ObservableObject {
         self.runningCopy = runningCopy
         self.audit = audit ?? { HostLog.shared.write($0, "continuity", $1) }
         self.uptime = uptime
+        self.schedule = schedule
         layoutSubscription = layout.objectWillChange.sink { [weak self] _ in
             Task { @MainActor in
                 await Task.yield()
@@ -561,6 +590,56 @@ final class ContinuityEdgeController: ObservableObject {
         self.guestFileAtPoint = guestFileAtPoint
         self.hostFilesDropped = hostFilesDropped
         refreshFileEdge()
+    }
+
+    /// **The handoff seam: the ownership toggle, expressed as two calls.**
+    ///
+    /// The plan's design invariant (`2026-08-17-036`, "The ownership
+    /// toggle"): exactly one machine's drag machinery is live at a time,
+    /// and the edge toggles it. This Mac's own `NSDraggingSession` has
+    /// already ended at the crossing and the file is staged; `begin` is
+    /// where the OTHER machine's Drag Manager takes over.
+    ///
+    /// **Neither call knows anything about targeting, windows, or
+    /// collisions, and that is the acceptance test, not an omission.**
+    /// After the handoff the guest sees a normal drag with a promise —
+    /// where it lands, what it collides with, and what dialog the Finder
+    /// raises are all the receiving OS's business. A parameter here
+    /// answering any of those would be this app re-inventing what it just
+    /// handed over.
+    struct HostDragHandoff {
+        /// Derive the promise skeleton from the staged file and send
+        /// `continuity.hostDragBegin` at the guest entry point. False when
+        /// nothing crossed — no guest listening, nothing nameable on the
+        /// staged pasteboard — which is a degraded gesture, not a broken
+        /// one, and the caller says so out loud.
+        var begin: (NSPasteboard, MirrorKit.Point, UInt64) -> Bool
+        /// The carry ended without the guest's drop: let the promise go,
+        /// with a reason. Must be safe to call when `begin` never
+        /// succeeded, and safe to call twice.
+        var abandon: (String, UInt64) -> Void
+    }
+
+    /// **How long a staged carry may live unresolved before this Mac lets
+    /// it go.**
+    ///
+    /// The plan's named failure mode: the skeleton never arrives, or the
+    /// guest never starts the drag, and it times out into a native
+    /// non-drop over there. This is the same bound seen from this side —
+    /// without it a gesture that ended somewhere this Mac cannot observe
+    /// leaves a staged file and a live promise behind forever.
+    ///
+    /// Three minutes rather than the offer's own 30 s: this one has to
+    /// outlive a LEISURELY HUMAN DRAG (the allowance the plan calls out),
+    /// so it is a zombie bound, not a responsiveness bound.
+    static let stagedCarryLifetime: TimeInterval = 180
+
+    /// Installs the handoff. Optional in the same sense as the
+    /// presentation pair below: a controller without one still stages and
+    /// still transfers on release — the crossing simply never becomes a
+    /// native drag on the other side.
+    func configureHostDragHandoff(_ handoff: HostDragHandoff) {
+        self.hostDragHandoff = handoff
     }
 
     /// Installs the host→guest PRESENTATION half: what the guest draws while
@@ -2300,6 +2379,10 @@ final class ContinuityEdgeController: ObservableObject {
         }
         stagedHostFiles = staged
         stagedCarry = .init()
+        /* Per-gesture, at the one place a staging begins: a handoff belongs
+           to the carry that produced it, and so does the bound on it. */
+        hostDragHandedOff = false
+        stagedCarryTimedOut = false
         stagedCrossPoint = hostPoint
         expectingCrossDrop = true
         /* Widened before the post, not after: the drop has to have a
@@ -2337,6 +2420,12 @@ final class ContinuityEdgeController: ObservableObject {
             + "this Mac's own strip took the drop, so nothing of the "
             + "Finder's is still in flight and the pass now takes ordinary "
             + "pointer custody (gesture=\(hostFileDragGestureID))")
+        /* THE TOGGLE, AND IT HAPPENS HERE. Before the converge below, not
+           after: the converge re-arms the button, and the guest starts its
+           own drag when that applied button says so — a skeleton arriving
+           after the press it is meant to explain is a press with nothing to
+           drag. */
+        handOffToGuest()
         convergeAfterCrossDrop()
         /* Narrowed LAST, after the converge has armed custody and posted the
            button re-arm: the widened strip is what the re-arm's own point
@@ -2378,6 +2467,72 @@ final class ContinuityEdgeController: ObservableObject {
            application is the capture `hideHostCursor` just armed. */
         rearmStagedCarryButton()
         status = "Carrying the file on the guest display"
+    }
+
+    /// **Hand the gesture to the other machine's Drag Manager.**
+    ///
+    /// One act per staged carry, at the staging point and nowhere else:
+    /// the skeleton for what is staged, sent at the GUEST ENTRY POINT the
+    /// crossing already computed. Position and button travel on the
+    /// ordinary Continuity datagrams from here, so there is nothing more to
+    /// send — and nothing here says where the file should land, because
+    /// after this call that is not this Mac's question.
+    ///
+    /// A refusal is honest degradation, not a failure: the crossing keeps
+    /// its staged file and its release still commits through the existing
+    /// lane. What must never happen is a silent one.
+    private func handOffToGuest() {
+        guard !hostDragHandedOff, let staged = stagedHostFiles else { return }
+        guard let handoff = hostDragHandoff else {
+            audit(.info, "host file drag: no handoff is wired, so the "
+                + "crossing stages and transfers on release exactly as it "
+                + "did before the native lane "
+                + "(gesture=\(hostFileDragGestureID))")
+            return
+        }
+        guard let current = ownership ?? pending else {
+            audit(.warn, "host file drag: the staging point was reached with "
+                + "no guest entry point to hand off at, so the Macintosh "
+                + "starts no drag (gesture=\(hostFileDragGestureID))")
+            return
+        }
+        let point = mirrorPoint(current.guestPoint)
+        let sent = handoff.begin(staged, point, hostFileDragGestureID)
+        hostDragHandedOff = sent
+        let verb = sent ? "handed the drag OVER to"
+                        : "could NOT hand the drag over to"
+        audit(sent ? .info : .warn,
+              "host file drag: \(verb) the Macintosh at "
+                + "\(point.x),\(point.y) — from here its Drag Manager owns "
+                + "the gesture and this Mac only serves the promise "
+                + "(gesture=\(hostFileDragGestureID))")
+        if sent { armStagedCarryDeadline() }
+    }
+
+    /// Bounds the staged carry. See `stagedCarryLifetime` for why the bound
+    /// is generous and why it exists at all.
+    private func armStagedCarryDeadline() {
+        stagedCarryDeadlineID &+= 1
+        let id = stagedCarryDeadlineID
+        let gesture = hostFileDragGestureID
+        schedule(Self.stagedCarryLifetime) { [weak self] in
+            self?.stagedCarryDeadlineFired(id: id, gesture: gesture)
+        }
+    }
+
+    private func stagedCarryDeadlineFired(id: UInt64, gesture: UInt64) {
+        guard id == stagedCarryDeadlineID, stagedHostFiles != nil else {
+            return
+        }
+        stagedCarryTimedOut = true
+        audit(.warn, "host file drag: the carry was still staged "
+            + "\(Int(Self.stagedCarryLifetime))s after the handoff — the "
+            + "Macintosh never dropped it and no release ever reached this "
+            + "Mac, so the file is let go rather than held forever "
+            + "(gesture=\(gesture))")
+        abandonStagedHostFiles(
+            reason: "no drop and no release within "
+                + "\(Int(Self.stagedCarryLifetime))s of the handoff")
     }
 
     /// **Undo this Mac's own lie about the button, the way the guest→host
@@ -2455,11 +2610,48 @@ final class ContinuityEdgeController: ObservableObject {
     /// crossing has ended the host drag.
     private func completeStagedHostDrop(at ownership: Ownership,
                                         release: String) {
-        guard let staged = stagedHostFiles else { return }
+        guard let staged = stagedHostFiles else {
+            /* Not silence. A release arriving after the carry was let go is
+               the timeout's own consequence, and it has to read as one. */
+            if stagedCarryTimedOut {
+                stagedCarryTimedOut = false
+                audit(.warn, "host file drag: \(release), but this Mac had "
+                    + "already let the carry go on the "
+                    + "\(Int(Self.stagedCarryLifetime))s bound, so the "
+                    + "release commits nothing "
+                    + "(gesture=\(hostFileDragGestureID))")
+            }
+            return
+        }
         stagedHostFiles = nil
         let carry = stagedCarry
         stagedCarry = .init()
+        /* THE DEADLINE DIES WITH THE CARRY IT BOUNDED. */
+        stagedCarryDeadlineID &+= 1
         let point = mirrorPoint(ownership.guestPoint)
+        if hostDragHandedOff {
+            /* **THE GUEST'S DROP IS THE COMMIT, AND THIS MAC ADDS NOTHING
+               TO IT.** The gesture belongs to the other machine's Drag
+               Manager: the person's release becomes its button-up, its
+               Finder resolves the drop and asks for the promise, and the
+               only thing wanted from this side is that the promise still be
+               serveable when it does. So the offer is NOT cleared here —
+               the pull happens after this instant, inside that drop. */
+            hostDragHandedOff = false
+            audit(.info, "host file drag: \(release) at \(point.x),"
+                + "\(point.y) while the Macintosh owned the gesture — its "
+                + "drop is the commit, and this Mac keeps serving the "
+                + "promise until its send proc asks "
+                + "(gesture=\(hostFileDragGestureID), "
+                + "buttonReArmed=\(carry.reArmed ? 1 : 0), "
+                + "suppressedPresses=\(carry.suppressedPresses))")
+            endHostDragPresentation()
+            hostFileDrag = false
+            hostDragEndedAtCross = false
+            crossEndRefusal = nil
+            status = "The Macintosh is taking the file"
+            return
+        }
         let accepted = hostFilesDropped?(staged, point) ?? false
         audit(accepted ? .info : .warn,
               "host file drag: \(release) at "
@@ -2486,11 +2678,23 @@ final class ContinuityEdgeController: ObservableObject {
         stagedHostFiles = nil
         let carry = stagedCarry
         stagedCarry = .init()
+        stagedCarryDeadlineID &+= 1
         audit(.info, "host file drag: the staged file was let go without a "
             + "transfer — \(reason). Nothing was copied "
             + "(gesture=\(hostFileDragGestureID), "
             + "buttonReArmed=\(carry.reArmed ? 1 : 0), "
             + "suppressedPresses=\(carry.suppressedPresses))")
+        guard hostDragHandedOff else { return }
+        /* **THE ABORT IS NATIVE ON BOTH SIDES, AND THIS IS THIS SIDE'S
+           HALF.** Over there the guest's input proc reports a point nothing
+           accepts and then button-up, `TrackDrag` returns
+           `userCanceledErr`, and the Drag Manager plays its own snap-back —
+           no cancel channel, nothing of ours drawn. Here the whole abort is
+           letting the promise go, because nothing was ever copied. */
+        hostDragHandedOff = false
+        audit(.info, "host file drag: releasing the promise the Macintosh "
+            + "was handed — \(reason) (gesture=\(hostFileDragGestureID))")
+        hostDragHandoff?.abandon(reason, hostFileDragGestureID)
     }
 
     private func hostFileExited() {
