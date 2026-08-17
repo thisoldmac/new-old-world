@@ -7,6 +7,113 @@ search:
 
 # Open issues
 
+## THE HOST→GUEST DRAG DROPPED AT THE ENTRY POINT BECAUSE ONE BIT SERVED TWO CONSUMERS — FIXED, EMULATOR-MEASURED, METAL PENDING (2026-08-17, `fix/hg-drag-button-level`)
+
+Attended metal on 2026-08-17 carried a file across the edge and watched
+OS 9 drop it instantly, at the crossing, every time. The forensic read
+(F2, defect B) found no race and no ordering to fix:
+
+- the host suppresses **every** `.primaryDown` while a carry is staged —
+  the round-3 fix that stopped forwarded presses opening Classilla (D5),
+  and it must stay;
+- so `wireButtonDown` was never true, so the Continuity datagram never
+  carried `.primaryDown`, so the guest's drag input proc read
+  `btnState` SET (classic inversion: SET means UP) on its very first
+  sample, and `TrackDrag` returned before the gesture began;
+- and the guest served the held `hostDragBegin` with no button gate at
+  all.
+
+**One bit was serving two consumers with different semantics.** The
+guest's *drag* reads the button as a LEVEL, every time the Drag Manager
+samples the input proc. The guest's *resident* applies a press only on a
+NEWER `button_generation` (`now_continuity_logic.c:47-49`). The host was
+only ever able to raise that bit as a side effect of an event it must not
+forward.
+
+### The fix: the level and the edge are told apart by the key they already differ on
+
+**Host** (`MirrorContinuityController.setCarriedButtonLevel`,
+`ContinuityEdgeController.holdCarriedButton`). For the life of a staged
+carry the host holds `.primaryDown` in the datagram flags **without
+advancing `buttonGeneration`**. The input proc reads a held button; the
+resident answers `Nothing` and posts no click, so D5 survives untouched.
+The level is raised **before** `hostDragBegin` crosses — the host writes
+both channels, so it can simply guarantee that ordering — and cleared at
+the person's physical release, which is what makes the drop land where
+they let go. It is also cleared on every abort (cross-back, the 180 s
+bound, ownership ending, a handoff that could not cross) and under all of
+them by the epoch's own teardown. No contract change and **no `ext/`
+change**: the fix exploits the resident's existing generation semantics
+rather than asking it for anything.
+
+**Guest** (`now_continuity_drag_host_ripen`,
+`continuity_dragmgr.c`). The held begin no longer starts `TrackDrag`
+unconditionally: it ripens on the plane's level, with a 5 s bound that
+expires into the native non-drop and a named line. This fixes nothing by
+itself — it makes the invariant checked, and covers a host that dies
+between the two messages.
+
+### The rig blind spot, closed
+
+Slice 1's probe drove the button as generation EDGES and published the
+drop point and the release before the guest's service pass ran the held
+begin, so an instantly-returning `TrackDrag` still dropped the file at the
+intended target and the byte-compare passed. `plane=0` was printed in
+every passing receipt and read as noise. The probe now drives the
+product's own level-only sequencing, and each round carries six named
+verdicts. **Two guest-side readings were unreadable and are fixed:** the
+`drag input:` counters were behind a diagnostic bit (now always printed),
+and `drag detail: button plane=` was the RESIDENT'S APPLIED button all
+along — now `level=` / `applied=` / `toolbox=`, three fields for three
+questions.
+
+### Emulator round, 2026-08-17 (mac99, guest build `833628c2`, receipts `/private/tmp/now-lvl-receipts/`)
+
+Base `now-mirror-stage.qcow2`, sha256 `8db8ddc2…`; rig table in that
+directory's `provenance.md`.
+
+| gesture | track | level@entry | applied@entry | input proc | fed | drop | bytes |
+|---|---|---|---|---|---|---|---|
+| desktop 4 KB | 273 ticks | **1** | 0 | 12448 calls, 12447 down, 1 up | 295,204 → 120,380 | `loc='alis'`, on the desktop | identical (4096/4096) |
+| Finder **window** | 269 ticks | **1** | 0 | 4034 / 4033 / 1 | 298,200 → 250,232 | into the window's folder | promise served |
+| **600 KB** | 4394 ticks | **1** | 0 | 9577 / 9576 / 1 | 295,204 → 120,380 | on the desktop | **identical** (614400/614400) |
+| collision (two drops, one name) | 268 / 278 ticks | **1** | 0 | 8002 / 7562 | 295,204 → 120,380 | **the Finder's own replace ask** (`r-collision/r1-03-after.png`); OK leaves exactly one file | — |
+| abort (driven to a non-accepting point) | 284 ticks | **1** | 0 | 65054 / 65053 / 1 | 292,195 → 2,2 | `TrackDrag -128`, `loc='null'`, **0 asks** | nothing created |
+
+Every round: `appliedButtonEdges = 0` and `applied@entry = 0` — **the
+resident applied no button at all**, which is the D5 guarantee measured
+rather than asserted. Every round ripened in **0 ticks**: the level was
+already in the plane when the begin was served, which is the ordering the
+host now owns.
+
+For comparison, the same rig before the fix (F2's receipts): `track=1
+tick`, `plane=0`, drop at the entry point.
+
+### What is NOT fixed, and one prior claim corrected
+
+- **THE CURSOR SPRITE DOES NOT FOLLOW during the guest-owned segment.**
+  The Drag Manager's ghost tracks to the release point
+  (`dm=120,380 pin=120,380`) and the drop resolves there, while the
+  Toolbox cursor stays at the entry (`raw=295,204 lm=295,204`).
+  **Correction to the slice-1 entry below, which recorded "the sprite
+  FOLLOWS for free":** that was measured with the rig applying real
+  button EDGES, and it was the resident's button-apply that moved the
+  cursor. The product sends no edges, so it buys no sprite. Position
+  applies are the application's task time, which `TrackDrag` consumes —
+  the 2026-08-17 wall in its last costume. The plan's deferred "sprite
+  decision" (resident low-memory chase vs. ghost-only) is therefore still
+  open, and it is now a decision a person has to make about what the
+  gesture LOOKS like, not about whether the file lands.
+- **Metal owes the whole gesture.** Everything above is emulator. The
+  attended round must repeat the five gestures on the PowerBook, watch
+  the drop land where the hand lets go rather than at the edge, and
+  confirm no click reaches the guest's Finder under the carry (the D5
+  regression this fix could have reintroduced and, by measurement here,
+  does not).
+- The lease-during-a-long-drag question from slice 1 is untouched; a
+  4394-tick (73 s) drag was measured again here.
+
+
 ## SLICE 1 DONE, EMULATOR-MEASURED: `continuity.hostDragBegin` starts a real OS 9 drag from a BACKGROUND process, the sprite follows for free, and 1 MB completes byte-identical (2026-08-17, `feat/gh-native-drag-guest`)
 
 Slice 1 of the blessed-path drag plan
@@ -35,7 +142,10 @@ fact of slice 0's induction press, exactly as the plan suspected: a
 process.
 
 **2. Does the cursor sprite follow, or is it ghost-only? IT FOLLOWS, and
-it costs nothing.** Screendumps, run 4 round 0: `r0-00-before.png` has
+it costs nothing.** *(CORRECTED 2026-08-17 by the entry above: this was
+measured with the rig applying real button edges, which the product does
+not send. Under the shipped level-only carry the sprite does NOT
+follow.)* Screendumps, run 4 round 0: `r0-00-before.png` has
 the arrow at the press point (300,200); `r0-01-mid.png` and
 `r0-02-held.png` have it at the driven point (120,380), with the Finder
 window's items showing drag-over feedback as it passed. Slice 0 measured
