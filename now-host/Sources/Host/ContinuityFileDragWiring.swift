@@ -200,6 +200,15 @@ enum ContinuityFileDrag {
                             }
                             return grab.reviseLiveBinding(to: stub)
                         }
+                    },
+                    /* NO CACHE CONSULTED, and that is the difference. The
+                       epoch this stub names has ended, so `selection()`
+                       refuses it by construction — the join key is what
+                       makes it safe, not an agreement with something
+                       cached. */
+                    reviseAfterEpoch: { [weak grab] stub in
+                        guard let grab else { return .noGesture }
+                        return grab.joinAfterEpoch(stub)
                     }))
         }
         edge.configureFileDragging(

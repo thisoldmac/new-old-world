@@ -247,6 +247,43 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
         return liveBinding.revise(to: stub)
     }
 
+    /// Applies a generation the Mac minted for a gesture whose epoch had
+    /// already ended, JOINED BY `dragSeq` and by nothing else.
+    ///
+    /// The cache cannot be consulted for this one and must not be: no epoch
+    /// is running, so `bindable(activeEpoch:)` refuses by construction and a
+    /// host that leaned on it would be asking the wrong question. What makes
+    /// this frame safe to apply is not a cached agreement but the join —
+    /// the resident named this gesture mid-drag over its own channel, this
+    /// Mac is carrying that identity, and the sequence says the two are one
+    /// gesture rather than two drags of the same icon. Exactly the live
+    /// join's rule, one epoch later.
+    ///
+    /// A crossing carrying no identity at all is REFUSED rather than filled
+    /// in. There is then nothing to join to, and a generation adopted on
+    /// timing alone is the wrong-file bug the join key exists to prevent.
+    func joinAfterEpoch(_ stub: ContinuityDragStub)
+        -> ContinuityLateBind.Outcome {
+        guard let liveBinding else { return .noGesture }
+        guard let arriving = stub.dragSeq else {
+            return .unusable(reason: "a generation minted after its epoch "
+                + "ended arrived with no dragSeq, so nothing says which "
+                + "gesture it belongs to; this crossing keeps what it has")
+        }
+        guard let carried = liveBinding.stub?.dragSeq else {
+            return .unusable(reason: "this crossing carries no drag identity "
+                + "to join dragSeq \(arriving) to — the resident never named "
+                + "the gesture on this Mac, and a generation adopted on "
+                + "timing alone is how the wrong file crosses")
+        }
+        guard carried == arriving else {
+            return .unusable(reason: "dragSeq \(arriving) is not the gesture "
+                + "this crossing carries (\(carried)) — a second drag has "
+                + "its own consent and its own generation")
+        }
+        return liveBinding.revise(to: stub)
+    }
+
     /// How long a drop waits for the application to mint the generation the
     /// resident's announcement could not carry.
     ///
@@ -258,6 +295,21 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     /// Settable so a test can watch the hold expire without spending a real
     /// second on it.
     var mintWaitSeconds: TimeInterval = 1.0
+    /// The same wait when this Mac KNOWS a mint is owed — the resident named
+    /// the gesture mid-drag, so a `dragSeq` is carried and the application's
+    /// frame is a thing that exists rather than a thing hoped for.
+    ///
+    /// Three seconds, and the number is a ratio rather than a guess. The
+    /// mint's measured arrival is ~0.3 s after the release on the emulator
+    /// (2026-08-16) and 230 ms after the drag ended on metal, so this is
+    /// about ten times the measurement — the margin a slower machine, a
+    /// busier Finder or a longer drain is allowed to take. It stays far
+    /// inside the guest's own 30-second grant window
+    /// (`kNowContinuityGrantTicks`), which is the ceiling that matters: a
+    /// wait outliving the grant would redeem nothing and stall for the
+    /// privilege. Without an identity the wait stays at one second, because
+    /// then nothing is known to be coming.
+    var mintWaitWithIdentitySeconds: TimeInterval = 3.0
     /// Polled rather than signalled: the wire, the revision and this wait
     /// all run on the one main actor, so a turn of the run loop is the only
     /// thing that can change the answer, and asking each turn costs a
@@ -279,11 +331,19 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
         async -> ContinuityDragStub? {
         let name = binding.stub?.item.name ?? "an unnamed file"
         let started = DispatchTime.now()
-        let deadline = started + mintWaitSeconds
+        /* HOW LONG DEPENDS ON WHETHER A MINT IS OWED. A crossing carrying a
+           `dragSeq` was announced by the resident mid-gesture, so the
+           application's own frame is coming — on a crossing gesture it
+           cannot even be sent until the cross has ended the epoch. Waiting
+           the bare second for that is waiting less than the thing takes on
+           an unhurried machine. */
+        let waiting = binding.stub?.dragSeq != nil
+            ? mintWaitWithIdentitySeconds : mintWaitSeconds
+        let deadline = started + waiting
         audit(.info, "grab held: gesture \(binding.gesture) crossed with an "
             + "identity and no generation (name=\(name), dragSeq="
             + "\(binding.stub?.dragSeq.map(String.init) ?? "none")) — "
-            + "waiting up to \(Int(mintWaitSeconds * 1000)) ms for the "
+            + "waiting up to \(Int(waiting * 1000)) ms for the "
             + "Macintosh to mint one rather than asking with a zero")
         while true {
             if let ready = binding.grabbable {

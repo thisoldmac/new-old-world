@@ -832,6 +832,11 @@ final class MirrorContinuityController: ObservableObject,
         let rate = [15, 30, 60].contains(requestedHz) ? requestedHz : 30
         requestedHz = rate
         epoch = nextNonzero(epoch)
+        /* A NEW EPOCH ENDS THE LAST ONE'S AFTERLIFE. The window a crossing
+           gesture's generation may arrive in is one epoch wide; a record
+           kept past the next arm would let a frame from a finished session
+           reach a crossing made under this one. */
+        endedEpoch = nil
         repeat {
             nonceHi = UInt32.random(in: UInt32.min ... UInt32.max)
             nonceLo = UInt32.random(in: UInt32.min ... UInt32.max)
@@ -1020,7 +1025,87 @@ final class MirrorContinuityController: ObservableObject,
         }
     }
 
+    /// The epoch that ended most recently, and who owned it.
+    ///
+    /// One epoch's worth of memory, held for exactly one purpose: a gesture
+    /// that CROSSED published its generation after the cross ended its
+    /// epoch, and there is nothing else left by then that can say the frame
+    /// belongs to this Mac's own last session.
+    private struct EndedEpoch {
+        var epoch: UInt32
+        var key: GuestKey
+        /// The gesture the resident announced mid-drag, if it announced
+        /// one. Kept so the join is answerable after the epoch is gone.
+        var dragSeq: UInt32?
+    }
+    private var endedEpoch: EndedEpoch?
+
+    /// A GENERATION FOR AN EPOCH THAT IS OVER, which is the only kind a
+    /// crossing single-gesture drag can ever produce.
+    ///
+    /// It is deliberately NOT run through `selectionCache.apply`: caching it
+    /// would make a grab reachable under an epoch nobody is consenting in,
+    /// which is the rule the cache's own epoch guard exists to hold. What it
+    /// feeds instead is the crossing already in flight — the drop is holding
+    /// for exactly this number — and it gets there by the same join the live
+    /// case uses, `dragSeq`.
+    private func receivedAfterEpoch(_ selection: ContinuitySelection,
+                                    from key: GuestKey) {
+        guard selection.version == ContinuityContract.version else {
+            audit(.warn, "selection after the epoch ignored: the Mac "
+                + "reported Continuity version "
+                + "\(selection.version.map(String.init) ?? "none") and this "
+                + "Mac speaks \(ContinuityContract.version)")
+            return
+        }
+        guard let ended = endedEpoch, ended.key == key,
+              ended.epoch == selection.epoch else {
+            audit(.warn, "selection after the epoch ignored: it names epoch "
+                + "\(selection.epoch) from \(key.machine.slug), and this "
+                + "Mac's last epoch was "
+                + "\(endedEpoch.map { "\($0.epoch) from \($0.key.machine.slug)" } ?? "none")")
+            return
+        }
+        guard selection.resolvedSource == .drag, selection.generation != 0,
+              let seq = selection.dragSeq, let item = selection.item else {
+            audit(.warn, "selection after the epoch ignored: only a "
+                + "drag-sourced generation may name an epoch that ended "
+                + "(source=\(selection.resolvedSource.rawValue), "
+                + "generation=\(selection.generation), dragSeq="
+                + "\(selection.dragSeq.map(String.init) ?? "none"), "
+                + "item=\(selection.item?.name ?? "none"))")
+            return
+        }
+        guard !item.isFolder else {
+            audit(.warn, "selection after the epoch ignored: \(item.name) is "
+                + "a folder, and folders cross in a later slice")
+            return
+        }
+        if let announced = ended.dragSeq, announced != seq {
+            audit(.info, "drag \(seq) is not the drag this Mac was announced "
+                + "(\(announced)) before epoch \(ended.epoch) ended — the "
+                + "join below decides it, not this line")
+        }
+        audit(.info, "drag \(seq) joined AFTER its epoch: epoch "
+            + "\(selection.epoch) ended at the cross and the Mac minted "
+            + "generation \(selection.generation) for \(item.name) once its "
+            + "Finder let the application run again")
+        edge.noteSelectionPublishedAfterEpoch(
+            ContinuityDragStub(epoch: selection.epoch,
+                               generation: selection.generation,
+                               item: item,
+                               dragSeq: seq))
+    }
+
     private func received(_ selection: ContinuitySelection, from key: GuestKey) {
+        /* THE EPOCH THIS NAMES MAY ALREADY BE OVER, and on the gesture this
+           whole plane exists for it always is. Routed before the ownership
+           guard below, because that guard reads `target`, which the epoch's
+           own ending cleared. */
+        if selection.namesEndedEpoch {
+            receivedAfterEpoch(selection, from: key)
+            return
+        }
         guard target?.key == key else {
             audit(.warn, "selection ignored: it came from "
                 + "\(key.machine.slug), which does not own this epoch")
@@ -1754,6 +1839,17 @@ final class MirrorContinuityController: ObservableObject,
            is that rule made mechanical: the next epoch gets its own
            generation 1 and cannot redeem consent given in the last one. */
         selectionCache.clear(reason: "the Continuity epoch ended")
+        /* WHOSE EPOCH JUST ENDED, and it is not a second cache. The target
+           is cleared on this line's own account, so without this record the
+           frame that carries a crossing gesture's generation — which by
+           construction cannot be sent until the epoch is over — arrives
+           from a machine this Mac no longer recognises as the owner of
+           anything. It names one epoch and one gesture, and it is dropped
+           the moment a new epoch is armed. */
+        if epoch != 0, let key = target?.key {
+            endedEpoch = EndedEpoch(epoch: epoch, key: key,
+                                    dragSeq: announcedDragSeq)
+        }
         /* The announcement dies with the epoch it was made under. A join
            key outliving its consent would let the NEXT epoch's application
            frame claim a gesture from the last one. */

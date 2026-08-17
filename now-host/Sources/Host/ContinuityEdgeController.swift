@@ -650,6 +650,66 @@ final class ContinuityEdgeController: ObservableObject {
         }
     }
 
+    /// THE GENERATION FOR A GESTURE WHOSE EPOCH ENDED AT THE CROSS.
+    ///
+    /// The same arrival as `noteSelectionPublished`, one epoch later and by
+    /// a different route: it carries a whole stub rather than a mark,
+    /// because an ended epoch has no bindable cache entry to look one up
+    /// in. Every guard here is the one next door, for the same reasons; what
+    /// is NOT here is a source test, because the guest only ever marks a
+    /// drag-sourced mint this way — a poll cannot run without a live epoch.
+    ///
+    /// A frame with no crossing left to revise is a MISS and says so at
+    /// warning level. The gesture it belonged to has already refused or
+    /// already taken its answer, and the one thing this must never do is
+    /// redeem a drop that stopped waiting.
+    func noteSelectionPublishedAfterEpoch(_ stub: ContinuityDragStub) {
+        guard let lateBind else { return }
+        let gesture = lateBind.gesture().map(String.init) ?? "none"
+        guard pendingReturnDrag != nil || hostDragSessionLive else {
+            audit(.warn, "a generation minted after epoch \(stub.epoch) "
+                + "ended (generation \(stub.generation), dragSeq="
+                + "\(stub.dragSeq.map(String.init) ?? "none"), "
+                + "name=\(stub.item.name)) arrived with no crossing of this "
+                + "Mac's left to carry it — the gesture is over, and a drop "
+                + "that stopped waiting is not redeemed late")
+            return
+        }
+        if hostDragOverThisMac {
+            audit(.info, "not revising this crossing (gesture \(gesture)): "
+                + "it carries a drag from this Mac, not the guest's — "
+                + "generation \(stub.generation) changes nothing here")
+            return
+        }
+        switch lateBind.reviseAfterEpoch(stub) {
+        case .revised(let gesture, let from, let to):
+            audit(.info, "late bind after the epoch: this crossing now "
+                + "carries \(to) (gesture \(gesture), source=drag, epoch="
+                + "\(stub.epoch) which has ENDED, dragSeq="
+                + "\(stub.dragSeq.map(String.init) ?? "none")), replacing "
+                + "\(from ?? "nothing at all") — the cross is what ended "
+                + "that epoch, so this is the first moment the Mac could "
+                + "mint a number for the file in the hand")
+        case .refusedRedeemed(let gesture, let generation):
+            audit(.warn, "late bind refused: generation \(generation), "
+                + "minted after epoch \(stub.epoch) ended, arrived after "
+                + "the drop redeemed gesture \(gesture); the file being "
+                + "fetched is already decided and this Mac does not swap "
+                + "one mid-transfer")
+        case .unchanged(let gesture, let generation):
+            audit(.info, "late bind: gesture \(gesture) already carries "
+                + "generation \(generation); nothing to revise")
+        case .unusable(let reason):
+            audit(.warn, "late bind after the epoch not applied: \(reason)")
+        case .noGesture:
+            audit(.warn, "a generation minted after epoch \(stub.epoch) "
+                + "ended (generation \(stub.generation), dragSeq="
+                + "\(stub.dragSeq.map(String.init) ?? "none"), "
+                + "name=\(stub.item.name)) found no crossing waiting for "
+                + "it — nothing is redeemed on its account")
+        }
+    }
+
     /// Whether the file seam has an owner at all. Both callbacks are a
     /// precondition for creating the AppKit destination, so their absence is
     /// the difference between a drop that refuses and a strip that is not
