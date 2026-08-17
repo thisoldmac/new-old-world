@@ -176,7 +176,17 @@ final class LiveDragInputProcExperiment: XCTestCase {
         return ppm
     }
 
-    /// THE WHOLE RING, not the newest page.
+    /// THE WHOLE RING, not the newest page — AND READ EARLY.
+    ///
+    /// Run 1 of this file paged eight seconds after the release and found
+    /// `drag input:` as its OLDEST product line: `drag ... ended:`,
+    /// `drag detail:`, `drag drop:` and `drag attrs:` had all been pushed
+    /// out of a 2000-line ring. The V15 tracking stream is the reason —
+    /// a four-second drag accumulates ~9400 handler passes and the idle
+    /// drain dumps them sixteen at a time for seconds afterwards, so the
+    /// lines the measurement turns on have a shelf life of about a
+    /// second. Every caller pages IMMEDIATELY now, and the settle wait
+    /// happens after.
     private func pagedLog(pages: Int) async -> String {
         var collected: [String] = []
         var before: Int?
@@ -320,16 +330,18 @@ final class LiveDragInputProcExperiment: XCTestCase {
         if shotDuringPull {
             // WHILE THE PROMISE IS STREAMING. A Finder copy-progress
             // window, if there is one, exists only here.
-            try await Task.sleep(nanoseconds: 250_000_000)
             screendump("\(label)-during-pull-1")
-            try await Task.sleep(nanoseconds: 750_000_000)
+        }
+        // THE LOG FIRST, EVERYTHING ELSE AFTER. See pagedLog: the
+        // decisive product lines survive about a second.
+        let logText = await pagedLog(pages: 8)
+        if shotDuringPull {
             screendump("\(label)-during-pull-2")
         }
-        try await Task.sleep(nanoseconds: 8_000_000_000)
+        try await Task.sleep(nanoseconds: 6_000_000_000)
         screendump("\(label)-settled")
 
         let report = await execLine("offer")
-        let logText = await pagedLog(pages: 8)
         let after = await askTheFinder(about: item.name)
         say("[\(label)] report: \(report.text)")
         say("[\(label)] Finder after: \(after)")
@@ -342,12 +354,28 @@ final class LiveDragInputProcExperiment: XCTestCase {
 
     // MARK: - the measurement
 
+    /// A FRESH EPOCH PER GESTURE, and this is a rig repair rather than
+    /// tidiness. Run 1 armed once and every gesture after the first
+    /// reported `button-never-came`: the plane's button edge stopped
+    /// being applied once a four-second `TrackDrag` had held it, and a
+    /// stuck plane and a refused drag wear the same word. Re-arming is
+    /// the one operation that puts the plane back in a known state, and
+    /// the offer is published under the same fresh epoch it will be
+    /// dragged under.
+    private var epochCounter: UInt32 = 917_100
+    private func freshEpoch() async throws -> (UInt32, UInt16) {
+        epochCounter &+= 1
+        guard let udpPort = try await arm(epoch: epochCounter) else {
+            throw NoGuest(port: port)
+        }
+        // The socket is per-port and the port does not move, but the
+        // sequence must keep climbing: a restarted sequence is a gesture
+        // the plane never sees.
+        return (epochCounter, udpPort)
+    }
+
     func testTheInputProcDrivesTheDrag() async throws {
         try await waitConnected()
-        let epoch: UInt32 = 917_050
-        guard let udpPort = try await arm(epoch: epoch) else {
-            return XCTFail("no udpPort: the button plane cannot be driven")
-        }
 
         // THE BUILD UNDER TEST, before anything it says is believed.
         let mirror = await runCommand("mirror", line: "")
@@ -361,64 +389,71 @@ final class LiveDragInputProcExperiment: XCTestCase {
         try await Task.sleep(nanoseconds: 1_500_000_000)
         screendump("00-before")
 
+        // ---- the Finder's own window, opened and MEASURED ------------
+        // Asked for rather than assumed, and asked three ways because
+        // run 1's single phrasing answered -1753 and the gesture then
+        // aimed at a guess.
+        _ = await runCommand(
+            "script",
+            line: "tell application \"Finder\" to open startup disk")
+        try await Task.sleep(nanoseconds: 2_500_000_000)
+        var windowTarget: (Int, Int)?
+        for phrasing in [
+            "tell application \"Finder\" to get bounds of Finder window 1",
+            "tell application \"Finder\" to get bounds of window 1",
+            "tell application \"Finder\" to get (bounds of Finder window 1) "
+                + "as text",
+        ] {
+            let reply = await runCommand("script", line: phrasing)
+            let text = String(describing: reply.output)
+            say("window bounds via `\(phrasing)`: \(text)")
+            if let t = Self.interior(ofBounds: text) {
+                windowTarget = t
+                break
+            }
+        }
+        _ = await execLine("front New Old World")
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        screendump("01-window-open")
+        let target = windowTarget ?? (400, 300)
+        say("aiming Finder-window gestures at \(target) "
+            + "(measured=\(windowTarget != nil))")
+
         // ---- P: does the GHOST track a reported position at all? ------
         // Scripted (`--x=16`), so the answer cannot be an artifact of
         // the transport, and the host drives NO path — every point the
         // Manager sees comes from the input proc.
+        let (epP, udpP) = try await freshEpoch()
         let fileP = try fixture(named: "InputProcP.txt", bytes: 4096)
         let p = try await drag(
-            label: "P", epoch: epoch, publishGeneration: 1, udpPort: udpPort,
+            label: "P", epoch: epP, publishGeneration: 1, udpPort: udpP,
             file: fileP, arm: "--drag --x=16@10,300",
             from: (300, 240), to: (10, 300), drivePath: false,
-            holdSeconds: 3.0, shotDuringPull: true)
-
-        // ---- D: plane-fed, dropped on EXPOSED DESKTOP -----------------
-        // The left band (x < 25, full height) is outside the Workshop's
-        // default geometry at every height, so it is neither the Control
-        // Strip nor a window of ours.
-        let fileD = try fixture(named: "InputProcD.txt", bytes: 4096)
-        let d = try await drag(
-            label: "D", epoch: epoch, publishGeneration: 5, udpPort: udpPort,
-            file: fileD, arm: "--drag --x=8",
-            from: (300, 240), to: (10, 300), drivePath: true,
             holdSeconds: 2.4, shotDuringPull: true)
 
-        // ---- W: into an OPEN FINDER WINDOW ----------------------------
-        // The first out-of-process promise pull this project would ever
-        // have seen. The window is opened by the Finder itself and its
-        // geometry is asked for rather than assumed.
-        let opened = await runCommand(
-            "script",
-            line: "tell application \"Finder\" to open the startup disk")
-        say("[W] open startup disk: \(String(describing: opened.output))")
-        try await Task.sleep(nanoseconds: 2_000_000_000)
-        let bounds = await runCommand(
-            "script",
-            line: "tell application \"Finder\" to return (bounds of window 1) "
-                + "as string")
-        say("[W] window 1 bounds: \(String(describing: bounds.output))")
-        _ = await execLine("front New Old World")
-        try await Task.sleep(nanoseconds: 1_200_000_000)
-        screendump("W-before")
-        let target = Self.interior(ofBounds: String(describing: bounds.output))
-            ?? (420, 200)
-        say("[W] aiming at \(target)")
+        // ---- W: into the OPEN FINDER WINDOW ---------------------------
+        // The first out-of-process promise pull into another process's
+        // WINDOW rather than onto its desktop.
+        let (epW, udpW) = try await freshEpoch()
         let fileW = try fixture(named: "InputProcW.txt", bytes: 4096)
         let w = try await drag(
-            label: "W", epoch: epoch, publishGeneration: 10, udpPort: udpPort,
-            file: fileW, arm: "--drag --x=8",
-            from: (300, 240), to: target, drivePath: true,
+            label: "W", epoch: epW, publishGeneration: 1, udpPort: udpW,
+            file: fileW, arm: "--drag --x=16@\(target.0),\(target.1)",
+            from: (300, 240), to: target, drivePath: false,
             holdSeconds: 2.4, shotDuringPull: true)
 
-        // ---- C: the SAME NAME again, if W landed one ------------------
+        // ---- C: the SAME NAME again -----------------------------------
+        // The Finder's own collision behaviour, which decides the fate of
+        // the hand-built replace dialog. Only provoked if W got as far
+        // as a pull.
         var c: Gesture?
         if w.landedAfter || Self.logSaysAsked(w.log) {
-            say("[C] W got as far as a pull; dropping the same name again "
-                + "to watch the FINDER's own collision behaviour")
+            let (epC, udpC) = try await freshEpoch()
             c = try await drag(
-                label: "C", epoch: epoch, publishGeneration: 15,
-                udpPort: udpPort, file: fileW, arm: "--drag --x=8",
-                from: (300, 240), to: target, drivePath: true,
+                label: "C", epoch: epC, publishGeneration: 1,
+                udpPort: udpC, file: fileW,
+                arm: "--drag --x=16@\(target.0),\(target.1)",
+                from: (300, 240), to: target, drivePath: false,
                 holdSeconds: 2.4, shotDuringPull: true)
         } else {
             say("[C] skipped: W materialised nothing, so there is no "
@@ -430,23 +465,36 @@ final class LiveDragInputProcExperiment: XCTestCase {
         // there accepts a promised HFS file, so the Manager's own
         // snap-back should play and TrackDrag should answer
         // dragNotAcceptedErr (-1857) or userCanceledErr (-128).
+        let (epN, udpN) = try await freshEpoch()
         let fileN = try fixture(named: "InputProcN.txt", bytes: 4096)
         let n = try await drag(
-            label: "N", epoch: epoch, publishGeneration: 20, udpPort: udpPort,
-            file: fileN, arm: "--drag --x=8",
-            from: (300, 240), to: (300, 240), drivePath: true,
+            label: "N", epoch: epN, publishGeneration: 1, udpPort: udpN,
+            file: fileN, arm: "--drag --x=16@300,240",
+            from: (300, 240), to: (300, 240), drivePath: false,
             holdSeconds: 2.4, shotDuringPull: false)
+
+        // ---- L: the PLANE feeding the proc, not a script --------------
+        // Slice 1 replaces the script with the wire, so the last gesture
+        // asks whether the notifier-written point is fresh enough to
+        // steer the Manager while TrackDrag holds this application. It
+        // is the only gesture that drives a path over UDP.
+        let (epL, udpL) = try await freshEpoch()
+        let fileL = try fixture(named: "InputProcL.txt", bytes: 4096)
+        let l = try await drag(
+            label: "L", epoch: epL, publishGeneration: 1, udpPort: udpL,
+            file: fileL, arm: "--drag --x=8",
+            from: (300, 240), to: (10, 300), drivePath: true,
+            holdSeconds: 2.4, shotDuringPull: true)
 
         // ---- the verdict inputs, stated so they cannot read as
         //      narration ----
         say("VERDICT INPUTS")
-        for g in [("P", p), ("D", d), ("W", w), ("N", n)] {
+        var all = [("P", p), ("W", w), ("N", n), ("L", l)]
+        if let c { all.insert(("C", c), at: 2) }
+        for g in all {
             say("  \(g.0) landed=\(g.1.landedAfter) "
                 + "asked=\(Self.logSaysAsked(g.1.log))")
             say("  \(g.0) report: \(g.1.report)")
-        }
-        if let c {
-            say("  C landed=\(c.landedAfter) asked=\(Self.logSaysAsked(c.log))")
         }
         XCTAssertTrue(
             p.log.contains("drag input:"),
@@ -458,14 +506,17 @@ final class LiveDragInputProcExperiment: XCTestCase {
     /// own `bounds` string (`left, top, right, bottom`). Nudged down past
     /// the title bar rather than centred, so a tall window's midpoint
     /// cannot land on a proxy row that means something else.
+    /// THE OUTPUT FIELD, NOT THE ENVELOPE. The reply also carries
+    /// `timeoutMs 15000` and `osaErr 0`, and a naive scan for numbers
+    /// reads those as a window — which is how a rig aims a gesture at a
+    /// coordinate nothing put there.
     static func interior(ofBounds reply: String) -> (Int, Int)? {
-        let digits = reply.split(whereSeparator: { !"-0123456789".contains($0) })
+        guard let range = reply.range(of: "\"output\", ") else { return nil }
+        let field = reply[range.upperBound...].prefix(64)
+        let digits = field.split(whereSeparator: { !"-0123456789".contains($0) })
             .compactMap { Int($0) }
-        // The reply is an envelope; the four window numbers are the last
-        // plausible run of four in it.
         guard digits.count >= 4 else { return nil }
-        let tail = Array(digits.suffix(4))
-        let (l, t, r, b) = (tail[0], tail[1], tail[2], tail[3])
+        let (l, t, r, b) = (digits[0], digits[1], digits[2], digits[3])
         guard r > l + 40, b > t + 60 else { return nil }
         return ((l + r) / 2, t + 40 + (b - t - 40) / 2)
     }
