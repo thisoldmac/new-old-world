@@ -7,6 +7,70 @@ search:
 
 # Open issues
 
+## FIXED, EMULATOR-VERIFIED: the collision replace dialog landed on `refactor/mirror-continuity-split` (2026-08-16, `feat/hg-drag-collision-land`)
+
+`f74324a4` ("DECIDED AND BUILT, NOT METAL-VERIFIED" — see the entry below)
+merged onto this arc's line clean: `now-guest-ppc/src/core/wire.c` and
+`wire.h` took the merge with no manual resolution (git's own recursive
+merge), and the only conflicts were the eight derived docs plus this file's
+own two independent sections, both kept. The one thing the merge left
+behind was host-side: `MirrorFileTransferModel.hostFileFailureAudit`'s
+`exists` branch still said "the replace dialog is not built yet," which
+became false the moment the merge landed. Fixed in the same arc: `exists`
+keeps its defect wording (minus the now-false clause) for the lanes that
+still refuse unconditionally — an automated put has nobody to ask — and the
+new `declined` code gets its own `.info` line rather than sharing `exists`'s
+`.warn`, so a person's decision to keep their file does not read as the
+swallowed-dialog defect that shipped before.
+
+**Emulator round, 2026-08-16, session-private clone** (`scripts/spin-up-ppc`,
+`NOW_SPIN_PURPOSE=ppc-work`, base `now-mirror-stage.qcow2` sha256
+`8db8ddc2…`, this tree's app/ext staged, sourceManifest `0b83a0e1666b`,
+buildFingerprint `cad894807933`). Driven over the raw wire (no existing
+tool speaks `file.offer`+bulk end to end, so a one-shot instrument was
+built for this round reusing `scripts/probes/nowwire.GuestLink`, matching
+the exact sequence `now-host/Sources/Host/Session.swift` sends — not kept
+in the tree):
+
+1. Put `COLLIDE.TXT` (15 bytes) to the guest's Desktop with no collision —
+   `file.accept` / `file.done ok:true`, establishing the pre-existing file.
+2. Re-offered the same name: **no reply within 8s** — confirmed the offer
+   defers rather than refusing (`awaiting_confirm`), then a QMP screendump
+   showed the native dialog up: `Replace "COLLIDE.TXT"? / This Macintosh
+   already has a file with this name. The old one goes to the Trash.`,
+   buttons Cancel/Replace, Replace the default.
+3. Closed-loop-homed the QEMU relative mouse to the Cancel button
+   (`mouseloc` read back each step, per the rig's "rel-mouse is
+   closed-loop-only" rule) and clicked: **`file.refuse code=declined,
+   reason="somebody chose to keep the file already there"`**. A follow-up
+   offer of the same name immediately deferred again — the original 15-byte
+   file was untouched (never even reached a `file.accept`, by the design's
+   own construction — Cancel returns before any byte moves).
+4. Re-offered, homed to Replace, clicked: **`file.accept ... replacing:
+   true`**. Streamed 18 replacement bytes over the bulk channel + `file.end`
+   with CRC32; guest answered `file.done ok:true, received:18, checksum
+   ok`. Read the file back with the guest's own `script` verb (AppleScript
+   `read file`) — **byte-exact**, `"REPLACEMENT BYTES\n"`.
+5. **The wire pumped throughout**: `mouseloc` command/reply round-trips
+   succeeded repeatedly while the dialog was on screen and
+   `g_put.awaiting_confirm` was true, on the same TCP session — the
+   no-starve guarantee `pump.h` and `now_confirm`'s nested loop exist for,
+   observed rather than assumed.
+
+All four claims from the "what's genuinely still open" list in the entry
+below are now emulator-tested except metal. **One gap found empirically,
+not fixed here (small, scope-preserving):** `now_wire_put_resolve_replace`'s
+decline arm calls `file_refuse` and `rx_outcome` but no `now_log` — the
+guest's own `put` log shows `#N ... is already there; asking` and, on
+Replace, `#N replacing ...`, but a Cancel leaves no terminal log line at
+all on the guest side (confirmed against `tail area=put` after both a
+decline and a replace in the same run). Host-side logging is unaffected
+(the host's `declined` audit line comes from the wire reply, not the
+guest's log). Worth a one-line fix in `wire.c` someday; not blocking, and
+out of scope for a merge-and-repair pass.
+
+Metal remains pending, same as `f74324a4` left it.
+
 ## UNVERIFIED, ENVIRONMENTAL: two host gates on this Mac make each other red (2026-08-16, `chore/recover-034-orphans`)
 
 `LoggingSpecTests.testALineMatchesTheFormatTheSpecDefines` failed once in
