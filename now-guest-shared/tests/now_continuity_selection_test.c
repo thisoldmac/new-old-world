@@ -381,13 +381,22 @@ int main(void)
             CHECK(table.item.drag_seq == 12);
         }
 
-        /* A poll that sees a DIFFERENT file is an ordinary new generation
-           and is selection-sourced again. Nothing about the drag route
-           makes the poll stop working. */
-        CHECK(now_continuity_stub_observe(&table, &polled) == 1);
-        CHECK(table.generation == 3);
-        CHECK(table.item.source == kNowStubSourceSelection);
-        CHECK(table.item.drag_seq == 0);
+        /* DELIBERATE SPEC CHANGE (2026-08-17, attended): a poll that sees
+           a DIFFERENT file does NOT replace a drag-sourced stub, and a
+           poll that sees nothing does not clear it. The post-release
+           snap-back churns the Finder selection before the epoch settles,
+           and the old rule handed the grant hold a churned or empty table
+           — "the drag no longer names what it was given" on every
+           crossing gesture. The drag holds the slot until the settle or
+           another drag. */
+        CHECK(now_continuity_stub_observe(&table, &polled) == 0);
+        CHECK(table.generation == 2);
+        CHECK(table.item.source == kNowStubSourceDrag);
+        CHECK(table.item.drag_seq == 12);
+        CHECK(now_continuity_stub_observe(
+                  &table, (const NowContinuityStubItem *)0) == 0);
+        CHECK(table.have_item == 1);
+        CHECK(table.generation == 2);
 
         /* --- the confirmation, against the right witness --------------
            The gesture this whole route exists to serve: the file being

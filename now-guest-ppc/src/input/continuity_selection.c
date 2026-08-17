@@ -680,10 +680,21 @@ int now_continuity_selection_grab(unsigned long live_epoch,
     /* THE LAST CHECK, AND THE ONLY ONE THAT ASKS THE MACHINE. Everything
        above proves consent was given for this generation; none of it can
        notice the generation stopped describing what the person is holding.
-       Before the checks below turn a stub into a real FSSpec, ask. */
-    verdict = confirm_serve(serve);
-    if (verdict != kNowGrabOK) {
-        return verdict;
+       Before the checks below turn a stub into a real FSSpec, ask.
+
+       NOT FOR A GRAB SERVED FROM THE HOLD. After the epoch there is no
+       live witness to ask: the crossing released the press, the Finder's
+       drag loop returned, and the resident's drag record died with it —
+       consulting it here refused every crossing gesture by construction
+       (attended, 2026-08-17). The hold IS the witness for this window:
+       captured while the consent was live, bound to its drag_seq, and the
+       FSMakeFSSpec below still re-resolves the identity so a file moved
+       or renamed since refuses here exactly as it always did. */
+    if (!after_epoch) {
+        verdict = confirm_serve(serve);
+        if (verdict != kNowGrabOK) {
+            return verdict;
+        }
     }
     if (after_epoch) {
         /* Named, because this is the one place a grab is served under an

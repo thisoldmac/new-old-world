@@ -101,6 +101,24 @@ int now_continuity_stub_observe(NowContinuityStubTable *table,
     if (table == NULL) {
         return 0;
     }
+    /* A DRAG-BOUND STUB IS NOT THE POLL'S TO OVERWRITE. The consent for
+       this epoch's gesture is the drag; what the Finder's selection does
+       after the release — the snap-back moving it, the desktop clearing
+       it — is that gesture's noise, and observing it here is what handed
+       the epoch-end grant hold a churned or empty table on 2026-08-17
+       (the attended "the drag no longer names what it was given" chain).
+       Only another drag (now_continuity_stub_observe_drag) or the epoch's
+       own settle replaces a drag-sourced stub. A poll re-observing the
+       SAME item still falls through to the silent field refresh below.
+
+       DELIBERATE SPEC CHANGE: this reverses the earlier rule that a poll
+       seeing a different file replaces a drag stub — the attended run
+       proved that rule is how a crossing gesture loses its grant. */
+    if (table->have_item && table->item.source == kNowStubSourceDrag
+            && (item == NULL
+                || !now_continuity_stub_same(&table->item, item))) {
+        return 0;
+    }
     if (item == NULL) {
         if (!table->have_item) {
             return 0;               /* still empty; nothing to say */
