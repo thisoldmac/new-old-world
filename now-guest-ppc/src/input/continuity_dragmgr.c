@@ -47,6 +47,11 @@ static DragSendDataUPP g_send_upp;
         control for bit 8, so "the proc is never called" and "the plane
         is stale inside TrackDrag" cannot share one frozen coordinate.
         Wins over 8 when both are set.
+    32  materialise the promise in the Temporary Items folder instead of
+        the folder the receiver named, and hand the receiver THAT spec.
+        Asks whether the receiver places the file itself - the half of
+        "who owns the destination" that a file already sitting at its
+        destination can never answer.
 
    Bit 1 was here and is gone: it held the DragRef past TrackDrag on the
    theory that the Finder asks late. Bit 4 killed that theory by showing
@@ -506,6 +511,44 @@ static pascal OSErr drag_send_data(FlavorType type, void *refcon,
         return cantGetFlavorErr;
     }
 
+    /* ---- SLICE-2 DIAGNOSTIC BIT 32: WHOSE FOLDER PLACES THE FILE ----
+       Measured 2026-08-17: materialising into the folder the receiver
+       named leaves the file exactly where we put it, under the name we
+       chose — the receiver never touches it, so its own duplicate
+       machinery never runs and a second same-name drop dies in OUR
+       pre-check. This bit asks the other half of the question: given a
+       file that is NOT already at its destination, does the receiver
+       move it there itself? If it does, the placement — and every
+       collision decision that comes with it — was always the
+       receiver's, and the send proc has no business naming a
+       destination at all. */
+    if ((g_diag_mask & 32) != 0) {
+        short tvref = 0;
+        long tdir = 0;
+
+        if (FindFolder(vref, kTemporaryFolderType, kCreateFolder,
+                       &tvref, &tdir) == noErr) {
+            FSSpec stale;
+            Str255 pname;
+
+            /* Our own scratch, our own leftovers: a previous drop's
+               staged copy is ours to clear, and clearing it is not a
+               decision about anybody's file. */
+            CopyCStringToPascal(g_drag.item.name, pname);
+            if (FSMakeFSSpec(tvref, tdir, pname, &stale) == noErr) {
+                FSpDelete(&stale);
+            }
+            vref = tvref;
+            dir = tdir;
+            now_log(kLogInfo, "mirror",
+                    "drag promise staging in Temporary Items (dir %ld)",
+                    tdir);
+        } else {
+            now_log(kLogWarn, "mirror",
+                    "drag promise: no Temporary Items folder; using the "
+                    "drop folder");
+        }
+    }
     now_log(kLogInfo, "mirror", "drag promise streaming %.31s into dir %ld",
             g_drag.item.name, dir);
     /* WHOSE FOLDER THE RECEIVER NAMED, and whether the name it is about

@@ -549,11 +549,18 @@ final class LiveDragInputProcExperiment: XCTestCase {
             .environment["NOW_DRAG_FIXTURE_BYTES"].flatMap { Int($0) } ?? 4096
         try Data(repeating: 0x4E, count: bytes).write(to: big)
         say("fixture \(name) is \(bytes) bytes")
+        // THE DIAGNOSTIC MASK IS A DIAL TOO. Slice 2 asks the same two
+        // gestures of more than one promise-materialisation rule, and a
+        // rebuild per hypothesis costs a spin cycle each.
+        let mask = ProcessInfo.processInfo
+            .environment["NOW_DRAG_MASK"] ?? "16"
+        let arm = "--drag --x=\(mask)@10,300"
+        say("arm mask \(mask)")
 
         let (ep1, udp1) = try await freshEpoch()
         let first = try await drag(
             label: "B1", epoch: ep1, publishGeneration: 1, udpPort: udp1,
-            file: big, arm: "--drag --x=16@10,300",
+            file: big, arm: arm,
             from: (300, 240), to: (10, 300), drivePath: false,
             holdSeconds: 2.4, shotDuringPull: true)
         let size1 = await runCommand(
@@ -573,7 +580,7 @@ final class LiveDragInputProcExperiment: XCTestCase {
         let (ep2, udp2) = try await freshEpoch()
         let second = try await drag(
             label: "B2", epoch: ep2, publishGeneration: 1, udpPort: udp2,
-            file: big, arm: "--drag --x=16@10,300",
+            file: big, arm: arm,
             from: (300, 240), to: (10, 300), drivePath: false,
             holdSeconds: 2.4, shotDuringPull: true)
         let after = await runCommand(
