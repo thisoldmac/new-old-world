@@ -462,6 +462,116 @@ int main(void)
         }
     }
 
+    /* --- the mint that arrives after its epoch ended -------------------
+
+       THE CROSSING GESTURE, which is the one the whole plane exists for
+       and the one that published nothing at all until this existed. The
+       shape, from metal 2026-08-16: an epoch is live, a person presses an
+       icon nobody selected, the Drag Manager names it to the resident, the
+       pointer crosses — which ENDS the epoch — and only then, when the
+       Finder's drag loop lets go, does this application get task time to
+       drain the identity. There is no live epoch to publish under and
+       nothing in the table to hold. */
+    {
+        NowContinuityStubTable post;
+        NowContinuityGrantHold hold;
+        NowContinuityEndedEpoch ended;
+        NowContinuityStubItem picked = item_named("HELLO_CLAUDE.txt", 2,
+                                                  3400000000UL, 0);
+        NowContinuityStubItem second = item_named("NOTES.txt", 2,
+                                                  3400000001UL, 0);
+        NowContinuityStubItem folder2 = item_named("Projects", 2, 1000, 1);
+        const NowContinuityStubItem *serve;
+        unsigned long table_epoch;
+        int after_epoch;
+
+        memset(&post, 0, sizeof post);
+        memset(&hold, 0, sizeof hold);
+        memset(&ended, 0, sizeof ended);
+
+        /* Nothing has ended yet: there is no consent to publish under, and
+           a drain arriving now is a person using their own Macintosh. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 2, 500) == 0);
+
+        /* Epoch 4 ran and its last generation was 3. */
+        now_continuity_epoch_ended(&ended, 4, 3, 1000);
+        CHECK(ended.epoch == 4 && ended.generation == 3);
+
+        /* The drain, a quarter of a second later. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 2, 1015) == 1);
+        CHECK(post.epoch == 4);
+        /* A NUMBER NOBODY PUBLISHED: the ended epoch's last generation
+           plus one, so a host holding generation 3 cannot confuse them. */
+        CHECK(post.generation == 4);
+        CHECK(post.have_item && post.item.source == kNowStubSourceDrag);
+        CHECK(post.item.drag_seq == 2);
+        CHECK(strcmp(post.item.name, "HELLO_CLAUDE.txt") == 0);
+
+        /* AND IT IS GRANTABLE AT ONCE, which is the half a publish alone
+           would have got wrong: the host binds this number and asks for it
+           while no epoch is live at all. */
+        CHECK(hold.epoch == 4 && hold.generation == 4);
+        CHECK(hold.item.drag_seq == 2);
+        {
+            NowContinuityStubTable live;
+
+            now_continuity_stub_reset(&live, 0);
+            table_epoch = 0;
+            serve = (const NowContinuityStubItem *)0;
+            after_epoch = 0;
+            CHECK(now_continuity_grab_resolve(&live, &hold, &table_epoch,
+                                              0, 4, 4, 1100,
+                                              &serve, &after_epoch)
+                  == kNowGrabOK);
+            CHECK(after_epoch == 1);
+            CHECK(serve != (const NowContinuityStubItem *)0);
+            CHECK(strcmp(serve->name, "HELLO_CLAUDE.txt") == 0);
+        }
+
+        /* THE SAME DRAG DRAINED TWICE mints nothing further. The observer
+           is edge-triggered, but the table must be idempotent anyway. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 2, 1020) == 0);
+        CHECK(post.generation == 4);
+
+        /* A SECOND GESTURE under the same ended epoch counts on from the
+           first rather than reusing its number. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &second, 3, 1030) == 1);
+        CHECK(post.generation == 5 && post.item.drag_seq == 3);
+
+        /* A folder is refused here, once, rather than at the host's bind
+           and again at the grab. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &folder2, 4, 1040) == 0);
+        /* No sequence is no gesture. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 0, 1040) == 0);
+
+        /* THE WINDOW IS THE GRANT'S WINDOW, for the grant's reason: a
+           gesture is a human act, not a standing consent. One tick past it
+           and the mint refuses rather than publishing a number that could
+           never be redeemed. */
+        CHECK(now_continuity_stub_publish_post_epoch(
+                  &post, &hold, &ended, &picked, 9,
+                  1000 + kNowContinuityGrantTicks) == 1);
+        CHECK(now_continuity_stub_publish_post_epoch(
+                  &post, &hold, &ended, &picked, 10,
+                  1000 + kNowContinuityGrantTicks + 1) == 0);
+
+        /* A new epoch clears the record, so a drain that arrives later
+           cannot publish under a consent that is over twice. */
+        now_continuity_epoch_ended_release(&ended);
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 11, 1100) == 0);
+        /* An epoch of zero never ended; recording one is recorded as
+           nothing. */
+        now_continuity_epoch_ended(&ended, 0, 7, 1200);
+        CHECK(ended.epoch == 0);
+    }
+
     /* Every refusal has a contract code and success has none. */
     CHECK(now_continuity_grab_code(kNowGrabOK) == (const char *)0);
     CHECK(strcmp(now_continuity_grab_code(kNowGrabBadEpoch),

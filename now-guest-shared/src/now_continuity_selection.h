@@ -195,6 +195,70 @@ int now_continuity_selection_settle(NowContinuityStubTable *table,
    the gesture was redeemed. */
 void now_continuity_grant_release(NowContinuityGrantHold *hold);
 
+/* --- the generation minted after its epoch ended --------------------------
+
+   THE GRANT ABOVE IS ONE STEP TOO LATE FOR A CROSSING GESTURE, and the
+   crossing is the whole point. The grant survives the epoch its gesture
+   began in — but only for a generation that was MINTED while the epoch was
+   still live. On a single-gesture drag of a file nobody selected there is
+   no such generation: the Drag Manager names the item to the resident from
+   inside the Finder's drag loop, the application gets no task time until
+   that loop ends, and on a crossing gesture the cross is what ends it. So
+   the identity is drained AFTER the epoch is over, with nothing in the
+   table to hold — measured on metal 2026-08-16, where six crossings
+   published nothing at all and the host refused every one of them by name.
+
+   The rule is the grant's rule one step earlier: THE MINT SURVIVES THE
+   EPOCH ITS GESTURE BEGAN IN, under the same bounded window and the same
+   consent. Nothing else about consent moves. The item is still the one the
+   person picked up with their own hand, the number is still one this guest
+   minted, the grab still names it, and the window is still
+   kNowContinuityGrantTicks from the moment the epoch's end was NOTICED. */
+
+/* What the epoch that just ended was, kept so a drain that arrives after it
+   can still say which consent it belongs to. Zero epoch means none. */
+typedef struct {
+    unsigned long epoch;          /* the epoch that ended; 0 when none */
+    unsigned long generation;     /* its last generation, so the next mint
+                                     is a number nobody has published */
+    unsigned long ended_at;       /* TickCount() when the end was noticed */
+} NowContinuityEndedEpoch;
+
+/* Record an epoch's end. Called with the table's epoch and generation as
+   they stood BEFORE the settle reset them, because after it neither exists
+   anywhere else. */
+void now_continuity_epoch_ended(NowContinuityEndedEpoch *ended,
+                                unsigned long epoch,
+                                unsigned long generation,
+                                unsigned long now_ticks);
+
+/* Forget the ended epoch — a new one is running, or the link went away. */
+void now_continuity_epoch_ended_release(NowContinuityEndedEpoch *ended);
+
+/* Mint a generation for a drag whose epoch is already over, and make it
+   grantable.
+
+   `post` is the table the WIRE publishes from: it names the ended epoch, so
+   it cannot be the live table (which the settle has already reset onto the
+   new epoch, or onto none). `hold` is written from it, because a mint that
+   the host could name and this guest would refuse is worse than no mint.
+
+   Returns 1 when a generation was minted and the wire owes the host a
+   continuity.selection carrying the ENDED epoch; 0 for every refusal:
+
+     - no ended epoch recorded (nothing to publish under),
+     - the window has closed (same window as the grant's, and for the same
+       reason: a person's gesture, not a standing consent),
+     - no item, a folder, or no drag sequence,
+     - the same drag sequence already minted under this epoch, so the drain
+       is idempotent the way the live one is. */
+int now_continuity_stub_publish_post_epoch(NowContinuityStubTable *post,
+                                           NowContinuityGrantHold *hold,
+                                           const NowContinuityEndedEpoch *ended,
+                                           const NowContinuityStubItem *item,
+                                           unsigned long drag_seq,
+                                           unsigned long now_ticks);
+
 enum {
     kNowGrabOK = 0,
     /* The epoch is not the live one — the consent has expired with the

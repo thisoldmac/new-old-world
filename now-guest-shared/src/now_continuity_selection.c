@@ -247,6 +247,92 @@ static int grant_expired(const NowContinuityGrantHold *hold,
     return (long)(now_ticks - hold->expires_at) > 0;
 }
 
+void now_continuity_epoch_ended(NowContinuityEndedEpoch *ended,
+                                unsigned long epoch,
+                                unsigned long generation,
+                                unsigned long now_ticks)
+{
+    if (ended == NULL) {
+        return;
+    }
+    if (epoch == 0) {
+        /* Nothing ended. Recording a zero epoch would make every later
+           drain believe it had a consent to publish under. */
+        now_continuity_epoch_ended_release(ended);
+        return;
+    }
+    ended->epoch = epoch;
+    ended->generation = generation;
+    ended->ended_at = now_ticks;
+}
+
+void now_continuity_epoch_ended_release(NowContinuityEndedEpoch *ended)
+{
+    if (ended == NULL) {
+        return;
+    }
+    memset(ended, 0, sizeof *ended);
+}
+
+/* The same window as the grant's, measured from the moment the end was
+   noticed. Signed, for the reason grant_expired is. */
+static int ended_epoch_window_closed(const NowContinuityEndedEpoch *ended,
+                                     unsigned long now_ticks)
+{
+    return (long)(now_ticks - (ended->ended_at + kNowContinuityGrantTicks)) > 0;
+}
+
+int now_continuity_stub_publish_post_epoch(NowContinuityStubTable *post,
+                                           NowContinuityGrantHold *hold,
+                                           const NowContinuityEndedEpoch *ended,
+                                           const NowContinuityStubItem *item,
+                                           unsigned long drag_seq,
+                                           unsigned long now_ticks)
+{
+    unsigned long generation;
+
+    if (post == NULL || ended == NULL || item == NULL || drag_seq == 0) {
+        return 0;
+    }
+    if (ended->epoch == 0 || ended_epoch_window_closed(ended, now_ticks)) {
+        return 0;
+    }
+    /* A folder is refused HERE for the reason the live drain refuses one:
+       once, at the source, rather than at the host's bind and again at this
+       guest's grab. */
+    if (item->is_folder) {
+        return 0;
+    }
+    /* Idempotent on the gesture, exactly like the live drain: the observer
+       is edge-triggered, but a second drain of one drag must not mint a
+       second number for it. */
+    if (post->epoch == ended->epoch && post->have_item
+        && post->item.source == kNowStubSourceDrag
+        && post->item.drag_seq == drag_seq) {
+        return 0;
+    }
+    /* A NUMBER NOBODY HAS PUBLISHED. The ended epoch's last generation is
+       the floor; a second post-epoch mint under the same epoch counts on
+       from the first, so two gestures cannot share a name. */
+    generation = ended->generation;
+    if (post->epoch == ended->epoch && post->generation > generation) {
+        generation = post->generation;
+    }
+    now_continuity_stub_reset(post, ended->epoch);
+    post->generation = generation + 1;
+    post->item = *item;
+    post->item.source = kNowStubSourceDrag;
+    post->item.drag_seq = drag_seq;
+    post->have_item = 1;
+    /* AND IT IS GRANTABLE AT ONCE. Publishing a number this guest would
+       refuse to serve is the defect being fixed, wearing different clothes:
+       the host would bind it, ask for it, and be told bad-epoch. The window
+       runs from the mint rather than from the epoch's end, because the
+       gesture the person is holding is still in flight now. */
+    now_continuity_grant_hold(hold, post, now_ticks);
+    return 1;
+}
+
 int now_continuity_grab_resolve(NowContinuityStubTable *table,
                                 NowContinuityGrantHold *hold,
                                 unsigned long *table_epoch,
