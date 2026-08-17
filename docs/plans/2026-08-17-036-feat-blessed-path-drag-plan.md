@@ -24,6 +24,16 @@ emulator without a human gesture — `setState({pos, mouse_down,
 attachment: promise_skeleton})` as a contract-declared verb — so the whole
 lane is observable and testable around.
 
+**The acceptance test, in one sentence (Michelle): once the edge hands
+off, the recipient of the handoff sees a normal drag with a promise —
+nothing on the receiving side can tell it from a drag its own user
+started.** Every slice's design questions resolve against that: a normal
+drag has no targeting code, no collision handling, no dialogs of its own,
+and does not rearrange the front process; it feeds input, serves its
+promise when asked, and otherwise stays out of the OS's way. The same
+sentence holds mirrored for guest→host: AppKit receives an ordinary
+session with an ordinary file promise.
+
 This plan is banked at Michelle's direction on 2026-08-16/17. It records
 the evidence gathered the same night, including one decisive negative
 result, and gates its first implementation slice on one cheap experiment
