@@ -322,6 +322,14 @@ final class LiveDragInputProcExperiment: XCTestCase {
         // reports btnState up on its own clock); the plane-fed ones are
         // released here. Both then get the plane's button lowered, so
         // the arm state and the resident agree whatever happened.
+        // BEFORE THE RELEASE BURST, not after. A scripted drag drops on
+        // its OWN clock — the input proc reports btnState up while the
+        // hold loop is still running — so the promise pull is already
+        // under way here, and a shot taken after the burst can miss the
+        // only window a progress panel would exist in.
+        if shotDuringPull {
+            screendump("\(label)-during-pull-0")
+        }
         generation &+= 1
         for _ in 0..<20 {
             send(h: to.0, v: to.1, down: false)
@@ -506,6 +514,70 @@ final class LiveDragInputProcExperiment: XCTestCase {
     /// own `bounds` string (`left, top, right, bottom`). Nudged down past
     /// the title bar rather than centred, so a tall window's midpoint
     /// cannot land on a proxy row that means something else.
+    /// THE PLAN'S SLICE-2 OBSERVATIONS, captured the moment a drop
+    /// completes and not a slice later, because they decide the fate of
+    /// two hand-built dialogs and only a completed drop can answer them:
+    ///
+    ///   * does the FINDER show a copy-progress window of its own while
+    ///     it pulls a promise? Run 2's 4 KB file crossed too fast for
+    ///     the question to mean anything, so this one is 600 KB.
+    ///   * what does the Finder natively do when the SAME NAME is
+    ///     dropped twice? Run 2 collided by accident (its `P` fixture
+    ///     survived run 1) and answered `transfer-failed` with the
+    ///     decisive lines already paged out. This asks on purpose.
+    ///
+    /// Separate from the four-question case so a rig failure in one is
+    /// not a rig failure in both.
+    func testTheFindersOwnProgressAndCollision() async throws {
+        try await waitConnected()
+        _ = await execLine("front New Old World")
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+
+        // A NAME NOTHING HAS USED, so the first drop is a create and the
+        // second is unambiguously a collision.
+        let stamp = Int(Date().timeIntervalSince1970) % 100000
+        let name = "Collide\(stamp).txt"
+        let big = receipts.appendingPathComponent(name)
+        try Data(repeating: 0x4E, count: 600 * 1024).write(to: big)
+
+        let (ep1, udp1) = try await freshEpoch()
+        let first = try await drag(
+            label: "B1", epoch: ep1, publishGeneration: 1, udpPort: udp1,
+            file: big, arm: "--drag --x=16@10,300",
+            from: (300, 240), to: (10, 300), drivePath: false,
+            holdSeconds: 2.4, shotDuringPull: true)
+        let size1 = await runCommand(
+            "script",
+            line: "tell application \"Finder\" to return (size of file "
+                + "\"\(name)\" of desktop) as string")
+        say("[B1] size on the guest: \(String(describing: size1.output)) "
+            + "(host wrote \(600 * 1024))")
+
+        guard first.landedAfter else {
+            say("[B2] skipped: B1 materialised nothing, so there is no "
+                + "collision to provoke")
+            return XCTFail("B1 did not land; the collision question cannot "
+                           + "be asked and is NOT answered by this run")
+        }
+
+        let (ep2, udp2) = try await freshEpoch()
+        let second = try await drag(
+            label: "B2", epoch: ep2, publishGeneration: 1, udpPort: udp2,
+            file: big, arm: "--drag --x=16@10,300",
+            from: (300, 240), to: (10, 300), drivePath: false,
+            holdSeconds: 2.4, shotDuringPull: true)
+        let after = await runCommand(
+            "script",
+            line: "tell application \"Finder\" to return (count of "
+                + "(every file of desktop whose name contains "
+                + "\"Collide\(stamp)\")) as string")
+        say("[B2] files matching the name afterwards: "
+            + "\(String(describing: after.output))")
+        say("COLLISION INPUTS")
+        say("  B1 landed=\(first.landedAfter) report: \(first.report)")
+        say("  B2 landed=\(second.landedAfter) report: \(second.report)")
+    }
+
     /// THE OUTPUT FIELD, NOT THE ENVELOPE. The reply also carries
     /// `timeoutMs 15000` and `osaErr 0`, and a naive scan for numbers
     /// reads those as a window — which is how a rig aims a gesture at a
