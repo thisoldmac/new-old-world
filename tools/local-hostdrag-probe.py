@@ -87,6 +87,7 @@ class Guest:
         self.sock = sock
         self.buffer = b""
         self.seen = []
+        self.on_bulk = None
         self._next_id = 7000
 
     def send(self, obj):
@@ -100,9 +101,14 @@ class Guest:
             _, _, _, length = struct.unpack(">BBHI", self.buffer[:8])
             if len(self.buffer) < 8 + length:
                 return None
-            payload = self.buffer[8:8 + length]
+            channel = self.buffer[0]
+            body = self.buffer[8:8 + length]
             self.buffer = self.buffer[8 + length:]
-            return json.loads(payload.decode("utf-8", "replace"))
+            if channel == BULK:
+                if self.on_bulk is not None:
+                    self.on_bulk(body)
+                continue
+            return json.loads(body.decode("utf-8", "replace"))
         return None
 
     def pump(self, seconds, want_id=None, udp=None, on_message=None):
@@ -327,9 +333,38 @@ def main():
     # because there is no other loop: the whole point of the lane is that
     # the guest is blocked while this happens.
     served = {"grabs": [], "sent": 0}
+    # THE LANDED FILE, COMING BACK THE OTHER WAY. `read file` through the
+    # script verb truncates at ~1 KB, so a chunked read is 600 requests
+    # for a 600 KB file and proves the transport as much as the file. The
+    # guest's own `put` verb hands the whole thing back down the ordinary
+    # send lane instead, and the compare is then a sha256 of bytes that
+    # never went through a text encoding.
+    back = {"active": False, "id": None, "bytes": bytearray(),
+            "announced": None, "done": None}
 
     def serve(message):
-        if message.get("type") != "continuity.grab":
+        kind = message.get("type")
+        if kind == "file.offer":
+            back["active"] = True
+            back["id"] = message.get("id")
+            back["announced"] = message.get("bytes")
+            back["bytes"] = bytearray()
+            guest.send({"type": "file.accept", "id": message.get("id"),
+                        "have": 0})
+            return
+        if kind == "file.begin" and back["active"]:
+            return
+        if kind == "file.end" and back["active"]:
+            back["done"] = dict(message)
+            back["active"] = False
+            guest.send({"type": "file.done", "id": message.get("id"),
+                        "ok": True})
+            return
+        if kind == "file.refuse":
+            back["done"] = dict(message)
+            back["active"] = False
+            return
+        if kind != "continuity.grab":
             return
         transfer = int(message.get("id") or 0)
         served["grabs"].append(dict(message))
@@ -379,8 +414,8 @@ def main():
                   file=sys.stderr, flush=True)
 
     before = guest.script(
-        'tell application "Finder" to return (count of every file of desktop '
-        f'whose name contains "{fixture_name[:-4]}") as string',
+        'tell application "Finder" to return (count of (every file of '
+        f'desktop whose name contains "{fixture_name[:-4]}")) as string',
         on_message=serve)
 
     # ---- arm the plane -------------------------------------------------
@@ -491,46 +526,69 @@ def main():
                    on_message=serve)
 
     after = guest.script(
-        'tell application "Finder" to return (count of every file of desktop '
-        f'whose name contains "{fixture_name[:-4]}") as string',
+        'tell application "Finder" to return (count of (every file of '
+        f'desktop whose name contains "{fixture_name[:-4]}")) as string',
         on_message=serve)
 
-    # ---- the byte-compare ----------------------------------------------
+    # ---- the byte-compare, whole ------------------------------------
+    # Read back through the guest's own File Manager, every byte, and
+    # compared against what the host sent. In 1000-byte chunks because
+    # the script verb's reply truncates at 1024 and says so — a chunk
+    # that came back short would otherwise be a silent hole in the middle
+    # of a "identical: true".
+    #
+    # The `put` verb would hand the whole file back in one transfer and
+    # was tried first: its console parser takes ONE whitespace token as
+    # the path, so no file under "Macintosh HD:Desktop Folder:" is
+    # reachable by it. Recorded rather than worked around, because it is
+    # a real gap in a verb whose whole subject is full HFS paths.
     verify = None
     if args.verify:
         path = f"Macintosh HD:Desktop Folder:{fixture_name}"
         size_raw = guest.script(
-            f'tell application "Finder" to return (size of file "{path}") '
-            'as string', on_message=serve)
+            'tell application "Finder" to get size of file '
+            f'"{fixture_name}" of desktop', on_message=serve)
         landed = bytearray()
+        offset = 0
+        trouble = None
+        while offset < len(payload) and trouble is None:
+            span = min(1000, len(payload) - offset)
+            reply = guest.ask("script", {
+                "source": f'return (read file "{path}" from {offset + 1} '
+                          f'to {offset + span})'}, timeout=180,
+                on_message=serve)
+            rows = {r[0]: r[1] for r in
+                    ((reply.get("output") or {}).get("script") or [])
+                    if isinstance(r, list) and len(r) == 2}
+            if str(rows.get("osaErr")) not in ("0",):
+                trouble = f"osaErr {rows.get('osaErr')} at {offset}"
+                break
+            if str(rows.get("truncated")) == "true":
+                trouble = f"reply truncated at {offset}"
+                break
+            raw = rows.get("output") or ""
+            if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
+                raw = raw[1:-1]
+            landed.extend(raw.encode("ascii", "replace"))
+            offset += span
+        landed = bytes(landed)
         mismatch = None
-        try:
-            size = int(float(size_raw))
-        except ValueError:
-            size = -1
-        if size == len(payload):
-            offset = 0
-            while offset < size:
-                span = min(16384, size - offset)
-                text = guest.script(
-                    f'read file "{path}" from {offset + 1} to '
-                    f'{offset + span}', on_message=serve)
-                landed += text.encode("ascii", "replace")
-                offset += span
-        if bytes(landed) != payload:
-            for i, (a, b) in enumerate(zip(bytes(landed), payload)):
+        if landed != payload:
+            for i, (a, b) in enumerate(zip(landed, payload)):
                 if a != b:
                     mismatch = i
                     break
             if mismatch is None:
                 mismatch = min(len(landed), len(payload))
-        verify = {"path": path, "sizeReported": size_raw,
-                  "sizeExpected": len(payload),
-                  "readBack": len(landed),
+        verify = {"path": path,
+                  "finderSize": size_raw,
+                  "bytesReadBack": len(landed),
+                  "bytesExpected": len(payload),
                   "sha256Expected": digest,
-                  "sha256ReadBack": hashlib.sha256(bytes(landed)).hexdigest(),
-                  "identical": bytes(landed) == payload,
-                  "firstDifferingOffset": mismatch}
+                  "sha256ReadBack": hashlib.sha256(landed).hexdigest(),
+                  "identical": landed == payload,
+                  "firstDifferingOffset": mismatch,
+                  "trouble": trouble}
 
     guest.send({"type": "bye"})
 
