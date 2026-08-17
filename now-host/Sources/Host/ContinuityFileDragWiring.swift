@@ -178,7 +178,29 @@ enum ContinuityFileDrag {
                             + "type=\(stub.utType.identifier)")
                         return grab.dragItem(for: stub)
                     }
-                })
+                },
+                /* THE LATE-BIND LANE. Wired from the same two halves as the
+                   stub lane above and for the same reason: a crossing this
+                   Mac can revise but never redeem would be a promise nobody
+                   can fill. See `ContinuityLateBind`. */
+                lateBind: ContinuityLateBind.Lane(
+                    pendingItem: { [weak grab] in grab?.pendingDragItem() },
+                    gesture: { [weak grab] in grab?.liveBinding?.gesture },
+                    revise: { [weak grab] mark in
+                        guard let grab else { return .noGesture }
+                        switch selection() {
+                        case .failure(let unusable):
+                            return .unusable(reason: unusable.message)
+                        case .success(let stub):
+                            guard stub.epoch == mark.epoch,
+                                  stub.generation == mark.generation else {
+                                return .unusable(reason: "the Mac's cache no "
+                                    + "longer names generation "
+                                    + "\(mark.generation)")
+                            }
+                            return grab.reviseLiveBinding(to: stub)
+                        }
+                    }))
         }
         edge.configureFileDragging(
             guestFileAtPoint: { [weak fileTransfer] point in

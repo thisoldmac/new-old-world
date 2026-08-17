@@ -951,6 +951,16 @@ final class MirrorContinuityController: ObservableObject,
             return
         }
         selectionCache.apply(selection, activeEpoch: epoch)
+        /* AND THE EDGE HEARS ABOUT IT EVEN IF IT ALREADY DECIDED. A
+           drag-sourced generation cannot arrive before the crossing — the
+           Finder's drag loop starves the guest of task time, and the
+           crossing's own release is what ends that loop — so this arrival is
+           routinely the FIRST thing this Mac learns about the file it is
+           already carrying. The edge refuses it in every case but that one;
+           see `noteSelectionPublished`. */
+        if let mark = selectionCache.mark {
+            edge.noteSelectionPublished(mark)
+        }
     }
 
     /// What a press may be bound to right now, or the named reason it may
