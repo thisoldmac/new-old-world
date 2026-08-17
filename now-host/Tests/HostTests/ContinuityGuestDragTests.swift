@@ -605,6 +605,208 @@ final class ContinuityGuestDragTests: XCTestCase {
                        .unchanged(gesture: 10, generation: 4))
     }
 
+    /// **THE EPOCH-4 REGRESSION.** Attended PowerBook round 2026-08-16,
+    /// log `221834` epoch 4: the cache held generation 3 of `main 2.c`,
+    /// whose bytes this Mac had already fetched, and the resident's
+    /// identity-only announcement of THE SAME FILE overwrote it with a
+    /// generation of 0. Every grab after that was refused by this Mac to
+    /// itself, and the file that was already here never crossed.
+    ///
+    /// The drag is still the better account of what is in the hand. It is
+    /// not a reason to lose the number a grab must name.
+    func testAnIdentityOnlyDragKeepsTheGenerationItsOwnFileAlreadyHas() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let cache = ContinuitySelectionCache(audit: { audits.append(($0, $1)) },
+                                             now: { 1_000 })
+        cache.apply(Self.selection(epoch: 4, generation: 3,
+                                   item: Self.file(name: "main 2.c")),
+                    activeEpoch: 4)
+        cache.apply(Self.announced(epoch: 4, dragSeq: 4, name: "main 2.c"),
+                    activeEpoch: 4)
+
+        guard case .success(let stub) = cache.bindable(activeEpoch: 4)
+        else { return XCTFail("the announced drag is not bindable") }
+        XCTAssertEqual(stub.generation, 3,
+                       "an identity carries no generation and must not "
+                        + "take one away")
+        XCTAssertEqual(stub.item.name, "main 2.c")
+        XCTAssertEqual(stub.item.dataSize, 5,
+                       "the richer account of the same file survives, so "
+                        + "the eager-fetch policy still has sizes to read")
+        XCTAssertEqual(stub.dragSeq, 4, "and the join key rides with it")
+        XCTAssertEqual(cache.mark?.source, .drag,
+                       "the cross still binds to the drag: this changes "
+                        + "which number is kept, not which witness wins")
+        XCTAssertEqual(cache.mark?.generation, 3)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("the drag names the file this Mac already holds")
+                && $0.1.contains("keeping generation 3")
+        }, "a merge nobody can see is indistinguishable from the bug")
+    }
+
+    /// The other half of the same rule. A stale cache naming a DIFFERENT
+    /// file is exactly what the drag plane exists to overrule — but its
+    /// generation belongs to that other file, and serving it under this
+    /// name would be the wrong-file bug wearing a valid number.
+    func testADragNamingAnotherFileTakesTheNameAndNotTheGeneration() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let cache = ContinuitySelectionCache(audit: { audits.append(($0, $1)) },
+                                             now: { 1_000 })
+        cache.apply(Self.selection(epoch: 5, generation: 3,
+                                   item: Self.file(name: "main 2.c")),
+                    activeEpoch: 5)
+        cache.apply(Self.announced(epoch: 5, dragSeq: 2, name: "hello.txt"),
+                    activeEpoch: 5)
+
+        guard case .success(let stub) = cache.bindable(activeEpoch: 5)
+        else { return XCTFail("the announced drag is not bindable") }
+        XCTAssertEqual(stub.item.name, "hello.txt",
+                       "the drag names what is in the hand; the cache was "
+                        + "naming what was selected a gesture ago")
+        XCTAssertEqual(stub.generation, 0,
+                       "and it has no generation of its own yet — the "
+                        + "cached one was minted for another file")
+        XCTAssertTrue(audits.contains {
+            $0.0 == .warn && $0.1.contains("the drag names hello.txt")
+                && $0.1.contains("generation 3 cached for main 2.c")
+        })
+    }
+
+    /// **NO GRAB IS EVER ASKED WITH A ZERO.** The Macintosh mints
+    /// generations and refuses every number it did not, so an eager fetch
+    /// under generation 0 is a certain refusal — six for six on metal
+    /// 2026-08-16 — and spending the gesture's first attempt on it reports
+    /// the wire's symptom instead of the cause.
+    func testAnIdentityOnlyStubStartsNoEagerFetch() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        var wireCalls = 0
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, _ in wireCalls += 1 },
+            audit: { audits.append(($0, $1)) })
+
+        let item = transfer.dragItem(
+            for: ContinuityDragStub(epoch: 4, generation: 0,
+                                    item: Self.file(name: "main 2.c"),
+                                    dragSeq: 4))
+
+        XCTAssertEqual(wireCalls, 0,
+                       "nothing may be asked of the wire under a generation "
+                        + "the Macintosh never minted")
+        XCTAssertNil(item.resolve, "and the drag carries the promise")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("eager fetch skipped")
+                && $0.1.contains("has minted a generation")
+        })
+    }
+
+    /// **THE HOLD, AND THE FIRST ATTEMPT IT MAKES POSSIBLE.** The crossing
+    /// carries an identity; the application's frame joins by `dragSeq` a
+    /// fifth of a second later. The drop waits for it and then asks ONCE,
+    /// with the minted number — which is not a retry of anything: nothing
+    /// was ever asked for this gesture.
+    func testAHeldDropRedeemsTheGenerationThatJoinsAfterTheCross() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var audits: [(HostLog.LogLevel, String)] = []
+        let seen = Asked()
+        let asked = expectation(description: "the grab reached the wire")
+        let transfer = ContinuityGrabTransfer(
+            grab: { epoch, generation, _, _, completion in
+                seen.epoch = epoch
+                seen.generation = generation
+                asked.fulfill()
+                completion(.failure(.init(
+                    code: "test", message: "no bytes cross in this test")))
+            }, audit: { audits.append(($0, $1)) })
+        let provider = try XCTUnwrap(
+            transfer.pendingDragItem().writer as? NSFilePromiseProvider)
+        let minted = ContinuityDragStub(epoch: 4, generation: 6,
+                                        item: Self.file(name: "main 2.c"),
+                                        dragSeq: 4)
+
+        let done = expectation(description: "the promise answered")
+        transfer.filePromiseProvider(
+            provider, writePromiseTo: staging.appendingPathComponent("main 2.c")
+        ) { _ in done.fulfill() }
+        /* The application's own frame, arriving while the drop holds. */
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            MainActor.assumeIsolated { _ = transfer.reviseLiveBinding(to: minted) }
+        }
+        wait(for: [asked, done], timeout: 5)
+
+        XCTAssertEqual(seen.generation, 6,
+                       "the drop asked with the number that joined, and "
+                        + "asked exactly once")
+        XCTAssertTrue(audits.contains { $0.1.contains("grab held:") })
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("the generation joined")
+                && $0.1.contains("FIRST attempt")
+        }, "the log must say this is a first attempt, not a retry")
+    }
+
+    /// And when nothing ever mints one, this Mac refuses by name and says
+    /// how long it waited — rather than sending a zero and reporting the
+    /// Macintosh's `drag-not-yet-named` for a race it never saw.
+    func testAHeldDropRefusesByNameWhenNoGenerationEverArrives() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var audits: [(HostLog.LogLevel, String)] = []
+        var wireCalls = 0
+        var refusals: [String] = []
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, _ in wireCalls += 1 },
+            audit: { audits.append(($0, $1)) })
+        transfer.mintWaitSeconds = 0.1
+        transfer.refusalSink = { refusals.append($0) }
+        let provider = try XCTUnwrap(
+            transfer.pendingDragItem().writer as? NSFilePromiseProvider)
+        _ = transfer.reviseLiveBinding(
+            to: ContinuityDragStub(epoch: 4, generation: 0,
+                                   item: Self.file(name: "main 2.c"),
+                                   dragSeq: 4))
+
+        let thrown = fulfill(transfer,
+                             to: staging.appendingPathComponent("main 2.c"),
+                             provider: provider)
+
+        XCTAssertEqual(wireCalls, 0)
+        guard case .notYetNamed(let name, let waitedMs) =
+                thrown as? ContinuityGrabTransfer.GrabError else {
+            return XCTFail("the drop must refuse by name, not by the wire's "
+                            + "word for a request it never received")
+        }
+        XCTAssertEqual(name, "main 2.c")
+        XCTAssertGreaterThan(waitedMs, 0,
+                             "the refusal is only useful if it says the "
+                              + "hold actually happened")
+        XCTAssertEqual(refusals.count, 1,
+                       "a drag that did not work must interrupt the person")
+        XCTAssertTrue(audits.contains {
+            $0.0 == .error && $0.1.contains("never minted a generation")
+        })
+    }
+
+    /// The binding's own half of the same invariant: an identity-only
+    /// revision arriving after a real one may not un-name the gesture.
+    func testALateIdentityCannotUnnameALiveGeneration() {
+        let binding = ContinuityDragBinding(
+            gesture: 3,
+            stub: ContinuityDragStub(epoch: 4, generation: 6,
+                                     item: Self.file(name: "main 2.c"),
+                                     dragSeq: 4))
+        let outcome = binding.revise(
+            to: ContinuityDragStub(epoch: 4, generation: 0,
+                                   item: Self.file(name: "main 2.c"),
+                                   dragSeq: 4))
+
+        guard case .unusable(let reason) = outcome else {
+            return XCTFail("an identity-only revision must be refused")
+        }
+        XCTAssertTrue(reason.contains("generation 6"))
+        XCTAssertEqual(binding.grabbable?.generation, 6)
+        XCTAssertEqual(binding.redeem()?.generation, 6)
+    }
+
     /// The box itself, where the two rules live: one revision at a time is
     /// fine, and none at all after the drop has taken its answer.
     func testTheRevisionWindowClosesAtRedemptionAndNotBefore() {
@@ -2383,6 +2585,19 @@ final class ContinuityGuestDragTests: XCTestCase {
         -> ContinuitySelection {
         .init(version: ContinuityContract.version, epoch: epoch,
               generation: generation, source: .selection, item: item)
+    }
+
+    /// What `MirrorContinuityController` synthesises from one
+    /// `continuity.dragBegin`: the resident's identity, no generation, and
+    /// none of the three fields only the File Manager could answer.
+    private static func announced(epoch: UInt32, dragSeq: UInt32,
+                                  name: String) -> ContinuitySelection {
+        .init(version: ContinuityContract.version, epoch: epoch,
+              generation: 0, source: .drag, dragSeq: dragSeq,
+              item: .init(name: name, volumeRef: -1, dirID: 2,
+                          fileType: "TEXT", creator: "ttxt", dataSize: nil,
+                          resourceSize: nil, modifiedAt: nil,
+                          isFolder: false, icon: nil))
     }
 
     fileprivate static func file(name: String) -> ContinuitySelection.Item {
