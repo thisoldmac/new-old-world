@@ -7,6 +7,102 @@ search:
 
 # Open issues
 
+## FIXED: the host offer's epoch was a constant, so the guest could never draw a carried file (2026-08-16, `fix/hg-drag-offer-epoch`, forensics D3)
+
+`scratchpad/recon-reports/F1-metal-round-forensics.md` (2026-08-16 attended
+PB1400c round, `feat/hg-drag-arc-candidate` @ `0447594c`) named D3: every
+one of seven carried gestures logged `the Macintosh would not pick up the
+carried file (refused): the drag crosses unillustrated and the drop still
+decides`, seven for seven. Root cause, confirmed by reading both halves:
+`now-host/Sources/Host/HostAppState.swift:89` published every offer under
+`hostDragOfferEpoch: UInt32 = 1`, a constant scoped to "one per app
+lifetime." `now-guest-shared/src/now_continuity_offer.c:40` closes an offer
+the moment `table->epoch != live_epoch` — and `live_epoch` is the **live
+Continuity epoch**, which increments on every crossing
+(`MirrorContinuityController.epoch`, bumped in `nextNonzero(epoch)` at
+`beginEdgeMode`). The two only ever agreed at epoch 1, the first arm of a
+session — matching exactly Michelle's "it never has."
+
+**Fix.** `MirrorContinuityController` gained a read-only accessor,
+`currentEpoch`, alongside the existing `selectionMark` pattern. `HostAppState`
+now reads `continuity.currentEpoch` at both the `carry` and `release`
+call sites instead of the removed constant; `hostDragOfferGeneration`
+is unchanged (it was already correctly monotonic per carried item). This
+was a one-value threading fix, no contract change — the offer's epoch
+field always meant "the live Continuity epoch" on the guest side; the host
+just never asked its own controller for it.
+
+**Also fixed, the diagnosability defect named alongside D3.**
+`HostAppState.swift:511`'s refusal log dropped `result.error.message` and
+kept only `result.error.code`, which is the literal string `"refused"` on
+every `command.request` refusal regardless of cause — so this exact defect
+read as "no reason given" the whole round. The line now appends the
+guest's own message.
+
+**Not yet metal- or emulator-verified.** A session-private `spin-up-ppc` +
+carry-and-cross round would show the guest accepting the offer instead of
+`the drag crosses unillustrated`; not run in this pass — see the branch's
+own handoff message for why. Builds clean (`scripts/build-host-app`,
+`scripts/build-guests ppc`); existing `AgentIntegrationContinuityOfferControlTests`
+/ `LiveOfferDragAcceptanceTests` call `publish`/`clear` directly with their
+own epochs and are unaffected by the threading change.
+
+## FIXED, ROOT CAUSE CORRECTED: D6's "modifiers refused as malformed" traces to a stale guest build, not a live code defect (2026-08-16, `fix/hg-drag-offer-epoch`, forensics D6)
+
+The same forensics round logged, at epoch 13 (a Cmd-Delete, no drag in
+flight): `keyboard event queued: generation=1, action=modifiers, …` /
+`keyboard event refused: generation=1, reason=malformed`, twice. D6 traced
+it to `now-guest-shared/src/now_continuity_keyboard_logic.c:26`
+(`action_valid`), which accepts only down/up/repeat, and read that as the
+guest simply never having learned the contract-legal `modifiers` action
+(`contract/asyncapi.yaml`'s `ContinuityKey.action` enum, additive, no
+version bump).
+
+Reading the actual dispatch path on this exact tree (`0447594c`) does not
+support that as the live cause. `now-guest-ppc/src/core/wire.c ::
+serve_continuity_key` special-cases `action == "modifiers"` **before** any
+key validation and routes it to `now_continuity_intake.c ::
+now_continuity_modifiers` — a side channel that stamps
+`cell->host_modifiers` directly and never enqueues anything, so
+`action_valid`/the PostEvent queue in `now_continuity_keyboard_logic.c` is
+never reached for a modifiers frame. That routing is not new work here: it
+landed in `4abcfd8d` ("carry a bare modifier change across the edge"),
+merged via `b7fedae1`, both confirmed ancestors of this branch's base
+`0447594c` (`git merge-base --is-ancestor b7fedae1 0447594c`). Nor is the
+architecture an oversight to "fix": the contract itself says a modifiers
+frame "IS NOT A KEY" and "a receiver must not post a key event for it" —
+teaching the down/up/repeat queue a fourth action would be the wrong fix,
+not a smaller one, since whatever eventually drains that queue posts real
+`PPostEvent` keystrokes (`continuity_keyboard_safety_source_test.py`
+already pins that drain).
+
+**What was actually missing, and what closed it.** Nothing in the native
+or source-test suites exercised this routing at all — no test called
+`now_continuity_modifiers`, `now_continuity_key`, or
+`serve_continuity_key`, and none pinned that `modifiers` stays out of the
+PostEvent queue. Two additions:
+
+- `now_continuity_keyboard_logic_test.c` gained
+  `test_modifiers_is_not_a_queue_action`, pinning that an action value past
+  `kNowPeekContinuityKeyRepeat` (what `modifiers` would be, were it ever
+  handed to this queue) is `kNowContinuityKeyEnqueueInvalid`. Watched
+  failing: widening `action_valid` to accept it flips the test red.
+- `continuity_keyboard_safety_source_test.py` gained three checks: the
+  wire dispatcher recognises `"modifiers"` before key validation, routes it
+  to `now_continuity_modifiers` and never to `now_continuity_key`, and
+  `now_continuity_key`'s own range check still excludes anything past
+  down/up/repeat as a second line of defence. Watched failing: rerouting
+  the modifiers branch through `now_continuity_key` flips it red with the
+  exact sentence naming why.
+
+**Still unverified, and named as a hypothesis rather than a fact.** The
+metal round's own guest build was `e4defdec…`; whether that build actually
+predated `4abcfd8d`/`b7fedae1` is not something the host log can answer
+(the same build-provenance gap D3's writeup names for the resident). That
+is the leading explanation for the observed refusal — the code on this
+branch does not reproduce it — but it is not confirmed the way the routing
+above is. No guest-log evidence exists either way.
+
 ## FIXED, EMULATOR-VERIFIED: the collision replace dialog landed on `refactor/mirror-continuity-split` (2026-08-16, `feat/hg-drag-collision-land`)
 
 `f74324a4` ("DECIDED AND BUILT, NOT METAL-VERIFIED" — see the entry below)
