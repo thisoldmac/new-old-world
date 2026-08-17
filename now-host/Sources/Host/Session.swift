@@ -905,6 +905,20 @@ final class Session {
                                     item: item)))
     }
 
+    /// Hands the gesture over: the guest starts a real Drag Manager drag
+    /// with a promise at `pos`. Arms nothing here for the same reason
+    /// `sendContinuityOffer` does not — it is a push, and the pull that
+    /// follows is the guest's own `continuity.grab` against the offer this
+    /// message's skeleton describes.
+    func sendContinuityHostDragBegin(
+        dragSeq: UInt32, pos: ContinuityHostDragBegin.Position,
+        item: ContinuityHostDragBegin.Item
+    ) {
+        send(.continuityHostDragBegin(
+            .init(version: ContinuityContract.version, dragSeq: dragSeq,
+                  pos: pos, item: item)))
+    }
+
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,
                                        path: String,
                                        stagingDirectory: URL) {

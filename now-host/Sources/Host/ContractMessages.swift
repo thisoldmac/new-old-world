@@ -103,6 +103,7 @@ enum ControlMessage: Equatable, Sendable {
     case continuityKeyReport(ContinuityKeyReport)
     case continuitySelection(ContinuitySelection)
     case continuityDragBegin(ContinuityDragBegin)
+    case continuityHostDragBegin(ContinuityHostDragBegin)
     case continuityGrab(ContinuityGrab)
     case continuityOffer(ContinuityOffer)
     case mirrorInvalidate(MirrorInvalidate)
@@ -404,6 +405,65 @@ struct ContinuityDragBegin: Codable, Equatable, Sendable {
     var dragSeq: UInt32
     /// The guest's TickCount at drag begin, for the arrival-ordering line.
     var ticks: UInt32?
+    var item: Item
+}
+
+/// **THE HANDOFF ITSELF: start a real Drag Manager drag over there, with a
+/// promise, at this point.**
+///
+/// `continuity.dragBegin` inverted — same beat of the gesture, opposite
+/// sender — and the whole of the host's half of the blessed-path drag
+/// (plan `2026-08-17-036`, slice 3). This host's own `NSDraggingSession`
+/// has just ended at the crossing and the file behind it is staged; this
+/// message is what makes the OTHER machine's Drag Manager the live one.
+///
+/// **It carries the STARTING state and nothing else.** Position and button
+/// travel on the ordinary Continuity datagrams from here — they already
+/// ship, at the pointer plane's own cadence — so a second position channel
+/// would be a slower duplicate of a solved problem. And it names no
+/// target: where the file lands is the Drag Manager's and the receiver's
+/// business entirely (Michelle, 2026-08-17). A field here answering "which
+/// window" would be re-invented targeting.
+///
+/// `item` is the promise SKELETON — what the guest advertises as
+/// `flavorTypePromiseHFS`, and exactly what will actually arrive if the
+/// promise is asked for. The bytes themselves are pulled later, by the
+/// guest's own send proc, over the offer lane (`continuity.grab` →
+/// `ContinuityOfferService`), which is why publishing the offer and sending
+/// this message are one act on the host side.
+struct ContinuityHostDragBegin: Codable, Equatable, Sendable {
+    /// Where on the guest the drag starts, in GLOBAL GUEST COORDINATES —
+    /// the same plane the pointer datagrams use, named `h`/`v` because
+    /// that is what the receiving side calls a `Point`.
+    struct Position: Codable, Equatable, Sendable {
+        var h: Int
+        var v: Int
+    }
+
+    /// The promise skeleton: what the Finder is told it is about to get.
+    /// No path, no volume, no directory — the guest is not being told where
+    /// this file is, because on the guest it is nowhere yet.
+    struct Item: Codable, Equatable, Sendable {
+        var name: String
+        /// Classic four-character type/creator, the same pair
+        /// `ContinuityOffer.Item` carries for the same file.
+        var type: String?
+        var creator: String?
+        /// The forks AS THEY WILL ARRIVE, not as they sit on this Mac: a
+        /// plan that sends data only says `rsrcSize: 0` rather than
+        /// reporting a resource fork the receiver will never see.
+        var dataSize: Int
+        var rsrcSize: Int
+    }
+
+    /* Optional at the decoder for the reason every Continuity message
+       treats it so: a missing version must be readable enough to be
+       refused by name. */
+    var version: Int?
+    /// One host→guest carry, so a log line on either side can be paired
+    /// with the other's without guessing from timestamps.
+    var dragSeq: UInt32
+    var pos: Position
     var item: Item
 }
 
@@ -2015,6 +2075,12 @@ enum ControlMessageCodec {
         case "continuity.dragBegin":
             return .continuityDragBegin(
                 try decoder.decode(ContinuityDragBegin.self, from: data))
+        case "continuity.hostDragBegin":
+            /* Never sent by a guest — this host is the only sender — but
+               decoded anyway so a test's FakeGuest can read back what was
+               handed off, the same reason `continuity.offer` decodes. */
+            return .continuityHostDragBegin(
+                try decoder.decode(ContinuityHostDragBegin.self, from: data))
         case "continuity.grab":
             return .continuityGrab(
                 try decoder.decode(ContinuityGrab.self, from: data))
@@ -2194,6 +2260,8 @@ enum ControlMessageCodec {
             return try tagged("continuity.selection", m)
         case .continuityDragBegin(let m):
             return try tagged("continuity.dragBegin", m)
+        case .continuityHostDragBegin(let m):
+            return try tagged("continuity.hostDragBegin", m)
         case .continuityGrab(let m):
             return try tagged("continuity.grab", m)
         case .continuityOffer(let m):
