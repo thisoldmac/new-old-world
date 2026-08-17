@@ -1043,7 +1043,9 @@ final class ContinuityEdgeController: ObservableObject {
                press's own selection is the whole point of the guest's
                press probe. */
             audit(.info, "binding this press to the selection it made: "
-                + "epoch=\(mark.epoch), generation=\(mark.generation), "
+                + "epoch=\(mark.epoch), source=\(mark.source.rawValue), "
+                + "generation=\(mark.generation), "
+                + "dragSeq=\(mark.dragSeq.map(String.init) ?? "none"), "
                 + "published \(age(mark)), replacing "
                 + "\(pressed.mark.map { "generation \($0.generation)" } ?? "nothing")")
             guestFileCandidate = guestSelectionItem()
