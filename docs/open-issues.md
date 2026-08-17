@@ -26884,3 +26884,56 @@ release path that does not require the owning process to be front), or
 `finderSelect` stops fronting and the visibility guard is retired with a
 dated line saying why. Both are edits to a test that currently encodes a
 decision, so neither should happen quietly.
+
+## ATTEMPTED, METAL-UNVERIFIED: hiding the host cursor's visible layer during a host→guest file drag (2026-08-16, `fix/hg-drag-cursor-hide`)
+
+Recon `R1-host-drag-cursor.md` traced the reported symptom — a file
+dragged from macOS across the shared edge transfers correctly, but the
+native drag ghost and green `+` badge stay pinned at the physical screen
+edge while the guest pointer keeps moving — to a deliberate, documented
+scope cut: `ContinuityEdgeController.transportPhaseChanged` skips
+`hideHostCursor` (and its pin/detach machinery) whenever `hostFileDrag`
+is true, because that machinery is built for a session THIS app owns and
+a host file drag's `NSDraggingSession` belongs to Finder. This app is
+only ever a drop destination for that session; it cannot end it, warp
+it, or reposition its image (§1–2 of the recon report).
+
+**What this branch changed.** `hostFileEntered`'s once-per-gesture
+arrival branch now calls `CGDisplayHideCursor` (via
+`hideHostDragCursor`) right after announcing `hostDragArrived`, and
+`endHostDragPresentation` calls the paired `showHostDragCursor`. This is
+narrower than `hideHostCursor`: no association change, no pin, no warp —
+only the visible cursor layer, on its own tracked variable
+(`hostDragCursorHiddenOn`) independent of `cursorHiddenOn` so the two
+paths cannot interfere. `endOwnership` (the funnel every ownership exit
+already passes through) now also calls `endHostDragPresentation`
+unconditionally, so a host file drag that ends via transport loss,
+`stop()`, or a pointer crossing back to host under
+`hostDragOverThisMac` — none of which visit `hostFileExited` directly —
+still restores the cursor. `deinit` restores it defensively too. Every
+hide/show pair logs with a per-gesture counter
+(`hostFileDragGestureID`) so an attended run's log alone can show the
+balance held.
+
+**KNOWN OPEN QUESTION, not answered by this branch.** Whether
+`CGDisplayHideCursor` suppresses only the arrow cursor or also AppKit's
+drag-image compositing layer — the actual ghost + badge the symptom is
+about — is empirical and could not be settled from source reading alone
+(recon §6, Fix A's own risk section). If it does not, this change hides
+a cursor that was never the visible artifact and the reported symptom
+persists unchanged; if it does, whether hiding the cursor mid-session
+also confuses Finder's own drag tracking (wrong end-of-drag icon, a
+stall, or silently-different-but-still-wrong feedback) is likewise
+unverified. **Neither this entry nor the branch's commit messages claim
+the visual defect fixed** — only that the code now makes the attempt R1
+ranked highest-confidence, with the hide/show balance covering every
+known exit path (drop, drag-exits-without-dropping, transport loss,
+`stop()`, and deinit) under host-side unit tests
+(`ContinuityEdgeControllerTests.swift`,
+`testHostFileDragHidesCursorVisibleLayerAndRestoresItOnDrop` and
+neighbours).
+
+**What only a real Mac driving a real Finder drag can prove:** whether
+the ghost actually disappears, and whether Finder's own tracking stays
+sane while it is hidden. Both need an attended metal pass; the emulator
+has no real window-server drag-image compositor to test this against.

@@ -763,6 +763,128 @@ final class ContinuityEdgeControllerTests: XCTestCase {
                       "nothing was detached, so nothing is re-attached")
     }
 
+    /// R1's Fix A: the host's real cursor VISIBLE LAYER hides while the
+    /// guest draws the carried file, and is restored on drop — but
+    /// `associationChanges`/`moves` (the warp/pin/detach machinery a
+    /// FOREIGN `NSDraggingSession` must never have done to it) stay empty
+    /// throughout, exactly like `testHostFileDragNeverDetachesTheCursorOrCapturesInput`.
+    func testHostFileDragHidesCursorVisibleLayerAndRestoresItOnDrop() throws {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.configureFileDragging(guestFileAtPoint: { _ in nil },
+                                         hostFilesDropped: { _, _ in true })
+        var arrived = 0
+        var departed = 0
+        controller.configureHostDragPresentation(
+            arrived: { _ in arrived += 1 },
+            departed: { departed += 1 })
+        controller.start()
+
+        let callbacks = try XCTUnwrap(environment.fileCallbacks)
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)))
+        XCTAssertEqual(arrived, 1)
+        XCTAssertEqual(environment.hidden, [host.id],
+                       "the visible cursor layer hides once the guest starts "
+                        + "drawing the carried file")
+        controller.transportPhaseChanged(.active)
+        XCTAssertTrue(environment.associationChanges.isEmpty,
+                      "the visible-layer hide must not touch association")
+        XCTAssertTrue(environment.moves.isEmpty,
+                      "the visible-layer hide must not warp the cursor")
+
+        XCTAssertTrue(callbacks.dropped(.init(name: .drag)))
+        XCTAssertEqual(departed, 1)
+        XCTAssertEqual(environment.shown, [host.id],
+                       "dropping restores the visible layer exactly once")
+        XCTAssertTrue(environment.associationChanges.isEmpty)
+    }
+
+    /// The same balance, off the "drag left without dropping" exit
+    /// (`hostFileExited`, AppKit's `draggingExited`) rather than the drop
+    /// exit — the two are different callbacks and both tear down through
+    /// `endHostDragPresentation`.
+    func testHostFileDragCursorIsRestoredWhenTheDragLeavesWithoutDropping()
+        throws {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.configureFileDragging(guestFileAtPoint: { _ in nil },
+                                         hostFilesDropped: { _, _ in true })
+        controller.start()
+
+        let callbacks = try XCTUnwrap(environment.fileCallbacks)
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)))
+        XCTAssertEqual(environment.hidden, [host.id])
+
+        callbacks.exited()
+
+        XCTAssertEqual(environment.shown, [host.id],
+                       "leaving the edge without a drop still restores the "
+                        + "visible cursor layer")
+    }
+
+    /// The defensive half: a host file drag that is still announced when
+    /// ownership ends some OTHER way (transport loss, here) must not leave
+    /// the cursor hidden. This exit never visits `hostFileExited` at all —
+    /// it is exactly the gap `endOwnership`'s unconditional
+    /// `endHostDragPresentation` call exists to close.
+    func testHostFileDragCursorIsRestoredWhenTransportEndsMidDrag() throws {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.configureFileDragging(guestFileAtPoint: { _ in nil },
+                                         hostFilesDropped: { _, _ in true })
+        controller.start()
+
+        let callbacks = try XCTUnwrap(environment.fileCallbacks)
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)))
+        controller.transportPhaseChanged(.active)
+        XCTAssertEqual(environment.hidden, [host.id])
+        XCTAssertTrue(environment.shown.isEmpty,
+                      "not restored yet: transport has not ended")
+
+        controller.transportEnded(reason: "guest hung up mid-drag")
+
+        XCTAssertEqual(environment.shown, [host.id],
+                       "transport loss still restores the visible cursor "
+                        + "layer even though this path never calls "
+                        + "hostFileExited")
+    }
+
+    /// Each gesture hides and shows exactly once, and a second gesture
+    /// after the first fully ends hides again rather than being treated as
+    /// a stale no-op. Guards against the balance being accidentally
+    /// one-shot (a flag that never resets after the first gesture) as much
+    /// as against it being unbalanced.
+    func testHostFileDragCursorBalanceHoldsAcrossConsecutiveGestures() throws {
+        let layout = makeLayout()
+        let driver = Driver()
+        let environment = Environment()
+        let controller = ContinuityEdgeController(
+            layout: layout, driver: driver, environment: environment)
+        controller.configureFileDragging(guestFileAtPoint: { _ in nil },
+                                         hostFilesDropped: { _, _ in true })
+        controller.start()
+        let callbacks = try XCTUnwrap(environment.fileCallbacks)
+
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)))
+        XCTAssertTrue(callbacks.dropped(.init(name: .drag)))
+        XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)))
+        XCTAssertTrue(callbacks.dropped(.init(name: .drag)))
+
+        XCTAssertEqual(environment.hidden, [host.id, host.id],
+                       "a second gesture hides again rather than staying a "
+                        + "no-op from the first gesture's teardown")
+        XCTAssertEqual(environment.shown, [host.id, host.id])
+    }
+
     func testWithoutInputCaptureOwnershipDegradesToTheObservingMonitor() {
         let layout = makeLayout()
         let driver = Driver()
