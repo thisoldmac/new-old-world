@@ -560,6 +560,33 @@ static void ask_about_replacing(void)
     now_wire_send_resolve_replace(now_confirm(heading, detail, "Replace"));
 }
 
+/* The same, for a file coming the other way: somebody on the Mac dropped
+   one over here and this Macintosh already has that name. Same reason it
+   cannot be asked where the collision is found (pump.h), same place it
+   is safe to ask, and deliberately the same words — a person meets one
+   replace question on this machine, not two that differ by direction.
+
+   The Mac's own name is not in the sentence. On the send side the peer
+   is named because the file is going somewhere else and a person should
+   know where; here the file is landing on the machine they are looking
+   at, and "this Macintosh already has one" is a fact about the screen in
+   front of them. */
+static void ask_about_replacing_incoming(void)
+{
+    char name[64];
+    char heading[96];
+    char detail[128];
+
+    if (!now_wire_put_pending_replace(name, sizeof name)) {
+        return;
+    }
+    snprintf(heading, sizeof heading, "Replace \"%.31s\"?", name);
+    snprintf(detail, sizeof detail,
+             "This Macintosh already has a file with this name. The old "
+             "one goes to the Trash.");
+    now_wire_put_resolve_replace(now_confirm(heading, detail, "Replace"));
+}
+
 int main(void)
 {
     EventRecord event;
@@ -697,6 +724,7 @@ int main(void)
            mirror_log.h carries the boundary in full. */
         now_mirror_log_idle();
         ask_about_replacing();
+        ask_about_replacing_incoming();
         /* NEVER SLEEP ZERO. A zero sleep tells WaitNextEvent to return
            at once, so this application spins and, on a cooperatively
            scheduled Macintosh, nothing else runs. That is survivable for

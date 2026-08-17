@@ -7,6 +7,70 @@ search:
 
 # Open issues
 
+## FIXED, EMULATOR-VERIFIED: the collision replace dialog landed on `refactor/mirror-continuity-split` (2026-08-16, `feat/hg-drag-collision-land`)
+
+`f74324a4` ("DECIDED AND BUILT, NOT METAL-VERIFIED" — see the entry below)
+merged onto this arc's line clean: `now-guest-ppc/src/core/wire.c` and
+`wire.h` took the merge with no manual resolution (git's own recursive
+merge), and the only conflicts were the eight derived docs plus this file's
+own two independent sections, both kept. The one thing the merge left
+behind was host-side: `MirrorFileTransferModel.hostFileFailureAudit`'s
+`exists` branch still said "the replace dialog is not built yet," which
+became false the moment the merge landed. Fixed in the same arc: `exists`
+keeps its defect wording (minus the now-false clause) for the lanes that
+still refuse unconditionally — an automated put has nobody to ask — and the
+new `declined` code gets its own `.info` line rather than sharing `exists`'s
+`.warn`, so a person's decision to keep their file does not read as the
+swallowed-dialog defect that shipped before.
+
+**Emulator round, 2026-08-16, session-private clone** (`scripts/spin-up-ppc`,
+`NOW_SPIN_PURPOSE=ppc-work`, base `now-mirror-stage.qcow2` sha256
+`8db8ddc2…`, this tree's app/ext staged, sourceManifest `0b83a0e1666b`,
+buildFingerprint `cad894807933`). Driven over the raw wire (no existing
+tool speaks `file.offer`+bulk end to end, so a one-shot instrument was
+built for this round reusing `scripts/probes/nowwire.GuestLink`, matching
+the exact sequence `now-host/Sources/Host/Session.swift` sends — not kept
+in the tree):
+
+1. Put `COLLIDE.TXT` (15 bytes) to the guest's Desktop with no collision —
+   `file.accept` / `file.done ok:true`, establishing the pre-existing file.
+2. Re-offered the same name: **no reply within 8s** — confirmed the offer
+   defers rather than refusing (`awaiting_confirm`), then a QMP screendump
+   showed the native dialog up: `Replace "COLLIDE.TXT"? / This Macintosh
+   already has a file with this name. The old one goes to the Trash.`,
+   buttons Cancel/Replace, Replace the default.
+3. Closed-loop-homed the QEMU relative mouse to the Cancel button
+   (`mouseloc` read back each step, per the rig's "rel-mouse is
+   closed-loop-only" rule) and clicked: **`file.refuse code=declined,
+   reason="somebody chose to keep the file already there"`**. A follow-up
+   offer of the same name immediately deferred again — the original 15-byte
+   file was untouched (never even reached a `file.accept`, by the design's
+   own construction — Cancel returns before any byte moves).
+4. Re-offered, homed to Replace, clicked: **`file.accept ... replacing:
+   true`**. Streamed 18 replacement bytes over the bulk channel + `file.end`
+   with CRC32; guest answered `file.done ok:true, received:18, checksum
+   ok`. Read the file back with the guest's own `script` verb (AppleScript
+   `read file`) — **byte-exact**, `"REPLACEMENT BYTES\n"`.
+5. **The wire pumped throughout**: `mouseloc` command/reply round-trips
+   succeeded repeatedly while the dialog was on screen and
+   `g_put.awaiting_confirm` was true, on the same TCP session — the
+   no-starve guarantee `pump.h` and `now_confirm`'s nested loop exist for,
+   observed rather than assumed.
+
+All four claims from the "what's genuinely still open" list in the entry
+below are now emulator-tested except metal. **One gap found empirically,
+not fixed here (small, scope-preserving):** `now_wire_put_resolve_replace`'s
+decline arm calls `file_refuse` and `rx_outcome` but no `now_log` — the
+guest's own `put` log shows `#N ... is already there; asking` and, on
+Replace, `#N replacing ...`, but a Cancel leaves no terminal log line at
+all on the guest side (confirmed against `tail area=put` after both a
+decline and a replace in the same run). Host-side logging is unaffected
+(the host's `declined` audit line comes from the wire reply, not the
+guest's log). Worth a one-line fix in `wire.c` someday; not blocking, and
+out of scope for a merge-and-repair pass.
+
+Metal remains pending, same as `f74324a4` left it.
+
 ## UNVERIFIED, ENVIRONMENTAL: two host gates on this Mac make each other red (2026-08-16, `chore/recover-034-orphans`)
 
 `LoggingSpecTests.testALineMatchesTheFormatTheSpecDefines` failed once in
@@ -92,6 +156,78 @@ watched failing against each separately.
   fresh name, which succeeds. The outcome now reaches `rx_outcome`, but the
   windoid only opens for a receive that became *active*, so a refusal is
   written to a window that never opens. Separate defect, separate fix.
+
+## FOUND BY A NEW GATE: four refusal codes were on the wire and in no contract (2026-08-16, `feat/hg-drag-edge-custody`)
+
+The collision work needed one new `file.refuse` code, so it also needed a
+reason to believe the enum listing them was true. Nothing checked it. The
+contract's own prose had already confessed the problem —
+
+> bad-source and project-file-unavailable have been on the wire since the
+> Mirror drag and Development lanes shipped and were simply never written
+> down, which is the drift this enum exists to prevent.
+
+— and then the same thing happened again, after that sentence was written,
+because a sentence is not a gate.
+
+`testEveryGuestRefusalCodeIsDeclaredInTheContract` derives the list from the
+PowerPC guest's own `file_refuse` call sites and checks it against
+`FileRefuse.code`. **It failed on its first run and named four:**
+`bad-target`, `not-requested`, `invalid-update`, `candidate-unavailable` —
+all live emissions from the Mirror-drop and update lanes, none of them
+declared anywhere a host author could read. All four are now in the
+contract with prose saying what they mean and, deliberately, how they were
+found. A host that decoded one of these was reading a word the file family
+had never defined.
+
+This is the `two-halves-never-met-in-a-test` shape one layer below the
+fields it already gates: the wire's VOCABULARY drifting rather than its
+schema.
+
+## DECIDED AND BUILT, NOT METAL-VERIFIED: `declined` and `replacing` (2026-08-16, `feat/hg-drag-edge-custody`)
+
+Two additions, both receiver→sender, so symmetric by construction — every
+guest and the host can receive a file, and whoever receives one sends these.
+
+**`file.refuse code=declined`** is `exists` AFTER SOMEBODY WAS ASKED.
+`exists` says a receiver found the name taken and applied its own policy;
+`declined` says a person was shown the collision and chose to keep what they
+had. A sender cannot tell them apart from the outcome — nothing arrives
+either way — and they are not the same event: one is a receiver that never
+asked, which is the defect this arc is closing, and the other is consent
+working. A log that spells them the same way makes the first invisible for
+as long as it survives. It is deliberately not `cancelled`, which is already
+`file.done`'s word for a transfer abandoned once bytes were moving.
+
+**`file.accept replacing: true`** is the receiver telling the sender that
+accepting overwrites something and a person authorised it. Without it a
+replacement and a first-time write are indistinguishable from the sending
+side — both are one accept and one stream — so a Mac that had just
+overwritten somebody's file recorded it as an ordinary copy. The consent is
+the receiver's and stays there: the field REPORTS a decision, it does not
+carry one, and a sender must never pre-authorise an acceptance.
+
+### What did NOT need to change, and the correction that goes with it
+
+This lane told the coordinator the wire had no way to say "replace" and that
+this was a genuine contract gap. **That was wrong.** `file.offer` has
+carried `overwrite` all along, `now_files_receive_begin` has taken it all
+along, and the guest→host direction has had a complete
+ask-a-person-then-re-send-with-overwrite flow since it shipped
+(`now_wire_send_pending_replace` / `now_wire_send_resolve_replace`, with
+`ask_about_replacing` at the top of the event loop and a `now_confirm`
+dialog). The receive direction simply never grew its half — its own comment
+said so plainly: *"the host offers, the guest answers without prompting
+anyone."*
+
+So the deferred-answer state machine, the pump-safe placement, and the
+dialog were all **already in the tree, in the other direction**, and the
+work was to mirror them rather than invent them. The estimate that this was
+"more than one push" was made before reading that code and was wrong by a
+large factor. Worth recording because the wrong estimate came from reasoning
+about what the design would need instead of asking what already existed —
+the same failure the `check Mirror before deriving anything` rule exists to
+prevent, applied to this repository's own siblings.
 
 ## CORRECTED BY DERIVATION: the "17 TrackDrag cycles" anomaly is a misread counter (2026-08-16, `feat/hg-drag-edge-custody`)
 

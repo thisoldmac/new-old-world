@@ -358,6 +358,123 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(listing.freeBytes, 1_073_637_376)
     }
 
+    /// **EVERY REFUSAL CODE THE GUEST CAN SAY IS ONE THE CONTRACT
+    /// DECLARES.** Derived from the guest's own `file_refuse` call sites
+    /// against `FileRefuse.code`'s enum, rather than remembered.
+    ///
+    /// The gap this closes is the file family's oldest one, named in the
+    /// contract itself: `bad-source` and `project-file-unavailable` "have
+    /// been on the wire since the Mirror drag and Development lanes
+    /// shipped and were simply never written down". Nothing checked, so
+    /// the enum was documentation. A code the guest emits and the contract
+    /// has never heard of is the defect class this repository has paid
+    /// most for, one layer down from the fields it already gates.
+    func testEveryGuestRefusalCodeIsDeclaredInTheContract() throws {
+        let source = try GateSource.guestC("now-guest-ppc/src/core/wire.c")
+        let contract = try GateSource.raw("contract/asyncapi.yaml")
+        guard let enumStart = contract.range(
+            of: "enum: [busy, exists, declined,") else {
+            return XCTFail("FileRefuse's code enum has moved or been "
+                + "renamed; this gate reads it by its first members")
+        }
+        guard let enumEnd = contract.range(
+            of: "]", range: enumStart.lowerBound..<contract.endIndex) else {
+            return XCTFail("unterminated enum")
+        }
+        let declared = Set(
+            contract[enumStart.lowerBound..<enumEnd.lowerBound]
+                .replacingOccurrences(of: "enum: [", with: "")
+                .split(whereSeparator: { ",\n ".contains($0) })
+                .map(String.init))
+        XCTAssertTrue(declared.contains("declined"), "\(declared)")
+
+        /* Every `file_refuse(<id>, "code"` literal in the guest. The first
+           string literal after the call is the code; `file_refuse_rc` and
+           the forward declaration carry none and fall out on their own. */
+        var emitted: Set<String> = []
+        var cursor = source.startIndex
+        while let call = source.range(of: "file_refuse(",
+                                      range: cursor..<source.endIndex) {
+            cursor = call.upperBound
+            let window = source.index(cursor, offsetBy: 60,
+                                      limitedBy: source.endIndex)
+                ?? source.endIndex
+            guard let open = source.range(of: "\"",
+                                          range: cursor..<window) else {
+                continue
+            }
+            guard let close = source.range(
+                of: "\"", range: open.upperBound..<source.endIndex) else {
+                continue
+            }
+            emitted.insert(String(source[open.upperBound..<close.lowerBound]))
+        }
+        XCTAssertFalse(emitted.isEmpty, "the scanner found no refusals at "
+            + "all, so this gate is asserting nothing")
+        XCTAssertTrue(emitted.contains("declined"),
+                      "the guest never says `declined`, so a person who "
+                        + "kept their file is indistinguishable on the wire "
+                        + "from a receiver that never asked: \(emitted)")
+        let undeclared = emitted.subtracting(declared)
+        XCTAssertEqual(undeclared, [],
+                       "the guest can send refusal codes the contract has "
+                        + "never heard of: \(undeclared.sorted())")
+    }
+
+    /// **A REPLACEMENT AND A FIRST-TIME WRITE STOP LOOKING IDENTICAL.**
+    /// Both are one accept followed by one stream, and the collision is
+    /// knowable only on the side that looked — so a sender that had just
+    /// overwritten somebody's file recorded it as an ordinary copy.
+    ///
+    /// The exact frame the guest emits from `now_wire_put_resolve_replace`
+    /// after a person answered Replace.
+    func testAGuestAcceptThatOverwritesSaysSo() throws {
+        guard case .fileAccept(let accept) = try decode(
+            #"{"type":"file.accept","id":7,"reservedBytes":4096,"staging":"same-folder-temp","replacing":true}"#
+        ) else {
+            return XCTFail("not an accept")
+        }
+        XCTAssertEqual(accept.replacing, true)
+        XCTAssertEqual(accept.staging, "same-folder-temp")
+    }
+
+    /// Absence means nothing is being replaced — never "the receiver
+    /// declined to say". Every accept that shipped before this field
+    /// existed is one of these, and must keep decoding unchanged.
+    func testAnAcceptWithoutTheFieldIsNotAReplacement() throws {
+        guard case .fileAccept(let accept) = try decode(
+            #"{"type":"file.accept","id":3,"staging":"same-folder-temp"}"#
+        ) else {
+            return XCTFail("not an accept")
+        }
+        XCTAssertNil(accept.replacing)
+    }
+
+    /// **`declined` IS `exists` AFTER SOMEBODY WAS ASKED**, and the two
+    /// are separate words on purpose. `exists` says a receiver found the
+    /// name taken and applied its own policy; `declined` says a person was
+    /// shown the collision and chose to keep what they had. A sender
+    /// cannot tell them apart from the outcome — nothing arrives either
+    /// way — and only one of them is a gap worth closing.
+    func testAPersonKeepingTheirFileIsNotTheSameRefusalAsAPolicy() throws {
+        guard case .fileRefuse(let declined) = try decode(
+            #"{"type":"file.refuse","id":9,"code":"declined","reason":"somebody chose to keep the file already there"}"#
+        ) else {
+            return XCTFail("not a refusal")
+        }
+        XCTAssertEqual(declined.code, "declined")
+
+        guard case .fileRefuse(let policy) = try decode(
+            #"{"type":"file.refuse","id":9,"code":"exists","reason":"a file of that name is already there"}"#
+        ) else {
+            return XCTFail("not a refusal")
+        }
+        XCTAssertEqual(policy.code, "exists")
+        XCTAssertNotEqual(declined.code, policy.code,
+                          "a receiver that never asked and a person who "
+                            + "said no must not spell themselves the same")
+    }
+
     func testGuestReservationAndFinalizationEvidenceDecodes() throws {
         guard case .fileAccept(let accept) = try decode(
             #"{"type":"file.accept","id":5,"freeBytes":5000000,"reservedBytes":4096,"staging":"same-folder-temp"}"#

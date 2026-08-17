@@ -209,6 +209,23 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap);
 Boolean now_wire_send_pending_replace(char *name, long cap);
 void now_wire_send_resolve_replace(Boolean replace);
 
+/* THE SAME QUESTION IN THE OTHER DIRECTION: somebody on the Mac dragged
+   a file over here and this Macintosh already has one by that name. The
+   pair above is the model, down to the reason — the offer arrives inside
+   a pumped network callback, so it is left UNANSWERED and the question
+   is raised for the event loop.
+
+   The ordering is the product decision (Michelle, 2026-08-16): the
+   person has already released, and no byte moves until they answer,
+   because the unanswered offer is what holds the transfer. Release,
+   then dialog, then bytes.
+
+   Only a human's drop is asked about. An automated put with nobody at
+   the machine keeps the old policy refusal, because inventing consent
+   for it would be worse than refusing it. */
+Boolean now_wire_put_pending_replace(char *name, long cap);
+void now_wire_put_resolve_replace(Boolean replace);
+
 /* --- browsing the other machine's share ---------------------------------
    Asking the same file.list the guest already answers. A listing is
    control-plane, so this works mid-transfer; only the answer is one at

@@ -4610,6 +4610,18 @@ static struct {
     char update_sha256[65];
     Boolean mirror_drop;
     NowMirrorFileTarget drop_target;
+    /* A person released a file over this Macintosh, the name is already
+       taken, and NOBODY HAS BEEN ASKED YET. The offer is deliberately
+       unanswered while this is set: the wire is inside a pumped network
+       callback here and pump.h forbids opening a dialog from one, so the
+       question is raised as a flag and put to a person at the top of the
+       event loop, exactly as the SEND direction has done since it
+       shipped (now_wire_send_pending_replace). */
+    Boolean awaiting_confirm;
+    /* The accept about to go out overwrites something, because a person
+       said it could. Reported to the sender so a replacement and a
+       first-time write stop looking identical from over there. */
+    Boolean replacing;
 } g_put;
 
 /* A nested target is copied out before flat lookup. Without that boundary,
@@ -5266,6 +5278,25 @@ static void serve_file_offer(const char *request)
 
         switch (rc) {
         case kFilesExists:
+            /* A HUMAN DROP GETS ASKED; ANYTHING ELSE KEEPS THE OLD
+               POLICY. The collision Michelle met on 2026-08-16 was a
+               person's own drag, and refusing it without a word is the
+               defect. An automated put is a different event with nobody
+               standing at the machine, and inventing consent for it
+               would be worse than refusing it.
+
+               Nothing is answered here. The offer stays open across the
+               question, which is what makes the ordering right: the
+               person has already released, no byte has moved, and the
+               dialog decides whether any does. */
+            if (g_put.mirror_drop) {
+                g_put.id = id;
+                g_put.awaiting_confirm = true;
+                now_log(kLogInfo, "put",
+                        "#%ld %.31s is already there; asking", id, name);
+                rx_outcome("Waiting for an answer about replacing");
+                return;
+            }
             why = "a file of that name is already there";
             file_refuse(id, "exists", why);
             break;
@@ -5295,31 +5326,37 @@ static void serve_file_offer(const char *request)
             name, bytes, g_put.at_candidate ? "a Development candidate" :
             (g_put.at_dest ? "the chosen folder" : "the share"));
     /* `have` is omitted rather than sent as 0, so an accept to an old
-       host looks exactly as it always did. */
+       host looks exactly as it always did. `replacing` is omitted on the
+       same terms and for the same reason. */
+    {
+        const char *replacing = g_put.replacing ? ",\"replacing\":true" : "";
     if (have > 0 && g_put.rx.free_before >= 0) {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.accept\",\"id\":%ld,\"have\":%ld,"
                  "\"freeBytes\":%ld,\"reservedBytes\":%ld,"
-                 "\"staging\":\"same-folder-temp\"}",
-                 id, have, g_put.rx.free_before, g_put.rx.reserved_bytes);
+                 "\"staging\":\"same-folder-temp\"%s}",
+                 id, have, g_put.rx.free_before, g_put.rx.reserved_bytes,
+                 replacing);
     } else if (have > 0) {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.accept\",\"id\":%ld,\"have\":%ld,"
                  "\"reservedBytes\":%ld,"
-                 "\"staging\":\"same-folder-temp\"}",
-                 id, have, g_put.rx.reserved_bytes);
+                 "\"staging\":\"same-folder-temp\"%s}",
+                 id, have, g_put.rx.reserved_bytes, replacing);
     } else if (g_put.rx.free_before >= 0) {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.accept\",\"id\":%ld,"
                  "\"freeBytes\":%ld,\"reservedBytes\":%ld,"
-                 "\"staging\":\"same-folder-temp\"}",
-                 id, g_put.rx.free_before, g_put.rx.reserved_bytes);
+                 "\"staging\":\"same-folder-temp\"%s}",
+                 id, g_put.rx.free_before, g_put.rx.reserved_bytes,
+                 replacing);
     } else {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.accept\",\"id\":%ld,"
                  "\"reservedBytes\":%ld,"
-                 "\"staging\":\"same-folder-temp\"}",
-                 id, g_put.rx.reserved_bytes);
+                 "\"staging\":\"same-folder-temp\"%s}",
+                 id, g_put.rx.reserved_bytes, replacing);
+    }
     }
     if (!send_control(json)) {
         now_files_receive_abort(&g_put.rx);
@@ -5332,6 +5369,79 @@ static void serve_file_offer(const char *request)
     } else {
         snprintf(note, sizeof note, "Receiving %.31s...", name);
     }
+    note_shot(note);
+}
+
+/* What the event loop needs to know to ask, and the answer. The exact
+   shape of the SEND direction's pair above (now_wire_send_pending_replace
+   / now_wire_send_resolve_replace), deliberately: this is the same
+   question asked of the same person about the same kind of collision, and
+   two spellings of one interaction is how the two directions drift.
+
+   THE ORDERING IS THE PRODUCT DECISION. The person has already released
+   — the offer only exists because they dropped — and not one byte has
+   moved, because the offer is what goes unanswered while they think.
+   Release, then dialog, then bytes. */
+Boolean now_wire_put_pending_replace(char *name, long cap)
+{
+    if (!g_put.awaiting_confirm) {
+        return false;
+    }
+    if (name != NULL && cap > 0) {
+        strncpy(name, g_put.name, (size_t)cap - 1);
+        name[cap - 1] = '\0';
+    }
+    return true;
+}
+
+void now_wire_put_resolve_replace(Boolean replace)
+{
+    char json[320];
+    char note[128];
+    int rc;
+
+    if (!g_put.awaiting_confirm) {
+        return;
+    }
+    g_put.awaiting_confirm = false;
+    if (!replace) {
+        /* `declined` and not `exists`: a person was asked and kept what
+           they had. The sender cannot tell those apart from the outcome
+           — nothing arrives either way — and only one of them is a gap
+           worth closing. See the contract's own note on the pair. */
+        file_refuse(g_put.id, "declined",
+                    "somebody chose to keep the file already there");
+        rx_outcome("Not received: the existing file was kept");
+        return;
+    }
+    /* The SAME offer, re-begun with overwrite. Nothing is re-read from
+       the wire and nothing was buffered, so the only thing that changed
+       between the question and here is the answer to it. */
+    rc = now_files_mirror_receive_begin(
+        &g_put.drop_target, g_put.name, g_put.container, g_put.bytes,
+        g_put.file_type, g_put.creator, g_put.modified, true, &g_put.rx);
+    if (rc != kFilesOK) {
+        file_refuse(g_put.id, rc == kFilesTooBig ? "too-big" : "io-error",
+                    rc == kFilesTooBig ? "not enough room on that disk"
+                                       : "could not replace the file");
+        rx_outcome("Not received: could not replace the existing file");
+        return;
+    }
+    g_put.active = true;
+    g_put.replacing = true;
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.accept\",\"id\":%ld,\"reservedBytes\":%ld,"
+             "\"staging\":\"same-folder-temp\",\"replacing\":true}",
+             g_put.id, g_put.rx.reserved_bytes);
+    if (!send_control(json)) {
+        now_files_receive_abort(&g_put.rx);
+        g_put.active = false;
+        g_put.replacing = false;
+        rx_outcome("Connection lost during the transfer");
+        return;
+    }
+    now_log(kLogInfo, "put", "#%ld replacing %.31s", g_put.id, g_put.name);
+    snprintf(note, sizeof note, "Replacing %.31s...", g_put.name);
     note_shot(note);
 }
 
