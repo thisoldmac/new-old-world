@@ -2120,6 +2120,9 @@ final class ContinuityEdgeController: ObservableObject {
                matters is that the log says which of the two happened. */
             expectingCrossDrop = false
             setFileEdgeCatching(false)
+            abandonStagedHostFiles(
+                reason: "the release this Mac posted did not come back as a "
+                    + "drop on its own strip")
             audit(.warn, "host file drag: the synthetic release did NOT come "
                 + "back as a drop on this Mac's own strip — AppKit reported "
                 + "the drag leaving instead (gesture="
