@@ -252,6 +252,9 @@ def read_gesture(rows, entry, drop, floor, gesture="desktop"):
         r"drag input: calls=(-?\d+) fed=(-?\d+) down=(-?\d+) up=(-?\d+)")
     dropline, drop_line = find(
         r"drag drop: loc='(.{0,4})' err=(-?\d+) end=(-?\d+),(-?\d+)")
+    fed, fed_line = find(
+        r"drag input: seq (\d+)\.\.(\d+) pt (-?\d+),(-?\d+)\.\."
+        r"(-?\d+),(-?\d+)")
     ripe, ripe_line = find(
         r"drag hostDragBegin seq=(\d+) ripened: plane button held after "
         r"(\d+) ticks")
@@ -265,8 +268,17 @@ def read_gesture(rows, entry, drop, floor, gesture="desktop"):
     out["inputDowns"] = int(inputs.group(3)) if inputs else None
     out["inputUps"] = int(inputs.group(4)) if inputs else None
     out["inputCalls"] = int(inputs.group(1)) if inputs else None
-    out["dropEnd"] = ([int(dropline.group(3)), int(dropline.group(4))]
-                      if dropline else None)
+    # WHAT THE MANAGER WAS FED, which is what it resolves the drop
+    # against. `end=` on the drop line is GetMouse — the SPRITE — and
+    # reading one as the other is how round 1 of this branch reported a
+    # correct drop as a failure.
+    out["firstFedPoint"] = ([int(fed.group(3)), int(fed.group(4))]
+                            if fed else None)
+    out["lastFedPoint"] = ([int(fed.group(5)), int(fed.group(6))]
+                           if fed else None)
+    out["cursorSpriteAtEnd"] = ([int(dropline.group(3)),
+                                 int(dropline.group(4))]
+                                if dropline else None)
     out["dropLoc"] = dropline.group(1) if dropline else None
     out["ripenTicks"] = int(ripe.group(2)) if ripe else None
     out["appliedButtonEdges"] = len(applied)
@@ -280,7 +292,8 @@ def read_gesture(rows, entry, drop, floor, gesture="desktop"):
                            ("pass" if ok else "FAIL"),
                 "why": why}
 
-    end = out["dropEnd"]
+    end = out["lastFedPoint"]
+    began = out["firstFedPoint"]
     checks = {
         "trackRanForAGesture": verdict(
             out["trackTicks"],
@@ -301,8 +314,10 @@ def read_gesture(rows, entry, drop, floor, gesture="desktop"):
         # driven, having travelled there first.
         "droppedAtTheRelease": verdict(
             end,
-            end is not None
+            end is not None and began is not None
             and abs(end[0] - drop[0]) <= 8 and abs(end[1] - drop[1]) <= 8
+            and abs(began[0] - entry[0]) <= 12
+            and abs(began[1] - entry[1]) <= 12
             and (abs(end[0] - entry[0]) > 8 or abs(end[1] - entry[1]) > 8),
             ("the gesture must end where the button was released, away "
              "from the entry point" if gesture == "abort" else
