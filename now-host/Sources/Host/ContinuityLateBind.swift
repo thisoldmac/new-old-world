@@ -84,8 +84,31 @@ final class ContinuityDragBinding {
     /// revised.
     func pin() { pinned = true }
 
+    /// What this gesture can be redeemed with RIGHT NOW, or nil while the
+    /// only account of it is an identity.
+    ///
+    /// The seed is not consulted as a fallback and does not need to be:
+    /// `revise` refuses to replace a live generation with a zero, so the
+    /// best number this gesture ever had is the one still in `stub`.
+    var grabbable: ContinuityDragStub? {
+        guard let stub, stub.generation != 0 else { return nil }
+        return stub
+    }
+
     /// Applies a late `.dragged` verdict, or says why it could not.
     func revise(to next: ContinuityDragStub) -> ContinuityLateBind.Outcome {
+        /* A ZERO IS NOT AN ARRIVAL. An identity-only stub reaching a
+           binding that already carries a minted generation would undo the
+           only thing the drop can spend — the same displacement the cache
+           refuses one layer up, and the reason a fetched file was thrown
+           away on metal 2026-08-16. The name is already bound; there is
+           nothing here for a number that does not exist to add. */
+        if next.generation == 0, let held = stub, held.generation != 0 {
+            return .unusable(reason: "generation 0 names an identity and no "
+                + "grant; this crossing already carries generation "
+                + "\(held.generation) for \(held.item.name), and a drag "
+                + "that has not been minted yet cannot take that away")
+        }
         guard !pinned else {
             return .unusable(reason: "this drag already carries the file's "
                 + "own bytes — an eager fetch won the race before the Mac "

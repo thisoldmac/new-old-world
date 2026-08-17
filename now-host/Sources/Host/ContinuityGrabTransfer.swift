@@ -33,6 +33,12 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     enum GrabError: LocalizedError, Equatable {
         case noStub
         case busy
+        /// The drop knew WHICH file and never learned its generation. Its
+        /// own case rather than `noStub`: nothing is missing or gone — the
+        /// Macintosh simply never minted the number a grab must name, and
+        /// saying "no longer available" about a file sitting on the desktop
+        /// is the kind of wrong sentence a person cannot act on.
+        case notYetNamed(name: String, waitedMs: Int)
         case wire(code: String, message: String)
 
         var errorDescription: String? {
@@ -40,6 +46,11 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
             case .noStub:
                 return "That dragged item is no longer available on "
                     + MachineNaming.simpleReference + "."
+            case .notYetNamed(let name, _):
+                return MachineNaming.startingSentence(
+                    "\(MachineNaming.simpleReference) did not finish naming "
+                    + "\(name) before the drop. Try dragging it across "
+                    + "again.")
             case .busy:
                 return "Another file is already crossing from "
                     + MachineNaming.simpleReference + "."
@@ -236,6 +247,61 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
         return liveBinding.revise(to: stub)
     }
 
+    /// How long a drop waits for the application to mint the generation the
+    /// resident's announcement could not carry.
+    ///
+    /// Measured shape (2026-08-16, build `cfc5c1a1`): the application's own
+    /// frame reaches this Mac about 230 ms after the drag ends. A second is
+    /// four times that and still short enough that a person who drops on a
+    /// Finder window sees a copy start rather than a stall — and it is a
+    /// WAIT, not a retry: nothing has been asked of the wire yet.
+    /// Settable so a test can watch the hold expire without spending a real
+    /// second on it.
+    var mintWaitSeconds: TimeInterval = 1.0
+    /// Polled rather than signalled: the wire, the revision and this wait
+    /// all run on the one main actor, so a turn of the run loop is the only
+    /// thing that can change the answer, and asking each turn costs a
+    /// comparison. A continuation would buy nothing and could be resumed
+    /// twice.
+    private static let mintPollNanoseconds: UInt64 = 20_000_000
+
+    /// Holds one drop until the application's generation joins, and says
+    /// which way it went.
+    ///
+    /// **This is not a retry of a refused grab.** No grab has been sent for
+    /// this gesture — the eager fetch declined to spend one on a zero, and
+    /// the wire has been asked nothing. When the mint lands, the grab that
+    /// follows is the FIRST attempt for that newly minted generation. The
+    /// no-retry rule this project holds to is about not asking twice for a
+    /// number the Macintosh already refused; it has nothing to say about
+    /// waiting for the number to exist.
+    private func holdForMintedGeneration(_ binding: ContinuityDragBinding)
+        async -> ContinuityDragStub? {
+        let name = binding.stub?.item.name ?? "an unnamed file"
+        let started = DispatchTime.now()
+        let deadline = started + mintWaitSeconds
+        audit(.info, "grab held: gesture \(binding.gesture) crossed with an "
+            + "identity and no generation (name=\(name), dragSeq="
+            + "\(binding.stub?.dragSeq.map(String.init) ?? "none")) — "
+            + "waiting up to \(Int(mintWaitSeconds * 1000)) ms for the "
+            + "Macintosh to mint one rather than asking with a zero")
+        while true {
+            if let ready = binding.grabbable {
+                let waited = Int(Double(DispatchTime.now().uptimeNanoseconds
+                    - started.uptimeNanoseconds) / 1_000_000)
+                audit(.info, "grab held \(waited) ms and the generation "
+                    + "joined: gesture \(binding.gesture), "
+                    + "generation=\(ready.generation), "
+                    + "dragSeq=\(ready.dragSeq.map(String.init) ?? "none"), "
+                    + "name=\(ready.item.name) — this is the FIRST attempt "
+                    + "for that generation, not a retry of one refused")
+                return ready
+            }
+            guard DispatchTime.now() < deadline else { return nil }
+            try? await Task.sleep(nanoseconds: Self.mintPollNanoseconds)
+        }
+    }
+
     /// The drag image. Stub icon extraction from the guest's desktop
     /// database is declared by the contract and deliberately unsent, so this
     /// is the generic icon for the type the OSType named — honest about
@@ -366,6 +432,19 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
     /// the only lane, exactly as before this existed.
     private func beginEagerFetch(for stub: ContinuityDragStub, bytes: Int)
         -> EagerFetch? {
+        /* NOTHING TO ASK WITH. A stub at generation 0 is the resident's
+           identity and no grant; a fetch started under it can only be
+           refused, and on metal 2026-08-16 six crossings spent their first
+           attempt on exactly that certainty. The promise carries this drag
+           instead, and the drop holds it until a number arrives. */
+        guard stub.generation != 0 else {
+            audit(.info, "eager fetch skipped: nothing has minted a "
+                + "generation for this gesture yet (epoch=\(stub.epoch), "
+                + "dragSeq=\(stub.dragSeq.map(String.init) ?? "none"), "
+                + "name=\(stub.item.name)) — a grab with a zero is refused "
+                + "by the Macintosh that mints them, so none is sent")
+            return nil
+        }
         guard ContinuityFileDragPolicy.eligibleForEagerFetch(
             dataSize: stub.item.dataSize, resourceSize: stub.item.resourceSize)
         else { return nil }
@@ -493,8 +572,28 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                binding says so out loud rather than quietly swapping a file
                whose bytes are already being asked for. */
             let stub: ContinuityDragStub?
+            var heldMs: Int?
+            /* Named here rather than read back off `liveBinding` at the
+               refusal: a second crossing may have replaced it during the
+               hold, and a refusal line that names the WRONG gesture is
+               worse than one that names none. */
+            var heldGesture: UInt64?
             if let binding = self.liveBinding,
                binding.providerID == providerID {
+                /* THE HOLD, AND IT HAPPENS BEFORE THE WINDOW SHUTS. A
+                   crossing whose only account is the resident's identity
+                   has nothing a grab may name, and redeeming it here would
+                   close the revision window against the very frame it is
+                   waiting for. So the wait comes first and the redemption
+                   after it — one gesture, one attempt, made when there is
+                   something to attempt with. */
+                if binding.grabbable == nil {
+                    heldGesture = binding.gesture
+                    let started = DispatchTime.now()
+                    _ = await self.holdForMintedGeneration(binding)
+                    heldMs = Int(Double(DispatchTime.now().uptimeNanoseconds
+                        - started.uptimeNanoseconds) / 1_000_000)
+                }
                 stub = binding.redeem()
                 if let stub, stub.generation != binding.seed?.generation {
                     self.audit(.info, "grab redeems a LATE bind: gesture "
@@ -512,6 +611,31 @@ final class ContinuityGrabTransfer: NSObject, ObservableObject,
                     + "drag-sourced generation for it, so there is nothing "
                     + "to ask for — no file is guessed at")
                 completion.finish(GrabError.noStub)
+                return
+            }
+            /* REFUSED HERE, BY NAME, AND NOT ON THE WIRE. The Macintosh
+               mints generations and refuses every number it did not, so a
+               zero is a certain refusal — spending the drop's one grab on
+               it would report the symptom (`drag-not-yet-named`) instead of
+               the cause, which is that this Mac waited and nothing came.
+               The listener keeps its own guard as the last line; this one
+               exists to say how long the wait was. */
+            guard stub.generation != 0 else {
+                let waited = heldMs ?? 0
+                self.audit(.error, "grab refused: gesture "
+                    + "\(heldGesture?.description ?? "none") "
+                    + "waited \(waited) ms and the Macintosh never minted a "
+                    + "generation for \(stub.item.name) (dragSeq="
+                    + "\(stub.dragSeq.map(String.init) ?? "none")) — the "
+                    + "identity crossed and the grant never did, so nothing "
+                    + "is asked for and no file is guessed at")
+                let refusal = GrabError
+                    .notYetNamed(name: stub.item.name, waitedMs: waited)
+                    .localizedDescription
+                self.setNotice(refusal)
+                self.refusalSink?(refusal)
+                completion.finish(GrabError.notYetNamed(name: stub.item.name,
+                                                        waitedMs: waited))
                 return
             }
             self.redeem(stub, to: url, completion: completion)

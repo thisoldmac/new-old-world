@@ -660,7 +660,8 @@ final class ContinuityEdgeController: ObservableObject {
         switch lateBind.revise(mark) {
         case .revised(let gesture, let from, let to):
             audit(.info, "late bind: this crossing now carries \(to) "
-                + "(gesture \(gesture), source=drag, epoch=\(mark.epoch)), "
+                + "(gesture \(gesture), source=drag, epoch=\(mark.epoch), "
+                + "dragSeq=\(mark.dragSeq.map(String.init) ?? "none")), "
                 + "replacing \(from ?? "nothing at all") — the Mac could "
                 + "not say what was in the hand until its own drag loop "
                 + "ended, and the drop is what redeems this")
@@ -1083,10 +1084,17 @@ final class ContinuityEdgeController: ObservableObject {
                merely resolved: a stale cache and a fresh drag disagreeing
                is the ORDINARY case for a file nobody selected first. */
             audit(.info, "binding this cross to the drag itself: "
-                + "epoch=\(mark.epoch), generation=\(mark.generation), "
+                + "epoch=\(mark.epoch), source=\(mark.source.rawValue), "
+                + "generation=\(mark.generation), "
+                + "dragSeq=\(mark.dragSeq.map(String.init) ?? "none"), "
                 + "published \(age(mark)) by the Mac's drag plane, "
                 + "replacing "
-                + "\(pressed.mark.map { "generation \($0.generation)" } ?? "nothing")")
+                + "\(pressed.mark.map { "generation \($0.generation)" } ?? "nothing")"
+                + (mark.generation == 0
+                   ? " — IDENTITY ONLY: no generation has been minted for "
+                     + "this gesture, so the grab waits for the "
+                     + "application's frame rather than asking with a zero"
+                   : ""))
             guestFileCandidate = guestSelectionItem()
         case .bound(let mark):
             audit(.info, "this cross carries the selection its press was "
@@ -1104,7 +1112,9 @@ final class ContinuityEdgeController: ObservableObject {
                press's own selection is the whole point of the guest's
                press probe. */
             audit(.info, "binding this press to the selection it made: "
-                + "epoch=\(mark.epoch), generation=\(mark.generation), "
+                + "epoch=\(mark.epoch), source=\(mark.source.rawValue), "
+                + "generation=\(mark.generation), "
+                + "dragSeq=\(mark.dragSeq.map(String.init) ?? "none"), "
                 + "published \(age(mark)), replacing "
                 + "\(pressed.mark.map { "generation \($0.generation)" } ?? "nothing")")
             guestFileCandidate = guestSelectionItem()
