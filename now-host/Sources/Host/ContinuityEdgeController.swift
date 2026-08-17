@@ -295,6 +295,28 @@ final class ContinuityEdgeController: ObservableObject {
     /// not the transfer** — see `ContinuityHostFileStaging` and
     /// `completeStagedHostDrop`.
     private var stagedHostFiles: NSPasteboard?
+    /// The button bookkeeping a staged carry owns, for as long as it is
+    /// staged. See `rearmStagedCarryButton` for why it has to exist at all.
+    private struct StagedCarryButton {
+        /// A synthetic down has been posted to undo this Mac's own
+        /// synthetic release, so the person's physical lift is a real HID
+        /// transition again.
+        var reArmed = false
+        /// The HID has since answered "held" at least once. Until it has,
+        /// the re-arm is a hope and the HID backstop must not read the
+        /// button as released — that reading would be this Mac's own lie
+        /// coming back.
+        var heldSeen = false
+        /// Button samples refused while the carry was staged. Counted, and
+        /// reported once, because on 2026-08-16 they were forwarded to the
+        /// guest as real clicks (F1 ledger, D5).
+        var suppressedPresses: UInt32 = 0
+    }
+    private var stagedCarry = StagedCarryButton()
+    /// Where the host drag was ended at the crossing. The re-arm is posted
+    /// there — the one point on this Mac known to have been over this app's
+    /// own catch surface a moment ago.
+    private var stagedCrossPoint: CGPoint = .zero
     /// Snapshots a live drag pasteboard into something that outlives the
     /// session. Injectable because no test has a real drag pasteboard, and
     /// because whether a given drag CAN be staged is the one fact that
@@ -741,6 +763,11 @@ final class ContinuityEdgeController: ObservableObject {
             if !hostDragSessionOverEdgeIsLive {
                 hideHostCursor(for: pending)
                 startKeyboardCapture()
+                /* The deferred half of `convergeAfterCrossDrop`: a carry
+                   whose host drag ended before the guest confirmed
+                   ownership takes its custody here, and the button re-arm
+                   is part of that custody rather than a step beside it. */
+                rearmStagedCarryButton()
             }
         case .idle:
             guard state == .arming || state == .active else { return }
@@ -838,13 +865,45 @@ final class ContinuityEdgeController: ObservableObject {
             endHostDragPresentation()
         }
         guard var ownership else { return }
-        if sample.kind == .primaryUp, stagedHostFiles != nil {
-            /* THE RELEASE THE PERSON ACTUALLY MADE, and the only one that
-               decides anything. The release this Mac posted at the edge
-               ended Finder's session and staged the file; this one says
-               where on the guest it goes. */
-            completeStagedHostDrop(at: ownership)
-            return
+        if stagedHostFiles != nil {
+            /* **A STAGED CARRY OWNS THE BUTTON OUTRIGHT.** Everything the
+               primary button does between the crossing and the drop is this
+               gesture's, and none of it is a click on the guest: the person
+               is holding a file, and the only thing they can mean by
+               letting go is "put it here". */
+            if sample.kind == .primaryUp {
+                /* THE RELEASE THE PERSON ACTUALLY MADE, and the only one
+                   that decides anything. The release this Mac posted at the
+                   edge ended Finder's session and staged the file; this one
+                   says where on the guest it goes. */
+                completeStagedHostDrop(at: ownership,
+                                       release: "the person released on the "
+                                        + "guest")
+                return
+            }
+            if sample.kind == .primaryDown {
+                /* D5, 2026-08-16: these were forwarded as real guest clicks
+                   — three bursts inside the double-click window on the
+                   guest desktop, which is how a drag came to open Classilla.
+                   The synthetic down this Mac posts to re-arm the button
+                   comes back through the same tap and is refused here too,
+                   which is the point: WE synthesise the guest-side release,
+                   at the commit and only there. */
+                stagedCarry.suppressedPresses &+= 1
+                if stagedCarry.suppressedPresses == 1 {
+                    custodyAudit(.info, "button forwarding suppressed",
+                                 "a file is staged, so a press is this "
+                                    + "gesture's own and not a click on the "
+                                    + "guest")
+                }
+                return
+            }
+            if stagedCarryReleasedAtHID() {
+                completeStagedHostDrop(at: ownership,
+                                       release: "the HID says the button "
+                                        + "went up and no event carried it")
+                return
+            }
         }
         if hostDragSessionOverEdgeIsLive || hostDragOverThisMac,
            sample.kind == .primaryDown || sample.kind == .primaryUp {
@@ -2170,6 +2229,8 @@ final class ContinuityEdgeController: ObservableObject {
             return
         }
         stagedHostFiles = staged
+        stagedCarry = .init()
+        stagedCrossPoint = hostPoint
         expectingCrossDrop = true
         /* Widened before the post, not after: the drop has to have a
            surface of ours to land on at the instant the window server
@@ -2187,6 +2248,7 @@ final class ContinuityEdgeController: ObservableObject {
                 + "The file is staged; the guest release is still the commit")
         guard posted else {
             stagedHostFiles = nil
+            stagedCarry = .init()
             expectingCrossDrop = false
             setFileEdgeCatching(false)
             crossEndRefusal = "the window server refused the synthetic "
@@ -2201,12 +2263,16 @@ final class ContinuityEdgeController: ObservableObject {
         expectingCrossDrop = false
         hostDragEndedAtCross = true
         _ = pasteboard
-        setFileEdgeCatching(false)
         audit(.info, "host file drag: the host drag ENDED at the crossing — "
             + "this Mac's own strip took the drop, so nothing of the "
             + "Finder's is still in flight and the pass now takes ordinary "
             + "pointer custody (gesture=\(hostFileDragGestureID))")
         convergeAfterCrossDrop()
+        /* Narrowed LAST, after the converge has armed custody and posted the
+           button re-arm: the widened strip is what the re-arm's own point
+           sits on, and a surface withdrawn before that post is a surface
+           that was not there when it mattered. */
+        setFileEdgeCatching(false)
         return true
     }
 
@@ -2237,22 +2303,101 @@ final class ContinuityEdgeController: ObservableObject {
         }
         hideHostCursor(for: current)
         startKeyboardCapture()
+        /* AFTER the tap, never before: the re-arm is a synthetic button
+           press, and the only thing that keeps it out of another
+           application is the capture `hideHostCursor` just armed. */
+        rearmStagedCarryButton()
         status = "Carrying the file on the guest display"
+    }
+
+    /// **Undo this Mac's own lie about the button, the way the guest→host
+    /// lane already does.**
+    ///
+    /// `endHostDragAtCross` posts a `leftMouseUp` at `.cghidEventTap` to end
+    /// Finder's session. That sets the system's global primary-button state
+    /// to UP while the person's finger is still down — so when they
+    /// eventually lift, IOHIDSystem sees no transition, emits no
+    /// `leftMouseUp`, and the commit gated on that event can never fire. Six
+    /// of seven carries on 2026-08-16 died exactly there, and the one that
+    /// worked did so only because Michelle pressed the button AGAIN
+    /// mid-carry (F1 ledger, D2).
+    ///
+    /// The guest→host lane has always handled the mirror image of this: its
+    /// consuming tap swallows the physical down, so it posts a synthetic
+    /// down to re-arm the session's belief before a drag session may begin
+    /// (`armSessionButtonIfSurfaceIsReady`, `session button state
+    /// re-armed`). This is the same mechanism pointed the other way — a
+    /// synthetic DOWN posted after our synthetic UP, at the HID level
+    /// because that is the level our release lied to, so the physical lift
+    /// is a real transition again.
+    ///
+    /// **It waits for the consuming tap, and declines without one.** A down
+    /// posted at the HID level with no tap in front of it is this app
+    /// pressing a button in another application — the same rule
+    /// `armSessionButtonIfSurfaceIsReady` refuses to break, and the reason
+    /// it holds its own post until the catch surface owns the point.
+    private func rearmStagedCarryButton() {
+        guard stagedHostFiles != nil, !stagedCarry.reArmed else { return }
+        guard inputCapture != nil else {
+            custodyAudit(.error, "button re-arm DECLINED",
+                         "this Mac has no consuming tap, and a synthetic "
+                            + "down with nothing in front of it presses a "
+                            + "button in another application. The physical "
+                            + "release will not commit this carry")
+            return
+        }
+        let posted = environment.postSyntheticPrimaryButtonAtHID(
+            down: true, at: stagedCrossPoint)
+        stagedCarry.reArmed = posted
+        custodyAudit(posted ? .info : .error,
+                     posted ? "button re-armed" : "button re-arm FAILED",
+                     "synthetic primary down at "
+                        + "\(Int(stagedCrossPoint.x)),"
+                        + "\(Int(stagedCrossPoint.y)) undoing this Mac's own "
+                        + "release, so the person's physical lift is a real "
+                        + "HID transition again")
+    }
+
+    /// The backstop for the release, read off the hardware rather than
+    /// waited for as an event.
+    ///
+    /// The event is the ordinary path and this is not a substitute for it —
+    /// but the whole D2 defect was a commit gated on an event that the
+    /// window server had been talked out of emitting, and one desync of that
+    /// shape is enough to stop trusting the event alone. Only armed once the
+    /// HID has confirmed the re-arm took: before that, "not held" is this
+    /// Mac's own synthetic release coming back as an answer.
+    private func stagedCarryReleasedAtHID() -> Bool {
+        guard stagedCarry.reArmed else { return false }
+        guard !physicalPrimaryButtonHeld() else {
+            if !stagedCarry.heldSeen {
+                stagedCarry.heldSeen = true
+                custodyAudit(.info, "button re-arm confirmed",
+                             "the HID reads the primary button held again")
+            }
+            return false
+        }
+        return stagedCarry.heldSeen
     }
 
     /// The person released on the guest: the staged file lands there, and
     /// this is the only place a host→guest transfer is ever started once the
     /// crossing has ended the host drag.
-    private func completeStagedHostDrop(at ownership: Ownership) {
+    private func completeStagedHostDrop(at ownership: Ownership,
+                                        release: String) {
         guard let staged = stagedHostFiles else { return }
         stagedHostFiles = nil
+        let carry = stagedCarry
+        stagedCarry = .init()
         let point = mirrorPoint(ownership.guestPoint)
         let accepted = hostFilesDropped?(staged, point) ?? false
         audit(accepted ? .info : .warn,
-              "host file drag: the person released on the guest at "
+              "host file drag: \(release) at "
                 + "\(point.x),\(point.y) and the staged file was "
                 + "\(accepted ? "accepted" : "refused") "
-                + "(gesture=\(hostFileDragGestureID))")
+                + "(gesture=\(hostFileDragGestureID), "
+                + "buttonReArmed=\(carry.reArmed ? 1 : 0), "
+                + "suppressedPresses=\(carry.suppressedPresses))")
         endHostDragPresentation()
         hostFileDrag = false
         hostDragEndedAtCross = false
@@ -2269,9 +2414,13 @@ final class ContinuityEdgeController: ObservableObject {
     private func abandonStagedHostFiles(reason: String) {
         guard stagedHostFiles != nil else { return }
         stagedHostFiles = nil
+        let carry = stagedCarry
+        stagedCarry = .init()
         audit(.info, "host file drag: the staged file was let go without a "
             + "transfer — \(reason). Nothing was copied "
-            + "(gesture=\(hostFileDragGestureID))")
+            + "(gesture=\(hostFileDragGestureID), "
+            + "buttonReArmed=\(carry.reArmed ? 1 : 0), "
+            + "suppressedPresses=\(carry.suppressedPresses))")
     }
 
     private func hostFileExited() {
