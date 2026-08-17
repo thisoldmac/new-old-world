@@ -1403,6 +1403,33 @@ operations:
           bookkeeping look like a Macintosh that fell behind.
         - The console face inverts too, and deliberately — see the
           DECLARED ASYMMETRY below.
+
+      continuity.hostDragBegin IS THE THIRD MESSAGE OF THAT CROSSING AND
+      IT IS NOT AN OFFER. continuity.offer says what the host is
+      CARRYING; hostDragBegin says the hand has CROSSED, and asks this
+      Macintosh to begin a Drag Manager drag of it at a named point.
+      They are separate because a person can carry something toward the
+      edge for as long as they like without ever crossing, and a guest
+      that started a drag on the offer would draw one for every hover.
+      The offer is also what makes the drag serveable: the promise's
+      bytes are fetched with the ordinary continuity.grab against the
+      offer table, so a hostDragBegin with no live offer behind it has
+      nothing to pull and the guest's own drag refuses by name.
+
+      IT DOES NOT INVERT, and it does not need to. There is no
+      guest-sends-hostDragBegin: the mirrored fact — a drag begun by a
+      person at the Macintosh — is already continuity.dragBegin, sent by
+      the resident, and the two are one gesture seen from the two ends
+      rather than one message with two senders (which is what
+      continuity.grab is, and why that one is listed in both
+      operations).
+
+      ITS CONSOLE FACE ALREADY EXISTS, which is what satisfies the
+      parity rule argued below rather than an exemption from it. `offer
+      --drag` at the Macintosh drags the ONE item the person over there
+      published, by their own gesture — the same bounded set, reached
+      the same way, differing only in which side's hand started it. A
+      second verb would be a second name for one capability.
   guestReportsContinuity:
     action: receive
     channel: { $ref: "#/channels/control" }

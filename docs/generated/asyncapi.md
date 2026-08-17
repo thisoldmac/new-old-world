@@ -53,7 +53,7 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `hostServesWeb` | `receive` | `control` | `webResponseBegin`, `webResponseChunk`, `webResponseEnd` |
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
 | `hostServesHostSurface` | `receive` | `control` | `hostShown` |
-| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey`, `continuityGrab`, `continuityOffer` |
+| `hostAsksGuestContinuity` | `send` | `control` | `continuityArm`, `continuityDisarm`, `continuityKey`, `continuityGrab`, `continuityOffer`, `continuityHostDragBegin` |
 | `guestReportsContinuity` | `receive` | `control` | `continuityReport`, `continuityKeyReport`, `continuitySelection`, `continuityDragBegin`, `continuityGrab` |
 | `peerAnnouncesMirrorInvalidation` | `send` | `control` | `mirrorInvalidate` |
 | `peerReceivesMirrorInvalidation` | `receive` | `control` | `mirrorInvalidate` |
@@ -130,6 +130,7 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `continuityDragBegin` | `continuity.dragBegin` | `ContinuityDragBegin` |
 | `continuityGrab` | `continuity.grab` | `ContinuityGrab` |
 | `continuityOffer` | `continuity.offer` | `ContinuityOffer` |
+| `continuityHostDragBegin` | `continuity.hostDragBegin` | `ContinuityHostDragBegin` |
 | `cloudServices` | `cloud.services` | `CloudServices` |
 | `cloudReport` | `cloud.report` | `CloudReport` |
 | `cloudList` | `cloud.list` | `CloudList` |
