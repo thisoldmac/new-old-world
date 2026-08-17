@@ -463,7 +463,7 @@ int now_continuity_selection_poll(unsigned long live_epoch)
     /* NOT WHILE THIS MACHINE IS THE DRAG SOURCE, and this is the one
        gate whose absence cost a 600 KB file.
      *
-       The poll asks the Finder a question with AESend(kAEWaitReply). A
+       The poll asks the Finder a question and waits for the reply. A
        NOW-originated promise drag reaches its send proc INSIDE the
        Finder's own drop handling — the Finder is sitting in
        GetFlavorData waiting for us — and the send proc pumps the wire by

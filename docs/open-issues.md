@@ -7,6 +7,155 @@ search:
 
 # Open issues
 
+## SLICE 1 DONE, EMULATOR-MEASURED: `continuity.hostDragBegin` starts a real OS 9 drag from a BACKGROUND process, the sprite follows for free, and 1 MB completes byte-identical (2026-08-17, `feat/gh-native-drag-guest`)
+
+Slice 1 of the blessed-path drag plan
+(`docs/plans/2026-08-17-036-feat-blessed-path-drag-plan.md`). The
+acceptance sentence is Michelle's: *once the edge hands off, OS 9 sees a
+normal drag with a promise — nothing on the receiving side can tell it
+from a drag its own user started.* Seven gestures across one boot say it
+does.
+
+### The two open questions, answered by measurement
+
+**1. Can NOW run the whole lane while it is NOT the front process? YES.**
+Every gesture logged
+
+```
+mirror drag begin: host=1 seq=1000 front=other at 300,200
+```
+
+— `front=other` is `GetFrontProcess`/`SameProcess` asked at `TrackDrag`
+entry, with the Finder frontmost and NOW's own window hidden by the
+guest's own `hide` verb. `TrackDrag` ran, the ghost tracked, the Finder
+took the drop, and the promise was pulled. **The fallback (NOW
+front-but-hidden) is not needed and is not built.** Front-ness was a rig
+fact of slice 0's induction press, exactly as the plan suspected: a
+`hostDragBegin` delivers no event, so nothing routes to the front
+process.
+
+**2. Does the cursor sprite follow, or is it ghost-only? IT FOLLOWS, and
+it costs nothing.** Screendumps, run 4 round 0: `r0-00-before.png` has
+the arrow at the press point (300,200); `r0-01-mid.png` and
+`r0-02-held.png` have it at the driven point (120,380), with the Finder
+window's items showing drag-over feedback as it passed. Slice 0 measured
+the opposite (arrow frozen) and the variable is answer 1: with NOW in the
+BACKGROUND its blocked task time no longer starves the pointer, because
+the pointer authority is not NOW's alone. **No new resident code was
+written and none is needed.** The Drag Manager's own drag image was not
+captured in these frames — a capture question, not a targeting one, since
+targeting is proven by `loc='alis'` and by where the file landed.
+
+### The drop, four ways
+
+| gesture | result |
+|---|---|
+| desktop, 4 KB | `Last drag ok`, `asks=1`, `loc='alis'`, `left=1 inwin=0`, file on the desktop |
+| desktop, 600 KB | `Last drag ok`, sha256 **identical** (`d1e7340a…`), 614400/614400 read back |
+| desktop, 1 MB (the declared cap) | `Last drag ok`, sha256 **identical** (`6da7f41a…`), 1048576/1048576 |
+| **Finder WINDOW** (`bounds` 48,103,452,321; drop 250,232) | `drag promise dest: (dir 2 …)` — the open window's own folder, not the desktop's dir 19 — `asks=1`, `Last drag ok`, sha256 identical. **The never-yet-watched gate: the Manager delivers into a window container exactly as it does the desktop.** Slice 0 could not run it because NOW's window occluded the target; the fix was one verb (`hide`), as the plan said |
+| collision (two drops, one name) | the **Finder's own ask** — "An older item named "HostDrag94936.txt" already exists in this location. Do you want to replace it with the one you're moving?", Cancel / OK (`run4/r1-03-after.png`). Escape leaves exactly one file (`after-dismiss.png`). Zero collision code of ours ran; both drops report `ok` |
+| abort (driven to a non-accepting point, then button-up) | `TrackDrag -128` (`userCanceledErr`), **`asks=0`** — the promise was never requested — `loc='null'`, nothing created. The Manager's own cancel, no cancel channel of ours |
+
+### THE 600 KB PULL: two defects, neither of them a missing pump
+
+`stream_promise` already pumped, and its pumps provably reached the wire.
+The failure was elsewhere and it was two things compounding:
+
+1. **The pull lane never acked.** The host clocks its SENDER on
+   `file.progress` (`Session.swift`'s outbound window). The push lane has
+   reported since large transfers were fixed; the **pull** lane —
+   `take_bulk_in`'s `g_get` branch — sent nothing, ever. With no ack the
+   window never engages, the sender runs unbounded, and the transfer
+   falls into the non-recovering retransmit collapse
+   `docs/large-transfers.md` already names. Fixed: both inbound lanes now
+   report on one step (`kXferProgressStep`, stated once).
+2. **The selection poll Apple-Evented a Finder that was blocked on us.**
+   `service_continuity_selection` sends `AESend(kAEWaitReply, 120 ticks)`
+   to the Finder — from inside `conn_service`, which the promise send
+   proc pumps while the Finder sits in `GetFlavorData` waiting for that
+   send proc to return. Two-second blackouts, back to back, with the AE's
+   own idle hook bounced. **The comment claiming this was unreachable was
+   wrong**: `now_wire_pump`'s guard bounces a pump reached from a request
+   handler, not one reached from the main loop, and `TrackDrag` runs at
+   main-loop level. Fixed: the poll refuses while a NOW-originated drag is
+   in flight, and the false comment is corrected in place.
+
+4096 bytes survived both because it is a single bulk frame, already
+buffered before the guest's first read window.
+
+### One verdict was wrong and is fixed
+
+The abort reported `button-not-real`. For a host-driven drag this
+Macintosh's own `Button()` is up **by construction** — nobody is touching
+its mouse — so the test that makes that verdict specific answers the same
+way every time and stops being evidence. It is now `cancelled` for a
+host-driven drag and still `button-not-real` for a console one, both
+pinned in `now_continuity_drag_test.c`. **Unit-proven, not re-measured on
+the emulator**: the fix landed after the run and changes only the word.
+
+### The kill list, guest side, drag lane only
+
+- The **receive windoid** never appeared in any of the 30 screendumps, and
+  that is now a decision rather than an accident of scheduling:
+  `now_wire_receive_active` returns false for a pull taken while a native
+  drag is in flight. The wire-offer and MCP put lanes keep it untouched.
+- **`now_confirm` never engaged**, and structurally cannot: its two drag-
+  adjacent call sites are the SEND lane and the PUSH lane
+  (`ask_about_replacing`, `ask_about_replacing_incoming`); a promise pull
+  is neither. The Finder's own ask is what a collision raises.
+- The app-drawn **carry illustration** is the host's and is not touched
+  here.
+- **"Native drag in flight" is declared**, not inferred:
+  `now_continuity_drag_in_flight()` is true from `TrackDrag`'s entry to
+  its return, promise included, and the log brackets the interval at both
+  ends. That is what makes the wire's silence and the blocked task time
+  readable as healthy for the drag's bounded duration.
+
+### Still open after this slice
+
+- **The lease during a long drag.** A 60-second `TrackDrag` (measured:
+  `track=3597 ticks`) is longer than the resident's 30 s lease, and
+  nothing of ours renews it from inside `TrackDrag` — the input proc is
+  bounded, allocation-free and must stay so. Not hit in these runs; not
+  proven safe either, and the fix is not a guest-app change.
+- **`track=1 ticks` on two later gestures.** Two drops completed with a
+  reported `TrackDrag` duration of one tick. The drops were correct
+  (targeted, asked, byte-identical), so this reads as a rig artefact of
+  back-to-back gestures on one boot rather than a product fault — but it
+  is unexplained and is recorded rather than smoothed.
+- The **Finder's own copy progress** is still unobserved: even 1 MB
+  crosses without one appearing. Whether OS 9 shows one for a promise
+  pull at all remains unanswered.
+- The **`put` verb cannot name a path with spaces** — its console parser
+  takes one whitespace token — so nothing under `Macintosh HD:Desktop
+  Folder:` is reachable by it. Found while building the byte-compare;
+  worked around (chunked `read file`), not fixed.
+- **Metal is untouched.** Slice 5's attended PowerBook gate stands.
+
+### The rig
+
+One boot of `scripts/spin-up-ppc` onto a session-private clone of
+`now-mirror-stage.qcow2` (sha256
+`8db8ddc2de99c4221ba563ab095ebcb24190a4d3e7ef69ef0720edbdbba199d4`,
+volume clean, provenance ACCOUNTED FOR), lane block 248, ports
+13984/13985, OS 9.1 on `Power Mac G4`, resident `active` capabilities
+`1023`, sourceManifest `1df8e014ab79`, buildFingerprint `5410aeef3706`
+(unchanged — nothing under `ext/` was touched). Instrument:
+`tools/local-hostdrag-probe.py`, which unlike every earlier Python
+instrument here **serves the grab** as well as inducing the drag, so a
+drop that completes can be measured at all. Screendumps through QMP, not
+through the wire under measurement. The guest was shut down through the
+Finder's own Special > Shut Down; **volume cleanly unmounted**.
+**Receipts are outside the run directory**, at
+`/private/tmp/now-s1-guest-receipts/` (`run1`…`run7`, `spin-up.log`,
+`provenance.md`/`.json`, `staged.json`) — `lane-ports reclaim` deleted
+`$NOW_SPIN_RUN` afterwards, as designed, with the evidence unaffected.
+
+`corpus_impact: none` — NOW's own drag lane, not a TimBotTu topic-corpus
+claim; the durable statement lives in this ledger and in the plan's slice
+table.
+
 ## FIXED, EMULATOR-MEASURED: the promised file was PLACED by us instead of staged for the receiver, so NOW adjudicated a collision in the Finder's house (2026-08-17, `test/hg-drag-input-proc`, slice 2)
 
 Slice 2 of the blessed-path drag plan
