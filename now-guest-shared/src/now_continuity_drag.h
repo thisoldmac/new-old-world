@@ -140,7 +140,14 @@ enum {
        because reading them as one produced a result that could not be
        attributed. It reports absence and defect separately, which is the
        standing rule for anything that reads a live machine. */
-    kNowDragButtonNotReal = 11
+    kNowDragButtonNotReal = 11,
+    /* A continuity.hostDragBegin named an epoch that is not the live
+       one. Its own word rather than `no-offer`, because the two want
+       opposite diagnosis: no-offer is a host that never published,
+       bad-epoch is a host publishing into a session this machine has
+       already left — and the drag it asks for would be steered by a
+       cursor plane nobody is writing. */
+    kNowDragBadEpoch = 12
 };
 
 /* What an arm ripening asks the caller to do. */
@@ -172,6 +179,22 @@ typedef struct {
     /* How the last drag ended, one of the kNowDrag* verdicts.
        kNowDragOK means it settled. */
     int last_verdict;
+    /* The host's gesture id when this drag came from a
+       continuity.hostDragBegin, 0 when a person at this Macintosh asked
+       for it. It is carried so every line about one crossing can be
+       joined to the host's own account of the same gesture — the join
+       key continuity.dragBegin already established in the mirrored
+       direction. */
+    unsigned long drag_seq;
+    /* Non-zero when the host asked for this drag rather than the
+       console. It is a fact about PROVENANCE, not about behaviour: the
+       Drag Manager half below it is identical either way, and anything
+       that branched on this to change what the receiver sees would be
+       building the second lane this whole slice exists to delete. What
+       it IS for: a liveness monitor asking "is the wire's silence
+       expected right now", and a log line saying which side started
+       this. */
+    int host_driven;
 } NowContinuityDragState;
 
 void now_continuity_drag_reset(NowContinuityDragState *st);
@@ -189,6 +212,39 @@ int now_continuity_drag_request(NowContinuityDragState *st,
                                 const NowContinuityOfferTable *table,
                                 unsigned long live_epoch,
                                 unsigned long now_ticks);
+
+/* THE EDGE HANDED OFF: begin a drag the HOST asked for, now.
+   ------------------------------------------------------------------
+   continuity.hostDragBegin's decision half. It is deliberately NOT
+   request() with a different argument, and the difference is the arm:
+
+     - request() arms and waits for the resident's applied button,
+       because a console `offer --drag` is a person naming an intention
+       with no gesture behind it yet, and starting before the button was
+       applied would track nothing.
+
+     - THIS ONE STARTS. The gesture already exists — a person's hand is
+       mid-drag on the other machine and the host's own session ended at
+       the crossing — and the button that steers this drag arrives
+       through the Drag Manager's input proc, not through the resident's
+       apply. There is nothing to wait for, and waiting would spend the
+       one beat at the edge where neither drag exists (the plan's
+       ownership toggle) drawing nothing.
+
+   So state goes straight to Tracking and the caller must call TrackDrag
+   on this pass. `item` is the skeleton off the wire — a copy is taken,
+   for request()'s reason: the host may rewrite its offer at any moment
+   and a drag whose name changed halfway through materialises something
+   the person did not pick up.
+
+   Refusals, in the order asked: `busy` (a drag is already in flight and
+   must not be trampled), `bad-epoch`, `folder`, `too-large`. Every one
+   of them leaves the state alone. */
+int now_continuity_drag_host_begin(NowContinuityDragState *st,
+                                   const NowContinuityOfferItem *item,
+                                   unsigned long epoch,
+                                   unsigned long live_epoch,
+                                   unsigned long drag_seq);
 
 /* Ripen the arm. `button_down` is the APPLIED button, never Button().
    Returns one of the kNowDragTick* actions; Start moves the state to

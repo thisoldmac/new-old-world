@@ -19,6 +19,7 @@
 #include "continuity_intake.h"
 #include "continuity_selection.h"
 #include "continuity_offer_intake.h"
+#include "continuity_hostdrag_intake.h"
 #include "continuity_dragmgr.h"
 #include "json.h"
 #include "loopstat.h"
@@ -3802,6 +3803,26 @@ static void service_host_show(void)
 
 enum { kGetTimeoutTicks = 60 * 30 };
 
+/* How often a RECEIVING lane tells the host what has landed, in bytes.
+ *
+ * This is not only a progress bar: the host clocks its sender on these
+ * reports and will not run more than a few of them ahead. So the step is
+ * flow control, and a coarse one caps how tightly the sender can be
+ * bounded - at 32 KB the host could not go below a 64 KB window without
+ * deadlocking (it parks, then waits for a report needing bytes it has
+ * decided not to send). Matching the host's 8 KB bulk frame means one
+ * report per frame, which is what makes a ~24 KB in-flight bound work.
+ *
+ * ONE NUMBER FOR BOTH INBOUND LANES, and it is stated here rather than
+ * beside either of them because the push lane having it and the pull
+ * lane not is exactly how a 600 KB promise drop died: same host window,
+ * same collapse, one lane silent. A limit stated where only one reader
+ * looks is a limit the other reader does not have.
+ *
+ * Reports stay advisory and are still dropped when the control queue is
+ * busy; `received` is cumulative, so a skipped one costs nothing. */
+enum { kXferProgressStep = 8 * 1024 };
+
 /* Forward reference: defined below with finish_put, which checks the
    same field for the other direction. */
 static unsigned long json_find_u32(const char *json, const char *key,
@@ -3824,6 +3845,11 @@ static struct {
        the two entry points rather than inferred here, because "which
        caller asked" is the fact and the lane's state is not. */
     Boolean unattended;
+    /* How much of this pull the host has already been told about. The
+       PUSH lane has had one of these since large transfers were fixed;
+       this lane had none, and that is why it could not carry a large
+       file. See get_report_progress. */
+    long reported;
     FileReceive rx;
     unsigned long deadline;
 } g_get;
@@ -3939,6 +3965,37 @@ static void get_cleanup(Boolean keep_file)
     }
     g_get.pending = false;
     g_get.receiving = false;
+}
+
+/* WHAT THIS PULL HAS ACTUALLY TAKEN, told to the host that is sending
+   it. The push lane's twin (put_report_progress) with one difference
+   worth naming: nothing on this side is drawing a bar for a promise
+   drop, so this exists ENTIRELY as flow control. The host parks its
+   sender on these; without them it runs unbounded and collapses (see
+   kXferProgressStep, and docs/large-transfers.md for the collapse).
+
+   Advisory, exactly like the other lane: the control queue is eight
+   slots deep and shared with messages that carry meaning, so a report
+   yields rather than crowding them out. `received` is cumulative, so a
+   dropped one costs the sender one step of window and nothing else. */
+static void get_report_progress(Boolean force)
+{
+    char json[128];
+
+    if (!g_get.receiving) {
+        return;
+    }
+    if (!force && g_get.rx.received - g_get.reported < kXferProgressStep) {
+        return;
+    }
+    if (!force && g_ctlq.count >= kCtlQueueSlots / 2) {
+        return;                       /* real traffic first */
+    }
+    g_get.reported = g_get.rx.received;
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.progress\",\"id\":%ld,\"received\":%ld}",
+             g_get.id, g_get.rx.received);
+    send_control(json);               /* best effort: a drop is not a fault */
 }
 
 /* Stop the pull in flight, from this side. Two halves, in this order:
@@ -4192,6 +4249,11 @@ static void get_begin(const char *reply)
         return;
     }
     g_get.receiving = true;
+    /* Zeroed with the transfer it counts, not once at startup: a pull
+       that inherited the last one's high-water mark would report nothing
+       until it passed it, and the host would park a sender nobody was
+       acking. */
+    g_get.reported = 0;
     g_get.deadline = TickCount() + kGetTimeoutTicks;
     now_log(kLogInfo, "get", "#%ld %.31s, %ld bytes, into %s", g_get.id,
             g_get.name, g_get.expected, g_get.dest_name);
@@ -4801,6 +4863,19 @@ Boolean now_wire_receive_active(long *received, long *expected,
         if (!g_get.receiving || !g_get.unattended) {
             return false;
         }
+        /* NOT ON THE DRAG LANE, AND SAID RATHER THAN LEFT TO LUCK.
+           A promise pull runs inside the receiver's drop, so the event
+           loop that opens the windoid is not running and it has never
+           in fact appeared there. That is an accident of scheduling,
+           not a decision, and the blessed path makes it one: while a
+           native drag is in flight the OS's own drop is the progress
+           surface, and a windoid of ours beside it would be the second
+           imitation this slice exists to delete. The wire-offer and MCP
+           put lanes keep the windoid untouched — nobody is dragging
+           there. */
+        if (now_continuity_drag_in_flight()) {
+            return false;
+        }
         if (received != NULL) {
             *received = g_get.rx.received;
         }
@@ -4874,23 +4949,9 @@ static unsigned long json_find_u32(const char *json, const char *key,
     return negative ? (0UL - v) & 0xFFFFFFFFUL : v;
 }
 
-/* How often the guest says where it has got to. The write batch is the
-   natural cadence — one report per flush — and on a 2.7 MB file that is
-   about 85 control frames across several minutes, which is nothing next
-   to the bulk stream they describe. */
-/* How often the guest tells the host what it has taken.
- *
- * This is not only a progress bar: the host clocks its sender on these
- * reports and will not run more than a few of them ahead. So the step is
- * flow control, and a coarse one caps how tightly the sender can be
- * bounded — at 32 KB the host could not go below a 64 KB window without
- * deadlocking (it parks, then waits for a report needing bytes it has
- * decided not to send). Matching the host's 8 KB bulk frame means one
- * report per frame, which is what makes a ~24 KB in-flight bound work.
- *
- * Reports stay advisory and are still dropped when the control queue is
- * busy; `received` is cumulative, so a skipped one costs nothing. */
-enum { kPutProgressStep = 8 * 1024 };
+/* The step this lane reports on is kXferProgressStep, stated once beside
+   the pull lane's own timeout — see its comment for why it is that
+   number and why both inbound lanes share it. */
 
 /* Tells the host what has actually landed. The sender cannot know this:
    its own completion fires when the local socket accepts a chunk, which
@@ -5038,8 +5099,27 @@ static void take_bulk_in(const unsigned char *bytes, long len)
         if (rc != kFilesOK) {
             get_cleanup(false);
             get_note("Could not write the file");
+            return;
         }
         g_get.deadline = TickCount() + kGetTimeoutTicks;
+        /* AND THEN SAY SO. The push lane has reported its progress since
+           large transfers were fixed, and the host clocks its SENDER on
+           those reports (Session.swift's outbound window): no report, no
+           ack, no park, and the sender runs unbounded against whatever
+           this machine can take.
+
+           This lane never sent one. For a file that fits in a single
+           bulk frame nothing noticed; for a 600 KB promise pulled inside
+           a Finder drop it is the whole defect - the sender ratchets into
+           the retransmit collapse docs/large-transfers.md names, which
+           does not recover, and the pull dies of its own silence timeout
+           having received almost nothing.
+
+           So the two lanes now report identically, on the same 8 KB step
+           matched to the host's bulk frame, through the same advisory
+           rules: dropped when the control queue is busy, cumulative, and
+           never a fault when one is missed. */
+        get_report_progress(false);
         return;
     }
     /* A preview we asked for: raw indexed rows into the buffer the
@@ -5074,7 +5154,7 @@ static void take_bulk_in(const unsigned char *bytes, long len)
        this guest reports at all, so it can stop trusting its own send
        counter early rather than after the first 32 KB. */
     if (g_put.reported == 0
-        || g_put.rx.received - g_put.reported >= kPutProgressStep) {
+        || g_put.rx.received - g_put.reported >= kXferProgressStep) {
         put_report_progress(false);
     }
 }
@@ -7657,12 +7737,25 @@ static void serve_continuity_key(const char *request)
 
 /* Poll the Finder's selection and push a stub when it moved.
 
-   CALLED FROM conn_service() AND NOWHERE ELSE, which is the whole safety
-   argument: now_wire_pump() bounces every nested entry (see its guard),
-   so this cannot be reached from inside a Toolbox loop. An Apple Event
-   sent from a nested loop would be one wait inside another, and the
-   Finder's answer would arrive underneath a machine already waiting for
-   something else.
+   CALLED FROM conn_service() AND NOWHERE ELSE — and the safety argument
+   that used to be written here was WRONG, which cost a 600 KB file.
+
+   It said: now_wire_pump() bounces every nested entry, so this cannot be
+   reached from inside a Toolbox loop. The guard does bounce a pump
+   reached from a request handler. It does not bounce a nested loop
+   entered from the MAIN loop, and the promise drag's send proc is
+   exactly that — TrackDrag runs at main-loop level, the Finder's drop
+   calls back into us, and the send proc pumps by hand. Every one of
+   those passes reached this poll, which then sent an Apple Event to the
+   Finder that was blocked waiting for that very callback to return, and
+   waited out the whole timeout with the AE's own idle hook bounced.
+
+   So the gate is now where it can be true: the poll itself refuses while
+   a NOW-originated drag is in flight (now_continuity_selection_poll).
+   Anything NEW added to this function inherits that hazard and not that
+   fix — an Apple Event sent from a nested loop is one wait inside
+   another, and the answer arrives underneath a machine already waiting
+   for something else.
 
    The gates that decide whether to ask at all — epoch, held button,
    cadence — belong to the poll rather than to this caller, so they hold
@@ -7851,6 +7944,20 @@ static int handle_frame(const char *reply)
            ANSWERED" - so this just folds it into the table the `offer`
            command and now_wire_get_offer both read. */
         now_continuity_offer_intake(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.hostDragBegin")) {
+        /* THE EDGE HANDED OFF. No answer is owed and none is sent: the
+           only honest report on an instruction is what the drag does,
+           and the drag's own log says that, joined to the host's account
+           by dragSeq.
+
+           Note what this does NOT do — start the drag. It is held for
+           the service pass one statement after this one returns, because
+           now_wire_pump() bounces every nested entry and the promise's
+           byte pull happens inside the drop. See
+           now_continuity_dragmgr_host_request. */
+        now_continuity_hostdrag_intake(reply);
         return 1;
     }
     if (now_json_type_is(reply, "capture.request")) {

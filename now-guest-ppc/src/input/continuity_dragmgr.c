@@ -24,6 +24,14 @@
 static NowContinuityDragState g_drag;
 static DragSendDataUPP g_send_upp;
 
+/* WHERE THE HOST SAID THE DRAG STARTS. Set by
+   now_continuity_dragmgr_host_begin immediately before it starts the
+   drag, and consumed by start_drag on that same pass — never held
+   across one, because a start point that outlived its gesture would
+   put the next drag at the last crossing's coordinates. */
+static Point g_start_point;
+static Boolean g_have_start_point;
+
 /* ---- SLICE-2 DIAGNOSTIC SCAFFOLD. NOT PRODUCT. -------------------
    Set from the console (`offer --drag --x=<mask>`) so one boot can run
    the whole experiment matrix rather than one hypothesis per build,
@@ -37,16 +45,17 @@ static DragSendDataUPP g_send_upp;
         HFS file is not what it is looking for.
      4  install OUR OWN tracking and receive handlers on OUR OWN window,
         so the drop has a receiver whose source is in this repository.
-     8  SLICE-0 ROUTE A': attach a SetDragInputProc that reports the
-        continuity plane's latest point and button to the Drag Manager,
-        so the drag is steered by the host's reported pointer rather
-        than by a Cursor Device this application's blocked task time
-        cannot move.
-    16  the same input proc, but replaying an IN-APP scripted ramp to a
-        baked target instead of reading the plane - the deterministic
-        control for bit 8, so "the proc is never called" and "the plane
-        is stale inside TrackDrag" cannot share one frozen coordinate.
-        Wins over 8 when both are set.
+    16  replay an IN-APP scripted ramp to a baked target through the
+        input proc instead of reading the Continuity plane. It is the
+        RIG'S DETERMINISM DIAL and it stays: a measurement of this lane
+        needs one gesture whose path is not a second machine's opinion,
+        so "the proc is never called" and "the plane is stale inside
+        TrackDrag" can never share one frozen coordinate.
+
+   Bit 8 was here and is gone - not disproved, ADOPTED. It attached the
+   input proc fed from the Continuity plane; the proc is now on every
+   drag as ordinary code, so a bit to ask for it would be a bit that
+   changes nothing.
 
    Bit 1 was here and is gone: it held the DragRef past TrackDrag on the
    theory that the Finder asks late. Bit 4 killed that theory by showing
@@ -169,7 +178,7 @@ static void diag_install_handlers(void)
             (int)InstallReceiveHandler(g_diag_recv_upp, win, NULL));
 }
 
-/* ---- DIAGNOSTIC bits 8 and 16: ROUTE A', THE MANAGER'S OWN SEAM ------
+/* ---- ROUTE A': THE MANAGER'S OWN SEAM. PRODUCT, NOT SCAFFOLD --------
    The 2026-08-17 measurement found that a NOW-originated drag cannot
    leave NOW because the POINTER never leaves: Continuity applies Cursor
    Device motion at task time only, and a drag source's TrackDrag
@@ -179,6 +188,14 @@ static void diag_install_handlers(void)
    the Manager wants one, from inside TrackDrag, in our own context. The
    header says CarbonLib 1.0 and later (Drag.h, `SetDragInputProc`), so
    the CarbonLib 1.6 floor this application already requires carries it.
+
+   IT IS ATTACHED TO EVERY DRAG, and the slice-0 measurement is why:
+   12786 samples out of 12786 came through it, the ghost tracked the
+   reported ramp, and the drag left the application (`inwin=0`) for the
+   first time. There is no second mode to choose between. When no
+   Continuity datagram has ever arrived the proc simply declines to
+   speak and the Manager reads the real mouse, which is exactly what a
+   drag a person starts at this Macintosh wants.
 
    THIS PROC DOES BOUNDED WORK AND NOTHING ELSE. It is called at the
    Manager's sampling rate inside a nested Toolbox loop: no allocation,
@@ -800,36 +817,45 @@ static void start_drag(void)
                           &pname[1], (Size)pname[0], 0);
     }
 
-    /* SLICE-0 ROUTE A'. Attached before the bounds are taken so the
-       origin the script ramps from is the same point the drag image is
-       built around. A refusal is LOUD and not fatal: a drag that ran
-       without the proc would otherwise answer the experiment's question
-       with the old wall's answer and look like a result. */
-    if ((g_diag_mask & 24) != 0) {
-        if (g_diag_input_upp == NULL) {
-            /* A UPP IS NOT A CAST on this runtime; same rule as the
-               send proc above. */
-            g_diag_input_upp = NewDragInputUPP(diag_input);
-        }
-        g_diag_input_calls = 0;
-        g_diag_input_fed = 0;
-        g_diag_input_downs = 0;
-        g_diag_input_ups = 0;
-        g_diag_input_first_seq = 0;
-        g_diag_input_last_seq = 0;
-        if (g_diag_input_upp == NULL
-            || SetDragInputProc(drag, g_diag_input_upp, NULL) != noErr) {
-            now_log(kLogError, "mirror",
-                    "drag input: SetDragInputProc REFUSED; not Route A'");
-        } else {
-            now_log(kLogInfo, "mirror",
-                    "drag input: proc attached (mask=%ld target=%d,%d)",
-                    g_diag_mask, (int)g_diag_script_h, (int)g_diag_script_v);
-        }
+    /* ROUTE A'. Attached before the bounds are taken so the origin the
+       proc reports from is the same point the drag image is built
+       around. A refusal is LOUD and not fatal: a drag that ran without
+       the proc is the 2026-08-17 wall — a drag that cannot leave this
+       application because nothing moves the pointer — and it would
+       otherwise present as an ordinary declined drop. */
+    if (g_diag_input_upp == NULL) {
+        /* A UPP IS NOT A CAST on this runtime; same rule as the
+           send proc above. */
+        g_diag_input_upp = NewDragInputUPP(diag_input);
+    }
+    g_diag_input_calls = 0;
+    g_diag_input_fed = 0;
+    g_diag_input_downs = 0;
+    g_diag_input_ups = 0;
+    g_diag_input_first_seq = 0;
+    g_diag_input_last_seq = 0;
+    if (g_diag_input_upp == NULL
+        || SetDragInputProc(drag, g_diag_input_upp, NULL) != noErr) {
+        now_log(kLogError, "mirror",
+                "drag input: SetDragInputProc REFUSED; the pointer will "
+                "not move and this drag cannot leave");
     }
 
-    GetMouse(&where);
-    LocalToGlobal(&where);
+    /* WHERE THE DRAG STARTS. From the host when the host asked (the
+       point its crossing put the cursor at, already in this screen's
+       coordinates); from GetMouse otherwise.
+
+       It is NOT GetMouse in the host-driven case and that is the whole
+       lane: the pointer this application can read is the one that
+       cannot move while TrackDrag holds it. Building the drag around it
+       would start every crossing at wherever the cursor was parked. */
+    if (g_have_start_point) {
+        where = g_start_point;
+        g_have_start_point = false;
+    } else {
+        GetMouse(&where);
+        LocalToGlobal(&where);
+    }
     g_diag_input_origin = where;
     g_diag_input_started = TickCount();
     drag_bounds(where, &bounds);
@@ -875,6 +901,41 @@ static void start_drag(void)
     event.where = where;
     event.modifiers = (short)now_continuity_host_modifiers();
 
+    /* WHOSE PROCESS IS IN FRONT WHEN THIS DRAG BEGINS, asked of the
+       Process Manager rather than assumed from the rig.
+
+       It is the slice-1 open question, and it is a MEASUREMENT here
+       rather than a requirement: slice 0 kept NOW frontmost because its
+       induction press travelled through the Event Manager, which routes
+       to the front process. A hostDragBegin needs no delivered event —
+       the EventRecord is a struct parameter and the input proc supplies
+       position and button thereafter — so whether TrackDrag runs at all
+       from a background process is a fact nobody has read yet. Recorded
+       for every drag, so the answer is in the log of any run rather
+       than in the one run that went looking. */
+    {
+        ProcessSerialNumber front, self;
+        Boolean same = false;
+        OSErr front_err = GetFrontProcess(&front);
+
+        if (front_err == noErr && GetCurrentProcess(&self) == noErr) {
+            SameProcess(&front, &self, &same);
+        }
+        now_log(kLogInfo, "mirror",
+                "drag begin: host=%d seq=%lu front=%s at %d,%d",
+                g_drag.host_driven, g_drag.drag_seq,
+                front_err != noErr ? "unknown" : (same ? "NOW" : "other"),
+                (int)where.h, (int)where.v);
+    }
+
+    /* NATIVE DRAG IN FLIGHT, DECLARED. From here until TrackDrag
+       returns this application is inside a Toolbox loop that takes no
+       idle callback (pump.h's list), so the wire is silent and this
+       task's time is spent. Both are HEALTHY for the drag's bounded
+       duration and both look exactly like a wedge from outside, so the
+       boundary is said out loud at each end — a liveness monitor
+       reading this log has the interval, and now_continuity_drag_in_
+       flight() answers the same question to code. */
     now_log(kLogInfo, "mirror", "drag tracking %.31s (%ld bytes)",
             g_drag.item.name, g_drag.item.data_size);
 
@@ -1130,6 +1191,72 @@ int now_continuity_dragmgr_request(char *err, long cap)
     return -1;
 }
 
+/* The one crossing waiting to become a drag. See the header for why it
+   waits at all rather than starting where it arrived. */
+static NowContinuityOfferItem g_host_item;
+static unsigned long g_host_epoch;
+static unsigned long g_host_seq;
+static short g_host_h, g_host_v;
+static Boolean g_host_pending;
+
+void now_continuity_dragmgr_host_request(const NowContinuityOfferItem *item,
+                                         unsigned long epoch,
+                                         unsigned long drag_seq,
+                                         short h, short v)
+{
+    if (item == NULL) {
+        return;
+    }
+    if (g_host_pending) {
+        /* Said out loud rather than dropped quietly: two crossings
+           inside one loop pass is a host doing something this side does
+           not expect, and the newer one winning is a decision, not an
+           accident. */
+        now_log(kLogWarn, "mirror",
+                "drag hostDragBegin seq=%lu replaced unserved seq=%lu",
+                drag_seq, g_host_seq);
+    }
+    g_host_item = *item;
+    g_host_epoch = epoch;
+    g_host_seq = drag_seq;
+    g_host_h = h;
+    g_host_v = v;
+    g_host_pending = true;
+}
+
+/* Begin the crossing that was held. Called from the service pass, on a
+   stack the promise's pull can pump from. */
+static void serve_host_request(void)
+{
+    int verdict;
+
+    g_host_pending = false;
+    verdict = now_continuity_drag_host_begin(&g_drag, &g_host_item,
+                                             g_host_epoch,
+                                             now_continuity_live_epoch(),
+                                             g_host_seq);
+    if (verdict != kNowDragOK) {
+        now_log(kLogWarn, "mirror",
+                "drag hostDragBegin seq=%lu refused: %s", g_host_seq,
+                now_continuity_drag_code(verdict));
+        return;
+    }
+    g_start_point.h = g_host_h;
+    g_start_point.v = g_host_v;
+    g_have_start_point = true;
+    /* Returns when the drag is over: TrackDrag runs inside it. That is
+       the ownership toggle written as control flow — while this
+       Macintosh's drag machinery is live, this Macintosh is inside
+       it. */
+    start_drag();
+}
+
+Boolean now_continuity_drag_in_flight(void)
+{
+    return g_drag.state == kNowDragTracking
+        || g_drag.state == kNowDragPromising;
+}
+
 int now_continuity_dragmgr_cancel(char *err, long cap)
 {
     if (now_continuity_drag_cancel(&g_drag) != kNowDragOK) {
@@ -1145,6 +1272,12 @@ void now_continuity_dragmgr_service(void)
 {
     int action;
 
+    /* The held crossing first, and unconditionally: it is not an arm and
+       has no button to ripen on. */
+    if (g_host_pending) {
+        serve_host_request();
+        return;
+    }
     if (g_drag.state != kNowDragWaitingButton) {
         return;
     }
@@ -1176,6 +1309,11 @@ Boolean now_continuity_dragmgr_busy(void)
 
 void now_continuity_dragmgr_forget(void)
 {
+    /* A crossing cannot outlive the session that carried it, exactly as
+       the drag and the offer cannot. Dropped here rather than left to be
+       served after a reconnect, where it would begin a drag whose promise
+       has no link to pull down. */
+    g_host_pending = false;
     now_continuity_drag_forget(&g_drag);
 }
 
