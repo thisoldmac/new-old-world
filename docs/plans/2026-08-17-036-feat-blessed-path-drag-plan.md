@@ -7,6 +7,8 @@ artifact_readiness: experiment-gated
 execution: code
 ---
 
+<!-- now-doc-provenance: generated reviewed=false -->
+
 # The blessed-path drag — OS-owned drops in both directions
 
 ## Goal Capsule
