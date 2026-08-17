@@ -971,6 +971,27 @@ void now_liveness_net_pump(NowPeekTable *table,
         return;
     }
     if (!gConnected) {
+        /* A NEW EPOCH ENDS THE BACKOFF, and this is the difference between
+           a resident that comes back in seconds and one that comes back in
+           three minutes.
+           ------------------------------------------------------------
+           The backoff exists to be polite to a host that is not up: a
+           Macintosh booted before the Mac it talks to is the normal case,
+           and hammering it would be rude and useless. But an endpoint
+           epoch only moves when this machine's OWN application has just
+           completed a hello with a host - so a new epoch is positive
+           evidence, from inside this machine, that somebody is listening
+           on that address RIGHT NOW. Waiting out a politeness timer
+           against a host we can see is up is not politeness, it is delay.
+           Measured 2026-08-17 on the emulator: a host process killed
+           ungracefully was answering the application again 2 s later, and
+           the resident took 175 s to follow because it sat out this
+           countdown. It is not self-perpetuating - `issue_open` records
+           the epoch it dialled, so a dial that fails backs off normally
+           and a stale epoch never clears the timer twice. */
+        if (gRetryCountdown > 0 && want->endpoint_epoch != gDialledEpoch) {
+            gRetryCountdown = 0;
+        }
         if (gRetryCountdown > 0) {
             --gRetryCountdown;
             return;

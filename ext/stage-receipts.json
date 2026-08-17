@@ -1175,6 +1175,16 @@
         "ext/src/now_liveness_net.c"
       ],
       "reason": "fix/resident-net-redial lane: iterating on the liveness channel's wedge deadline; baking privately to agent-stage/fix-resident-net-redial for the host-death drill, shared bake is Michelle's sign-off"
+    },
+    {
+      "at": "2026-08-17T18:00:33-0400",
+      "branch": "fix/resident-net-redial",
+      "extDigest": "83fd30f2796709a6b4b955fdd9a40b7fc415f06e",
+      "kind": "deferral",
+      "paths": [
+        "ext/src/now_liveness_net.c"
+      ],
+      "reason": "fix/resident-net-redial lane: private bake to agent-stage/fix-resident-net-redial follows the second drill round"
     }
   ]
 }
