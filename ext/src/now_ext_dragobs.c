@@ -107,6 +107,16 @@ static void read_identity_into(NowPeekDragObserve *block, DragRef drag,
                                NowPeekU32 *out_creator, NowPeekI32 *out_vref,
                                NowPeekU32 *out_parid, unsigned char *out_name);
 
+/* The resident's own connection to the host, declared at its use site the
+   way now_liveness.c declares the rest of that channel. Task time only -
+   see the four rules on it in now_liveness_net.c. */
+extern int now_liveness_net_send_drag(NowPeekTable *table, NowPeekU32 epoch,
+                                      NowPeekU32 seq, NowPeekU32 ticks,
+                                      NowPeekU32 file_type,
+                                      NowPeekU32 creator, NowPeekI32 vref,
+                                      NowPeekU32 parid,
+                                      const unsigned char *name);
+
 static NowPeekContinuityCell *dragobs_cell(NowPeekTable *table)
 {
     if (table == NULL || table->magic != (NowPeekU32)kNowPeekTableMagic)
@@ -500,6 +510,42 @@ static pascal OSErr now_dragobs_tracking(DragTrackingMessage message,
                            block->hfile_name);
         gInside = 0;
         block->handler_begin_seq++;          /* even: whole */
+        /* AND NOW THE HALF THAT MAKES IT USEFUL IN TIME.
+           ------------------------------------------------------------
+           Everything above puts the identity in a cell, and the cell is
+           read by the PowerPC application - which gets no task time at
+           all until this drag loop ends. Measured 2026-08-16: the
+           application published this same identity 462 ticks after the
+           drag began and 14 ticks after it ENDED, which is after the
+           crossing it was needed for. So the resident says it itself,
+           here, over its own connection, while the button is still
+           down.
+
+           SENT AFTER THE COMMIT WORD, deliberately: the application's
+           drain reads the cell on the strength of an even
+           `handler_begin_seq`, and a send that preceded it would be a
+           host holding a fact the machine's own table does not yet
+           admit to.
+
+           ONLY AN HFS FIRST ITEM. A promise or a text drag names no
+           file this side could serve and the frame must not invent one -
+           the same gate the application's drain applies, applied here
+           for the same reason.
+
+           NO EPOCH, NO FRAME. A drag seen while nothing is armed for
+           Continuity is a person using their own Macintosh, not a
+           consent, and the host has nothing to bind it to. */
+        if (block->hitem_status == (NowPeekU32)kNowPeekDragObsItemHFS) {
+            NowPeekContinuityCell *cell = dragobs_cell(gTable);
+
+            if (cell != NULL && cell->epoch != 0) {
+                (void)now_liveness_net_send_drag(
+                    gTable, cell->epoch, block->handler_begin_seq, ticks,
+                    block->hfile_type, block->hfile_creator,
+                    block->hfile_vrefnum, block->hfile_parid,
+                    block->hfile_name);
+            }
+        }
         break;
     case kDragTrackingEnterWindow:
         block->handler_enter_window++;

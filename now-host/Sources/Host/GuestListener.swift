@@ -165,6 +165,18 @@ final class GuestListener: ObservableObject {
     /// active session only, like the two reports above: a background Mac's
     /// selection is not what the pointer is standing on.
     var onContinuitySelection: ((GuestKey, ContinuitySelection) -> Void)?
+    /// The RESIDENT's account of a drag that is still in flight, delivered
+    /// under the guest key of the application it belongs to.
+    ///
+    /// The frame arrives on a channel that is deliberately not a session and
+    /// has no `GuestKey` of its own, so the key is resolved here by machine
+    /// fingerprint — the same join, and the same ambiguity rule, that
+    /// `machineIsAnswering` uses: exactly one live session for that machine,
+    /// or nothing is delivered. Two Macs calling themselves the same thing
+    /// from one address are indistinguishable, and binding one machine's
+    /// drag to the other's crossing would put a file on somebody's desktop
+    /// that nobody dragged.
+    var onContinuityDragBegin: ((GuestKey, ContinuityDragBegin) -> Void)?
 
     /// One exec in flight, from exec.request to its terminal exec.result.
     ///
@@ -327,6 +339,19 @@ final class GuestListener: ObservableObject {
             $0.machineFingerprint == print
         }
         return matching.count == 1
+    }
+
+    /// The one live session for a machine fingerprint, or nil.
+    ///
+    /// AMBIGUOUS MEANS NO, for the reason `machineIsAnswering` above says at
+    /// length: two sessions matching one fingerprint cannot be told apart
+    /// here, and guessing which of them a resident speaks for is a wrong
+    /// file rather than a missing one.
+    func sessionKey(forMachine fingerprint: String) -> GuestKey? {
+        let matching = sessions.filter {
+            $0.value.machineFingerprint == fingerprint
+        }
+        return matching.count == 1 ? matching.first?.key : nil
     }
 
     /// Whether the guest for this key is answering, or is STARVED — alive
@@ -1875,6 +1900,21 @@ final class GuestListener: ObservableObject {
             completion(.failure(.init(
                 code: "disconnected",
                 message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        /* GENERATION 0 IS NOT A GENERATION. It is what a stub carries when
+           the only thing this Mac has heard about the gesture is the
+           resident's mid-drag announcement — an identity, sent before any
+           generation was minted. The Macintosh mints them and refuses every
+           number it did not, so asking with a zero would spend the one
+           grab this transfer gets on a certain `stale-selection`. Refused
+           here instead, by name, so the reason names the race rather than
+           the symptom. */
+        guard generation != 0 else {
+            completion(.failure(.init(
+                code: "drag-not-yet-named",
+                message: "the Mac named this file mid-drag but has not "
+                    + "published the generation a grab must ask for yet")))
             return
         }
         guard pendingFile == nil else {
@@ -3724,6 +3764,16 @@ final class GuestListener: ObservableObject {
             guard let self, let key = newSession?.guestKey,
                   key == self.activeKey else { return }
             self.onContinuitySelection?(key, sel)
+        }
+        /* The resident channel's one non-liveness frame, routed to the
+           application it speaks for. Same active-session gate as the stub
+           above: a background Mac's drag is not what this pointer is
+           standing on. */
+        newSession.onContinuityDragBegin = { [weak self, weak newSession] begin in
+            guard let self, let print = newSession?.machineFingerprint,
+                  let key = self.sessionKey(forMachine: print),
+                  key == self.activeKey else { return }
+            self.onContinuityDragBegin?(key, begin)
         }
         origin.session = newSession
         pending.append(newSession)

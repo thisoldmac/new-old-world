@@ -71,6 +71,116 @@ out of scope for a merge-and-repair pass.
 
 Metal remains pending, same as `f74324a4` left it.
 
+## FIXED, EMULATOR-MEASURED: the resident says which file is being dragged WHILE the button is down (2026-08-16, `feat/resident-drag-publish`)
+
+The late-bind entry below buys the single gesture by revising after the
+cross. This is the other half, and it is the one the carrier problem
+actually asked for: **the resident sends the dragged file's identity
+itself, from the Drag Manager tracking handler, over its own MacTCP
+channel, while the Finder is still inside `TrackDrag`.** The host holds
+the file identity during the gesture instead of a fifth of a second after
+it, and the late-bind window goes back to being the fallback it should
+always have been.
+
+`ext/src/now_ext_dragobs.c` already read the identity in the Finder's own
+context; it only ever put it in a cell for an application that is not
+scheduled. It now also calls `now_liveness_net_send_drag`
+(`ext/src/now_liveness_net.c`), after the commit word, only for an HFS
+first item, and only under a live epoch.
+
+**Four rules, because the caller is somebody else's drag loop.** Task
+time, never the interrupt-time pump. Its own `TCPiopb` — `gCtlPB` belongs
+to the pump's one-call-at-a-time state machine and a task-time caller
+filling it in while an interrupt reaps it is a corruption, not a race to
+argue about. One `PBControlAsync`, nil completion, no wait and no retry.
+Nothing queued: every way a frame does not go out is a counter
+(`drag_send_sends` / `dropped` / `unconnected` / `busy`), because a
+resident holding somebody's file identity for an unbounded time is worse
+than a drag the host was never told about.
+
+**It carries an identity, not a generation, and that distinction is the
+design.** The resident makes no File Manager call, by charter, so there
+is no size, no date and no folderness in the frame — and it cannot mint a
+generation either, because the application mints those and the guest's own
+grab check refuses every number it did not. So a stub built from this
+frame carries **generation 0**, which reads everywhere as "no generation
+yet": bindable, and refused a grab by name (`drag-not-yet-named`). The
+application's own `continuity.selection` for the same gesture arrives
+moments later and supplies it. The two accounts are joined by `dragSeq`,
+new on both messages, so "one gesture or two drags" is a number rather
+than a timing guess — and which source won is a line in the log.
+
+Contract: `continuity.dragBegin` is the ONE non-liveness message the
+resident lane may carry, and the rule that admits it is stated where a
+third exception would have to argue against it
+(`docs/resident-components.md`): *is the thing that would state it
+scheduled?* If some main loop could say it, however late, it is not
+resident.
+
+### What the emulator round measured
+
+Rig: `run/resident-drag/rig-provenance.md` — private throwaway base
+`now-stage-feat-resident-drag-publish.qcow2` sha256 `4434d5b2…`, this
+tree's app and ext staged into a session-private clone (sourceManifest
+`1df8e014ab79`, buildFingerprint `5410aeef3706`), NOW hidden and the
+Finder fronted, stepped motion with dwell. Instrument:
+`tools/continuity-resident-drag-probe.py` — the first one that accepts
+BOTH connections the machine makes, so "which sender said it first" is a
+subtraction. Receipt: `run/resident-drag/probe-1.json` (under the
+gitignored `run/`, so the rig facts are restated here rather than pointed
+at).
+
+The gesture: **one press on `HELLO_CLAUDE.txt`, an icon that was NOT
+selected** — the Finder's selection before the gesture was
+`Macintosh HD`.
+
+| moment | when, from the press |
+|---|---|
+| press sent | 0.000 s |
+| **`continuity.dragBegin` from the RESIDENT** | **+0.251 s — the button is down and stays down for eleven more seconds** |
+| button released (the simulated cross) | +11.221 s |
+| `continuity.selection source=drag` from the APPLICATION | +11.303 s — **82 ms after the release**, exactly as before |
+
+`dragSeq=2` on both frames, `HELLO_CLAUDE.txt` on both, guest tick 21198
+at drag begin. So the host learns the file **eleven seconds before** it
+used to on this gesture, and the improvement is not a constant: it is the
+whole length of whatever drag a person makes.
+
+The grab of the joined generation (3) answered `file.begin`, 42 bytes,
+and the bytes were **drained whole to `FLAG_END`** — sha256 `9ee02d95…`,
+`Hello, Claude! \rI'm just a little old Mac.`, the same digest the
+previous round drained. That is the regression repeated, not a new claim.
+
+### What this entry does NOT claim
+
+- **The host's own bind log was not watched. SKIPPED AND UNVERIFIED.**
+  Driving the host app against this guest needs a real pointer,
+  Accessibility and the human's screen; this session cannot drive that
+  and must not. What the emulator proves is the WIRE ordering — the
+  identity is on this Mac while the drag is in flight — and that the
+  application's later frame joins rather than fights. That the bind
+  reads `.dragged` at the cross, that generation 0 refuses a grab, and
+  that the join revises the generation without changing the file are
+  pinned by host tests only (`ContinuityGuestDragTests`).
+- **The resident's counters were not read back off the machine.** The
+  frame arriving is the stronger evidence and it was read directly; the
+  counters are pinned as source properties
+  (`dragobs_safety_source_test.py`) and are not a substitute for a peek.
+- **NO METAL ROUND, AND THIS ONE REQUIRES ONE BEFORE IT SHIPS.** Say it
+  plainly: this is the first thing the drag plane has ever done that
+  *sends* from a foreign application's context, and the entire wedge
+  history of this project is a metal history — six PowerBook wedges, and
+  resident 1.11's Force Quit stall. The emulator's transport is not a
+  Farallon card and its ADB/PMU row has never reproduced the
+  PowerBook's. **Attended metal, on the checklist, before this is
+  shipped**, and the specific question is whether a `PBControlAsync` on
+  the resident's stream from inside a real Finder's `TrackDrag` leaves
+  that machine alive.
+- **One gesture, one file, one guest.** No second drag of the same file
+  (the second-consent path), no folder (the frame cannot know, and the
+  application's frame refuses it a gesture later), no multi-item drag,
+  no 68K guest.
+
 ## FIXED (host only), EMULATOR-MEASURED: the bind was not wrong, it was early — a crossing may now be revised until the drop (2026-08-16, `feat/gh-drag-late-bind`)
 
 Guest→host file drag needed two gestures: click the icon, let go, press again,

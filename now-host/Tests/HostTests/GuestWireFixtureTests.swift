@@ -101,6 +101,73 @@ final class GuestWireFixtureTests: XCTestCase {
         XCTAssertEqual(empty.resolvedSource, .selection)
     }
 
+    /// build_drag_begin() in ext/src/now_liveness_net.c, byte for byte as
+    /// the RESIDENT builds it — no snprintf, no library, appended by hand
+    /// from inside the Finder's drag loop.
+    ///
+    /// This is the frame the whole plane exists for, and the fixture is
+    /// what makes it a two-halves-met test rather than two hopeful
+    /// implementations: the resident cannot be run over here, so the only
+    /// place its bytes and this decoder can meet is a fixture.
+    ///
+    /// NOTE WHAT IS NOT IN IT. No dataSize, no modifiedAt, no isFolder.
+    /// The resident makes no File Manager call by charter, so it does not
+    /// know them; a decoder that required any of them would refuse every
+    /// real frame this route will ever send.
+    func testContinuityDragBeginAsTheResidentWritesIt() throws {
+        let json = """
+        {"type":"continuity.dragBegin","version":4,"epoch":7,"dragSeq":2,\
+        "ticks":32817,"item":{"name":"HELLO_CLAUDE.txt","volumeRef":-1,\
+        "dirID":2,"fileType":"TEXT","creator":"ttxt"}}
+        """
+        guard case .continuityDragBegin(let begin) = try decode(json) else {
+            return XCTFail("not a continuity drag begin")
+        }
+        XCTAssertEqual(begin.epoch, 7)
+        XCTAssertEqual(begin.dragSeq, 2)
+        XCTAssertEqual(begin.ticks, 32817)
+        XCTAssertEqual(begin.item.name, "HELLO_CLAUDE.txt")
+        XCTAssertEqual(begin.item.volumeRef, -1)
+        XCTAssertEqual(begin.item.dirID, 2)
+        XCTAssertEqual(begin.item.fileType, "TEXT")
+        XCTAssertEqual(begin.item.creator, "ttxt")
+    }
+
+    /// The same gesture's OTHER account, from the application, with the
+    /// number that joins them. `dragSeq` rides beside `source` exactly
+    /// where service_continuity_selection() splices its fragment in.
+    func testContinuitySelectionCarriesTheDragJoinKey() throws {
+        let json = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":4,"source":"drag","dragSeq":2,\
+        "item":{"name":"HELLO_CLAUDE.txt","volumeRef":-1,"dirID":2,\
+        "fileType":"TEXT","creator":"ttxt","dataSize":499,\
+        "resourceSize":0,"modifiedAt":3400000000,"isFolder":false}}
+        """
+        guard case .continuitySelection(let selection) = try decode(json)
+        else { return XCTFail("not a continuity selection") }
+        XCTAssertEqual(selection.resolvedSource, .drag)
+        XCTAssertEqual(selection.dragSeq, 2,
+                       "the join key must survive the decoder, or a host "
+                       + "has to decide by timing whether two frames are "
+                       + "one gesture")
+        XCTAssertEqual(selection.generation, 4)
+
+        /* A polled selection has no drag behind it and says so by
+           silence rather than by a zero. */
+        let polled = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":5,"source":"selection","item":{"name":"hello.txt",\
+        "volumeRef":-1,"dirID":2,"fileType":"TEXT","creator":"ttxt",\
+        "dataSize":5,"resourceSize":0,"modifiedAt":3400000000,\
+        "isFolder":false}}
+        """
+        guard case .continuitySelection(let poll) = try decode(polled) else {
+            return XCTFail("not a continuity selection")
+        }
+        XCTAssertNil(poll.dragSeq)
+    }
+
     /// send_scene_same() in now-guest-ppc/src/core/wire.c, built across
     /// several snprintf calls because its phases block loops over the
     /// phase table. This is the answer a guest gives when the machine did

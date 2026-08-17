@@ -96,11 +96,20 @@
 #       is what associates the two — and is exempt from the busy refusal
 #       for exactly that reason. It is the one dial that may repeat a live
 #       session's name.
-#     * may send only `hello`, `ping` and `bye`, and is answered `pong`. It
-#       carries no state and reports nothing about the application: how
-#       long the app has been silent is something the RECEIVER already
-#       knows, and a second account of it on the wire would be a second
-#       place to be wrong.
+#     * may send only `hello`, `ping`, `bye` and `continuity.dragBegin`,
+#       and is answered `pong`. It carries no state and reports nothing
+#       about the application: how long the app has been silent is
+#       something the RECEIVER already knows, and a second account of it
+#       on the wire would be a second place to be wrong.
+#       `continuity.dragBegin` is the ONE exception and it is admitted for
+#       a reason no amount of application-side work can answer: the fact
+#       it carries is known INSIDE the Finder's drag loop, and the
+#       application gets no task time until that loop ends. Everything
+#       else this channel could be asked to carry is a fact somebody
+#       scheduled can state, and stays off it. It is still not a command
+#       lane — the frame is unsolicited, the host answers it with nothing,
+#       and a host that has never heard of it ignores one frame rather
+#       than dropping a machine's heartbeat.
 #   What it licenses is one inference and no more: traffic on a live
 #   resident channel means THE MACHINE IS ALIVE, so a silent guest session
 #   for that machine is STARVED rather than GONE. A host may hold such a
@@ -320,6 +329,7 @@ channels:
       continuityKey: { $ref: "#/components/messages/continuityKey" }
       continuityKeyReport: { $ref: "#/components/messages/continuityKeyReport" }
       continuitySelection: { $ref: "#/components/messages/continuitySelection" }
+      continuityDragBegin: { $ref: "#/components/messages/continuityDragBegin" }
       continuityGrab: { $ref: "#/components/messages/continuityGrab" }
       continuityOffer: { $ref: "#/components/messages/continuityOffer" }
       cloudServices: { $ref: "#/components/messages/cloudServices" }
@@ -1397,8 +1407,17 @@ operations:
       - $ref: "#/channels/control/messages/continuityReport"
       - $ref: "#/channels/control/messages/continuityKeyReport"
       - $ref: "#/channels/control/messages/continuitySelection"
+      - $ref: "#/channels/control/messages/continuityDragBegin"
       - $ref: "#/channels/control/messages/continuityGrab"
     description: >
+      continuity.dragBegin is the one message here that does NOT come
+      from the PowerPC application. It arrives on the machine's resident
+      liveness channel, because it is the only sender that runs while the
+      Finder holds its drag loop; see the schema, and the resident-lane
+      rule at the top of this file for why that channel is allowed to
+      carry it and nothing else. A host joins it to the application's own
+      `continuity.selection` for the same gesture by `dragSeq`.
+
       The PowerPC guest answers every arm and disarm and may also report an
       asynchronous guest-input or lease-expiry exit. The `state` and `reason`
       fields are the authoritative ownership answer; UDP acknowledgements are
@@ -1663,6 +1682,9 @@ components:
     continuitySelection:
       name: continuity.selection
       payload: { $ref: "#/components/schemas/ContinuitySelection" }
+    continuityDragBegin:
+      name: continuity.dragBegin
+      payload: { $ref: "#/components/schemas/ContinuityDragBegin" }
     continuityGrab:
       name: continuity.grab
       payload: { $ref: "#/components/schemas/ContinuityGrab" }
@@ -2735,6 +2757,34 @@ components:
 
             An absent field means `selection`: a guest built before this
             field existed had only the poll.
+        dragSeq:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            WHICH DRAG THIS GENERATION WAS MINTED FROM — the resident's
+            own drag-begin sequence, sent only when `source` is `drag`.
+
+            It exists because the same gesture is now reported TWICE, by
+            two senders with different clocks: the resident names the
+            file from inside the Finder's drag loop over its own liveness
+            channel (`continuity.dragBegin`), and this application
+            publishes it again when it is next scheduled. Without a
+            shared name for the gesture a host would have to decide by
+            timing whether those are one drag or two, and timing is
+            exactly what is unreliable here — the whole reason the second
+            sender exists is that it can be hundreds of ticks late.
+
+            So the host joins on this number: same `dragSeq` means one
+            gesture, and the application's frame supplies the GENERATION
+            (which only it mints, and which a later continuity.grab must
+            name) for an identity the host already holds. A different
+            `dragSeq` is a second drag and a second consent.
+
+            Absent for `selection`, and absent from a guest that predates
+            the resident's own send — in which case the application's
+            frame is the only account of the gesture and binds as it
+            always did.
         item:
           type: object
           additionalProperties: false
@@ -2789,6 +2839,102 @@ components:
                 than the rest of the poll put together, so it is named here
                 to fix its shape and left unsent; a host must treat its
                 absence as ordinary.
+    ContinuityDragBegin:
+      type: object
+      required: [type, version, epoch, dragSeq, item]
+      additionalProperties: false
+      description: >
+        THE FILE IN THE HAND, SAID WHILE THE HAND IS STILL MOVING.
+
+        Sent by the RESIDENT over its own liveness channel — the only
+        sender on this wire that runs inside the Finder's drag loop — at
+        the instant a Drag Manager tracking handler is entered. It is not
+        sent by the application and cannot be: measured 2026-08-16, the
+        application's own account of the same gesture
+        (`continuity.selection` with `source: drag`) reached the host 462
+        ticks after the drag began and 14 ticks after it ENDED, because
+        nothing of the application's is scheduled while that loop runs.
+        The crossing this fact is needed for happens in between.
+
+        SO THIS IS A PRE-ANNOUNCEMENT, NOT A GENERATION. It names an
+        item; it does not mint a generation, and a host may not grab
+        with it. Generations belong to the application's stub table, a
+        `continuity.grab` names one, and the guest's own grab check
+        refuses any other number — which is a property worth keeping
+        rather than working around. What this frame buys is the half the
+        host could not get in time: WHICH FILE, before the pointer
+        crosses. The generation follows on the application's frame,
+        joined by `dragSeq`, well before any drop.
+
+        WHAT IT DOES NOT CARRY, AND WHY THAT IS THE DESIGN. No size, no
+        modification date, no folderness. All three need the File
+        Manager, and a resident may not call it from a foreign
+        application's context — the whole safety argument for running
+        there at all is that it reads a live DragRef and touches nothing
+        else. The HFSFlavor the Drag Manager hands the handler carries
+        the identity triple plus type and creator, and that is exactly
+        what is here. A receiver must tolerate their absence and must not
+        infer folderness from silence: a folder drag is refused when the
+        application's frame arrives and says so, one gesture later,
+        which is the same slice folders were already deferred to.
+
+        A HOST THAT HAS NEVER HEARD OF IT ignores one control frame and
+        keeps the connection, per the unreadable-frame rule. That is the
+        whole cost of a resident newer than its host.
+      properties:
+        type: { const: continuity.dragBegin }
+        version:
+          const: 4
+          description: The Continuity control-contract version, as elsewhere.
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            The live Continuity epoch as the RESIDENT's shared table
+            reports it. A drag seen with no epoch running is a person
+            using their own Macintosh and is not sent at all.
+        dragSeq:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            The resident's drag-begin sequence — the join key. The
+            application's later `continuity.selection` for the same
+            gesture carries the same number in its own `dragSeq`.
+        ticks:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
+          description: >
+            The guest's TickCount at drag begin, as read inside the
+            handler. Sent so a host log can state the arrival ordering
+            against the guest's own clock rather than against its own —
+            the measurement this whole route exists to move.
+        item:
+          type: object
+          additionalProperties: false
+          required: [name, volumeRef, dirID]
+          description: >
+            The FIRST drag item's HFS identity, and only the first: the
+            multi-item case needs a promise group and a host-side answer
+            to "some of these arrived", exactly as `continuity.selection`
+            says of its own v1.
+          properties:
+            name:
+              type: string
+              maxLength: 31
+              description: The item's name, HFS's own 31-byte limit.
+            volumeRef: { type: integer, minimum: -32768, maximum: 32767 }
+            dirID: { type: integer, description: Parent directory ID. }
+            fileType:
+              type: string
+              maxLength: 4
+              description: Four-byte OSType, from the HFSFlavor.
+            creator:
+              type: string
+              maxLength: 4
+              description: Four-byte creator, from the HFSFlavor.
     ContinuityGrab:
       type: object
       required: [type, version, id, epoch, generation]

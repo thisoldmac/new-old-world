@@ -1139,6 +1139,30 @@
         "ext/src/now_ext_dragobs_patch.S"
       ],
       "reason": "merge of feat/resident-drag-bind: V14-V17 drag-plane observer/registry/pump blocks; every constituent commit carried its own deferral; shared bake due at main per landing plan"
+    },
+    {
+      "at": "2026-08-16T21:23:52-0400",
+      "branch": "feat/resident-drag-publish",
+      "extDigest": "4de969803b7b897a199c1d1da0a0030f8dec1602",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_dragobs.c",
+        "ext/src/now_liveness_net.c"
+      ],
+      "reason": "the resident source is still moving; one bake before the emulator round rather than four"
+    },
+    {
+      "at": "2026-08-16T22:04:41-0400",
+      "branch": "feat/hg-drag-arc-candidate",
+      "extDigest": "4de969803b7b897a199c1d1da0a0030f8dec1602",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h",
+        "ext/src/now_ext_dragobs.c",
+        "ext/src/now_liveness_net.c"
+      ],
+      "reason": "merge commit; this exact resident source (4de96980) is baked+census-verified in this lane's private image now-stage-feat-hg-drag-arc-candidate.qcow2 (sidecar receipt beside it); shared-oracle promotion is Michelle's call at RC time"
     }
   ]
 }

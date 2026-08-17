@@ -102,6 +102,7 @@ enum ControlMessage: Equatable, Sendable {
     case continuityKey(ContinuityKey)
     case continuityKeyReport(ContinuityKeyReport)
     case continuitySelection(ContinuitySelection)
+    case continuityDragBegin(ContinuityDragBegin)
     case continuityGrab(ContinuityGrab)
     case continuityOffer(ContinuityOffer)
     case mirrorInvalidate(MirrorInvalidate)
@@ -336,12 +337,56 @@ struct ContinuitySelection: Codable, Equatable, Sendable {
     /// silent demotion to `selection` — a future third source must not be
     /// bound as if it were a poll.
     var source: Source?
+    /// Which drag this generation was minted from, when one was — the
+    /// resident's own drag-begin sequence, and the number that says this
+    /// frame and a `ContinuityDragBegin` are two accounts of ONE gesture.
+    /// Absent for a poll, and absent from a guest older than the resident's
+    /// send, which is then the only account there is.
+    var dragSeq: UInt32?
     /// Absent means nothing is selected — an instruction to drop whatever
     /// was cached, not a poll that found nothing to say.
     var item: Item?
 
     /// What this generation is, with the contract's default applied once.
     var resolvedSource: Source { source ?? .selection }
+}
+
+/// THE FILE IN THE HAND, SAID WHILE THE HAND IS STILL MOVING.
+///
+/// Sent by the RESIDENT over its own liveness channel at the instant a Drag
+/// Manager tracking handler is entered — the only sender on this wire that
+/// runs inside the Finder's drag loop. The application's own account of the
+/// same gesture arrives 462 ticks later (measured 2026-08-16), which is
+/// after the crossing that needed it.
+///
+/// It is a PRE-ANNOUNCEMENT AND NOT A GENERATION. It says which file; it
+/// does not mint a generation and this Mac may not grab with one. The
+/// generation follows on `ContinuitySelection` with the same `dragSeq`,
+/// long before any drop, and that is what a `continuity.grab` names.
+///
+/// No size, no date, no folderness: all three need the File Manager, and a
+/// resident may not call it from a foreign application's context. Their
+/// absence is the design, not a gap to fill in with a guess.
+struct ContinuityDragBegin: Codable, Equatable, Sendable {
+    /// The first drag item's identity, and only the first — the same v1
+    /// narrowing `ContinuitySelection` declares for itself.
+    struct Item: Codable, Equatable, Sendable {
+        var name: String
+        var volumeRef: Int
+        var dirID: Int
+        var fileType: String?
+        var creator: String?
+    }
+
+    /* Optional at the decoder for the reason every Continuity message
+       treats it so: a missing version must be readable enough to be
+       refused by name. */
+    var version: Int?
+    var epoch: UInt32
+    var dragSeq: UInt32
+    /// The guest's TickCount at drag begin, for the arrival-ordering line.
+    var ticks: UInt32?
+    var item: Item
 }
 
 /// Serve the item one `ContinuitySelection` generation named — or, sent
@@ -1949,6 +1994,9 @@ enum ControlMessageCodec {
         case "continuity.selection":
             return .continuitySelection(
                 try decoder.decode(ContinuitySelection.self, from: data))
+        case "continuity.dragBegin":
+            return .continuityDragBegin(
+                try decoder.decode(ContinuityDragBegin.self, from: data))
         case "continuity.grab":
             return .continuityGrab(
                 try decoder.decode(ContinuityGrab.self, from: data))
@@ -2126,6 +2174,8 @@ enum ControlMessageCodec {
             return try tagged("continuity.keyReport", m)
         case .continuitySelection(let m):
             return try tagged("continuity.selection", m)
+        case .continuityDragBegin(let m):
+            return try tagged("continuity.dragBegin", m)
         case .continuityGrab(let m):
             return try tagged("continuity.grab", m)
         case .continuityOffer(let m):

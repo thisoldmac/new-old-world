@@ -2458,7 +2458,42 @@ typedef struct {
        application, outside interrupt context. */
     NowPeekU32 continuity_format;
     NowPeekContinuityCell continuity;
+    /* U15 append. **The resident's own drag-begin send**, counted and
+       never logged.
+       ------------------------------------------------------------------
+       The resident does not log — it has no log to write to from a
+       foreign application's context — so the only account it can give of
+       a send it made inside somebody else's drag loop is a number here.
+       Four of them rather than one, because the ways a drag-begin frame
+       does not reach the host are not one fact and the difference is
+       exactly what an emulator round has to read: `drag_send_sends`
+       counts the frames the Device Manager accepted, `drag_send_dropped`
+       the ones refused by MacTCP at the door, `drag_send_unconnected`
+       the drags seen while this channel had no connection to send them
+       over, and `drag_send_busy` the ones that arrived while our own
+       previous frame was still in flight. A single "not sent" counter
+       would make "the host was never up" and "we sent two drags in one
+       tick" the same reading.
+
+       `drag_send_format` is the written-ness word the accretive rule
+       needs: `length` says the region EXISTS and this says it was
+       written, because a zeroed tail and an absent tail have to look
+       different. Written by the RESIDENT and by nothing else. */
+    NowPeekU32 drag_send_format;   /* kNowPeekDragSendFormat* */
+    NowPeekU32 drag_send_sends;
+    NowPeekU32 drag_send_dropped;
+    NowPeekU32 drag_send_unconnected;
+    NowPeekU32 drag_send_busy;
+    /* The sequence of the last drag-begin frame this channel put on the
+       wire. Zero until one has been. It is the same `handler_begin_seq`
+       the application's own publish carries as `dragSeq`, which is what
+       lets a host join the two accounts of one gesture. */
+    NowPeekU32 drag_send_last_seq;
 } NowPeekTable;
+
+enum {
+    kNowPeekDragSendFormatV1 = 1
+};
 
 /* What the resident currently HAS INSTALLED. A bitmask rather than a
    state, because these are independent facts and a machine can be in any
@@ -2882,9 +2917,18 @@ _Static_assert(offsetof(NowPeekTable, continuity_format)
 _Static_assert(offsetof(NowPeekTable, continuity)
                    == offsetof(NowPeekTable, continuity_format) + 4,
                "continuity cell offset");
-_Static_assert(sizeof(NowPeekTable)
+/* U15. The drag-send counters append behind the continuity cell, so
+   every offset a deployed resident depends on is unchanged and these six
+   words are the only new numbers. */
+_Static_assert(offsetof(NowPeekTable, drag_send_format)
                    == offsetof(NowPeekTable, continuity)
                           + sizeof(NowPeekContinuityCell),
-               "the continuity cell is the new tail");
+               "the drag-send counters append behind the continuity cell");
+_Static_assert(offsetof(NowPeekTable, drag_send_last_seq)
+                   == offsetof(NowPeekTable, drag_send_format) + 20,
+               "the drag-send sequence is the tail of its own block");
+_Static_assert(sizeof(NowPeekTable)
+                   == offsetof(NowPeekTable, drag_send_format) + 24,
+               "the drag-send counters are the new tail");
 
 #endif /* NOW_PEEK_TABLE_H */

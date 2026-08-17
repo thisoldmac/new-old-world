@@ -10,6 +10,15 @@ import UniformTypeIdentifiers
 /// objects is how a grant outlives what it was granted for.
 struct ContinuityDragStub: Equatable, Sendable {
     var epoch: UInt32
+    /// **Zero means no generation has been minted for this gesture yet.**
+    ///
+    /// It is what a stub carries when the only account this Mac has of the
+    /// drag is the resident's mid-gesture `continuity.dragBegin` — which
+    /// names a file but cannot name a generation, because the guest's
+    /// application mints those and it is not running yet. The identity is
+    /// usable immediately, which is the whole point; the grab is not, and
+    /// is refused by name until the application's own frame joins on
+    /// `dragSeq` and supplies the number.
     var generation: UInt32
     var item: ContinuitySelection.Item
 

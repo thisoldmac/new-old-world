@@ -61,6 +61,11 @@ final class Session {
        is not the active one — the frame still decodes, so an unbound stub
        can never drop a connection. */
     var onContinuitySelection: ((ContinuitySelection) -> Void)?
+    /* The one thing a RESIDENT channel says that is not liveness. A `var`
+       for the same reason as its neighbour above: nil is honest for a
+       channel nobody is listening to, and an unbound frame must never
+       drop a machine's heartbeat. */
+    var onContinuityDragBegin: ((ContinuityDragBegin) -> Void)?
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
@@ -518,9 +523,17 @@ final class Session {
             case .bye(let bye):
                 onLog(byeDescription(bye, guest: guestName), "wire", .info)
                 finish(reason: "Closed by guest")
+            case .continuityDragBegin(let begin):
+                /* THE ONE EXCEPTION, and the contract argues it where
+                   both sides read it: this fact is known inside the
+                   Finder's drag loop and the application gets no task
+                   time until that loop ends, so no scheduled sender can
+                   state it in time. It is still not a command — nothing
+                   is answered, and an unbound handler drops it. */
+                onContinuityDragBegin?(begin)
             default:
                 protocolError("a resident liveness channel may send only "
-                              + "hello, ping and bye")
+                              + "hello, ping, bye and continuity.dragBegin")
             }
             return
         }

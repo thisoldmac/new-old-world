@@ -69,12 +69,49 @@
  * so the receive path exists only to keep MacTCP's buffer from filling.
  * A resident that parsed replies would be a second command lane, and the
  * host refuses one by name.
+ *
+ * THE SECOND THING THIS CHANNEL CARRIES, AND WHY IT IS HERE
+ * ---------------------------------------------------------
+ * `now_liveness_net_send_drag` puts one drag-begin identity on this same
+ * connection, and it is the only thing on this wire that is not
+ * liveness. It is here because of WHO CAN SPEAK DURING A DRAG: the
+ * identity of a dragged icon is read by the tracking handler inside the
+ * Finder's own drag loop, and the PowerPC application that would
+ * otherwise publish it gets no task time at all while that loop runs -
+ * measured 2026-08-16, the drag-sourced generation reached the host 462
+ * ticks after the drag began and 14 ticks after it ENDED. A fact known
+ * inside the loop has to leave through something that is also inside the
+ * loop, and this channel's globals are the resident's own system-heap
+ * storage, reachable from every context.
+ *
+ * FOUR RULES IT KEEPS, because the caller is somebody else's drag loop:
+ *
+ *   - IT IS TASK TIME, NOT INTERRUPT TIME. The pump above is the
+ *     interrupt-time half and this is not called from it, ever. A drag
+ *     frame built from an interrupt would be the exact context error six
+ *     PowerBook wedges were bought with.
+ *   - IT NEVER BLOCKS THE FINDER. One PBControlAsync with a nil
+ *     completion and no wait, no retry, and no second attempt. The
+ *     handler returns to the Drag Manager having spent a queue call.
+ *   - IT HAS ITS OWN PARAM BLOCK. `gCtlPB` belongs to the pump's
+ *     one-call-at-a-time state machine, and an interrupt landing on a
+ *     block a task-time caller is filling in is a corruption rather than
+ *     a race to argue about. `gDragPB` is written by this function only.
+ *     Two TCPSends outstanding on one stream is ordinary MacTCP: the
+ *     driver keeps a per-stream queue and transmits them in the order
+ *     they were issued, so neither frame can be cut into the other.
+ *   - NOTHING IS QUEUED. A drag whose frame cannot go out now is
+ *     COUNTED and dropped. A queue here would be a resident holding
+ *     somebody's file identity for an unbounded time, and the host has a
+ *     fallback for a drag it was never told about; it has none for a
+ *     drag it is told about a minute late.
  */
 
 #include <Devices.h>
 #include <MacTCP.h>
 #include <MacTypes.h>
 
+#include "continuity_udp.h"
 #include "peek_table.h"
 #include "wire_limits.h"
 
@@ -98,6 +135,12 @@ enum {
     /* Replies are drained, never read. Small on purpose: a big buffer
        here would only mean more bytes discarded per call. */
     kDrainBuffLen = 256,
+    /* One drag-begin frame. The variable parts are a 31-byte HFS name,
+       which can double under JSON escaping, and two four-character
+       codes; everything else is constant text and five small integers.
+       Sized with room rather than to the byte, because a builder that
+       overflows here sends NOTHING and the drag is lost. */
+    kDragBuffLen = 320,
 
     /* Ticks between pings, in units of the vehicle's own 5 s cadence.
        FIVE, so ~30 s - the countdown is spent on the tick that reaches
@@ -159,9 +202,17 @@ static TCPiopb gRcvPB;                /* the drain, independently in flight */
 static Boolean gRcvInFlight;
 static wdsEntry gWDS[2];
 
+/* The drag-begin send's own everything. Written from TASK time in a
+   foreign application and never touched by the interrupt-time pump - see
+   the header's fourth rule. */
+static TCPiopb gDragPB;
+static wdsEntry gDragWDS[2];
+static Boolean gDragInFlight;
+
 static unsigned char gRcvBuff[kRcvBuffLen];
 static unsigned char gSendBuff[kSendBuffLen];
 static unsigned char gDrainBuff[kDrainBuffLen];
+static unsigned char gDragBuff[kDragBuffLen];
 
 /* ---------------------------------------------------------------- */
 /* Building a frame, without a formatter.                            */
@@ -271,12 +322,83 @@ static unsigned long finish_frame(Build *b)
     return b->len;
 }
 
+static void begin_frame_in(Build *b, unsigned char *buf, unsigned long cap)
+{
+    b->buf = buf;
+    b->len = NOW_WIRE_FRAME_HEADER_BYTES;
+    b->cap = cap;
+    b->overflowed = false;
+}
+
 static void begin_frame(Build *b)
 {
-    b->buf = gSendBuff;
-    b->len = NOW_WIRE_FRAME_HEADER_BYTES;
-    b->cap = kSendBuffLen;
-    b->overflowed = false;
+    begin_frame_in(b, gSendBuff, kSendBuffLen);
+}
+
+/* A signed integer, because a vRefNum is one and always negative for a
+   mounted volume. Written as a sign and the unsigned magnitude rather
+   than by negating: -2147483648 has no positive counterpart and a
+   formatter that assumes it does is wrong exactly once, silently. */
+static void put_i32(Build *b, NowPeekI32 v)
+{
+    unsigned long magnitude;
+
+    if (v < 0) {
+        put_byte(b, '-');
+        magnitude = (unsigned long)(-(long)(v + 1)) + 1UL;
+    } else {
+        magnitude = (unsigned long)v;
+    }
+    put_u32(b, (NowPeekU32)magnitude);
+}
+
+/* Four characters out of an OSType, JSON-escaped by the same rules the
+   machine name uses. A code is not a string the Toolbox NUL-terminates,
+   so all four bytes go out including embedded spaces - 'PDF ' is a real
+   type and trimming it would name a different one. A NUL byte becomes a
+   space rather than ending the code early: an OSType with one in it is
+   already malformed, and truncating would hand the host a shorter code
+   that means something else. */
+static void put_ostype(Build *b, NowPeekU32 code)
+{
+    int i;
+
+    for (i = 3; i >= 0; --i) {
+        unsigned char c = (unsigned char)((code >> (i * 8)) & 0xFF);
+
+        if (c == '"' || c == '\\') {
+            put_byte(b, '\\');
+            put_byte(b, c);
+        } else if (c < 0x20) {
+            put_byte(b, ' ');
+        } else {
+            put_byte(b, c);
+        }
+    }
+}
+
+/* An HFS name out of the drag observer's fixed-width Pascal copy. Same
+   escaping as put_pascal_json, which it cannot simply call because that
+   one takes the field width as the cap and this field is 64 bytes wide
+   while the contract's name is 31 - a longer name is refused rather than
+   truncated, because half a file name is a different file. */
+static void put_drag_name(Build *b, const unsigned char *p)
+{
+    unsigned long n = p[0];
+    unsigned long i;
+
+    for (i = 1; i <= n; ++i) {
+        unsigned char c = p[i];
+
+        if (c == '"' || c == '\\') {
+            put_byte(b, '\\');
+            put_byte(b, c);
+        } else if (c < 0x20) {
+            put_byte(b, '_');
+        } else {
+            put_byte(b, c);
+        }
+    }
 }
 
 /* `role: resident` is what makes this connection possible at all, and
@@ -585,4 +707,129 @@ void now_liveness_net_pump(NowPeekTable *table,
        connection and needs no counter of its own. The host echoes it in
        `pong` and nothing here reads the echo. */
     issue_send(table, build_ping(table->channel_sends + 1));
+}
+
+/* ---------------------------------------------------------------- */
+/* The drag-begin frame. TASK TIME, in the dragging application.      */
+/* ---------------------------------------------------------------- */
+
+/* NO SIZES, NO DATES, NO FOLDERNESS, and that is the design rather than
+   a gap. Every one of those needs the File Manager, and this runs inside
+   a foreign application's drag loop where the resident's charter permits
+   no such call - `now_ext_dragobs.c` says it in its own header and the
+   HFSFlavor the Drag Manager already handed us needs none of them. The
+   host is told what a live DragRef knows: which file, by the triple the
+   File Manager itself uses, plus its type and creator. The rest arrives
+   with the application's own publish of the same gesture and again at
+   grab redemption, both of which happen long before a drop. */
+static unsigned long build_drag_begin(NowPeekU32 epoch, NowPeekU32 seq,
+                                      NowPeekU32 ticks, NowPeekU32 file_type,
+                                      NowPeekU32 creator, NowPeekI32 vref,
+                                      NowPeekU32 parid,
+                                      const unsigned char *name)
+{
+    Build b;
+
+    begin_frame_in(&b, gDragBuff, kDragBuffLen);
+    put_cstr(&b, "{\"type\":\"continuity.dragBegin\",\"version\":");
+    put_u32(&b, (NowPeekU32)NOW_CONTINUITY_VERSION);
+    put_cstr(&b, ",\"epoch\":");
+    put_u32(&b, epoch);
+    put_cstr(&b, ",\"dragSeq\":");
+    put_u32(&b, seq);
+    put_cstr(&b, ",\"ticks\":");
+    put_u32(&b, ticks);
+    put_cstr(&b, ",\"item\":{\"name\":\"");
+    put_drag_name(&b, name);
+    put_cstr(&b, "\",\"volumeRef\":");
+    put_i32(&b, vref);
+    put_cstr(&b, ",\"dirID\":");
+    put_u32(&b, parid);
+    put_cstr(&b, ",\"fileType\":\"");
+    put_ostype(&b, file_type);
+    put_cstr(&b, "\",\"creator\":\"");
+    put_ostype(&b, creator);
+    put_cstr(&b, "\"}}");
+    return finish_frame(&b);
+}
+
+/* Reap our own previous frame, if the driver has finished with it. There
+   is no state machine here on purpose: the only thing this needs to know
+   is whether the param block is free to fill in again. A failed send is
+   not retried and not reported to the channel state - the pump owns that
+   word, and a drag frame failing says nothing about liveness. */
+static void drag_reap(void)
+{
+    if (!gDragInFlight) {
+        return;
+    }
+    if (gDragPB.ioResult > 0) {
+        return;                       /* still queued in the driver */
+    }
+    gDragInFlight = false;
+}
+
+int now_liveness_net_send_drag(NowPeekTable *table, NowPeekU32 epoch,
+                               NowPeekU32 seq, NowPeekU32 ticks,
+                               NowPeekU32 file_type, NowPeekU32 creator,
+                               NowPeekI32 vref, NowPeekU32 parid,
+                               const unsigned char *name)
+{
+    unsigned long len;
+
+    if (table == NULL || name == NULL || seq == 0) {
+        return 0;
+    }
+    table->drag_send_format = (NowPeekU32)kNowPeekDragSendFormatV1;
+    if (!gStreamReady || !gConnected || !gHelloSent) {
+        /* No connection, or one the host has not been introduced to yet.
+           Counted rather than queued: a host that has never heard this
+           machine's hello cannot attach a drag to it either. */
+        table->drag_send_unconnected++;
+        return 0;
+    }
+    drag_reap();
+    if (gDragInFlight) {
+        /* Our own previous drag frame is still with the driver. Two
+           drags inside one send is not a case worth a queue - the second
+           one's cross is seconds away and the fallback lane still has
+           it - so it is counted and dropped. */
+        table->drag_send_busy++;
+        return 0;
+    }
+    len = build_drag_begin(epoch, seq, ticks, file_type, creator, vref,
+                           parid, name);
+    if (len == 0) {
+        table->drag_send_dropped++;   /* the builder overflowed */
+        return 0;
+    }
+    gDragWDS[0].length = (unsigned short)len;
+    gDragWDS[0].ptr = (Ptr)gDragBuff;
+    gDragWDS[1].length = 0;
+    gDragWDS[1].ptr = NULL;
+
+    gDragPB.ioCompletion = NULL;
+    gDragPB.ioCRefNum = gRefNum;
+    gDragPB.csCode = TCPSend;
+    gDragPB.tcpStream = gStream;
+    /* Bounded, and it aborts rather than hangs - the same pair the pump
+       uses, for a reason that bites harder here: this call is made with
+       the Finder's drag loop waiting on it. */
+    gDragPB.csParam.send.ulpTimeoutValue = 30;
+    gDragPB.csParam.send.ulpTimeoutAction = 1;
+    gDragPB.csParam.send.validityFlags = timeoutValue | timeoutAction;
+    gDragPB.csParam.send.pushFlag = true;
+    gDragPB.csParam.send.urgentFlag = false;
+    gDragPB.csParam.send.wdsPtr = (Ptr)gDragWDS;
+    gDragPB.csParam.send.sendFree = 0;
+    gDragPB.csParam.send.sendLength = 0;
+    gDragPB.csParam.send.userDataPtr = NULL;
+    if (PBControlAsync((ParmBlkPtr)&gDragPB) != noErr) {
+        table->drag_send_dropped++;
+        return 0;
+    }
+    gDragInFlight = true;
+    table->drag_send_sends++;
+    table->drag_send_last_seq = seq;
+    return 1;
 }

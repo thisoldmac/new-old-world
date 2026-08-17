@@ -20,6 +20,9 @@ CORE = (ROOT / "ext/src/now_ext.c").read_text()
 OBS = (ROOT / "ext/src/now_ext_dragobs.c").read_text()
 SHIM = (ROOT / "ext/src/now_ext_dragobs_patch.S").read_text()
 DRAIN = (ROOT / "now-guest-ppc/src/input/continuity_service.c").read_text()
+NET = (ROOT / "ext/src/now_liveness_net.c").read_text()
+LIVENESS = (ROOT / "ext/src/now_liveness.c").read_text()
+WIRE = (ROOT / "now-guest-ppc/src/core/wire.c").read_text()
 
 failures = []
 
@@ -312,6 +315,112 @@ check(drain.index("drag begin seq=")
       "a drag beginning went behind the debug gate")
 check("drag look n=" in drain.split("if (now_mirror_debug_on()")[1],
       "the per-look ring came out from behind the debug gate")
+
+# ============================================ V16, the resident's own send
+#
+# The identity has always been read in time and published too late: the
+# application that publishes it gets no task time until the Finder's drag
+# loop ends, so the drag-sourced generation reached the host 462 ticks
+# after the drag began and 14 ticks after it ENDED (2026-08-16). The
+# resident now says it itself, over its own channel, from the tracking
+# handler. That is a SEND from inside a foreign application's drag loop,
+# and every property that makes it safe is a property of this source.
+NET_CODE = strip_comments(NET)
+send = body(NET, "int now_liveness_net_send_drag(", "\n}\n")
+send_code = strip_comments(send)
+
+# WHERE IT IS CALLED FROM. Task time in the handler, and nowhere else.
+# The pump is INTERRUPT time; a drag frame built from there would be the
+# context error six PowerBook wedges were bought with.
+check("now_liveness_net_send_drag(" in handler_code,
+      "the drag identity is no longer sent from the tracking handler, so "
+      "it can only reach the host after the drag it describes has ended")
+pump = body(NET, "void now_liveness_net_pump(", "/* ------------------")
+check("now_liveness_net_send_drag" not in strip_comments(pump)
+      and "now_liveness_net_send_drag" not in strip_comments(LIVENESS),
+      "the drag send is reachable from the interrupt-time pump")
+
+# AFTER THE COMMIT WORD. The application's drain lifts the record on the
+# strength of an even handler_begin_seq; a send that preceded it would
+# be a host holding a fact the machine's own table does not yet admit.
+check(handler_code.index("block->handler_begin_seq++;\n        break;") <
+      handler_code.index("now_liveness_net_send_drag(")
+      if "block->handler_begin_seq++;\n        break;" in handler_code
+      else handler_code.rindex("handler_begin_seq++")
+           < handler_code.index("now_liveness_net_send_drag("),
+      "the drag frame is sent before the record is committed")
+# ONLY AN HFS FIRST ITEM, AND ONLY UNDER AN EPOCH. A promise names no
+# file this side could serve, and a drag with no epoch is a person using
+# their own Macintosh rather than a consent.
+check("kNowPeekDragObsItemHFS" in handler_code
+      and handler_code.index("kNowPeekDragObsItemHFS")
+          < handler_code.index("now_liveness_net_send_drag("),
+      "a promise or a text drag would now be sent as a file")
+check("cell->epoch != 0" in handler_code,
+      "a drag seen with no Continuity epoch running is sent anyway")
+
+# ITS OWN PARAM BLOCK. gCtlPB belongs to the interrupt-time pump's
+# one-call-at-a-time state machine; a task-time caller filling it in
+# while an interrupt reaps it is a corruption, not a race to argue over.
+check("gDragPB" in send_code and "gCtlPB" not in send_code,
+      "the drag send writes the pump's own param block")
+check("static TCPiopb gDragPB;" in NET_CODE
+      and "static wdsEntry gDragWDS[2];" in NET_CODE,
+      "the drag send lost the param block and WDS that keep it clear of "
+      "the pump")
+
+# FIRE AND FORGET. Async, nil completion, no wait, no retry - the Finder
+# is inside TrackDrag with this call on its stack.
+check("PBControlAsync((ParmBlkPtr)&gDragPB)" in send_code
+      and "PBControlSync" not in send_code,
+      "the drag send blocks the Finder's drag loop")
+check("gDragPB.ioCompletion = NULL;" in send_code,
+      "the drag send grew a completion routine whose ABI is not settled")
+check("while" not in send_code and "for (" not in send_code,
+      "the drag send waits or retries inside the Finder's drag loop")
+
+# NOTHING IS QUEUED, AND EVERY WAY IT DOES NOT GO OUT IS COUNTED.
+# A queue here would be a resident holding somebody's file identity for
+# an unbounded time; a single 'not sent' counter would make 'the host was
+# never up' and 'two drags in one send' the same reading.
+for counter in ("drag_send_sends", "drag_send_dropped",
+                "drag_send_unconnected", "drag_send_busy",
+                "drag_send_last_seq"):
+    check(f"NowPeekU32 {counter};" in CONTRACT and counter in send_code,
+          f"the drag send lost the counter that names one of its "
+          f"outcomes: {counter}")
+check("_Static_assert(sizeof(NowPeekTable)\n                   == offsetof("
+      "NowPeekTable, drag_send_format) + 24," in CONTRACT,
+      "the drag-send counters moved without their tail assert following")
+
+# THE RESIDENT DOES NOT LOG, AND DOES NOT REACH THE FILE MANAGER. The
+# frame carries what a live DragRef already knew and nothing that would
+# need a call this context may not make.
+for token in ("now_log", "NewPtr", "NewHandle", "FSpGetFInfo", "PBGetCatInfo",
+              "FSpOpenDF", "GetVInfo", "WaitNextEvent"):
+    check(token not in NET_CODE,
+          f"the resident's channel reaches work its context forbids: {token}")
+
+# THE JOIN KEY IS ON BOTH ACCOUNTS OF THE GESTURE. The resident's frame
+# and the application's own continuity.selection must carry the same
+# dragSeq, or a host has to decide by timing whether two frames are one
+# drag - and timing is precisely what is unreliable here.
+builder = body(NET, "static unsigned long build_drag_begin(",
+               "/* Reap our own previous frame")
+builder_code = strip_comments(builder)
+check(r',\"dragSeq\":' in builder_code
+      and r'\"continuity.dragBegin\"' in builder_code,
+      "the resident's frame stopped naming the drag it describes")
+# NO SIZES, NO DATES, NO FOLDERNESS: all three need the File Manager and
+# this context may not call it. A frame that carried them would either be
+# lying or be a charter breach, and both are worse than their absence.
+for absent in ("dataSize", "resourceSize", "modifiedAt", "isFolder"):
+    check(absent not in builder_code,
+          f"the drag frame claims a field only the File Manager could "
+          f"answer: {absent}")
+check('\\"dragSeq\\":%lu' in WIRE
+      and "table->item.drag_seq" in WIRE,
+      "the application's selection stopped carrying the join key")
 
 if failures:
     for message in failures:
