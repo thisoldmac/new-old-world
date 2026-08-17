@@ -47,11 +47,6 @@ static DragSendDataUPP g_send_upp;
         control for bit 8, so "the proc is never called" and "the plane
         is stale inside TrackDrag" cannot share one frozen coordinate.
         Wins over 8 when both are set.
-    32  materialise the promise in the Temporary Items folder instead of
-        the folder the receiver named, and hand the receiver THAT spec.
-        Asks whether the receiver places the file itself - the half of
-        "who owns the destination" that a file already sitting at its
-        destination can never answer.
 
    Bit 1 was here and is gone: it held the DragRef past TrackDrag on the
    theory that the Finder asks late. Bit 4 killed that theory by showing
@@ -511,46 +506,6 @@ static pascal OSErr drag_send_data(FlavorType type, void *refcon,
         return cantGetFlavorErr;
     }
 
-    /* ---- SLICE-2 DIAGNOSTIC BIT 32: WHOSE FOLDER PLACES THE FILE ----
-       Measured 2026-08-17: materialising into the folder the receiver
-       named leaves the file exactly where we put it, under the name we
-       chose — the receiver never touches it, so its own duplicate
-       machinery never runs and a second same-name drop dies in OUR
-       pre-check. This bit asks the other half of the question: given a
-       file that is NOT already at its destination, does the receiver
-       move it there itself? If it does, the placement — and every
-       collision decision that comes with it — was always the
-       receiver's, and the send proc has no business naming a
-       destination at all. */
-    if ((g_diag_mask & 32) != 0) {
-        short tvref = 0;
-        long tdir = 0;
-
-        if (FindFolder(vref, kTemporaryFolderType, kCreateFolder,
-                       &tvref, &tdir) == noErr) {
-            FSSpec stale;
-            Str255 pname;
-
-            /* Our own scratch, our own leftovers: a previous drop's
-               staged copy is ours to clear, and clearing it is not a
-               decision about anybody's file. */
-            CopyCStringToPascal(g_drag.item.name, pname);
-            if (FSMakeFSSpec(tvref, tdir, pname, &stale) == noErr) {
-                FSpDelete(&stale);
-            }
-            vref = tvref;
-            dir = tdir;
-            now_log(kLogInfo, "mirror",
-                    "drag promise staging in Temporary Items (dir %ld)",
-                    tdir);
-        } else {
-            now_log(kLogWarn, "mirror",
-                    "drag promise: no Temporary Items folder; using the "
-                    "drop folder");
-        }
-    }
-    now_log(kLogInfo, "mirror", "drag promise streaming %.31s into dir %ld",
-            g_drag.item.name, dir);
     /* WHOSE FOLDER THE RECEIVER NAMED, and whether the name it is about
        to be handed is already taken there. Both are facts about the
        RECEIVER's house, and the collision diagnosis cannot proceed
@@ -573,6 +528,63 @@ static pascal OSErr drag_send_data(FlavorType type, void *refcon,
                 "drag promise name check: FSMakeFSSpec('%.31s') -> %d "
                 "(0 = already there)", g_drag.item.name, (int)taken);
     }
+    /* WHERE THE PROMISE IS MATERIALISED, AND WHY IT IS NOT THE FOLDER
+       THE RECEIVER NAMED.
+
+       MEASURED, both halves, 2026-08-17 (receipts
+       /private/tmp/now-slice2-receipts):
+
+         - Create the file in the drop folder under the final name and
+           the receiver never touches it again — the catalogue finds it
+           exactly where we put it after TrackDrag returns. Its own
+           duplicate machinery therefore never runs, and a second
+           same-name drop died in OUR pre-check
+           (now_files_receive_begin_at -> kFilesExists), silently, with
+           no dialog anywhere. That was NOW deciding a collision in the
+           receiver's house.
+         - Create it in Temporary Items on the same volume and hand back
+           THAT spec, and the Finder moves it into the folder it chose —
+           where the second same-name drop raises the Finder's OWN ask:
+           "An older item named X already exists in this location. Do
+           you want to replace it with the one you're moving?"
+           (shot-finder-ask.png). Zero collision code of ours involved.
+
+       So the destination is the receiver's, and the send proc's job is
+       to produce a file somewhere the receiver can take it FROM. Same
+       volume on purpose: the Finder's move stays a move.
+
+       This is the whole of NOW's collision handling on the drag lane,
+       and it is the absence of any. */
+    {
+        short tvref = 0;
+        long tdir = 0;
+        FSSpec stale;
+        Str255 pname;
+
+        if (FindFolder(vref, kTemporaryFolderType, kCreateFolder,
+                       &tvref, &tdir) != noErr) {
+            /* Refused rather than quietly aimed at the drop folder: the
+               drop folder is the one destination this function must not
+               choose, and a fallback into it would restore the defect
+               under a name that reads like resilience. */
+            now_log(kLogError, "mirror",
+                    "drag promise: no Temporary Items on that volume; "
+                    "nothing to hand the receiver");
+            now_continuity_drag_promise_end(&g_drag, 0);
+            return cantGetFlavorErr;
+        }
+        /* Our own scratch, our own leftovers: a staged copy from a drop
+           the receiver cancelled is ours to clear, and clearing it is
+           not a decision about anybody's file. */
+        CopyCStringToPascal(g_drag.item.name, pname);
+        if (FSMakeFSSpec(tvref, tdir, pname, &stale) == noErr) {
+            FSpDelete(&stale);
+        }
+        vref = tvref;
+        dir = tdir;
+    }
+    now_log(kLogInfo, "mirror", "drag promise streaming %.31s into dir %ld",
+            g_drag.item.name, dir);
     if (!stream_promise(vref, dir, &spec)) {
         now_continuity_drag_promise_end(&g_drag, 0);
         return cantGetFlavorErr;
