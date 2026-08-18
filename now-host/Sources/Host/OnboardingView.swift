@@ -83,9 +83,14 @@ struct OnboardingSheet: View {
                         }
                     }
                 }
-                Text("The downloaded settings point NOW back to "
-                     + "\(endpoint.host):\(endpoint.wirePort). The web "
-                     + "page's \(endpoint.httpPort) port is temporary.")
+                Text(portal.guestFlavor == .powerpc
+                     ? "The downloaded settings point NOW back to "
+                       + "\(endpoint.host):\(endpoint.wirePort). The web "
+                       + "page's \(endpoint.httpPort) port is temporary."
+                     : "NOW-68K keeps no settings file; type "
+                       + "\(endpoint.host) and \(endpoint.wirePort) into its "
+                       + "Host and Port fields. The web page's "
+                       + "\(endpoint.httpPort) port is temporary.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             case .failed(let message):
@@ -102,23 +107,47 @@ struct OnboardingSheet: View {
                 Text("Packages")
                     .font(.headline)
                 Spacer()
+                Picker("", selection: $portal.guestFlavor) {
+                    ForEach(OnboardingGuestFlavor.allCases) { flavor in
+                        Text(flavor.displayName).tag(flavor)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("Which classic Mac this page and install image "
+                      + "are for.")
                 Button("Refresh") { portal.refreshAssets() }
                     .controlSize(.small)
             }
-            packageLine("New Old World",
-                        asset: portal.assets.application,
-                        required: true)
-            packageLine("CodeKitten",
-                        asset: portal.assets.codeKitten,
-                        required: false)
-            packageLine("NOW Extension",
-                        asset: portal.assets.extensionComponent,
-                        required: false)
-            Divider()
-            Text("System dependencies")
-                .font(.subheadline.weight(.semibold))
-            ForEach(OnboardingDependencyCatalog.all) { dependency in
-                dependencyLine(dependency)
+            switch portal.guestFlavor {
+            case .powerpc:
+                packageLine("New Old World",
+                            asset: portal.assets.application,
+                            required: true)
+                packageLine("CodeKitten",
+                            asset: portal.assets.codeKitten,
+                            required: false)
+                packageLine("NOW Extension",
+                            asset: portal.assets.extensionComponent,
+                            required: false)
+            case .m68k:
+                // The extension is 68K by nature and offered to both
+                // flavors; CodeKitten and CarbonLib are Carbon and are not.
+                packageLine("NOW-68K",
+                            asset: portal.assets.application68K,
+                            required: true)
+                packageLine("NOW Extension",
+                            asset: portal.assets.extensionComponent,
+                            required: false)
+            }
+            if portal.guestFlavor == .powerpc {
+                Divider()
+                Text("System dependencies")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(OnboardingDependencyCatalog.all) { dependency in
+                    dependencyLine(dependency)
+                }
             }
             ForEach(OnboardingDependencyCatalog.additionalAssets(
                 in: portal.assets)) { asset in
@@ -209,7 +238,8 @@ struct OnboardingSheet: View {
                 .toggleStyle(.checkbox)
                 .disabled(required)
                 .help(required
-                      ? "New Old World is required in every install image."
+                      ? portal.guestFlavor.applicationDisplayName
+                        + " is required in every install image."
                       : "Include this item in the next install image.")
         } else {
             Image(systemName: "circle")
@@ -328,7 +358,14 @@ struct OnboardingSheet: View {
     private func saveSetupImage() {
         guard let image = portal.currentSetupImage() else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = ClassicSetupImageBuilder.downloadFileName
+        // Name the copy after the image actually being served, which can
+        // lag the pill until the next rebuild.
+        if case .ready(let served) = portal.setupImageState {
+            panel.nameFieldStringValue = served.fileName + ".bin"
+        } else {
+            panel.nameFieldStringValue =
+                ClassicSetupImageBuilder.downloadFileName
+        }
         panel.canCreateDirectories = true
         panel.prompt = "Save"
         guard panel.runModal() == .OK, let url = panel.url else { return }
