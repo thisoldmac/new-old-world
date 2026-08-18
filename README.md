@@ -86,6 +86,42 @@ See [current limitations](docs/user-guide/reference/limitations.md), [known wron
 
 ## Build and test
 
+### Dependencies
+
+- **Xcode** (not just the Command Line Tools) for the macOS host app.
+- **[CMake](https://cmake.org)** and **[Ninja](https://ninja-build.org)** for the guest builds.
+- **[Retro68](https://github.com/autc04/Retro68)** to cross-compile the classic-Mac halves — two separate build trees, not two flags on one install: a PowerPC build (whose `retrocarbon.toolchain.cmake` targets CarbonLib) and a 68K build (`retro68.toolchain.cmake`). Without them the host still builds; only the guest targets need them.
+- **python3**, which stamps the canonical `New Old World.bin` and writes update manifests.
+
+### Configure
+
+```sh
+cp .env.example .env
+```
+
+Fill in the two Retro68 toolchain paths; everything else in the file configures deploying to real hardware, the emulator rigs, and release signing, and can wait. `.env` is gitignored — every value describes one desk — and an explicit environment variable always wins over it. See [lab setup](docs/lab-setup.md).
+
+### Build
+
+```sh
+make host    # macOS app            -> build/host/New Old World.app
+make ppc     # PowerPC Carbon guest -> build/ppc/New Old World.bin
+make 68k     # 68K guest            -> build/68k/
+make ext     # NOW Extension INIT   -> build/ext/NOW Extension.bin
+```
+
+`make guests` builds the three classic targets; `scripts/build-all` builds everything this machine has toolchains for, skipping (loudly) what it cannot. Everything lands in the gitignored `build/`.
+
+```sh
+scripts/build-bundle
+```
+
+builds all of it and produces an installable DMG under `build/bundle/`, with the guest components staged inside the app for in-app deployment. It signs with your Apple Development identity when `NOW_HOST_TEAM_ID` is set in `.env` — which keeps macOS permission grants across rebuilds — and ad-hoc otherwise.
+
+A build proves the code compiles, nothing more. This project's verification levels are **builds**, **tested**, and **metal-verified**, and they are not adjectives — see [AGENTS.md](AGENTS.md).
+
+### Test
+
 ```sh
 tools/setup-hooks
 scripts/test-all

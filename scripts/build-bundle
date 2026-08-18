@@ -1,0 +1,120 @@
+#!/bin/sh
+# Build the complete development bundle: the host app with every guest
+# component staged inside it for in-app deployment, wrapped in a DMG.
+#
+#     scripts/build-bundle           # -> build/bundle/New-Old-World-<version>-b<n>.dmg
+#
+# Signed with an Apple Development identity when NOW_HOST_TEAM_ID is set
+# (the identity is looked up in the keychain by team), ad-hoc otherwise.
+# Both guest toolchains are REQUIRED here, unlike scripts/build-all: a
+# bundle whose point is carrying the guests is not honestly built
+# without them.
+#
+# The guests land in Contents/Resources/Onboarding, which is the catalog
+# the host actually reads (OnboardingAssets.swift): the PPC application
+# and the extension with their .now-update.json sidecars beside them,
+# because UpdateProvider reads identity from the sidecar. The 68K guest
+# is staged too so the bundle carries all three, but the onboarding
+# catalog has no 68K entry yet - the host cannot deploy it in-app, and
+# that asymmetry is declared here rather than left to be discovered.
+#
+# Staging happens BEFORE the final signature: resources are sealed, so
+# an app modified after signing fails verification. This is not the
+# release pipeline - scripts/assemble-release owns checksummed inputs,
+# licensed material, and publication.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+
+# Desk configuration, same resolution as scripts/build-guests: local
+# .env or .env.lab, else the main worktree's - a worktree is the same
+# desk, not a stranger. Explicit environment still wins (set -a before
+# sourcing would let the file override it, so guard each key).
+saved_team=${NOW_HOST_TEAM_ID:-}
+for f in "$repo_root/.env" "$repo_root/.env.lab"; do
+    [ -f "$f" ] && { set -a; . "$f"; set +a; }
+done
+if [ -z "${NOW_HOST_TEAM_ID:-}" ] || [ -n "$saved_team" ]; then
+    NOW_HOST_TEAM_ID=$saved_team
+fi
+
+out_root="$repo_root/build/bundle"
+staged="$out_root/New Old World.app"
+
+echo "== guests"
+make -C "$repo_root" ppc 68k ext
+
+echo "== host"
+make -C "$repo_root" host
+
+echo "== staging Onboarding"
+rm -rf "$out_root"
+mkdir -p "$out_root"
+cp -R "$repo_root/build/host/New Old World.app" "$staged"
+onboarding="$staged/Contents/Resources/Onboarding"
+mkdir -p "$onboarding"
+cp "$repo_root/build/ppc/New Old World.bin" \
+   "$repo_root/build/ppc/New Old World.bin.now-update.json" \
+   "$repo_root/build/ext/NOW Extension.bin" \
+   "$repo_root/build/ext/NOW Extension.bin.now-update.json" \
+   "$repo_root/build/68k/now-guest-68k.bin" \
+   "$onboarding/"
+
+echo "== signing"
+if [ -n "${NOW_HOST_TEAM_ID:-}" ]; then
+    # The team's development identity, found in the keychain rather than
+    # configured: an identity string in a file goes stale the day the
+    # certificate rotates, while the team id is durable. A certificate's
+    # DISPLAY name carries the developer's personal id, not the team id,
+    # so candidates cannot be picked by grep - each one is tried and the
+    # signed result's TeamIdentifier is what decides, because that is the
+    # value macOS itself will attribute grants to.
+    #
+    # No --entitlements: codesign does not expand the $(AppIdentifierPrefix)
+    # build variable in the file, and the keychain entitlement is restricted -
+    # without an embedded provisioning profile AMFI kills the app at spawn
+    # and the Finder says only "can't be opened". Identity signing here buys
+    # a certificate-based code identity so TCC grants survive rebuilds;
+    # entitlement-gated features stay with build-host-app and release-dmg.
+    signed_team=""
+    for identity in $(security find-identity -v -p codesigning 2>/dev/null \
+            | grep "Apple Development" \
+            | sed -n 's/^ *[0-9]*) \([0-9A-F]*\) .*/\1/p'); do
+        codesign --force --deep --options runtime --sign "$identity" "$staged"
+        signed_team=$(codesign -dvv "$staged" 2>&1 \
+            | sed -n 's/^TeamIdentifier=//p')
+        [ "$signed_team" = "$NOW_HOST_TEAM_ID" ] && break
+    done
+    if [ "$signed_team" != "$NOW_HOST_TEAM_ID" ]; then
+        echo "error: no Apple Development identity in the keychain signs for" >&2
+        echo "       team $NOW_HOST_TEAM_ID (security find-identity -v -p codesigning" >&2
+        echo "       lists what this desk has; got ${signed_team:-none})" >&2
+        exit 64
+    fi
+else
+    codesign --force --deep --sign - "$staged"
+fi
+codesign --verify --strict "$staged"
+
+# The DMG, the same way assemble-release makes one: the app beside an
+# /Applications symlink so it opens onto a drag-to-install, via
+# `diskutil image create from` (hdiutil -srcfolder is deprecated).
+version=$(sed -n 's/^#define NOW_PRODUCT_VERSION "\(.*\)"/\1/p' \
+    "$repo_root/contract/product_version.h")
+build_number=$(git -C "$repo_root" rev-list --count HEAD 2>/dev/null || echo 1)
+dmg="$out_root/New-Old-World-$version-b$build_number.dmg"
+
+echo "== dmg"
+dmg_src=$(mktemp -d "${TMPDIR:-/tmp}/now-bundle-dmg.XXXXXX")
+trap 'rm -rf "$dmg_src"' EXIT
+cp -R "$staged" "$dmg_src/New Old World.app"
+ln -s /Applications "$dmg_src/Applications"
+rm -f "$dmg"
+diskutil image create from --format UDZO --volumeName "New Old World" \
+    "$dmg_src" "$dmg" >/dev/null
+
+team=$(codesign -dvv "$staged" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+[ "$team" = "not set" ] && team=""
+echo "== signed: ${team:-ad-hoc}"
+echo "$dmg"
