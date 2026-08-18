@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "continuity_intake.h"
+#include "continuity_cursor.h"
 #include "continuity_offer_intake.h"
 #include "fileshare.h"
 #include "now_continuity_drag.h"
@@ -210,6 +211,9 @@ static void diag_install_handlers(void)
 static DragInputUPP g_diag_input_upp;
 enum { kNowContinuityDragStaleTicks = 180 };  /* 3 s of plane silence */
 static long g_stale_releases;        /* dead-man reported the button up   */
+static long g_nudge_moves;           /* cursor applies made from the proc */
+static unsigned long g_nudge_last_ticks;
+static short g_nudge_last_h, g_nudge_last_v;
 static long g_diag_input_calls;      /* the Manager sampled us            */
 static long g_diag_input_fed;        /* ...and we had something to say    */
 static unsigned long g_diag_input_first_seq;
@@ -313,6 +317,29 @@ static pascal OSErr diag_input(Point *mouse, SInt16 *modifiers, void *refcon,
     } else {
         *modifiers = (SInt16)(*modifiers | btnState);
         g_diag_input_ups++;
+    }
+
+    /* THE SPRITE RIDES ALONG. Nothing task-time moves the cursor while
+       TrackDrag holds this application's loop - custody's apply starves
+       and the arrow parks at the entry while the ghost walks (attended,
+       2026-08-17). This proc is the one task-time context alive during
+       the drag, so it makes the same apply custody would have made,
+       throttled to the cursor's rate rather than the Manager's. Same
+       primitive, same epoch gate, same task-time class as 1.17. */
+    {
+        unsigned long now_t = (unsigned long)TickCount();
+
+        if ((g_diag_mask & 16) == 0
+                && (h != g_nudge_last_h || v != g_nudge_last_v)
+                && now_t - g_nudge_last_ticks >= 2) {
+            if (now_continuity_cursor_move(now_continuity_live_epoch(),
+                                           seq, (long)h, (long)v) == noErr) {
+                g_nudge_moves++;
+            }
+            g_nudge_last_ticks = now_t;
+            g_nudge_last_h = h;
+            g_nudge_last_v = v;
+        }
     }
 
     if (g_diag_input_fed == 0) {
@@ -658,6 +685,65 @@ static void drag_bounds(Point where, Rect *r)
                         + kDragNameHeight);
 }
 
+/* The drag REGION is the icon's own silhouette plus a label box, which
+   is what a native source drags - the bare rectangle this replaced read
+   as a grey slab wherever the image could not carry it (attended,
+   2026-08-17). Global coordinates, like the bounds. Returns 0 when the
+   silhouette cannot be built, and the caller falls back to the rect. */
+static int icon_silhouette_region(const Rect *bounds, RgnHandle out)
+{
+    IconRef icon = NULL;
+    RgnHandle label = NULL;
+    Rect icon_rect;
+    Rect label_rect;
+    OSType type, creator;
+    short width;
+
+    type = g_drag.item.have_file_type ? (OSType)g_drag.item.file_type
+                                      : (OSType)'????';
+    creator = g_drag.item.have_creator ? (OSType)g_drag.item.creator
+                                       : (OSType)'????';
+    icon_rect.left = (short)(bounds->left
+                             + (bounds->right - bounds->left
+                                - kDragIconSize) / 2);
+    icon_rect.top = bounds->top;
+    icon_rect.right = (short)(icon_rect.left + kDragIconSize);
+    icon_rect.bottom = (short)(icon_rect.top + kDragIconSize);
+    if (GetIconRef(kOnSystemDisk, creator, type, &icon) != noErr
+        || icon == NULL) {
+        return 0;
+    }
+    if (IconRefToRgn(out, &icon_rect, kAlignAbsoluteCenter,
+                     kIconServicesNormalUsageFlag, icon) != noErr
+        || EmptyRgn(out)) {
+        ReleaseIconRef(icon);
+        return 0;
+    }
+    ReleaseIconRef(icon);
+    /* The label's outline under it, sized from the name - the width is an
+       estimate (the port's metrics are not worth borrowing here), and an
+       outline a few pixels generous reads native where a slab does not. */
+    width = (short)(strlen(g_drag.item.name) * 6 + 6);
+    if (width > (short)(bounds->right - bounds->left)) {
+        width = (short)(bounds->right - bounds->left);
+    }
+    if (width > 6) {
+        label = NewRgn();
+        if (label != NULL) {
+            label_rect.left = (short)(bounds->left
+                                      + (bounds->right - bounds->left
+                                         - width) / 2);
+            label_rect.right = (short)(label_rect.left + width);
+            label_rect.top = (short)(icon_rect.bottom + kDragNameGap);
+            label_rect.bottom = (short)(label_rect.top + 12);
+            RectRgn(label, &label_rect);
+            UnionRgn(out, label, out);
+            DisposeRgn(label);
+        }
+    }
+    return 1;
+}
+
 /* Draw the offer's own icon and name into an offscreen world, so the
    thing crossing the screen is the file the person picked up rather
    than a grey rectangle.
@@ -706,7 +792,12 @@ static GWorldPtr build_drag_image(const Rect *bounds)
     }
 
     /* White ground: the drag image is masked by the drag region, so
-       what is not drawn is not shown. */
+       what is not drawn is not shown. Colors normalized FIRST - a port
+       whose fore/back drifted draws white on white, and a blank
+       translucent image composited over the desktop is exactly the
+       grey slab the attended run photographed (2026-08-17). */
+    ForeColor(blackColor);
+    BackColor(whiteColor);
     EraseRect(&local);
 
     type = g_drag.item.have_file_type ? (OSType)g_drag.item.file_type
@@ -717,11 +808,24 @@ static GWorldPtr build_drag_image(const Rect *bounds)
     icon_rect.top = local.top;
     icon_rect.right = (short)(icon_rect.left + kDragIconSize);
     icon_rect.bottom = (short)(icon_rect.top + kDragIconSize);
-    if (GetIconRef(kOnSystemDisk, creator, type, &icon) == noErr
-        && icon != NULL) {
-        PlotIconRef(&icon_rect, kAlignAbsoluteCenter, kTransformNone,
-                    kIconServicesNormalUsageFlag, icon);
-        ReleaseIconRef(icon);
+    {
+        OSErr icon_err = GetIconRef(kOnSystemDisk, creator, type, &icon);
+
+        if (icon_err == noErr && icon != NULL) {
+            icon_err = PlotIconRef(&icon_rect, kAlignAbsoluteCenter,
+                                   kTransformNone,
+                                   kIconServicesNormalUsageFlag, icon);
+            ReleaseIconRef(icon);
+        }
+        /* One line per drag, because the attended run could photograph
+           a blank image and the log could not say which stage blanked
+           it. */
+        now_log(kLogInfo, "mirror",
+                "drag image: icon '%c%c%c%c'/'%c%c%c%c' err=%d name=%d",
+                (char)(type >> 24), (char)(type >> 16), (char)(type >> 8),
+                (char)type, (char)(creator >> 24), (char)(creator >> 16),
+                (char)(creator >> 8), (char)creator, (int)icon_err,
+                (int)strlen(g_drag.item.name));
     }
 
     /* MacRoman, always — the name crossed the wire already mapped (the
@@ -895,7 +999,11 @@ static void start_drag(void)
 
     region = NewRgn();
     if (region != NULL) {
-        RectRgn(region, &bounds);
+        if (!icon_silhouette_region(&bounds, region)) {
+            RectRgn(region, &bounds);
+            now_log(kLogInfo, "mirror",
+                    "drag region: no icon silhouette; the rect stands in");
+        }
     }
     image = build_drag_image(&bounds);
     if (image != NULL && region != NULL) {
