@@ -236,9 +236,13 @@ static void accept_datagram(const NowContinuityStatePacket *packet)
        file at the entry edge (onto whatever lived there, including an
        application alias). Same serial rule the button generation uses. */
     if (shared->packet_seq != 0
+        && shared->packet_epoch == packet->epoch
         && packet->position_seq != shared->position_seq
         && !((packet->position_seq - shared->position_seq)
                  < 0x80000000UL)) {
+        /* SAME EPOCH ONLY. A new epoch restarts the host's counter, and
+           comparing across epochs rejected every packet of the fresh one
+           - the no-handoff-at-all build of 2026-08-17. */
         gRejected++;
         return;
     }
