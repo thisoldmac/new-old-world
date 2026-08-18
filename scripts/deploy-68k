@@ -2,9 +2,17 @@
 """Build NOW-68K, name it honestly, put it on the PowerBook, and prove it
 arrived intact.
 
-    scripts/deploy-68k                 # build, stamp, upload, verify
-    scripts/deploy-68k --test          # ...then run the metal suite
-    scripts/deploy-68k --test-only     # skip the build; just run the suite
+    scripts/deploy-68k                     # build, stamp, upload, verify
+    scripts/deploy-68k --machine pb180c    # ...to a named machine
+    scripts/deploy-68k --test              # ...then run the metal suite
+    scripts/deploy-68k --test-only         # skip the build; just run the suite
+
+WHICH MACHINE is a machine profile's question, not this file's: one
+gitignored file per vintage Mac under `.lab/machines/`, keyed by the id
+the host already calls it. With one profile there is nothing to ask; with
+two this REFUSES and names them, because a deploy that went to a machine
+nobody chose is the same failure as one that went to a stale default.
+See tools/machine_profiles.py and docs/lab-setup.md.
 
 Every step of this was being done by hand, and each one has a way of going
 quietly wrong that this project has already paid for at least once:
@@ -45,9 +53,20 @@ from ftplib import FTP
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "tools"))
+import machine_profiles as mp  # noqa: E402
+
 VERSION_SRC = REPO / "now-guest-68k" / "src" / "core" / "wire68.c"
 STAMPER = REPO / "now-guest-ppc" / "tools" / "name_macbinary.py"
 LAB_ENV = REPO / ".env.lab"
+
+#: The process environment as it arrived, BEFORE any file was read.
+#:
+#: This is the only thing that can tell `NOW68K_FTP_HOST=192.0.2.44
+#: scripts/deploy-68k` - a deliberate one-off that must win - from the
+#: same key sitting in a desk file, which must not. Both look identical
+#: in `os.environ` a moment later.
+EXPLICIT = dict(os.environ)
 
 
 def fail(message: str) -> "NoReturn":  # noqa: F821
@@ -55,26 +74,32 @@ def fail(message: str) -> "NoReturn":  # noqa: F821
     raise SystemExit(1)
 
 
-def load_lab_env() -> None:
+def load_lab_env() -> dict:
     """Read `.env.lab` into the environment, without overriding what is
-    already set there.
+    already set there. Returns what it read, so a key a machine profile
+    now answers can be reported as shadowed rather than silently lost.
 
-    Nobody's network belongs in a commit: the address of a particular
-    PowerBook, the account it answers to and the path a particular
-    toolchain was built at are properties of ONE desk, and a default
-    baked into this file is a default that is wrong for everyone else
-    while looking authoritative. So the values live in a gitignored file
-    beside the repo, and an explicit environment variable still wins over
-    it - which is what lets a one-off run point at another machine
-    without editing anything."""
+    Nobody's network belongs in a commit: the path a particular toolchain
+    was built at is a property of ONE desk, and a default baked into this
+    file is a default that is wrong for everyone else while looking
+    authoritative. So the values live in a gitignored file beside the
+    repo, and an explicit environment variable still wins over it.
+
+    The MACHINE half of this file has moved to `.lab/machines/` - see
+    machine_profiles.py for why an address is not a desk fact. Old keys
+    left behind still work when there is no profile, so an untouched
+    desk keeps deploying."""
+    values = {}
     if not LAB_ENV.exists():
-        return
+        return values
     for line in LAB_ENV.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
+        values[key.strip()] = value.strip()
         os.environ.setdefault(key.strip(), value.strip())
+    return values
 
 
 def lab_setting(name: str, what: str, default: str = None) -> str:
@@ -90,15 +115,48 @@ def lab_setting(name: str, what: str, default: str = None) -> str:
     return value
 
 
-load_lab_env()
+def machine_setting(profile, key: str, env_key: str, what: str,
+                    default: str = None) -> str:
+    """A machine fact, from the profile that owns it - or from the flat
+    key, on a desk that has not written a profile yet.
 
-HOST = lab_setting("NOW68K_FTP_HOST", "the 68K Mac's address")
-USER = lab_setting("NOW68K_FTP_USER", "its FTP account")
-PASSWORD = lab_setting("NOW68K_FTP_PASS", "that account's password")
-REMOTE_DIR = os.environ.get("NOW68K_FTP_DIR", "Lab/now-68k")
+    Two ways to be missing and they need different sentences. With a
+    profile in play the reader must be sent to THAT FILE and that key;
+    without one, to `.env.lab`. A message naming the wrong file is how
+    somebody edits the wrong file and watches nothing change."""
+    value = os.environ.get(env_key, default)
+    if value:
+        return value
+    if profile is not None:
+        fail("%s has no `%s` (%s).\n"
+             "  Add it to %s" % (profile.title, key, what, profile.path))
+    fail("no %s (%s).\n"
+         "  This desk has no machine profile, so this came from .env.lab.\n"
+         "  Write one - it is where machine facts belong now:\n"
+         "    cp .lab/machines/pb180c.machine.example "
+         ".lab/machines/<id>.machine\n"
+         "  See docs/lab-setup.md." % (env_key, what))
 
-TOOLCHAIN = Path(lab_setting("NOW68K_TOOLCHAIN",
-                             "the Retro68 68K toolchain file"))
+
+def resolve_machine(wanted):
+    """Pick the machine, put its facts in the environment, say which."""
+    try:
+        profiles = mp.discover(REPO)
+        profile = mp.select(profiles, wanted, why="a deploy")
+    except mp.ProfileError as exc:
+        fail(str(exc))
+    if profile is None:
+        return None
+    if profile.guest and profile.guest != "68k":
+        fail("%s runs the %s guest, and this deploys NOW-68K.\n"
+             "  Deploying a 68K build to it would put an application on "
+             "the machine that cannot run there, under a name that says "
+             "it should."
+             % (profile.title, profile.guest))
+    mp.apply(profile, EXPLICIT, log=print)
+    print("== machine %s at %s (%s)"
+          % (profile.title, profile.address, profile.path))
+    return profile
 
 
 def source_version() -> str:
@@ -154,14 +212,14 @@ def macbinary_forks(path: Path):
     return name, data, rsrc
 
 
-def build(build_dir: Path) -> Path:
+def build(build_dir: Path, toolchain: Path) -> Path:
     if not (build_dir / "CMakeCache.txt").exists():
-        if not TOOLCHAIN.exists():
-            fail("no 68K toolchain at %s (set NOW68K_TOOLCHAIN)" % TOOLCHAIN)
+        if not toolchain.exists():
+            fail("no 68K toolchain at %s (set NOW68K_TOOLCHAIN)" % toolchain)
         print("== configuring %s" % build_dir)
         subprocess.run(
             ["cmake", "-S", str(REPO / "now-guest-68k"), "-B", str(build_dir),
-             "-DCMAKE_TOOLCHAIN_FILE=" + str(TOOLCHAIN)],
+             "-DCMAKE_TOOLCHAIN_FILE=" + str(toolchain)],
             check=True, stdout=subprocess.DEVNULL)
     print("== building")
     subprocess.run(["cmake", "--build", str(build_dir), "-j4"],
@@ -266,8 +324,18 @@ def main() -> int:
                     help="run the metal suite after deploying")
     ap.add_argument("--test-only", action="store_true",
                     help="do not build or deploy; only run the suite")
-    ap.add_argument("--port", default=os.environ.get("NOW_METAL_PORT", "5252"),
-                    help="harness port the guest should dial (default 5252)")
+    ap.add_argument("--machine", default=os.environ.get("NOW_MACHINE"),
+                    help="which machine to deploy to, by the id the host "
+                         "calls it (pb180c). Optional when this desk has "
+                         "one profile; required when it has several.")
+    # Resolved after the machine is known, since a profile may name the
+    # port this machine's runs use.
+    ap.add_argument("--port", default=None,
+                    help="harness port the guest should dial (default: the "
+                         "machine's metal_port, NOW_METAL_PORT, or 5252)")
+    ap.add_argument("--which", action="store_true",
+                    help="resolve the machine, print where this would "
+                         "deploy, and stop — touching nothing")
     ap.add_argument("--filter", default="Metal68KTests",
                     help="swift test --filter for --test")
     ap.add_argument("--force", action="store_true",
@@ -284,12 +352,39 @@ def main() -> int:
                                                / "now68k-build")))
     args = ap.parse_args()
 
+    # ORDER IS THE PRECEDENCE. The profile is applied over anything not
+    # explicitly in the environment; `.env.lab` then fills what is still
+    # unset. So: explicit variable > machine profile > desk file, which
+    # is the repo's convention with the machine layer inserted where it
+    # belongs.
+    profile = resolve_machine(args.machine)
+    env_lab = load_lab_env()
+    mp.note_shadowed(profile, env_lab, print)
+
+    host = machine_setting(profile, "address", "NOW68K_FTP_HOST",
+                           "the 68K Mac's address")
+    user = machine_setting(profile, "ftp_user", "NOW68K_FTP_USER",
+                           "its FTP account")
+    password = machine_setting(profile, "ftp_pass", "NOW68K_FTP_PASS",
+                               "that account's password")
+    remote_dir = os.environ.get("NOW68K_FTP_DIR", "Lab/now-68k")
+    args.port = args.port or os.environ.get("NOW_METAL_PORT", "5252")
+
+    if args.which:
+        # Everything above has already refused if the machine was
+        # ambiguous or a key was missing, so reaching here IS the answer.
+        print("would deploy to ftp://%s@%s/%s/ and test on port %s"
+              % (user, host, remote_dir, args.port))
+        return 0
+
     if not args.test_only:
+        toolchain = Path(lab_setting("NOW68K_TOOLCHAIN",
+                                     "the Retro68 68K toolchain file"))
         version = source_version() if args.no_bump else bump_version()
         product = "NOW-68K %s" % version
         print("== version %s (from wire68.c)" % version)
 
-        built = build(Path(args.build_dir))
+        built = build(Path(args.build_dir), toolchain)
         stamped = Path(args.build_dir) / (product + ".bin")
         subprocess.run([sys.executable, str(STAMPER), str(built),
                         str(stamped), product], check=True)
@@ -303,25 +398,27 @@ def main() -> int:
         # mode after serving traffic) - so an unreachable host is a named
         # outcome here, not a traceback.
         try:
-            ftp = FTP(HOST, timeout=120)
+            ftp = FTP(host, timeout=120)
         except OSError as error:
             fail("cannot reach %s (%s).\n"
                  "  The machine is off, asleep, or its TCP stack has "
                  "wedged - MacTCP does that\n"
                  "  silently after serving traffic; reboot the Mac and "
-                 "rerun. Nothing was deployed." % (HOST, error))
+                 "rerun. Nothing was deployed." % (host, error))
         try:
-            ftp.login(USER, PASSWORD)
+            ftp.login(user, password)
         except Exception as error:
             fail("%s refused the login for %r (%s).\n"
-                 "  Check NOW68K_FTP_USER/NOW68K_FTP_PASS. Nothing was "
-                 "deployed." % (HOST, USER, error))
+                 "  Check the machine profile's ftp keys (or "
+                 "NOW68K_FTP_USER/NOW68K_FTP_PASS). Nothing was "
+                 "deployed." % (host, user, error))
         try:
-            ftp.cwd(REMOTE_DIR)
+            ftp.cwd(remote_dir)
         except Exception as error:
             fail("no %r folder on %s (%s).\n"
-                 "  Create it there, or set NOW68K_FTP_DIR. Nothing was "
-                 "deployed." % (REMOTE_DIR, HOST, error))
+                 "  Create it there, or set the profile's ftp folder "
+                 "(NOW68K_FTP_DIR). Nothing was deployed."
+                 % (remote_dir, host, error))
         before = listing(ftp)
 
         if product in before and not args.force:
@@ -333,9 +430,9 @@ def main() -> int:
                  "today unattributable.\n"
                  "  (--force if you really mean it; the server will append "
                  "#2 rather than overwrite, which is its own trap.)"
-                 % (product, HOST))
+                 % (product, host))
 
-        print("== uploading to ftp://%s/%s/" % (HOST, REMOTE_DIR))
+        print("== uploading to ftp://%s/%s/" % (host, remote_dir))
         with stamped.open("rb") as handle:
             ftp.storbinary("STOR " + product + ".bin", handle)
 
@@ -414,9 +511,9 @@ def main() -> int:
         # the run this guard exists to prevent was a run where an FTP
         # deploy to exactly this address overlapped a ladder.
         env = dict(os.environ, NOW_METAL="1", NOW_METAL_PORT=args.port,
-                   NOW_METAL_MACHINE=HOST)
+                   NOW_METAL_MACHINE=host)
         print("\n== metal suite (%s), port %s, machine %s"
-              % (args.filter, args.port, HOST))
+              % (args.filter, args.port, host))
         # Not check=True: a metal gate FAILING is a result, not a crash,
         # and its own output says more than a traceback would.
         return subprocess.run(
