@@ -150,7 +150,7 @@ so ours is the later reading of the same rule.
   (`MirrorAssetIngestion`, `MirrorFileTransferModel`, `GuestListener`,
   `ContinuityGrabTransfer`'s refusal sentence), `LocalizedStringResource →
   LocalizedStringKey/String`, the `super.setUp()` drop, and the test fixture
-  that stopped naming a real desk (`/Users/michelle/Downloads` →
+  that stopped naming a real desk (an absolute home path →
   `/Volumes/Scratch/Downloads`).
 - **`development` → `projects` rename**, `census_size_mib`, `web_accept.c`,
   `web_proxy_ot.{c,h}`, `web_module.c`, ROM-dump `NSSavePanel`, and every

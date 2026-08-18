@@ -2325,7 +2325,8 @@ survive on the PowerBook with this change in place. Tested only.
 arc settled the evidence for it, then closed it application-side.
 
 **The evidence.** `~/Library/Logs/now-logs/2026-08-16 125237.log` is the
-incident session (wire connect to `10.91.5.47`, human-scale timing; the
+incident session (wire connect to the PowerBook's own LAN address, which
+lives in `.env.lab` rather than here; human-scale timing; the
 `131901.log` beside it is fixture traffic — every epoch is 1 and the
 reasons are control-version scenarios). Five epochs there end
 `guest ended Continuity: reason=UDP acknowledgements stopped`, and **two
