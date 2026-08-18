@@ -110,14 +110,26 @@ enum OnboardingPage {
         <h1>New Old World Setup</h1>
         <p>This page is coming from the modern Mac on your LAN.</p>
         <h2>Recommended</h2>
-        <p><a href="/now/setup.img.bin"><b>Download the complete setup disk</b></a></p>
+        <p><a href="\(flavor == .m68k ? "/now/setup.img" : "/now/setup.img.bin")"><b>Download the complete setup disk</b></a></p>
         \(imageDetails)
-        <p>The download is a MacBinary file. A browser with MacBinary
-        decoding turned on leaves a
-        <b>\(escape(ClassicSetupImageBuilder.classicImageName(for: flavor)))</b>
-        file; decode it with StuffIt Expander or another MacBinary tool if
-        yours does not. Open that image with Disk Copy.
-        \(imageContents)</p>
+        \(flavor == .m68k
+            ? """
+              <p>Save the download as it arrives - no decoding is needed -
+              and open the saved file with <b>Disk Copy</b>. If your browser
+              renamed it, any name works.
+              \(imageContents)</p>
+              <p>For a MacBinary-aware transfer path there is also
+              <a href="/now/setup.img.bin">the MacBinary envelope</a>, which
+              decodes to a typed <b>\(escape(ClassicSetupImageBuilder.classicImageName(for: flavor)))</b>.</p>
+              """
+            : """
+              <p>The download is a MacBinary file. A browser with MacBinary
+              decoding turned on leaves a
+              <b>\(escape(ClassicSetupImageBuilder.classicImageName(for: flavor)))</b>
+              file; decode it with StuffIt Expander or another MacBinary tool if
+              yours does not. Open that image with Disk Copy.
+              \(imageContents)</p>
+              """)
         <h2>Individual files</h2>
         <p>These MacBinary files are fallbacks for machines that already have
         a MacBinary-aware transfer or decoding tool.</p>

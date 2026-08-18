@@ -8,7 +8,7 @@ import XCTest
 /// without the tool is not failing a check it cannot run.
 final class HFSStandardVolumeTests: XCTestCase {
     func testOracleReadsBackNamesForksAndFinderInfo() throws {
-        let tools = try oracle()
+        let tools = try HFSOracle.tools()
         let dataFork = Data((0..<21_000).map { UInt8($0 % 251) })
         let resourceFork = Data((0..<250_000).map { UInt8($0 % 253) })
         let readMe = Data("Type the host into Host.\r".utf8)
@@ -37,9 +37,9 @@ final class HFSStandardVolumeTests: XCTestCase {
         try disk.write(to: image)
 
         // The oracle mounts it...
-        try run(tools + "/hmount", [image.path], home: temporary)
-        defer { _ = try? run(tools + "/humount", [], home: temporary) }
-        let listing = try run(tools + "/hls", ["-la", ":"], home: temporary)
+        try HFSOracle.run(tools + "/hmount", [image.path], home: temporary)
+        defer { _ = try? HFSOracle.run(tools + "/humount", [], home: temporary) }
+        let listing = try HFSOracle.run(tools + "/hls", ["-la", ":"], home: temporary)
         let text = try XCTUnwrap(String(data: listing, encoding: .utf8))
         XCTAssertTrue(text.contains("NOW-68K"), text)
         XCTAssertTrue(text.contains("Read Me First"), text)
@@ -48,7 +48,7 @@ final class HFSStandardVolumeTests: XCTestCase {
 
         // ...and hands back byte-identical forks through MacBinary.
         let extracted = temporary.appendingPathComponent("out.bin")
-        try run(tools + "/hcopy", ["-m", ":NOW-68K", extracted.path],
+        try HFSOracle.run(tools + "/hcopy", ["-m", ":NOW-68K", extracted.path],
                 home: temporary)
         let roundTrip = try MacBinaryFile.decode(
             Data(contentsOf: extracted))
@@ -146,79 +146,4 @@ final class HFSStandardVolumeTests: XCTestCase {
                                "Read Me First"])
     }
 
-    // MARK: - Oracle plumbing
-
-    private func oracle() throws -> String {
-        // Same resolution as the Makefile, and VALIDATED at each step -
-        // a worktree's .env.lab copied from the example carries /path/to/
-        // placeholders that would otherwise shadow the main worktree's
-        // real value (which cost this desk an evening once already).
-        var candidates: [String] = []
-        if let path = ProcessInfo.processInfo.environment["NOW_HFSUTILS"] {
-            candidates.append(path)
-        }
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // HostTests
-            .deletingLastPathComponent()  // Tests
-            .deletingLastPathComponent()  // now-host
-            .deletingLastPathComponent()  // repo root
-        var roots = [root]
-        if let range = root.path.range(of: "/.claude/worktrees/") {
-            roots.append(URL(fileURLWithPath:
-                String(root.path[..<range.lowerBound])))
-        }
-        for directory in roots {
-            for envFile in [".env", ".env.lab"] {
-                let url = directory.appendingPathComponent(envFile)
-                guard let text = try? String(contentsOf: url,
-                                             encoding: .utf8) else {
-                    continue
-                }
-                for line in text.split(whereSeparator: \.isNewline)
-                    where line.hasPrefix("NOW_HFSUTILS=") {
-                    candidates.append(String(
-                        line.dropFirst("NOW_HFSUTILS=".count)))
-                }
-            }
-        }
-        for candidate in candidates where !candidate.isEmpty {
-            if FileManager.default.isExecutableFile(
-                atPath: candidate + "/hmount") {
-                return candidate
-            }
-        }
-        throw XCTSkip("no usable NOW_HFSUTILS (checked environment and "
-                      + "env files) - the hfsutils oracle cannot read "
-                      + "the volume back (docs/lab-setup.md)")
-    }
-
-    @discardableResult
-    private func run(_ executable: String, _ arguments: [String],
-                     home: URL) throws -> Data {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        // hfsutils keeps mount state in $HOME/.hcwd; a private HOME keeps
-        // parallel tests and the desk's own state out of each other.
-        var environment = ProcessInfo.processInfo.environment
-        environment["HOME"] = home.path
-        process.environment = environment
-        let output = Pipe()
-        let errors = Pipe()
-        process.standardOutput = output
-        process.standardError = errors
-        try process.run()
-        process.waitUntilExit()
-        let stdout = output.fileHandleForReading.readDataToEndOfFile()
-        let stderr = errors.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
-            throw OracleError.failed(String(data: stderr, encoding: .utf8)
-                ?? executable)
-        }
-        return stdout
-    }
-
-    private enum OracleError: Error {
-        case failed(String)
-    }
 }

@@ -197,9 +197,12 @@ final class OnboardingPortalTests: XCTestCase {
             catalog: OnboardingAssetCatalog(
                 roots: [temporary], writableRoot: temporary),
             setupImageBuilder: { _, _, assets, flavor in
-                Data(("flavor=\(flavor.rawValue);"
-                     + "app=\(assets.application(for: flavor)?.fileName ?? "none")")
+                let payload = Data(("flavor=\(flavor.rawValue);"
+                    + "app=\(assets.application(for: flavor)?.fileName ?? "none")")
                     .utf8)
+                return MacBinaryEncoder.data(
+                    name: "NOW-68K Setup.img", type: "dImg",
+                    creator: "dCpy", dataFork: payload) ?? payload
             },
             advertisedAddress: { "127.0.0.1" })
         portal.start(wirePort: 5_412)
@@ -229,12 +232,19 @@ final class OnboardingPortalTests: XCTestCase {
         XCTAssertEqual(app.data, Data("macbinary-68k".utf8),
                        "application.bin serves the active flavor's guest")
 
+        // The plain route serves the BARE container - the fork-blind
+        // save path - while .bin keeps the typed MacBinary envelope.
         let served = try await fetch(endpointURL(
             endpoint, path: "/now/setup.img"))
         XCTAssertEqual(String(data: served.data, encoding: .utf8),
                        "flavor=m68k;app=NOW-68K 0.6.bin")
+        XCTAssertEqual(served.contentType, "application/octet-stream")
+        XCTAssertTrue(served.contentDisposition?.contains(
+            "NOW-68K Setup.img") == true)
         let envelope = try await fetch(endpointURL(
             endpoint, path: "/now/setup.img.bin"))
+        XCTAssertNotEqual(envelope.data, served.data,
+                          "the envelope route keeps its 128-byte header")
         XCTAssertTrue(envelope.contentDisposition?.contains(
             "NOW-68K Setup.img.bin") == true)
 

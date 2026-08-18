@@ -489,9 +489,20 @@ final class OnboardingPortal: ObservableObject {
                         for: setupImageFlavor),
                     contentType: "application/macbinary")
             }
-            // The same standard type every other route serves: classic
-            // browsers map "application/macbinary"; the x- variant was a
-            // second spelling that some of them simply do not know.
+            // The 68K image is a Disk Copy 4.2 container - data-fork-only
+            // by design - so the plain route serves it BARE: a browser
+            // with no MacBinary decoder (MacWeb) saves a byte-perfect,
+            // openable image. The PPC image is NDIF, whose bcem resource
+            // only survives inside MacBinary, so its plain route stays an
+            // envelope in the one standard spelling classic browsers map.
+            if setupImageFlavor == .m68k {
+                let container = try MacBinaryFile.decode(image).dataFork
+                return .download(
+                    data: container,
+                    fileName: ClassicSetupImageBuilder.classicImageName(
+                        for: .m68k),
+                    contentType: "application/octet-stream")
+            }
             return .download(
                 data: image,
                 fileName: ClassicSetupImageBuilder.downloadFileName(

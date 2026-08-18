@@ -98,6 +98,10 @@ struct ClassicSetupImageBuilder: Sendable {
             throw BuildError.missingApplication
         }
         try DevelopmentStarterPackManifest.validate(in: assets)
+        if flavor == .m68k {
+            return try build68KImage(host: host, wirePort: wirePort,
+                                     assets: assets)
+        }
         let selectedDependencies = OnboardingDependencyCatalog.setupAssets(
             in: assets)
 
@@ -112,7 +116,7 @@ struct ClassicSetupImageBuilder: Sendable {
         try fileManager.createDirectory(
             at: contents, withIntermediateDirectories: true)
         try populate(destination: contents, host: host, wirePort: wirePort,
-                     assets: assets, flavor: flavor,
+                     assets: assets,
                      dependencies: selectedDependencies)
 
         let fittedImage = workspace.appendingPathComponent(
@@ -132,60 +136,98 @@ struct ClassicSetupImageBuilder: Sendable {
 
     private func populate(destination: URL, host: String, wirePort: UInt16,
                           assets: OnboardingAssetSnapshot,
-                          flavor: OnboardingGuestFlavor,
                           dependencies selectedDependencies:
                             [OnboardingAsset]) throws {
-        guard let application = assets.application(for: flavor) else {
+        guard let application = assets.application else {
             throw BuildError.missingApplication
         }
-        switch flavor {
-        case .powerpc:
-            try writeMacBinary(application.fileURL, to: destination)
-            if let codeKitten = assets.codeKitten {
-                try writeMacBinary(codeKitten.fileURL, to: destination,
-                                   nameOverride: "CodeKitten")
-            }
-            guard let preferences = OnboardingPreferences.macBinary(
-                host: host, port: wirePort) else {
-                throw BuildError.couldNotEncode
-            }
-            _ = try MacBinaryFile.decode(preferences).write(to: destination)
-            if let extensionComponent = assets.extensionComponent {
-                try writeMacBinary(extensionComponent.fileURL,
-                                   to: destination,
-                                   nameOverride: "NOW Extension")
-            }
+        try writeMacBinary(application.fileURL, to: destination)
+        if let codeKitten = assets.codeKitten {
+            try writeMacBinary(codeKitten.fileURL, to: destination,
+                               nameOverride: "CodeKitten")
+        }
+        guard let preferences = OnboardingPreferences.macBinary(
+            host: host, port: wirePort) else {
+            throw BuildError.couldNotEncode
+        }
+        _ = try MacBinaryFile.decode(preferences).write(to: destination)
+        if let extensionComponent = assets.extensionComponent {
+            try writeMacBinary(extensionComponent.fileURL,
+                               to: destination,
+                               nameOverride: "NOW Extension")
+        }
 
-            let dependencies = destination.appendingPathComponent(
-                "Dependencies", isDirectory: true)
-            try fileManager.createDirectory(
-                at: dependencies, withIntermediateDirectories: true)
-            for asset in selectedDependencies {
-                try installDependency(
-                    asset, in: dependencies,
-                    workspace: destination.deletingLastPathComponent())
-            }
-        case .m68k:
-            // The build-tree artifact carries its target name; a deploy
-            // stamp carries a version. Either way the disk shows the
-            // product's name.
-            try writeMacBinary(application.fileURL, to: destination,
-                               nameOverride: "NOW-68K")
-            if let extensionComponent = assets.extensionComponent {
-                try writeMacBinary(extensionComponent.fileURL,
-                                   to: destination,
-                                   nameOverride: "NOW Extension")
-            }
+        let dependencies = destination.appendingPathComponent(
+            "Dependencies", isDirectory: true)
+        try fileManager.createDirectory(
+            at: dependencies, withIntermediateDirectories: true)
+        for asset in selectedDependencies {
+            try installDependency(
+                asset, in: dependencies,
+                workspace: destination.deletingLastPathComponent())
         }
 
         let readMe = MacBinaryFile(
             name: "Read Me First", type: "TEXT", creator: "ttxt",
             finderFlags: 0,
             dataFork: Self.instructions(host: host, port: wirePort,
-                                        flavor: flavor)
+                                        flavor: .powerpc)
                 .data(using: .macOSRoman) ?? Data(),
             resourceFork: Data())
         _ = try readMe.write(to: destination)
+    }
+
+    /// The 68K flavor's image: an HFS Standard volume in a Disk Copy 4.2
+    /// container, entirely in memory - no hdiutil, no mount, no forks on
+    /// the way through. DC 4.2 is data-fork-only by design, so even a
+    /// browser that saves the transfer raw (MacWeb) has delivered a
+    /// usable image, and the Disk Copy on a stock System 7 machine opens
+    /// it. The MacBinary envelope on top is for transfer paths that CAN
+    /// carry the dImg type; the raw route serves the container bare.
+    private func build68KImage(host: String, wirePort: UInt16,
+                               assets: OnboardingAssetSnapshot)
+        throws -> Data {
+        guard let application = assets.application68K else {
+            throw BuildError.missingApplication
+        }
+        var files: [HFSStandardVolume.File] = []
+        let app = try MacBinaryFile.decode(
+            Data(contentsOf: application.fileURL, options: [.mappedIfSafe]))
+        files.append(HFSStandardVolume.File(
+            name: "NOW-68K", type: app.type, creator: app.creator,
+            finderFlags: app.finderFlags,
+            dataFork: app.dataFork, resourceFork: app.resourceFork))
+        if let extensionComponent = assets.extensionComponent {
+            let ext = try MacBinaryFile.decode(
+                Data(contentsOf: extensionComponent.fileURL,
+                     options: [.mappedIfSafe]))
+            files.append(HFSStandardVolume.File(
+                name: "NOW Extension", type: ext.type,
+                creator: ext.creator, finderFlags: ext.finderFlags,
+                dataFork: ext.dataFork, resourceFork: ext.resourceFork))
+        }
+        files.append(HFSStandardVolume.File(
+            name: "Read Me First", type: "TEXT", creator: "ttxt",
+            finderFlags: 0,
+            dataFork: Self.instructions(host: host, port: wirePort,
+                                        flavor: .m68k)
+                .data(using: .macOSRoman) ?? Data(),
+            resourceFork: Data()))
+
+        guard let capacity = HFSStandardVolume.fittingCapacity(
+            for: files, volumeName: Self.volumeName) else {
+            throw BuildError.packageTooLarge
+        }
+        guard let volume = HFSStandardVolume.build(
+                  volumeName: Self.volumeName, files: files,
+                  capacity: capacity),
+              let container = DiskCopy42Image.data(
+                  name: Self.classicImageName(for: .m68k), disk: volume),
+              let envelope = MacBinaryEncoder.data(
+                  name: Self.classicImageName(for: .m68k),
+                  type: "dImg", creator: "dCpy", dataFork: container)
+        else { throw BuildError.couldNotEncode }
+        return envelope
     }
 
     private func writeMacBinary(_ url: URL, to directory: URL,
