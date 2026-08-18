@@ -1864,6 +1864,12 @@ final class MirrorContinuityController: ObservableObject,
     /// particular, click timing cannot cross an epoch boundary and masquerade
     /// as evidence about the next guest double-click.
     private func clearTransportState() {
+        /* CAPTURED BEFORE THE CLEAR. The ended-epoch record forty lines
+           down needs to know whose epoch this was, and `target = nil`
+           below runs first — reading `target` at the record site left
+           `endedEpoch` unrecorded on EVERY path, and every after-epoch
+           mint died at "belonged to nobody" (attended, 2026-08-17). */
+        let endedKey = target?.key
         _ = keepaliveClock.stop()
         timer?.cancel()
         timer = nil
@@ -1916,7 +1922,7 @@ final class MirrorContinuityController: ObservableObject,
            from a machine this Mac no longer recognises as the owner of
            anything. It names one epoch and one gesture, and it is dropped
            the moment a new epoch is armed. */
-        if epoch != 0, let key = target?.key {
+        if epoch != 0, let key = endedKey {
             endedEpoch = EndedEpoch(epoch: epoch, key: key,
                                     dragSeq: announcedDragSeq)
         }
