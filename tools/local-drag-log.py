@@ -3,10 +3,11 @@
 
     tools/local-drag-log.py --port <wire port> [--area mirror] [--rows 2000]
 
-WHY A SECOND PAGER. `tools/local-hg-drag-targeting-remeasure.py`'s
-`tail_pages` stops as soon as one page comes back without a usable
-`next` cursor, and on 2026-08-17 that returned 46 of the 111 rows the
-guest itself said it was holding — so the product's own `drag drop:` and
+WHY A SECOND PAGER. The targeting-remeasure probe this one was written
+beside (`tools/local-hg-drag-targeting-remeasure.py`, retired
+2026-08-17) had a `tail_pages` that stopped as soon as one page came
+back without a usable `next` cursor, and on 2026-08-17 that returned 46
+of the 111 rows the guest itself said it was holding — so the product's own `drag drop:` and
 `drag attrs:` lines, the two the whole measurement turns on, were absent
 from a transcript that looked complete. An instrument that returns part
 of the ring and says nothing is the "absence and defect in the same
