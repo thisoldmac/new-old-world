@@ -1,0 +1,79 @@
+# Metal QA is a HUMAN act, so a human's own authenticated click records it.
+#
+# The gate certifies that a person watched product code run on real
+# hardware. `tools/code-qa attest-metal` cannot certify that: it is a CLI
+# any holder of the repository token can call, and agents run under the
+# maintainer's token, so an agent-published attestation renders as
+# "Recorded by: @<the human>" and is indistinguishable afterwards from the
+# real thing. Meanwhile `override-metal` — the WEAKER claim, that metal QA
+# is being skipped — is guarded by an actor allow-list, a TTY check and a
+# typed confirmation. The strong claim was the open one. See issue #46.
+#
+# A pull-request review is a thing GitHub authenticates as a person and an
+# agent's token cannot forge. So: an approving review from an allow-listed
+# reviewer posts the Metal QA status for the exact head that was reviewed,
+# and any other review state clears it back to pending.
+name: Metal QA
+
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  statuses: write
+  pull-requests: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The policy file is read from the BASE branch, never from the
+          # pull request's own head: a PR that edits its own allow-list
+          # must not be able to approve itself.
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Record metal QA from the reviewer's own click
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEWER: ${{ github.event.review.user.login }}
+          REVIEW_STATE: ${{ github.event.review.state }}
+          REVIEW_URL: ${{ github.event.review.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          set -eu
+          allowed=$(python3 - <<'PY'
+          import json
+          policy = json.load(open(".github/repository-policy.json"))["code_qa"]
+          names = policy.get("metal_qa_approvers") or policy["human_override_actors"]
+          print(" ".join(names))
+          PY
+          )
+          case " $allowed " in
+            *" $REVIEWER "*) ;;
+            *)
+              echo "@$REVIEWER is not a metal QA approver; nothing recorded."
+              exit 0
+              ;;
+          esac
+
+          # Approved records; anything else (changes requested, comment,
+          # dismissal) puts the gate back to pending. A gate that only ever
+          # goes green is not a gate.
+          if [ "$ACTION" = "submitted" ] && [ "$REVIEW_STATE" = "approved" ]; then
+            state=success
+            description="passed; approved on hardware by $REVIEWER"
+          else
+            state=pending
+            description="waiting for an approving review from a metal QA approver"
+          fi
+
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$state" \
+            -f context="Metal QA" \
+            -f description="$description" \
+            -f target_url="$REVIEW_URL"
+          echo "Metal QA -> $state for ${HEAD_SHA} (@$REVIEWER)"

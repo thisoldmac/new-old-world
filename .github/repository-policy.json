@@ -27,7 +27,10 @@
       "exact_paths": [
         "product/features.yaml"
       ]
-    }
+    },
+    "metal_qa_approvers": [
+      "mishyjari"
+    ]
   },
   "ruleset": {
     "name": "Protected main",
