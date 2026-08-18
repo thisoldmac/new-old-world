@@ -450,9 +450,14 @@ final class OnboardingPortal: ObservableObject {
                         for: setupImageFlavor),
                     contentType: "application/macbinary")
             }
-            return .data(
-                status: 200, reason: "OK",
-                contentType: "application/x-macbinary", data: image)
+            // The same standard type every other route serves: classic
+            // browsers map "application/macbinary"; the x- variant was a
+            // second spelling that some of them simply do not know.
+            return .download(
+                data: image,
+                fileName: ClassicSetupImageBuilder.downloadFileName(
+                    for: setupImageFlavor),
+                contentType: "application/macbinary")
         } catch {
             return .plain(status: 500, reason: "Internal Server Error",
                           text: error.localizedDescription + "\r\n")
