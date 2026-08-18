@@ -403,6 +403,17 @@ final class OnboardingPortal: ObservableObject {
         }
 
         let path = requestPath(String(fields[1]))
+        // Every guest-browser experiment so far has been interpreted from
+        // memory of what the browser probably did. The log line is the
+        // evidence: which route the guest actually fetched, and as whom -
+        // MacWeb, Netscape and Fetch behave differently enough that the
+        // User-Agent decides which download story applies.
+        let userAgent = text.split(whereSeparator: \.isNewline)
+            .first { $0.lowercased().hasPrefix("user-agent:") }
+            .map { $0.dropFirst("user-agent:".count)
+                .trimmingCharacters(in: .whitespaces) } ?? "-"
+        HostLog.shared.write(.info, "onboarding",
+                             "\(method) \(path) ua=\(userAgent)")
         let localHost = acceptedHost(on: connection)
             ?? endpoint?.host
             ?? advertisedAddress()
