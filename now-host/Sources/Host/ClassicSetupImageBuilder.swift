@@ -115,12 +115,10 @@ struct ClassicSetupImageBuilder: Sendable {
                      assets: assets, flavor: flavor,
                      dependencies: selectedDependencies)
 
-        let fittedImage = workspace.appendingPathComponent(
-            "setup.dmg", isDirectory: false)
         let rawImage = workspace.appendingPathComponent(
             "setup.raw", isDirectory: false)
-        try createFittedHFSImage(from: contents, at: fittedImage)
-        try extractRawDisk(from: fittedImage, to: rawImage)
+        try buildFittedHFSVolume(from: contents, at: rawImage,
+                                 in: workspace)
 
         let disk = try Data(contentsOf: rawImage, options: [.mappedIfSafe])
         guard let image = NDIFImage.macBinary(
@@ -245,8 +243,16 @@ struct ClassicSetupImageBuilder: Sendable {
         }
     }
 
-    private func createFittedHFSImage(from contents: URL,
-                                      at image: URL) throws {
+    /* hdiutil create is not used: on current macOS its legacy path fails
+       from an application context with a bare "Operation not permitted",
+       and its own warning text points at diskutil - whose create knows
+       only APFS/ExFAT/MS-DOS. So the volume is made the way the OS still
+       fully supports: a raw file, attached as a device, formatted with
+       newfs_hfs, mounted, and written through the same fork-preserving
+       writer as everything else. The raw file then IS the disk - no
+       conversion step and nothing to extract. */
+    private func buildFittedHFSVolume(from contents: URL, at rawImage: URL,
+                                      in workspace: URL) throws {
         let kibibyte = 1_024
         let allocationBlock = 4 * kibibyte
         let minimumHFSVolume = 512 * kibibyte
@@ -259,20 +265,44 @@ struct ClassicSetupImageBuilder: Sendable {
         var insufficientCapacity = 0
 
         /* The prepared native files are the measurement. The structure
-           estimate avoids a knowingly-too-small first attempt; hdiutil's
-           ENOSPC is authoritative when the catalog or allocation bitmap needs
-           more. After a successful format, measured HFS free blocks tighten
-           the result again so the estimate can never become transfer padding. */
+           estimate avoids a knowingly-too-small first attempt; a copy that
+           runs out of blocks is authoritative when the catalog or allocation
+           bitmap needs more. After a successful copy, measured HFS free
+           blocks tighten the result again so the estimate can never become
+           transfer padding. */
         while capacity <= Self.maximumImageBytes {
-            try? fileManager.removeItem(at: image)
+            try? fileManager.removeItem(at: rawImage)
+            try Data(count: capacity).write(to: rawImage)
+            let device = try attach(rawImage, mountPoint: nil)
             do {
-                try run("/usr/bin/hdiutil", [
-                    "create", "-srcfolder", contents.path,
-                    "-size", String(capacity), "-fs", "HFS+",
-                    "-volname", Self.volumeName, "-layout", "NONE",
-                    "-format", "UDRW", image.path
-                ])
-                let free = try availableBytes(in: image)
+                let raw = "/dev/r" + URL(fileURLWithPath: device)
+                    .lastPathComponent
+                try run("/sbin/newfs_hfs",
+                        ["-v", Self.volumeName, raw])
+                let mountPoint = workspace.appendingPathComponent(
+                    "volume", isDirectory: true)
+                try? fileManager.removeItem(at: mountPoint)
+                try fileManager.createDirectory(
+                    at: mountPoint, withIntermediateDirectories: true)
+                try run("/usr/sbin/diskutil", [
+                    "mount", "-mountPoint", mountPoint.path, device])
+                do {
+                    try copyTree(of: contents, to: mountPoint)
+                } catch {
+                    // Any failed write on a fresh volume is treated as the
+                    // volume being too small; a genuine fault surfaces as
+                    // packageTooLarge with the step ceiling reached.
+                    try eject(device)
+                    insufficientCapacity = max(insufficientCapacity,
+                                               capacity)
+                    capacity += growthStep
+                    continue
+                }
+                let attributes = try fileManager.attributesOfFileSystem(
+                    forPath: mountPoint.path)
+                let free = (attributes[.systemFreeSize] as? NSNumber)?
+                    .intValue ?? 0
+                try eject(device)
                 let fitted = max(insufficientCapacity + growthStep, roundUp(
                     capacity - max(0, free - maximumFreeBytes),
                     to: allocationBlock))
@@ -281,13 +311,25 @@ struct ClassicSetupImageBuilder: Sendable {
                     continue
                 }
                 return
-            } catch BuildError.commandFailed(let detail)
-                    where detail.contains("No space left on device") {
-                insufficientCapacity = max(insufficientCapacity, capacity)
-                capacity += growthStep
+            } catch {
+                try? eject(device)
+                throw error
             }
         }
         throw BuildError.packageTooLarge
+    }
+
+    /// FileManager.copyItem carries both forks and Finder info, which is
+    /// the whole point of this volume.
+    private func copyTree(of source: URL, to destination: URL) throws {
+        for entry in try fileManager.contentsOfDirectory(
+            at: source, includingPropertiesForKeys: nil,
+            options: []) {
+            try fileManager.copyItem(
+                at: entry,
+                to: destination.appendingPathComponent(
+                    entry.lastPathComponent))
+        }
     }
 
     private func allocatedBytes(in directory: URL) throws -> Int {
@@ -301,35 +343,8 @@ struct ClassicSetupImageBuilder: Sendable {
         return kibibytes * 1_024
     }
 
-    private func availableBytes(in image: URL) throws -> Int {
-        let mountPoint = image.deletingLastPathComponent()
-            .appendingPathComponent("fit-mount", isDirectory: true)
-        try? fileManager.removeItem(at: mountPoint)
-        try fileManager.createDirectory(
-            at: mountPoint, withIntermediateDirectories: true)
-        defer { try? fileManager.removeItem(at: mountPoint) }
-        let device = try attach(image, mountPoint: mountPoint)
-        defer { try? eject(device) }
-        let attributes = try fileManager.attributesOfFileSystem(
-            forPath: mountPoint.path)
-        guard let free = attributes[.systemFreeSize] as? NSNumber else {
-            throw BuildError.commandFailed(
-                "macOS could not measure the fitted HFS volume.")
-        }
-        return free.intValue
-    }
-
     private func roundUp(_ value: Int, to multiple: Int) -> Int {
         (value + multiple - 1) / multiple * multiple
-    }
-
-    private func extractRawDisk(from image: URL, to rawImage: URL) throws {
-        let device = try attach(image, mountPoint: nil)
-        defer { try? eject(device) }
-        try run("/bin/dd", [
-            "if=/dev/r\(URL(fileURLWithPath: device).lastPathComponent)",
-            "of=\(rawImage.path)", "bs=1048576"
-        ])
     }
 
     private func attach(_ image: URL, mountPoint: URL?) throws -> String {
