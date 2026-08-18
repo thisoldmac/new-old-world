@@ -614,6 +614,19 @@ static int confirm_serve_against_drag(const NowContinuityStubItem *serve)
     int read_ok;
     int verdict;
 
+    /* NO DRAG, NO WITNESS TO ASK. The crossing releases the press before
+       the grab can arrive, so at grab time the gesture this stub records
+       is usually OVER and the plane's record is gone — consulting it then
+       refused every crossing eager fetch by construction (attended,
+       2026-08-17, the race the mint join later recovered or didn't). The
+       consent was recorded when the drag was observed into the table; the
+       FSMakeFSSpec identity re-resolution below the caller still refuses
+       a moved or renamed file. A drag that IS in flight keeps the full
+       witness check — that is the second-gesture protection working. */
+    if (serve != NULL && serve->source == kNowStubSourceDrag
+            && serve->drag_seq != 0 && !now_continuity_drag_in_flight()) {
+        return kNowGrabOK;
+    }
     read_ok = now_continuity_drag_identity(&ident) && ident.is_hfs;
     if (read_ok && stub_from_drag(&ident, &observed) != noErr) {
         /* The plane named something this side cannot describe. Not a

@@ -342,6 +342,9 @@ final class ContinuityEdgeController: ObservableObject {
     /// decision of this lifecycle's, and so the clears can be idempotent —
     /// several exit paths legitimately run for one carry.
     private var carriedButtonHeld = false
+    /// The catch strip was widened on the resident's dragBegin, before any
+    /// cross. Cleared when the gesture resolves either way.
+    private var preWidenedForGuestDrag = false
     /// Whether that level actually reached the wire. A raise made before the
     /// guest confirms ownership sets the field and sends nothing, and the
     /// difference is what decides whether the confirming pass has anything
@@ -743,6 +746,29 @@ final class ContinuityEdgeController: ObservableObject {
     ///   swapped for another mid-fetch is the wrong-file bug wearing a new
     ///   hat.
     func noteSelectionPublished(_ mark: ContinuitySelectionMark) {
+        /* PRE-WIDEN ON THE MAC'S OWN ANNOUNCEMENT. The resident names the
+           drag seconds before any cross, and the widen needs 15-25 ms of
+           window-server lag the crossing instant does not have — widened
+           only at the cross, the physically held button rubber-banded the
+           host desktop until the strip landed (attended, 2026-08-17). A
+           drag that ends on the guest narrows again when the next
+           selection-sourced mark publishes. */
+        if ownership != nil, pendingReturnDrag == nil, !hostDragSessionLive,
+           !hostDragOverThisMac {
+            if mark.source == .drag, !preWidenedForGuestDrag {
+                preWidenedForGuestDrag = true
+                setFileEdgeCatching(true)
+                audit(.info, "catch surface widened EARLY: the Mac says a "
+                    + "drag is in the hand (dragSeq="
+                    + "\(mark.dragSeq.map(String.init) ?? "none")), and the "
+                    + "widen needs server time a crossing does not have")
+            } else if mark.source != .drag, preWidenedForGuestDrag {
+                preWidenedForGuestDrag = false
+                setFileEdgeCatching(false)
+                audit(.info, "catch surface narrowed: the drag ended on the "
+                    + "guest without crossing")
+            }
+        }
         guard let lateBind else { return }
         guard pendingReturnDrag != nil || hostDragSessionLive else { return }
         let gesture = lateBind.gesture().map(String.init) ?? "none"
@@ -1943,6 +1969,8 @@ final class ContinuityEdgeController: ObservableObject {
     }
 
     private func setFileEdgeCatching(_ catching: Bool) {
+        /* Narrowing resolves any early widen, whoever asked for it. */
+        if !catching { preWidenedForGuestDrag = false }
         guard let fileEdge else { return }
         environment.setFileEdgeCatching(fileEdge, catching)
     }
