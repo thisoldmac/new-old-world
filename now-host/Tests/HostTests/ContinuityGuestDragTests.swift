@@ -3264,9 +3264,13 @@ final class ContinuityGuestDragTests: XCTestCase {
         _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
         _ = callbacks.dropped(Self.fileDrag(url))
         rig.controller.transportPhaseChanged(.active)
-        XCTAssertEqual(rig.deadlines.armed.map(\.delay),
-                       [ContinuityEdgeController.stagedCarryLifetime],
-                       "the handoff arms exactly one bound")
+        XCTAssertEqual(rig.deadlines.armed.map(\.delay).sorted(),
+                       [0.25,
+                        ContinuityEdgeController.stagedCarryLifetime],
+                       "the handoff arms the lifetime bound and the HID "
+                        + "probe's first tick - the probe is the "
+                        + "time-driven half of the release backstop "
+                        + "(review, 2026-08-17)")
 
         rig.deadlines.fireAll()
         XCTAssertEqual(abandons.count, 1, "\(abandons)")

@@ -1162,6 +1162,45 @@ int now_continuity_button_is_down(void)
    allowed to hold the button forever - a frozen carried level held a
    TrackDrag open past every recovery and wedged the PowerBook (attended,
    2026-08-17). No packet or no epoch reads as maximally stale. */
+/* The input proc's one read: point, button, seq, age and the tick it was
+   measured at, from ONE cell resolution and ONE TickCount - the proc runs
+   thousands of times a second and was paying for three of each (review,
+   2026-08-17). */
+int now_continuity_latest_input_aged(short *h, short *v, int *down,
+                                     unsigned long *seq,
+                                     unsigned long *age_ticks,
+                                     unsigned long *now_ticks)
+{
+    NowPeekContinuityCell *shared;
+    unsigned long now_t = (unsigned long)TickCount();
+
+    if (now_ticks != NULL) {
+        *now_ticks = now_t;
+    }
+    if (gEpoch == 0) {
+        if (age_ticks != NULL) *age_ticks = 0xFFFFFFFFUL;
+        return 0;
+    }
+    shared = cell();
+    if (shared == NULL || shared->packet_seq == 0) {
+        if (age_ticks != NULL) *age_ticks = 0xFFFFFFFFUL;
+        return 0;
+    }
+    if (h != NULL) *h = (short)shared->want_h;
+    if (v != NULL) *v = (short)shared->want_v;
+    if (down != NULL) {
+        *down = (shared->flags
+                     & ((NowPeekU32)kNowPeekContinuityPrimaryDown
+                        | (NowPeekU32)kNowPeekContinuityCarriedLevel))
+            ? 1 : 0;
+    }
+    if (seq != NULL) *seq = (unsigned long)shared->position_seq;
+    if (age_ticks != NULL) {
+        *age_ticks = now_t - (unsigned long)shared->arrival_ticks;
+    }
+    return 1;
+}
+
 unsigned long now_continuity_input_age_ticks(void)
 {
     NowPeekContinuityCell *shared;

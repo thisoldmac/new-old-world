@@ -1198,7 +1198,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: bd9bafe9272f27da8fb5ec60603bbdf8a9ec0b8f
+sources-sha1: 9ad519b3df4615bb519fbcdf3066a9c8ef9e2400
 derive ppc-inbound-types sha256=5c659300160d136813e618972ee666eff5313dfd50488d136938776328ffefb0 lines=58 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1418,4 +1418,5 @@ rederived: 2026-08-17T16:17:03-0400 f60e2999 unchanged
 rederived: 2026-08-17T18:04:09-0400 30e23df6 unchanged
 rederived: 2026-08-17T18:09:10-0400 4fb9b6b0 unchanged
 rederived: 2026-08-17T18:50:31-0400 e18796a5 unchanged
+rederived: 2026-08-17T23:36:26-0400 5aa1092c sources
 -->

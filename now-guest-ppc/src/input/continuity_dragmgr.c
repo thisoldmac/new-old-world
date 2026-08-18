@@ -26,7 +26,7 @@ static NowContinuityDragState g_drag;
 static DragSendDataUPP g_send_upp;
 
 /* WHERE THE HOST SAID THE DRAG STARTS. Set by
-   now_continuity_dragmgr_host_begin immediately before it starts the
+   serve_host_request immediately before it starts the
    drag, and consumed by start_drag on that same pass — never held
    across one, because a start point that outlived its gesture would
    put the next drag at the last crossing's coordinates. */
@@ -271,6 +271,8 @@ static pascal OSErr diag_input(Point *mouse, SInt16 *modifiers, void *refcon,
     short h = 0, v = 0;
     int down = 0;
     unsigned long seq = 0;
+    unsigned long age_ticks = 0xFFFFFFFFUL;
+    unsigned long now_ticks = 0;
     int have = 0;
 
     (void)refcon;
@@ -284,7 +286,8 @@ static pascal OSErr diag_input(Point *mouse, SInt16 *modifiers, void *refcon,
         seq = (unsigned long)g_diag_input_calls;
         have = 1;
     } else {
-        have = now_continuity_latest_input(&h, &v, &down, &seq);
+        have = now_continuity_latest_input_aged(&h, &v, &down, &seq,
+                                                &age_ticks, &now_ticks);
     }
 
     if (!have) {
@@ -303,8 +306,7 @@ static pascal OSErr diag_input(Point *mouse, SInt16 *modifiers, void *refcon,
        reports the button up and the drag ends as an ordinary non-drop -
        with the host gone the promise is unservable, so nothing lands. */
     if (down && (g_diag_mask & 16) == 0
-            && now_continuity_input_age_ticks()
-                   > (unsigned long)kNowContinuityDragStaleTicks) {
+            && age_ticks > (unsigned long)kNowContinuityDragStaleTicks) {
         down = 0;
         g_stale_releases++;
     }
@@ -326,20 +328,16 @@ static pascal OSErr diag_input(Point *mouse, SInt16 *modifiers, void *refcon,
        the drag, so it makes the same apply custody would have made,
        throttled to the cursor's rate rather than the Manager's. Same
        primitive, same epoch gate, same task-time class as 1.17. */
-    {
-        unsigned long now_t = (unsigned long)TickCount();
-
-        if ((g_diag_mask & 16) == 0
-                && (h != g_nudge_last_h || v != g_nudge_last_v)
-                && now_t - g_nudge_last_ticks >= 2) {
-            if (now_continuity_cursor_move(now_continuity_live_epoch(),
-                                           seq, (long)h, (long)v) == noErr) {
-                g_nudge_moves++;
-            }
-            g_nudge_last_ticks = now_t;
-            g_nudge_last_h = h;
-            g_nudge_last_v = v;
+    if ((g_diag_mask & 16) == 0
+            && (h != g_nudge_last_h || v != g_nudge_last_v)
+            && now_ticks - g_nudge_last_ticks >= 2) {
+        if (now_continuity_cursor_move(now_continuity_live_epoch(),
+                                       seq, (long)h, (long)v) == noErr) {
+            g_nudge_moves++;
         }
+        g_nudge_last_ticks = now_ticks;
+        g_nudge_last_h = h;
+        g_nudge_last_v = v;
     }
 
     if (g_diag_input_fed == 0) {
@@ -685,41 +683,60 @@ static void drag_bounds(Point where, Rect *r)
                         + kDragNameHeight);
 }
 
-/* The drag REGION is the icon's own silhouette plus a label box, which
-   is what a native source drags - the bare rectangle this replaced read
-   as a grey slab wherever the image could not carry it (attended,
-   2026-08-17). Global coordinates, like the bounds. Returns 0 when the
-   silhouette cannot be built, and the caller falls back to the rect. */
-static int icon_silhouette_region(const Rect *bounds, RgnHandle out)
+/* ONE RESOLUTION FOR BOTH FACES OF THE DRAG. The silhouette region and
+   the drag image describe the same item; resolving the IconRef twice per
+   drag was two chances for the pair to drift and one redundant Icon
+   Services lookup (review, 2026-08-17). The caller releases it. */
+static IconRef drag_item_icon(OSErr *err_out)
 {
     IconRef icon = NULL;
-    RgnHandle label = NULL;
-    Rect icon_rect;
-    Rect label_rect;
     OSType type, creator;
-    short width;
+    OSErr err;
 
     type = g_drag.item.have_file_type ? (OSType)g_drag.item.file_type
                                       : (OSType)'????';
     creator = g_drag.item.have_creator ? (OSType)g_drag.item.creator
                                        : (OSType)'????';
+    err = GetIconRef(kOnSystemDisk, creator, type, &icon);
+    if (err_out != NULL) {
+        *err_out = err;
+    }
+    now_log(kLogInfo, "mirror",
+            "drag image: icon '%c%c%c%c'/'%c%c%c%c' err=%d name=%d",
+            (char)(type >> 24), (char)(type >> 16), (char)(type >> 8),
+            (char)type, (char)(creator >> 24), (char)(creator >> 16),
+            (char)(creator >> 8), (char)creator, (int)err,
+            (int)strlen(g_drag.item.name));
+    return err == noErr ? icon : NULL;
+}
+
+/* The drag REGION is the icon's own silhouette plus a label box, which
+   is what a native source drags - the bare rectangle this replaced read
+   as a grey slab wherever the image could not carry it (attended,
+   2026-08-17). Global coordinates, like the bounds. Returns 0 when the
+   silhouette cannot be built, and the caller falls back to the rect. */
+static int icon_silhouette_region(const Rect *bounds, RgnHandle out,
+                                  IconRef icon)
+{
+    RgnHandle label = NULL;
+    Rect icon_rect;
+    Rect label_rect;
+    short width;
+
+    if (icon == NULL) {
+        return 0;
+    }
     icon_rect.left = (short)(bounds->left
                              + (bounds->right - bounds->left
                                 - kDragIconSize) / 2);
     icon_rect.top = bounds->top;
     icon_rect.right = (short)(icon_rect.left + kDragIconSize);
     icon_rect.bottom = (short)(icon_rect.top + kDragIconSize);
-    if (GetIconRef(kOnSystemDisk, creator, type, &icon) != noErr
-        || icon == NULL) {
-        return 0;
-    }
     if (IconRefToRgn(out, &icon_rect, kAlignAbsoluteCenter,
                      kIconServicesNormalUsageFlag, icon) != noErr
         || EmptyRgn(out)) {
-        ReleaseIconRef(icon);
         return 0;
     }
-    ReleaseIconRef(icon);
     /* The label's outline under it, sized from the name - the width is an
        estimate (the port's metrics are not worth borrowing here), and an
        outline a few pixels generous reads native where a slab does not. */
@@ -769,16 +786,14 @@ static int icon_silhouette_region(const Rect *bounds, RgnHandle out)
    this tree (screenshots/pixels.c, screenshots/capture.c) holds its
    lock across exactly the span the pixels are read, which is the same
    rule stated by a different caller. */
-static GWorldPtr build_drag_image(const Rect *bounds)
+static GWorldPtr build_drag_image(const Rect *bounds, IconRef icon)
 {
     GWorldPtr world = NULL;
     GWorldPtr save_port;
     GDHandle save_device;
     Rect local;
     Rect icon_rect;
-    IconRef icon = NULL;
     Str255 pname;
-    OSType type, creator;
 
     local = *bounds;
     OffsetRect(&local, (short)-local.left, (short)-local.top);
@@ -803,32 +818,13 @@ static GWorldPtr build_drag_image(const Rect *bounds)
     BackColor(whiteColor);
     EraseRect(&local);
 
-    type = g_drag.item.have_file_type ? (OSType)g_drag.item.file_type
-                                      : (OSType)'????';
-    creator = g_drag.item.have_creator ? (OSType)g_drag.item.creator
-                                       : (OSType)'????';
     icon_rect.left = (short)((local.right - kDragIconSize) / 2);
     icon_rect.top = local.top;
     icon_rect.right = (short)(icon_rect.left + kDragIconSize);
     icon_rect.bottom = (short)(icon_rect.top + kDragIconSize);
-    {
-        OSErr icon_err = GetIconRef(kOnSystemDisk, creator, type, &icon);
-
-        if (icon_err == noErr && icon != NULL) {
-            icon_err = PlotIconRef(&icon_rect, kAlignAbsoluteCenter,
-                                   kTransformNone,
-                                   kIconServicesNormalUsageFlag, icon);
-            ReleaseIconRef(icon);
-        }
-        /* One line per drag, because the attended run could photograph
-           a blank image and the log could not say which stage blanked
-           it. */
-        now_log(kLogInfo, "mirror",
-                "drag image: icon '%c%c%c%c'/'%c%c%c%c' err=%d name=%d",
-                (char)(type >> 24), (char)(type >> 16), (char)(type >> 8),
-                (char)type, (char)(creator >> 24), (char)(creator >> 16),
-                (char)(creator >> 8), (char)creator, (int)icon_err,
-                (int)strlen(g_drag.item.name));
+    if (icon != NULL) {
+        (void)PlotIconRef(&icon_rect, kAlignAbsoluteCenter, kTransformNone,
+                          kIconServicesNormalUsageFlag, icon);
     }
 
     /* MacRoman, always — the name crossed the wire already mapped (the
@@ -1013,15 +1009,24 @@ static void start_drag(void)
     drag_bounds(where, &bounds);
     SetDragItemBounds(drag, kOfferItemRef, &bounds);
 
-    region = NewRgn();
-    if (region != NULL) {
-        if (!icon_silhouette_region(&bounds, region)) {
-            RectRgn(region, &bounds);
-            now_log(kLogInfo, "mirror",
-                    "drag region: no icon silhouette; the rect stands in");
+    {
+        OSErr icon_err = noErr;
+        IconRef item_icon = drag_item_icon(&icon_err);
+
+        region = NewRgn();
+        if (region != NULL) {
+            if (!icon_silhouette_region(&bounds, region, item_icon)) {
+                RectRgn(region, &bounds);
+                now_log(kLogInfo, "mirror",
+                        "drag region: no icon silhouette; the rect "
+                        "stands in");
+            }
+        }
+        image = build_drag_image(&bounds, item_icon);
+        if (item_icon != NULL) {
+            ReleaseIconRef(item_icon);
         }
     }
-    image = build_drag_image(&bounds);
     if (image != NULL && region != NULL) {
         Point offset;
         OSErr set;

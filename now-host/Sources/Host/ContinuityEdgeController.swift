@@ -359,6 +359,12 @@ final class ContinuityEdgeController: ObservableObject {
     /// Distinguishes one armed deadline from the next, so a timer fired for
     /// a carry that has since ended cannot let go of the one after it.
     private var stagedCarryDeadlineID: UInt64 = 0
+    /// The HID backstop's own clock. The release edge used to be sampled
+    /// only from .moved events, so a motionless or instant release after
+    /// the re-arm never armed it (review, 2026-08-17); this probe runs the
+    /// same check on time instead of motion.
+    private var stagedCarryProbeID: UInt64 = 0
+    private static let stagedCarryProbeInterval: TimeInterval = 0.25
     /// Where the host drag was ended at the crossing. The re-arm is posted
     /// there — the one point on this Mac known to have been over this app's
     /// own catch surface a moment ago.
@@ -2648,6 +2654,34 @@ final class ContinuityEdgeController: ObservableObject {
         schedule(Self.stagedCarryLifetime) { [weak self] in
             self?.stagedCarryDeadlineFired(id: id, gesture: gesture)
         }
+        armStagedCarryProbe()
+    }
+
+    /// Time-driven twin of driveGuest's HID-backstop branch: the same
+    /// check, on a clock, so a release that produces no event AND no
+    /// motion still commits instead of waiting out the whole staged-carry
+    /// lifetime. Idle probes are cheap (one HID state read); the probe
+    /// dies with the staging.
+    private func armStagedCarryProbe() {
+        stagedCarryProbeID &+= 1
+        let id = stagedCarryProbeID
+        schedule(Self.stagedCarryProbeInterval) { [weak self] in
+            self?.stagedCarryProbeFired(id: id)
+        }
+    }
+
+    private func stagedCarryProbeFired(id: UInt64) {
+        guard id == stagedCarryProbeID, stagedHostFiles != nil else {
+            return
+        }
+        if let ownership, stagedCarryReleasedAtHID() {
+            completeStagedHostDrop(at: ownership,
+                                   release: "the HID poll says the button "
+                                    + "went up and neither an event nor "
+                                    + "motion carried it")
+            return
+        }
+        armStagedCarryProbe()
     }
 
     private func stagedCarryDeadlineFired(id: UInt64, gesture: UInt64) {

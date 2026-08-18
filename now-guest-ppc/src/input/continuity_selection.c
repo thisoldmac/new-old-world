@@ -85,10 +85,18 @@ static void settle_to_epoch(unsigned long live_epoch)
        epoch clears it: a drag drained under a running epoch is that
        epoch's, and publishing it under a dead one would be a consent
        resurrected. */
-    if (live_epoch != 0) {
-        now_continuity_epoch_ended_release(&g_ended);
-    } else {
+    if (live_epoch == 0 || (was != 0 && was != live_epoch)) {
+        /* THE ZERO IS NOT GUARANTEED. A re-arm may reach this side before
+           (or instead of) the disarm that should have ended the old epoch
+           - the wire handler accepts arm(B) under a live A - and the old
+           release-on-any-live branch destroyed epoch A's mint window on
+           exactly that edge (review, 2026-08-17). An epoch that WAS live
+           and is not the one now living has ended, zero or no zero; its
+           gesture keeps the same bounded window it always had, and the
+           next transition (or the window's own clock) still releases it. */
         now_continuity_epoch_ended(&g_ended, was, was_generation, now_ticks);
+    } else {
+        now_continuity_epoch_ended_release(&g_ended);
     }
     /* A fresh table has nothing polled into it yet, so the next pass must
        ask the Finder rather than wait out a cadence set under the old
@@ -393,7 +401,19 @@ int now_continuity_selection_note_drag(const NowContinuityDragIdentity *ident)
         if (!now_continuity_stub_publish_post_epoch(
                 &g_post, &g_hold, &g_ended, &item, ident->seq,
                 (unsigned long)TickCount())) {
-            if (g_ended.epoch != 0) {
+            /* NAME THE REASON, not the worst case: the shared publish
+               refuses for four reasons and only one is the closed window
+               (review, 2026-08-17). Idempotent re-observation says
+               nothing; a folder names itself. */
+            if (g_post.epoch == g_ended.epoch && g_post.have_item
+                    && g_post.item.source == kNowStubSourceDrag
+                    && g_post.item.drag_seq == ident->seq) {
+                /* already published this gesture; quiet */
+            } else if (item.is_folder) {
+                now_log(kLogInfo, "mirror",
+                        "drag not published seq=%lu: folders are refused "
+                        "by name", ident->seq);
+            } else if (g_ended.epoch != 0) {
                 now_log(kLogWarn, "mirror",
                         "drag not published seq=%lu: the window on epoch "
                         "%lu has closed", ident->seq, g_ended.epoch);

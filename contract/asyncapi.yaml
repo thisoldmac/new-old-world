@@ -135,6 +135,19 @@
 #   generation. A host does not send the release until the press generation is
 #   acknowledged; while held, the resident consumes the newest point and owns
 #   the dead-man release even when the cooperative PPC application is starved.
+#   Version 4 adds NOW_CONTINUITY_FLAG_CARRIED_LEVEL (0x0008): a LEVEL, not
+#   an edge, held for the life of a staged host->guest file carry so the
+#   guest Drag Manager's input proc reads a held button. It is deliberately
+#   a separate bit from PRIMARY_DOWN and never advances the button
+#   generation: the resident's press logic masks PRIMARY_DOWN alone and
+#   must post nothing for a carried level (a stale generation plus the
+#   level riding PRIMARY_DOWN was the phantom-press class of 2026-08-17).
+#   Only the drag input proc reads it; the receiver accepts it within
+#   NOW_CONTINUITY_KNOWN_FLAGS (0x000F) and old receivers that validate
+#   the stricter mask refuse the datagram, which is why the flag ships in
+#   lockstep. Datagrams are also ordered per epoch by position_seq
+#   (serial arithmetic); an out-of-order packet within an epoch is
+#   rejected rather than replayed over the latest state.
 #   Keyboard events stay on this reliable stream. The PPC application queues
 #   them for the foreground process and the resident posts them only from that
 #   process's target-context jGNE pass. They model Event Manager input, not

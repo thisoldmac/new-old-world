@@ -80,6 +80,10 @@ int now_continuity_button_is_down(void);
    epoch is live or no datagram has arrived. Slice-0 spike support; see
    continuity_dragmgr.c's input proc. */
 unsigned long now_continuity_input_age_ticks(void);
+int now_continuity_latest_input_aged(short *h, short *v, int *down,
+                                     unsigned long *seq,
+                                     unsigned long *age_ticks,
+                                     unsigned long *now_ticks);
 
 int now_continuity_latest_input(short *h, short *v, int *down,
                                 unsigned long *seq);

@@ -7,7 +7,17 @@
    and repeatedly wedged the PowerBook.
 
    This module owns one synthetic absolute device for the PPC application's
-   lifetime and calls it only from the ordinary/nested cooperative wire pump.
+   lifetime. The safety boundary is the CONTEXT, stated exactly: task time,
+   in this application's own process, never interrupt or Time Manager
+   context, never dispatched through the Extension. Three callers satisfy
+   it: the ordinary and nested cooperative wire pumps
+   (continuity_service.c), and the Drag Manager's input proc
+   (continuity_dragmgr.c diag_input) - synchronous inside TrackDrag on this
+   process's own stack while the pumps are blocked, so the callers can
+   never interleave. The input-proc caller's safety argument is the
+   blessed-path plan's Route A-prime
+   (docs/plans/2026-08-17-036-feat-blessed-path-drag-plan.md); the
+   timer-context route it rejects is the one that wedged PowerBooks.
    The Extension never receives this pointer and never enters CDM for P9. */
 #include "continuity_cursor.h"
 
