@@ -7,6 +7,18 @@ search:
 
 # Open issues
 
+## CORRECTED, 2026-08-18: `hostDragOfferEpoch` was prose, then a constant, then retired
+
+An earlier entry below describes `hostDragOfferEpoch: UInt32 = 1` as a
+design note. The constant briefly existed in `HostAppState` and was the
+review-confirmed reason the guest could never draw the 2026-08-16 carry
+(the guest compares the live Continuity epoch; they agreed only at 1).
+The epoch was threaded from `continuity.currentEpoch` on 2026-08-17 and
+the whole carry-presentation lane was then superseded by
+`continuity.hostDragBegin` and deleted in the PR-prep prune. The prose
+below stands as history; nothing named `hostDragOfferEpoch` survives in
+source.
+
 ## THE HOST→GUEST DRAG DROPPED AT THE ENTRY POINT BECAUSE ONE BIT SERVED TWO CONSUMERS — FIXED, EMULATOR-MEASURED, METAL PENDING (2026-08-17, `fix/hg-drag-button-level`)
 
 Attended metal on 2026-08-17 carried a file across the edge and watched
