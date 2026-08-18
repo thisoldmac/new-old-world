@@ -291,8 +291,10 @@ enum MetalMachineGuard {
             }
         } else {
             print("=== machine-busy guard: NOW_METAL_MACHINE unset, so only "
-                  + "the port checks ran. Set it to the guest's address "
-                  + "(the 180c is 192.0.2.180) for the full check.")
+                  + "the port checks ran. It is the machine's own `address`, "
+                  + "so take it from that machine's profile rather than "
+                  + "typing one: eval \"$(tools/lab-machine env <id>)\" — or "
+                  + "run through scripts/deploy-68k --test, which does it.")
         }
 
         let neighbours = conventionalPorts
