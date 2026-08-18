@@ -29,16 +29,17 @@ set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(dirname "$script_dir")
 
-# Desk configuration, same resolution as scripts/build-guests: local
-# .env or .env.lab, else the main worktree's - a worktree is the same
-# desk, not a stranger. Explicit environment still wins (set -a before
-# sourcing would let the file override it, so guard each key).
-saved_team=${NOW_HOST_TEAM_ID:-}
-for f in "$repo_root/.env" "$repo_root/.env.lab"; do
-    [ -f "$f" ] && { set -a; . "$f"; set +a; }
-done
-if [ -z "${NOW_HOST_TEAM_ID:-}" ] || [ -n "$saved_team" ]; then
-    NOW_HOST_TEAM_ID=$saved_team
+# Desk configuration, PARSED rather than sourced: an env file is data,
+# and sourcing one executes whatever a hand edit left in it - a single
+# malformed line killed this script under set -e. Resolution matches the
+# Makefile: environment, ./.env, ./.env.lab, then the main worktree's
+# copies (a worktree is the same desk, not a stranger).
+main_wt=$(git -C "$repo_root" rev-parse --path-format=absolute     --git-common-dir 2>/dev/null | sed 's|/\.git$||')
+if [ -z "${NOW_HOST_TEAM_ID:-}" ]; then
+    for f in "$repo_root/.env" "$repo_root/.env.lab"              "$main_wt/.env" "$main_wt/.env.lab"; do
+        v=$(sed -n 's/^NOW_HOST_TEAM_ID=//p' "$f" 2>/dev/null | head -1)
+        if [ -n "$v" ]; then NOW_HOST_TEAM_ID=$v; break; fi
+    done
 fi
 
 out_root="$repo_root/build/bundle"
