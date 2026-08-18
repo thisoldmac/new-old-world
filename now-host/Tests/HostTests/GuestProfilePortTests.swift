@@ -271,6 +271,45 @@ final class GuestProfilePortTests: XCTestCase {
         }
     }
 
+    /// **Opening a new port must not cost the desk the Mac it is driving.**
+    ///
+    /// `start(ports:)` says goodbye to every guest before it binds anything,
+    /// so reusing it to pick up a newly assigned port would disconnect the
+    /// machine a person is working on as a side effect of typing a number
+    /// on a page about that machine. `ensure(ports:)` exists for exactly
+    /// this, and the claim is worth a test rather than a comment.
+    func testAddingAPortLeavesAConnectedMachineConnected() async throws {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60))
+        defer { listener.stop() }
+        listener.start(port: 0)
+        try await waitUntil("listening") {
+            if case .listening = listener.state { return true }
+            return false
+        }
+        let first = try XCTUnwrap(listener.boundPort)
+
+        let guest = FakeGuest(port: first)
+        defer { guest.connection.cancel() }
+        guest.start()
+        try guest.send(.hello(Hello(
+            contract: Contract.revision, side: "guest", version: "0.1.0",
+            name: guestName, os: os, chunk: 8192)))
+        try await waitUntil("connected") { listener.guests.count == 1 }
+        let session = try XCTUnwrap(listener.guests.first).sessionID
+
+        listener.ensure(ports: [first, 0])
+
+        XCTAssertEqual(listener.guests.count, 1,
+                       "the machine on the wire did not move and must not "
+                           + "be told to leave")
+        XCTAssertEqual(listener.guests.first?.sessionID, session,
+                       "and it is the same session, not a reconnection")
+        XCTAssertTrue(listener.boundPorts.contains(first),
+                      "its socket is still bound")
+    }
+
     private func waitUntil(_ what: String, timeout: TimeInterval = 5,
                            _ condition: @escaping () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
