@@ -62,3 +62,11 @@ trap - EXIT
 echo "install-host: installed $(defaults read "$app/Contents/Info" \
     CFBundleVersion 2>/dev/null || echo '?') at $app; launching"
 open "$app"
+
+# Local Network is keyed to the EXECUTABLE for non-notarized builds and is
+# silently prohibited after every update, usually without re-prompting
+# (attended, 2026-08-17: Accessibility survived the version-stamped update,
+# Local Network did not). Until a notarized channel exists, the toggle is
+# per-install - so end where the toggle is.
+echo "install-host: Local Network needs its per-build toggle - opening the pane"
+open "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork" 2>/dev/null || true
