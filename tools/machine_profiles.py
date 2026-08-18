@@ -145,18 +145,20 @@ def _valid_id(text):
             and text[0].isalnum() and text[-1].isalnum())
 
 
-def profile_dir(repo):
-    """Where this checkout's profiles are, or None.
+def main_worktree(repo):
+    """The MAIN worktree of whatever checkout `repo` belongs to, or None.
 
-    A worktree is not a fresh clone — it is the same desk and the same
-    machines — so the MAIN worktree's directory is used when this one has
-    none. `scripts/build-guests` learnt that the hard way with `.env.lab`:
-    a lane told to copy the file copied it into its own worktree, where it
-    died with the worktree, and the gate had already read green once.
+    A worktree is not a fresh clone — it is the same desk, the same
+    Retro68 install and the same machines — so a desk file it does not
+    have is looked for there. `scripts/build-guests` learnt this the hard
+    way with `.env.lab`: a lane told to copy the file copied it into its
+    own worktree, where it died with the worktree, and the gate had
+    already read green once.
+
+    Git is asked rather than the filesystem walked: an agent's worktree
+    can live under `/private/tmp` with no shared ancestor at all, and
+    `--git-common-dir` points at the main clone's `.git` wherever it sits.
     """
-    here = Path(repo) / PROFILE_DIR
-    if here.is_dir():
-        return here
     try:
         out = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "--path-format=absolute",
@@ -166,8 +168,28 @@ def profile_dir(repo):
         return None
     if out.returncode != 0 or not out.stdout.strip():
         return None
-    main = Path(out.stdout.strip()).parent / PROFILE_DIR
-    return main if main.is_dir() else None
+    return Path(out.stdout.strip()).parent
+
+
+def desk_file(repo, name=".env.lab"):
+    """This checkout's desk file, falling back to the main worktree's."""
+    here = Path(repo) / name
+    if here.exists():
+        return here
+    main = main_worktree(repo)
+    there = main / name if main else None
+    return there if there and there.exists() else here
+
+
+def profile_dir(repo):
+    """Where this checkout's profiles are, or None. Same fallback, and
+    the same reason."""
+    here = Path(repo) / PROFILE_DIR
+    if here.is_dir():
+        return here
+    main = main_worktree(repo)
+    there = main / PROFILE_DIR if main else None
+    return there if there and there.is_dir() else None
 
 
 def discover(repo):

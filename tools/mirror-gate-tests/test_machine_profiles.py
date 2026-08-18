@@ -154,6 +154,26 @@ class Selection(Fixture):
                          "a worktree with no profiles of its own must find "
                          "the main worktree's")
 
+    def test_a_worktree_reads_the_main_worktrees_env_lab_too(self):
+        """Profiles and the desk file follow ONE rule. A worktree that
+        found its machine but not its toolchain would be a confusing
+        half-answer, and `scripts/build-guests` already resolves
+        `.env.lab` this way."""
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)],
+                       check=True, capture_output=True)
+        for args in (("config", "user.email", "t@t"),
+                     ("config", "user.name", "t"),
+                     ("add", "-A"), ("commit", "-qm", "scaffold")):
+            subprocess.run(["git", "-C", str(self.repo), *args], check=True,
+                           capture_output=True)
+        self.env_lab("NOW68K_FTP_HOST=192.0.2.99\nNOW68K_FTP_USER=lab\n"
+                     "NOW68K_FTP_PASS=secret\n")
+        tree = Path(self.work) / "wt"
+        subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "-q",
+                        "--detach", str(tree), "HEAD"],
+                       check=True, capture_output=True)
+        self.assertEqual(mp.desk_file(tree), self.repo / ".env.lab")
+
     def test_a_worktrees_own_profiles_still_win(self):
         subprocess.run(["git", "init", "-q", "-b", "main", str(self.repo)],
                        check=True, capture_output=True)

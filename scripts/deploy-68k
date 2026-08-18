@@ -58,7 +58,11 @@ import machine_profiles as mp  # noqa: E402
 
 VERSION_SRC = REPO / "now-guest-68k" / "src" / "core" / "wire68.c"
 STAMPER = REPO / "now-guest-ppc" / "tools" / "name_macbinary.py"
-LAB_ENV = REPO / ".env.lab"
+#: This worktree's desk file, or the MAIN worktree's — the same rule the
+#: machine profiles follow, and the same one `scripts/build-guests`
+#: already applies. A worktree that found its machine but not its
+#: toolchain would be a confusing half-answer.
+LAB_ENV = mp.desk_file(REPO)
 
 #: The process environment as it arrived, BEFORE any file was read.
 #:
