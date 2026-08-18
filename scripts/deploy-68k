@@ -298,9 +298,30 @@ def main() -> int:
             fail("stamped name is %r, expected %r" % (name, product))
         print("== stamped %r  data=%d rsrc=%d" % (name, data, rsrc))
 
-        ftp = FTP(HOST, timeout=120)
-        ftp.login(USER, PASSWORD)
-        ftp.cwd(REMOTE_DIR)
+        # A dark machine is the COMMON case for a 1993 laptop - asleep,
+        # switched off, or MacTCP silently wedged (its documented failure
+        # mode after serving traffic) - so an unreachable host is a named
+        # outcome here, not a traceback.
+        try:
+            ftp = FTP(HOST, timeout=120)
+        except OSError as error:
+            fail("cannot reach %s (%s).\n"
+                 "  The machine is off, asleep, or its TCP stack has "
+                 "wedged - MacTCP does that\n"
+                 "  silently after serving traffic; reboot the Mac and "
+                 "rerun. Nothing was deployed." % (HOST, error))
+        try:
+            ftp.login(USER, PASSWORD)
+        except Exception as error:
+            fail("%s refused the login for %r (%s).\n"
+                 "  Check NOW68K_FTP_USER/NOW68K_FTP_PASS. Nothing was "
+                 "deployed." % (HOST, USER, error))
+        try:
+            ftp.cwd(REMOTE_DIR)
+        except Exception as error:
+            fail("no %r folder on %s (%s).\n"
+                 "  Create it there, or set NOW68K_FTP_DIR. Nothing was "
+                 "deployed." % (REMOTE_DIR, HOST, error))
         before = listing(ftp)
 
         if product in before and not args.force:
