@@ -100,7 +100,7 @@ ext:
 # CFBundleVersion 1 left LaunchServices unable to tell an update from a
 # duplicate, and per-binary grants were lost on every install.
 host:
-	xcodebuild \
+	xcodebuild -quiet \
 	    -project now-host/NewOldWorld.xcodeproj \
 	    -scheme "New Old World" \
 	    -configuration Release \
