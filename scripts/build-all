@@ -1,0 +1,38 @@
+#!/bin/sh
+# Build everything this machine can: the host app always, the guests and
+# the extension when their Retro68 toolchains are configured.
+#
+#     scripts/build-all
+#
+# A thin orchestration over the Makefile, which owns the raw
+# invocations - `make host`, `make guests` and friends are the pieces,
+# this is the one verb. A missing toolchain SKIPS the guests with the
+# key named rather than failing, because a contributor with no Retro68
+# install is not failing a build they cannot run (same rule as
+# scripts/build-guests) - but the skip is the last thing printed, so it
+# cannot scroll away and read as coverage.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(dirname "$script_dir")
+
+skipped=""
+if make -C "$repo_root" --no-print-directory print-toolchains \
+        | grep -q '^NOW_PPC_TOOLCHAIN=..*'; then
+    make -C "$repo_root" ppc
+else
+    skipped="$skipped ppc"
+fi
+if make -C "$repo_root" --no-print-directory print-toolchains \
+        | grep -q '^NOW68K_TOOLCHAIN=..*'; then
+    make -C "$repo_root" 68k ext
+else
+    skipped="$skipped 68k ext"
+fi
+
+make -C "$repo_root" host
+
+if [ -n "$skipped" ]; then
+    echo "== SKIPPED:$skipped (no Retro68 toolchain - cp .env.example .env" \
+         "and fill in the toolchain keys; docs/lab-setup.md)"
+fi

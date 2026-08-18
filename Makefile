@@ -50,7 +50,13 @@ define cmake-guest
 	cmake --build $(BUILD)/$(2)
 endef
 
-.PHONY: all guests ppc 68k ext host clean
+.PHONY: all guests ppc 68k ext host clean print-toolchains
+
+# For scripts that decide to build or skip: the resolved values, one per
+# line, so the decision and the build read the same keys the same way.
+print-toolchains:
+	@echo "NOW_PPC_TOOLCHAIN=$(NOW_PPC_TOOLCHAIN)"
+	@echo "NOW68K_TOOLCHAIN=$(NOW68K_TOOLCHAIN)"
 
 all: guests host
 
