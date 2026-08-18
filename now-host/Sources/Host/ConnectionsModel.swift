@@ -599,6 +599,19 @@ final class ConnectionsModel: ObservableObject {
         renameProblem = nil
     }
 
+    /// The host's default port as the page prints it — what a machine with
+    /// no port of its own dials. Read from the same closure the rows use,
+    /// so the placeholder can never name a different number than the
+    /// address beside it.
+    var defaultPortText: String { String(basePort()) }
+
+    /// A problem the FIELD found before the model was asked — text that is
+    /// not a port at all. Routed here so the page has one place it reads
+    /// refusals from, rather than a second label that could disagree.
+    func reportPortProblem(_ message: String) {
+        renameProblem = message
+    }
+
     /// **Gives one machine its own port, and opens the socket for it.**
     ///
     /// The two halves are one action deliberately. A port written into the

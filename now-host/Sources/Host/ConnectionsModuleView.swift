@@ -32,6 +32,9 @@ struct ConnectionsModuleView: View {
     @State private var connectedBeforeAdding: Set<String> = []
     @State private var pendingRemoval: ConnectionRow?
     @State private var renamingRow: ConnectionRow?
+    /// The machine whose settings download is open. Its port, not the
+    /// host's default, is what the generated prefs and the page will say.
+    @State private var settingUp: ConnectionRow?
     /* Persisted like Files' collapse and NOT like its divider: which of
        the two panes a person wants to see survives a launch, where the
        exact pixel the divider sat at does not. */
@@ -68,6 +71,15 @@ struct ConnectionsModuleView: View {
         .onChange(of: listener.activeKey) { _ in
             guard !adding else { return }
             selectedID = model.snapshot.driving?.id
+        }
+        .sheet(item: $settingUp) { row in
+            OnboardingSheet(portal: onboarding,
+                            wirePort: row.listenPort ?? settings.listenPort,
+                            machineName: row.displayName)
+                .onAppear {
+                    onboarding.start(
+                        wirePort: row.listenPort ?? settings.listenPort)
+                }
         }
         .alert(removalTitle, isPresented: removalIsPresented) {
             Button("Remove", role: .destructive, action: confirmRemoval)
@@ -314,6 +326,13 @@ struct ConnectionsModuleView: View {
     @ViewBuilder
     private func connectionMenu(for row: ConnectionRow) -> some View {
         Button("Rename…") { beginRenaming(row) }
+        /* Settings for THIS machine, on the port THIS machine dials — the
+           download is the only thing that can actually move a guest onto a
+           new port, so it has to be reachable per machine rather than only
+           from the page's one "add a machine" button. */
+        Button("Download Settings for \(row.displayName)…") {
+            settingUp = row
+        }
         Button("Delete", role: .destructive) { requestRemoval(row) }
         Divider()
         switch listener.state {
@@ -714,6 +733,16 @@ private struct ConnectionCard: View {
                     + "which socket, useless as a name.")
                 Text(row.address).font(.callout.monospaced())
             }
+            GridRow {
+                FieldLabel("Port", help:
+                    "The port this machine dials. Give it one of its own "
+                    + "when the host cannot otherwise tell it apart from "
+                    + "another — every emulated \(MachineNaming.commonNoun) "
+                    + "reaches this Mac from the same address. Changing it "
+                    + "here opens the socket; the machine itself keeps "
+                    + "dialling the old one until you repoint it.")
+                PortField(row: row, model: model)
+            }
         }
     }
 
@@ -764,6 +793,63 @@ private struct ConnectionCard: View {
             }
         }
         .padding(.top, 2)
+    }
+}
+
+/// **One machine's port**, editable in place.
+///
+/// In the identity grid rather than behind a sheet because it belongs to
+/// the same set of facts as the address it sits under, and because the
+/// question it answers — "which socket is this Mac's" — is one a person
+/// asks while looking at two rows side by side.
+///
+/// Empty means the host's default port, and the placeholder says which
+/// number that is. That is the state every existing desk is in, so it has
+/// to read as a normal answer rather than as something missing.
+private struct PortField: View {
+    let row: ConnectionRow
+    @ObservedObject var model: ConnectionsModel
+    @State private var text: String = ""
+    @FocusState private var editing: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField(model.defaultPortText, text: $text)
+                .font(.callout.monospaced())
+                .frame(width: 90)
+                .focused($editing)
+                .onSubmit(commit)
+            if editing || text != Self.text(row) {
+                Button("Set", action: commit)
+                    .font(.callout)
+            }
+        }
+        .onAppear { text = Self.text(row) }
+        /* The row is a value and is rebuilt on every refresh, so a change
+           made elsewhere — another machine taking this port, a reconnection
+           — has to reach the field. Not while it is focused: overwriting
+           what somebody is halfway through typing is worse than being one
+           refresh stale. */
+        .onChange(of: row.listenPort) { _ in
+            if !editing { text = Self.text(row) }
+        }
+    }
+
+    private static func text(_ row: ConnectionRow) -> String {
+        row.listenPort.map(String.init) ?? ""
+    }
+
+    private func commit() {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty {
+            model.setListenPort(row, to: nil)
+        } else if let port = UInt16(trimmed), port > 0 {
+            model.setListenPort(row, to: port)
+        } else {
+            model.reportPortProblem("Enter a port between 1 and 65535.")
+            return
+        }
+        editing = false
     }
 }
 
