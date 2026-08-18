@@ -57,6 +57,16 @@ final class GuestRegistry {
         struct Key: Hashable, Sendable {
             let address: String
             let fingerprint: String
+            /// The host port this machine dials. Part of the anchor because
+            /// it is the only discriminator that survives an emulator: every
+            /// QEMU guest arrives from the loopback address, so without it
+            /// two Macs are told apart by `slot` alone — which is assigned in
+            /// connection order and therefore swaps their identities when
+            /// they happen to dial in the other order.
+            ///
+            /// Nil is a record written before ports scoped a profile. It is
+            /// adopted rather than duplicated: see `identify`.
+            let listenPort: UInt16?
             let slot: Int
         }
 
@@ -71,12 +81,24 @@ final class GuestRegistry {
         /// Host-owned title. Nil only for records written before display
         /// names existed; those are upgraded on their next connection.
         var displayName: String? = nil
-        /// Host port this machine most recently connected through. Optional
-        /// for records written before per-machine ports were stored.
+        /// **This profile's own host port** — the one the host binds for
+        /// this machine and the one its generated settings tell it to dial.
+        ///
+        /// It began as a record of where a guest happened to arrive, which
+        /// was enough to print an address and nothing more. It is now the
+        /// profile's port: host-observed on first sight, thereafter editable
+        /// by a person, and bound by the listener whether or not the machine
+        /// is here. That promotion is what lets one desk serve several Macs
+        /// that cannot otherwise be told apart.
+        ///
+        /// Nil is a record written before this existed, or a machine that
+        /// has never connected. Both mean "the host's default port", which
+        /// is why an existing single-guest desk needs no migration.
         var listenPort: UInt16? = nil
 
         var key: Key {
-            Key(address: address, fingerprint: fingerprint, slot: slot)
+            Key(address: address, fingerprint: fingerprint,
+                listenPort: listenPort, slot: slot)
         }
     }
 
@@ -135,7 +157,11 @@ final class GuestRegistry {
     ///
     /// `occupiedSlots` is the set of slots the caller already has live for
     /// this same anchor, so a concurrent second machine at a
-    /// non-distinguishing address does not take the first one's id.
+    /// non-distinguishing address does not take the first one's id. The
+    /// anchor now includes `listenPort`, so the caller must count slots per
+    /// PORT: two Macs that dial their own ports are both slot 0, and
+    /// counting them together would hand the second one the first's slot
+    /// and undo the very distinction the port was configured to make.
     func identify(address: GuestAddress,
                   name: String?,
                   operatingSystem: String?,
@@ -146,10 +172,24 @@ final class GuestRegistry {
         var slot = 0
         while occupiedSlots.contains(slot) { slot += 1 }
 
-        if let index = records.firstIndex(where: {
+        /* The port is part of the anchor now, so the match is exact first.
+           The fallback is the upgrade path and nothing else: a record
+           written before profiles had ports carries no port at all, and
+           re-matching it here — rather than letting the exact test miss and
+           mint a second row — is what keeps a desk's machine ids, display
+           names and rename history across the version that adds this. It
+           adopts the port it arrived on, so it upgrades once and is exact
+           from then on. */
+        let exact = records.firstIndex {
             $0.address == address.text && $0.fingerprint == print
-                && $0.slot == slot
-        }) {
+                && $0.listenPort == listenPort && $0.slot == slot
+        }
+        let legacy = exact == nil ? records.firstIndex {
+            $0.address == address.text && $0.fingerprint == print
+                && $0.listenPort == nil && $0.slot == slot
+        } : nil
+
+        if let index = exact ?? legacy {
             if records[index].displayName == nil {
                 records[index].displayName = nextDisplayName(
                     basedOn: name, excluding: index)
@@ -210,6 +250,62 @@ final class GuestRegistry {
     /// The record currently holding an id, if any.
     func record(for id: GuestID) -> Record? {
         records.first { $0.id == id }
+    }
+
+    /// **Gives one machine its own port.**
+    ///
+    /// The port is part of the record's key, so this moves the record to a
+    /// new key — which is exactly what it means: the same Mac, expected
+    /// somewhere else. The id, the display name and the rename history ride
+    /// along, because they belong to the machine and not to the socket.
+    ///
+    /// Refuses a port another profile already claims. Two profiles on one
+    /// port is not an error the listener could report — it binds once and
+    /// serves both — it is a person believing they have separated two Macs
+    /// when they have not, which is the failure this whole seam exists to
+    /// remove. `nil` returns the machine to the host's default port.
+    @discardableResult
+    func setListenPort(_ key: Record.Key, to port: UInt16?)
+        -> Result<UInt16?, PortFailure> {
+        if let port, port == 0 { return .failure(.reserved) }
+        guard let index = records.firstIndex(where: { $0.key == key })
+        else { return .failure(.notFound) }
+        guard records[index].listenPort != port else { return .success(port) }
+        if let port, let clash = records.enumerated().first(where: {
+            $0.offset != index && $0.element.listenPort == port
+        })?.element {
+            return .failure(.taken(by: clash.displayName ?? clash.lastName))
+        }
+        records[index].listenPort = port
+        save()
+        return .success(port)
+    }
+
+    /// **Every port this host must bind to serve the machines it remembers.**
+    ///
+    /// Derived rather than stored, and derived HERE rather than at the
+    /// listener, because the book is the only thing that knows what a
+    /// profile expects. `base` is the host's default and is always included:
+    /// a machine with no port of its own dials it, and so does a Mac nobody
+    /// has met yet — which is every Mac, once.
+    func portsToBind(base: UInt16) -> [UInt16] {
+        var ports = [base]
+        for record in records {
+            guard let port = record.listenPort, port != 0,
+                  !ports.contains(port) else { continue }
+            ports.append(port)
+        }
+        return ports
+    }
+
+    enum PortFailure: Error, Equatable {
+        case notFound
+        /// Port 0 asks the OS for an ephemeral port, which is meaningless
+        /// as a profile's port: nothing could be told to dial it.
+        case reserved
+        /// Another profile already expects this port, named so the human
+        /// can go and free it rather than guess.
+        case taken(by: String)
     }
 
     /// Removes one remembered machine. A live socket is owned by the

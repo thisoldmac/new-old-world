@@ -294,7 +294,13 @@ final class GuestListener: ObservableObject {
     private let timing: Timing
     private let pacing: Pacing
     private let maxGuests: Int
-    private var listener: NWListener?
+    /// One per port this host binds — one per machine profile that owns a
+    /// port, plus the default every unscoped machine dials.
+    private var listeners: [NWListener] = []
+    /// Ports that would not bind, with the reason. Kept rather than thrown
+    /// away because a profile whose port is held looks exactly like a
+    /// profile whose Mac is switched off.
+    private(set) var failedPorts: [UInt16: String] = [:]
 
     /// Every guest currently past the hello gate, by SESSION identity —
     /// one entry per connection, never per name.
@@ -445,7 +451,7 @@ final class GuestListener: ObservableObject {
         if let activeKey, let session = sessions[activeKey] {
             state = .connected(guestName: session.guestName)
             health = healthByGuest[activeKey]
-        } else if listener != nil {
+        } else if !listeners.isEmpty {
             state = .listening(port: boundPort ?? 0)
             health = nil
         } else {
@@ -494,6 +500,7 @@ final class GuestListener: ObservableObject {
            into a slot nobody is using re-adopts the id it had. */
         let occupied = Set(machineBySession.values.filter {
             $0.address == address.text && $0.fingerprint == print
+                && $0.listenPort == listenPort
         }.map(\.slot))
         let record = registry.identify(
             address: address, name: hello.name, operatingSystem: hello.os,
@@ -616,23 +623,67 @@ final class GuestListener: ObservableObject {
         }
     }
 
+    /// Binds one port. The single-guest desk, and every test that wants an
+    /// ephemeral port: `start(port: 0)` still means "any free port, tell me
+    /// which" and `boundPort` still answers.
     func start(port: UInt16) {
+        start(ports: [port])
+    }
+
+    /// **Binds one port per machine profile.**
+    ///
+    /// Several listeners rather than one, because the port is what tells two
+    /// Macs apart when nothing else can: behind an emulator every guest
+    /// arrives from the loopback address wearing the same fingerprint, and
+    /// the host was left ordering them by who dialled first. A profile that
+    /// owns a port is a profile the host recognises before the hello.
+    ///
+    /// A port that will not bind does NOT fail the run. The others are still
+    /// serving real machines, and a desk losing every Mac because one port
+    /// is held by something else is a worse answer than losing the one. The
+    /// refusal is noted per port and reported in `failedPorts`, so it is
+    /// visible rather than silent — a machine that cannot arrive and a
+    /// machine that has not arrived look identical from the roster.
+    func start(ports: [UInt16]) {
         stop()
-        do {
-            let nwPort = NWEndpoint.Port(rawValue: port)
-                ?? NWEndpoint.Port(rawValue: 0)!
-            let listener = try NWListener(using: .tcp, on: nwPort)
-            self.listener = listener
-            listener.newConnectionHandler = { [weak self] connection in
-                Task { @MainActor in self?.accept(connection) }
+        var wanted: [UInt16] = []
+        for port in ports where !wanted.contains(port) { wanted.append(port) }
+        if wanted.isEmpty { wanted = [SettingsModel.defaultPort] }
+        for port in wanted {
+            do {
+                let nwPort = NWEndpoint.Port(rawValue: port)
+                    ?? NWEndpoint.Port(rawValue: 0)!
+                let listener = try NWListener(using: .tcp, on: nwPort)
+                listeners.append(listener)
+                /* The accepting listener names its own port. Reading the
+                   bound port off `self` here — which is what one listener
+                   allowed — would file every guest under whichever listener
+                   happened to be first in the list, so the port could not
+                   distinguish anything it was configured to distinguish. */
+                listener.newConnectionHandler = {
+                    [weak self, weak listener] connection in
+                    let accepted = listener?.port?.rawValue
+                    Task { @MainActor in
+                        self?.accept(connection, on: accepted)
+                    }
+                }
+                listener.stateUpdateHandler = {
+                    [weak self, weak listener] nwState in
+                    let requested = listener?.port?.rawValue ?? port
+                    Task { @MainActor in
+                        self?.listenerStateChanged(nwState, port: requested)
+                    }
+                }
+                listener.start(queue: .main)
+            } catch {
+                failedPorts[port] = error.localizedDescription
+                note("Could not listen on \(port): "
+                     + "\(error.localizedDescription)")
             }
-            listener.stateUpdateHandler = { [weak self] nwState in
-                Task { @MainActor in self?.listenerStateChanged(nwState) }
-            }
-            listener.start(queue: .main)
-        } catch {
-            state = .failed("Could not listen: \(error.localizedDescription)")
-            note("Could not listen: \(error.localizedDescription)")
+        }
+        if listeners.isEmpty {
+            let reason = failedPorts.values.first ?? "no port to bind"
+            state = .failed("Could not listen: \(reason)")
         }
     }
 
@@ -649,8 +700,9 @@ final class GuestListener: ObservableObject {
         activeKey = nil
         guests = []
         health = nil
-        listener?.cancel()
-        listener = nil
+        for listener in listeners { listener.cancel() }
+        listeners = []
+        failedPorts = [:]
         state = .idle
     }
 
@@ -678,8 +730,9 @@ final class GuestListener: ObservableObject {
         activeKey = nil
         guests = []
         health = nil
-        listener?.cancel()
-        listener = nil
+        for listener in listeners { listener.cancel() }
+        listeners = []
+        failedPorts = [:]
         state = .idle
 
         guard !leaving.isEmpty else {
@@ -714,9 +767,18 @@ final class GuestListener: ObservableObject {
         }
     }
 
-    /// The port actually bound (differs from the requested one when 0 was
+    /// Every port actually bound, in the order they were asked for — the
+    /// host's default first, then each profile's own.
+    var boundPorts: [UInt16] { listeners.compactMap { $0.port?.rawValue } }
+
+    /// The FIRST port bound (differs from the requested one when 0 was
     /// passed for an ephemeral port — used by tests).
-    var boundPort: UInt16? { listener?.port?.rawValue }
+    ///
+    /// It is the host's default port, never a profile's: `start(ports:)` is
+    /// given the default first. Deliberately not "the port", because with
+    /// several profiles there is no such thing — a caller that means one
+    /// machine's port must ask that machine.
+    var boundPort: UInt16? { boundPorts.first }
 
     struct ContinuityTarget: Equatable {
         var key: GuestKey
@@ -3323,15 +3385,26 @@ final class GuestListener: ObservableObject {
         deliverScene(.failure(.init(message: reason)))
     }
 
-    private func listenerStateChanged(_ nwState: NWListener.State) {
+    private func listenerStateChanged(_ nwState: NWListener.State,
+                                      port: UInt16) {
         switch nwState {
         case .ready:
-            note("Listening on port \(boundPort ?? 0)")
+            failedPorts[port] = nil
+            note("Listening on port \(port)")
             if case .connected = state { return }
-            state = .listening(port: boundPort ?? 0)
+            state = .listening(port: boundPort ?? port)
         case .failed(let error):
-            state = .failed(error.localizedDescription)
-            note("Listener failed: \(error.localizedDescription)")
+            /* One port failing is not the host failing. Another profile's
+               listener may be serving a real machine right now, and taking
+               the whole app to `.failed` over a port something else holds
+               would take that machine off the desk to report a problem it
+               does not have. The state falls over only when nothing is
+               left listening at all. */
+            failedPorts[port] = error.localizedDescription
+            note("Listener on \(port) failed: \(error.localizedDescription)")
+            if boundPorts.isEmpty {
+                state = .failed(error.localizedDescription)
+            }
         default:
             break
         }
@@ -3349,13 +3422,17 @@ final class GuestListener: ObservableObject {
     /// request we never sent must not settle another guest's waiter.
     private final class SessionRef { weak var session: Session? }
 
-    private func accept(_ connection: NWConnection) {
+    private func accept(_ connection: NWConnection,
+                        on acceptedPort: UInt16? = nil) {
         let origin = SessionRef()
         /* Host-observed, before a byte of the guest's own account of
            itself has been read. This is the fact the machine registry
-           anchors on precisely because the guest had no say in it. */
+           anchors on precisely because the guest had no say in it. And
+           with a listener per profile the PORT is host-observed in the
+           same sense and for the same reason: the guest chose which one to
+           dial, but it cannot claim to have arrived on another. */
         let address = GuestAddress(endpoint: connection.endpoint)
-        let listenPort = boundPort
+        let listenPort = acceptedPort ?? boundPort
         /// True when this connection is the one the request-shaped API is
         /// driving — so its answers are the ones our waiters are owed.
         func fromActive() -> Bool {
