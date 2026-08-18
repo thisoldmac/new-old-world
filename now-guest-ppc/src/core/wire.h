@@ -209,6 +209,23 @@ int now_wire_send_file(const FSSpec *spec, char *err, long cap);
 Boolean now_wire_send_pending_replace(char *name, long cap);
 void now_wire_send_resolve_replace(Boolean replace);
 
+/* THE SAME QUESTION IN THE OTHER DIRECTION: somebody on the Mac dragged
+   a file over here and this Macintosh already has one by that name. The
+   pair above is the model, down to the reason — the offer arrives inside
+   a pumped network callback, so it is left UNANSWERED and the question
+   is raised for the event loop.
+
+   The ordering is the product decision (Michelle, 2026-08-16): the
+   person has already released, and no byte moves until they answer,
+   because the unanswered offer is what holds the transfer. Release,
+   then dialog, then bytes.
+
+   Only a human's drop is asked about. An automated put with nobody at
+   the machine keeps the old policy refusal, because inventing consent
+   for it would be worse than refusing it. */
+Boolean now_wire_put_pending_replace(char *name, long cap);
+void now_wire_put_resolve_replace(Boolean replace);
+
 /* --- browsing the other machine's share ---------------------------------
    Asking the same file.list the guest already answers. A listing is
    control-plane, so this works mid-transfer; only the answer is one at
@@ -235,6 +252,41 @@ void conn_set_get_note(ConnGetNote fn);
 
 int now_wire_get_host(const char *path, const char *name,
                       char *err, long cap);
+
+/* The inverted crossing: ask for the item the host published via
+   continuity.offer, rather than a path this Mac names. Reuses the same
+   pull machinery above whole - same one-transfer-wide gate, same
+   progress, cancel and crc check - so a person watching the Files pane
+   cannot tell the two apart once bytes start moving. 0 once
+   continuity.grab is on the wire; -1 with a reason in err, including
+   "nothing is being held out right now" when no offer is live.
+
+   `id_out` (optional) receives the transfer id this ask started, for a
+   caller that must later prove the file which landed is the file IT
+   asked for rather than whatever the previous pull left behind — see
+   now_wire_get_landed. */
+int now_wire_get_offer(long *id_out, char *err, long cap);
+
+/* The FSSpec a pull landed under, for `id` and no other. False when
+   that transfer did not complete, or when the last one to complete was
+   somebody else's.
+
+   Every other caller is served by the get-note line, which says in
+   words that a file arrived and where. This exists for the one caller
+   that has to HAND THE FILE ON: the promise drag's send-data callback
+   owes the Finder an FSSpec, and a sentence is not one. */
+Boolean now_wire_get_landed(long id, FSSpec *spec_out);
+
+/* DIAGNOSTIC. Why the last pull stopped, in the pull's OWN words: the
+   call that refused and the code it returned.
+
+   A pull that fails says so to a page, in a sentence written for a
+   person ("X is already in Y"). The promise drag has no page: its
+   caller sees only that nothing landed, and the slice-0 collision
+   measurement spent a whole run unable to name the refusing layer
+   because of it. This is that name, kept next to the failure rather
+   than reconstructed from a note. Empty when the last pull completed. */
+void now_wire_get_last_failure(char *out, long cap);
 
 /* Where a PULL (file.get, the entry point above) actually lands.
    use=false (the default) means the downloads folder — byte-identical
@@ -339,14 +391,28 @@ int now_wire_cloud_get(const char *service, const char *item,
 void now_wire_cloud_get_destination(Boolean use, short vref, long dir);
 Boolean now_wire_cloud_get_destination_get(short *vref, long *dir);
 
-/* The inbound receive (the file.offer lane a cloud.get's answer
-   rides), read-only, now_wire_get_active's shape: false when nothing
-   is landing; otherwise fills what has arrived, what is expected, and
-   whether the receive answers our own cloud.get. Every out-parameter
-   is optional. */
+/* EVERY inbound file, whichever lane carries it, read-only and in
+   now_wire_get_active's shape: false when nothing is landing; otherwise
+   fills what has arrived, what is expected, whether the receive answers
+   our own cloud.get, and whether it is a PULL rather than a push. Every
+   out-parameter is optional.
+
+   Two lanes, one question, because the alternative is per-page wiring:
+   the file.offer lane (a push, or a cloud.get's answer) and the
+   file.get lane, whose UNATTENDED pulls — a continuity grab, whether
+   `offer --take` sent it or a Finder drag promise did — have no page
+   drawing them anywhere. An attended pull is left out: the page that
+   asked for it reads now_wire_get_active and draws its own, and two
+   windows reporting one transfer is worse than one (receive_progress.h
+   makes the same argument for the Cloud page's downloads).
+
+   `is_pull` exists because the two lanes stop differently:
+   now_wire_get_cancel for a pull, now_wire_put_cancel for a push. A
+   caller offering a person a Stop button must ask. */
 Boolean now_wire_receive_active(long *received, long *expected,
                                 Boolean *cloud_get,
-                                char *name, long name_cap);
+                                char *name, long name_cap,
+                                Boolean *is_pull);
 
 /* The last inbound receive's one-line outcome ("Received IMG_1234.jpg"
    or why not) and its sequence number, which changes exactly when a

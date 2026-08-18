@@ -96,11 +96,20 @@
 #       is what associates the two — and is exempt from the busy refusal
 #       for exactly that reason. It is the one dial that may repeat a live
 #       session's name.
-#     * may send only `hello`, `ping` and `bye`, and is answered `pong`. It
-#       carries no state and reports nothing about the application: how
-#       long the app has been silent is something the RECEIVER already
-#       knows, and a second account of it on the wire would be a second
-#       place to be wrong.
+#     * may send only `hello`, `ping`, `bye` and `continuity.dragBegin`,
+#       and is answered `pong`. It carries no state and reports nothing
+#       about the application: how long the app has been silent is
+#       something the RECEIVER already knows, and a second account of it
+#       on the wire would be a second place to be wrong.
+#       `continuity.dragBegin` is the ONE exception and it is admitted for
+#       a reason no amount of application-side work can answer: the fact
+#       it carries is known INSIDE the Finder's drag loop, and the
+#       application gets no task time until that loop ends. Everything
+#       else this channel could be asked to carry is a fact somebody
+#       scheduled can state, and stays off it. It is still not a command
+#       lane — the frame is unsolicited, the host answers it with nothing,
+#       and a host that has never heard of it ignores one frame rather
+#       than dropping a machine's heartbeat.
 #   What it licenses is one inference and no more: traffic on a live
 #   resident channel means THE MACHINE IS ALIVE, so a silent guest session
 #   for that machine is STARVED rather than GONE. A host may hold such a
@@ -126,6 +135,19 @@
 #   generation. A host does not send the release until the press generation is
 #   acknowledged; while held, the resident consumes the newest point and owns
 #   the dead-man release even when the cooperative PPC application is starved.
+#   Version 4 adds NOW_CONTINUITY_FLAG_CARRIED_LEVEL (0x0008): a LEVEL, not
+#   an edge, held for the life of a staged host->guest file carry so the
+#   guest Drag Manager's input proc reads a held button. It is deliberately
+#   a separate bit from PRIMARY_DOWN and never advances the button
+#   generation: the resident's press logic masks PRIMARY_DOWN alone and
+#   must post nothing for a carried level (a stale generation plus the
+#   level riding PRIMARY_DOWN was the phantom-press class of 2026-08-17).
+#   Only the drag input proc reads it; the receiver accepts it within
+#   NOW_CONTINUITY_KNOWN_FLAGS (0x000F) and old receivers that validate
+#   the stricter mask refuse the datagram, which is why the flag ships in
+#   lockstep. Datagrams are also ordered per epoch by position_seq
+#   (serial arithmetic); an out-of-order packet within an epoch is
+#   rejected rather than replayed over the latest state.
 #   Keyboard events stay on this reliable stream. The PPC application queues
 #   them for the foreground process and the resident posts them only from that
 #   process's target-context jGNE pass. They model Event Manager input, not
@@ -320,7 +342,11 @@ channels:
       continuityKey: { $ref: "#/components/messages/continuityKey" }
       continuityKeyReport: { $ref: "#/components/messages/continuityKeyReport" }
       continuitySelection: { $ref: "#/components/messages/continuitySelection" }
+      continuityDragBegin: { $ref: "#/components/messages/continuityDragBegin" }
       continuityGrab: { $ref: "#/components/messages/continuityGrab" }
+      continuityOffer: { $ref: "#/components/messages/continuityOffer" }
+      continuityHostDragBegin:
+        { $ref: "#/components/messages/continuityHostDragBegin" }
       cloudServices: { $ref: "#/components/messages/cloudServices" }
       cloudReport: { $ref: "#/components/messages/cloudReport" }
       cloudList: { $ref: "#/components/messages/cloudList" }
@@ -921,6 +947,56 @@ operations:
       MacBinary; both-forks defaults to the data fork with MacBinary on
       request. Text conversion is the HOST's job - the guest ships raw
       bytes and metadata.
+
+      NAMING AND STAMPING A FILE THAT CROSSES, BOTH DIRECTIONS, STATED
+      HERE ONCE. The rule above says who converts CONTENT; this says who
+      converts the three things a Macintosh needs before a file is a
+      file — its name, its type and its creator — and it is written in
+      one place because two places is how the two directions came to
+      disagree everywhere else in this project.
+
+      The host does all three, in both directions, for the reason it
+      already does text: the modern machine is the only side that can
+      spell both alphabets, and the classic machine should never be
+      asked to guess at one it cannot represent.
+
+        - NAME. Toward the guest: Unicode is normalised, transliterated
+          into MacRoman where a character has an honest equivalent,
+          stripped of colons (HFS's one forbidden byte), and truncated
+          to 31 bytes with the extension kept in preference to the middle
+          of the stem. The result is what continuity.offer and file.begin
+          carry, and the sender says when conversion cost something
+          (`nameAdjusted`) rather than letting a person discover it after
+          the drop. Toward the host: the guest's name is MacRoman by
+          construction and the host decodes it as MacRoman — never as
+          UTF-8, the encoding rule stated for guest text elsewhere in
+          this file.
+        - TYPE AND CREATOR. Toward the guest the host maps from what it
+          knows — UTI, then filename extension — to an OSType/creator
+          pair, and MAY DECLINE: an unmapped item travels with neither
+          field rather than with a guessed pair, because a wrong creator
+          opens a person's file in the wrong application, which is worse
+          than an untyped document they can open by hand. Toward the host
+          the guest's existing fileType/creator ride the file lane
+          unchanged and are not translated into an extension by the
+          sender; the receiver decides what to do with them.
+        - CONTENT. Unchanged and unmoved: whoever receives serves raw
+          bytes, and any line-ending or encoding conversion is the host's.
+
+      DECISION MICHELLE OWNS, WRITTEN AS THE DEFAULT AND OPEN TO REVIEW.
+      The default above is: convert names always, map type/creator on a
+      best effort that may decline, and convert TEXT CONTENT — line
+      endings and encoding — only for items the host has typed as text,
+      only on `container=data`, and never on MacBinary (a MacBinary file
+      is a Macintosh artifact already; rewriting its bytes would be a
+      lie about a container that describes itself). The second half of
+      that sentence is the part nobody had consciously owned: whether
+      `container=data` converts content by default was settled by
+      whatever each side happened to do, not by a decision, and the
+      first person to notice was the person watching a file cross on
+      2026-08-15. It is written down here as the default so that it can
+      be argued with — both directions in one paragraph, so a revision
+      cannot land on one of them and leave the other reading as current.
   hostAnswersOffer:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -1302,6 +1378,8 @@ operations:
       - $ref: "#/channels/control/messages/continuityDisarm"
       - $ref: "#/channels/control/messages/continuityKey"
       - $ref: "#/channels/control/messages/continuityGrab"
+      - $ref: "#/channels/control/messages/continuityOffer"
+      - $ref: "#/channels/control/messages/continuityHostDragBegin"
     description: >
       Reliable session ownership for the optional Continuity input plane.
       The host arms before sending UDP state and disarms on disable,
@@ -1309,6 +1387,62 @@ operations:
       older or unsupported receiver refuses by continuity.report rather than
       treating UDP arrival as authority. This is user-only Mirror input, not
       an MCP verb, automation capability, or generic coordinate click API.
+
+      THE CROSSING RUNS BOTH WAYS, and the second way reuses this family
+      rather than growing a sibling. continuity.selection is the guest
+      saying what a person picked up over there; continuity.offer is the
+      HOST saying what a person picked up over here — the same stub, sent
+      by the other side, so a guest can draw an honest drag before a byte
+      moves. continuity.grab is then the request either side sends for the
+      item the other one named, and whoever RECEIVES a grab serves its own
+      item: the file-family symmetry rule, applied to the one lane that
+      reaches outside a share.
+
+      WHERE THE TWO DIRECTIONS DIFFER, said plainly because a reader is
+      entitled to know rather than to infer:
+
+        - The selection stub carries an HFS identity triple (volumeRef,
+          dirID, name) and the offer stub carries NO source identity at
+          all. That is not an omission. The guest needs the triple to
+          re-find its own item at grab time; the host resolves an offer
+          from its own generation table, and a host path on the wire would
+          be the arbitrary-read the no-path rule already refuses in the
+          other direction. Both directions therefore name a GENERATION and
+          nothing else, which is the property that matters.
+        - The grant window is the guest's, the offer lifetime is the
+          host's, and they are separate clocks named separately
+          (`grant-expired`, `offer-expired`). A refusal must say whose
+          clock ran out; one shared word would make a host's own
+          bookkeeping look like a Macintosh that fell behind.
+        - The console face inverts too, and deliberately — see the
+          DECLARED ASYMMETRY below.
+
+      continuity.hostDragBegin IS THE THIRD MESSAGE OF THAT CROSSING AND
+      IT IS NOT AN OFFER. continuity.offer says what the host is
+      CARRYING; hostDragBegin says the hand has CROSSED, and asks this
+      Macintosh to begin a Drag Manager drag of it at a named point.
+      They are separate because a person can carry something toward the
+      edge for as long as they like without ever crossing, and a guest
+      that started a drag on the offer would draw one for every hover.
+      The offer is also what makes the drag serveable: the promise's
+      bytes are fetched with the ordinary continuity.grab against the
+      offer table, so a hostDragBegin with no live offer behind it has
+      nothing to pull and the guest's own drag refuses by name.
+
+      IT DOES NOT INVERT, and it does not need to. There is no
+      guest-sends-hostDragBegin: the mirrored fact — a drag begun by a
+      person at the Macintosh — is already continuity.dragBegin, sent by
+      the resident, and the two are one gesture seen from the two ends
+      rather than one message with two senders (which is what
+      continuity.grab is, and why that one is listed in both
+      operations).
+
+      ITS CONSOLE FACE ALREADY EXISTS, which is what satisfies the
+      parity rule argued below rather than an exemption from it. `offer
+      --drag` at the Macintosh drags the ONE item the person over there
+      published, by their own gesture — the same bounded set, reached
+      the same way, differing only in which side's hand started it. A
+      second verb would be a second name for one capability.
   guestReportsContinuity:
     action: receive
     channel: { $ref: "#/channels/control" }
@@ -1316,7 +1450,17 @@ operations:
       - $ref: "#/channels/control/messages/continuityReport"
       - $ref: "#/channels/control/messages/continuityKeyReport"
       - $ref: "#/channels/control/messages/continuitySelection"
+      - $ref: "#/channels/control/messages/continuityDragBegin"
+      - $ref: "#/channels/control/messages/continuityGrab"
     description: >
+      continuity.dragBegin is the one message here that does NOT come
+      from the PowerPC application. It arrives on the machine's resident
+      liveness channel, because it is the only sender that runs while the
+      Finder holds its drag loop; see the schema, and the resident-lane
+      rule at the top of this file for why that channel is allowed to
+      carry it and nothing else. A host joins it to the application's own
+      `continuity.selection` for the same gesture by `dragSeq`.
+
       The PowerPC guest answers every arm and disarm and may also report an
       asynchronous guest-input or lease-expiry exit. The `state` and `reason`
       fields are the authoritative ownership answer; UDP acknowledgements are
@@ -1326,15 +1470,42 @@ operations:
       guest sends one whenever the Finder selection it can see changes,
       and never outside a live epoch.
 
-      DECLARED ASYMMETRY. Neither continuity.selection nor continuity.grab
-      has a console verb, for the same reason continuity.arm and
-      continuity.key do not: the capability is a pointer plane the person
-      at the guest drives with their own hand and eyes. There is nothing a
-      typed word at the Macintosh could add to "the thing you have
-      selected", and a `grab` a person could type would be exactly the
-      general read outside the share that the gesture boundary below
-      exists to refuse. NOW-68K serves neither; it has no Continuity
-      plane at all.
+      continuity.grab is LISTED HERE AS WELL AS IN
+      hostAsksGuestContinuity, and the duplication is the point: it is
+      one message with two senders, so the host must be able to RECEIVE
+      the word it also sends. A guest sends it for an item a
+      continuity.offer published, and this side then serves its own item
+      down the ordinary file lane — file.begin, the bulk stream,
+      file.end, or file.refuse. The receiving side of that exchange is
+      the host's to serve, exactly as the guest serves the forward one;
+      a message declared in only the direction somebody implemented
+      first is the defect class this file exists to prevent.
+
+      DECLARED ASYMMETRY. Neither continuity.selection nor a GUEST-SERVED
+      continuity.grab has a console verb, for the same reason
+      continuity.arm and continuity.key do not: the capability is a
+      pointer plane the person at the guest drives with their own hand and
+      eyes. There is nothing a typed word at the Macintosh could add to
+      "the thing you have selected", and a `grab` a person could type
+      would be exactly the general read outside the share that the gesture
+      boundary below exists to refuse. NOW-68K serves neither; it has no
+      Continuity plane at all.
+
+      THE INVERTED GRAB IS THE OPPOSITE CASE, and it gets a console verb
+      (`offer`) precisely because the argument above does not survive the
+      flip. Typing `grab` at the Macintosh would have asked the host to
+      pick a file; typing `offer` asks for the ONE item a person over
+      there already published by their own gesture, which is the same
+      bounded set the wire may reach and no wider. So the direction that
+      refuses a console face and the direction that requires one are the
+      same rule read from two ends, not an exception — and refusing a
+      console face here would leave the capability half a feature
+      (docs/command-parity.md), reachable by a host that automates it and
+      not by the person standing at the machine it lands on.
+
+      The guest states whether it can take an offer at all in
+      continuity.report's `acceptsOffer`; a host that has not seen that
+      field must not publish one.
   peerAnnouncesMirrorInvalidation:
     action: send
     channel: { $ref: "#/channels/control" }
@@ -1554,9 +1725,18 @@ components:
     continuitySelection:
       name: continuity.selection
       payload: { $ref: "#/components/schemas/ContinuitySelection" }
+    continuityDragBegin:
+      name: continuity.dragBegin
+      payload: { $ref: "#/components/schemas/ContinuityDragBegin" }
     continuityGrab:
       name: continuity.grab
       payload: { $ref: "#/components/schemas/ContinuityGrab" }
+    continuityOffer:
+      name: continuity.offer
+      payload: { $ref: "#/components/schemas/ContinuityOffer" }
+    continuityHostDragBegin:
+      name: continuity.hostDragBegin
+      payload: { $ref: "#/components/schemas/ContinuityHostDragBegin" }
     cloudServices:
       name: cloud.services
       payload: { $ref: "#/components/schemas/CloudServices" }
@@ -2425,6 +2605,43 @@ components:
             source was Mirror's decoded scene, which quietly coupled
             Continuity to Mirror having run first. Optional at the decoder
             for older guests; this build always sends both.
+        acceptsOffer:
+          enum: [none, stage, place]
+          description: >
+            WHAT THIS GUEST CAN DO WITH A continuity.offer, answered per
+            epoch because it is a fact about the machine and the build,
+            not a negotiation. The values are ORDERED (none < stage <
+            place) so a further tier can slot above `place` without
+            reshaping the field, as `agent` in hello does; there is no
+            such tier today.
+
+            `none` refuses out loud — the guest understands the field and
+            cannot take an offered file at all. `stage` says it will
+            grab an offered item and write it somewhere honest of its own
+            choosing, with no gesture and no placement: that is the whole
+            of the capability's first slice, and it is also the shape a
+            guest with no native drag can serve completely rather than
+            halfway. `place` adds the part a person actually asked for —
+            the item lands where they let go of it.
+
+            ABSENT means the sender predates this field, which is a fact
+            about the sender and NOT an answer. A host must not publish
+            an offer to a guest that has not said `stage` or `place`: an
+            offer nobody can take leaves a person holding a file over a
+            screen that will never accept it, with nothing on either
+            machine saying why. A value this host does not recognise is
+            likewise not a wider claim it may act on — an unrecognised
+            tier means a NEWER guest, and a host that cannot name the
+            ceiling cannot claim to be under it.
+
+            NOW-68K answers nothing here because it has no Continuity
+            plane at all, so the host degrades by the same absence rule
+            rather than by a 68K-specific field. When that guest's turn
+            comes (deferred until the Carbon guest reaches public alpha)
+            its honest first answer is `stage`: System 7.1 has no Drag
+            Manager unless the extension is installed, and a typed
+            `stage` is a complete answer where a silent half-drag is not
+            (docs/command-parity.md).
     ContinuityKey:
       type: object
       required: [type, version, id, epoch, generation, action, code,
@@ -2514,6 +2731,18 @@ components:
         the thing worth watching. The guest polls at ordinary task time
         at a bounded cadence and only while the epoch runs.
 
+        AND THEN THE DRAG BECAME WATCHABLE AFTER ALL, which is what
+        `source` below records. The paragraph above remains true of the
+        APPLICATION — it still gets no task time inside the Finder's drag
+        loop — but an optional resident component registered a Drag
+        Manager tracking handler from the dragging application's own
+        context, and that handler holds a live DragRef at drag begin. So
+        a generation can now name the item a person actually picked up,
+        published while the application is next scheduled, rather than
+        the item they had selected beforehand. The poll is not retired by
+        this: it is what a machine without the resident still has, and it
+        is the fallback whenever the drag plane says nothing.
+
         v1 SENDS THE FIRST ITEM ONLY. A multiple selection is reported as
         its first item, and the host is told nothing about the rest. That
         is a deliberate narrowing rather than a limit of the poll: a
@@ -2535,6 +2764,115 @@ components:
             It is the name a later continuity.grab uses, so it must move
             whenever the item behind it could differ — including to an
             empty selection, which gets a generation of its own.
+        source:
+          type: string
+          enum: [selection, drag]
+          default: selection
+          description: >
+            WHICH GESTURE PRODUCED THIS GENERATION, and therefore what a
+            host may conclude from it.
+
+            `selection` is the original and remains the default: a
+            bounded Apple Event poll of the Finder's selection, published
+            when it changes, from ordinary task time. Everything the
+            stub's own description says about the poll is about this
+            source.
+
+            `drag` is the item the Drag Manager itself handed the guest
+            at the moment a drag began — read from a live DragRef in the
+            dragging application's own context, with NO SELECTION
+            CONSULTED ANYWHERE. It is a stronger fact than the poll can
+            ever produce, and it is why this field exists rather than a
+            sibling message: the item shape, the generation space and the
+            grab that redeems it are identical, and splitting them would
+            have made a grab ambiguous about which space its generation
+            names.
+
+            THE TWO CAN LEGITIMATELY DISAGREE, and a host must not treat
+            that as a fault. Dragging a file that was never selected is
+            an ordinary Macintosh gesture: the Finder's selection is then
+            something else entirely, and both statements are true. A
+            drag-sourced generation therefore supersedes a cached
+            selection-sourced one for binding purposes without any clock
+            comparison — the gesture in flight is its own attribution —
+            and the guest's grab confirmation confirms a drag-sourced
+            generation against THE DRAG rather than against the
+            selection, for the same reason. Confirming a drag against the
+            selection would refuse exactly the gesture this source exists
+            to serve.
+
+            An absent field means `selection`: a guest built before this
+            field existed had only the poll.
+        dragSeq:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            WHICH DRAG THIS GENERATION WAS MINTED FROM — the resident's
+            own drag-begin sequence, sent only when `source` is `drag`.
+
+            It exists because the same gesture is now reported TWICE, by
+            two senders with different clocks: the resident names the
+            file from inside the Finder's drag loop over its own liveness
+            channel (`continuity.dragBegin`), and this application
+            publishes it again when it is next scheduled. Without a
+            shared name for the gesture a host would have to decide by
+            timing whether those are one drag or two, and timing is
+            exactly what is unreliable here — the whole reason the second
+            sender exists is that it can be hundreds of ticks late.
+
+            So the host joins on this number: same `dragSeq` means one
+            gesture, and the application's frame supplies the GENERATION
+            (which only it mints, and which a later continuity.grab must
+            name) for an identity the host already holds. A different
+            `dragSeq` is a second drag and a second consent.
+
+            Absent for `selection`, and absent from a guest that predates
+            the resident's own send — in which case the application's
+            frame is the only account of the gesture and binds as it
+            always did.
+        afterEpoch:
+          type: boolean
+          default: false
+          description: >
+            THE EPOCH NAMED ABOVE HAS ALREADY ENDED, and this frame is
+            sent anyway — deliberately, and only for a gesture that began
+            inside it.
+
+            THE MEASUREMENT THAT FORCED IT. A drag that crosses the edge
+            is the drag this whole plane exists for, and it is exactly
+            the one that could not be published: the crossing is what
+            ends the epoch, the crossing's own release is what ends the
+            Finder's drag loop, and the application gets no task time
+            until that loop ends. So the identity is drained with no live
+            epoch to publish under. Measured on metal 2026-08-16
+            (`221834`): six crossings, six refusals, zero bytes, and no
+            `continuity.selection` for any of them — the frame was never
+            sent rather than sent and rejected.
+
+            THE RULE, AND IT IS THE GRANT'S RULE ONE STEP EARLIER. This
+            contract already lets a grab be served under an epoch that
+            ended, for one in-flight gesture, inside a bounded window
+            (see `continuity.grab`). `afterEpoch` says the same thing
+            about the MINT: the generation was minted for a gesture that
+            began in `epoch`, under the same window, and it is grantable
+            the instant it is published. Nothing else about consent
+            moves — the item is the one the person picked up, the number
+            is one this guest minted, and a grab must still name it.
+
+            WHAT A HOST MAY DO WITH IT, and what it may not. It may join
+            the frame to a crossing it is already carrying, by `dragSeq`,
+            exactly as it joins a live one, and redeem a drop that is
+            waiting for the number. It may NOT cache it as the current
+            selection: no epoch is running, so nothing may be bound to a
+            press that has not happened. A frame arriving after the host
+            stopped waiting is refused with a line naming the gesture it
+            missed, rather than redeemed late.
+
+            `true` only ever accompanies `source: drag`: a poll cannot
+            run without a live epoch, so a selection-sourced frame naming
+            a dead one is a fault rather than this case. Absent means
+            false — the ordinary frame, naming the epoch that is running.
         item:
           type: object
           additionalProperties: false
@@ -2589,6 +2927,102 @@ components:
                 than the rest of the poll put together, so it is named here
                 to fix its shape and left unsent; a host must treat its
                 absence as ordinary.
+    ContinuityDragBegin:
+      type: object
+      required: [type, version, epoch, dragSeq, item]
+      additionalProperties: false
+      description: >
+        THE FILE IN THE HAND, SAID WHILE THE HAND IS STILL MOVING.
+
+        Sent by the RESIDENT over its own liveness channel — the only
+        sender on this wire that runs inside the Finder's drag loop — at
+        the instant a Drag Manager tracking handler is entered. It is not
+        sent by the application and cannot be: measured 2026-08-16, the
+        application's own account of the same gesture
+        (`continuity.selection` with `source: drag`) reached the host 462
+        ticks after the drag began and 14 ticks after it ENDED, because
+        nothing of the application's is scheduled while that loop runs.
+        The crossing this fact is needed for happens in between.
+
+        SO THIS IS A PRE-ANNOUNCEMENT, NOT A GENERATION. It names an
+        item; it does not mint a generation, and a host may not grab
+        with it. Generations belong to the application's stub table, a
+        `continuity.grab` names one, and the guest's own grab check
+        refuses any other number — which is a property worth keeping
+        rather than working around. What this frame buys is the half the
+        host could not get in time: WHICH FILE, before the pointer
+        crosses. The generation follows on the application's frame,
+        joined by `dragSeq`, well before any drop.
+
+        WHAT IT DOES NOT CARRY, AND WHY THAT IS THE DESIGN. No size, no
+        modification date, no folderness. All three need the File
+        Manager, and a resident may not call it from a foreign
+        application's context — the whole safety argument for running
+        there at all is that it reads a live DragRef and touches nothing
+        else. The HFSFlavor the Drag Manager hands the handler carries
+        the identity triple plus type and creator, and that is exactly
+        what is here. A receiver must tolerate their absence and must not
+        infer folderness from silence: a folder drag is refused when the
+        application's frame arrives and says so, one gesture later,
+        which is the same slice folders were already deferred to.
+
+        A HOST THAT HAS NEVER HEARD OF IT ignores one control frame and
+        keeps the connection, per the unreadable-frame rule. That is the
+        whole cost of a resident newer than its host.
+      properties:
+        type: { const: continuity.dragBegin }
+        version:
+          const: 4
+          description: The Continuity control-contract version, as elsewhere.
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            The live Continuity epoch as the RESIDENT's shared table
+            reports it. A drag seen with no epoch running is a person
+            using their own Macintosh and is not sent at all.
+        dragSeq:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            The resident's drag-begin sequence — the join key. The
+            application's later `continuity.selection` for the same
+            gesture carries the same number in its own `dragSeq`.
+        ticks:
+          type: integer
+          minimum: 0
+          maximum: 4294967295
+          description: >
+            The guest's TickCount at drag begin, as read inside the
+            handler. Sent so a host log can state the arrival ordering
+            against the guest's own clock rather than against its own —
+            the measurement this whole route exists to move.
+        item:
+          type: object
+          additionalProperties: false
+          required: [name, volumeRef, dirID]
+          description: >
+            The FIRST drag item's HFS identity, and only the first: the
+            multi-item case needs a promise group and a host-side answer
+            to "some of these arrived", exactly as `continuity.selection`
+            says of its own v1.
+          properties:
+            name:
+              type: string
+              maxLength: 31
+              description: The item's name, HFS's own 31-byte limit.
+            volumeRef: { type: integer, minimum: -32768, maximum: 32767 }
+            dirID: { type: integer, description: Parent directory ID. }
+            fileType:
+              type: string
+              maxLength: 4
+              description: Four-byte OSType, from the HFSFlavor.
+            creator:
+              type: string
+              maxLength: 4
+              description: Four-byte creator, from the HFSFlavor.
     ContinuityGrab:
       type: object
       required: [type, version, id, epoch, generation]
@@ -2634,6 +3068,41 @@ components:
         file.end, and file.refuse for every failure. There is no second
         bulk path — reusing it is why a grabbed file resumes, cancels and
         reports progress the same way a Files pull does.
+
+        THE INVERTED USE: THE GUEST SENDS THIS TOO. When the item was
+        published by a continuity.offer rather than a
+        continuity.selection, the roles swap whole — the guest asks, the
+        host serves its own item, and the same answer lane carries it
+        back. This is the file family's symmetry rule ("whoever RECEIVES
+        a request serves its own share") applied to the one lane that
+        deliberately reaches outside a share, and it is why this
+        direction mints no sibling message: a second grab would be two
+        implementations of one bargain, drifting apart at the first
+        refusal somebody added to only one of them.
+
+        Every property above holds unchanged with the sender swapped —
+        one generation, one item, no path — and reads as a bound on the
+        HOST instead of on the guest. Three things differ, and they are
+        differences of fact rather than of rule:
+
+          - `epoch` and `generation` name a continuity.offer's numbers,
+            not a continuity.selection's. A responder that holds no offer
+            under them refuses `bad-epoch` or `stale-selection` by the
+            same test it would apply to its own cache; the words keep
+            their meanings, and `no-selection` is what an empty hand
+            answers whichever hand it is.
+          - The clock that can run out is the OFFER LIFETIME, stated once
+            on continuity.offer, and its refusal is `offer-expired`. A
+            grab that arrives late in this direction did not outlive a
+            Macintosh's grant; it outlived a Mac's, and the two are named
+            apart so a person is told the truth about which machine
+            stopped waiting.
+          - The promise callback that fires this grab runs inside the
+            guest Finder's own nested drop handling, so the requester is
+            answering a Toolbox loop while the bytes stream. That is a
+            guest implementation obligation (pump.h) rather than a wire
+            rule, and it is named here because it is the one hazard this
+            direction has that the other does not.
       properties:
         type: { const: continuity.grab }
         version: { const: 4 }
@@ -2653,6 +3122,336 @@ components:
           description: >
             The file lane's own knob, unchanged in meaning. auto (default)
             applies the container rule.
+    ContinuityOffer:
+      type: object
+      required: [type, version, epoch, generation]
+      additionalProperties: false
+      description: >
+        What the person at the Mac has picked up and is carrying toward
+        the Macintosh, pushed unsolicited while a Continuity epoch is
+        live. It is continuity.selection INVERTED — same stub, other
+        sender — and it is the only new vocabulary this direction needs.
+
+        WHY IDENTITY CROSSES FIRST. The guest must draw the drag before
+        any content byte moves: the right name under the pointer, the
+        right kind of icon, and — if the item is one it will not take —
+        a refusal it can make at the machine, immediately, without
+        asking. Everything after that is the
+        existing lane — a continuity.grab the guest sends, answered by
+        file.begin, the bulk stream and file.end — so this message is
+        where the feature's whole new surface lives, and it is
+        deliberately as small as the stub it mirrors.
+
+        AN OFFER IS NOT ANSWERED, AND NOTHING WAITS ON ONE. There is no
+        accept and no decline on this wire: a guest that will take the
+        item sends a continuity.grab, and a guest that will not simply
+        never sends one — its Finder refuses the drop and the person
+        watching both screens sees it refused, on the machine that
+        refused it. Declining is therefore silence, and the host must
+        read it as silence: no timer waiting for a verdict, no state
+        machine parked on an answer that is not coming, and no
+        conclusion drawn about the guest from the absence of a grab.
+        This is the one place this direction is DELIBERATELY thinner
+        than the forward one, where an unsolicited continuity.selection
+        is likewise never answered — inverted, the same shape means the
+        host learns nothing, so it must be built to need nothing. What
+        the guest CAN say ahead of a person's gesture it says once, per
+        epoch, in continuity.report's `acceptsOffer`; a per-item refusal
+        would be a second, quieter capability negotiation, and the
+        message it would need is the sibling this slice exists not to
+        mint.
+
+        IT CARRIES NO SOURCE IDENTITY, and that is the deliberate half of
+        the inversion. The selection stub carries volumeRef/dirID/name
+        because the GUEST must re-find its own item at grab time; the
+        host resolves an offer from its own generation table, so the
+        wire needs no host path — and must not have one, for the reason
+        continuity.grab names no path either. The reachable set is
+        exactly what a person put in their hand.
+
+        NOTHING HERE IS SHAPED BY THE DRAG MANAGER. The fields are file
+        facts — a name, a type and creator, two fork sizes, a date — and
+        a receiver that has no native drag at all can still serve the
+        whole message by staging the file (see `acceptsOffer`). That is
+        not politeness toward a future port: NOW-68K targets System 7.1,
+        where the Drag Manager is an extension that may not be
+        installed, and a message that assumed otherwise would have to be
+        replaced rather than implemented when that guest's turn comes.
+
+        v1 OFFERS ONE ITEM, the selection stub's narrowing in the other
+        direction and for the same reason: several items need a promise
+        group and an answer to "some of them arrived", which one item
+        does not. A host with several files in hand offers the first and
+        says so to its own person; it does not quietly send one of many.
+
+        THE OFFER OUTLIVES ITS EPOCH, BOUNDED. A person can drag back
+        across the edge — or the lease can expire, or Continuity can be
+        disarmed — while the guest's Finder still holds a promise whose
+        callback has not fired. The host therefore keeps the LAST
+        generation of an ending epoch serveable for a bounded window: 30
+        seconds, or until it publishes an offer under a new epoch,
+        whichever comes first. This is the ONE place that bound is
+        stated; a grab arriving after it is refused `offer-expired`.
+        Nothing else widens — same one generation, same item, no path.
+        The LINK dropping ends it immediately, because consent was given
+        to one Macintosh over one connection.
+
+        It is the same NUMBER as the guest's grant window and it is NOT
+        the same constant. Two clocks on two machines that happen to
+        agree today may be argued apart tomorrow — a Finder holding a
+        promise is not a person holding a drag — and an implementer who
+        derives one from the other has built the coupling this file
+        spends its refusal vocabulary avoiding. Each side reads its own
+        bound from the message that states it, and the two refusals stay
+        separate words for the same reason.
+      properties:
+        type: { const: continuity.offer }
+        version:
+          const: 4
+          description: The Continuity control-contract version, as elsewhere.
+        epoch: { type: integer, minimum: 1, maximum: 4294967295 }
+        generation:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            Monotonic per OFFER CHANGE within the epoch, not per send —
+            continuity.selection's rule, inverted. It is the name a
+            continuity.grab uses, so it must move whenever the item
+            behind it could differ, including to no offer at all, which
+            gets a generation of its own.
+        item:
+          type: object
+          additionalProperties: false
+          description: >
+            Absent when the host is carrying nothing. An absent item with
+            a fresh generation is the instruction to tear down whatever
+            drag the guest was drawing; it is not "the host had nothing
+            to say".
+          required: [name, dataSize, isFolder]
+          properties:
+            name:
+              type: string
+              maxLength: 31
+              description: >
+                The name the item will have ON THE GUEST — already
+                converted and already truncated by the host, HFS's own
+                31-byte limit. The guest displays this and stores under
+                it; it must not re-derive a name of its own, because a
+                person is entitled to see before the drop the name they
+                will find after it. The conversion rule is stated once,
+                beside the file family's other conversion rule, in the
+                guestServesFiles operation above.
+            nameAdjusted:
+              enum: [truncated, transliterated, both]
+              description: >
+                Present only when converting cost something, so the guest
+                can mark it and a person is not surprised by a name they
+                did not choose. ABSENT means the name crossed unchanged —
+                a fact, never a claim that the host did not look.
+            fileType:
+              type: string
+              maxLength: 4
+              description: >
+                Four-byte OSType the host MAPPED for this item; see the
+                mapping rule beside the conversion rule. Absent for a
+                folder, and absent when the host declined to guess —
+                which is a legitimate answer, not a gap for the guest to
+                fill from the name.
+            creator:
+              type: string
+              maxLength: 4
+              description: Four-byte creator, mapped and absent on the same terms.
+            dataSize:
+              type: integer
+              minimum: 0
+              description: >
+                Bytes the data fork will carry, known BEFORE the drag is
+                drawn so a guest can turn down an item it cannot take
+                while the person can still change their mind, rather than
+                partway through a stream. That refusal is local and
+                silent on the wire, like every other decline of an offer;
+                `too-big` is the word for it in what the guest tells its
+                own person, not a message it sends. What the ceiling is
+                remains the receiver's own policy and is not on this wire.
+            resourceSize:
+              type: integer
+              minimum: 0
+              description: >
+                Bytes the resource fork will carry. Absent means none —
+                the ordinary case for a file that has only ever lived on
+                the modern machine.
+            modifiedAt:
+              type: integer
+              minimum: 0
+              description: >
+                Classic seconds since 1904, converted host-side to the
+                File Manager's own clock, so the guest stamps what it
+                writes without arithmetic it has no timezone for.
+            isFolder: { type: boolean }
+            icon:
+              type: string
+              contentEncoding: base64
+              description: >
+                DECLARED, NOT IMPLEMENTED as of this slice, exactly as on
+                continuity.selection. A small icon payload so the guest's
+                drag image is honest before any wire round-trip; until it
+                is sent a guest draws from fileType/creator, and a host
+                must treat its absence as ordinary.
+    ContinuityHostDragBegin:
+      type: object
+      required: [type, version, epoch, dragSeq, pos, item]
+      additionalProperties: false
+      description: >
+        THE EDGE HAS HANDED OFF: START A REAL DRAG, HERE, NOW.
+
+        The mirror of continuity.dragBegin, and the two are deliberately
+        NOT one message. continuity.dragBegin is the guest's resident
+        ANNOUNCING a drag a person already started over there;
+        continuity.hostDragBegin is the host INSTRUCTING this Macintosh
+        to begin one of its own, because the person's hand crossed the
+        edge and the AppKit session ended at the crossing. One announces,
+        one commands, and a receiver that read them as one word would
+        have no way to tell an observation from an order.
+
+        THE OWNERSHIP TOGGLE. Exactly one machine's drag machinery is
+        live at a time — the one that owns the cursor — and this frame is
+        the moment it becomes this one's. On arrival the guest
+        synthesises the starting mouse-down EventRecord itself (a struct
+        parameter to TrackDrag; no event is delivered and none is
+        needed), builds a Drag Manager drag carrying
+        flavorTypePromiseHFS from the skeleton below, and enters
+        TrackDrag. From that instant the ORDINARY Continuity position
+        datagrams carry the gesture — the drag's input proc reads the
+        latest of them every time the Manager samples the mouse — so
+        this frame states the STARTING state and nothing else. There is
+        no second frame, no drag-move message and no drag-end message:
+        the drag ends the way any drag ends, when the reported button
+        goes up.
+
+        WHAT THE GUEST DOES NOT DO WITH IT. It does not choose a
+        destination, ask whether a point is over a Finder window, or
+        adjudicate a same-name collision. Where the file lands is the
+        Drag Manager's and the receiving application's business
+        entirely; code here that asked those questions would be
+        re-invented targeting and would break the one property the whole
+        lane is for — that the receiver cannot tell this from a drag its
+        own user started.
+
+        THE PROMISE IS SERVED BACK OVER THIS SAME CONNECTION. The
+        skeleton names an item the HOST is holding; when the receiver
+        asks for the promised flavor, the guest pulls those bytes down
+        the ordinary file lane (the continuity.grab exchange) from
+        inside the receiver's drop, and hands back an FSSpec of a file
+        staged where the receiver can take it from. So the wire is
+        SILENT between this frame and that pull, for as long as the
+        gesture lasts: a liveness monitor on either side must read that
+        silence as a native drag in flight rather than as a wedge.
+
+        A GUEST THAT HAS NEVER HEARD OF IT ignores one control frame and
+        keeps the connection, per the unreadable-frame rule — and the
+        host learns it can expect a native drag from
+        continuity.report's `acceptsOffer`, which already gates whether
+        this guest can take an offer at all. There is no separate
+        capability word, because a guest that can take an offer and a
+        guest that can be told to drag one are the same guest.
+      properties:
+        type: { const: continuity.hostDragBegin }
+        version:
+          const: 4
+          description: The Continuity control-contract version, as elsewhere.
+        epoch:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            The live Continuity epoch. A hostDragBegin naming any other
+            epoch is refused: the cursor authority this drag is steered
+            by belongs to one epoch, and a drag begun under a dead one
+            would read a plane nobody is writing.
+        dragSeq:
+          type: integer
+          minimum: 1
+          maximum: 4294967295
+          description: >
+            The gesture id, minted by the host, monotonic within the
+            epoch. It is the join key for everything this crossing later
+            says about itself, and it is the SAME field name
+            continuity.dragBegin uses for the mirrored direction on
+            purpose — one gesture has one number whichever side started
+            it.
+        pos:
+          type: object
+          additionalProperties: false
+          required: [h, v]
+          description: >
+            Where the drag starts, in the GUEST's global screen
+            coordinates — the point the host's crossing put the cursor
+            at, already mapped by the host exactly as the ordinary
+            Continuity position datagrams are. The guest builds the
+            starting EventRecord and the drag image's bounds around it
+            and does not re-derive it from GetMouse: the pointer this
+            application can read is the one that cannot move while
+            TrackDrag holds it, which is the whole reason this lane
+            exists.
+          properties:
+            h: { type: integer, minimum: -32768, maximum: 32767 }
+            v: { type: integer, minimum: -32768, maximum: 32767 }
+        item:
+          type: object
+          additionalProperties: false
+          required: [name, dataSize]
+          description: >
+            THE SKELETON, AND ONLY THE SKELETON. Everything the guest
+            needs to draw an honest drag and declare an honest promise
+            before a byte moves, and nothing else. The field names are
+            continuity.offer's, verbatim, because it is the same stub
+            said at a different moment — a second spelling of one item
+            is the drift this file exists to refuse.
+
+            NO FOLDERS. `isFolder` is absent here rather than declared
+            false: a folder crossing is refused by the offer that
+            published it, one message earlier, and a second refusal
+            point would be a second policy.
+          properties:
+            name:
+              type: string
+              maxLength: 31
+              description: >
+                The name the item will have on the guest — already
+                converted and truncated by the host, HFS's own 31-byte
+                limit, continuity.offer's rule verbatim. The guest
+                offers it to the receiver as a naming HINT and the
+                receiver stays free to uniquify it.
+            fileType:
+              type: string
+              maxLength: 4
+              description: >
+                Four-byte OSType the host mapped. Absent when the host
+                declined to guess; the guest then promises '????' and
+                the drag image falls back to the generic document icon.
+                That is a legitimate answer, not a gap to fill from the
+                name.
+            creator:
+              type: string
+              maxLength: 4
+              description: Four-byte creator, mapped and absent on the same terms.
+            dataSize:
+              type: integer
+              minimum: 0
+              description: >
+                Bytes the data fork will carry. Known BEFORE the drag is
+                drawn so the guest can refuse an item it cannot serve
+                inside a drop while the person can still change their
+                mind. The ceiling is the guest's own policy and is not
+                on this wire.
+            resourceSize:
+              type: integer
+              minimum: 0
+              description: >
+                Bytes the resource fork will carry. Absent means none.
+                Summed with dataSize against the guest's own cap,
+                because both forks stream through one lane.
     MirrorInvalidate:
       type: object
       required: [type, generation, domains, quality]
@@ -3990,6 +4789,27 @@ components:
           description: >
             Accepted bytes land under a temporary name in the destination
             folder and cannot appear under the final name before validation.
+        replacing:
+          type: boolean
+          description: >
+            True when accepting this offer will OVERWRITE an item the
+            receiver already had, and a person at the receiving machine
+            authorised it. Absent or false means nothing is being
+            replaced — never "the receiver declined to say".
+
+            It exists because the sender cannot otherwise tell a
+            first-time write from a replacement: both are one accept
+            followed by one stream, and the collision is knowable only on
+            the side that looked. A sender that has just overwritten
+            somebody's file and recorded it as an ordinary copy has
+            written down the least interesting half of what happened.
+
+            The consent is the RECEIVER'S and stays there. This field
+            reports a decision; it does not carry one, and a sender must
+            never send an offer whose acceptance it has pre-authorised —
+            the overwrite flag on file.offer is the sender's own
+            re-send after ITS person was asked, which is the same rule
+            read from the other end.
     FileDone:
       type: object
       required: [type, id, ok]
@@ -4050,10 +4870,12 @@ components:
         type: { const: file.refuse }
         id: { type: integer }
         code:
-          enum: [busy, exists, bad-path, not-found, io-error, too-big,
-                 changed, bad-source, project-file-unavailable,
+          enum: [busy, exists, declined, bad-path, not-found, io-error,
+                 too-big, changed, bad-source, project-file-unavailable,
+                 bad-target, not-requested, invalid-update,
+                 candidate-unavailable,
                  bad-epoch, stale-selection, no-selection, folder-not-yet,
-                 grant-expired]
+                 grant-expired, offer-expired]
           description: >
             The first seven are the file lane's own answers. The rest name
             a REQUEST SHAPE the responder would not resolve, and they are
@@ -4077,6 +4899,55 @@ components:
             window closed. A person whose drag took too long and a host
             asking for something that was never granted are different
             sentences, and only one of them is worth trying again.
+
+            offer-expired is grant-expired's deliberate parallel on the
+            other side of the crossing: the HOST refusing a guest's
+            continuity.grab because the offer lifetime stated on
+            continuity.offer has closed. It is a separate word rather
+            than a reuse for the reason the whole family names its
+            refusals precisely — the two say which machine stopped
+            waiting, and a guest that reported "the Macintosh let the
+            grant lapse" when the Mac had let the offer lapse would send
+            a person to look at the wrong machine. Everything else about
+            it is grant-expired's rule read from the other end: the epoch
+            was right, the generation was right, the clock was not.
+
+            declined is `exists` AFTER SOMEBODY WAS ASKED, and the two
+            are separate words for the same reason grant-expired and
+            bad-epoch are. `exists` says a receiver found the name taken
+            and applied its own policy; `declined` says a PERSON at the
+            receiving machine was shown the collision and chose to keep
+            what they had. A sender cannot tell those apart from the
+            outcome — nothing arrives either way — and they are not the
+            same event: one is a receiver that never asked, which is a
+            gap worth closing, and the other is consent working exactly
+            as intended. A log that spells them the same way makes the
+            first invisible for as long as it survives.
+
+            It is deliberately NOT `cancelled`. That word is already
+            file.done's, for a transfer abandoned once bytes were
+            moving, and a refusal answers an offer before any byte
+            moves. Two clocks, two words.
+
+            THE NEXT FOUR WERE FOUND, NOT DESIGNED, and how says more
+            than what. bad-target, not-requested, invalid-update and
+            candidate-unavailable have been on the wire from the PowerPC
+            guest for as long as the Mirror-drop and update lanes have
+            existed, and no reader of this file could have known:
+            exactly the drift the bad-source sentence above describes,
+            still happening after somebody wrote that sentence. What
+            changed is that a gate now derives this list from the
+            guest's own `file_refuse` call sites
+            (`testEveryGuestRefusalCodeIsDeclaredInTheContract`), so the
+            enum is checked rather than remembered. It failed on its
+            first run and named all four.
+
+            bad-target: a mirrorDrop target arrived incomplete or
+            malformed. not-requested and invalid-update are the update
+            lane's two halves — an offer this guest never asked for, and
+            one whose identity did not match what it did ask for.
+            candidate-unavailable: the inactive Development candidate
+            could not be opened for writing.
         reason: { type: string }
     FileBegin:
       type: object
@@ -7859,6 +8730,96 @@ components:
         properties:
           mirrorlog:
             $ref: "#/components/x-commands/gestalt/x-rowArray"
+
+    # The console face of the inverted crossing, declared 2026-08-15
+    # AHEAD OF ANY GUEST — legal by this file's own rule, the same way
+    # the act plane's verbs were: adding a command is additive, and a
+    # peer that does not serve one answers unknown-command cleanly.
+    offer:
+      description: >
+        The file the person at the Mac is holding out to this Macintosh,
+        and the one thing somebody standing at this Macintosh can do
+        about it.
+
+        A bare call REPORTS: the offer's generation, the name the item
+        will land under, its type and creator when the host mapped them,
+        its size, what became of the last drag of it, and nothing else.
+        `--take` asks for it — the same continuity.grab the wire sends,
+        answered down the same file lane — and reports where the bytes
+        landed. `--drag` asks for the same one file and the same lane,
+        differing only in WHERE it lands: the guest picks the item up in
+        a real Drag Manager drag carrying flavorTypePromiseHFS, and the
+        bytes are pulled when a person drops it, into the folder they
+        dropped on. `--stop` ends a drag. None of the four browses the
+        Mac, names a file, or reaches anything the host has not
+        published by a person's own gesture — the bounded set is
+        identical, and only the gesture that delivers it differs.
+
+        `--drag` REPORTS ARMED, NOT DRAGGING, AND THE DISTINCTION IS THE
+        WHOLE DESIGN. The Drag Manager tracks a button, and the button
+        on the guest side is the synthetic one the resident applies from
+        the host's plane. A drag begun when this request arrived would
+        race that apply and track nothing — the same class of defect as
+        the session-state poisoning the guest→host direction paid
+        eleven metal rounds for. So the request arms, the arm ripens on
+        APPLIED button state, and an arm whose button never came refuses
+        by name (`button-never-came`) rather than hanging. A caller that
+        wants to know how it went asks again with no argument.
+
+        THE SIZE LINE IS A REFUSAL, NOT A PROGRESS BAR. The promise
+        callback runs inside the receiving Finder's drop handling, a
+        nested Toolbox loop the guest must service the wire from by
+        hand. v1 streams under a cap stated once in the guest's shared
+        header and refuses `too-large` above it. Completing an
+        over-cap transfer in the background after the promise hands back
+        a file reference is legal under promised HFS and is deliberately
+        NOT built: a fork still filling is a lie shaped like a file
+        until something marks it busy, and marking it is later work.
+
+        WHY THIS DIRECTION HAS A CONSOLE VERB WHEN THE OTHER REFUSES ONE.
+        A typed `grab` on the guest→host crossing would have let a person
+        at the keyboard ask the host for a file of their choosing, which
+        is the general read outside the share that the whole gesture
+        boundary exists to refuse. Typing `offer --take` asks for the ONE
+        item already published — the identical bounded set the wire may
+        reach, no wider by a single file. The rule did not bend; it reads
+        differently from the other end, and the argument is stated beside
+        the DECLARED ASYMMETRY in the guestReportsContinuity operation.
+
+        It reports honestly when there is nothing to report: no live
+        Continuity epoch, no offer under it, or an offer whose lifetime
+        has closed are three different sentences, not one empty answer.
+        THE VERB AND THE CAPABILITY SHIP TOGETHER. A guest that registers
+        `offer` answers at least `stage` in continuity.report's
+        `acceptsOffer`, and a guest that cannot take an offered file at
+        all does not register it and answers unknown-command — which is
+        what a closed registry is for. They are one decision made in a
+        build, not two, and the parity gate compares the build under test
+        against its own `help` table, so a build that moved one without
+        the other fails naming the verb rather than shipping a word it
+        cannot honour.
+
+        NOW-68K answers unknown-command: it has no Continuity plane.
+      args:
+        type: object
+        properties:
+          action:
+            type: string
+            description: >
+              "--take" to request the published item into the downloads
+              folder, "--drag" to pick it up as a Drag Manager promise
+              drag that lands where a person drops it, "--stop" to end a
+              drag. Absent or anything else reports without asking for a
+              byte — a read is the safe default for a verb whose other
+              acts move a file.
+      x-line: >
+        One flag alone — "--take", "--drag" or "--stop" — or empty to
+        report. No name and no path: this verb takes neither, which is
+        the point of it.
+      output:
+        type: object
+        properties:
+          offer: { $ref: "#/components/x-commands/gestalt/x-rowArray" }
 
   # The census probe registry: the CLOSED, DECLARED set of probes a side may
   # be asked about, and the outcome vocabulary every report speaks. Adding a

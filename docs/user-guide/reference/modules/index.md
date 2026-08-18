@@ -6,9 +6,9 @@ doc_type: reference
 audience: user
 lifecycle: current
 authority: [docs/module-manifest.yaml, docs/contract-coverage.md, now-host/Sources/Host/NavigationLayout.swift]
-source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-host/Sources/Host/HostSettingsView.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
+source_dependencies: [docs/module-manifest.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/NavigationLayout.swift, now-host/Sources/Host/NavigationSelection.swift, now-host/Sources/Host/HostSidebarView.swift, now-host/Sources/Host/SidebarNavigationContent.swift, now-host/Sources/Host/SidebarNativeDragSurface.swift, now-host/Sources/Host/SidebarCanvasDropHost.swift, now-host/Sources/Host/ShelfDetailView.swift, now-host/Sources/Host/ModuleAvailabilityPresentation.swift, now-host/Sources/Host/AppearancePreferences.swift, now-host/Sources/Host/SettingsWindowController.swift, now-guest-ppc/src/workshop/workshop_module.h, now-guest-68k/src/commands/commands68.c, scripts/docs-inventory, tools/docs-gate]
 media_ids: []
-last_verified: 2026-08-15
+last_verified: 2026-08-14
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -28,7 +28,7 @@ is:
 | Upper sidebar | Screen | Screen, Mirror |
 | Upper sidebar | Files | Files, iCloud |
 | Upper sidebar | Chat | Chat |
-| Upper sidebar | Projects | Projects |
+| Upper sidebar | Development | Development |
 | Lower pinned stack | Debug | Console, Logs |
 | Lower pinned stack | Connections | Connections, Networking, MCP, Web Proxy |
 
@@ -72,18 +72,11 @@ tools remain usable, cached machine information is marked offline where it can
 be shown honestly, and live-only pages offer **Start Listening** or a route to
 Connections. Reconnecting restores live behavior in place.
 
-Application appearance, and a set of preferences pulled out of individual
-modules, are separate from Connections. Choose **New Old World >
-Settings…** or press **Command-,** for a pill-tabbed window: appearance
-(System, Light, or Dark theme and the Off, Clear, or Regular Liquid Glass
-setting — macOS 13–25 and macOS accessibility settings that reduce
-transparency or increase contrast use the native material fallback instead of
-glass), the sidebar's row density and layout, MCP's and Web's
-start-automatically switches, Web's compatibility and safety settings, Logs'
-disk-write switch, and defaults for a Continuity pairing that has never
-connected before. See [Connections](connections-and-preferences.md) for the
-full tab list. Several modules also carry their own **Settings…** button that
-opens this window on their tab.
+Application appearance is separate from Connections. Choose **New Old World >
+Settings…** or press **Command-,** for System, Light, or Dark theme and the
+Off, Clear, or Regular Liquid Glass setting. macOS 13–25 and macOS accessibility
+settings that reduce transparency or increase contrast use the native material
+fallback instead of glass.
 
 | Module | PowerPC Workshop | Pre-Carbon source (excluded from alpha) |
 |---|---|---|
@@ -110,9 +103,6 @@ work; it does not mean NOW-68K ships in the alpha.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
-sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
-derive module-map sha256=03dd8a0eabf715800bf6f0c52d475342279647d27fef813faa4a4bb5f4b49062 lines=17
 sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
 derive module-map sha256=03dd8a0eabf715800bf6f0c52d475342279647d27fef813faa4a4bb5f4b49062 lines=17
     scripts/docs-inventory
@@ -241,36 +231,12 @@ rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:51-0400 60bb3427 unchanged
-rederived: 2026-08-14T15:56:44-0400 835e6acf unchanged
 rederived: 2026-08-14T18:20:42-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:12-0400 e2c66126 unchanged
 rederived: 2026-08-14T18:30:53-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:26-0400 b248c9a1 unchanged
-rederived: 2026-08-14T20:24:57-0400 6d3d74d7 unchanged
-rederived: 2026-08-14T20:18:50-0400 cccec57a sources
-rederived: 2026-08-14T21:50:42-0400 edcc526f unchanged
-rederived: 2026-08-14T22:27:42-0400 5a6c46dc unchanged
-rederived: 2026-08-14T22:10:44-0400 568967b9 unchanged
-rederived: 2026-08-14T23:30:11-0400 0017d984 unchanged
-rederived: 2026-08-14T22:14:12-0400 0e743bc5 sources
-rederived: 2026-08-14T23:32:09-0400 a9afc153 unchanged
-rederived: 2026-08-14T22:19:02-0400 fe3d18a0 sources
-rederived: 2026-08-14T23:33:01-0400 09abc942 sources, sources
-rederived: 2026-08-14T22:27:26-0400 67772e4a unchanged
-rederived: 2026-08-14T23:33:52-0400 521b590f unchanged
-rederived: 2026-08-14T22:17:24-0400 4495cfb2 sources, module-map 17->17
-rederived: 2026-08-14T23:35:19-0400 61505862 sources, sources, module-map 17->17, sources, module-map 17->17
-rederived: 2026-08-14T22:33:00-0400 13bfe534 unchanged
-rederived: 2026-08-14T23:36:21-0400 b1fc9796 unchanged
-rederived: 2026-08-15T00:20:07-0400 e937faee sources, sources, sources
-rederived: 2026-08-15T01:40:29-0400 139dff1a unchanged
-rederived: 2026-08-15T01:32:40-0400 108db464 unchanged
-rederived: 2026-08-15T02:20:04-0400 de5812ab unchanged
-rederived: 2026-08-15T01:36:40-0400 34192244 unchanged
-rederived: 2026-08-15T02:21:01-0400 c87b3288 unchanged
-rederived: 2026-08-15T02:26:43-0400 2749aab1 unchanged
 rederived: 2026-08-14T19:50:32-0400 d20eee81 unchanged
 rederived: 2026-08-14T19:50:54-0400 d20eee81 unchanged
 rederived: 2026-08-14T20:02:53-0400 068ca7fd unchanged
@@ -279,14 +245,50 @@ rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
 rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:15-0400 f4dab407 unchanged
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
-rederived: 2026-08-15T02:57:59-0400 5d767dce unchanged
-rederived: 2026-08-15T03:19:44-0400 098e7ecf unchanged
-rederived: 2026-08-15T05:39:23-0400 829013ee unchanged
-rederived: 2026-08-15T05:30:48-0400 a327ba45 unchanged
-rederived: 2026-08-15T06:15:16-0400 3c7d14e4 unchanged
 rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 unchanged
 rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 unchanged
 rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
 rederived: 2026-08-15T04:01:11-0400 b18a891c unchanged
-rederived: 2026-08-15T06:18:29-0400 9232bd77 unchanged
+rederived: 2026-08-15T12:33:03-0400 eadb1784 unchanged
+rederived: 2026-08-15T13:22:25-0400 4e897bc6 unchanged
+rederived: 2026-08-15T14:24:09-0400 599da71e unchanged
+rederived: 2026-08-15T14:56:50-0400 4caf46ef unchanged
+rederived: 2026-08-15T15:01:59-0400 a06d9396 unchanged
+rederived: 2026-08-15T15:16:39-0400 cc0d429b unchanged
+rederived: 2026-08-15T15:19:24-0400 658719b4 unchanged
+rederived: 2026-08-15T15:25:08-0400 7949e13a unchanged
+rederived: 2026-08-15T16:00:10-0400 69217d7a unchanged
+rederived: 2026-08-15T16:06:11-0400 69217d7a unchanged
+rederived: 2026-08-15T16:43:48-0400 919bcc60 unchanged
+rederived: 2026-08-15T18:06:56-0400 feaa6945 unchanged
+rederived: 2026-08-15T19:13:28-0400 ce43eb74 unchanged
+rederived: 2026-08-15T22:25:52-0400 f627b5b4 unchanged
+rederived: 2026-08-16T13:07:44-0400 3fff0d5e unchanged
+rederived: 2026-08-16T13:48:35-0400 abfb91b7 unchanged
+rederived: 2026-08-16T14:23:14-0400 8e68ec3a unchanged
+rederived: 2026-08-16T14:56:45-0400 3eac8061 unchanged
+rederived: 2026-08-16T15:14:03-0400 3eac8061 unchanged
+rederived: 2026-08-16T15:40:24-0400 484f1ecd unchanged
+rederived: 2026-08-16T15:51:39-0400 3c9b1213 unchanged
+rederived: 2026-08-16T16:01:12-0400 5e83598e unchanged
+rederived: 2026-08-16T16:13:00-0400 d9f3bb77 unchanged
+rederived: 2026-08-16T16:57:26-0400 49fcbc64 sources, module-map 17->17
+rederived: 2026-08-16T18:23:18-0400 1162e33a unchanged
+rederived: 2026-08-16T18:52:31-0400 51558682 unchanged
+rederived: 2026-08-16T19:17:53-0400 0c75216b unchanged
+rederived: 2026-08-16T21:38:02-0400 9e1756d6 unchanged
+rederived: 2026-08-16T22:00:22-0400 c578fc99 unchanged
+rederived: 2026-08-16T23:39:05-0400 eecd0c30 unchanged
+rederived: 2026-08-17T02:09:48-0400 f94e2762 unchanged
+rederived: 2026-08-17T03:31:09-0400 8cf43bb9 unchanged
+rederived: 2026-08-17T14:41:18-0400 e7b68a20 unchanged
+rederived: 2026-08-17T15:49:23-0400 6c899380 unchanged
+rederived: 2026-08-17T15:52:53-0400 6c899380 unchanged
+rederived: 2026-08-17T16:04:36-0400 ef984b29 unchanged
+rederived: 2026-08-17T16:17:03-0400 f60e2999 unchanged
+rederived: 2026-08-17T18:04:09-0400 30e23df6 unchanged
+rederived: 2026-08-17T18:09:10-0400 4fb9b6b0 unchanged
+rederived: 2026-08-17T18:50:31-0400 e18796a5 unchanged
+rederived: 2026-08-17T23:36:26-0400 5aa1092c unchanged
+rederived: 2026-08-17T23:52:46-0400 91fe237e unchanged
 -->

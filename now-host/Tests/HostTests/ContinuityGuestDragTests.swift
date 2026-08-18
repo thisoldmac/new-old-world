@@ -145,6 +145,1055 @@ final class ContinuityGuestDragTests: XCTestCase {
         })
     }
 
+    // MARK: - The selection that changed under the press
+
+    /// **THE WRONG FILE, AS IT HAPPENED.** Metal, 2026-08-15 17:19:
+    /// `hello.txt` was the published generation, Michelle pressed on
+    /// `main.c` and dragged it across the edge, and this Mac transferred
+    /// `hello.txt`. Every rule the binding had was satisfied throughout —
+    /// the press bound the only generation that existed.
+    ///
+    /// Here the guest's press probe publishes `main.c` while the button is
+    /// held, which is the only thing that can have caused it, and the cross
+    /// binds THAT.
+    func testACrossBindsTheSelectionThePressItselfCreated() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        // The guest's press probe, mid-gesture: this press selected main.c.
+        rig.select(Self.file(name: "main.c"), generation: 3)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c",
+                       "the file the person dragged is the file that crosses")
+        XCTAssertEqual(stub.generation, 3)
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("binding this press to the selection it made")
+                && $0.1.contains("generation=3")
+                && $0.1.contains("replacing generation 2")
+        }, "the bind must name both generations: the 17:19 report could not "
+            + "be diagnosed from any single line")
+    }
+
+    /// The same shape with nothing cached at all — the press that selects
+    /// AND drags, which bound `boundFile=none` on metal at 15:37.
+    func testACrossBindsASelectionThatDidNotExistAtThePress() throws {
+        let rig = Rig()
+        rig.enterGuest()
+        rig.press()
+        rig.select(Self.file(name: "main.c"), generation: 1)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("replacing nothing")
+        })
+    }
+
+    /// A change this press cannot claim REFUSES, and says so at warn.
+    ///
+    /// The distinguishing fact is the clock: this generation was applied
+    /// before the press went out, so it is not this press's own doing and
+    /// nothing on this Mac knows which of the two the hand chose. A
+    /// snap-back is not the same kind of failure as a wrong file arriving.
+    func testASelectionThatMovedBeforeThePressRefusesRatherThanGuesses()
+    throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        /* Applied a second before the press went out, which is the shape of
+           a publish that crossed the press on the wire: real, arriving
+           late, and not attributable to this gesture. */
+        rig.selectAsOf(rig.now() - 1, Self.file(name: "main.c"),
+                       generation: 3)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.environment.fileDrags.isEmpty,
+                      "nothing may cross when this Mac cannot say which "
+                        + "file is in the person's hand")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn
+                && $0.1.contains("the selection changed under this press")
+                && $0.1.contains("not binding generation 2")
+                && $0.1.contains("publishes generation 3")
+        })
+    }
+
+    /// And the ritual that works today keeps working: select, release,
+    /// press again, drag. Nothing changes under that press, so nothing
+    /// here may interfere with it.
+    func testTheTwoStepRitualIsUntouched() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"), generation: 3)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "Read Me")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("this cross carries the selection its press was "
+                + "made under")
+        })
+    }
+
+    /// **THE RITUAL IS DEAD.** One gesture, on a file that was never
+    /// selected: press, drag, cross. Nothing selected it first, nothing
+    /// polled it, and the Finder's selection throughout is something else
+    /// entirely — which is exactly what dragging an unselected icon looks
+    /// like on a Macintosh.
+    ///
+    /// Every rule that existed before this slice refuses this drag, and
+    /// none of them was wrong: they were all reasoning about a cache of the
+    /// selection, and the selection genuinely does not name this file. The
+    /// drag plane is what makes the file knowable at all.
+    func testASingleGestureDragOfANeverSelectedFileBindsThatFile() throws {
+        let rig = Rig()
+        // What the Finder actually has selected, and keeps having.
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        /* The person picked up a DIFFERENT icon. The Drag Manager says so —
+           and the mark is stamped before the press instant so that no clock
+           heuristic can rescue this test: what binds it is the source. */
+        rig.dragBeginsAsOf(rig.now() - 1, Self.file(name: "main.c"),
+                           generation: 3)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c",
+                       "the file in the hand crosses, not the file in the "
+                         + "selection")
+        XCTAssertEqual(stub.generation, 3)
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("binding this cross to the drag itself")
+                && $0.1.contains("generation=3")
+                && $0.1.contains("replacing generation 2")
+        }, "the bind must name what it replaced: a drag and a cache "
+            + "disagreeing is the ordinary case here, not a fault, and the "
+            + "line is how anyone sees which one was taken")
+    }
+
+    /// **THE WRONG-FILE CASE, INVERTED.** A stale cache and a fresh drag
+    /// naming different files used to be `superseded` — a refusal, and the
+    /// right answer while a cache was all there was. It is now a bind, and
+    /// the file it binds is the dragged one.
+    ///
+    /// The cache here is stale in the way that produced the 17:19 report:
+    /// applied BEFORE the press, so the clock cannot attribute it to this
+    /// gesture and `adopted` cannot rescue it either.
+    func testAStaleCacheAndAFreshDragBindTheDrag() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.selectAsOf(rig.now() - 1, Self.file(name: "notes.txt"),
+                       generation: 3)
+        /* STAMPED BEFORE THE PRESS INSTANT, which is what makes this the
+           case only the source can answer. The clock cannot attribute this
+           generation to this gesture, so `adopted` does not fire and the
+           old ladder reached `superseded` and refused. Nothing about the
+           timing changed; what changed is that the Mac now says WHAT the
+           generation is, and a drag needs no alibi. */
+        rig.dragBeginsAsOf(rig.now() - 1, Self.file(name: "main.c"),
+                           generation: 4)
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c")
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("the selection changed under this press")
+        }, "a cache disagreeing with a drag is not an ambiguity: the drag "
+            + "is the gesture, and refusing here would refuse every "
+            + "never-selected file")
+    }
+
+    // MARK: - Late bind: the generation that arrives AFTER the cross
+    //
+    // Measured 2026-08-16 (build `cfc5c1a1`): the drag-sourced generation is
+    // published 14 ticks — about 230 ms — after the drag ENDS, and the
+    // crossing is what ends it, because the handback releases the guest
+    // press. So on a single-gesture drag of a never-selected icon the fact
+    // that names the file cannot exist on this side until after the cross has
+    // already decided. `ContinuitySelectionBind` says a drag-sourced
+    // generation "needs no clock comparison" and "wins first"; these say WHEN
+    // that verdict may still be applied — up to the drop, and not past it.
+
+    /// **THE SINGLE GESTURE, WITH NOTHING SELECTED AND NOTHING CACHED.**
+    /// Nothing at all is bindable at the cross, which used to end the drag.
+    /// The session starts anyway, carrying a promise nobody has filled in,
+    /// and the Mac names the file a fifth of a second later.
+    func testACrossWithNothingBoundIsFilledInByTheLateDragGeneration() throws {
+        let rig = Rig()
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item,
+                                 "a cross with nothing bound must still start "
+                                   + "a session: the fact that names the file "
+                                   + "cannot arrive before the crossing that "
+                                   + "releases the press")
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        XCTAssertNil(provider.userInfo,
+                     "nothing may be guessed at: the promise crosses unfilled")
+
+        rig.dragBegins(Self.file(name: "main.c"), generation: 5)
+
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c")
+        XCTAssertEqual(stub.generation, 5)
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("late bind: this crossing now carries main.c")
+                && $0.1.contains("generation 5")
+                && $0.1.contains("source=drag")
+                && $0.1.contains("replacing nothing at all")
+        }, "the revision names old, new, source and gesture or the next "
+            + "wrong-file report is unanswerable from the log")
+    }
+
+    /// And the drop redeems what the LATE generation named, not the empty
+    /// seed the crossing started with.
+    func testTheDropRedeemsTheLateBoundFile() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let asked = Asked()
+        let rig = Rig(grabRequest: { epoch, generation, _, _, completion in
+            asked.epoch = epoch
+            asked.generation = generation
+            completion(.failure(.init(code: "grant-expired",
+                                      message: "too late")))
+        })
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+        rig.dragBegins(Self.file(name: "main.c"), generation: 5)
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        _ = fulfill(rig.grab, to: staging.appendingPathComponent("main.c"),
+                    provider: provider)
+
+        XCTAssertEqual(asked.generation, 5,
+                       "the wire is asked for the file in the hand, not the "
+                         + "stale selection the crossing was seeded from")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("grab redeems a LATE bind")
+                && $0.1.contains("name=main.c")
+        })
+    }
+
+    /// A stale SELECTION candidate is replaced, exactly as
+    /// `ContinuitySelectionBind.decide` would have replaced it had the fact
+    /// arrived in time — "a stale cache and a fresh drag disagreeing is the
+    /// ORDINARY case for a file nobody selected first".
+    func testALateDragGenerationReplacesTheStaleSelectionItCrossedWith()
+        throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        XCTAssertEqual(
+            (provider.userInfo as? ContinuityDragStub)?.item.name,
+            "hello.txt", "the crossing is seeded from the cache, as before")
+
+        rig.dragBegins(Self.file(name: "main.c"), generation: 5)
+
+        XCTAssertEqual(
+            (provider.userInfo as? ContinuityDragStub)?.item.name, "main.c")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("late bind: this crossing now carries main.c")
+                && $0.1.contains("replacing hello.txt (generation 2)")
+        })
+    }
+
+    /// **ONLY THE DRAG PLANE MAY REVISE.** Every other source is a cache of
+    /// what was selected, and one arriving after the crossing has no claim
+    /// on a gesture already in flight — the decision table ranks it below a
+    /// drag even when it is fresh, and after the cross it is simply late
+    /// news.
+    func testALateSelectionGenerationNeverRevisesACrossing() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        rig.select(Self.file(name: "notes.txt"), generation: 6)
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        XCTAssertEqual(
+            (provider.userInfo as? ContinuityDragStub)?.item.name,
+            "hello.txt")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("not revising this crossing")
+                && $0.1.contains("generation 6 is a selection")
+        }, "the refusal is said out loud: a silent one reads exactly like a "
+            + "revision that worked")
+    }
+
+    /// **THE WINDOW SHUTS AT REDEMPTION.** The drop has asked the Mac for a
+    /// specific generation; swapping the identity while those bytes are
+    /// being fetched is the wrong-file bug in a new hat.
+    func testAGenerationArrivingAfterTheDropIsRefusedByName() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let rig = Rig()
+        rig.select(Self.file(name: "hello.txt"), generation: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        _ = fulfill(rig.grab, to: staging.appendingPathComponent("hello.txt"),
+                    provider: provider)
+
+        rig.dragBegins(Self.file(name: "main.c"), generation: 5)
+
+        XCTAssertEqual(
+            (provider.userInfo as? ContinuityDragStub)?.item.name,
+            "hello.txt", "a redeemed drag keeps the identity it was redeemed "
+                + "under")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn && $0.1.contains("late bind refused")
+                && $0.1.contains("generation 5")
+                && $0.1.contains("after the drop redeemed")
+        })
+    }
+
+    /// **A CROSSING UNDER A HOST DRAG BINDS NOTHING, AND LATE BIND IS NOT A
+    /// WAY AROUND THAT** (`37241007`). Widening the window in which a bind
+    /// may be revised must not widen the window in which a refused one can
+    /// come back.
+    func testACrossUnderAHostDragBindsNothingEvenIfADragGenerationFollows() {
+        let rig = Rig()
+        rig.controller.physicalPrimaryButtonHeld = { true }
+        rig.enterGuest()
+        rig.hostDragReachesTheEdge()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        rig.dragBegins(Self.file(name: "main.c"), generation: 5)
+
+        XCTAssertTrue(rig.environment.fileDrags.isEmpty,
+                      "the gesture belongs to this Mac's own drag; nothing "
+                        + "of the guest's crosses under it")
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("late bind: this crossing now carries")
+        })
+    }
+
+    /// **THE RESIDENT'S MID-GESTURE ANNOUNCEMENT, AND THE JOIN THAT
+    /// FINISHES IT.**
+    ///
+    /// The resident names the dragged file from inside the Finder's drag
+    /// loop and cannot name a generation — the application mints those and
+    /// is not running. So the cache holds an identity under generation 0,
+    /// which is enough to bind `.dragged` at the cross and NOT enough to
+    /// grab with; the application's own frame arrives moments later with
+    /// the same file and the real number, and the binding revises to it.
+    ///
+    /// This is the whole point of the plane in four assertions: identity
+    /// early, generation late, one gesture, no flip.
+    func testTheResidentsDragBindsBeforeTheApplicationNamesItsGeneration() {
+        let cache = ContinuitySelectionCache(audit: { _, _ in },
+                                             now: { 1_000 })
+        /* What MirrorContinuityController synthesises from a
+           continuity.dragBegin: source drag, no generation yet, and none
+           of the three fields only the File Manager could answer. */
+        let announced = ContinuitySelection(
+            version: 4, epoch: 7, generation: 0, source: .drag, dragSeq: 2,
+            item: .init(name: "HELLO_CLAUDE.txt", volumeRef: -1, dirID: 2,
+                        fileType: "TEXT", creator: "ttxt", dataSize: nil,
+                        resourceSize: nil, modifiedAt: nil, isFolder: false,
+                        icon: nil))
+        cache.apply(announced, activeEpoch: 7)
+
+        let announcedMark = try? XCTUnwrap(cache.mark)
+        XCTAssertEqual(announcedMark?.source, .drag)
+        XCTAssertEqual(announcedMark?.generation, 0,
+                       "the resident names a file, never a generation")
+        /* The cross decides on the mark, and a drag outranks every cache
+           case without any clock comparison. */
+        XCTAssertEqual(
+            ContinuitySelectionBind.decide(pressed: nil,
+                                           current: announcedMark,
+                                           downSentAt: 1_000.5),
+            .dragged(announcedMark!),
+            "the bind is already source=drag before the application has "
+            + "said anything at all")
+        /* And the identity is usable immediately — that is what was bought.
+           What it is NOT is grabbable: see the generation-0 refusal in
+           GuestListener.grabContinuityFile. */
+        guard case .success(let earlyStub) = cache.bindable(activeEpoch: 7)
+        else { return XCTFail("the announced identity is not bindable") }
+        XCTAssertEqual(earlyStub.item.name, "HELLO_CLAUDE.txt")
+        XCTAssertEqual(earlyStub.generation, 0)
+        XCTAssertNil(earlyStub.item.dataSize,
+                     "a size the resident cannot know must stay absent "
+                     + "rather than arriving as a zero")
+
+        let binding = ContinuityDragBinding(gesture: 9, stub: earlyStub)
+
+        /* THE APPLICATION'S OWN ACCOUNT OF THE SAME GESTURE, joined by
+           dragSeq: same file, real generation, and now the metadata. */
+        let published = ContinuitySelection(
+            version: 4, epoch: 7, generation: 4, source: .drag, dragSeq: 2,
+            item: Self.file(name: "HELLO_CLAUDE.txt"))
+        cache.apply(published, activeEpoch: 7)
+        guard case .success(let joined) = cache.bindable(activeEpoch: 7)
+        else { return XCTFail("the joined stub is not bindable") }
+        XCTAssertEqual(joined.generation, 4)
+        XCTAssertEqual(joined.item.dataSize, 5)
+        XCTAssertEqual(binding.revise(to: joined),
+                       .revised(gesture: 9,
+                                from: "HELLO_CLAUDE.txt (generation 0)",
+                                to: "HELLO_CLAUDE.txt (generation 4)"),
+                       "the join supplies a number, not a different file")
+        XCTAssertEqual(binding.redeem()?.generation, 4)
+
+        /* THE DEDUPE. The application's frame for a gesture already joined
+           names the same generation, so a second delivery of it revises
+           nothing rather than binding twice. */
+        let repeated = ContinuityDragBinding(gesture: 10, stub: joined)
+        XCTAssertEqual(repeated.revise(to: joined),
+                       .unchanged(gesture: 10, generation: 4))
+    }
+
+    /// **THE EPOCH-4 REGRESSION.** Attended PowerBook round 2026-08-16,
+    /// log `221834` epoch 4: the cache held generation 3 of `main 2.c`,
+    /// whose bytes this Mac had already fetched, and the resident's
+    /// identity-only announcement of THE SAME FILE overwrote it with a
+    /// generation of 0. Every grab after that was refused by this Mac to
+    /// itself, and the file that was already here never crossed.
+    ///
+    /// The drag is still the better account of what is in the hand. It is
+    /// not a reason to lose the number a grab must name.
+    func testAnIdentityOnlyDragKeepsTheGenerationItsOwnFileAlreadyHas() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let cache = ContinuitySelectionCache(audit: { audits.append(($0, $1)) },
+                                             now: { 1_000 })
+        cache.apply(Self.selection(epoch: 4, generation: 3,
+                                   item: Self.file(name: "main 2.c")),
+                    activeEpoch: 4)
+        cache.apply(Self.announced(epoch: 4, dragSeq: 4, name: "main 2.c"),
+                    activeEpoch: 4)
+
+        guard case .success(let stub) = cache.bindable(activeEpoch: 4)
+        else { return XCTFail("the announced drag is not bindable") }
+        XCTAssertEqual(stub.generation, 3,
+                       "an identity carries no generation and must not "
+                        + "take one away")
+        XCTAssertEqual(stub.item.name, "main 2.c")
+        XCTAssertEqual(stub.item.dataSize, 5,
+                       "the richer account of the same file survives, so "
+                        + "the eager-fetch policy still has sizes to read")
+        XCTAssertEqual(stub.dragSeq, 4, "and the join key rides with it")
+        XCTAssertEqual(cache.mark?.source, .drag,
+                       "the cross still binds to the drag: this changes "
+                        + "which number is kept, not which witness wins")
+        XCTAssertEqual(cache.mark?.generation, 3)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("the drag names the file this Mac already holds")
+                && $0.1.contains("keeping generation 3")
+        }, "a merge nobody can see is indistinguishable from the bug")
+    }
+
+    /// The other half of the same rule. A stale cache naming a DIFFERENT
+    /// file is exactly what the drag plane exists to overrule — but its
+    /// generation belongs to that other file, and serving it under this
+    /// name would be the wrong-file bug wearing a valid number.
+    func testADragNamingAnotherFileTakesTheNameAndNotTheGeneration() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let cache = ContinuitySelectionCache(audit: { audits.append(($0, $1)) },
+                                             now: { 1_000 })
+        cache.apply(Self.selection(epoch: 5, generation: 3,
+                                   item: Self.file(name: "main 2.c")),
+                    activeEpoch: 5)
+        cache.apply(Self.announced(epoch: 5, dragSeq: 2, name: "hello.txt"),
+                    activeEpoch: 5)
+
+        guard case .success(let stub) = cache.bindable(activeEpoch: 5)
+        else { return XCTFail("the announced drag is not bindable") }
+        XCTAssertEqual(stub.item.name, "hello.txt",
+                       "the drag names what is in the hand; the cache was "
+                        + "naming what was selected a gesture ago")
+        XCTAssertEqual(stub.generation, 0,
+                       "and it has no generation of its own yet — the "
+                        + "cached one was minted for another file")
+        XCTAssertTrue(audits.contains {
+            $0.0 == .warn && $0.1.contains("the drag names hello.txt")
+                && $0.1.contains("generation 3 cached for main 2.c")
+        })
+    }
+
+    /// **NO GRAB IS EVER ASKED WITH A ZERO.** The Macintosh mints
+    /// generations and refuses every number it did not, so an eager fetch
+    /// under generation 0 is a certain refusal — six for six on metal
+    /// 2026-08-16 — and spending the gesture's first attempt on it reports
+    /// the wire's symptom instead of the cause.
+    func testAnIdentityOnlyStubStartsNoEagerFetch() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        var wireCalls = 0
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, _ in wireCalls += 1 },
+            audit: { audits.append(($0, $1)) })
+
+        let item = transfer.dragItem(
+            for: ContinuityDragStub(epoch: 4, generation: 0,
+                                    item: Self.file(name: "main 2.c"),
+                                    dragSeq: 4))
+
+        XCTAssertEqual(wireCalls, 0,
+                       "nothing may be asked of the wire under a generation "
+                        + "the Macintosh never minted")
+        XCTAssertNil(item.resolve, "and the drag carries the promise")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("eager fetch skipped")
+                && $0.1.contains("has minted a generation")
+        })
+    }
+
+    /// **THE HOLD, AND THE FIRST ATTEMPT IT MAKES POSSIBLE.** The crossing
+    /// carries an identity; the application's frame joins by `dragSeq` a
+    /// fifth of a second later. The drop waits for it and then asks ONCE,
+    /// with the minted number — which is not a retry of anything: nothing
+    /// was ever asked for this gesture.
+    func testAHeldDropRedeemsTheGenerationThatJoinsAfterTheCross() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var audits: [(HostLog.LogLevel, String)] = []
+        let seen = Asked()
+        let asked = expectation(description: "the grab reached the wire")
+        let transfer = ContinuityGrabTransfer(
+            grab: { epoch, generation, _, _, completion in
+                seen.epoch = epoch
+                seen.generation = generation
+                asked.fulfill()
+                completion(.failure(.init(
+                    code: "test", message: "no bytes cross in this test")))
+            }, audit: { audits.append(($0, $1)) })
+        let provider = try XCTUnwrap(
+            transfer.pendingDragItem().writer as? NSFilePromiseProvider)
+        let minted = ContinuityDragStub(epoch: 4, generation: 6,
+                                        item: Self.file(name: "main 2.c"),
+                                        dragSeq: 4)
+
+        let done = expectation(description: "the promise answered")
+        transfer.filePromiseProvider(
+            provider, writePromiseTo: staging.appendingPathComponent("main 2.c")
+        ) { _ in done.fulfill() }
+        /* The application's own frame, arriving while the drop holds. */
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            MainActor.assumeIsolated { _ = transfer.reviseLiveBinding(to: minted) }
+        }
+        wait(for: [asked, done], timeout: 5)
+
+        XCTAssertEqual(seen.generation, 6,
+                       "the drop asked with the number that joined, and "
+                        + "asked exactly once")
+        XCTAssertTrue(audits.contains { $0.1.contains("grab held:") })
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("the generation joined")
+                && $0.1.contains("FIRST attempt")
+        }, "the log must say this is a first attempt, not a retry")
+    }
+
+    /// And when nothing ever mints one, this Mac refuses by name and says
+    /// how long it waited — rather than sending a zero and reporting the
+    /// Macintosh's `drag-not-yet-named` for a race it never saw.
+    func testAHeldDropRefusesByNameWhenNoGenerationEverArrives() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        var audits: [(HostLog.LogLevel, String)] = []
+        var wireCalls = 0
+        var refusals: [String] = []
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, _ in wireCalls += 1 },
+            audit: { audits.append(($0, $1)) })
+        transfer.mintWaitSeconds = 0.1
+        transfer.refusalSink = { refusals.append($0) }
+        let provider = try XCTUnwrap(
+            transfer.pendingDragItem().writer as? NSFilePromiseProvider)
+        _ = transfer.reviseLiveBinding(
+            to: ContinuityDragStub(epoch: 4, generation: 0,
+                                   item: Self.file(name: "main 2.c"),
+                                   dragSeq: 4))
+
+        let thrown = fulfill(transfer,
+                             to: staging.appendingPathComponent("main 2.c"),
+                             provider: provider)
+
+        XCTAssertEqual(wireCalls, 0)
+        guard case .notYetNamed(let name, let waitedMs) =
+                thrown as? ContinuityGrabTransfer.GrabError else {
+            return XCTFail("the drop must refuse by name, not by the wire's "
+                            + "word for a request it never received")
+        }
+        XCTAssertEqual(name, "main 2.c")
+        XCTAssertGreaterThan(waitedMs, 0,
+                             "the refusal is only useful if it says the "
+                              + "hold actually happened")
+        XCTAssertEqual(refusals.count, 1,
+                       "a drag that did not work must interrupt the person")
+        XCTAssertTrue(audits.contains {
+            $0.0 == .error && $0.1.contains("never minted a generation")
+        })
+    }
+
+    // MARK: - The generation minted after its epoch ended
+
+    /// **THE CROSSING GESTURE, END TO END ON THIS SIDE.** The shape metal
+    /// produced six times on 2026-08-16 and this Mac refused six times: an
+    /// icon nobody selected is pressed, the resident names it mid-gesture,
+    /// the pointer crosses — which ENDS the epoch — and the Macintosh's own
+    /// generation for the file in the hand cannot exist until afterwards.
+    /// It now arrives naming that ended epoch, and the crossing takes it.
+    func testACrossingTakesTheGenerationMintedAfterItsEpochEnded() throws {
+        let rig = Rig()
+        rig.residentAnnounces(Self.file(name: "HELLO_CLAUDE.txt"), dragSeq: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        XCTAssertEqual(
+            (provider.userInfo as? ContinuityDragStub)?.generation, 0,
+            "the crossing carries an identity and no grant, as it must")
+
+        /* The cross ended the epoch — the cache goes, exactly as it does on
+           metal — and only THEN does the application publish. */
+        rig.endEpochDroppingTheCache()
+        rig.mintsAfterTheEpoch(Self.file(name: "HELLO_CLAUDE.txt"),
+                               generation: 4, dragSeq: 2)
+
+        let carried = try XCTUnwrap(
+            provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(carried.generation, 4,
+                       "the number a grab must ask for reached the crossing "
+                        + "that was waiting for it")
+        XCTAssertEqual(carried.epoch, 7,
+                       "and it names the epoch the gesture BEGAN in, which "
+                        + "is the epoch the guest's grant still honours")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("late bind after the epoch")
+                && $0.1.contains("which has ENDED")
+        }, "a redemption nobody can read is how this arc lost two rounds")
+    }
+
+    /// **THE JOIN IS THE WHOLE SAFETY ARGUMENT.** No epoch is running, so
+    /// there is no cache to agree with; what says this frame is about the
+    /// gesture this Mac is carrying is `dragSeq` and nothing else. A second
+    /// drag's number is refused rather than adopted.
+    func testAPostEpochGenerationFromAnotherGestureIsRefused() throws {
+        let rig = Rig()
+        rig.residentAnnounces(Self.file(name: "HELLO_CLAUDE.txt"), dragSeq: 2)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+        rig.endEpochDroppingTheCache()
+
+        rig.mintsAfterTheEpoch(Self.file(name: "notes.txt"),
+                               generation: 9, dragSeq: 3)
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        XCTAssertEqual(
+            (provider.userInfo as? ContinuityDragStub)?.generation, 0,
+            "a generation from another gesture may not fill this one in")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn && $0.1.contains("dragSeq 3 is not the gesture")
+        })
+    }
+
+    /// A crossing that nobody announced has nothing to join TO. Filling it
+    /// in on timing alone is precisely the wrong-file bug the join key was
+    /// added to end, so it refuses and says so.
+    func testAPostEpochGenerationRefusesACrossingWithNoIdentity() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, _ in }, audit: { audits.append(($0, $1)) })
+        _ = transfer.pendingDragItem()
+
+        let outcome = transfer.joinAfterEpoch(
+            ContinuityDragStub(epoch: 4, generation: 6,
+                               item: Self.file(name: "main 2.c"),
+                               dragSeq: 4))
+
+        guard case .unusable(let reason) = outcome else {
+            return XCTFail("a crossing with no identity must refuse")
+        }
+        XCTAssertTrue(reason.contains("no drag identity"))
+        XCTAssertNil(transfer.liveBinding?.grabbable)
+    }
+
+    /// And with no crossing at all it is a MISS, at warning level: the
+    /// gesture it belonged to has already refused or already taken its
+    /// answer, and nothing is redeemed on its account.
+    func testAPostEpochGenerationWithNoCrossingIsANamedMiss() {
+        let rig = Rig()
+        rig.mintsAfterTheEpoch(Self.file(name: "HELLO_CLAUDE.txt"),
+                               generation: 4, dragSeq: 2)
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn && $0.1.contains("no crossing of this Mac's left")
+        }, "a frame arriving after the hold gave up must name the miss")
+    }
+
+    /// The admission rules themselves, watched without a machine. Each of
+    /// these would otherwise be a silent drop indistinguishable from a
+    /// Macintosh that never published — which is the state this whole arc
+    /// spent two attended rounds inside.
+    func testTheAfterEpochAdmissionRefusesEverythingButTheGesture() {
+        let item = Self.file(name: "HELLO_CLAUDE.txt")
+        func frame(epoch: UInt32 = 4, generation: UInt32 = 5,
+                   source: ContinuitySelection.Source = .drag,
+                   dragSeq: UInt32? = 2, afterEpoch: Bool? = true,
+                   item: ContinuitySelection.Item? = item)
+            -> ContinuitySelection {
+            .init(version: ContinuityContract.version, epoch: epoch,
+                  generation: generation, source: source, dragSeq: dragSeq,
+                  afterEpoch: afterEpoch, item: item)
+        }
+
+        guard case .join(let stub) = ContinuityAfterEpochAdmission
+            .decide(frame(), lastEpoch: 4) else {
+            return XCTFail("the crossing gesture's own frame must be joined")
+        }
+        XCTAssertEqual(stub.generation, 5)
+        XCTAssertEqual(stub.dragSeq, 2)
+
+        /* An epoch that is not the one that just ended is a consent this
+           Mac has already let go of. */
+        XCTAssertEqual(
+            ContinuityAfterEpochAdmission.decide(frame(epoch: 3),
+                                                 lastEpoch: 4),
+            .refused(reason: "it names epoch 3 and this Mac's last epoch "
+                + "was 4"))
+        XCTAssertEqual(
+            ContinuityAfterEpochAdmission.decide(frame(), lastEpoch: nil),
+            .refused(reason: "it names epoch 4 and this Mac's last epoch "
+                + "was none"))
+
+        /* A poll cannot run without a live epoch, a zero is an identity
+           this Mac already has, and a frame with no join key cannot be
+           attributed to any gesture at all. */
+        for refused in [frame(source: .selection), frame(generation: 0),
+                        frame(dragSeq: nil), frame(item: nil),
+                        frame(item: Self.folder(name: "Projects"))] {
+            guard case .refused = ContinuityAfterEpochAdmission
+                .decide(refused, lastEpoch: 4) else {
+                return XCTFail("admitted a frame that names no usable "
+                                + "gesture: \(refused)")
+            }
+        }
+
+        /* And a live-epoch frame does not belong on this path at all. */
+        guard case .refused = ContinuityAfterEpochAdmission
+            .decide(frame(afterEpoch: nil), lastEpoch: 4) else {
+            return XCTFail("a frame naming a live epoch must not be "
+                            + "admitted here")
+        }
+    }
+
+    /// **THE HOLD STRETCHES WHEN A MINT IS OWED.** A crossing carrying a
+    /// `dragSeq` was announced by the resident mid-gesture, so the
+    /// application's frame is coming — and on a crossing gesture it cannot
+    /// be sent until the cross has ended the epoch. The bare second is for
+    /// a crossing nobody promised anything about.
+    func testTheHoldWaitsLongerWhenTheGestureWasAnnounced() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let seen = Asked()
+        let asked = expectation(description: "the grab reached the wire")
+        var audits: [(HostLog.LogLevel, String)] = []
+        let transfer = ContinuityGrabTransfer(
+            grab: { epoch, generation, _, _, completion in
+                seen.epoch = epoch
+                seen.generation = generation
+                asked.fulfill()
+                completion(.failure(.init(
+                    code: "test", message: "no bytes cross in this test")))
+            }, audit: { audits.append(($0, $1)) })
+        /* Far too short for the join below; the identity is what buys the
+           time, and this test fails if it does not. */
+        transfer.mintWaitSeconds = 0.05
+        transfer.mintWaitWithIdentitySeconds = 2.0
+        let item = transfer.dragItem(
+            for: ContinuityDragStub(epoch: 4, generation: 0,
+                                    item: Self.file(name: "HELLO_CLAUDE.txt"),
+                                    dragSeq: 2))
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+
+        let done = expectation(description: "the promise answered")
+        transfer.filePromiseProvider(
+            provider,
+            writePromiseTo: staging.appendingPathComponent("HELLO_CLAUDE.txt")
+        ) { _ in done.fulfill() }
+        /* The application's frame, minted after the cross ended epoch 4 and
+           naming that epoch. */
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            MainActor.assumeIsolated {
+                _ = transfer.joinAfterEpoch(
+                    ContinuityDragStub(epoch: 4, generation: 4,
+                                       item: Self.file(
+                                           name: "HELLO_CLAUDE.txt"),
+                                       dragSeq: 2))
+            }
+        }
+        wait(for: [asked, done], timeout: 10)
+
+        XCTAssertEqual(seen.generation, 4,
+                       "the drop asked with the number that joined after "
+                        + "the epoch, and asked exactly once")
+        XCTAssertEqual(seen.epoch, 4,
+                       "under the epoch the gesture began in — the one the "
+                        + "guest's grant still honours")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("grab held:") && $0.1.contains("waiting up to 2000 ms")
+        }, "the announced gesture must buy the longer wait, out loud")
+    }
+
+    /// The binding's own half of the same invariant: an identity-only
+    /// revision arriving after a real one may not un-name the gesture.
+    func testALateIdentityCannotUnnameALiveGeneration() {
+        let binding = ContinuityDragBinding(
+            gesture: 3,
+            stub: ContinuityDragStub(epoch: 4, generation: 6,
+                                     item: Self.file(name: "main 2.c"),
+                                     dragSeq: 4))
+        let outcome = binding.revise(
+            to: ContinuityDragStub(epoch: 4, generation: 0,
+                                   item: Self.file(name: "main 2.c"),
+                                   dragSeq: 4))
+
+        guard case .unusable(let reason) = outcome else {
+            return XCTFail("an identity-only revision must be refused")
+        }
+        XCTAssertTrue(reason.contains("generation 6"))
+        XCTAssertEqual(binding.grabbable?.generation, 6)
+        XCTAssertEqual(binding.redeem()?.generation, 6)
+    }
+
+    /// The box itself, where the two rules live: one revision at a time is
+    /// fine, and none at all after the drop has taken its answer.
+    func testTheRevisionWindowClosesAtRedemptionAndNotBefore() {
+        let first = ContinuityDragStub(epoch: 7, generation: 2,
+                                       item: Self.file(name: "hello.txt"))
+        let second = ContinuityDragStub(epoch: 7, generation: 5,
+                                        item: Self.file(name: "main.c"))
+        let binding = ContinuityDragBinding(gesture: 1, stub: first)
+
+        XCTAssertEqual(binding.revise(to: second),
+                       .revised(gesture: 1,
+                                from: "hello.txt (generation 2)",
+                                to: "main.c (generation 5)"))
+        XCTAssertEqual(binding.revise(to: second),
+                       .unchanged(gesture: 1, generation: 5))
+        XCTAssertEqual(binding.redeem()?.item.name, "main.c")
+        XCTAssertEqual(binding.revise(to: first),
+                       .refusedRedeemed(gesture: 1, generation: 2))
+        XCTAssertEqual(binding.stub?.item.name, "main.c")
+
+        /* And an empty one is honest about being empty: a crossing nothing
+           ever named has no file, and refusing is what it must do. */
+        let pending = ContinuityDragBinding(gesture: 2, stub: nil)
+        XCTAssertNil(pending.redeem())
+    }
+
+    /// **BYTES ON THE PASTEBOARD END THE WINDOW EARLY, AND SAY SO.** An
+    /// eager fetch that wins its race hands AppKit a real `file://` URL,
+    /// because a promise-only pasteboard reads as nothing-droppable to every
+    /// application that never adopted `NSFilePromiseReceiver` (metal,
+    /// 2026-08-15) — that head start is kept. What it costs is revisability:
+    /// a pasteboard cannot be changed once a session exists, so a drag that
+    /// took the bytes refuses a late bind by name rather than accepting one
+    /// that would be cosmetic.
+    func testADragCarryingFetchedBytesRefusesALateBindOutLoud() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        let fetched = expectation(description: "eager fetch completed")
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in completion(.success(delivery)) },
+            audit: { if $1.contains("eager fetch completed") {
+                fetched.fulfill()
+            } })
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+        let item = transfer.dragItem(for: stub)
+        wait(for: [fetched], timeout: 5)
+        XCTAssertTrue(item.finalized().writer is NSURL)
+
+        let later = ContinuityDragStub(epoch: 7, generation: 5,
+                                       item: Self.file(name: "main.c"))
+        guard case .unusable(let reason) =
+            transfer.reviseLiveBinding(to: later) else {
+            return XCTFail("a pinned drag must refuse, not revise")
+        }
+        XCTAssertTrue(reason.contains("bytes"))
+    }
+
+    /// The pure decision, including the two cases the rig cannot stage
+    /// without a real epoch ending underneath it.
+    func testTheBindDecisionInEveryShape() {
+        let press: TimeInterval = 1_000
+        let before = ContinuitySelectionMark(epoch: 7, generation: 2,
+                                             appliedAt: press - 1)
+        let same = ContinuitySelectionMark(epoch: 7, generation: 2,
+                                           appliedAt: press - 1)
+        let after = ContinuitySelectionMark(epoch: 7, generation: 3,
+                                            appliedAt: press + 0.4)
+        let crossed = ContinuitySelectionMark(epoch: 7, generation: 3,
+                                              appliedAt: press - 0.001)
+
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: same, downSentAt: press), .bound(same))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: after, downSentAt: press),
+            .adopted(after))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: nil, current: after, downSentAt: press),
+            .adopted(after))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: crossed, downSentAt: press),
+            .superseded(pressed: before, current: crossed))
+        /* An arrival exactly ON the press instant is not this press's own
+           doing either: the guest cannot have applied a down this Mac has
+           only just sent. */
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before,
+            current: .init(epoch: 7, generation: 3, appliedAt: press),
+            downSentAt: press),
+            .superseded(pressed: before,
+                        current: .init(epoch: 7, generation: 3,
+                                       appliedAt: press)))
+        /* The epoch ended with the cross, which is the ordinary case and
+           must not read as a refusal. */
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: nil, downSentAt: press),
+            .unchallenged(before))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: nil, current: nil, downSentAt: press), .nothing)
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: nil, current: crossed, downSentAt: press), .nothing)
+
+        /* --- and the drag source, which outranks all of it -------------
+           Every case above argues about a CACHE; a drag-sourced mark is a
+           report of the gesture, so it wins on kind rather than on
+           freshness and needs no clock comparison to do it. */
+        let dragged = ContinuitySelectionMark(epoch: 7, generation: 4,
+                                              appliedAt: press + 0.4,
+                                              source: .drag)
+        /* THE ONE THAT MATTERS: applied BEFORE the press instant, so the
+           clock cannot attribute it and `adopted` would not fire — and it
+           binds anyway, because the Drag Manager named it. */
+        let draggedEarly = ContinuitySelectionMark(epoch: 7, generation: 4,
+                                                   appliedAt: press - 5,
+                                                   source: .drag)
+
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: dragged, downSentAt: press),
+            .dragged(dragged))
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: nil, current: dragged, downSentAt: press),
+            .dragged(dragged))
+        /* Where the old ladder said `superseded` and refused. */
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: draggedEarly, downSentAt: press),
+            .dragged(draggedEarly))
+        /* And where it said `bound` — still a drag, and still said so, so
+           one line can tell the ritual working from it being unnecessary. */
+        let sameGeneration = ContinuitySelectionMark(epoch: 7, generation: 2,
+                                                     appliedAt: press - 1,
+                                                     source: .drag)
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: before, current: sameGeneration, downSentAt: press),
+            .dragged(sameGeneration))
+        /* A cleared cache is still a cleared cache: there is no drag mark
+           to prefer, and the guest's own grant hold redeems it. */
+        XCTAssertEqual(ContinuitySelectionBind.decide(
+            pressed: draggedEarly, current: nil, downSentAt: press),
+            .unchallenged(draggedEarly))
+    }
+
+    /// The contract's default, applied where a host actually reads it.
+    ///
+    /// An absent `source` is `selection` — a guest built before the field
+    /// existed had only the poll. An UNKNOWN value is not: it decodes as a
+    /// failure rather than being demoted, because a future third source
+    /// bound as if it were a poll is the quiet wrong-file bug this whole
+    /// field exists to close.
+    func testAnAbsentSourceIsASelectionAndAnUnknownOneIsNotDecodable()
+    throws {
+        let absent = try JSONDecoder().decode(
+            ContinuitySelection.self,
+            from: Data(#"{"version":4,"epoch":7,"generation":2}"#.utf8))
+        XCTAssertNil(absent.source)
+        XCTAssertEqual(absent.resolvedSource, .selection)
+
+        let drag = try JSONDecoder().decode(
+            ContinuitySelection.self,
+            from: Data(#"{"version":4,"epoch":7,"generation":2,"source":"drag"}"#.utf8))
+        XCTAssertEqual(drag.resolvedSource, .drag)
+
+        XCTAssertThrowsError(try JSONDecoder().decode(
+            ContinuitySelection.self,
+            from: Data(#"{"version":4,"epoch":7,"generation":2,"source":"telepathy"}"#.utf8)))
+    }
+
     // MARK: - The cross
 
     /// **An UNBOUND held cross releases at the press origin too.**
@@ -181,28 +1230,43 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertLessThan(release, left,
                           "the press must end before this app stops driving "
                             + "the guest at all")
+        /* THE LINE CHANGED WITH THE CONTRACT, THE ORDER DID NOT. An unbound
+           cross no longer ends the gesture — it starts a drag pending a late
+           bind, because the fact that names an unselected icon cannot reach
+           this Mac until this very release ends the Finder's drag loop. The
+           safety property above is untouched and is why it is asserted
+           first: the guest pointer goes home before the button comes up
+           whichever path the crossing takes. */
         XCTAssertTrue(rig.recorder.lines.contains {
-            $0.0 == .warn
-                && $0.1.contains("held press released without a file handoff")
-                && $0.1.contains("boundFile=none")
-        }, "the degradation must be loud: an unbound cross carries no file, "
-            + "and an info line is how this shipped destructive")
+            $0.1.contains("no file is bound to this cross")
+                && $0.1.contains("pending a late bind")
+        }, "an unbound cross must say what it is waiting for; silence here "
+            + "reads as a drag that simply vanished")
     }
 
-    /// The unbound path borrows the order and nothing else. Arming the catch
-    /// surface or starting an AppKit session for a press carrying no file
-    /// would be a drag of nothing over the host.
-    func testAnUnboundHeldCrossStartsNoHostDragAndArmsNoCatchSurface() {
+    /// **THE UNBOUND PATH IS NOW A HANDOFF, NOT AN ENDING.** It used to
+    /// start nothing, on the reasoning that a press carrying no file is a
+    /// drag of nothing — sound while the cross was the last moment this Mac
+    /// could learn the file's name, and false since the drag plane: the
+    /// generation that names a never-selected icon is published ~230 ms
+    /// AFTER the crossing, because the crossing's own release is what ends
+    /// the Finder's drag loop. So the session is started and left unfilled,
+    /// and the drop refuses by name if nothing ever arrives.
+    func testAnUnboundHeldCrossStartsADragPendingALateBind() throws {
         let rig = Rig()
         rig.enterGuest()
         rig.press()
         rig.crossBackHolding()
         rig.deliverRealDragEvent()
 
-        XCTAssertTrue(rig.environment.fileDrags.isEmpty,
-                      "there is no file to hand to AppKit")
-        XCTAssertEqual(rig.environment.catchChanges, [],
-                       "the catch surface belongs to a file handoff")
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        XCTAssertNil(provider.userInfo,
+                     "nothing may be guessed at: the promise is unfilled "
+                       + "until the Mac itself names a file")
+        XCTAssertEqual(rig.environment.catchChanges, [true],
+                       "the catch surface is armed for the handoff, exactly "
+                         + "as it is for a bound one")
     }
 
     /// A press the guest never took is not a press to release: sending an
@@ -344,16 +1408,164 @@ final class ContinuityGuestDragTests: XCTestCase {
         })
     }
 
-    /// The unbound path needs no session truth — there is no AppKit session
-    /// to drive — and a synthetic down posted there would be this app
-    /// pressing a button on the host with nothing to receive it.
-    func testAnUnboundHeldCrossPostsNoSyntheticButton() {
+    /// **The synthetic down waits for the WINDOW SERVER, not for the widen.**
+    ///
+    /// Metal, 2026-08-15 13:43: the transfer worked and the presentation did
+    /// not — a rubber-band selection dragged across the Finder desktop for
+    /// the length of the handoff, and the drag image stuck at the screen edge
+    /// while the session tracked 240 px and dropped correctly. The seed line
+    /// named the cause without anyone reading it that way: `type=1,
+    /// windowNumber=30, ourWindow=no` is a **`leftMouseDown`** — this app's
+    /// own synthetic one, handed back by the global monitor after the window
+    /// server delivered it to the Finder.
+    ///
+    /// Measured here the same day: a widened panel takes 15–25 ms and several
+    /// runloop turns to reach the window server, and no synchronous flush
+    /// brings it forward — while `panel.frame.contains(point)` is true the
+    /// instant `setFrame` returns. The old code widened and posted in one
+    /// synchronous block and read the second fact as the first.
+    func testNoSyntheticDownIsPostedUntilTheServerOwnsTheSeedPoint() {
         let rig = Rig()
+        rig.environment.catchSurfaceOwnsSeedPoint = false
+        rig.select(Self.file(name: "Read Me"))
         rig.enterGuest()
         rig.press()
         rig.crossBackHolding()
 
+        XCTAssertTrue(rig.environment.syntheticButtonPosts.isEmpty,
+                      "posted while the server still gives that point to "
+                        + "another application, the down presses a button in "
+                        + "somebody else's window")
+        XCTAssertEqual(rig.environment.catchChanges, [true],
+                       "the surface is still widened; it is the POST that "
+                        + "waits")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("holding the synthetic primary down until the "
+                + "window server")
+        })
+
+        rig.deliverRealDragEvent()
+        XCTAssertTrue(rig.environment.syntheticButtonPosts.isEmpty,
+                      "a real event is not the thing that was missing")
+        XCTAssertTrue(rig.environment.fileDrags.isEmpty,
+                      "and no session may begin before the button is re-armed")
+    }
+
+    /// The other half: once the server takes the surface the handoff
+    /// proceeds, in the pinned order, from the real event that arrived while
+    /// it was still catching up. That event is KEPT rather than dropped — it
+    /// is the scarce thing on this path.
+    func testTheHeldEventStartsTheDragOnceTheServerTakesTheSurface() throws {
+        let rig = Rig()
+        rig.environment.catchSurfaceOwnsSeedPoint = false
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent(eventNumber: 9182)
+
+        rig.environment.catchSurfaceOwnsSeedPoint = true
+        rig.deliverHeldSampleWithoutEvent()
+
+        XCTAssertEqual(rig.environment.fileDrags.first?.event.eventNumber,
+                       9182,
+                       "the drag must start from the real event held back "
+                        + "while the server caught up, not wait for another")
+        let rearm = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .sessionButtonRearmed))
+        let session = try XCTUnwrap(
+            rig.ledger.steps.firstIndex(of: .hostDragBegan))
+        XCTAssertLessThan(rearm, session,
+                          "the order this whole path exists to hold")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("the catch surface owns the seed point")
+                && $0.1.contains("ownsPoint=yes")
+        })
+    }
+
+    /// A surface the server never takes is an ERROR naming the consequence.
+    /// It keeps trying — the release ends it either way — but a silence here
+    /// reads exactly like a drag that never happened.
+    func testACatchSurfaceTheServerNeverTakesIsNamedOutLoud() {
+        let rig = Rig()
+        rig.environment.catchSurfaceOwnsSeedPoint = false
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        for _ in 0..<40 { rig.deliverHeldSampleWithoutEvent() }
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error
+                && $0.1.contains("still does not own the seed point")
+                && $0.1.contains("will not press a button into another "
+                    + "application")
+        })
+        XCTAssertEqual(
+            rig.recorder.lines.filter {
+                $0.1.contains("still does not own the seed point")
+            }.count, 1,
+            "once, not per sample: a burst would bury the line that matters")
         XCTAssertTrue(rig.environment.syntheticButtonPosts.isEmpty)
+    }
+
+    /// **`ourWindow=yes` and `serverOwnsPoint=no` is the shape that shipped**,
+    /// and the two must stay separable in the log. The seed this app
+    /// CONSTRUCTS can carry our own panel while the window server still hands
+    /// every real event at that point to somebody else — which is a tracking
+    /// session with a frozen image, exactly what 13:43 produced.
+    func testASeedTheServerDoesNotOwnIsNamedEvenWhenItIsOurWindow() {
+        let rig = Rig()
+        rig.environment.dragSeed = ContinuityDragSeed(
+            eventType: 6, serverTopWindowNumber: 30, appActive: false,
+            windowNumber: 77, panelWindowNumber: 77,
+            resolvedToPanel: true, clickCount: 1, panelKey: true,
+            panelCoversPoint: true)
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("window this app does not own")
+        }, "the anchor was ours; naming the wrong half sends the next round "
+            + "after the wrong defect")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error
+                && $0.1.contains("the window server does not put the catch "
+                    + "surface under the seed point")
+        })
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error && $0.1.contains("host drag session seed")
+                && $0.1.contains("ourWindow=yes")
+                && $0.1.contains("serverOwnsPoint=no")
+                && $0.1.contains("appActive=no")
+        })
+    }
+
+    /// The pending handoff is a real handoff, so it re-arms the session
+    /// button state exactly as a bound one does — and for the same reason:
+    /// this app's own tap swallowed the physical down, and an
+    /// `NSDraggingSession` is driven by session state rather than the HID's.
+    /// A cross that refuses outright (`superseded`) still posts nothing.
+    func testAPendingHandoffArmsTheSessionAndARefusedCrossDoesNot() {
+        let pending = Rig()
+        pending.enterGuest()
+        pending.press()
+        pending.crossBackHolding()
+        XCTAssertEqual(pending.environment.syntheticButtonPosts.count, 1)
+
+        let refused = Rig()
+        refused.select(Self.file(name: "hello.txt"), generation: 2)
+        refused.enterGuest()
+        refused.press()
+        refused.selectAsOf(refused.now() - 1, Self.file(name: "main.c"),
+                           generation: 3)
+        refused.crossBackHolding()
+        XCTAssertTrue(refused.environment.syntheticButtonPosts.isEmpty,
+                      "an ambiguous cross refuses; late bind is not a way "
+                        + "to reopen a refusal")
     }
 
     /// The tap has no NSEvent by construction, and the physical button is
@@ -368,7 +1580,8 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertTrue(rig.environment.fileDrags.isEmpty,
                       "no real event yet means no drag session at all")
         XCTAssertTrue(rig.recorder.lines.contains {
-            $0.1.contains("waiting for the first real one")
+            $0.1.contains("waiting for the catch surface and the first real "
+                + "host mouse event")
         })
         XCTAssertEqual(rig.environment.catchChanges.first, true,
                        "two pixels cannot catch a moving pointer")
@@ -384,6 +1597,62 @@ final class ContinuityGuestDragTests: XCTestCase {
         rig.endHostDragSession(operation: .copy)
         XCTAssertEqual(rig.environment.catchChanges, [true, false],
                        "the wide surface belongs to one handoff only")
+    }
+
+    /// **WIDE and HIT-TESTABLE are two different questions**, and the fix
+    /// for the felt drop dead zone answers only the second one.
+    ///
+    /// The strip stays WIDE for the length of the session — asserted above
+    /// — because narrowing it moves the drag source's own window out from
+    /// under a live drag. But `EdgeView.isOwnSession` refuses the strip's
+    /// own drag rather than passing it through, and a refusal still
+    /// answers the drag: no `+` badge, and nothing else is asked. Michelle
+    /// felt that refusal, at the shipped 160 px, as a drop dead zone the
+    /// width of the whole strip. This asserts the controller turns the
+    /// strip drop-transparent to ITS OWN session the instant that session
+    /// actually starts, and restores it the instant the session ends — the
+    /// two calls a real Mac needs so the badge is decided by whatever is
+    /// really beneath the strip, not by the strip's own refusal.
+    func testTheCatchSurfaceDropsThroughItsOwnLiveSessionOnly() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+
+        XCTAssertTrue(rig.environment.dropsThroughChanges.isEmpty,
+                      "no session has started yet — nothing should be "
+                        + "drop-transparent before there is a session to "
+                        + "protect")
+
+        rig.deliverRealDragEvent()
+        XCTAssertEqual(rig.environment.dropsThroughChanges, [true],
+                       "the session just started; the strip must stop "
+                        + "intercepting its own drag from this instant")
+
+        rig.endHostDragSession(operation: .copy)
+        XCTAssertEqual(rig.environment.dropsThroughChanges, [true, false],
+                       "drop-through belongs to one live session only — an "
+                        + "ordinary foreign drag afterwards must still be "
+                        + "caught and refused by identity")
+    }
+
+    /// A drag AppKit refuses to start never became drop-through in the
+    /// first place, so there is nothing to undo — asserting the array
+    /// stays empty is the same shape of guard as `catchChanges` staying at
+    /// `[true, false]` above rather than growing a spurious third entry.
+    func testARefusedDragNeverTogglesDropThrough() {
+        let rig = Rig()
+        rig.environment.dragSeed = nil
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.environment.dropsThroughChanges.isEmpty,
+                      "AppKit never started a session, so there was never a "
+                        + "session's own refusal to fix")
     }
 
     /// **The strip must not catch the drag it just started.**
@@ -403,7 +1672,7 @@ final class ContinuityGuestDragTests: XCTestCase {
         rig.deliverRealDragEvent()
         let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
 
-        XCTAssertFalse(callbacks.entered(CGPoint(x: 1439, y: 450)),
+        XCTAssertFalse(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)),
                        "the strip answered .copy to our own session and armed "
                         + "a pass back to the guest")
         XCTAssertFalse(callbacks.dropped(.init(name: .drag)),
@@ -445,6 +1714,117 @@ final class ContinuityGuestDragTests: XCTestCase {
                 && $0.1.contains("standDownSamples=1")
         }, "a drop that went nowhere and a promise that failed must not read "
             + "as the same silence")
+    }
+
+    /// `standDownSamples` counts what THIS APP saw, and on metal it read 0
+    /// or 1 for every session in the 2026-08-15 15:27 build — over two to
+    /// four seconds of hand motion. A count taken from a blind observer
+    /// cannot say what ended a session, so the session's own stream is
+    /// witnessed beside it.
+    func testTheEndOfSessionLineNamesWhatEndedIt() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+        XCTAssertEqual(rig.environment.dragWitnessStarts, 1,
+                       "the witness must be armed with the session, not "
+                        + "after it")
+
+        var witness = ContinuityDragWitness(installed: true)
+        witness.record(Self.witnessed(type: 6, at: rig.now() - 0.5))
+        witness.record(Self.witnessed(type: 2, at: rig.now(), pid: 77))
+        rig.environment.dragWitness = witness
+        rig.controller.hostProcessIdentifier = { 77 }
+        rig.endHostDragSession(operation: [])
+
+        XCTAssertEqual(rig.environment.dragWitnessStops, 1,
+                       "a witness left running outlives the session it "
+                        + "describes")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag session end witness")
+                && $0.1.contains("ended by a session leftMouseUp")
+                && $0.1.contains("(this app)")
+        }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
+    }
+
+    /// The shape the 2026-08-15 rounds actually produced — a session that
+    /// ended while the button was still physically held — must not be
+    /// reported at the same level as an ordinary release.
+    func testASessionEndingUnderAHeldButtonIsAnError() {
+        let rig = Rig()
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        var witness = ContinuityDragWitness(installed: true)
+        witness.record(Self.witnessed(type: 6, at: rig.now() - 0.2))
+        rig.environment.dragWitness = witness
+        /* Set only now: the same reader decides whether a held handback is
+           an echo, and this test is about the END of the session. */
+        rig.controller.physicalPrimaryButtonHeld = { true }
+        rig.controller.sessionPrimaryButtonHeld = { false }
+        rig.endHostDragSession(operation: [])
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .error && $0.1.contains("host drag session end witness")
+                && $0.1.contains(
+                    "NO session-level leftMouseUp was seen at all")
+        }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
+    }
+
+    /// Said before the session as well as after it. A witness that could not
+    /// arm is a fact about the next four seconds, and learning it only
+    /// afterwards is learning it too late to move the mouse differently.
+    func testARefusedWitnessIsAnnouncedBeforeTheSessionAndNotOnlyAfter() {
+        let rig = Rig()
+        rig.environment.dragWitnessAvailable = false
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn && $0.1.contains("no drag-session witness")
+        }, "the refusal has to be on the record while the drag is still in "
+            + "flight")
+        rig.endHostDragSession(operation: [])
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag session end witness")
+                && $0.1.contains("no witness was installed")
+        }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
+    }
+
+    /// Beside whose WINDOW the seed arrived at, whose PROCESS put it in the
+    /// stream. Without it the log cannot distinguish a real host event from
+    /// this app's own synthetic re-arm, which is the candidate the current
+    /// build hands to `beginDraggingSession` every single time.
+    func testTheSeedEventSaysWhetherThisAppPostedIt() {
+        let rig = Rig()
+        rig.controller.hostProcessIdentifier = { 90210 }
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("host drag seed event")
+                && $0.1.contains("postedByThisApp=no")
+        }, rig.recorder.lines.map(\.1).joined(separator: "\n"))
+    }
+
+    private static func witnessed(type: UInt32, at uptime: TimeInterval,
+                                  pid: Int64 = 0)
+        -> ContinuityWitnessedEvent {
+        ContinuityWitnessedEvent(
+            type: type, location: CGPoint(x: 1520, y: 379), sourcePID: pid,
+            sourceStateID: pid == 0 ? 1 : 0, uptime: uptime,
+            hidPrimaryHeld: true, sessionPrimaryHeld: false)
     }
 
     /// The seed's provenance, because a global monitor hands over events
@@ -523,7 +1903,7 @@ final class ContinuityGuestDragTests: XCTestCase {
             pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
         let fileEdge = ContinuityFileEdge(
             edge: .init(host: host, guestSide: .left, overlap: 0...900),
-            callbacks: .init(entered: { _ in false }, exited: {},
+            callbacks: .init(entered: { _, _ in false }, exited: {},
                              dropped: { _ in false }))
         defer { fileEdge.close() }
         let foreign = try XCTUnwrap(NSEvent.mouseEvent(
@@ -545,6 +1925,143 @@ final class ContinuityGuestDragTests: XCTestCase {
                       "a seed anchored to our window at a point outside it "
                         + "is the next shape of the same defect")
         XCTAssertTrue(seed.summary.contains("ourWindow=yes"))
+    }
+
+    /// `catchThickness` is now configurable, and this is the geometry math
+    /// against a real AppKit panel: the same seed point covered at the
+    /// shipped 160 px default must NOT be covered at zero, because zero
+    /// means the strip never widens past the ordinary two-pixel sentinel
+    /// at all — cursor-at-the-very-edge handoff, exactly as asked for.
+    func testConfiguredCatchThicknessChangesWhatThePanelCovers() throws {
+        let host = HostDisplayDescriptor(
+            id: 41, name: "Studio Display",
+            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: CGPoint(x: 10, y: 10),
+            modifierFlags: [], timestamp: 12, windowNumber: 14932,
+            context: nil, eventNumber: 4242, clickCount: 1, pressure: 1))
+        // 160 px in from the left host's right edge (1440): 1280...1440.
+        let seedPoint = CGPoint(x: 1380, y: 450)
+
+        let wide = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            catchThickness: 160,
+            callbacks: .init(entered: { _, _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { wide.close() }
+        let wideSeed = try XCTUnwrap(wide.makeDragSeed(at: seedPoint,
+                                                       from: event))
+        XCTAssertTrue(wideSeed.panelCoversPoint,
+                      "1380 is 60px in from the edge — inside the 160px "
+                        + "catch surface")
+
+        let zero = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            catchThickness: 0,
+            callbacks: .init(entered: { _, _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { zero.close() }
+        let zeroSeed = try XCTUnwrap(zero.makeDragSeed(at: seedPoint,
+                                                       from: event))
+        XCTAssertFalse(zeroSeed.panelCoversPoint,
+                       "at zero the strip never widens beyond the ordinary "
+                         + "sentinel, so the same point 60px off the "
+                         + "physical edge is no longer covered")
+    }
+
+    /// **A window the window server cannot see is not a catch surface.**
+    ///
+    /// The strip was `backgroundColor = .clear` over a view that draws
+    /// nothing — every pixel at alpha zero — and the server routes mouse
+    /// events straight through such a window.
+    /// `NSWindow.windowNumber(at:)` never returned it, at any delay,
+    /// deterministically over three rounds; frontness and key state made no
+    /// difference and only the alpha did (measured 2026-08-15). That is why
+    /// the synthetic down landed on the Finder desktop.
+    ///
+    /// Asserted against a real AppKit panel because both properties it reads
+    /// are exactly the pair whose defaults look harmless in a diff.
+    func testTheCatchPanelIsSomethingTheWindowServerCanHitTest() {
+        let host = HostDisplayDescriptor(
+            id: 41, name: "Studio Display",
+            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
+        let fileEdge = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            callbacks: .init(entered: { _, _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { fileEdge.close() }
+
+        XCTAssertTrue(fileEdge.catchSurfaceIsHitTestable,
+                      "a fully transparent strip is a hole the seeding down "
+                        + "falls through onto whatever is underneath")
+        XCTAssertGreaterThan(ContinuityFileEdge.hitTestableAlpha, 0)
+        XCTAssertLessThan(ContinuityFileEdge.hitTestableAlpha, 0.01,
+                          "and it must stay below a visible tint: this strip "
+                            + "sits over another app's window all day")
+    }
+
+    /// Against a real AppKit panel, not the mock: `catchSurfaceIsHitTestable`
+    /// already reads `!panel.ignoresMouseEvents` as half of what makes the
+    /// strip a valid destination — this is the other half of that same
+    /// fact, that setting it TRUE is exactly what un-hit-tests the strip,
+    /// which is the mechanism `setDropsThroughOwnSession` exists to drive.
+    func testDropsThroughOwnSessionMakesTheStripNotHitTestableAndBackAgain() {
+        let host = HostDisplayDescriptor(
+            id: 41, name: "Studio Display",
+            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
+        let fileEdge = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            callbacks: .init(entered: { _, _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { fileEdge.close() }
+        XCTAssertTrue(fileEdge.catchSurfaceIsHitTestable,
+                      "the ordinary state: a foreign drag must still be able "
+                        + "to reach this destination")
+
+        fileEdge.setDropsThroughOwnSession(true)
+        XCTAssertFalse(fileEdge.catchSurfaceIsHitTestable,
+                       "drop-through means the window server routes the "
+                         + "OWN session's drag query straight past this "
+                         + "panel to whatever is really underneath")
+
+        fileEdge.setDropsThroughOwnSession(false)
+        XCTAssertTrue(fileEdge.catchSurfaceIsHitTestable,
+                      "restored the instant the live session ends, so the "
+                        + "strip goes back to being an ordinary destination "
+                        + "for the NEXT foreign drag")
+    }
+
+    /// The seed-time audit line carries the three facts that separate the
+    /// failures a single frozen drag image could mean: the panel never went
+    /// key, the window server never handed us the point, or this app was
+    /// never front.
+    func testTheSeedNamesKeyServerAndActivationTogether() throws {
+        let host = HostDisplayDescriptor(
+            id: 41, name: "Studio Display",
+            frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            pixelSize: CGSize(width: 5120, height: 2880), isPrimary: true)
+        let fileEdge = ContinuityFileEdge(
+            edge: .init(host: host, guestSide: .left, overlap: 0...900),
+            callbacks: .init(entered: { _, _ in false }, exited: {},
+                             dropped: { _ in false }))
+        defer { fileEdge.close() }
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: CGPoint(x: 10, y: 10),
+            modifierFlags: [], timestamp: 12, windowNumber: 14932,
+            context: nil, eventNumber: 4242, clickCount: 1, pressure: 1))
+
+        let seed = try XCTUnwrap(
+            fileEdge.makeDragSeed(at: CGPoint(x: 1380, y: 450), from: event))
+
+        for fact in ["panelKey=", "panelCoversPoint=", "serverTopWindow=",
+                     "serverOwnsPoint=", "appActive="] {
+            XCTAssertTrue(seed.summary.contains(fact),
+                          "the audit line must carry \(fact) or the next "
+                            + "metal round cannot tell these apart")
+        }
     }
 
     func testReleasingBeforeARealEventAbandonsTheDragOutLoud() {
@@ -690,6 +2207,267 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertEqual(asked.generation, 3)
     }
 
+    // MARK: - Eager fetch for app drop targets
+    //
+    // Metal, 2026-08-15: the drag pasteboard carried only an
+    // NSFilePromiseProvider, so Finder took the drop and every other
+    // application refused it silently — a promise-only pasteboard reads as
+    // nothing-droppable to anything that never adopted
+    // NSFilePromiseReceiver. The host knows a stub's size before the drag
+    // even starts, so a small one is fetched during the crossing and the
+    // drag carries a real file:// URL instead — see
+    // ContinuityFileDragPolicy for the cap this reads, and
+    // ContinuityGrabTransfer.EagerFetch for why resolving it must never
+    // block.
+
+    func testEagerEligibilityIsExactlyAtTheCapBoundary() {
+        let cap = ContinuityFileDragPolicy.eagerFetchCapBytes
+        XCTAssertTrue(ContinuityFileDragPolicy.eligibleForEagerFetch(
+            dataSize: cap, resourceSize: 0), "the cap itself is eligible")
+        XCTAssertFalse(ContinuityFileDragPolicy.eligibleForEagerFetch(
+            dataSize: cap + 1, resourceSize: 0),
+            "one byte over must not round down into eligibility")
+        XCTAssertTrue(ContinuityFileDragPolicy.eligibleForEagerFetch(
+            dataSize: cap / 2, resourceSize: cap / 2),
+            "the two forks must be summed, not checked separately")
+        XCTAssertFalse(ContinuityFileDragPolicy.eligibleForEagerFetch(
+            dataSize: cap / 2, resourceSize: cap / 2 + 1))
+    }
+
+    /// The design's small-file path, start to finish: a stub under the cap
+    /// gets a real fetch started immediately, and once that fetch finishes
+    /// the drag's writer is a real file, not a promise.
+    func testASmallStubStartsAnEagerFetchAndTheDragCarriesARealFileURL()
+        throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        var audits: [(HostLog.LogLevel, String)] = []
+        let fetched = expectation(description: "eager fetch completed")
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in completion(.success(delivery)) },
+            audit: {
+                audits.append(($0, $1))
+                if $1.contains("eager fetch completed") { fetched.fulfill() }
+            })
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        let item = transfer.dragItem(for: stub)
+        XCTAssertNotNil(item.resolve,
+                        "a stub under the cap must attempt an eager fetch")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("drag payload: eager") && $0.1.contains("5 bytes")
+                && $0.1.contains("fetching during the crossing")
+        }, "the decision must be logged the instant it is made, not only "
+            + "once it resolves")
+        wait(for: [fetched], timeout: 5)
+
+        let resolved = item.finalized()
+        let url = try XCTUnwrap(resolved.writer as? NSURL,
+                                "a finished eager fetch must hand the drag "
+                                    + "a real file, not a promise")
+        XCTAssertEqual(try String(contentsOf: url as URL, encoding: .utf8),
+                       "hello")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("drag payload: eager") && $0.1.contains("bytes")
+                && $0.1.contains("fetched in") && $0.1.contains("ms")
+                && $0.1.contains("using a real file URL, not a promise")
+        })
+    }
+
+    /// The other half of the cap: a large stub must never even attempt a
+    /// grab from `dragItem` — that grab belongs to the promise alone, on
+    /// release, exactly as before this slice existed.
+    func testAStubOverTheCapNeverAttemptsAnEagerFetch() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, _ in
+                XCTFail("a stub over the cap must never start a grab from "
+                    + "dragItem")
+            }, audit: { audits.append(($0, $1)) })
+        var oversized = Self.file(name: "Big File")
+        oversized.dataSize = ContinuityFileDragPolicy.eagerFetchCapBytes + 1
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: oversized)
+
+        let item = transfer.dragItem(for: stub)
+
+        XCTAssertNil(item.resolve)
+        XCTAssertTrue(item.writer is NSFilePromiseProvider)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("drag payload: promise") && $0.1.contains("over cap")
+        })
+    }
+
+    /// **Resolving must never block**, however far from finished the fetch
+    /// still is. Everything in this app — including the wire listener the
+    /// fetch itself asks — runs on the main actor; a synchronous wait here
+    /// would be this app deadlocking against its own completion.
+    func testAnEagerFetchStillPendingAtDragStartFallsBackWithoutBlocking() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let held = Held()
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in held.completion = completion },
+            audit: { audits.append(($0, $1)) })
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        let item = transfer.dragItem(for: stub)
+        XCTAssertNotNil(item.resolve)
+
+        let start = Date()
+        let resolved = item.finalized()
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.1,
+                          "resolving must never block on a fetch still in "
+                            + "flight")
+        XCTAssertTrue(resolved.writer is NSFilePromiseProvider,
+                      "an unfinished fetch must fall back to the promise "
+                        + "rather than hold the drag up")
+        XCTAssertTrue(audits.contains {
+            $0.0 == .warn
+                && $0.1.contains("had not finished when the drag started")
+        })
+        XCTAssertNotNil(held.completion,
+                        "the fetch is not cancelled, only not waited for — "
+                            + "it may still finish and simply go unused")
+    }
+
+    /// A refusal from the Mac (a stale selection, a bad epoch) must fall
+    /// back exactly like a slow one, named by its own code — indistinguishable
+    /// from a dead fetch is the failure mode `ContinuityGrabTransfer`'s
+    /// other refusal paths were built to avoid, and this path inherits it.
+    func testAFailedEagerFetchFallsBackToThePromiseAndIsNamed() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let refused = expectation(description: "eager fetch refused")
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                completion(.failure(.init(code: "stale-selection",
+                                          message: "the selection changed")))
+            },
+            audit: {
+                audits.append(($0, $1))
+                if $1.contains("eager fetch refused by the Mac") {
+                    refused.fulfill()
+                }
+            })
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        let item = transfer.dragItem(for: stub)
+        wait(for: [refused], timeout: 5)
+
+        let resolved = item.finalized()
+        XCTAssertTrue(resolved.writer is NSFilePromiseProvider)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("eager fetch refused by the Mac")
+                && $0.1.contains("stale-selection")
+        })
+    }
+
+    /// One grab lane, shared with the promise machinery: a stub bound while
+    /// another grab is already in flight must not attempt a second one —
+    /// that is what `ContinuityGrabTransfer.isBusy` already refuses on the
+    /// promise side, and the eager lane must honor the same one-at-a-time
+    /// rule rather than opening a second wire request underneath it.
+    func testABusyGrabLaneSkipsTheEagerFetchAndUsesThePromiseOutright() {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let asked = expectation(description: "the first grab reached the wire")
+        let held = Held()
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                held.completion = completion
+                asked.fulfill()
+            }, audit: { audits.append(($0, $1)) })
+        let busyStub = ContinuityDragStub(epoch: 7, generation: 1,
+                                          item: Self.file(name: "First"))
+        let first = transfer.promise(for: busyStub)
+        transfer.filePromiseProvider(
+            first, writePromiseTo: FileManager.default.temporaryDirectory
+                .appendingPathComponent("First")) { _ in }
+        wait(for: [asked], timeout: 5)
+        XCTAssertTrue(transfer.isBusy)
+
+        let secondStub = ContinuityDragStub(epoch: 7, generation: 2,
+                                            item: Self.file(name: "Second"))
+        let item = transfer.dragItem(for: secondStub)
+
+        XCTAssertNil(item.resolve)
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("eager fetch skipped")
+                && $0.1.contains("already in flight")
+        })
+        _ = held
+    }
+
+    /// End to end through the real controller wiring, not `dragItem`
+    /// called directly: the fetch that started at press time has finished
+    /// by the time the crossing hands AppKit the drag, and the item that
+    /// reaches AppKit is a real file.
+    func testTheControllerHandsAppKitARealFileWhenTheFetchWonTheRace()
+        throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        let rig = Rig(grabRequest: { _, _, _, _, completion in
+            completion(.success(delivery))
+        })
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        waitForAudit(rig, containing: "eager fetch completed")
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        let url = try XCTUnwrap(item.writer as? NSURL,
+                                "the fetch finished before the drag "
+                                    + "started; AppKit must have been "
+                                    + "handed the real file, not a promise")
+        XCTAssertEqual(try String(contentsOf: url as URL, encoding: .utf8),
+                       "hello")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("using a real file URL, not a promise")
+        })
+    }
+
+    /// The same race lost: nothing waits, so the ordinary promise still
+    /// reaches AppKit and the drag is not held up a moment for it.
+    func testTheControllerFallsBackToThePromiseWhenTheFetchIsStillPending()
+        throws {
+        let held = Held()
+        let rig = Rig(grabRequest: { _, _, _, _, completion in
+            held.completion = completion   /* never answers in this test */
+        })
+        rig.select(Self.file(name: "Read Me"))
+        rig.enterGuest()
+        rig.press()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item)
+        XCTAssertTrue(item.writer is NSFilePromiseProvider)
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.0 == .warn
+                && $0.1.contains("had not finished when the drag started")
+        })
+        _ = held
+    }
+
+    private func waitForAudit(_ rig: Rig, containing text: String,
+                              timeout: TimeInterval = 5) {
+        let predicate = NSPredicate { _, _ in
+            rig.recorder.lines.contains { $0.1.contains(text) }
+        }
+        let met = XCTNSPredicateExpectation(predicate: predicate,
+                                            object: NSObject())
+        wait(for: [met], timeout: timeout)
+    }
+
     // MARK: - Fulfillment
 
     func testGrabWritesTheFileAndReportsWhatArrived() throws {
@@ -751,6 +2529,209 @@ final class ContinuityGuestDragTests: XCTestCase {
         XCTAssertFalse(transfer.isBusy,
                        "a refusal must release the lane, or one bad drag "
                         + "wedges every later one")
+    }
+
+    /// The refusal above is named in the log, but nothing on screen used to
+    /// say it — `notice` was `@Published` to nobody. `outcomeSink` is the
+    /// forwarding seam `ContinuityFileDrag.configure` wires to
+    /// `edge.reportFileGrabOutcome`; this pins that EVERY terminal outcome
+    /// reaches it, not just the ones already covered by an audit line.
+    func testAWrongFileRefusalReachesTheOutcomeSinkInPlainWords() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                completion(.failure(.init(code: "stale-selection",
+                                          message: "the selection changed")))
+            })
+        var sunk: [String] = []
+        transfer.outcomeSink = { sunk.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        _ = fulfill(transfer, to: staging.appendingPathComponent("Read Me"),
+                   stub: stub)
+
+        XCTAssertEqual(sunk, [transfer.notice])
+        /* Composed through MachineNaming rather than spelled out, because
+           the literal is what this assertion is FOR: it must keep saying a
+           plain sentence rather than the wire's own code, and it must not
+           also become the second place the product's noun for the driven
+           machine is written down. It was a literal until 2026-08-16, when
+           the tree-wide rename to "the guest" landed on the sentence and
+           left this one copy behind. */
+        XCTAssertEqual(sunk.first, MachineNaming.startingSentence(
+            "the selection on \(MachineNaming.simpleReference) changed "
+            + "before the file could be copied."),
+            "a wrong-file refusal must reach the person in a plain "
+                + "sentence, not the wire's own code")
+    }
+
+    /// The same seam for the ordinary success path — not required by the
+    /// bug this exists for, but a sink that only ever fires on failure
+    /// would be a second, narrower promise than the one `notice` already
+    /// made.
+    func testACompletedGrabAlsoReachesTheOutcomeSink() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let destination = staging.appendingPathComponent("Read Me")
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in completion(.success(delivery)) })
+        var sunk: [String] = []
+        transfer.outcomeSink = { sunk.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        _ = fulfill(transfer, to: destination, stub: stub)
+
+        XCTAssertEqual(sunk, [transfer.notice])
+    }
+
+    /// `refusalSink` is the narrower sibling `ContinuityFileDrag.configure`
+    /// wires to a system notification plus the menu-bar flash — the two
+    /// surfaces a person mid-drag is actually looking at, not the
+    /// Continuity page's own status line. It must fire with the SAME
+    /// sentence `outcomeSink` gets, so a notification banner and the status
+    /// line can never disagree about why a drag ended.
+    func testAWrongFileRefusalReachesTheRefusalSinkTooWithTheSameSentence()
+        throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                completion(.failure(.init(code: "stale-selection",
+                                          message: "the selection changed")))
+            })
+        var refused: [String] = []
+        transfer.refusalSink = { refused.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        _ = fulfill(transfer, to: staging.appendingPathComponent("Read Me"),
+                   stub: stub)
+
+        XCTAssertEqual(refused, [transfer.notice],
+                       "the refusal sink must carry exactly the sentence "
+                           + "the status line got, never a second draft")
+    }
+
+    /// The negative half of the test above: a grab that SUCCEEDS must not
+    /// ring the refusal sink. Firing it on success would interrupt a
+    /// person with a notification for the ordinary case where their file
+    /// arrived exactly as asked — the opposite of what `refusalSink` exists
+    /// to be narrower than `outcomeSink` for.
+    func testACompletedGrabDoesNotReachTheRefusalSink() throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let destination = staging.appendingPathComponent("Read Me")
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in completion(.success(delivery)) })
+        var refused: [String] = []
+        transfer.refusalSink = { refused.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        _ = fulfill(transfer, to: destination, stub: stub)
+
+        XCTAssertTrue(refused.isEmpty,
+                      "a completed grab must not ring the refusal sink")
+    }
+
+    /// The third way a grab ends badly: the wire honoured the redemption
+    /// but this Mac could not WRITE what arrived — a destination directory
+    /// that no longer exists is the easiest way to force `FileConverter
+    /// .materialize` to throw. This must reach `refusalSink` exactly like
+    /// a wire refusal does; a person watching for "did my drag fail" does
+    /// not care which half of the trip went wrong.
+    func testAWriteFailureAfterAHonouredGrabAlsoReachesTheRefusalSink()
+        throws {
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let delivery = try Self.delivery(name: "Read Me",
+                                         bytes: Data("hello".utf8),
+                                         in: staging)
+        let vanished = staging.appendingPathComponent(
+            "gone-\(UUID().uuidString)", isDirectory: true)
+        let destination = vanished.appendingPathComponent("Read Me")
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in completion(.success(delivery)) })
+        var refused: [String] = []
+        transfer.refusalSink = { refused.append($0) }
+        let stub = ContinuityDragStub(epoch: 7, generation: 3,
+                                      item: Self.file(name: "Read Me"))
+
+        let thrown = fulfill(transfer, to: destination, stub: stub)
+
+        XCTAssertNotNil(thrown,
+                        "writing into a directory that does not exist "
+                            + "must actually fail, or this test proves "
+                            + "nothing")
+        XCTAssertEqual(refused, [transfer.notice])
+    }
+
+    /// The eager fetch (started at press time) and the promise-fallback
+    /// redemption (started at drop time) can both reach the wire for the
+    /// SAME generation when the eager fetch has not finished by drop —
+    /// ordinary, not guest flakiness, and the refusal noise this was meant
+    /// to distinguish from a scheduled retry (there is no such thing here)
+    /// is exactly two attempts on one generation's audit trail.
+    func testTwoAttemptsOnOneGenerationAreNumberedAndNamedAsSeparate()
+        throws {
+        var audits: [(HostLog.LogLevel, String)] = []
+        let staging = try Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        let stub = ContinuityDragStub(epoch: 9, generation: 4,
+                                      item: Self.file(name: "main.c"))
+        let delivery = try Self.delivery(name: "main.c",
+                                         bytes: Data("int main(){}".utf8),
+                                         in: staging)
+
+        /* Both attempts travel through ONE transfer, because the attempt
+           counter is per-instance: attempt 1 is the eager fetch started at
+           press time, held open so it can be refused on cue; attempt 2 is
+           the promise-fallback redemption at drop time, which this test
+           lets succeed — the exact "refused, then `grant honored` seconds
+           later" shape the metal log reported. */
+        let firstReached = expectation(description: "attempt one reached")
+        let held = Held()
+        let transfer = ContinuityGrabTransfer(
+            grab: { _, _, _, _, completion in
+                if held.completion == nil {
+                    held.completion = completion
+                    firstReached.fulfill()
+                } else {
+                    completion(.success(delivery))
+                }
+            }, audit: { audits.append(($0, $1)) })
+
+        _ = transfer.dragItem(for: stub)
+        wait(for: [firstReached], timeout: 5)
+        held.completion?(.failure(.init(code: "stale-selection",
+                                        message: "empty stub name")))
+
+        let failure = fulfill(transfer,
+                              to: staging.appendingPathComponent("main.c"),
+                              stub: stub)
+        XCTAssertNil(failure, "the second attempt is the one that succeeds")
+
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("attempt=1") && $0.1.contains("eager fetch")
+        }, "the first (eager) attempt must be numbered 1")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("attempt=2") && $0.1.contains("grab requested")
+        }, "the second (promise-fallback) attempt for the SAME generation "
+            + "must be numbered 2, not read as a first attempt")
+        XCTAssertTrue(audits.contains {
+            $0.1.contains("does not retry a refused grab on its own")
+        }, "the host must say plainly that it never schedules the retry "
+            + "itself — the second attempt is a separate lane, not a "
+            + "retry loop")
     }
 
     func testOneGrabAtATime() throws {
@@ -821,7 +2802,20 @@ final class ContinuityGuestDragTests: XCTestCase {
                                   item: ContinuitySelection.Item?)
         -> ContinuitySelection {
         .init(version: ContinuityContract.version, epoch: epoch,
-              generation: generation, item: item)
+              generation: generation, source: .selection, item: item)
+    }
+
+    /// What `MirrorContinuityController` synthesises from one
+    /// `continuity.dragBegin`: the resident's identity, no generation, and
+    /// none of the three fields only the File Manager could answer.
+    private static func announced(epoch: UInt32, dragSeq: UInt32,
+                                  name: String) -> ContinuitySelection {
+        .init(version: ContinuityContract.version, epoch: epoch,
+              generation: 0, source: .drag, dragSeq: dragSeq,
+              item: .init(name: name, volumeRef: -1, dirID: 2,
+                          fileType: "TEXT", creator: "ttxt", dataSize: nil,
+                          resourceSize: nil, modifiedAt: nil,
+                          isFolder: false, icon: nil))
     }
 
     fileprivate static func file(name: String) -> ContinuitySelection.Item {
@@ -857,6 +2851,545 @@ final class ContinuityGuestDragTests: XCTestCase {
                      creator: "ttxt", modified: nil,
                      staged: try sink.finish(expectedCRC32: nil),
                      transferMs: 1, crc32: nil, resumeToken: nil)
+    }
+
+    // MARK: - The carried drag's presentation
+
+    /// A pasteboard carrying one real file, the way a Finder drag arrives.
+    private static func fileDrag(_ url: URL) -> NSPasteboard {
+        let board = NSPasteboard(name: .init("carry.\(UUID().uuidString)"))
+        board.clearContents()
+        board.writeObjects([url as NSURL])
+        return board
+    }
+
+    /// **THE CARRY IS TAKEN AT THE CROSSING, ONCE** — the plan's one early
+    /// decision. `draggingEntered` is the only moment this side holds both
+    /// the pointer and what is being carried, and the strip is asked again
+    /// on every motion of the drag, so the arrival has to be an edge rather
+    /// than a repeat: a gesture numbered on every `draggingUpdated` names
+    /// nothing, and a cursor hidden on every one of them can never be
+    /// balanced.
+    func testCarryingAFileToTheEdgeIsTakenOncePerGesture() throws {
+        let rig = Rig()
+        let url = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)/main.c")
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450),
+                              Self.fileDrag(url))
+        XCTAssertEqual(rig.environment.hidden.count, 1)
+        /* The strip is asked again on every motion of the drag. */
+        _ = callbacks.entered(CGPoint(x: 1439, y: 460),
+                              Self.fileDrag(url))
+        _ = callbacks.entered(CGPoint(x: 1439, y: 470),
+                              Self.fileDrag(url))
+        XCTAssertEqual(rig.environment.hidden.count, 1,
+                       "the arrival is taken once per gesture, not once per "
+                        + "draggingUpdated")
+        XCTAssertTrue(rig.environment.shown.isEmpty,
+                      "and nothing has ended it: the person is still "
+                        + "carrying the file")
+    }
+
+    /// **A HIDE THAT OUTLIVES ITS GESTURE** is a cursor a person cannot get
+    /// back, so every departure path runs the teardown funnel — and each
+    /// does it exactly once.
+    func testEveryDeparturePathEndsTheDragVisualsExactlyOnce() throws {
+        /* "drop" is gone from this list ON PURPOSE (2026-08-16). The drop at
+           the edge is now the release this Mac posts to END the host's own
+           drag, and the person is still carrying the file afterwards — on
+           the guest, which must keep drawing it. The departures are the ways
+           that carry actually ends. */
+        for departure in ["exit", "release on the guest", "cross back"] {
+            let rig = Rig()
+            /* The drag lane's own restore says so in its own words, which
+               is what separates it from the ordinary custody's restore on
+               the two paths that take custody at all. */
+            let restores = {
+                rig.recorder.lines.filter {
+                    $0.1.contains("restored the host cursor's visible layer")
+                }.count
+            }
+            let staged = NSPasteboard(
+                name: .init("now.test.presentation.\(UUID().uuidString)"))
+            rig.controller.stageHostFiles = { _ in staged }
+            let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+            let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+            _ = callbacks.entered(CGPoint(x: 1439, y: 450),
+                                  Self.fileDrag(url))
+            XCTAssertEqual(rig.environment.hidden.count, 1, departure)
+            switch departure {
+            case "exit":
+                callbacks.exited()
+            case "release on the guest":
+                _ = callbacks.dropped(Self.fileDrag(url))
+                rig.controller.transportPhaseChanged(.active)
+                XCTAssertEqual(restores(), 0,
+                               "the edge drop is a staging, not a departure")
+                rig.releaseOnGuest()
+            default:
+                _ = callbacks.dropped(Self.fileDrag(url))
+                rig.controller.transportPhaseChanged(.active)
+                rig.crossBackHolding()
+            }
+            XCTAssertEqual(restores(), 1,
+                           "the hide outlived the gesture after \(departure)")
+            /* Idempotent: a strip can be told twice, and a second restore
+               of a layer nobody hid is a second line in the log for no
+               reason. */
+            callbacks.exited()
+            XCTAssertEqual(restores(), 1, "torn down twice after \(departure)")
+        }
+    }
+
+    /// The release backstop reaches the VISUALS too. `draggingExited`
+    /// belongs to another application's session and can simply not arrive;
+    /// a cursor left hidden for a gesture that ended is the visible half of
+    /// the same stuck-flag defect.
+    func testTheSelfHealingReleaseAlsoEndsTheDragVisuals() throws {
+        let rig = Rig()
+        var held = true
+        rig.controller.physicalPrimaryButtonHeld = { held }
+        rig.enterGuest()
+        _ = try XCTUnwrap(rig.environment.fileCallbacks)
+            .entered(CGPoint(x: 1439, y: 450),
+                     Self.fileDrag(URL(fileURLWithPath: "/tmp/x/main.c")))
+        held = false
+        rig.press()
+        rig.crossBackHolding()
+
+        XCTAssertEqual(rig.recorder.lines.filter {
+            $0.1.contains("restored the host cursor's visible layer")
+        }.count, 1,
+                       "the drag ended where no callback could see it and "
+                        + "this Mac was left holding the hide")
+    }
+
+    // MARK: - The handoff: the guest's own drag, with a promise
+
+    /// One staged carry, one handoff, at the point the crossing computed.
+    ///
+    /// **The acceptance sentence, from this side (plan `2026-08-17-036`):
+    /// after the handoff the recipient sees a normal drag with a promise.**
+    /// So what crosses here is a starting state and a skeleton and nothing
+    /// else — no target, no window, no collision. The strip is asked again
+    /// on every motion of the drag, and none of those is a second handoff:
+    /// one gesture is one drag over there.
+    func testTheStagingPointHandsTheDragOverExactlyOnce() throws {
+        let rig = Rig()
+        var handoffs: [MirrorKit.Point] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, point, _ in handoffs.append(point); return true },
+            abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.handoff.once"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        XCTAssertEqual(handoffs, [],
+                       "reaching the edge is not the handoff; the host's own "
+                        + "drag has not ended yet")
+        _ = callbacks.dropped(Self.fileDrag(url))
+        XCTAssertEqual(handoffs, [Rig.pressOrigin],
+                       "the handoff happens at the staging point, at the "
+                        + "guest entry point the crossing already computed")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 460), Self.fileDrag(url))
+        _ = callbacks.entered(CGPoint(x: 1439, y: 470), Self.fileDrag(url))
+        XCTAssertEqual(handoffs.count, 1,
+                       "every draggingUpdated is not a new drag on the "
+                        + "Macintosh")
+    }
+
+    /// **THE GUEST'S DROP IS THE COMMIT, AND THIS MAC ADDS NOTHING TO IT.**
+    ///
+    /// Once the gesture belongs to the other machine's Drag Manager, a
+    /// physical release is that machine's button-up: its Finder resolves the
+    /// drop and asks for the promise, inside the drop. So this side must not
+    /// start a transfer of its own — and must not let the promise go, which
+    /// is the one thing the pull still needs.
+    func testAReleaseUnderTheHandoffCommitsThroughTheGuestNotThisMac() throws {
+        let rig = Rig()
+        var abandons: [String] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true },
+            abandon: { reason, _ in abandons.append(reason) }))
+        var hostSideTransfers = 0
+        rig.controller.configureFileDragging(
+            guestFileAtPoint: { _ in nil },
+            hostFilesDropped: { _, _ in hostSideTransfers += 1; return true })
+        let staged = NSPasteboard(name: .init("now.test.handoff.commit"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        rig.releaseOnGuest()
+
+        XCTAssertEqual(hostSideTransfers, 0,
+                       "a second transfer beside the promise pull would be "
+                        + "this Mac copying the file the guest is already "
+                        + "asking for")
+        XCTAssertEqual(abandons, [],
+                       "the promise must still be serveable: the pull "
+                        + "happens INSIDE the drop, after this instant")
+    }
+
+    /// **THE CARRY HOLDS A BUTTON THE GUEST'S DRAG READS AND THE GUEST'S
+    /// RESIDENT NEVER SEES** (F2 defect B, attended metal 2026-08-17).
+    ///
+    /// The staged carry suppresses every press — it must, or a forwarded
+    /// click opens what is under the cursor (D5) — so this Mac used to hand
+    /// the other machine a drag with no button behind it, and its
+    /// `TrackDrag` first-sampled a released button and dropped the file at
+    /// the entry point. The level is the fix and the ORDER is the invariant:
+    /// it is in the plane before the begin crosses, because a first sample
+    /// reading UP is the whole defect.
+    func testTheCarriedButtonIsHeldBeforeTheBeginAndClearedAtTheRelease()
+        throws {
+        let rig = Rig()
+        var levelsWhenTheBeginCrossed: [Bool] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in
+                levelsWhenTheBeginCrossed =
+                    rig.driver.carriedLevels.map(\.held)
+                return true
+            },
+            abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.level.commit"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+
+        XCTAssertEqual(levelsWhenTheBeginCrossed, [true],
+                       "the begin crossed with no button held in the plane: "
+                        + "the Macintosh's TrackDrag samples that on its "
+                        + "first pass and returns at the entry point")
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true],
+                       "one raise, and nothing else until the person lets go")
+        XCTAssertNotEqual(rig.driver.carriedLevels[0].gesture, 0,
+                          "an unattributable level cannot be audited against "
+                            + "the gesture that raised it")
+        XCTAssertFalse(rig.driver.carriedLevels[0].reason.isEmpty)
+
+        rig.releaseOnGuest()
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true, false],
+                       "the physical release IS the other machine's "
+                        + "button-up; without the clear its drag never ends")
+        XCTAssertEqual(rig.driver.carriedLevels[1].gesture,
+                       rig.driver.carriedLevels[0].gesture,
+                       "the clear belongs to the carry that raised it")
+        /* AND THE PRESS WAS NEVER FORWARDED. The level is not a click: if
+           this ever becomes one, the guest's Finder gets a synthetic press
+           on the desktop under the gesture — D5, in the costume of a fix. */
+        XCTAssertFalse(rig.ledger.steps.contains(.guestPrimaryDown),
+                       "\(rig.ledger.steps)")
+    }
+
+    /// Every way out of a carry clears the level. A raised one that is never
+    /// cleared leaves the other machine inside a drag nobody is making — a
+    /// worse failure than the instant drop, and a silent one.
+    func testEveryCarryExitClearsTheCarriedButtonExactlyOnce() throws {
+        /* The abort at the edge. */
+        let back = try carryRig(named: "abort")
+        back.rig.crossBackHolding()
+        XCTAssertEqual(back.rig.driver.carriedLevels.map(\.held),
+                       [true, false], "cross-back: \(back.rig.driver.carriedLevels)")
+
+        /* The bound: nobody dropped it and nobody released. */
+        let bound = try carryRig(named: "bound")
+        bound.rig.deadlines.fireAll()
+        XCTAssertEqual(bound.rig.driver.carriedLevels.map(\.held),
+                       [true, false], "the bound: \(bound.rig.driver.carriedLevels)")
+        bound.rig.releaseOnGuest()
+        XCTAssertEqual(bound.rig.driver.carriedLevels.count, 2,
+                       "a late release must not clear a level twice")
+
+        /* Ownership ending some other way — transport idle, `stop()`, a
+           return under a host drag — all funnel through the same abandon. */
+        let ended = try carryRig(named: "ended")
+        ended.rig.controller.transportPhaseChanged(.idle)
+        XCTAssertEqual(ended.rig.driver.carriedLevels.map(\.held),
+                       [true, false],
+                       "ownership ended: \(ended.rig.driver.carriedLevels)")
+    }
+
+    /// A handoff that never crossed has no drag over there to hold a button
+    /// for, and a level asserted into that plane is this Mac pressing
+    /// something nobody is reading.
+    func testARefusedHandoffLetsTheCarriedButtonGoAgain() throws {
+        let rig = Rig()
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in false }, abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.level.refused"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true, false],
+                       "\(rig.driver.carriedLevels)")
+    }
+
+    /// A raise the transport could not carry is re-asserted when ownership
+    /// is confirmed, and said out loud in between. The handoff happens at
+    /// the staging point, which can be reached before the guest has
+    /// confirmed the epoch — the same gap `convergeAfterCrossDrop` names.
+    func testALevelRaisedBeforeOwnershipIsReassertedWhenItArrives() throws {
+        let rig = Rig()
+        rig.driver.carriedLevelReachesTheWire = false
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true }, abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.level.deferred"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("carried button level could not reach")
+        }, "a level that never reached the plane must not pass silently")
+
+        rig.driver.carriedLevelReachesTheWire = true
+        rig.controller.transportPhaseChanged(.active)
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true, true],
+                       "the level is re-asserted on the first datagram it "
+                        + "can ride: \(rig.driver.carriedLevels)")
+    }
+
+    /// One carry, staged and handed over, sitting at the point every exit
+    /// path leaves from.
+    private func carryRig(named: String) throws
+        -> (rig: Rig, callbacks: ContinuityFileEdge.Callbacks) {
+        let rig = Rig()
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true }, abandon: { _, _ in }))
+        let staged = NSPasteboard(name: .init("now.test.level.\(named)"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        XCTAssertEqual(rig.driver.carriedLevels.map(\.held), [true],
+                       "the carry starts with the button held")
+        return (rig, callbacks)
+    }
+
+    /// The abort, and it is native on both sides. Over there `TrackDrag`
+    /// returns `userCanceledErr` and the Manager plays its own snap-back;
+    /// here the whole of the abort is letting the promise go, with a reason
+    /// on the record.
+    func testCrossingBackReleasesThePromiseWithAReason() throws {
+        let rig = Rig()
+        var abandons: [String] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true },
+            abandon: { reason, _ in abandons.append(reason) }))
+        let staged = NSPasteboard(name: .init("now.test.handoff.abort"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        rig.crossBackHolding()
+
+        XCTAssertEqual(abandons.count, 1, "\(abandons)")
+        XCTAssertFalse(abandons[0].isEmpty,
+                       "a promise that stopped being served with no sentence "
+                        + "saying why is unauditable")
+    }
+
+    /// **THE PLAN'S NAMED FAILURE MODE, FROM THIS SIDE.** The skeleton never
+    /// arrives, or the guest never starts the drag, and it times out into a
+    /// native non-drop over there — where nothing on this Mac can observe
+    /// it. Without a bound of its own this side keeps a staged file and a
+    /// live promise for a gesture that ended minutes ago.
+    func testAStagedCarryNobodyResolvesIsLetGoOnItsOwnBound() throws {
+        let rig = Rig()
+        var abandons: [String] = []
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in true },
+            abandon: { reason, _ in abandons.append(reason) }))
+        var hostSideTransfers = 0
+        rig.controller.configureFileDragging(
+            guestFileAtPoint: { _ in nil },
+            hostFilesDropped: { _, _ in hostSideTransfers += 1; return true })
+        let staged = NSPasteboard(name: .init("now.test.handoff.timeout"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        XCTAssertEqual(rig.deadlines.armed.map(\.delay).sorted(),
+                       [0.25,
+                        ContinuityEdgeController.stagedCarryLifetime],
+                       "the handoff arms the lifetime bound and the HID "
+                        + "probe's first tick - the probe is the "
+                        + "time-driven half of the release backstop "
+                        + "(review, 2026-08-17)")
+
+        rig.deadlines.fireAll()
+        XCTAssertEqual(abandons.count, 1, "\(abandons)")
+        XCTAssertTrue(abandons[0].contains("180"),
+                      "the reason names the bound: \(abandons[0])")
+
+        /* And a release that turns up afterwards commits nothing — quietly
+           doing nothing would leave a person watching a file that never
+           arrives with no line to read. */
+        rig.releaseOnGuest()
+        XCTAssertEqual(hostSideTransfers, 0)
+        XCTAssertEqual(abandons.count, 1, "let go twice")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("already let the carry go")
+        }, "the late release says why it commits nothing")
+    }
+
+    /// A handoff that could not cross is honest degradation, not a broken
+    /// gesture: the file is still staged and the release still transfers it
+    /// through the lane that predates this one.
+    func testAHandoffThatCannotCrossLeavesTheOlderLaneCommitting() throws {
+        let rig = Rig()
+        rig.controller.configureHostDragHandoff(.init(
+            begin: { _, _, _ in false }, abandon: { _, _ in }))
+        var transfers = 0
+        rig.controller.configureFileDragging(
+            guestFileAtPoint: { _ in nil },
+            hostFilesDropped: { _, _ in transfers += 1; return true })
+        let staged = NSPasteboard(name: .init("now.test.handoff.refused"))
+        rig.controller.stageHostFiles = { _ in staged }
+        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
+        let url = URL(fileURLWithPath: "/tmp/x/main.c")
+
+        _ = callbacks.entered(CGPoint(x: 1439, y: 450), Self.fileDrag(url))
+        _ = callbacks.dropped(Self.fileDrag(url))
+        rig.controller.transportPhaseChanged(.active)
+        XCTAssertTrue(rig.deadlines.armed.isEmpty,
+                      "nothing was handed off, so there is no handoff to bound")
+        rig.releaseOnGuest()
+
+        XCTAssertEqual(transfers, 1,
+                       "the crossing still transfers on release exactly as it "
+                        + "did before the native lane")
+    }
+
+    // MARK: - Two features, one crossing
+
+    /// **THE 17:22 CONFLATION, AS IT HAPPENED.** Metal, 2026-08-16: Michelle
+    /// held a drag of a file on THIS Mac and carried it toward the guest.
+    /// The guest→host machinery ran backwards at her gesture — it bound the
+    /// guest's stale cached selection, sent a primary down the guest Finder
+    /// began dragging `main.c` under, started an AppKit session to bring
+    /// that file HERE, and refused its own grab `stale-selection`. A whole
+    /// pipeline's work, three refusals, and all of it about a file nobody
+    /// had picked up, while the file she was actually holding went nowhere.
+    ///
+    /// The mechanism is a race between two honest reporters of one gesture.
+    /// A held drag moves the pointer across the edge, so the sample stream
+    /// and the strip's own `draggingEntered` both see it arrive, by
+    /// different routes and in either order. When the samples win, the
+    /// controller is already `.active`, `hostFileEntered` declines to steer,
+    /// `hostFileDrag` stays false — and nothing left anywhere says a host
+    /// drag exists. This pins that the FACT is recorded regardless of who
+    /// won, and that the crossing then binds nothing and returns nothing.
+    func testACrossingUnderAHostDragBindsNothingAndReturnsNothing() throws {
+        let rig = Rig()
+        rig.controller.physicalPrimaryButtonHeld = { true }
+        rig.select(Self.file(name: "main.c"), generation: 3)
+        /* The samples win the race: Continuity is already active and
+           steering when the strip finally hears about the drag. */
+        rig.enterGuest()
+        XCTAssertEqual(rig.environment.fileCallbacks?
+            .entered(CGPoint(x: 1439, y: 450), .init(name: .drag)), false,
+            "an active controller does not start steering a second time — "
+                + "and that refusal is exactly what used to lose the fact")
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertTrue(rig.environment.fileDrags.isEmpty,
+                      "a crossing carrying a drag from THIS Mac must start "
+                        + "no return drag: it is travelling the other way")
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("press bound to the guest selection")
+        }, "nothing may be bound: the person's hand is on a host file")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("this cross carries a drag from this Mac")
+        }, "the suppression must say so, or the next report of this reads "
+            + "as a crossing that silently did nothing: \(rig.recorder.lines)")
+    }
+
+    /// **THE OTHER WAY, AND IT MUST STILL WORK.** A suppression that fires
+    /// on the ordinary guest→host gesture would trade one broken direction
+    /// for the other, and this is the direction that reached metal first
+    /// (2026-08-15 13:43, the first file to cross the edge). Identical to
+    /// the test above in every respect except the one that matters: no host
+    /// drag is over this Mac.
+    func testAnOrdinaryGuestCrossingIsUntouchedByTheSuppression() throws {
+        let rig = Rig()
+        rig.select(Self.file(name: "main.c"), generation: 3)
+        rig.enterGuest()
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        let item = try XCTUnwrap(rig.environment.fileDrags.first?.item,
+                                 "the guest→host direction must still bind "
+                                    + "and start its return drag")
+        let provider = try XCTUnwrap(item.writer as? NSFilePromiseProvider)
+        let stub = try XCTUnwrap(provider.userInfo as? ContinuityDragStub)
+        XCTAssertEqual(stub.item.name, "main.c")
+        XCTAssertFalse(rig.recorder.lines.contains {
+            $0.1.contains("this cross carries a drag from this Mac")
+        }, "no host drag exists here; suppressing this crossing would break "
+            + "the direction that already works")
+    }
+
+    /// **A SUPPRESSION FLAG THAT ONLY A FOREIGN CALLBACK CAN CLEAR IS ONE
+    /// THAT CAN STICK.** `draggingExited` belongs to a session in another
+    /// application — the one class of event this controller cannot make
+    /// arrive — and a stuck flag leaves the edge permanently deaf to real
+    /// guest presses. That is a worse failure than the one being fixed, and
+    /// a silent one. So the fact underneath clears it too.
+    func testTheSuppressionClearsItselfWhenTheButtonIsNoLongerHeld() throws {
+        let rig = Rig()
+        var held = true
+        rig.controller.physicalPrimaryButtonHeld = { held }
+        rig.enterGuest()
+        _ = rig.environment.fileCallbacks?.entered(CGPoint(x: 1439, y: 450), .init(name: .drag))
+        /* The drag ends somewhere this app never hears about. */
+        held = false
+        rig.select(Self.file(name: "main.c"), generation: 3)
+        rig.press()
+        rig.dragAcrossTheGuest()
+        rig.crossBackHolding()
+        rig.deliverRealDragEvent()
+
+        XCTAssertFalse(rig.environment.fileDrags.isEmpty,
+                       "the edge went deaf: a released host drag left the "
+                        + "suppression armed with nothing able to clear it")
+        XCTAssertTrue(rig.recorder.lines.contains {
+            $0.1.contains("the host drag over the shared edge is over")
+        }, "self-healing must be audible, or a stuck flag and a healthy one "
+            + "look identical afterwards")
     }
 }
 
@@ -894,10 +3427,23 @@ private final class Rig {
     let driver: Driver
     let ledger = Ledger()
     let recorder = AuditRecorder()
+    /// Every bound the controller armed, unfired. A deadline a test cannot
+    /// make elapse is a deadline nobody has tested.
+    final class Deadlines {
+        var armed: [(delay: TimeInterval, fire: @MainActor () -> Void)] = []
+
+        @MainActor
+        func fireAll() {
+            let due = armed
+            armed = []
+            for deadline in due { deadline.fire() }
+        }
+    }
+    let deadlines = Deadlines()
     private let cache: ContinuitySelectionCache
     private let listener: GuestListener
     private let fileTransfer: MirrorFileTransferModel
-    private let grab: ContinuityGrabTransfer
+    let grab: ContinuityGrabTransfer
     private let sceneCalls = Ledger()
     private var epoch: UInt32 = 7
 
@@ -905,7 +3451,10 @@ private final class Rig {
     /// must never need one.
     var sceneLookups: Int { sceneCalls.steps.count }
 
-    init() {
+    /// Nil keeps the ordinary "no Mac in this test" refusal every existing
+    /// test relies on; a rig built for the eager-fetch lane supplies its own
+    /// so a `dragItem(for:)` call can actually succeed or hang on demand.
+    init(grabRequest: ContinuityGrabTransfer.GrabRequest? = nil) {
         let recorder = self.recorder
         let audit: (HostLog.LogLevel, String) -> Void = {
             recorder.lines.append(($0, $1))
@@ -921,18 +3470,25 @@ private final class Rig {
             defaults: nil, observeScreens: false)
         driver = Driver(ledger: ledger)
         environment = Environment(ledger: ledger)
-        cache = ContinuitySelectionCache(audit: audit)
+        let clock = self.cacheClock
+        cache = ContinuitySelectionCache(
+            audit: audit,
+            now: { clock.value ?? ProcessInfo.processInfo.systemUptime })
         listener = GuestListener(identity: .init(version: "test",
                                                  name: "Host"))
         fileTransfer = MirrorFileTransferModel(listener: listener)
         grab = ContinuityGrabTransfer(
-            grab: { _, _, _, _, completion in
+            grab: grabRequest ?? { _, _, _, _, completion in
                 completion(.failure(.init(code: "disconnected",
                                           message: "no Mac in this test")))
             }, audit: audit)
+        let deadlines = self.deadlines
         controller = ContinuityEdgeController(
             layout: layout, driver: driver, environment: environment,
-            audit: audit)
+            audit: audit,
+            schedule: { delay, body in
+                deadlines.armed.append((delay, body))
+            })
         let cache = self.cache
         let epoch = self.epoch
         ContinuityFileDrag.configure(
@@ -943,6 +3499,7 @@ private final class Rig {
                 return nil
             },
             selection: { cache.bindable(activeEpoch: epoch) },
+            selectionMark: { cache.mark },
             grab: grab,
             audit: audit)
         controller.start()
@@ -959,10 +3516,85 @@ private final class Rig {
         cache.clear(reason: "the Continuity epoch ended")
     }
 
-    func select(_ item: ContinuitySelection.Item) {
+    /// Lets a test place a cache application on the same clock the
+    /// controller reads — the only way to stage a publish that crossed the
+    /// press on the wire, which is the case that must refuse.
+    final class Clock { var value: TimeInterval? }
+    let cacheClock = Clock()
+
+    /// Apply the next selection as though it had landed at `at`.
+    func selectAsOf(_ at: TimeInterval, _ item: ContinuitySelection.Item,
+                    generation: UInt32) {
+        cacheClock.value = at
+        select(item, generation: generation)
+        cacheClock.value = nil
+    }
+
+    func select(_ item: ContinuitySelection.Item,
+                generation: UInt32 = 3) {
         cache.apply(.init(version: ContinuityContract.version, epoch: epoch,
-                          generation: 3, item: item),
+                          generation: generation, source: .selection,
+                          item: item),
                     activeEpoch: epoch)
+        notePublished()
+    }
+
+    /// The Mac's drag plane publishing what the Drag Manager handed it at
+    /// drag begin. No selection is involved — this is the generation a
+    /// never-selected file gets, and the whole reason it can have one.
+    func dragBeginsAsOf(_ at: TimeInterval, _ item: ContinuitySelection.Item,
+                        generation: UInt32) {
+        cacheClock.value = at
+        dragBegins(item, generation: generation)
+        cacheClock.value = nil
+    }
+
+    func dragBegins(_ item: ContinuitySelection.Item,
+                    generation: UInt32 = 4) {
+        cache.apply(.init(version: ContinuityContract.version, epoch: epoch,
+                          generation: generation, source: .drag,
+                          item: item),
+                    activeEpoch: epoch)
+        notePublished()
+    }
+
+    /// The resident naming the file in the hand while the button is still
+    /// down: an identity, a gesture, and NO generation — the application
+    /// mints those and it is not running yet.
+    func residentAnnounces(_ item: ContinuitySelection.Item,
+                           dragSeq: UInt32) {
+        cache.apply(.init(version: ContinuityContract.version, epoch: epoch,
+                          generation: 0, source: .drag, dragSeq: dragSeq,
+                          item: item),
+                    activeEpoch: epoch)
+        notePublished()
+    }
+
+    /// The application's own frame for a gesture that CROSSED: minted after
+    /// the cross ended the epoch, naming that ended epoch, joined by the
+    /// sequence the resident announced.
+    func mintsAfterTheEpoch(_ item: ContinuitySelection.Item,
+                            generation: UInt32, dragSeq: UInt32,
+                            epoch: UInt32? = nil) {
+        controller.noteSelectionPublishedAfterEpoch(
+            ContinuityDragStub(epoch: epoch ?? self.epoch,
+                               generation: generation, item: item,
+                               dragSeq: dragSeq))
+    }
+
+    /// What `MirrorContinuityController` does with every arrival: hand it to
+    /// the edge, which refuses it in every case but the one that arrives
+    /// after a crossing it can still revise.
+    private func notePublished() {
+        guard let mark = cache.mark else { return }
+        controller.noteSelectionPublished(mark)
+    }
+
+    /// A drag belonging to some application on THIS Mac, held over the
+    /// shared edge. `37241007`: a crossing made under one binds nothing.
+    func hostDragReachesTheEdge() {
+        _ = environment.fileCallbacks?.entered(CGPoint(x: 1439, y: 450),
+                                               .init(name: .drag))
     }
 
     func enterGuest() {
@@ -993,6 +3625,14 @@ private final class Rig {
     }
 
     /// The crossing itself, through the consuming tap — which has no NSEvent.
+    /// The release a person makes on the GUEST, which is what commits a
+    /// carried host file now that the host's own drag ended at the crossing.
+    func releaseOnGuest() {
+        environment.emitCaptured(.init(kind: .primaryUp,
+                                       location: CGPoint(x: 1439, y: 450),
+                                       delta: .zero, buttonsDown: false))
+    }
+
     func crossBackHolding() {
         environment.emitCaptured(.init(kind: .moved,
                                        location: CGPoint(x: 1439, y: 450),
@@ -1000,10 +3640,24 @@ private final class Rig {
                                        buttonsDown: true))
     }
 
+    /// The same clock the controller reads, so a test can place a witnessed
+    /// event where the report will attribute it — or far enough back that it
+    /// must not.
+    func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+
     /// macOS finishing with the session this app started.
     func endHostDragSession(operation: NSDragOperation) {
         environment.fileCallbacks?.dragEnded(operation,
                                              CGPoint(x: 900, y: 400))
+    }
+
+    /// A held motion sample carrying no NSEvent — what the monitor keeps
+    /// delivering while the window server catches up with the widen.
+    func deliverHeldSampleWithoutEvent() {
+        environment.emit(.init(kind: .moved,
+                               location: CGPoint(x: 1300, y: 450),
+                               delta: CGPoint(x: -8, y: 0),
+                               buttonsDown: true))
     }
 
     /// The first physical `mouseDragged` after the tap died.
@@ -1051,6 +3705,19 @@ private final class Rig {
             ledger.steps.append(.guestPrimaryUp(point))
             return true
         }
+        /// **The carry's button level, and every reason given for it.** A
+        /// level with no clear is a guest stuck in a drag, so the tests
+        /// assert the SEQUENCE rather than the final value: a raise, and
+        /// then exactly one clear, whichever way the carry ended.
+        var carriedLevels: [(held: Bool, gesture: UInt64, reason: String)] = []
+        /// A transport with no epoch to send on. The raise still happens;
+        /// what the controller must then do is say so and re-assert.
+        var carriedLevelReachesTheWire = true
+        func setCarriedButtonLevel(_ held: Bool, gesture: UInt64,
+                                   reason: String) -> Bool {
+            carriedLevels.append((held, gesture, reason))
+            return carriedLevelReachesTheWire
+        }
         func keyboardEvent(_ sample: HostKeySample) -> Bool {
             _ = sample
             return true
@@ -1081,14 +3748,52 @@ private final class Rig {
             return syntheticPostsSucceed
         }
 
+        /// The HID-level sibling, kept apart in the ledger for the same
+        /// reason it is a separate call: one corrects what the session
+        /// believes, the other ends a real gesture.
+        var syntheticHIDButtonPosts: [(down: Bool, point: CGPoint)] = []
+
+        func postSyntheticPrimaryButtonAtHID(down: Bool,
+                                             at screenPoint: CGPoint) -> Bool {
+            syntheticHIDButtonPosts.append((down, screenPoint))
+            return syntheticPostsSucceed
+        }
+
         func start(_ handler: @escaping ContinuityPointerEnvironment
                     .SampleHandler) -> AnyObject {
             self.handler = handler
             return Token()
         }
         func stop(_ token: AnyObject) { _ = token }
-        func hideCursor(on displayID: UInt32) { _ = displayID }
-        func showCursor(on displayID: UInt32) { _ = displayID }
+        /// The witness lane. Available by default, so ordinary tests
+        /// describe a Mac where the listen-only tap was granted; a test for
+        /// the refusal sets `dragWitnessAvailable = false`.
+        var dragWitnessAvailable = true
+        var dragWitness = ContinuityDragWitness(installed: true)
+        var dragWitnessStarts = 0
+        var dragWitnessStops = 0
+
+        func startDragWitness() -> AnyObject? {
+            guard dragWitnessAvailable else { return nil }
+            dragWitnessStarts += 1
+            return Token()
+        }
+        func readDragWitness(_ token: AnyObject) -> ContinuityDragWitness {
+            _ = token
+            return dragWitness
+        }
+        func stopDragWitness(_ token: AnyObject) {
+            _ = token
+            dragWitnessStops += 1
+        }
+        /// The visible-layer hide/show pair, recorded rather than
+        /// discarded: it is what a carried host drag actually does to this
+        /// Mac's cursor, and the only thing left to watch on the paths that
+        /// used to be watched through the deleted presentation callbacks.
+        var hidden: [UInt32] = []
+        var shown: [UInt32] = []
+        func hideCursor(on displayID: UInt32) { hidden.append(displayID) }
+        func showCursor(on displayID: UInt32) { shown.append(displayID) }
         func moveCursor(on displayID: UInt32, to point: CGPoint) {
             _ = (displayID, point)
         }
@@ -1108,21 +3813,51 @@ private final class Rig {
             _ = token
             captureHandler = nil
         }
+        var catchThicknesses: [CGFloat] = []
+
         func showFileEdge(_ edge: ContinuitySharedEdge,
+                          catchThickness: CGFloat,
                           callbacks: ContinuityFileEdge.Callbacks)
             -> AnyObject {
             _ = edge
+            catchThicknesses.append(catchThickness)
             fileCallbacks = callbacks
             return Token()
         }
         func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
+                            catchThickness: CGFloat,
                             callbacks: ContinuityFileEdge.Callbacks) {
             _ = (token, edge)
+            catchThicknesses.append(catchThickness)
             fileCallbacks = callbacks
         }
         func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool) {
             _ = token
             catchChanges.append(catching)
+        }
+        var dropsThroughChanges: [Bool] = []
+        func setFileEdgeDropsThroughOwnSession(_ token: AnyObject,
+                                               _ dropsThrough: Bool) {
+            _ = token
+            dropsThroughChanges.append(dropsThrough)
+        }
+        /// Whether the WINDOW SERVER has put the catch surface under the
+        /// seed point. True by default so the ordinary tests describe a Mac
+        /// where it worked; the tests for the metal defect start it false
+        /// and let it become true, which is what actually happens 15–25 ms
+        /// after the widen.
+        var catchSurfaceOwnsSeedPoint = true
+        /// Every point the controller asked about, in order — the evidence
+        /// that it asked at all rather than assumed.
+        var catchHitTests: [CGPoint] = []
+
+        func catchSurfaceHitTest(_ token: AnyObject, at screenPoint: CGPoint)
+            -> ContinuityCatchHitTest {
+            _ = token
+            catchHitTests.append(screenPoint)
+            return ContinuityCatchHitTest(
+                serverTopWindowNumber: catchSurfaceOwnsSeedPoint ? 77 : 30,
+                panelWindowNumber: 77)
         }
         func hideFileEdge(_ token: AnyObject) {
             _ = token
@@ -1132,7 +3867,8 @@ private final class Rig {
         /// started. Own-window by default; a test that wants the metal
         /// failure sets a foreign one.
         var dragSeed: ContinuityDragSeed? = ContinuityDragSeed(
-            eventType: 6, windowNumber: 77, panelWindowNumber: 77,
+            eventType: 6, serverTopWindowNumber: 77, appActive: true,
+            windowNumber: 77, panelWindowNumber: 77,
             resolvedToPanel: true, clickCount: 1, panelKey: true,
             panelCoversPoint: true)
 

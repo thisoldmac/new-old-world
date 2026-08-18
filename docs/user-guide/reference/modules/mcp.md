@@ -7,9 +7,9 @@ audience: operator
 lifecycle: experimental
 authority: [docs/agent-integration.md, docs/mcp-coverage.md]
 module_ids: [mcp]
-source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/Host/MCP, now-host/Sources/Host/MCPModuleView.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
+source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/Host/MCP, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
 media_ids: [mcp-host, mcp-ppc]
-last_verified: 2026-08-15
+last_verified: 2026-08-14
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -42,11 +42,11 @@ The host exposes independent controls for:
   shows and copies the derived URL, and copies the bearer token without
   rendering the secret in the module or logs.
 
-Each card has independent **Start** and **Stop** controls for the current app
-session. Whether a transport starts automatically at launch is the MCP tab of
-the Settings window (**New Old World > Settings…**, or the module's own
-**Settings…** button) — a persisted launch policy the running card no longer
-holds.
+Each card has independent **Start** and **Stop** controls, which affect the
+current app session. The persisted launch policy is not here: **Start
+Standard Input automatically** and **Start HTTP automatically** live in the
+Settings window's MCP tab, because they are read once at launch and never
+mid-session. They apply the next time NOW opens.
 
 The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
@@ -62,9 +62,9 @@ credentials or prove that an MCP client can reach the host.
 ## Common tasks
 
 - Confirm the selected machine and requested capability before granting.
-- Start only the transport required by the client, or enable **Start
-  Standard Input automatically** / **Start HTTP automatically** in Settings
-  for a transport that should be restored whenever NOW opens.
+- Start only the transport required by the client, or set its automatic-start
+  switch in Settings for a transport that should be restored whenever NOW
+  opens.
 - Copy connection details from the relevant transport card rather than
   locating a helper executable.
 - Read the recent call record after an agent action.
@@ -93,95 +93,7 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
-sources-sha1: fbf4551cb57a4a39c4c223d3e2abc0b92b0a9f6e
+sources-sha1: 2f88e826b5eba4646832025987d41fa609910963
 derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -294,36 +206,12 @@ rederived: 2026-08-14T17:36:05-0400 02e9de5e sources
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a sources
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 sources
 rederived: 2026-08-14T18:19:51-0400 60bb3427 sources, sources
-rederived: 2026-08-14T15:56:44-0400 835e6acf sources
 rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources, sources
 rederived: 2026-08-14T18:30:53-0400 b248c9a1 sources, sources, sources, sources
 rederived: 2026-08-14T18:31:13-0400 b248c9a1 sources, sources, sources
 rederived: 2026-08-14T18:31:26-0400 b248c9a1 sources
-rederived: 2026-08-14T20:24:57-0400 6d3d74d7 sources
-rederived: 2026-08-14T20:18:50-0400 cccec57a sources
-rederived: 2026-08-14T21:50:43-0400 edcc526f sources, sources
-rederived: 2026-08-14T22:27:42-0400 5a6c46dc sources, sources
-rederived: 2026-08-14T22:10:45-0400 568967b9 sources, sources
-rederived: 2026-08-14T23:30:12-0400 0017d984 sources, sources, sources, sources
-rederived: 2026-08-14T22:14:12-0400 0e743bc5 sources, sources
-rederived: 2026-08-14T23:32:10-0400 a9afc153 sources, sources, sources, sources, sources, sources
-rederived: 2026-08-14T22:19:02-0400 fe3d18a0 sources, sources
-rederived: 2026-08-14T23:33:02-0400 09abc942 sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-14T22:27:26-0400 67772e4a sources, sources
-rederived: 2026-08-14T23:33:53-0400 521b590f sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-14T22:17:25-0400 4495cfb2 sources, sources
-rederived: 2026-08-14T23:35:20-0400 61505862 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-14T22:33:00-0400 13bfe534 sources, sources
-rederived: 2026-08-14T23:36:22-0400 b1fc9796 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T00:20:08-0400 e937faee sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T01:40:30-0400 139dff1a sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T01:32:41-0400 108db464 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T02:20:05-0400 de5812ab sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T01:36:41-0400 34192244 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T02:21:03-0400 c87b3288 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T02:26:45-0400 2749aab1 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 rederived: 2026-08-14T19:50:32-0400 d20eee81 sources
 rederived: 2026-08-14T19:50:54-0400 d20eee81 sources
 rederived: 2026-08-14T20:02:53-0400 068ca7fd sources
@@ -332,15 +220,51 @@ rederived: 2026-08-14T21:15:09-0400 5316a23e sources
 rederived: 2026-08-14T23:07:32-0400 9d85a31d sources
 rederived: 2026-08-15T00:30:16-0400 f4dab407 sources, mcp-catalog 3->3
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 sources
-rederived: 2026-08-15T02:58:01-0400 5d767dce sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, mcp-catalog 3->3, sources, mcp-catalog 3->3
-rederived: 2026-08-15T03:19:46-0400 098e7ecf sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T05:39:26-0400 829013ee sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T05:30:50-0400 a327ba45 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
-rederived: 2026-08-15T06:15:20-0400 3c7d14e4 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
 rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources
 rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 sources
 rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 sources
 rederived: 2026-08-15T03:32:08-0400 083691c4 sources
 rederived: 2026-08-15T04:01:11-0400 b18a891c sources
-rederived: 2026-08-15T06:18:33-0400 9232bd77 sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources, sources
+rederived: 2026-08-15T12:33:04-0400 eadb1784 sources
+rederived: 2026-08-15T13:22:25-0400 4e897bc6 sources
+rederived: 2026-08-15T14:24:09-0400 599da71e sources
+rederived: 2026-08-15T14:56:50-0400 4caf46ef sources
+rederived: 2026-08-15T15:02:00-0400 a06d9396 sources
+rederived: 2026-08-15T15:16:39-0400 cc0d429b sources
+rederived: 2026-08-15T15:19:24-0400 658719b4 sources
+rederived: 2026-08-15T15:25:08-0400 7949e13a sources
+rederived: 2026-08-15T16:00:10-0400 69217d7a sources
+rederived: 2026-08-15T16:06:11-0400 69217d7a sources
+rederived: 2026-08-15T16:43:48-0400 919bcc60 sources
+rederived: 2026-08-15T18:06:56-0400 feaa6945 sources
+rederived: 2026-08-15T19:13:29-0400 ce43eb74 sources
+rederived: 2026-08-15T22:25:52-0400 f627b5b4 sources
+rederived: 2026-08-16T13:07:44-0400 3fff0d5e sources
+rederived: 2026-08-16T13:48:36-0400 abfb91b7 sources
+rederived: 2026-08-16T14:23:14-0400 8e68ec3a sources
+rederived: 2026-08-16T14:56:46-0400 3eac8061 sources
+rederived: 2026-08-16T15:14:03-0400 3eac8061 sources
+rederived: 2026-08-16T15:40:24-0400 484f1ecd sources
+rederived: 2026-08-16T15:51:39-0400 3c9b1213 sources
+rederived: 2026-08-16T16:01:12-0400 5e83598e sources
+rederived: 2026-08-16T16:13:00-0400 d9f3bb77 sources
+rederived: 2026-08-16T16:57:26-0400 49fcbc64 sources
+rederived: 2026-08-16T18:23:18-0400 1162e33a sources
+rederived: 2026-08-16T18:52:31-0400 51558682 sources
+rederived: 2026-08-16T19:17:53-0400 0c75216b sources
+rederived: 2026-08-16T21:38:02-0400 9e1756d6 sources
+rederived: 2026-08-16T22:00:22-0400 c578fc99 sources
+rederived: 2026-08-16T23:39:05-0400 eecd0c30 sources
+rederived: 2026-08-17T02:09:48-0400 f94e2762 sources
+rederived: 2026-08-17T03:31:09-0400 8cf43bb9 sources
+rederived: 2026-08-17T14:41:19-0400 e7b68a20 sources
+rederived: 2026-08-17T15:49:23-0400 6c899380 sources
+rederived: 2026-08-17T15:52:53-0400 6c899380 sources
+rederived: 2026-08-17T16:04:36-0400 ef984b29 sources
+rederived: 2026-08-17T16:17:04-0400 f60e2999 sources
+rederived: 2026-08-17T18:04:09-0400 30e23df6 sources
+rederived: 2026-08-17T18:09:10-0400 4fb9b6b0 sources
+rederived: 2026-08-17T18:50:31-0400 e18796a5 sources
+rederived: 2026-08-17T23:36:26-0400 5aa1092c sources
+rederived: 2026-08-17T23:52:46-0400 91fe237e sources
 -->

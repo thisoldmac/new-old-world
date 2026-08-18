@@ -353,7 +353,7 @@ break rule 1 and churn even a bounded set of files.
 | Guest log surfaced in the UI | The Logs page, pinned in the footer just above Connection: a Monaco dump of the 2000-line ring that follows the tail live, with Invert and Log-to-disk switches | **Metal-verified** 2026-07-22 (PB1400c) |
 | Guest disk + invert are toggles | On/off for the file (off keeps the ring), and an inverted dark canvas like Console. Saved in prefs — disk at format 12, invert at 13 | Metal-verified 2026-07-22 |
 | Guest retention control | PPC Logs page Fewer/More controls save prefs format 25; NOW-68K reads `log-retention` from its dev settings file | Built and native-tested; target UI/File Manager behavior unverified |
-| Host log surfaced in the UI | The host's own Logs module, footer above Connection, same Invert + Log-to-disk switches over HostLog's ring | Built + tested 2026-07-22; **unverified on a real run** |
+| Host log surfaced in the UI | The host's own Logs module, footer above Connection: a scrollback over HostLog's ring with an Invert switch; Log-to-disk moved to the Logs tab of the Settings window and no longer lives in the module itself | Built + tested 2026-07-22; **unverified on a real run** |
 
 ## Rules for anything added later
 

@@ -29,10 +29,94 @@ int now_continuity_stub_same(const NowContinuityStubItem *a,
         && strcmp(a->name, b->name) == 0;
 }
 
+int now_continuity_stub_same_item(const NowContinuityStubItem *a,
+                                  const NowContinuityStubItem *b)
+{
+    if (a == NULL || b == NULL) {
+        return a == b;
+    }
+    return a->volume_ref == b->volume_ref
+        && a->dir_id == b->dir_id
+        && a->is_folder == b->is_folder
+        && strcmp(a->name, b->name) == 0;
+}
+
+int now_continuity_grab_confirm(const NowContinuityStubItem *serve,
+                                int read_ok,
+                                const NowContinuityStubItem *observed)
+{
+    if (serve == NULL) {
+        return kNowGrabNoSelection;
+    }
+    if (!read_ok) {
+        /* Reported as a stale selection rather than as a new code: the
+           contract's refusal vocabulary is a closed set both halves already
+           speak, and what the host must do about it — stop, do not transfer,
+           the selection is not what you think — is the same sentence. The
+           guest's log carries the difference for whoever is diagnosing. */
+        return kNowGrabStaleSelection;
+    }
+    if (observed == NULL) {
+        return kNowGrabNoSelection;
+    }
+    if (!now_continuity_stub_same_item(serve, observed)) {
+        return kNowGrabStaleSelection;
+    }
+    return kNowGrabOK;
+}
+
+int now_continuity_grab_confirm_drag(const NowContinuityStubItem *serve,
+                                     int read_ok,
+                                     const NowContinuityStubItem *observed,
+                                     unsigned long observed_seq)
+{
+    if (serve == NULL) {
+        return kNowGrabNoSelection;
+    }
+    /* The wrong witness for this stub. Not a refusal the person caused. */
+    if (serve->source != kNowStubSourceDrag || serve->drag_seq == 0) {
+        return kNowGrabNoSelection;
+    }
+    if (!read_ok) {
+        return kNowGrabStaleSelection;
+    }
+    if (observed == NULL) {
+        return kNowGrabNoSelection;
+    }
+    /* THE SHARPER HALF. Same file is not enough: it must be the same
+       DRAG, or a second pick-up of the same icon would be served under
+       the first one's generation. */
+    if (observed_seq != serve->drag_seq) {
+        return kNowGrabStaleSelection;
+    }
+    if (!now_continuity_stub_same_item(serve, observed)) {
+        return kNowGrabStaleSelection;
+    }
+    return kNowGrabOK;
+}
+
 int now_continuity_stub_observe(NowContinuityStubTable *table,
                                 const NowContinuityStubItem *item)
 {
     if (table == NULL) {
+        return 0;
+    }
+    /* A DRAG-BOUND STUB IS NOT THE POLL'S TO OVERWRITE. The consent for
+       this epoch's gesture is the drag; what the Finder's selection does
+       after the release — the snap-back moving it, the desktop clearing
+       it — is that gesture's noise, and observing it here is what handed
+       the epoch-end grant hold a churned or empty table on 2026-08-17
+       (the attended "the drag no longer names what it was given" chain).
+       Only another drag (now_continuity_stub_observe_drag) or the epoch's
+       own settle replaces a drag-sourced stub. A poll re-observing the
+       SAME item still falls through to the silent field refresh below.
+
+       DELIBERATE SPEC CHANGE: this reverses the earlier rule that a poll
+       seeing a different file replaces a drag stub — the attended run
+       proved that rule is how a crossing gesture loses its grant. */
+    if (table->have_item && table->item.source == kNowStubSourceDrag
+            && (item == NULL
+                || !now_continuity_stub_same(&table->item, item))) {
         return 0;
     }
     if (item == NULL) {
@@ -50,10 +134,42 @@ int now_continuity_stub_observe(NowContinuityStubTable *table,
            date alone, and a stub the host already holds is not worth a
            generation. Refreshing them silently keeps the cache the grab
            serves from agreeing with the disk without republishing. */
+        int was_source = table->item.source;
+        unsigned long was_seq = table->item.drag_seq;
+
         table->item = *item;
+        /* THE SOURCE BELONGS TO THE GENERATION. The poll's item is always
+           selection-sourced; copying it wholesale over a generation the
+           drag plane minted would demote that generation's source without
+           moving the generation — and the host, the grant hold and the
+           grab confirmation would then disagree about which witness to
+           ask for a name none of them had republished. */
+        table->item.source = was_source;
+        table->item.drag_seq = was_seq;
         return 0;
     }
     table->item = *item;
+    table->have_item = 1;
+    table->generation++;
+    return 1;
+}
+
+int now_continuity_stub_observe_drag(NowContinuityStubTable *table,
+                                     const NowContinuityStubItem *item,
+                                     unsigned long drag_seq)
+{
+    if (table == NULL || item == NULL || drag_seq == 0) {
+        return 0;
+    }
+    /* Idempotent on the sequence, not on the item: see the header. */
+    if (table->have_item
+        && table->item.source == kNowStubSourceDrag
+        && table->item.drag_seq == drag_seq) {
+        return 0;
+    }
+    table->item = *item;
+    table->item.source = kNowStubSourceDrag;
+    table->item.drag_seq = drag_seq;
     table->have_item = 1;
     table->generation++;
     return 1;
@@ -147,6 +263,92 @@ static int grant_expired(const NowContinuityGrantHold *hold,
                          unsigned long now_ticks)
 {
     return (long)(now_ticks - hold->expires_at) > 0;
+}
+
+void now_continuity_epoch_ended(NowContinuityEndedEpoch *ended,
+                                unsigned long epoch,
+                                unsigned long generation,
+                                unsigned long now_ticks)
+{
+    if (ended == NULL) {
+        return;
+    }
+    if (epoch == 0) {
+        /* Nothing ended. Recording a zero epoch would make every later
+           drain believe it had a consent to publish under. */
+        now_continuity_epoch_ended_release(ended);
+        return;
+    }
+    ended->epoch = epoch;
+    ended->generation = generation;
+    ended->ended_at = now_ticks;
+}
+
+void now_continuity_epoch_ended_release(NowContinuityEndedEpoch *ended)
+{
+    if (ended == NULL) {
+        return;
+    }
+    memset(ended, 0, sizeof *ended);
+}
+
+/* The same window as the grant's, measured from the moment the end was
+   noticed. Signed, for the reason grant_expired is. */
+static int ended_epoch_window_closed(const NowContinuityEndedEpoch *ended,
+                                     unsigned long now_ticks)
+{
+    return (long)(now_ticks - (ended->ended_at + kNowContinuityGrantTicks)) > 0;
+}
+
+int now_continuity_stub_publish_post_epoch(NowContinuityStubTable *post,
+                                           NowContinuityGrantHold *hold,
+                                           const NowContinuityEndedEpoch *ended,
+                                           const NowContinuityStubItem *item,
+                                           unsigned long drag_seq,
+                                           unsigned long now_ticks)
+{
+    unsigned long generation;
+
+    if (post == NULL || ended == NULL || item == NULL || drag_seq == 0) {
+        return 0;
+    }
+    if (ended->epoch == 0 || ended_epoch_window_closed(ended, now_ticks)) {
+        return 0;
+    }
+    /* A folder is refused HERE for the reason the live drain refuses one:
+       once, at the source, rather than at the host's bind and again at this
+       guest's grab. */
+    if (item->is_folder) {
+        return 0;
+    }
+    /* Idempotent on the gesture, exactly like the live drain: the observer
+       is edge-triggered, but a second drain of one drag must not mint a
+       second number for it. */
+    if (post->epoch == ended->epoch && post->have_item
+        && post->item.source == kNowStubSourceDrag
+        && post->item.drag_seq == drag_seq) {
+        return 0;
+    }
+    /* A NUMBER NOBODY HAS PUBLISHED. The ended epoch's last generation is
+       the floor; a second post-epoch mint under the same epoch counts on
+       from the first, so two gestures cannot share a name. */
+    generation = ended->generation;
+    if (post->epoch == ended->epoch && post->generation > generation) {
+        generation = post->generation;
+    }
+    now_continuity_stub_reset(post, ended->epoch);
+    post->generation = generation + 1;
+    post->item = *item;
+    post->item.source = kNowStubSourceDrag;
+    post->item.drag_seq = drag_seq;
+    post->have_item = 1;
+    /* AND IT IS GRANTABLE AT ONCE. Publishing a number this guest would
+       refuse to serve is the defect being fixed, wearing different clothes:
+       the host would bind it, ask for it, and be told bad-epoch. The window
+       runs from the mint rather than from the epoch's end, because the
+       gesture the person is holding is still in flight now. */
+    now_continuity_grant_hold(hold, post, now_ticks);
+    return 1;
 }
 
 int now_continuity_grab_resolve(NowContinuityStubTable *table,

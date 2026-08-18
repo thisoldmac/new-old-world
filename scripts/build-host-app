@@ -84,6 +84,13 @@ display_name=$($identity "$profile" display-name)
 bundle_name=$($identity "$profile" bundle-name)
 bundle="$output_root/$bundle_name"
 
+# A MONOTONIC BUILD NUMBER, because every build claiming CFBundleVersion 1
+# left LaunchServices and the Local Network daemon unable to tell an update
+# from a duplicate - and per-binary grants (Local Network, Accessibility)
+# were lost on every install (attended, 2026-08-17). The commit count moves
+# with every landing; the marketing version stays the release's own.
+build_number=$(git -C "$repo_root" rev-list --count HEAD 2>/dev/null || echo 1)
+
 if [ "$signing" = developer ] || [ "$signing" = unsigned-release ]; then
     rm -rf "$bundle"
     configuration=Debug
@@ -104,6 +111,7 @@ if [ "$signing" = developer ] || [ "$signing" = unsigned-release ]; then
         PRODUCT_BUNDLE_IDENTIFIER="$bundle_identifier" \
         NOW_PRODUCT_NAME="$display_name" \
         NOW_DISPLAY_NAME="$display_name" \
+        CURRENT_PROJECT_VERSION="$build_number" \
         $signing_args \
         build
     if [ "$signing" = developer ]; then

@@ -552,6 +552,131 @@ check("now_continuity_sequence_newer(" in
           result_up[:result_up.index("applied_button_generation = generation")],
       "a settled up can again regress an interrupt-delivered press")
 
+# THE EXPOSURE BARRIER. Applying a position is not exposing it: the Cursor
+# Device record is upstream of the mouse global that every guest tracking
+# loop samples, and until 2026-08-15 a round applied the position request
+# and then acted on it in adjacent instructions. On metal the release beat
+# the propagation and the Finder completed a move at the screen edge instead
+# of the settled press origin - a real relocation out of a Finder window.
+# The host's packet order was never the missing guarantee (the wire is a
+# latest-state mailbox and both packets carried the same point); the barrier
+# between applying a point and acting on it was.
+AWAIT = "now_continuity_cursor_await_exposure(&exposure"
+check(AWAIT in invoke
+      and invoke.index(AWAIT) < invoke.index("now_continuity_cursor_button(")
+      and invoke.index(AWAIT) < invoke.index(BUSY_SET),
+      "a button edge is applied without waiting for its own position to be "
+      "exposed, or waits while holding the manager-busy flag up")
+# ASYMMETRIC DEADLINE (2026-08-15 metal, PowerBook 1400c): a release that
+# follows a settle waits against the longer of the two shared bounds, an
+# ordinary press against the tight one. The call site is where that
+# selection has to happen - the barrier and the spin only know the bound
+# they were handed, not which edge type they are serving.
+check("event_down == 0" in invoke[invoke.index(AWAIT):invoke.index(AWAIT) + 200],
+      "a button edge no longer tells await_exposure whether it is a "
+      "release, so press and release can no longer use different bounds")
+# One FILE-logged line per edge naming applied against exposed. Without it a
+# metal round cannot tell a barrier that held from a barrier that never had
+# anything to hold, and "the icon landed in the wrong place" says neither.
+# Sliced defensively: a missing or misplaced wait is the check above's
+# sentence to say, and this one must not pre-empt it with a traceback.
+edge_log = invoke[invoke.index(AWAIT):] if AWAIT in invoke else ""
+if BUSY_SET in edge_log:
+    edge_log = edge_log[:edge_log.index(BUSY_SET)]
+check("now_log(" in edge_log
+      and "now_log_memory" not in edge_log
+      and "applied=%ld,%ld" in edge_log
+      and "exposed=%ld,%ld" in edge_log
+      and "waited=%lu" in edge_log,
+      "the per-edge exposure line is gone, went to the never-uploaded memory "
+      "log, or stopped naming applied against exposed")
+check("kNowContinuityBarrierExpired" in edge_log,
+      "an edge applied on the deadline is no longer distinguishable from one "
+      "whose position was actually exposed")
+# Two bounds now exist per now_continuity_logic.h; a bare "expired" no
+# longer says which one was measured against. The deadline rides in the
+# same logged line so a metal round can read it without cross-referencing
+# event_down against the source.
+check("deadline=%lu" in edge_log,
+      "an expired edge no longer names the deadline it was measured "
+      "against, so a metal round can't tell a press timeout from a "
+      "release timeout without reading the source")
+
+# THE EDGE'S OWN POINT, ON BOTH SIDES OF THE WAIT (2026-08-15 metal, second
+# round). A barrier is only satisfiable if what this side applied IS what the
+# edge rides with, and the cross-edge handoff exits the epoch in the same
+# breath as the release it settles - so the active-gated apply above declines
+# and this side's last applied point stays where the target's drag loop
+# starved it. Two halves, and neither is worth anything alone: reconcile the
+# edge's point through the Cursor Device first, then hold the barrier against
+# THAT point (`h`/`v`, the round's own snapshot) rather than against whatever
+# this side last moved to.
+settle_block = invoke[:invoke.index(AWAIT)]
+check("now_continuity_settle_before_edge(" in settle_block
+      and "now_continuity_cursor_move(" in settle_block,
+      "a button edge no longer reconciles the point it rides with before "
+      "acting, so a release served after the epoch exits waits on a point "
+      "this side moved away from and can never return to")
+await_call = invoke[invoke.index(AWAIT):invoke.index(AWAIT) + 400]
+check("(long)h, (long)v" in await_call
+      and "applied.requested_h == (long)h" in await_call
+      and "applied.requested_v == (long)v" in await_call,
+      "the barrier's target is no longer the edge's own point held by this "
+      "side; holding it against this module's last move is the 17:19:06 "
+      "metal failure exactly (applied=501,446, exposed=504,451 settled)")
+# A target this side does not hold is unaskable, not something to spin on -
+# and the line must not then print a point nobody applied.
+check('"unheld"' in edge_log,
+      "an edge whose point this side never applied is no longer "
+      "distinguishable from one that waited and was exposed")
+
+# The wait itself: Carbon's accessor, the guarded pure decision, and a spin
+# rather than a yield. The caller that needs this most is a release inside
+# the Finder's drag loop, which is exactly where further task time may never
+# come back - yielding there trades a wrong drop point for a stuck drag.
+await_body = body(PPC_CURSOR, "int now_continuity_cursor_await_exposure(",
+                  "void now_continuity_cursor_diagnostics(")
+check("GetGlobalMouse(&global)" in await_body
+      and "LMGetMouseLocation" not in await_body,
+      "the exposure test no longer asks the global the guest's tracking "
+      "loops sample, through the accessor Carbon promises")
+# Both stages, not just the nearer one. A QEMU round measured the record
+# lagging five times while the global was never behind at an edge, so a
+# barrier that asked the global alone was silent through all five.
+check("device_point(&record)" in await_body
+      and "state.observed_is_record = 1;" in await_body,
+      "the exposure test stopped asking the device record, which is upstream "
+      "of the global and can be behind while the global reads settled")
+check("now_continuity_button_barrier(" in await_body,
+      "the exposure wait no longer uses the guarded pure barrier")
+check("kNowContinuityExposureDeadlineTicks" in await_body,
+      "the exposure spin lost its deadline and can now hold an edge forever")
+# Both bounds must be reachable from this one function, and it must be the
+# one place that chooses between them - a caller wiring release_edge to the
+# wrong constant is the whole failure mode this asymmetry exists to avoid.
+check("kNowContinuityExposureDeadlineTicksPress" in await_body
+      and "kNowContinuityExposureDeadlineTicksRelease" in await_body
+      and "release_edge" in await_body,
+      "the exposure spin no longer selects between the press and release "
+      "deadlines by the edge type it was told about")
+# Direction, not just presence: `release_edge` truthy must select the
+# RELEASE constant. A source-shape check cannot run the ternary, so it pins
+# the exact wiring instead - the failure mode this guards is a swap that
+# gives presses the generous 0.5s bound and releases the tight one, which
+# would compile clean and read fine on an emulator that never waits long
+# enough to notice.
+check("release_edge\n        ? (NowPeekU32)kNowContinuityExposureDeadlineTicksRelease\n"
+      "        : (NowPeekU32)kNowContinuityExposureDeadlineTicksPress;"
+      in await_body,
+      "release_edge no longer selects the release deadline (and press the "
+      "press deadline) in that exact order - the two bounds may have been "
+      "swapped")
+for yielder in ("WaitNextEvent", "SystemTask", "now_continuity_pump",
+                "now_wire_pump"):
+    check(yielder not in await_body,
+          "the exposure spin yields (%s), so a starved drag loop can strand "
+          "a held button" % yielder)
+
 if failures:
     for failure in failures:
         print("FAIL:", failure)

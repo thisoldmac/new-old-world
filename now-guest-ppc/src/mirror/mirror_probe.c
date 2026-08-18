@@ -343,6 +343,29 @@ void now_mirror_probe(MirrorFacts *facts)
         facts->channel_result = 0;
         facts->channel_sends = 0;
     }
+    /* A fifth gate, on its own written-ness word rather than on length
+       alone: the wedge account is the tail of a resident that keeps it,
+       and a zeroed tail and an absent tail have to look different. Zero
+       wedges is the healthy reading and it must not be produced by a
+       resident that was never asked. */
+    if (table->length >= (unsigned long)(offsetof(NowPeekTable,
+                                                  channel_wedge_ticks)
+                                         + sizeof(NowPeekU32))
+        && table->channel_wedge_format == kNowPeekChannelWedgeFormatV1) {
+        facts->has_channel_wedges = 1;
+        facts->channel_wedges = table->channel_wedges;
+        facts->channel_wedge_reaps = table->channel_wedge_reaps;
+        facts->channel_redials = table->channel_redials;
+        facts->channel_wedge_op = table->channel_wedge_op;
+        facts->channel_wedge_ticks = table->channel_wedge_ticks;
+    } else {
+        facts->has_channel_wedges = 0;
+        facts->channel_wedges = 0;
+        facts->channel_wedge_reaps = 0;
+        facts->channel_redials = 0;
+        facts->channel_wedge_op = 0;
+        facts->channel_wedge_ticks = 0;
+    }
     /* And a fourth independent gate, for the reason the third one gives:
        a resident with the channel and without the rest word is exactly the
        build that shipped before this one, and it must read as "did not

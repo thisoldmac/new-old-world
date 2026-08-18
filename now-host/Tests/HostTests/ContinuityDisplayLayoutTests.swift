@@ -161,17 +161,71 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
                        "the excess above the host equals the excess below")
     }
 
-    func testFitLeavesAnUnattachedGuestWhereItWasPut() {
+    /* DESIGN CHANGE, 2026-08-16: unattached used to be a legal end state for
+       a drag release, and this test once asserted exactly that — a release
+       far from every edge stayed exactly where it was let go, and Fit
+       stayed Native because there was nothing to fit against. Michelle's
+       ruling that day was that a guest display must never be unattached,
+       full stop: `snappedOrigin`'s 48pt magnetic threshold remains the FEEL
+       of a live drag, but at release there is no longer such a thing as
+       "too far to snap" — the nearest host edge wins regardless of
+       distance (`ContinuityDisplayGeometry.nearestEdgeOrigin`). This is the
+       same test, rewritten for the new contract: what used to prove
+       "stayed put" now proves "landed on an edge anyway". */
+    func testDragReleaseFarFromEveryEdgeStillSnapsToTheNearestOne() {
         let layout = makeLayout()
         layout.selectScaleMode(.fit)
 
-        // Far enough that nothing snaps and no edge is shared.
+        // Far enough that the OLD 48pt threshold would have declined to
+        // answer at all.
         layout.setGuestOrigin(CGPoint(x: 3000, y: 1800))
         layout.finishGuestMove()
 
-        XCTAssertNil(layout.sharedEdge)
-        XCTAssertEqual(layout.guestOrigin, CGPoint(x: 3000, y: 1800))
-        XCTAssertEqual(layout.guestScale, 1, "Fit is Native until reattached")
+        XCTAssertNotNil(layout.sharedEdge,
+                        "a guest display is never unattached")
+        XCTAssertFalse(layout.guestFrame.intersects(host.frame))
+        XCTAssertGreaterThan(layout.guestScale, 1,
+                             "attached, so Fit actually grew it — the old "
+                             + "\"Fit is Native until reattached\" outcome "
+                             + "no longer applies because there is always "
+                             + "a reattachment now")
+    }
+
+    /// The geometry primitive on its own, isolated from drag/Fit machinery:
+    /// nearest host edge wins, however far the proposal was. This is the
+    /// piece `snappedOrigin`'s ordinary 48pt threshold used to refuse.
+    func testNearestEdgeOriginAttachesHoweverFarTheProposalWas() {
+        let origin = ContinuityDisplayGeometry.nearestEdgeOrigin(
+            proposed: CGPoint(x: 3000, y: 1800),
+            guestSize: CGSize(width: 800, height: 600), scale: 1,
+            hosts: [host])
+
+        let frame = CGRect(origin: origin,
+                           size: CGSize(width: 800, height: 600))
+        XCTAssertNotNil(ContinuityDisplayGeometry.sharedEdge(
+            hosts: [host], guest: frame),
+            "nearest edge wins regardless of distance")
+        XCTAssertFalse(frame.intersects(host.frame))
+    }
+
+    /// A release WELL within the ordinary magnetic threshold, and unique
+    /// about which edge is nearest, is unaffected by the always-snap
+    /// change: it lands on the same host edge either way. (Not asserted as
+    /// exact-coordinate equality with `snappedOrigin` in general — with the
+    /// ceiling lifted, `nearestEdgeOrigin` compares against every host edge
+    /// globally, not only the ones already inside 48pt, so the two can
+    /// legitimately pick different aligned points along the SAME edge when
+    /// more than one edge is close.)
+    func testNearestEdgeOriginPicksTheSameEdgeAsAnOrdinaryNearbySnap() {
+        let proposed = CGPoint(x: 1410, y: 120)
+        XCTAssertEqual(
+            ContinuityDisplayGeometry.nearestEdgeOrigin(
+                proposed: proposed, guestSize: CGSize(width: 800, height: 600),
+                scale: 1, hosts: [host]).x,
+            ContinuityDisplayGeometry.snappedOrigin(
+                proposed: proposed, guestSize: CGSize(width: 800, height: 600),
+                scale: 1, hosts: [host]).x,
+            "both land on the host's own right edge")
     }
 
     /* A drag in Fit mode still chooses WHICH edge; alignment then chooses
@@ -333,9 +387,255 @@ final class ContinuityDisplayLayoutTests: XCTestCase {
         XCTAssertEqual(returned.y, 600)
     }
 
+    /// `insetPixels` defaults to `ContinuityEdgeGeometry.default
+    /// .entryInsetPixels` (24), so a call site that has not been taught
+    /// about the geometry seam gets exactly today's behaviour — asserted
+    /// against the same fixture as the fit-scale test above, at native
+    /// scale where the math is easiest to check by hand.
+    func testGuestEntryPointDefaultsToTheStockInset() throws {
+        let layout = makeLayout()
+        let edge = try XCTUnwrap(layout.sharedEdge)
+
+        let guest = ContinuityDisplayGeometry.guestEntryPoint(
+            at: CGPoint(x: 1440, y: 600), edge: edge,
+            guestFrame: layout.guestFrame, guestPixels: layout.guestSize,
+            scale: layout.guestScale)
+
+        XCTAssertEqual(guest.x, ContinuityEdgeGeometry.default.entryInsetPixels)
+    }
+
+    /// **Zero is a legal, distinct answer, not a fallback to the default.**
+    /// A person who dials the entry inset to zero wants the pointer seeded
+    /// exactly on the boundary — cursor-at-the-edge entry — and this is
+    /// the geometry math proving that request is honoured rather than
+    /// silently floored back to 24.
+    func testGuestEntryPointHonoursAConfiguredInsetIncludingZero() throws {
+        let layout = makeLayout()
+        let edge = try XCTUnwrap(layout.sharedEdge)
+
+        let zero = ContinuityDisplayGeometry.guestEntryPoint(
+            at: CGPoint(x: 1440, y: 600), edge: edge,
+            guestFrame: layout.guestFrame, guestPixels: layout.guestSize,
+            scale: layout.guestScale, insetPixels: 0)
+        XCTAssertEqual(zero.x, 0)
+
+        let wide = ContinuityDisplayGeometry.guestEntryPoint(
+            at: CGPoint(x: 1440, y: 600), edge: edge,
+            guestFrame: layout.guestFrame, guestPixels: layout.guestSize,
+            scale: layout.guestScale, insetPixels: 60)
+        XCTAssertEqual(wide.x, 60)
+    }
+
+    /* Defect: a fresh install computes an attached default in memory at
+       construction, but nothing WRITES it down unless the person drags,
+       resizes, or a display genuinely reconfigures. If the constructor's
+       own `displayProvider()` read ran before the window server had a
+       display list — plausible at cold launch, well before anyone sees
+       the page — the guest can be stuck at whatever that early read
+       produced for the rest of the process. `attachToDefaultEdgeIfNeverPlaced`
+       is the fix: called once on the page's first appearance, it re-reads
+       the CURRENT display list and makes the attach durable. */
+    func testFirstAppearanceAttachesAnUnplacedGuestAndPersistsIt() {
+        let suite = "ContinuityDisplayLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        // Simulate the constructor having run before the real display list
+        // was ready: it is handed no hosts at all, so its own in-memory
+        // default collapses to `.zero` — a genuine island.
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false,
+            displayProvider: { [self.host] })
+
+        XCTAssertNil(layout.sharedEdge, "constructed with no hosts at all")
+        XCTAssertFalse(layout.hasPersistedPlacement)
+
+        layout.attachToDefaultEdgeIfNeverPlaced()
+
+        XCTAssertEqual(layout.hostDisplays, [host],
+                       "re-read the display list, not the stale empty one")
+        XCTAssertNotNil(layout.sharedEdge, "now attached, not an island")
+        XCTAssertEqual(layout.sharedEdge?.host.id, host.id)
+        XCTAssertTrue(layout.hasPersistedPlacement)
+        XCTAssertTrue(defaults.bool(forKey:
+            "mirror.continuity.hasGuestDisplayOrigin"),
+            "durable now, not just in memory")
+    }
+
+    /* The complement: a placement that was ever written must never be
+       silently overwritten just because the page happened to appear again
+       — even when it is attached somewhere OTHER than the constructor's
+       own default edge, which is the only way this test can tell "left
+       alone" from "coincidentally already there". (Formerly this fixture
+       was a deliberately unattached placement; since 2026-08-16 that is no
+       longer a legal placement to persist, so `attachToDefaultEdgeIfNeverPlaced`
+       is not what would repair it any more — the load-time repair in
+       `init` is, and is covered separately below.) */
+    func testFirstAppearanceLeavesAnExistingAttachedPlacementAlone() {
+        let suite = "ContinuityDisplayLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "mirror.continuity.hasGuestDisplayOrigin")
+        // Attached to the host's LEFT edge, not the constructor's own
+        // default (the widest host's right edge, (1440, 300)).
+        defaults.set(-800.0, forKey: "mirror.continuity.guestDisplayOriginX")
+        defaults.set(100.0, forKey: "mirror.continuity.guestDisplayOriginY")
+
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [host], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false)
+
+        XCTAssertEqual(layout.sharedEdge?.guestSide, .right,
+                       "attached, just to a different edge than the default")
+        let placedOrigin = layout.guestOrigin
+        XCTAssertNotEqual(placedOrigin, CGPoint(x: 1440, y: 300))
+
+        layout.attachToDefaultEdgeIfNeverPlaced()
+
+        XCTAssertEqual(layout.guestOrigin, placedOrigin,
+                       "an existing placement is never clobbered, even "
+                       + "though it differs from the constructor's own "
+                       + "default")
+    }
+
+    /// The load-time repair, isolated: a persisted placement from BEFORE
+    /// the 2026-08-16 invariant — a genuine island, exactly the shape
+    /// Michelle's own machine carried — is coerced onto the nearest host
+    /// edge at construction, the repair is durable (written back to
+    /// `defaults`, not just held in memory), and it is logged as a REPAIR
+    /// rather than happening silently.
+    func testLoadRepairsAPersistedIslandToTheNearestHostEdge() {
+        let suite = "ContinuityDisplayLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "mirror.continuity.hasGuestDisplayOrigin")
+        defaults.set(3000.0, forKey: "mirror.continuity.guestDisplayOriginX")
+        defaults.set(1800.0, forKey: "mirror.continuity.guestDisplayOriginY")
+        var audited: [(HostLog.LogLevel, String)] = []
+
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [host], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false,
+            audit: { audited.append(($0, $1)) })
+
+        XCTAssertNotNil(layout.sharedEdge,
+                        "a persisted island is repaired at load — unattached "
+                        + "is no longer a legal state, even for data "
+                        + "written before that ruling")
+        XCTAssertNotEqual(layout.guestOrigin, CGPoint(x: 3000, y: 1800))
+        XCTAssertTrue(audited.contains { $0.1.contains("repair") },
+                      "the repair is said out loud, not silent: \(audited)")
+        // Durable, not just in memory: the repaired coordinates are what a
+        // second launch would read back.
+        XCTAssertEqual(defaults.double(
+            forKey: "mirror.continuity.guestDisplayOriginX"),
+            layout.guestOrigin.x)
+        XCTAssertEqual(defaults.double(
+            forKey: "mirror.continuity.guestDisplayOriginY"),
+            layout.guestOrigin.y)
+    }
+
+    /// The guard on the load-time repair, mutation-tested by its own
+    /// absence of noise: an already-attached persisted placement needs no
+    /// repair, and must not audit one. Removing the `sharedEdge == nil`
+    /// check (repairing unconditionally) would still leave the guest
+    /// attached — the only thing this catches is the loud path firing when
+    /// it should have stayed quiet.
+    func testLoadLeavesAnAlreadyAttachedPersistedPlacementSilentlyAlone() {
+        let suite = "ContinuityDisplayLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "mirror.continuity.hasGuestDisplayOrigin")
+        // Exactly the constructor's own default attach point.
+        defaults.set(1440.0, forKey: "mirror.continuity.guestDisplayOriginX")
+        defaults.set(300.0, forKey: "mirror.continuity.guestDisplayOriginY")
+        var audited: [(HostLog.LogLevel, String)] = []
+
+        let layout = ContinuityDisplayLayout(
+            hostDisplays: [host], guestSize: CGSize(width: 800, height: 600),
+            defaults: defaults, observeScreens: false,
+            audit: { audited.append(($0, $1)) })
+
+        XCTAssertNotNil(layout.sharedEdge)
+        XCTAssertTrue(audited.isEmpty,
+                      "an already-attached placement needs no repair")
+    }
+
+    /* A second appearance after the first already attached and persisted
+       must also be a no-op — otherwise every reopen of the page could
+       silently re-snap a guest the person has since moved. */
+    func testSecondAppearanceDoesNotReattachAfterTheFirstAlreadyDid() {
+        let layout = makeLayout()
+        layout.attachToDefaultEdgeIfNeverPlaced()
+        XCTAssertTrue(layout.hasPersistedPlacement)
+
+        // Move it far from every edge, as a person might by hand — the
+        // always-snap invariant still attaches it on release, deliberately
+        // to somewhere OTHER than the constructor's own default, so this
+        // test can tell "left alone" from "coincidentally already there".
+        layout.setGuestOrigin(CGPoint(x: 3000, y: 1800))
+        layout.finishGuestMove()
+        XCTAssertNotNil(layout.sharedEdge,
+                        "always-snap: attached, just not to the default edge")
+        let moved = layout.guestOrigin
+        XCTAssertNotEqual(moved, CGPoint(x: 1440, y: 300),
+                          "moved away from the constructor's own default "
+                          + "attach point")
+
+        layout.attachToDefaultEdgeIfNeverPlaced()
+
+        XCTAssertEqual(layout.guestOrigin, moved,
+                       "already persisted once; a second appearance must "
+                       + "not re-snap a placement the person chose")
+    }
+
     private func makeLayout() -> ContinuityDisplayLayout {
         ContinuityDisplayLayout(hostDisplays: [host],
                                 guestSize: CGSize(width: 800, height: 600),
                                 defaults: nil, observeScreens: false)
+    }
+}
+
+/// `ContinuityEdgeGeometry` on its own: the one place both configurable
+/// numbers are declared, and the guard that keeps a hand-edited defaults
+/// value from putting either one somewhere that reads as broken rather
+/// than merely different.
+final class ContinuityEdgeGeometryTests: XCTestCase {
+    func testDefaultMatchesWhatShippedBeforeEitherWasConfigurable() {
+        XCTAssertEqual(ContinuityEdgeGeometry.default.entryInsetPixels, 24)
+        XCTAssertEqual(ContinuityEdgeGeometry.default.deadzoneDepth, 160)
+    }
+
+    /// Zero is IN the legal range for both — asserted explicitly because a
+    /// careless clamp (`min(max(value, 1), ...)`) would silently take zero
+    /// away from a person who asked for cursor-at-the-edge handoff.
+    func testZeroIsWithinRangeForBothAndSurvivesClamping() {
+        let zeroed = ContinuityEdgeGeometry(entryInsetPixels: 0,
+                                            deadzoneDepth: 0).clamped()
+        XCTAssertEqual(zeroed.entryInsetPixels, 0)
+        XCTAssertEqual(zeroed.deadzoneDepth, 0)
+    }
+
+    func testClampingRejectsNegativeAndOutOfRangeValuesInEitherDirection() {
+        let tooLow = ContinuityEdgeGeometry(entryInsetPixels: -50,
+                                            deadzoneDepth: -50).clamped()
+        XCTAssertEqual(tooLow.entryInsetPixels,
+                       ContinuityEdgeGeometry.entryInsetRange.lowerBound)
+        XCTAssertEqual(tooLow.deadzoneDepth,
+                       ContinuityEdgeGeometry.deadzoneDepthRange.lowerBound)
+
+        let tooHigh = ContinuityEdgeGeometry(entryInsetPixels: 10_000,
+                                             deadzoneDepth: 10_000).clamped()
+        XCTAssertEqual(tooHigh.entryInsetPixels,
+                       ContinuityEdgeGeometry.entryInsetRange.upperBound)
+        XCTAssertEqual(tooHigh.deadzoneDepth,
+                       ContinuityEdgeGeometry.deadzoneDepthRange.upperBound)
+    }
+
+    func testAnInRangeValueIsLeftExactlyAlone() {
+        let value = ContinuityEdgeGeometry(entryInsetPixels: 40,
+                                           deadzoneDepth: 96)
+        XCTAssertEqual(value.clamped(), value)
     }
 }

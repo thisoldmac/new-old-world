@@ -209,9 +209,35 @@ run_py now-guest-shared continuity_lease_admission_source_test.py
 # refusals are watched here where no Macintosh is needed to try them.
 run_c now-guest-shared now_continuity_selection_test.c "" \
       src/now_continuity_selection.c
+# continuity.offer inverted: the host publishes, this table just applies
+# it. No refusal vocabulary of its own to test - the host answers a
+# continuity.grab's refusals - so this covers the two local decisions:
+# what a report says with nothing better to go on, and when a grab may
+# be sent. Deliberately runs no clock (see the header on why).
+run_c now-guest-shared now_continuity_offer_test.c "" \
+      src/now_continuity_offer.c
+# The promise drag over that table: the size line, the arm that ripens on
+# an APPLIED button rather than on wire arrival, and every way a drag
+# ends - the cancel path most of all, because classic Finder is
+# unforgiving of a drag that never ends and the Drag Manager half cannot
+# be tested here at all.
+run_c now-guest-shared now_continuity_drag_test.c "" \
+      src/now_continuity_drag.c src/now_continuity_offer.c
 run_c now-guest-shared now_continuity_keyboard_logic_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/now_continuity_keyboard_logic.c
 run_py now-guest-shared continuity_keyboard_safety_source_test.py
+# V14's drag observer patches the trap EVERY Drag Manager call goes
+# through, so its safety properties are properties of the source: an
+# unconditional chain, a re-entrancy guard around every Drag Manager call
+# the observer itself makes, no allocation in a foreign application's
+# context, and no mutator anywhere.
+run_py now-guest-shared dragobs_safety_source_test.py
+# The resident's own connection reaps its MacTCP calls by polling, so the
+# deadline that makes the poll terminate is a source property too: a
+# channel with no deadline behaves exactly like a channel with one until
+# the day a driver stops answering, and that day cost an attended metal
+# session and a reboot (F2 defect A).
+run_py now-guest-shared liveness_net_deadline_source_test.py
 run_c now-guest-shared now_act_inflight_test.c  ""  src/now_act_inflight.c
 run_py now-guest-shared act_inflight_wiring_source_test.py
 # The gestaltSystemVersion decode `hello.os` carries since 2026-08-07.
@@ -360,6 +386,11 @@ run_c now-guest-ppc mirror_debug_test.c      ""  src/mirror/mirror_debug.c
 run_py now-guest-ppc mirror_debug_gate_source_test.py
 run_c now-guest-ppc peek_table_test.c \
       "-DNOW_PEEK_TABLE_HOST"
+# The V14 block's own reader contract: the length gate that keeps a
+# pre-V14 resident from being read past its allocation, and the ring
+# arithmetic the resident and the drain each derive independently.
+run_c now-guest-ppc drag_observe_block_test.c \
+      "-DNOW_PEEK_TABLE_HOST"
 run_c now-guest-ppc peek_validate_test.c     ""  src/peek/peek_validate.c
 run_c now-guest-ppc peek_lease_test.c \
       "-DNOW_PEEK_TABLE_HOST" src/peek/peek_lease.c
@@ -368,6 +399,16 @@ run_py now-guest-ppc peek_self_init_source_test.py
 # The nested-loop half of the pump rule, which the wire's reentrancy guard
 # quietly exempted the cursor plane from.
 run_py now-guest-ppc continuity_nested_pump_source_test.py
+# The promise drag's Toolbox half: the rules no native test can reach -
+# the streaming promise pumping inside the Finder's own nested loop, the
+# send-data UPP being made rather than cast, no DragRef left un-disposed
+# - plus the three-file agreement on which acts `offer` has.
+run_py now-guest-ppc continuity_dragmgr_source_test.py
+# One owner for every inbound file, both lanes. A continuity grab rides
+# the PULL lane, no page asked for it, and until 2026-08-16 the receive
+# windoid read only the push lane - measured on the emulator, 600 KB
+# landing without one pixel changing.
+run_py now-guest-ppc receive_windoid_owns_both_lanes_source_test.py
 # The Finder-selection poll's three gates and its caller. All four are
 # Toolbox or ordering properties a host cc cannot reach: no epoch means
 # no poll, a held button means no poll, and being called from
@@ -828,6 +869,19 @@ run_py now-guest-ppc ae_document_desc_source_test.py
 run_py now-guest-ppc apple_event_lifetime_source_test.py
 run_c now-guest-ppc continuity_report_logic_test.c "" \
       src/input/continuity_report_logic.c
+# When a retained UDP endpoint has gone deaf and may be rebuilt. The
+# retention rule it lives under is paid for - close/reopen churn wedged OS 9
+# twice - so the predicate is mostly a set of refusals, and those are what
+# this watches.
+run_c now-guest-ppc continuity_deaf_logic_test.c "" \
+      src/input/continuity_deaf_logic.c
+# How far one drain of that endpoint may go, and where it may NOT stop. The
+# cap of 8 was safe only because task time finished the job; inside a foreign
+# application's held-button loop task time never comes, so every early exit
+# became a permanent silence, arrival_ticks froze under a live host and the
+# resident's lease released the button into an open menu (metal, 2026-08-16).
+run_c now-guest-ppc continuity_drain_logic_test.c "" \
+      src/input/continuity_drain_logic.c
 run_py now-guest-ppc continuity_intake_lifecycle_source_test.py
 # `key`'s ordering, which the C test above cannot see: PostEvent is Toolbox
 # and does not exist on a host cc, so nothing there can observe whether the

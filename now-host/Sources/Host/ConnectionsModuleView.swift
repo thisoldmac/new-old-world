@@ -630,6 +630,20 @@ private struct ConnectionCard: View {
                               + "id surviving a reconnection is a guess. "
                               + "Use the session id when it must be exact.")
                 }
+                if model.isAwaitingRelaunch(for: row, component: .application)
+                    || model.isAwaitingRelaunch(for: row,
+                                                component: .extensionComponent) {
+                    Badge(text: "Needs relaunch", tint: .orange,
+                          help: "An update was installed and this Mac has "
+                              + "not seen this session report the new "
+                              + "build. The guest application only "
+                              + "replaces its code on disk when it is "
+                              + "installed — it keeps running the OLD "
+                              + "build until a person quits and launches "
+                              + "it again (an extension update needs the "
+                              + "guest Mac restarted instead). See "
+                              + "Software Updates below.")
+                }
                 Spacer(minLength: 8)
                 controls
             }

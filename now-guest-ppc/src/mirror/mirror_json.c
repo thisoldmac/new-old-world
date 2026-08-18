@@ -120,6 +120,19 @@ long now_mirror_json(const MirrorFacts *facts, long id, char *out, long cap)
                       facts->channel_state, facts->channel_result,
                       facts->channel_sends);
     }
+    /* The channel's wedge account, on its own written-ness word for the
+       same reason the rest state below is: zero wedges is the healthy
+       reading, and a resident too old to keep the account must not be
+       able to make it. */
+    if (facts->has_channel_wedges && n < cap) {
+        n += snprintf(out + n, (size_t)(cap - n),
+                      ",\"channelWedges\":%lu,\"channelWedgeReaps\":%lu,"
+                      "\"channelRedials\":%lu,\"channelWedgeOp\":%lu,"
+                      "\"channelWedgeTicks\":%lu",
+                      facts->channel_wedges, facts->channel_wedge_reaps,
+                      facts->channel_redials, facts->channel_wedge_op,
+                      facts->channel_wedge_ticks);
+    }
     /* Emitted only when the resident actually said it, so a host reading
        this can tell "nothing is installed" from "this resident is too old
        to have been asked" — opposite claims that a defaulted 0 would make

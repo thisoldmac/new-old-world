@@ -216,6 +216,20 @@ final class CommandRegistryTests: XCTestCase {
     /// this list should normally be in, and the machinery is what makes the
     /// NEXT declared-ahead verb cost a reason rather than a silent
     /// subtraction.
+    ///
+    /// **Not empty again as of 2026-08-15**: `offer` is the console face of
+    /// the host→guest crossing, declared with the contract slice that
+    /// invents `continuity.offer` and before the guest slice that answers
+    /// it. The reason is the one this list is for — the contract goes first
+    /// — and the debt is real: until a guest serves it, a person typing
+    /// `offer` gets `unknown-command` from a verb the schema publishes.
+    /// **Emptied again 2026-08-15**: the PowerPC guest now answers `offer`
+    /// (commands.c dispatches it, cmd_help.c documents it), so the
+    /// exemption came out and the three halves are compared for that verb
+    /// again — exactly what the debt existed to force. NOW-68K still
+    /// answers nothing here; it has no Continuity plane at all, which is
+    /// `notOnThePowerPCGuest`'s shape read from the other guest, not this
+    /// map's.
     private static let servedByNoGuestYet: [String: String] = [:]
 
     func testTheThreeHalvesAgreeOnTheCommandSet() throws {
@@ -250,12 +264,18 @@ final class CommandRegistryTests: XCTestCase {
     /// be unimplemented by either, and the subtraction would hide whichever
     /// was wrong.
     ///
-    /// With `servedByNoGuestYet` empty (2026-07-31) the loop below runs zero
-    /// times and only the disjointness assertion does any work. That is the
-    /// gate having done its job rather than the gate being pointless: it is
-    /// what failed when the guest started answering `winact`, `textget` and
-    /// `textset`, and it is what will fail again for the next name added
-    /// here and left behind.
+    /// The loop below ran zero times from 2026-07-31, when the act plane
+    /// landed and the map emptied, until 2026-08-15, when `offer` was
+    /// declared with the host→guest crossing. An empty map is the state to
+    /// expect and a running loop is the map earning its keep: this is the
+    /// gate that failed when the guest started answering `winact`,
+    /// `textget` and `textset`, and it is what fails again for the next
+    /// name added here and left behind.
+    ///
+    /// Both mutations were watched on 2026-08-15, against the `offer`
+    /// entry: emptying the map fails `testTheThreeHalvesAgreeOnTheCommandSet`
+    /// naming `offer` as declared-but-unanswered, and deleting `offer` from
+    /// the contract's `x-commands` fails the assertion below by name.
     func testTheUnservedDeclarationsAreStillUnserved() throws {
         let declared = try declared()
         let ppc = try answered()

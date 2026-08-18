@@ -220,6 +220,26 @@ def main() -> int:
         advanced = command("git", "branch", "-f", "main", "lane-b",
                            cwd=repo)
         require(advanced.returncode == 0, advanced.stdout + advanced.stderr)
+
+        # verify-revision reads a specific commit rather than the working
+        # tree/index that `check` reads. It must compose the same lifecycle
+        # display as `check` does -- a composer that reads
+        # NOW_PRODUCT_VERSION_{MAJOR,MINOR,PATCH} but not NOW_PRODUCT_LIFECYCLE
+        # for this path would demand a bare "0.2.0" against a tree that
+        # honestly states "0.2.0-alpha.1", refusing a coherent revision. The
+        # expected string here is built from the exact values write_version
+        # just wrote to contract/product_version.h, not echoed back from the
+        # gate under test.
+        alpha_rev = command("git", "rev-parse", "HEAD", cwd=repo,
+                            check=True).stdout.strip()
+        alpha_revision_check = command("tools/product-version-gate",
+                                       "verify-revision", alpha_rev, cwd=repo)
+        require(alpha_revision_check.returncode == 0,
+                alpha_revision_check.stdout + alpha_revision_check.stderr)
+        require("0.2.0-alpha.1" in alpha_revision_check.stdout,
+                "verify-revision did not compose the lifecycle suffix: "
+                + alpha_revision_check.stdout + alpha_revision_check.stderr)
+
         write_version(repo, (0, 2, 0), ("prealpha", 2))
         command("git", "add", ".", cwd=repo, check=True)
         command("git", "commit", "-qm", "bad lifecycle rollback", cwd=repo,
@@ -251,7 +271,8 @@ def main() -> int:
                         check=True).stdout.strip() == released,
                 "a refused rollback moved main")
 
-    print("product-version gate: 6 collision/coherence mutations passed")
+    print("product-version gate: 6 collision/coherence mutations plus the "
+          "revision-mode lifecycle pin passed")
     return 0
 
 

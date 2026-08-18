@@ -81,6 +81,27 @@ final class AppKitContinuityPointerEnvironment:
         return true
     }
 
+    func postSyntheticPrimaryButtonAtHID(down: Bool,
+                                         at screenPoint: CGPoint) -> Bool {
+        let flipHeight = NSScreen.screens.first?.frame.maxY ?? 0
+        let point = CGPoint(x: screenPoint.x,
+                            y: flipHeight - screenPoint.y)
+        guard let event = CGEvent(
+            mouseEventSource: nil,
+            mouseType: down ? .leftMouseDown : .leftMouseUp,
+            mouseCursorPosition: point, mouseButton: .left) else {
+            return false
+        }
+        /* The HID tap, not the session one, and the difference is who gets
+           to see it. This release has to reach the window server's own drag
+           machinery to END a live session; posted at the session level it
+           enters in FRONT of nothing and BEHIND every head-inserted tap on
+           this Mac — this app's own consuming tap among them, which
+           swallows exactly this event type by design. */
+        event.post(tap: .cghidEventTap)
+        return true
+    }
+
     func hideCursor(on displayID: UInt32) {
         CGDisplayHideCursor(CGDirectDisplayID(displayID))
     }
@@ -289,22 +310,130 @@ final class AppKitContinuityPointerEnvironment:
             eventUptime: ProcessInfo.processInfo.systemUptime)
     }
 
-    func showFileEdge(_ edge: ContinuitySharedEdge,
+    /// The tally lives in a class the tap callback mutates directly, on the
+    /// main runloop thread the source is attached to. **No main-actor hop**:
+    /// the callback fires inside AppKit's own drag-tracking loop, and a
+    /// `Task { @MainActor }` scheduled from there is not guaranteed to run
+    /// until the loop exits — which is after the very session-end callback
+    /// that wants to read it.
+    private final class WitnessBox: NSObject, @unchecked Sendable {
+        var witness = ContinuityDragWitness(installed: true)
+        var port: CFMachPort?
+        var source: CFRunLoopSource?
+    }
+
+    func startDragWitness() -> AnyObject? {
+        let box = WitnessBox()
+        let types: [CGEventType] = [
+            .mouseMoved, .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+        ]
+        let mask = types.reduce(UInt64(0)) { $0 | (1 << $1.rawValue) }
+        guard let port = CGEvent.tapCreate(
+            /* Tail-append and listen-only: the question is what the session
+               ACTUALLY saw, after every other tap on this Mac has had its
+               say, and answering it must not change the answer. */
+            tap: .cgSessionEventTap, place: .tailAppendEventTap,
+            options: .listenOnly, eventsOfInterest: CGEventMask(mask),
+            callback: { _, type, event, refcon in
+                guard let refcon else {
+                    return Unmanaged.passUnretained(event)
+                }
+                let box = Unmanaged<WitnessBox>.fromOpaque(refcon)
+                    .takeUnretainedValue()
+                if type == .tapDisabledByTimeout
+                    || type == .tapDisabledByUserInput {
+                    if let port = box.port {
+                        CGEvent.tapEnable(tap: port, enable: true)
+                    }
+                    return Unmanaged.passUnretained(event)
+                }
+                box.witness.record(ContinuityWitnessedEvent(
+                    type: type.rawValue,
+                    location: event.location,
+                    sourcePID: event.getIntegerValueField(
+                        .eventSourceUnixProcessID),
+                    sourceStateID: event.getIntegerValueField(
+                        .eventSourceStateID),
+                    uptime: ProcessInfo.processInfo.systemUptime,
+                    hidPrimaryHeld: CGEventSource.buttonState(
+                        .hidSystemState, button: .left),
+                    sessionPrimaryHeld: CGEventSource.buttonState(
+                        .combinedSessionState, button: .left)))
+                return Unmanaged.passUnretained(event)
+            }, userInfo: Unmanaged.passUnretained(box).toOpaque()) else {
+            return nil
+        }
+        box.port = port
+        guard let source = CFMachPortCreateRunLoopSource(nil, port, 0) else {
+            CFMachPortInvalidate(port)
+            return nil
+        }
+        box.source = source
+        /* `.commonModes` covers the event-tracking mode AppKit's drag loop
+           runs in. Attached anywhere narrower this would go quiet for exactly
+           the interval it exists to observe. */
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: port, enable: true)
+        return box
+    }
+
+    func readDragWitness(_ token: AnyObject) -> ContinuityDragWitness {
+        guard let box = token as? WitnessBox else {
+            return ContinuityDragWitness(installed: false)
+        }
+        return box.witness
+    }
+
+    func stopDragWitness(_ token: AnyObject) {
+        guard let box = token as? WitnessBox, let port = box.port else {
+            return
+        }
+        CGEvent.tapEnable(tap: port, enable: false)
+        if let source = box.source {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        CFMachPortInvalidate(port)
+        box.port = nil
+        box.source = nil
+    }
+
+    func showFileEdge(_ edge: ContinuitySharedEdge, catchThickness: CGFloat,
                       callbacks: ContinuityFileEdge.Callbacks) -> AnyObject {
-        let fileEdge = ContinuityFileEdge(edge: edge, callbacks: callbacks)
+        let fileEdge = ContinuityFileEdge(edge: edge,
+                                          catchThickness: catchThickness,
+                                          callbacks: callbacks)
         activeFileEdge = fileEdge
         return fileEdge
     }
 
     func updateFileEdge(_ token: AnyObject, edge: ContinuitySharedEdge,
+                        catchThickness: CGFloat,
                         callbacks: ContinuityFileEdge.Callbacks) {
         guard let edgeWindow = token as? ContinuityFileEdge else { return }
         edgeWindow.update(edge: edge)
+        edgeWindow.update(catchThickness: catchThickness)
         edgeWindow.update(callbacks: callbacks)
     }
 
     func setFileEdgeCatching(_ token: AnyObject, _ catching: Bool) {
         (token as? ContinuityFileEdge)?.setCatching(catching)
+    }
+
+    func setFileEdgeDropsThroughOwnSession(_ token: AnyObject,
+                                           _ dropsThrough: Bool) {
+        (token as? ContinuityFileEdge)?.setDropsThroughOwnSession(dropsThrough)
+    }
+
+    func catchSurfaceHitTest(_ token: AnyObject, at screenPoint: CGPoint)
+        -> ContinuityCatchHitTest {
+        guard let edge = token as? ContinuityFileEdge else {
+            /* Both zero, so `ownsPoint` is false: no surface is not the
+               same as a surface that lost, and the caller must not act as
+               though it had one. */
+            return ContinuityCatchHitTest(serverTopWindowNumber: 0,
+                                          panelWindowNumber: 0)
+        }
+        return edge.hitTest(at: screenPoint)
     }
 
     func hideFileEdge(_ token: AnyObject) {

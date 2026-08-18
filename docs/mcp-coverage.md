@@ -639,6 +639,7 @@ to exist:
 | `cloud.listing` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.list` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
 | `cloud.refuse` | message | ppc | deliberate | The refusal half of the same family, same reason ([command-parity.md](command-parity.md)). |
 | `cloud.report` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.services` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
+| `continuity.grab` | message | ppc | deliberate | **New to this table on 2026-08-15, and the reason is worth reading before the disposition.** The grab did not change; the operations section did. Until the host→guest crossing was declared, `continuity.grab` was a message only the host SENT, so nothing derived it as host-askable. The inverted crossing gives it a second sender — a guest asking for the item a `continuity.offer` published — so the contract now declares it in both directions and it lands here. Excluded from projection for the reason `continuity.report` and `continuity.selection` are, one step sharper: this is the message that MOVES A FILE, and the consent behind it is a person's own drag across the shared edge. A tool would let a caller redeem a grant nobody gestured for — the general read outside the share that the whole gesture boundary refuses ([continuity-mode.md](continuity-mode.md), [command-parity.md](command-parity.md)). Served `ppc` because the PowerPC guest dispatches the forward one — an inbound `continuity.grab` from the host, answered down the file lane. The PowerPC guest now also SENDS the inverted one (`wire.c :: now_wire_get_offer`, reached through the `offer --take` verb below), which this derivation cannot see: `served` reads only what a guest DISPATCHES as an incoming request, and a guest asking is not a guest serving. |
 | `continuity.report` | message | none | deliberate | The bounded status and negotiation answer to the host Mirror module's internal `continuity.arm` request. The host consumes it to settle one optional human pointer-control epoch; exposing the raw report would make that transport handshake a second public control surface even though Continuity explicitly excludes MCP and agent integration. The ownership and surface boundary are stated in [continuity-mode.md](continuity-mode.md). Both guests emit a report, but neither dispatches one as an incoming request, which is why the mechanically derived Served column says `none`. |
 | `continuity.selection` | message | none | deliberate | The Finder-selection stub the guest pushes while a Continuity epoch is live, so a cross-the-edge drag has something to name before the press. Excluded for the same reason `continuity.report` is: Continuity is one human's pointer epoch and has no MCP or agent surface ([continuity-mode.md](continuity-mode.md)). The exclusion is sharper here than for the report - the stub says what a person has selected on their own machine, and exposing it would make an agent able to watch that, which is a capability nobody asked for and the drag does not need. The guest emits it and dispatches nothing, which is why the derived Served column says `none`. |
 | `exec.cancel` | message | both | deliberate | Ends an exec, and is excluded with the rest of the console plane — [agent-integration.md](agent-integration.md). |
@@ -679,6 +680,7 @@ to exist:
 | `mirror` | command | ppc | unnoticed | What this Mac can say about MIRROR - whether each of its three resident extensions is loaded, whether its agent is running, and which port the file beside the agent names. Landed 2026-08-02 as the guest half only, and the gap is honest rather than argued: nobody has decided whether an agent should be able to ask it. **What a row would have to settle first:** Mirror is a SEPARATE application that happens to run on the same Macintosh, so a tool here would be NOW reporting on a neighbour - which is defensible (the host's own Mirror page does exactly that, one step less truthfully, off a folder listing) but is a boundary question rather than a plumbing one. The capability itself is not in doubt: residency is a Gestalt answer and the guest is the only side that can give it, which is why the verb exists at all ([contract-coverage.md](contract-coverage.md)). The pane face is owed the same upgrade and has not had it either - the host page still lists the Extensions folder, so today NEITHER face reads this verb. |
 | `mouseloc` | command | ppc | deliberate | Where the pointer IS — an instrument, not a capability. It exists because an emulator's relative mouse is acceleration-distorted, so the host's own drag plane positions by reading this and correcting; every hop calibration closes its loop against it. A caller that is not driving a pointer has nothing to do with the answer, and a caller that IS driving one is the host, which calls it directly rather than through a tool. Projecting it would put a calibration read on a surface whose other rows are capabilities. The closed loop it is the far end of is described in [emu-readiness.md](emu-readiness.md), which is also where the probes that depend on it are listed. |
 | `mirrorlog` | command | ppc | deliberate | The `mirror` log area's debug tier, on a session-scoped switch — **an instrument's own knob, not a capability, and the same disposition as `wirestat` for the same reason** ([logging.md](logging.md) carries the tier's argument; [command-parity.md](command-parity.md) the two faces that already reach it). It changes what the guest's log RECORDS, so the only caller the answer serves is whoever is diagnosing the mirror plane, and they already reach it from both command faces (console and typed wire/exec). A row here would put a logging configuration on a surface whose other rows are things a Mac can DO, with `wirestat`'s exact hazard one step milder: a caller that turns it on and walks away buries the product's story in every later ring — which is precisely the failure the default-off, per-launch design exists to prevent, and a standing agent surface would reintroduce. Landed 2026-08-15 with the gate itself. Revisit only if an agent-driven mirror-plane diagnosis loop ever needs to arm diagnostics without holding a console. |
+| `offer` | command | ppc | deliberate | The console face of the inverted crossing — what the person at the Mac is holding out to this Macintosh, and the single act of taking it. Excluded for the reason `continuity.report` and `continuity.selection` are: Continuity is one human's pointer epoch and has no MCP or agent surface ([continuity-mode.md](continuity-mode.md)). The exclusion is sharper here than for either of those, because this verb MOVES A FILE: the consent behind it is a person's own drag across the shared edge, and a projection would let a caller redeem that consent without the gesture that gave it — which is the same argument that keeps a guest-side `grab` off the console in the other direction ([command-parity.md](command-parity.md)). Declared 2026-08-15 ahead of any guest; the PowerPC guest answers it the same day (`commands.c :: run_offer`, one implementation behind the console fallback and the wire's `command.request`), so the Served column now reads `ppc`. The exclusion argument is unchanged by who serves it — the gesture, not the guest, is what a projection would be missing. |
 | `net` | command | ppc | unnoticed | What a Mac says about its own networking: the link it holds to this host, its TCP/IP configuration, its network ports, and — last — why a list of that machine's connections is not among them. **Landed 2026-08-01 as a spike, guest page and host pane, with no projection deliberately.** Nobody has decided whether an agent should get it. What a row would have to settle first: nearly all of it is *read-only and harmless*, which argues for a plain row — but the fourth group is a statement about an API rather than about a machine, and a capability report that says "this Mac cannot list its connections" would be the wrong shape of true. A tool would have to carry that distinction into typed unavailability, or drop the group and answer three. There is also a real question of whether `now_hardware_census` already covers the hardware half, which would make a `net` row a second route to a capability already projected — the thing this column exists to refuse. PowerPC only: it is built on Open Transport, and the 68K guest speaks MacTCP ([ot-networking-surface.md](ot-networking-surface.md)). |
 | `wirestat` | command | ppc | deliberate | How long the guest takes to NOTICE a request — the interval between its own wire service passes, and the delay from Open Transport announcing data to its event loop reading it — and the two knobs that change them. **An instrument, not a capability, and the same disposition as `mouseloc` for the same reason.** It answers a question about the wire this host is holding, so the only caller that can use the answer is the one already on the other end of it; a tool would put a measurement of the instrument on a surface whose other rows are things a Mac can DO. The half that decides it is the setting half: `sleep N` changes the guest's event-loop sleep and `wake off` its Open Transport wake, which makes a row a **configuration** surface rather than a capability one — and the setting it would expose is the one that starves every other application on a cooperatively scheduled Macintosh if a caller sets it wrong. Landed 2026-08-06 with the wire-latency arc; the numbers it produced are in [open-issues.md](open-issues.md). Revisit if an agent ever needs to defend its own latency budget to a caller, which is the one case that would argue for the reading half alone. |
 | `update` | command | ppc | deliberate | Withheld from agent projection because today's artifacts are explicitly unsigned. The guest's Connections page requires a local modal confirmation before it may pass `allow_unsigned`; the shared console/wire command cannot spend that confirmation, and an MCP row would be a second remote route around the same boundary. Status remains visible to the person on the classic Mac. Revisit only after the release-signing design has a pinned trust root, rotation, revocation and recovery policy ([command-parity.md](command-parity.md), “`update` is the mutating example”; [host-owned updates](developer-guide/architecture/updating.md#trust-boundary)). |
@@ -1196,18 +1198,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: dd9a1befbaf907ad16048d5b0d847cdffcaa59f9
-sources-sha1: dd9a1befbaf907ad16048d5b0d847cdffcaa59f9
-sources-sha1: dd9a1befbaf907ad16048d5b0d847cdffcaa59f9
-sources-sha1: dd9a1befbaf907ad16048d5b0d847cdffcaa59f9
-sources-sha1: dd9a1befbaf907ad16048d5b0d847cdffcaa59f9
-derive ppc-inbound-types sha256=4b8855fa9e0cb9da3ae3962368e9ea714d9e3d736ddabd304e1af82a104ccb90 lines=57 published
+sources-sha1: 9ad519b3df4615bb519fbcdf3066a9c8ef9e2400
+derive ppc-inbound-types sha256=5c659300160d136813e618972ee666eff5313dfd50488d136938776328ffefb0 lines=58 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=c798571be8d2b53f23893bc4de72677bb0b363d8a59c5e09edd4ec773f6b5775 lines=3
+derive disposition-census sha256=e1fd0d92d72112c446182fdeb1d74c27d57ada04e127f238d560e84b4dc4a2b4 lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1361,37 +1359,12 @@ rederived: 2026-08-14T17:36:04-0400 02e9de5e unchanged
 rederived: 2026-08-14T18:14:39-0400 db6a7c6a unchanged
 rederived: 2026-08-14T18:17:42-0400 d9ed70d2 unchanged
 rederived: 2026-08-14T18:19:50-0400 60bb3427 sources, ppc-inbound-types 54->0, sources, ppc-inbound-types 54->0
-rederived: 2026-08-14T15:56:43-0400 835e6acf sources
 rederived: 2026-08-14T18:20:42-0400 23dc0759 sources, sources, sources
 rederived: 2026-08-14T18:22:07-0400 23dc0759 unchanged
 rederived: 2026-08-14T18:23:12-0400 e2c66126 sources, sources, sources, sources, disposition-census 3->0, disposition-census 3->0
 rederived: 2026-08-14T18:30:53-0400 b248c9a1 disposition-census 0->3
 rederived: 2026-08-14T18:31:12-0400 b248c9a1 unchanged
 rederived: 2026-08-14T18:31:25-0400 b248c9a1 ppc-inbound-types 0->57
-rederived: 2026-08-14T20:24:57-0400 6d3d74d7 sources
-rederived: 2026-08-14T20:18:49-0400 cccec57a unchanged
-rederived: 2026-08-14T21:50:42-0400 edcc526f sources
-rederived: 2026-08-14T22:27:41-0400 5a6c46dc unchanged
-rederived: 2026-08-14T22:10:44-0400 568967b9 unchanged
-rederived: 2026-08-14T23:30:11-0400 0017d984 sources
-rederived: 2026-08-14T22:14:12-0400 0e743bc5 unchanged
-rederived: 2026-08-14T23:32:09-0400 a9afc153 unchanged
-rederived: 2026-08-14T22:19:02-0400 fe3d18a0 unchanged
-rederived: 2026-08-14T23:33:01-0400 09abc942 unchanged
-rederived: 2026-08-14T22:27:26-0400 67772e4a sources
-rederived: 2026-08-14T23:33:52-0400 521b590f sources, sources
-rederived: 2026-08-14T22:17:24-0400 4495cfb2 unchanged
-rederived: 2026-08-14T23:34:44-0400 61505862 unchanged
-rederived: 2026-08-14T23:35:19-0400 61505862 unchanged
-rederived: 2026-08-14T22:33:00-0400 13bfe534 sources
-rederived: 2026-08-14T23:36:21-0400 b1fc9796 sources, sources, sources
-rederived: 2026-08-15T00:20:07-0400 e937faee unchanged
-rederived: 2026-08-15T01:40:29-0400 139dff1a sources, sources, sources
-rederived: 2026-08-15T01:32:40-0400 108db464 unchanged
-rederived: 2026-08-15T02:20:04-0400 de5812ab unchanged
-rederived: 2026-08-15T01:36:39-0400 34192244 unchanged
-rederived: 2026-08-15T02:21:00-0400 c87b3288 unchanged
-rederived: 2026-08-15T02:26:43-0400 2749aab1 unchanged
 rederived: 2026-08-14T19:50:32-0400 d20eee81 sources
 rederived: 2026-08-14T19:50:54-0400 d20eee81 unchanged
 rederived: 2026-08-14T20:02:53-0400 068ca7fd unchanged
@@ -1400,15 +1373,51 @@ rederived: 2026-08-14T21:15:09-0400 5316a23e unchanged
 rederived: 2026-08-14T23:07:32-0400 9d85a31d unchanged
 rederived: 2026-08-15T00:30:15-0400 f4dab407 sources
 rederived: 2026-08-15T01:11:36-0400 c9a1a8a4 unchanged
-rederived: 2026-08-15T02:57:59-0400 5d767dce sources, sources, sources, sources
-rederived: 2026-08-15T03:19:44-0400 098e7ecf sources, sources, sources, sources
-rederived: 2026-08-15T05:39:23-0400 829013ee sources, sources, sources, sources
-rederived: 2026-08-15T05:30:48-0400 a327ba45 unchanged
-rederived: 2026-08-15T06:15:16-0400 3c7d14e4 unchanged
 rederived: 2026-08-15T03:16:30-0400 2c7ff2a1 sources
 rederived: 2026-08-15T03:17:33-0400 2c7ff2a1 disposition-census 3->3
 rederived: 2026-08-15T03:18:50-0400 2c7ff2a1 unchanged
 rederived: 2026-08-15T03:30:55-0400 083691c4 unchanged
 rederived: 2026-08-15T04:01:11-0400 b18a891c sources
-rederived: 2026-08-15T06:18:29-0400 9232bd77 sources, sources, sources, sources, sources
+rederived: 2026-08-15T12:33:03-0400 eadb1784 sources
+rederived: 2026-08-15T13:22:25-0400 4e897bc6 unchanged
+rederived: 2026-08-15T14:24:09-0400 599da71e sources, disposition-census 3->3
+rederived: 2026-08-15T14:56:50-0400 4caf46ef sources
+rederived: 2026-08-15T15:01:59-0400 a06d9396 disposition-census 3->3
+rederived: 2026-08-15T15:16:39-0400 cc0d429b sources
+rederived: 2026-08-15T15:19:23-0400 658719b4 sources
+rederived: 2026-08-15T15:25:07-0400 7949e13a sources
+rederived: 2026-08-15T16:00:10-0400 69217d7a sources, ppc-inbound-types 57->58
+rederived: 2026-08-15T16:06:10-0400 69217d7a unchanged
+rederived: 2026-08-15T16:43:48-0400 919bcc60 unchanged
+rederived: 2026-08-15T18:06:56-0400 feaa6945 sources
+rederived: 2026-08-15T19:13:28-0400 ce43eb74 unchanged
+rederived: 2026-08-15T22:25:51-0400 f627b5b4 sources
+rederived: 2026-08-16T13:07:44-0400 3fff0d5e unchanged
+rederived: 2026-08-16T13:48:35-0400 abfb91b7 unchanged
+rederived: 2026-08-16T14:23:14-0400 8e68ec3a unchanged
+rederived: 2026-08-16T14:56:45-0400 3eac8061 sources
+rederived: 2026-08-16T15:14:02-0400 3eac8061 unchanged
+rederived: 2026-08-16T15:40:24-0400 484f1ecd unchanged
+rederived: 2026-08-16T15:51:38-0400 3c9b1213 unchanged
+rederived: 2026-08-16T16:01:12-0400 5e83598e unchanged
+rederived: 2026-08-16T16:13:00-0400 d9f3bb77 unchanged
+rederived: 2026-08-16T16:57:26-0400 49fcbc64 sources
+rederived: 2026-08-16T18:23:18-0400 1162e33a unchanged
+rederived: 2026-08-16T18:52:31-0400 51558682 sources
+rederived: 2026-08-16T19:17:53-0400 0c75216b unchanged
+rederived: 2026-08-16T21:38:02-0400 9e1756d6 sources
+rederived: 2026-08-16T22:00:22-0400 c578fc99 sources
+rederived: 2026-08-16T23:39:05-0400 eecd0c30 sources
+rederived: 2026-08-17T02:09:48-0400 f94e2762 sources
+rederived: 2026-08-17T03:31:09-0400 8cf43bb9 sources
+rederived: 2026-08-17T14:41:18-0400 e7b68a20 sources
+rederived: 2026-08-17T15:49:23-0400 6c899380 sources
+rederived: 2026-08-17T15:52:53-0400 6c899380 sources
+rederived: 2026-08-17T16:04:36-0400 ef984b29 unchanged
+rederived: 2026-08-17T16:17:03-0400 f60e2999 unchanged
+rederived: 2026-08-17T18:04:09-0400 30e23df6 unchanged
+rederived: 2026-08-17T18:09:10-0400 4fb9b6b0 unchanged
+rederived: 2026-08-17T18:50:31-0400 e18796a5 unchanged
+rederived: 2026-08-17T23:36:26-0400 5aa1092c sources
+rederived: 2026-08-17T23:52:46-0400 91fe237e unchanged
 -->

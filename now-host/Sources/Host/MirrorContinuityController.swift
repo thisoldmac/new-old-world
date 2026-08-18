@@ -346,6 +346,47 @@ final class MirrorContinuityController: ObservableObject,
         }
     }
 
+    /// Bridges to `edge.edgeGeometry`, persisting per machine like the other
+    /// Continuity prefs. Two setters rather than a mirrored `@Published`
+    /// pair here, because the geometry itself has to live on the edge
+    /// controller — it reaches the live catch surface immediately, the way
+    /// `edge.updateEdgeGeometry` is written to — and this is the settings
+    /// funnel around it, the same shape as `keyboardConfigurationChanged`
+    /// pushing a toggle INTO `edge` rather than `edge` owning its own copy.
+    func setEdgeEntryInset(_ pixels: CGFloat) {
+        var geometry = edge.edgeGeometry
+        geometry.entryInsetPixels = pixels
+        applyEdgeGeometry(geometry)
+    }
+
+    func setEdgeDeadzoneDepth(_ pixels: CGFloat) {
+        var geometry = edge.edgeGeometry
+        geometry.deadzoneDepth = pixels
+        applyEdgeGeometry(geometry)
+    }
+
+    private func applyEdgeGeometry(_ geometry: ContinuityEdgeGeometry) {
+        edge.updateEdgeGeometry(geometry)
+        guard let machine = listener.activeContinuityTarget?.key.machine
+        else { return }
+        // Persist what was actually APPLIED, not what was asked for —
+        // `updateEdgeGeometry` clamps, and a value on disk that the
+        // controller itself would refuse on the next launch is a silent
+        // drift the same way an un-derived count is.
+        defaults.set(edge.edgeGeometry.entryInsetPixels,
+                     forKey: edgeEntryInsetKey(for: machine))
+        defaults.set(edge.edgeGeometry.deadzoneDepth,
+                     forKey: edgeDeadzoneDepthKey(for: machine))
+    }
+
+    private func edgeEntryInsetKey(for machine: GuestID) -> String {
+        "mirror.continuity.edgeEntryInset.\(machine.slug)"
+    }
+
+    private func edgeDeadzoneDepthKey(for machine: GuestID) -> String {
+        "mirror.continuity.edgeDeadzoneDepth.\(machine.slug)"
+    }
+
     var isActive: Bool { phase == .active }
     @Published private(set) var isMenuTracking = false
 
@@ -381,6 +422,17 @@ final class MirrorContinuityController: ObservableObject,
     /// Longer than the resident's 1.5-second lease: one delayed ack does not
     /// churn ownership, but a dead receive path cannot leave the UI active.
     private let acknowledgementTimeout: TimeInterval
+    private let starvationAnnounceAfter: TimeInterval
+    /// The absolute cap on trusting resident liveness in place of the guest
+    /// application's own acknowledgements. Resident liveness is a TCP
+    /// connection, and a half-open one can answer "alive" long after the
+    /// machine underneath it is not — the same dead-man concern this
+    /// project already argues in docs/open-issues.md for other TCP-backed
+    /// liveness reads. Minutes-scale rather than seconds-scale: it must
+    /// outlast any ordinary held menu or modal a person is expected to
+    /// leave open, and exist only as the backstop for the case that
+    /// evidence is lying, not as a patience budget a real gesture can spend.
+    private let starvationBackstop: TimeInterval
     private weak var localNetworkAccess: LocalNetworkAccessController?
     private let accessibility: AccessibilityAuthorization
     private let runningCopy: RunningCopy
@@ -408,8 +460,38 @@ final class MirrorContinuityController: ObservableObject,
     private var lastForwardedModifiers: UInt16 = 0
     private var buttonCycleActive = false
     private var wireButtonDown = false
+    /// **The button as a LEVEL, held for the life of a staged carry, with no
+    /// generation behind it.**
+    ///
+    /// One bit in the datagram serves two consumers with different
+    /// semantics, and that is the whole of defect B (F2 forensics,
+    /// 2026-08-17). The guest's Drag Manager input proc reads the LEVEL —
+    /// `flags & primaryDown` — every time the Manager samples it, and a
+    /// `TrackDrag` whose first sample reads button-UP returns at once, which
+    /// is the drag that dropped at the entry point on metal. The resident
+    /// applies a press only on a NEWER `button_generation`
+    /// (`now_continuity_logic.c:47-49`), so a level raised without touching
+    /// `buttonGeneration` reaches the input proc and reaches nothing else:
+    /// no Event Manager click is posted on the guest, and the D5 suppression
+    /// that stopped forwarded presses opening Classilla stays exactly as it
+    /// is.
+    ///
+    /// It is deliberately NOT `wireButtonDown`. That field is the click
+    /// cycle's own state — acknowledgement, timeout, deferred point, epoch
+    /// teardown all hang off it — and a carry has none of those; it has one
+    /// question, "is the person still holding the file", answered by the
+    /// edge controller's carry lifecycle.
+    private var carriedButtonLevel = false
     private var pressAcknowledged = false
     private var deferredButtonPoint: MirrorKit.Point?
+    /// The point the last `settleHeldPosition` asked for, held only until the
+    /// release that follows it consumes it. See `settledReleasePoint`.
+    private var heldSettlePoint: MirrorKit.Point?
+    /// Set when a release went out carrying the point a settle had just
+    /// asked for — i.e. the cross-edge handback's settle-then-release pair
+    /// completed on the wire. Consumed by the epoch teardown, which must not
+    /// step on it. See `pointerLeft`.
+    private var settledReleasePoint: MirrorKit.Point?
     private var primaryDownInMenuBar = false
     private var primaryCycleDragged = false
     private var menuLatched = false
@@ -437,6 +519,22 @@ final class MirrorContinuityController: ObservableObject,
     private var validAcks: UInt32 = 0
     private var lastAcknowledgementUptime: TimeInterval?
     private var acknowledgementStarvedSince: TimeInterval?
+    /// One announcement per starvation episode. The status line changes at
+    /// `acknowledgementTimeout`, which is short enough that an ordinary
+    /// tracking loop trips it; this is the second, louder tier, and it
+    /// escalates only once so a two-minute modal is one notification.
+    private var starvationAnnounced = false
+    /// The silence value at which the "tolerated" audit line last fired,
+    /// so an extended hold is narrated periodically — one line per
+    /// additional `acknowledgementTimeout` of patience spent — rather than
+    /// once at onset (already covered by the line above) or once per timer
+    /// tick, which at 60 Hz would flood the log with the same fact.
+    private var toleratedSilenceLogMark: TimeInterval = 0
+    /// Told once, at `starvationAnnounceAfter`, that this Mac has stopped
+    /// answering while the machine underneath it is still alive. Wired to
+    /// the same notification-plus-flash seam as a drag refusal, because the
+    /// person is looking at their Mac and not at this page.
+    var onStarvation: ((String) -> Void)?
     private var lastAuditedButtonGeneration: UInt32 = 0
     private var lastPrimaryDownUptime: TimeInterval?
     private var buttonTransitionSentUptime: TimeInterval?
@@ -450,17 +548,23 @@ final class MirrorContinuityController: ObservableObject,
          accessibility: AccessibilityAuthorization? = nil,
          runningCopy: RunningCopy = .current,
          acknowledgementTimeout: TimeInterval = 3,
+         starvationAnnounceAfter: TimeInterval = 10,
+         starvationBackstop: TimeInterval = 300,
          audit: Audit? = nil) {
+        let resolvedAudit = audit ?? {
+            HostLog.shared.write($0, "continuity", $1)
+        }
         self.listener = listener
         self.defaults = defaults
-        self.layout = ContinuityDisplayLayout(defaults: defaults)
+        self.layout = ContinuityDisplayLayout(defaults: defaults,
+                                              audit: resolvedAudit)
         self.localNetworkAccess = localNetworkAccess
         self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
         self.runningCopy = runningCopy
         self.acknowledgementTimeout = acknowledgementTimeout
-        self.audit = audit ?? {
-            HostLog.shared.write($0, "continuity", $1)
-        }
+        self.starvationAnnounceAfter = starvationAnnounceAfter
+        self.starvationBackstop = starvationBackstop
+        self.audit = resolvedAudit
         localNetworkAccess?.onDirectAccessReady = { [weak self] in
             self?.localNetworkAccessBecameReady()
         }
@@ -472,6 +576,9 @@ final class MirrorContinuityController: ObservableObject,
         }
         listener.onContinuitySelection = { [weak self] key, selection in
             self?.received(selection, from: key)
+        }
+        listener.onContinuityDragBegin = { [weak self] key, begin in
+            self?.received(begin, from: key)
         }
         loadSettingsForActiveGuest()
     }
@@ -488,10 +595,46 @@ final class MirrorContinuityController: ObservableObject,
         }
     }
 
+    /// THE EPOCH-ENDING DATAGRAM IS WITHHELD AFTER A SETTLED RELEASE, AND
+    /// THAT IS THE WHOLE OF IT.
+    ///
+    /// The wire is a latest-state mailbox and the guest reads ONE snapshot of
+    /// it per pass, so three datagrams sent inside a millisecond are one
+    /// snapshot to an application starved inside the Finder's drag-tracking
+    /// loop. On the cross-edge handback the host sends exactly three: the
+    /// settle to the press origin, the release carrying that same origin, and
+    /// then this one — and this one clears `inside`, which both the resident's
+    /// timer task and the application's service honour BEFORE they take the
+    /// snapshot's position. The settled origin is thrown away with it, the
+    /// release is applied against whatever mid-drag point the guest last
+    /// ingested, and the Finder completes a real move to the screen edge.
+    ///
+    /// Metal, 2026-08-15: origin=522,199 was commanded and logged by this
+    /// side; the guest settled at 792,231 — one drag sample short of the
+    /// 802,231 cross — and again 524,203 against 799,232. Slow drags only,
+    /// because a slow drag is exactly the one where the guest application is
+    /// deep enough in the Finder's loop to collapse the three into one.
+    ///
+    /// Withholding it costs nothing: `relinquish` ends the epoch over the
+    /// RELIABLE control stream in the next statement, and the resident's own
+    /// lease bounds the gap. What it buys is that the last datagram the guest
+    /// can possibly see carries the settled origin beside the release edge —
+    /// which is precisely the shape the fast path already had, by accident,
+    /// because an unacknowledged press sends no separate settle at all.
     func pointerLeft() {
         pointerInside = false
         guard phase != .idle else { return }
-        if phase == .active { sendState(inside: false, keepalive: false) }
+        if phase == .active {
+            if let settled = settledReleasePoint {
+                settledReleasePoint = nil
+                audit(.info, "epoch-ending datagram withheld: the release "
+                    + "settled at \(settled.x),\(settled.y) and clearing "
+                    + "`inside` in the next packet would let a starved guest "
+                    + "drop that point; the reliable disarm ends the epoch")
+            } else {
+                sendState(inside: false, keepalive: false)
+            }
+        }
         relinquish(reason: "pointer left Mirror", keepEnabled: true)
     }
 
@@ -580,6 +723,8 @@ final class MirrorContinuityController: ObservableObject,
         buttonCycleActive = true
         pressAcknowledged = false
         deferredButtonPoint = releasedAt
+        heldSettlePoint = nil
+        settledReleasePoint = nil
         primaryDownInMenuBar = inMenuBar
         primaryCycleDragged = false
         menuLatched = false
@@ -631,6 +776,11 @@ final class MirrorContinuityController: ObservableObject,
     func settleHeldPosition(to point: MirrorKit.Point) -> Bool {
         guard phase == .active, buttonCycleActive else { return false }
         primaryDragged(to: point)
+        /* Armed on BOTH returns: the deferred path below is the one that
+           already worked on metal, and the teardown must treat the two
+           identically or the guard only covers the case it was written
+           against. See `pointerLeft`. */
+        heldSettlePoint = point
         guard pressAcknowledged else {
             /* The press point is deliberately stable until the guest
                confirms its down; `primaryDragged` has parked the origin in
@@ -673,6 +823,42 @@ final class MirrorContinuityController: ObservableObject,
         return true
     }
 
+    /// **Raise or clear the carried button LEVEL. It mints no generation,
+    /// and that is the entire mechanism.**
+    ///
+    /// Defect B, attended metal 2026-08-17: a host→guest carry suppresses
+    /// every `.primaryDown` for the life of the staging (the D5 fix, which
+    /// must stay), so `wireButtonDown` never became true, the datagram never
+    /// carried `.primaryDown`, and the guest's `TrackDrag` first-sampled a
+    /// released button and returned at the entry point. This is the button
+    /// the drag needs and the press the guest must never receive, told
+    /// apart: the level goes on the wire, `buttonGeneration` does not move,
+    /// so `now_continuity_button_action` answers `Nothing` and the resident
+    /// posts no click.
+    ///
+    /// Returns whether the level is on the wire — false while there is no
+    /// active epoch to carry it, which the caller reports rather than
+    /// assumes. The field is still set: an epoch armed later sends it with
+    /// the next datagram, and `clearTransportState` drops it with the epoch.
+    @discardableResult
+    func setCarriedButtonLevel(_ held: Bool, gesture: UInt64,
+                               reason: String) -> Bool {
+        guard carriedButtonLevel != held else { return phase == .active }
+        carriedButtonLevel = held
+        let live = phase == .active
+        audit(live ? .info : .warn,
+              "carried button level \(held ? "RAISED" : "cleared"): "
+                + "\(reason) (gesture=\(gesture), "
+                + "generation=\(buttonGeneration) — NOT advanced, so the "
+                + "Macintosh's resident applies nothing and only the drag's "
+                + "input proc reads this)"
+                + (live ? "" : "; no epoch is active, so nothing is on the "
+                   + "wire yet"))
+        guard live else { return false }
+        sendState(inside: true, keepalive: false)
+        return true
+    }
+
     func cancel(reason: String) {
         pointerInside = false
         relinquish(reason: reason, keepEnabled: true)
@@ -704,6 +890,11 @@ final class MirrorContinuityController: ObservableObject,
         let rate = [15, 30, 60].contains(requestedHz) ? requestedHz : 30
         requestedHz = rate
         epoch = nextNonzero(epoch)
+        /* A NEW EPOCH ENDS THE LAST ONE'S AFTERLIFE. The window a crossing
+           gesture's generation may arrive in is one epoch wide; a record
+           kept past the next arm would let a frame from a finished session
+           reach a crossing made under this one. */
+        endedEpoch = nil
         repeat {
             nonceHi = UInt32.random(in: UInt32.min ... UInt32.max)
             nonceLo = UInt32.random(in: UInt32.min ... UInt32.max)
@@ -819,13 +1010,190 @@ final class MirrorContinuityController: ObservableObject,
         }
     }
 
+    /// The drag this Mac was told about while the button was still down, or
+    /// nil once the application's own frame has caught up with it.
+    ///
+    /// It is the JOIN KEY and nothing else: the resident names a file, the
+    /// application later names the same file WITH A GENERATION, and this is
+    /// how the two are known to be one gesture rather than two drags of the
+    /// same icon. Cleared when the join lands, so a second drag of the same
+    /// file cannot be joined to the first one's announcement.
+    private var announcedDragSeq: UInt32?
+
+    /// THE RESIDENT NAMING THE FILE MID-GESTURE.
+    ///
+    /// This is the arrival the whole drag plane was built to get: the
+    /// application publishes the same identity, but not until the Finder's
+    /// drag loop releases it — 462 ticks after the drag began, measured
+    /// 2026-08-16, which is after the crossing that needed it. This frame
+    /// comes off the resident's own channel while the loop is still running.
+    ///
+    /// IT BINDS AN IDENTITY AND NOT A GENERATION. The stub is cached with
+    /// generation 0, which every consumer reads as "no generation has been
+    /// minted for this gesture yet": the guest mints generations, a
+    /// `continuity.grab` names one, and the guest's own check refuses any
+    /// number it did not mint. So a drop that somehow beats the
+    /// application's frame is refused by name rather than served the wrong
+    /// file — and the application's frame arrives in the same fifth of a
+    /// second the crossing does, long before a human drop.
+    private func received(_ begin: ContinuityDragBegin, from key: GuestKey) {
+        guard target?.key == key else {
+            audit(.warn, "drag begin ignored: it came from "
+                + "\(key.machine.slug), which does not own this epoch")
+            return
+        }
+        guard begin.epoch == epoch, epoch != 0 else {
+            audit(.warn, "drag begin ignored: it names epoch "
+                + "\(begin.epoch) while this Mac owns epoch \(epoch)")
+            return
+        }
+        guard announcedDragSeq != begin.dragSeq else { return }
+        announcedDragSeq = begin.dragSeq
+        /* Folderness is UNKNOWN here and is recorded as false rather than
+           guessed at: the resident makes no File Manager call, by charter,
+           so nothing in this frame can say. A folder drag is refused when
+           the application's own frame arrives and says `isFolder`, one
+           gesture later — the slice folders were already deferred to. */
+        let synthesised = ContinuitySelection(
+            version: ContinuityContract.version,
+            epoch: begin.epoch,
+            generation: 0,
+            source: .drag,
+            dragSeq: begin.dragSeq,
+            item: .init(name: begin.item.name,
+                        volumeRef: begin.item.volumeRef,
+                        dirID: begin.item.dirID,
+                        fileType: begin.item.fileType,
+                        creator: begin.item.creator,
+                        dataSize: nil,
+                        resourceSize: nil,
+                        modifiedAt: nil,
+                        isFolder: false,
+                        icon: nil))
+        audit(.info, "drag begin from the resident: dragSeq="
+            + "\(begin.dragSeq), epoch=\(begin.epoch), "
+            + "name=\(begin.item.name), "
+            + "type=\(begin.item.fileType ?? "none"), "
+            + "guestTicks=\(begin.ticks.map(String.init) ?? "none") — the "
+            + "Mac is still holding this drag; the generation follows on "
+            + "the application's own frame")
+        selectionCache.apply(synthesised, activeEpoch: epoch)
+        if let mark = selectionCache.mark {
+            edge.noteSelectionPublished(mark)
+        }
+    }
+
+    /// The epoch that ended most recently, and who owned it.
+    ///
+    /// One epoch's worth of memory, held for exactly one purpose: a gesture
+    /// that CROSSED published its generation after the cross ended its
+    /// epoch, and there is nothing else left by then that can say the frame
+    /// belongs to this Mac's own last session.
+    private struct EndedEpoch {
+        var epoch: UInt32
+        var key: GuestKey
+        /// The gesture the resident announced mid-drag, if it announced
+        /// one. Kept so the join is answerable after the epoch is gone.
+        var dragSeq: UInt32?
+    }
+    private var endedEpoch: EndedEpoch?
+
+    /// A GENERATION FOR AN EPOCH THAT IS OVER, which is the only kind a
+    /// crossing single-gesture drag can ever produce.
+    ///
+    /// It is deliberately NOT run through `selectionCache.apply`: caching it
+    /// would make a grab reachable under an epoch nobody is consenting in,
+    /// which is the rule the cache's own epoch guard exists to hold. What it
+    /// feeds instead is the crossing already in flight — the drop is holding
+    /// for exactly this number — and it gets there by the same join the live
+    /// case uses, `dragSeq`.
+    private func receivedAfterEpoch(_ selection: ContinuitySelection,
+                                    from key: GuestKey) {
+        /* WHOSE it is stays here, because a GuestKey is this object's own
+           notion of who it was talking to; WHETHER it may be used is pure
+           and lives in ContinuityAfterEpochAdmission, where every refusal
+           can be watched without a machine. */
+        guard let ended = endedEpoch, ended.key == key else {
+            audit(.warn, "selection after the epoch ignored: it came from "
+                + "\(key.machine.slug), and this Mac's last epoch belonged "
+                + "to \(endedEpoch.map { $0.key.machine.slug } ?? "nobody")")
+            return
+        }
+        switch ContinuityAfterEpochAdmission.decide(selection,
+                                                    lastEpoch: ended.epoch) {
+        case .refused(let reason):
+            audit(.warn, "selection after the epoch ignored: \(reason)")
+        case .join(let stub):
+            if let announced = ended.dragSeq,
+               announced != stub.dragSeq {
+                audit(.info, "drag \(stub.dragSeq.map(String.init) ?? "none") "
+                    + "is not the drag this Mac was announced (\(announced)) "
+                    + "before epoch \(ended.epoch) ended — the join below "
+                    + "decides it, not this line")
+            }
+            audit(.info, "drag \(stub.dragSeq.map(String.init) ?? "none") "
+                + "joined AFTER its epoch: epoch \(stub.epoch) ended at the "
+                + "cross and the Mac minted generation \(stub.generation) "
+                + "for \(stub.item.name) once its Finder let the application "
+                + "run again")
+            edge.noteSelectionPublishedAfterEpoch(stub)
+        }
+    }
+
     private func received(_ selection: ContinuitySelection, from key: GuestKey) {
+        /* THE EPOCH THIS NAMES MAY ALREADY BE OVER, and on the gesture this
+           whole plane exists for it always is. Routed before the ownership
+           guard below, because that guard reads `target`, which the epoch's
+           own ending cleared. */
+        if selection.namesEndedEpoch {
+            receivedAfterEpoch(selection, from: key)
+            return
+        }
         guard target?.key == key else {
             audit(.warn, "selection ignored: it came from "
                 + "\(key.machine.slug), which does not own this epoch")
             return
         }
+        /* THE JOIN, AND WHICH SOURCE WON, said out loud. Two senders
+           reported one gesture; this is the second, and it carries the one
+           thing the first could not — the generation a grab must name. The
+           identity is expected to agree, and a disagreement is a finding
+           rather than a preference, so it is logged as one. */
+        if selection.resolvedSource == .drag, let seq = selection.dragSeq {
+            if seq == announcedDragSeq {
+                let announced = selectionCache.stub?.item.name
+                announcedDragSeq = nil
+                if let announced, announced != selection.item?.name {
+                    audit(.warn, "drag \(seq) joined and DISAGREED: the "
+                        + "resident named \(announced) mid-gesture and the "
+                        + "application named "
+                        + "\(selection.item?.name ?? "nothing") — the "
+                        + "application's frame wins, because it carries the "
+                        + "generation a grab must name")
+                } else {
+                    audit(.info, "drag \(seq) joined: the resident's "
+                        + "mid-gesture identity keeps its name and gains "
+                        + "generation \(selection.generation) from the "
+                        + "application")
+                }
+            } else if let announced = announcedDragSeq {
+                audit(.info, "drag \(seq) is not the drag this Mac was "
+                    + "announced (\(announced)) — a second gesture, bound "
+                    + "on its own")
+                announcedDragSeq = nil
+            }
+        }
         selectionCache.apply(selection, activeEpoch: epoch)
+        /* AND THE EDGE HEARS ABOUT IT EVEN IF IT ALREADY DECIDED. A
+           drag-sourced generation cannot arrive before the crossing — the
+           Finder's drag loop starves the guest of task time, and the
+           crossing's own release is what ends that loop — so this arrival is
+           routinely the FIRST thing this Mac learns about the file it is
+           already carrying. The edge refuses it in every case but that one;
+           see `noteSelectionPublished`. */
+        if let mark = selectionCache.mark {
+            edge.noteSelectionPublished(mark)
+        }
     }
 
     /// What a press may be bound to right now, or the named reason it may
@@ -836,6 +1204,23 @@ final class MirrorContinuityController: ObservableObject,
         -> Result<ContinuityDragStub, ContinuitySelectionCache.Unusable> {
         selectionCache.bindable(activeEpoch: epoch)
     }
+
+    /// Which selection this Mac currently holds and when it learned of it,
+    /// for the cross-time bind decision. Deliberately NOT filtered by
+    /// bindability: a folder or an other-epoch stub still marks a change,
+    /// and hiding it here would make "the selection moved under this press"
+    /// unanswerable in exactly the cases where it moved to something
+    /// undraggable.
+    var selectionMark: ContinuitySelectionMark? { selectionCache.mark }
+
+    /// The live Continuity epoch, exposed for the one caller outside this
+    /// object that must agree with it: a host→guest offer's epoch field.
+    /// The guest's own offer table checks `table.epoch != live_epoch`
+    /// (`now_continuity_offer.c`) — that live epoch is THIS number, not a
+    /// namespace of the offer's own. Publishing under anything else (a
+    /// constant, a separately-counted offer epoch) can only ever agree with
+    /// the guest by coincidence, once, at epoch 1.
+    var currentEpoch: UInt32 { epoch }
 
     private func openUDP(host: String, port: UInt16) {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
@@ -990,12 +1375,43 @@ final class MirrorContinuityController: ObservableObject,
                     ?? self.listener.machineIsAnswering(sessionKey: key) {
                     if self.acknowledgementStarvedSince == nil {
                         self.acknowledgementStarvedSince = last
+                        self.toleratedSilenceLogMark = 0
                         self.audit(.warn, String(
                             format: "guest application acknowledgements starved for %.1f s; resident liveness is still answering and the independent lease clock remains armed",
                             silence))
                         self.status = "The Mac is busy in another interaction; "
                             + "pointer safety remains armed"
                     }
+                    /* Resident liveness is a TCP read, and a half-open
+                       connection can keep answering "alive" long after the
+                       machine underneath it stopped being reachable. Trust
+                       it for the length of any real gesture, but not
+                       forever: past the backstop this stops being patience
+                       and becomes the dead-man fallback the seconds-scale
+                       watchdog already was before liveness was consulted
+                       at all. */
+                    guard silence < self.starvationBackstop else {
+                        self.audit(.error, String(
+                            format: "ack silence %.1f s exceeded the %.0f s "
+                                + "backstop despite resident liveness still "
+                                + "answering; treating as dead rather than "
+                                + "trusting a possibly half-open liveness "
+                                + "channel indefinitely",
+                            silence, self.starvationBackstop))
+                        self.guestEnded(reason: "UDP acknowledgements "
+                            + "stopped despite resident liveness "
+                            + "(backstop exceeded)")
+                        return
+                    }
+                    if silence - self.toleratedSilenceLogMark
+                        >= self.acknowledgementTimeout {
+                        self.toleratedSilenceLogMark = silence
+                        self.audit(.info, String(
+                            format: "ack silence %.1f s tolerated: resident "
+                                + "liveness answering (starvation, not death)",
+                            silence))
+                    }
+                    self.announceStarvationIfDue(silence: silence)
                 } else {
                     self.guestEnded(reason: "UDP acknowledgements stopped")
                     return
@@ -1009,6 +1425,49 @@ final class MirrorContinuityController: ObservableObject,
         }
         self.timer = timer
         timer.resume()
+    }
+
+    /// THE SENTENCE, WRITTEN ONCE.
+    ///
+    /// What is actually known at this moment is narrow and worth stating
+    /// precisely: the guest application has not acknowledged for `silence`
+    /// seconds, and the resident — a Time Manager task that answers whether
+    /// or not any application is scheduled — is still answering. So the Mac
+    /// is running and NOW is not being given time, which under cooperative
+    /// scheduling is what a modal alert in *another* application looks like
+    /// from here. It is not the only thing that looks like it (a menu held
+    /// down does too), which is why this waits ten seconds first and why the
+    /// sentence describes rather than diagnoses.
+    ///
+    /// The second half is the part a person can act on, and it is honest
+    /// about the current limitation: Continuity's clicks travel through the
+    /// guest application's own task time, so while it is starved NOW cannot
+    /// press that alert's button for the person. Dismissing it has to happen
+    /// at the Mac. When the resident learns to serve a press without the
+    /// application (docs/open-issues.md, the foreign-modal entry), this
+    /// sentence is the one that changes.
+    static func starvationMessage(silence: TimeInterval) -> String {
+        String(
+            format: "NOW on the Mac has not answered for %.0f s, but the "
+                + "machine itself is still running — which is what another "
+                + "application's modal alert looks like from here. Dismiss "
+                + "it at the Mac; Continuity cannot click it for you while "
+                + "NOW is starved.",
+            silence)
+    }
+
+    private func announceStarvationIfDue(silence: TimeInterval) {
+        guard !starvationAnnounced, silence >= starvationAnnounceAfter else {
+            return
+        }
+        starvationAnnounced = true
+        let message = Self.starvationMessage(silence: silence)
+        /* The status line and the notification are handed the same string,
+           never two drafts of it — the rule announceDragRefusal already
+           carries, for the same reason. */
+        status = message
+        audit(.warn, message)
+        onStarvation?(message)
     }
 
     static func pointerLaneWaitingStatus(_ error: NWError) -> String {
@@ -1051,7 +1510,19 @@ final class MirrorContinuityController: ObservableObject,
     private func encodedState(inside: Bool, keepalive: Bool) -> Data {
         var flags: ContinuityStateDatagram.Flags = []
         if inside { flags.insert(.inside) }
+        /* LEVEL OR EDGE, ONE BIT. `wireButtonDown` is the click cycle's
+           edge, `carriedButtonLevel` the carry's held level; the guest's
+           input proc cannot tell them apart and must not — it wants to know
+           whether the button is down, which under a carry it is. What
+           separates them is `buttonGeneration`, which only the cycle
+           advances. See `carriedButtonLevel`. */
         if wireButtonDown { flags.insert(.primaryDown) }
+        /* The carry rides its OWN bit. Folding it into .primaryDown gave a
+           stale button_generation a down flag at every fresh epoch, and the
+           resident posted the phantom press that clicked and
+           marquee-selected at random on 2026-08-17. Only the guest drag's
+           input proc reads this level. */
+        if carriedButtonLevel { flags.insert(.carriedLevel) }
         if keepalive { flags.insert(.keepalive) }
         let packet = ContinuityStateDatagram(
             nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,
@@ -1099,6 +1570,8 @@ final class MirrorContinuityController: ObservableObject,
                                 format: "guest application acknowledgements recovered after %.1f s",
                                 ProcessInfo.processInfo.systemUptime - starved))
                             self.acknowledgementStarvedSince = nil
+                            self.toleratedSilenceLogMark = 0
+                            self.starvationAnnounced = false
                             self.status = "direct pointer connected at "
                                 + "\(self.acceptedHz) Hz"
                         }
@@ -1181,6 +1654,11 @@ final class MirrorContinuityController: ObservableObject,
             point = deferredButtonPoint
         }
         deferredButtonPoint = nil
+        /* Only a release that carries the settled point earns the teardown's
+           silence — an ordinary click's release, or one that wandered off the
+           settled point, leaves the epoch ending exactly as it always did. */
+        settledReleasePoint = heldSettlePoint == point ? point : nil
+        heldSettlePoint = nil
         positionDirty = true
         advancePositionIfNeeded()
         advanceButton(to: false)
@@ -1386,6 +1864,12 @@ final class MirrorContinuityController: ObservableObject,
     /// particular, click timing cannot cross an epoch boundary and masquerade
     /// as evidence about the next guest double-click.
     private func clearTransportState() {
+        /* CAPTURED BEFORE THE CLEAR. The ended-epoch record forty lines
+           down needs to know whose epoch this was, and `target = nil`
+           below runs first — reading `target` at the record site left
+           `endedEpoch` unrecorded on EVERY path, and every after-epoch
+           mint died at "belonged to nobody" (attended, 2026-08-17). */
+        let endedKey = target?.key
         _ = keepaliveClock.stop()
         timer?.cancel()
         timer = nil
@@ -1408,12 +1892,22 @@ final class MirrorContinuityController: ObservableObject,
         validAcks = 0
         lastAcknowledgementUptime = nil
         acknowledgementStarvedSince = nil
+        toleratedSilenceLogMark = 0
+        starvationAnnounced = false
         lastAuditedButtonGeneration = 0
         lastPrimaryDownUptime = nil
+        heldSettlePoint = nil
+        settledReleasePoint = nil
         buttonTransitionSentUptime = nil
         buttonTransitionSourceUptime = nil
         previousButtonGeneration = 0
         previousButtonDown = false
+        /* THE LEVEL DIES WITH THE EPOCH IT WAS HELD IN. The carry's own
+           lifecycle clears it on every exit path (see
+           `ContinuityEdgeController.holdCarriedButton` callers); this is
+           the floor under those, because a level surviving into the next
+           epoch would hand the next drag a button nobody is holding. */
+        carriedButtonLevel = false
         resetButtonState(.transport, reason: "authority epoch ended")
         keyGeneration = 0
         lastForwardedModifiers = 0
@@ -1421,6 +1915,21 @@ final class MirrorContinuityController: ObservableObject,
            is that rule made mechanical: the next epoch gets its own
            generation 1 and cannot redeem consent given in the last one. */
         selectionCache.clear(reason: "the Continuity epoch ended")
+        /* WHOSE EPOCH JUST ENDED, and it is not a second cache. The target
+           is cleared on this line's own account, so without this record the
+           frame that carries a crossing gesture's generation — which by
+           construction cannot be sent until the epoch is over — arrives
+           from a machine this Mac no longer recognises as the owner of
+           anything. It names one epoch and one gesture, and it is dropped
+           the moment a new epoch is armed. */
+        if epoch != 0, let key = endedKey {
+            endedEpoch = EndedEpoch(epoch: epoch, key: key,
+                                    dragSeq: announcedDragSeq)
+        }
+        /* The announcement dies with the epoch it was made under. A join
+           key outliving its consent would let the NEXT epoch's application
+           frame claim a gesture from the last one. */
+        announcedDragSeq = nil
     }
 
     private enum ButtonResetScope {
@@ -1487,6 +1996,15 @@ final class MirrorContinuityController: ObservableObject,
         let delayKey = reconnectDelayKey(for: machine)
         reconnectDelay = defaults.object(forKey: delayKey) == nil
             ? seed.reconnectDelay : clampReconnectDelay(defaults.double(forKey: delayKey))
+        let entryInsetKey = edgeEntryInsetKey(for: machine)
+        let deadzoneDepthKey = edgeDeadzoneDepthKey(for: machine)
+        edge.updateEdgeGeometry(ContinuityEdgeGeometry(
+            entryInsetPixels: defaults.object(forKey: entryInsetKey) == nil
+                ? ContinuityEdgeGeometry.default.entryInsetPixels
+                : defaults.double(forKey: entryInsetKey),
+            deadzoneDepth: defaults.object(forKey: deadzoneDepthKey) == nil
+                ? ContinuityEdgeGeometry.default.deadzoneDepth
+                : defaults.double(forKey: deadzoneDepthKey)))
         loadingSettings = false
     }
 

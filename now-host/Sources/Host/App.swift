@@ -295,6 +295,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         state.setQuickCaptureFeedback { [weak flasher] in
             flasher?.flash($0.flash)
         }
+        /* Not a restatement of the refusal — `flash` has room for a
+           couple of words, the same shape as `QuickCaptureOutcome.flash`,
+           while the sentence itself goes to the notification banner and
+           the Continuity status line. This is the "somebody is looking at
+           the corner of the screen even with the app buried" half of the
+           pair; the notification is the "the banner is what a person
+           mid-drag actually sees" half. */
+        state.setDragRefusalFeedback { [weak flasher] _ in
+            flasher?.flash("⚠ File drag refused")
+        }
 
         statusWatch = state.guestStatus.$status.sink { [weak self] _ in
             self?.refreshStatusItemTitle()

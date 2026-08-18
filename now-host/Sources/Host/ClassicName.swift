@@ -84,6 +84,39 @@ enum ClassicName {
         return nil
     }
 
+    /// What changed, if anything, projecting `name` cost — the
+    /// classification `ContinuityOffer.item.nameAdjusted` carries so a
+    /// person is not surprised by a name they did not choose. Nil means
+    /// `project` returns the name unchanged.
+    ///
+    /// Approximates the leading-dot and bare-colon cases as `truncated`:
+    /// both force `passthrough` to fail without shortening or
+    /// resubstituting a character, and neither has occurred once in this
+    /// project's own file names, so a coarser answer there was preferred
+    /// to a third code the contract does not define.
+    static func adjustment(for name: String) -> String? {
+        guard passthrough(name) == nil else { return nil }
+        let nfc = name.precomposedStringWithCanonicalMapping
+        let unencodable = nfc.unicodeScalars.contains {
+            String($0).data(using: .macOSRoman) == nil
+        }
+        /* The length test cannot ask `nfc.data(using: .macOSRoman)` when
+           the string is unencodable — that returns nil for the WHOLE
+           string over one bad scalar, which would make every
+           transliterated name read as too-long too. Measured the way
+           `fingerprinted` actually substitutes instead: one byte per
+           scalar MacRoman cannot spell, its own encoded length otherwise. */
+        let projectedBytes = nfc.unicodeScalars.reduce(0) { total, scalar in
+            total + (String(scalar).data(using: .macOSRoman)?.count ?? 1)
+        }
+        let tooLong = projectedBytes > maxBytes
+        switch (tooLong, unencodable) {
+        case (true, true): return "both"
+        case (false, true): return "transliterated"
+        default: return "truncated"
+        }
+    }
+
     // MARK: - The projection itself
 
     /// The composed name when it is already one the other machine can

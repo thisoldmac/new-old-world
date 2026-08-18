@@ -300,6 +300,8 @@ final class CommandParityTests: XCTestCase {
     private static let reachedByFallback: [String: String] = [
         "putstat": "no arguments; renders as rows through console_reply.c",
         "mirrorlog": "closed on/off/status grammar is the raw line's first word",
+        "offer": "the flag alone, \"--take\", or empty to report — the raw "
+                + "line is offer's own grammar (x-line)",
         "mouseloc": "no arguments; renders as rows through console_reply.c",
         "desktop": "no arguments; renders as rows through console_reply.c",
         "development-build": "closed status, cancel or start grammar is the raw line",

@@ -279,6 +279,308 @@ int main(void)
               == kNowGrabGrantExpired);
     }
 
+    /* --- the last check, and the wrong-file case itself -------------------
+
+       METAL, 2026-08-15 17:19. `hello.txt` was the published generation,
+       Michelle pressed on `main.c` and dragged it across the edge, and the
+       grab named the generation it had every right to name. Every check
+       above says yes to that grab. This is the one that says no.
+
+       Watched failing against today's code: with confirm_serve_against_finder
+       absent from now_continuity_selection_grab, the guest hands out
+       `hello.txt` and the person watches the wrong file arrive. */
+    {
+        NowContinuityStubItem serving = item_named("hello.txt", 42, 1000, 0);
+        NowContinuityStubItem dragged = item_named("main.c", 42, 3000, 0);
+        NowContinuityStubItem touched = item_named("hello.txt", 42, 9999, 0);
+
+        /* The Mac still holds what the grab names: serve it. */
+        CHECK(now_continuity_grab_confirm(&serving, 1, &serving)
+              == kNowGrabOK);
+        /* Identity, not freshness. A file saved between the publish and the
+           grab is still the file being dragged, and refusing it here would
+           be this guard inventing a defect of its own. */
+        CHECK(now_continuity_stub_same(&serving, &touched) == 0);
+        CHECK(now_continuity_grab_confirm(&serving, 1, &touched)
+              == kNowGrabOK);
+        /* THE WRONG FILE. */
+        CHECK(now_continuity_grab_confirm(&serving, 1, &dragged)
+              == kNowGrabStaleSelection);
+        /* Same name, different folder — the identity triple, not the name. */
+        CHECK(now_continuity_grab_confirm(&serving, 1, &elsewhere)
+              == kNowGrabStaleSelection);
+        /* Nothing selected any more. */
+        CHECK(now_continuity_grab_confirm(
+                  &serving, 1, (const NowContinuityStubItem *)0)
+              == kNowGrabNoSelection);
+        /* THE FINDER DID NOT ANSWER, and that refuses too: "we could not
+           check" is not a reason to send somebody's file. */
+        CHECK(now_continuity_grab_confirm(
+                  &serving, 0, (const NowContinuityStubItem *)0)
+              == kNowGrabStaleSelection);
+        /* Not even when a stale observation rides along with the failure. */
+        CHECK(now_continuity_grab_confirm(&serving, 0, &serving)
+              == kNowGrabStaleSelection);
+        CHECK(now_continuity_grab_confirm(
+                  (const NowContinuityStubItem *)0, 1, &serving)
+              == kNowGrabNoSelection);
+    }
+
+    /* --- the drag source ---------------------------------------------
+       A generation minted by the Drag Manager rather than by the poll.
+       Three rules, and each one is a way the two sources could have been
+       collapsed into one and silently broken something. */
+    {
+        NowContinuityStubTable table;
+        NowContinuityStubItem dragged = item_named("main.c", 4, 1000, 0);
+        NowContinuityStubItem polled = item_named("hello.txt", 4, 900, 0);
+        NowContinuityStubItem observed;
+
+        now_continuity_stub_reset(&table, 7);
+
+        /* A file nobody selected. The poll never saw it and the table is
+           empty; the drag alone mints generation 1. */
+        CHECK(now_continuity_stub_observe_drag(&table, &dragged, 11) == 1);
+        CHECK(table.generation == 1);
+        CHECK(table.have_item == 1);
+        CHECK(table.item.source == kNowStubSourceDrag);
+        CHECK(table.item.drag_seq == 11);
+        CHECK(strcmp(table.item.name, "main.c") == 0);
+
+        /* IDEMPOTENT ON THE SEQUENCE. The drain is edge-triggered but the
+           table must not move if it is drained twice. */
+        CHECK(now_continuity_stub_observe_drag(&table, &dragged, 11) == 0);
+        CHECK(table.generation == 1);
+
+        /* A NEW DRAG OF THE SAME FILE IS A NEW GENERATION, which is where
+           the drag source parts company with the poll: the poll would
+           suppress an identical item, and a host that could not tell two
+           pick-ups apart would bind the first gesture to the second
+           gesture's cross. */
+        CHECK(now_continuity_stub_observe_drag(&table, &dragged, 12) == 1);
+        CHECK(table.generation == 2);
+        CHECK(table.item.drag_seq == 12);
+
+        /* A drag with no sequence is not a drag. */
+        CHECK(now_continuity_stub_observe_drag(&table, &dragged, 0) == 0);
+        CHECK(table.generation == 2);
+
+        /* THE SOURCE BELONGS TO THE GENERATION. The poll re-observing the
+           item the drag published must refresh the fields it is allowed to
+           refresh and leave the source alone: demoting it here would move
+           the witness the grab confirmation asks without moving the
+           generation the host bound. */
+        {
+            NowContinuityStubItem same = dragged;
+
+            same.data_size = 8192;       /* a field the poll may refresh */
+            CHECK(now_continuity_stub_observe(&table, &same) == 0);
+            CHECK(table.generation == 2);
+            CHECK(table.item.data_size == 8192);
+            CHECK(table.item.source == kNowStubSourceDrag);
+            CHECK(table.item.drag_seq == 12);
+        }
+
+        /* DELIBERATE SPEC CHANGE (2026-08-17, attended): a poll that sees
+           a DIFFERENT file does NOT replace a drag-sourced stub, and a
+           poll that sees nothing does not clear it. The post-release
+           snap-back churns the Finder selection before the epoch settles,
+           and the old rule handed the grant hold a churned or empty table
+           — "the drag no longer names what it was given" on every
+           crossing gesture. The drag holds the slot until the settle or
+           another drag. */
+        CHECK(now_continuity_stub_observe(&table, &polled) == 0);
+        CHECK(table.generation == 2);
+        CHECK(table.item.source == kNowStubSourceDrag);
+        CHECK(table.item.drag_seq == 12);
+        CHECK(now_continuity_stub_observe(
+                  &table, (const NowContinuityStubItem *)0) == 0);
+        CHECK(table.have_item == 1);
+        CHECK(table.generation == 2);
+
+        /* --- the confirmation, against the right witness --------------
+           The gesture this whole route exists to serve: the file being
+           dragged is NOT the file selected, and confirming the drag
+           against the selection would refuse it. */
+        {
+            NowContinuityStubItem serving = dragged;
+
+            serving.source = kNowStubSourceDrag;
+            serving.drag_seq = 12;
+
+            /* The selection confirmation would refuse it — same call, same
+               inputs, and this is the check that proves the two witnesses
+               are not interchangeable. */
+            CHECK(now_continuity_grab_confirm(&serving, 1, &polled)
+                  == kNowGrabStaleSelection);
+
+            /* The drag confirmation serves it. */
+            observed = dragged;
+            CHECK(now_continuity_grab_confirm_drag(&serving, 1, &observed, 12)
+                  == kNowGrabOK);
+
+            /* SAME FILE, DIFFERENT DRAG. Stricter than the selection
+               witness was ever asked to be: a second pick-up of the same
+               icon has a generation of its own and must not be served
+               under the first one's name. */
+            CHECK(now_continuity_grab_confirm_drag(&serving, 1, &observed, 13)
+                  == kNowGrabStaleSelection);
+
+            /* A different file under the same sequence — the plane moved on
+               between the mint and the grab. */
+            CHECK(now_continuity_grab_confirm_drag(&serving, 1, &polled, 12)
+                  == kNowGrabStaleSelection);
+
+            /* The plane could not be read. Refuses, for the reason the
+               Finder's silence refuses. */
+            CHECK(now_continuity_grab_confirm_drag(&serving, 0, &observed, 12)
+                  == kNowGrabStaleSelection);
+            CHECK(now_continuity_grab_confirm_drag(
+                      &serving, 1, (const NowContinuityStubItem *)0, 12)
+                  == kNowGrabNoSelection);
+
+            /* THE WRONG WITNESS FOR THIS STUB is a caller error, not a
+               refusal the person caused, and is reported as one. */
+            CHECK(now_continuity_grab_confirm_drag(&polled, 1, &polled, 12)
+                  == kNowGrabNoSelection);
+            {
+                NowContinuityStubItem seqless = serving;
+
+                seqless.drag_seq = 0;
+                CHECK(now_continuity_grab_confirm_drag(&seqless, 1,
+                                                       &observed, 0)
+                      == kNowGrabNoSelection);
+            }
+            CHECK(now_continuity_grab_confirm_drag(
+                      (const NowContinuityStubItem *)0, 1, &observed, 12)
+                  == kNowGrabNoSelection);
+        }
+
+        /* A drag-sourced generation survives into the grant hold with its
+           source and sequence intact — the cross ENDS the epoch, so this is
+           the path every real drag-sourced grab actually takes. */
+        {
+            NowContinuityGrantHold hold;
+
+            memset(&hold, 0, sizeof hold);
+            now_continuity_stub_reset(&table, 9);
+            CHECK(now_continuity_stub_observe_drag(&table, &dragged, 21) == 1);
+            now_continuity_grant_hold(&hold, &table, 100);
+            CHECK(hold.item.source == kNowStubSourceDrag);
+            CHECK(hold.item.drag_seq == 21);
+        }
+    }
+
+    /* --- the mint that arrives after its epoch ended -------------------
+
+       THE CROSSING GESTURE, which is the one the whole plane exists for
+       and the one that published nothing at all until this existed. The
+       shape, from metal 2026-08-16: an epoch is live, a person presses an
+       icon nobody selected, the Drag Manager names it to the resident, the
+       pointer crosses — which ENDS the epoch — and only then, when the
+       Finder's drag loop lets go, does this application get task time to
+       drain the identity. There is no live epoch to publish under and
+       nothing in the table to hold. */
+    {
+        NowContinuityStubTable post;
+        NowContinuityGrantHold hold;
+        NowContinuityEndedEpoch ended;
+        NowContinuityStubItem picked = item_named("HELLO_CLAUDE.txt", 2,
+                                                  3400000000UL, 0);
+        NowContinuityStubItem second = item_named("NOTES.txt", 2,
+                                                  3400000001UL, 0);
+        NowContinuityStubItem folder2 = item_named("Projects", 2, 1000, 1);
+        const NowContinuityStubItem *serve;
+        unsigned long table_epoch;
+        int after_epoch;
+
+        memset(&post, 0, sizeof post);
+        memset(&hold, 0, sizeof hold);
+        memset(&ended, 0, sizeof ended);
+
+        /* Nothing has ended yet: there is no consent to publish under, and
+           a drain arriving now is a person using their own Macintosh. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 2, 500) == 0);
+
+        /* Epoch 4 ran and its last generation was 3. */
+        now_continuity_epoch_ended(&ended, 4, 3, 1000);
+        CHECK(ended.epoch == 4 && ended.generation == 3);
+
+        /* The drain, a quarter of a second later. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 2, 1015) == 1);
+        CHECK(post.epoch == 4);
+        /* A NUMBER NOBODY PUBLISHED: the ended epoch's last generation
+           plus one, so a host holding generation 3 cannot confuse them. */
+        CHECK(post.generation == 4);
+        CHECK(post.have_item && post.item.source == kNowStubSourceDrag);
+        CHECK(post.item.drag_seq == 2);
+        CHECK(strcmp(post.item.name, "HELLO_CLAUDE.txt") == 0);
+
+        /* AND IT IS GRANTABLE AT ONCE, which is the half a publish alone
+           would have got wrong: the host binds this number and asks for it
+           while no epoch is live at all. */
+        CHECK(hold.epoch == 4 && hold.generation == 4);
+        CHECK(hold.item.drag_seq == 2);
+        {
+            NowContinuityStubTable live;
+
+            now_continuity_stub_reset(&live, 0);
+            table_epoch = 0;
+            serve = (const NowContinuityStubItem *)0;
+            after_epoch = 0;
+            CHECK(now_continuity_grab_resolve(&live, &hold, &table_epoch,
+                                              0, 4, 4, 1100,
+                                              &serve, &after_epoch)
+                  == kNowGrabOK);
+            CHECK(after_epoch == 1);
+            CHECK(serve != (const NowContinuityStubItem *)0);
+            CHECK(strcmp(serve->name, "HELLO_CLAUDE.txt") == 0);
+        }
+
+        /* THE SAME DRAG DRAINED TWICE mints nothing further. The observer
+           is edge-triggered, but the table must be idempotent anyway. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 2, 1020) == 0);
+        CHECK(post.generation == 4);
+
+        /* A SECOND GESTURE under the same ended epoch counts on from the
+           first rather than reusing its number. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &second, 3, 1030) == 1);
+        CHECK(post.generation == 5 && post.item.drag_seq == 3);
+
+        /* A folder is refused here, once, rather than at the host's bind
+           and again at the grab. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &folder2, 4, 1040) == 0);
+        /* No sequence is no gesture. */
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 0, 1040) == 0);
+
+        /* THE WINDOW IS THE GRANT'S WINDOW, for the grant's reason: a
+           gesture is a human act, not a standing consent. One tick past it
+           and the mint refuses rather than publishing a number that could
+           never be redeemed. */
+        CHECK(now_continuity_stub_publish_post_epoch(
+                  &post, &hold, &ended, &picked, 9,
+                  1000 + kNowContinuityGrantTicks) == 1);
+        CHECK(now_continuity_stub_publish_post_epoch(
+                  &post, &hold, &ended, &picked, 10,
+                  1000 + kNowContinuityGrantTicks + 1) == 0);
+
+        /* A new epoch clears the record, so a drain that arrives later
+           cannot publish under a consent that is over twice. */
+        now_continuity_epoch_ended_release(&ended);
+        CHECK(now_continuity_stub_publish_post_epoch(&post, &hold, &ended,
+                                                     &picked, 11, 1100) == 0);
+        /* An epoch of zero never ended; recording one is recorded as
+           nothing. */
+        now_continuity_epoch_ended(&ended, 0, 7, 1200);
+        CHECK(ended.epoch == 0);
+    }
+
     /* Every refusal has a contract code and success has none. */
     CHECK(now_continuity_grab_code(kNowGrabOK) == (const char *)0);
     CHECK(strcmp(now_continuity_grab_code(kNowGrabBadEpoch),

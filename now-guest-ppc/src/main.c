@@ -6,6 +6,7 @@
 
 #include "confirm.h"
 #include "continuity_intake.h"
+#include "continuity_dragmgr.h"
 #include "carbon_warning.h"
 #include "nowlog.h"
 #include "fileshare.h"
@@ -559,6 +560,33 @@ static void ask_about_replacing(void)
     now_wire_send_resolve_replace(now_confirm(heading, detail, "Replace"));
 }
 
+/* The same, for a file coming the other way: somebody on the Mac dropped
+   one over here and this Macintosh already has that name. Same reason it
+   cannot be asked where the collision is found (pump.h), same place it
+   is safe to ask, and deliberately the same words — a person meets one
+   replace question on this machine, not two that differ by direction.
+
+   The Mac's own name is not in the sentence. On the send side the peer
+   is named because the file is going somewhere else and a person should
+   know where; here the file is landing on the machine they are looking
+   at, and "this Macintosh already has one" is a fact about the screen in
+   front of them. */
+static void ask_about_replacing_incoming(void)
+{
+    char name[64];
+    char heading[96];
+    char detail[128];
+
+    if (!now_wire_put_pending_replace(name, sizeof name)) {
+        return;
+    }
+    snprintf(heading, sizeof heading, "Replace \"%.31s\"?", name);
+    snprintf(detail, sizeof detail,
+             "This Macintosh already has a file with this name. The old "
+             "one goes to the Trash.");
+    now_wire_put_resolve_replace(now_confirm(heading, detail, "Replace"));
+}
+
 int main(void)
 {
     EventRecord event;
@@ -662,6 +690,16 @@ int main(void)
            ordering. */
         now_scene_note_front_process();
         conn_service();
+        /* Ripen an armed promise drag. It is HERE, in the main loop,
+           and not at wire arrival on purpose: the Drag Manager tracks a
+           button, and the button on this side is the synthetic one the
+           resident applies. Starting the drag when the request landed
+           would race the apply and track nothing.
+
+           Free when nothing is armed - one integer compare - and after
+           conn_service so an arm placed by a wire verb this same pass
+           can ripen without waiting a whole loop. */
+        now_continuity_dragmgr_service();
         dispatch_pending_menu_choice();
         workshop_idle();
         /* Whether or not the Workshop is open: a file the host pushes
@@ -686,6 +724,7 @@ int main(void)
            mirror_log.h carries the boundary in full. */
         now_mirror_log_idle();
         ask_about_replacing();
+        ask_about_replacing_incoming();
         /* NEVER SLEEP ZERO. A zero sleep tells WaitNextEvent to return
            at once, so this application spins and, on a cooperatively
            scheduled Macintosh, nothing else runs. That is survivable for
@@ -768,6 +807,7 @@ int main(void)
     now_log_flush();
     conn_shutdown();
     now_continuity_shutdown();
+    now_continuity_dragmgr_shutdown();
 
     now_log(kLogInfo, "app", "quit: stopping pump");
     now_log_flush();

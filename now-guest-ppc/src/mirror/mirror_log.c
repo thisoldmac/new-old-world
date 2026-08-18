@@ -1,5 +1,7 @@
 #include "mirror_log.h"
 
+#include "continuity_service.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -189,6 +191,12 @@ void now_mirror_log_idle(void)
 {
     NowContentBlock *block;
     MirrorContentSeen now_seen;
+
+    /* V14's drag observer, drained on the same idle and ahead of the
+       poll gate: a drag lasts a few seconds and this observer's whole
+       value is the lifecycle line, which must not wait on a cadence
+       chosen for content-plane counters. */
+    now_continuity_drag_observe_idle();
 
     if (g_polled_once && (long)(TickCount() - g_next_poll) < 0) {
         return;

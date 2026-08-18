@@ -9,7 +9,7 @@ authority: [docs/continuity-mode.md]
 module_ids: [continuity]
 source_dependencies: [docs/continuity-mode.md, now-host/Sources/Host/ContinuityHostModule.swift, now-host/Sources/Host/MirrorContinuityController.swift, now-host/Sources/Host/ContinuityConnectionDefaults.swift, now-host/Sources/Host/HostSettingsView.swift, now-host/Sources/Host/ContinuityEdgeController.swift, now-host/Sources/Host/ContinuityDisplayLayout.swift, now-guest-ppc/src/input, contract/asyncapi.yaml, contract/peek_table.h]
 media_ids: [continuity-host, continuity-ppc]
-last_verified: 2026-08-15
+last_verified: 2026-08-16
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -41,6 +41,15 @@ Mac; a configurable return shortcut, always handled on this Mac, brings
 every control home at once. The update rate, reconnection behavior, and
 the product input options live beside the arrangement, saved per machine.
 Diagnostic probes record into Logs.
+
+Two steppers beside those controls tune the shared edge itself: **Entry
+inset** is the click-wiggle guard — how far inside the guest boundary a
+crossing has to land before it re-enters, so an ordinary click near the
+edge cannot tip straight back across it. **File-drag deadzone** is how
+far the file-drag catch surface widens for the length of a guest→host
+handoff; at zero, the cursor has to return to the physical edge before
+this Mac tries to take over the drag. Both are saved per machine, like
+the update rate.
 
 A classic Mac that has never connected before starts from a separate seed:
 the "Defaults for New Connections" tab of the Settings window
@@ -97,6 +106,16 @@ captured on this Mac except while a pointer session is actively owned.
   dead-man timers, and reconnection follows the configured delay.
 - **The pointer seems stuck at the edge** — the classic display probably
   has no shared edge in the arrangement; drag it against a host display.
+- **"Accessibility permission needed"** — without it, this Mac cannot
+  consume its own mouse and keyboard events while the pointer is on the
+  guest, so the pointer still crosses but host clicks also reach host
+  apps and window-drag protection is off. The module shows this row with
+  a button to open Privacy & Security › Accessibility; because
+  Accessibility is granted per copy of the app, the row also names which
+  copy is running. If the permission is already granted but the row
+  still appears, this copy of the app needs to be relaunched — macOS
+  only picks up a new Accessibility grant for a process at its next
+  launch.
 
 ## Current limitations
 

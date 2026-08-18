@@ -69,6 +69,42 @@ final class CaptureNotifier: NSObject, UNUserNotificationCenterDelegate {
                                          content: content, trigger: nil))
     }
 
+    /// Announce a Continuity file drag that ended in refusal — a wrong-file
+    /// grab or a host→guest drop with no scene to resolve against. No
+    /// attachment and no click-to-open: there is no file to open, only a
+    /// sentence to read at the moment the drag itself just silently ended.
+    /// The body is never a second draft of the refusal: every caller hands
+    /// this the exact sentence the status line already got, so the two can
+    /// never say different things about the same drag.
+    func announce(continuityDragRefusal message: String) {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        requestAuthorizationIfNeeded(center)
+
+        let content = UNMutableNotificationContent()
+        content.title = "File drag refused"
+        content.body = message
+        center.add(UNNotificationRequest(identifier: UUID().uuidString,
+                                         content: content, trigger: nil))
+    }
+
+    /// Announce that the Mac has stopped giving NOW any time while the
+    /// machine underneath it is still answering — the shape a foreign
+    /// application's modal alert has from this side. Same discipline as the
+    /// refusal above: the body is the exact sentence the status line got,
+    /// because the person may be reading either one.
+    func announce(continuityStarvation message: String) {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        requestAuthorizationIfNeeded(center)
+
+        let content = UNMutableNotificationContent()
+        content.title = "The Mac is not responding to NOW"
+        content.body = message
+        center.add(UNNotificationRequest(identifier: UUID().uuidString,
+                                         content: content, trigger: nil))
+    }
+
     private func requestAuthorizationIfNeeded(_ center: UNUserNotificationCenter) {
         guard !authorizationAsked else { return }
         authorizationAsked = true

@@ -101,6 +101,93 @@ NowPeekU32 now_continuity_release_due(NowPeekU32 applied_generation,
     return 0;
 }
 
+/* MAY THIS BUTTON EDGE BE APPLIED YET?
+ *
+ * APPLIED is not EXPOSED. The application moves the pointer through the
+ * Cursor Device Manager, whose record is upstream of the mouse global that
+ * every guest tracking loop actually samples; the manager call returns
+ * before that propagation happens (continuity_cursor.c already counts the
+ * lag as after_lag_pending/caught_up). A button transition applied inside
+ * that window is dispatched against the point the guest still believes in,
+ * not the one this side just requested.
+ *
+ * It cost a real file. On 2026-08-15 the host did the designed thing for a
+ * guest->host drag: settle the held pointer back to the press origin in its
+ * own packet, THEN release in the next one. The guest applied both in one
+ * service round, the release beat the propagation, and the Finder completed
+ * the move at the screen edge where the pointer had crossed rather than at
+ * the origin - cosmetic on the desktop, a real relocation out of a window.
+ * The host's ordering was never the missing guarantee; the wire is a
+ * latest-state mailbox and both packets carried the SAME settled point.
+ * What was missing was any barrier between applying that point and acting
+ * on it.
+ *
+ * Answers Exposed (apply now), Wait (poll again), or Expired (apply and say
+ * so). Expiry is deliberate: an edge held forever is a stuck drag, which is
+ * strictly worse than an edge at a stale point, so the deadline resolves the
+ * barrier rather than the barrier resolving the deadline. Unaskable is
+ * Exposed - a caller that cannot read the request or the pointer has nothing
+ * to wait FOR, and must not turn a missing instrument into a hang. */
+int now_continuity_button_barrier(int have_request, int have_observed,
+                                  NowPeekI32 request_h, NowPeekI32 request_v,
+                                  NowPeekI32 observed_h, NowPeekI32 observed_v,
+                                  NowPeekU32 waited_ticks,
+                                  NowPeekU32 deadline_ticks)
+{
+    if (!have_request || !have_observed)
+        return kNowContinuityBarrierExposed;
+    if (observed_h == request_h && observed_v == request_v)
+        return kNowContinuityBarrierExposed;
+    if (waited_ticks >= deadline_ticks)
+        return kNowContinuityBarrierExpired;
+    return kNowContinuityBarrierWait;
+}
+
+/* MUST THE EDGE'S OWN POSITION BE APPLIED FIRST?
+ *
+ * The barrier above asks whether the point this side applied has been
+ * exposed. It is only ever answerable if the point this side applied is the
+ * point the EDGE RIDES WITH, and on the one path that matters it is not.
+ *
+ * The resident drives the pointer through low memory at interrupt time while
+ * the application is starved inside the target's own drag loop, and says so
+ * in its own words: "the final point remains requested below so task time can
+ * reconcile the drawn Cursor Device once the release unwinds it". The
+ * application's reconcile is gated on the epoch still being ACTIVE - and a
+ * cross-edge handoff ends the epoch in the same breath as the release, so the
+ * gate declines exactly when the reconcile was promised. The application's
+ * last Cursor Device point then stays where the drag loop starved it, early
+ * and near the press, while the settled point the host sent lives only in low
+ * memory. The Cursor Device record is upstream of low memory, so that stale
+ * point is not merely a wrong reading: it is the point the machine will
+ * re-assert.
+ *
+ * Metal, PowerBook 1400c, 2026-08-15 17:19:06: applied=501,446 against
+ * exposed=504,451, where 504,451 is EXACTLY the point the host logged as
+ * settled. Nothing was rounding and nothing was lagging - the barrier was
+ * holding an edge against a point no longer on the wire, and spent its whole
+ * half-second deadline doing it.
+ *
+ * Never against the human's own hand: a guest-input exit means somebody
+ * touched the trackpad, and moving the pointer back for the sake of a tidy
+ * release would take the machine off them. */
+int now_continuity_settle_before_edge(NowPeekU32 exit_reason,
+                                      int have_edge, int position_valid,
+                                      int applied_valid,
+                                      NowPeekI32 request_h,
+                                      NowPeekI32 request_v,
+                                      NowPeekI32 applied_h,
+                                      NowPeekI32 applied_v)
+{
+    if (!have_edge || !position_valid)
+        return 0;
+    if (exit_reason == (NowPeekU32)kNowPeekContinuityExitGuestInput)
+        return 0;
+    if (!applied_valid)
+        return 1;
+    return applied_h != request_h || applied_v != request_v;
+}
+
 NowPeekU32 now_continuity_exit_due(
     NowPeekU32 ticks, NowPeekU32 last_arrival, NowPeekU32 lease,
     int have_physical, int expected_valid,

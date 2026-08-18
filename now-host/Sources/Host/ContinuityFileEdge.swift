@@ -14,6 +14,17 @@ import MirrorKitUI
 struct ContinuityDragSeed: Equatable, Sendable {
     /// `NSEvent.EventType` raw value of the constructed seed.
     var eventType: UInt
+    /// What the WINDOW SERVER says is the frontmost window at the seed
+    /// point. Reported beside `panelCoversPoint`, which is this process's
+    /// own frame arithmetic, because on metal the two disagreed and only
+    /// the server's answer routes a mouse event. See
+    /// `ContinuityCatchHitTest`.
+    var serverTopWindowNumber: Int = 0
+    /// Whether this app was active at the instant the seed was built. It is
+    /// the third leg of the same diagnosis: a background app's panel that
+    /// never went key, an event that never arrived, and an app that was
+    /// never front are three different failures that produced one symptom.
+    var appActive: Bool = false
     /// The window number the seed carries — the one AppKit anchors to.
     var windowNumber: Int
     /// The catch panel's own number, so the two can be compared in the log
@@ -40,6 +51,13 @@ struct ContinuityDragSeed: Equatable, Sendable {
         panelWindowNumber != 0 && windowNumber == panelWindowNumber
     }
 
+    /// The artifact-level companion to `panelCoversPoint`: not "our frame
+    /// contains this point" but "the window server would deliver a mouse
+    /// event here to us".
+    var serverOwnsPoint: Bool {
+        panelWindowNumber != 0 && serverTopWindowNumber == panelWindowNumber
+    }
+
     /// Logged verbatim beside the source event's provenance line, in the
     /// same grammar, so the two can be read against each other.
     var summary: String {
@@ -49,7 +67,84 @@ struct ContinuityDragSeed: Equatable, Sendable {
             + "resolved=\(resolvedToPanel ? "yes" : "no"), "
             + "clickCount=\(clickCount), "
             + "panelKey=\(panelKey ? "yes" : "no"), "
-            + "panelCoversPoint=\(panelCoversPoint ? "yes" : "no")"
+            + "panelCoversPoint=\(panelCoversPoint ? "yes" : "no"), "
+            + "serverTopWindow=\(serverTopWindowNumber), "
+            + "serverOwnsPoint=\(serverOwnsPoint ? "yes" : "no"), "
+            + "appActive=\(appActive ? "yes" : "no")"
+    }
+}
+
+/// The window server's answer to "whose window is at this point", beside
+/// the catch panel's own number.
+///
+/// It exists because `ContinuityDragSeed.panelCoversPoint` is
+/// `window.frame.contains(point)` — a fact about THIS process's idea of its
+/// own geometry, true the instant `setFrame` returns — while the routing of
+/// a posted `leftMouseDown` is decided by the window server, which is a
+/// different machine with a different clock. Measured on this Mac,
+/// 2026-08-15, the two disagree in two separate ways:
+///
+/// - for **15–25 ms and several runloop turns** after every widen, because
+///   a frame change reaches the server asynchronously and no synchronous
+///   flush (`CATransaction.flush`, `display`, `displayIfNeeded`, a zero-length
+///   runloop spin) brings it forward; and
+/// - **forever**, when the panel's surface is fully transparent — see
+///   `ContinuityFileEdge.hitTestableAlpha`.
+///
+/// This is the same rule as "the artifact carries it, not the intent": the
+/// old code asserted that it had widened the surface, which was true, and
+/// inferred that events would arrive there, which was not.
+struct ContinuityCatchHitTest: Equatable, Sendable {
+    /// `NSWindow.windowNumber(at:belowWindowWithWindowNumber:)` — the
+    /// server's frontmost window at the point.
+    var serverTopWindowNumber: Int
+    var panelWindowNumber: Int
+
+    var ownsPoint: Bool {
+        panelWindowNumber != 0 && serverTopWindowNumber == panelWindowNumber
+    }
+
+    var summary: String {
+        "serverTopWindow=\(serverTopWindowNumber), "
+            + "panelWindow=\(panelWindowNumber), "
+            + "ownsPoint=\(ownsPoint ? "yes" : "no")"
+    }
+}
+
+/// **What a host drag was carrying, kept past the death of the session that
+/// carried it.**
+///
+/// The host→guest cross ends the Finder-owned drag AT the edge (see
+/// `ContinuityEdgeController.endHostDragAtCross`), which means the drop this
+/// app accepts there is a STAGING, not the transfer: the person has not
+/// chosen where on the guest it lands yet. An `NSDraggingInfo`'s pasteboard
+/// is only valid for the length of that session, so what it named has to be
+/// copied somewhere that outlives it before the session ends.
+///
+/// **Only real file URLs stage.** A drag carrying nothing but file PROMISES
+/// names files that do not exist yet and are redeemed through a receiver
+/// tied to the live session; nothing here can hold one past the drop. That
+/// is why `snapshot` returns nil rather than an empty pasteboard, and why
+/// the caller treats nil as "do not end this drag early" — a promise-only
+/// drag keeps the pre-existing behaviour end to end.
+@MainActor
+enum ContinuityHostFileStaging {
+    /// A private pasteboard, not the drag pasteboard: the drag one dies with
+    /// the session this app is about to end.
+    static let name = NSPasteboard.Name("net.shelbel.now.continuity.staged")
+
+    static func snapshot(_ pasteboard: NSPasteboard) -> NSPasteboard? {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true,
+        ]
+        let urls = (pasteboard.readObjects(forClasses: [NSURL.self],
+                                           options: options) ?? [])
+            .compactMap { $0 as? NSURL }
+        guard !urls.isEmpty else { return nil }
+        let staged = NSPasteboard(name: name)
+        staged.clearContents()
+        guard staged.writeObjects(urls) else { return nil }
+        return staged
     }
 }
 
@@ -59,7 +154,15 @@ struct ContinuityDragSeed: Equatable, Sendable {
 @MainActor
 final class ContinuityFileEdge: NSObject {
     struct Callbacks {
-        var entered: (CGPoint) -> Bool
+        /// The pointer, AND WHAT IS BEING CARRIED. The pasteboard rides
+        /// along because the identity has to cross at the crossing — the
+        /// guest draws an honest drag, right name and right icon, before
+        /// any byte moves (`plan-host-to-guest-drag-2026-08-15.md`, "the one
+        /// early decision"). `draggingEntered` is the only moment this side
+        /// has both facts at once, and a drag that reached the edge without
+        /// its identity would have to publish from memory later or not at
+        /// all.
+        var entered: (CGPoint, NSPasteboard) -> Bool
         var exited: () -> Void
         var dropped: (NSPasteboard) -> Bool
         /// The guest→host session this app itself started has ended, wherever
@@ -69,6 +172,14 @@ final class ContinuityFileEdge: NSObject {
         /// silence — which is exactly the symptom the first metal round
         /// could not name.
         var dragEnded: (NSDragOperation, CGPoint) -> Void = { _, _ in }
+        /// How many dragging items this destination replaced the image
+        /// components of, once per foreign session. Reported rather than
+        /// assumed: whether a destination-side image replacement actually
+        /// reaches a FINDER-owned session's ghost is attended-only
+        /// evidence, and a zero here says the enumeration found nothing to
+        /// touch, which is a different failure from "it ran and the ghost
+        /// stayed". See `EdgeView.blankDragGhost`.
+        var ghostBlanked: (Int) -> Void = { _ in }
     }
 
     private final class EdgePanel: NSPanel {
@@ -113,16 +224,72 @@ final class ContinuityFileEdge: NSObject {
             (sender.draggingSource as AnyObject?) === self
         }
 
+        /// Which foreign session's ghost has already been reported blanked,
+        /// so the log carries one line per gesture rather than one per
+        /// `draggingUpdated` (which arrives on every motion).
+        private var blankedSequence: Int?
+
+        /// **Ask AppKit to draw this destination's copy of the drag with no
+        /// image at all.**
+        ///
+        /// A destination cannot move, cancel or reposition a session it does
+        /// not own — see `ContinuityEdgeController`'s "PRESENTATION, NOT
+        /// TRANSPORT" note — but it IS handed its own `NSDraggingItem`s
+        /// through `enumerateDraggingItems(options:for:classes:searchOptions:)`
+        /// and may replace their image components while the drag is over it.
+        /// An empty component array is the documented way to say "nothing".
+        ///
+        /// Nothing is restored on exit and nothing needs to be: these items
+        /// are the destination's own copies, valid for the length of this
+        /// destination's involvement, and the source's session keeps its own
+        /// components untouched. There is therefore no original provider to
+        /// put back — capturing and restoring one would be restoring a value
+        /// this side never owned.
+        ///
+        /// **Its visual effect is attended-only evidence.** Image
+        /// replacement is documented for destinations, and whether it
+        /// reaches the ghost the window server composites for a FINDER-owned
+        /// session is exactly the sort of claim that fails in practice. So
+        /// the count is reported out (`Callbacks.ghostBlanked`) and audited:
+        /// a run where the ghost stayed visible can at least be read for
+        /// whether the enumeration ran at all and how many items it touched.
+        ///
+        /// Scoped to foreign sessions by the `isOwnSession` guard at every
+        /// call site: this app's own guest→host drag draws a real image on
+        /// purpose.
+        private func blankDragGhost(_ sender: any NSDraggingInfo) {
+            var touched = 0
+            sender.enumerateDraggingItems(
+                options: [], for: self, classes: [NSPasteboardItem.self],
+                searchOptions: [:]) { item, _, _ in
+                item.imageComponentsProvider = { [] }
+                touched += 1
+            }
+            guard blankedSequence != sender.draggingSequenceNumber else {
+                return
+            }
+            blankedSequence = sender.draggingSequenceNumber
+            callbacks.ghostBlanked(touched)
+        }
+
         override func draggingEntered(_ sender: any NSDraggingInfo)
             -> NSDragOperation {
             guard !isOwnSession(sender) else { return [] }
-            return callbacks.entered(screenPoint(sender)) ? .copy : []
+            blankDragGhost(sender)
+            return callbacks.entered(screenPoint(sender),
+                                     sender.draggingPasteboard) ? .copy : []
         }
 
         override func draggingUpdated(_ sender: any NSDraggingInfo)
             -> NSDragOperation {
             guard !isOwnSession(sender) else { return [] }
-            return callbacks.entered(screenPoint(sender)) ? .copy : []
+            /* Re-applied on every update rather than only on entry: the
+               replacement is scoped to this destination's involvement, and
+               a session that re-enters after leaving gets its components
+               back from the source in between. */
+            blankDragGhost(sender)
+            return callbacks.entered(screenPoint(sender),
+                                     sender.draggingPasteboard) ? .copy : []
         }
 
         override func draggingExited(_ sender: (any NSDraggingInfo)?) {
@@ -174,6 +341,13 @@ final class ContinuityFileEdge: NSObject {
             guard let event else { return nil }
             return (event, ContinuityDragSeed(
                 eventType: event.type.rawValue,
+                /* The server's own answer, taken at the same instant as the
+                   frame arithmetic beside it, so the log can be read for
+                   which of the two was wrong instead of assuming they
+                   agree. */
+                serverTopWindowNumber: NSWindow.windowNumber(
+                    at: screenPoint, belowWindowWithWindowNumber: 0),
+                appActive: NSApp?.isActive ?? false,
                 windowNumber: event.windowNumber,
                 panelWindowNumber: window.windowNumber,
                 resolvedToPanel: event.window === window,
@@ -239,18 +413,36 @@ final class ContinuityFileEdge: NSObject {
     private let edgeView: EdgeView
     private var edge: ContinuitySharedEdge
     private var catching = false
+    /// How wide the catch surface widens to while `catching`. Configurable
+    /// — see `ContinuityEdgeGeometry.deadzoneDepth` — and defaults to the
+    /// value this shipped with before it was. Zero is legal: the strip
+    /// still exists (so the ARM phase has a window of ours to be
+    /// hit-tested against) but never widens beyond the ordinary two-pixel
+    /// sentinel, so a handoff has no arming cushion at all.
+    private var catchThickness: CGFloat
+    /// Whether the panel is currently letting every event fall through to
+    /// whatever real window is beneath it. See `setDropsThroughOwnSession`.
+    private var dropsThroughOwnSession = false
 
-    init(edge: ContinuitySharedEdge, callbacks: Callbacks) {
+    init(edge: ContinuitySharedEdge,
+         catchThickness: CGFloat = ContinuityEdgeGeometry.default.deadzoneDepth,
+         callbacks: Callbacks) {
         self.edge = edge
+        self.catchThickness = catchThickness
         edgeView = EdgeView(callbacks: callbacks)
         panel = EdgePanel(
-            contentRect: Self.frame(for: edge, catching: false),
+            contentRect: Self.frame(for: edge, catching: false,
+                                    catchThickness: catchThickness),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
         super.init()
         panel.contentView = edgeView
         panel.isOpaque = false
-        panel.backgroundColor = .clear
+        panel.backgroundColor = Self.hitTestableBackground
+        /* Redundant with the default, and set anyway: this is the property
+           the window server's routing decision is named after, and leaving
+           it implicit is how it took a metal round to suspect. */
+        panel.ignoresMouseEvents = false
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -263,9 +455,22 @@ final class ContinuityFileEdge: NSObject {
 
     func update(edge: ContinuitySharedEdge) {
         self.edge = edge
-        panel.setFrame(Self.frame(for: edge, catching: catching),
+        panel.setFrame(Self.frame(for: edge, catching: catching,
+                                  catchThickness: catchThickness),
                        display: false)
         panel.orderFrontRegardless()
+    }
+
+    /// Applies a new deadzone depth. Effective immediately — including
+    /// while a handoff is in progress and the strip is already widened —
+    /// because a person turning this knob wants to feel the new size, not
+    /// wait for the next crossing.
+    func update(catchThickness: CGFloat) {
+        guard catchThickness != self.catchThickness else { return }
+        self.catchThickness = catchThickness
+        panel.setFrame(Self.frame(for: edge, catching: catching,
+                                  catchThickness: catchThickness),
+                       display: false)
     }
 
     /// Widens the strip into a catch surface for one handoff, or narrows it
@@ -274,7 +479,8 @@ final class ContinuityFileEdge: NSObject {
     func setCatching(_ catching: Bool) {
         guard catching != self.catching else { return }
         self.catching = catching
-        panel.setFrame(Self.frame(for: edge, catching: catching),
+        panel.setFrame(Self.frame(for: edge, catching: catching,
+                                  catchThickness: catchThickness),
                        display: false)
         /* Key for the handoff instant only. The gesture arrives with the
            button already held and no application holding the press, so the
@@ -288,6 +494,47 @@ final class ContinuityFileEdge: NSObject {
 
     func update(callbacks: Callbacks) {
         edgeView.callbacks = callbacks
+    }
+
+    /// **A refusing destination is not a transparent one.**
+    ///
+    /// `EdgeView.isOwnSession` already answers this app's own drag session
+    /// with no operation — the panel must never let its own file drop on
+    /// itself — but a refusal still ANSWERS the drag. AppKit shows no `+`
+    /// badge and asks nothing else, because the refusing panel was the
+    /// topmost thing the window server hit-tested at that point. Measured
+    /// on this Mac, 2026-08-16, at the shipped 160 px `catchThickness`: a
+    /// human felt that refusal as a drop dead zone extending the full width
+    /// of the strip, because the badge could not appear until the cursor
+    /// physically cleared it and reached whatever was actually underneath.
+    ///
+    /// `ignoresMouseEvents` is the one property that makes a window
+    /// invisible to the window server's routing rather than merely
+    /// declining what it is asked — already the load-bearing fact behind
+    /// `catchSurfaceIsHitTestable` and `hitTestableAlpha` above. Set for the
+    /// length of the live session THIS APP itself seeded, the strip stops
+    /// being hit-tested at all and every drag query — including this one —
+    /// falls straight through to the real destination beneath it, which
+    /// answers with its own badge immediately, at whatever cursor position
+    /// the strip would otherwise have masked.
+    ///
+    /// Only the LIVE session gets this: the ARM phase before a session
+    /// exists still needs the window server to agree this panel owns the
+    /// seed point (`serverOwnsPoint`) before the synthetic primary-down is
+    /// posted, and the physical strip still has to widen before the tap
+    /// dies so a returning press has somewhere of ours to land — both of
+    /// which need the panel to keep being hit-testable. Only once
+    /// `beginFileDrag` has actually started a session does dropping through
+    /// apply, and the caller is responsible for undoing it the moment that
+    /// session ends — narrowing (`setCatching(false)`) and this are
+    /// independent knobs, because narrowing mid-session moves the drag
+    /// source's own window out from under a live drag (see
+    /// `returnGuestFileToHost`'s doc), while this only changes whether the
+    /// strip still intercepts.
+    func setDropsThroughOwnSession(_ dropsThrough: Bool) {
+        guard dropsThrough != dropsThroughOwnSession else { return }
+        dropsThroughOwnSession = dropsThrough
+        panel.ignoresMouseEvents = dropsThrough
     }
 
     func beginFileDrag(_ item: HostFileDragItem, at screenPoint: CGPoint,
@@ -330,10 +577,58 @@ final class ContinuityFileEdge: NSObject {
     /// has already left by the time the tap dies. Restored the moment the
     /// drag starts or the handoff is abandoned — a permanently wide surface
     /// would eat the edge of whatever app lives there.
-    static let catchThickness: CGFloat = 160
+    ///
+    /// How wide is now `catchThickness`, the instance property configured
+    /// from `ContinuityEdgeGeometry.deadzoneDepth` — see that type for why
+    /// 160 remains the default and why zero is a legal choice rather than a
+    /// clamp floor.
 
-    private static func frame(for edge: ContinuitySharedEdge,
-                              catching: Bool) -> CGRect {
+    /// **A window the window server cannot see is not a catch surface.**
+    ///
+    /// The strip was `backgroundColor = .clear` with a content view that
+    /// draws nothing, which leaves every pixel at alpha zero — and the
+    /// window server routes mouse events straight THROUGH such a window to
+    /// whatever is beneath it. `NSWindow.windowNumber(at:)` never returned
+    /// this panel, at any delay, deterministically over three rounds
+    /// (measured on this Mac, 2026-08-15). Frontness made no difference and
+    /// neither did key state; only the alpha did.
+    ///
+    /// That single fact is the whole of the marquee: the synthetic primary
+    /// down this app posts at the seed point fell through the panel onto the
+    /// Finder desktop, which took it for a rubber-band selection AND handed
+    /// the same event straight back through the global monitor as the "real"
+    /// one the drag was then seeded from — the metal log's `host drag seed
+    /// event: type=1, windowNumber=30, ourWindow=no`, a `leftMouseDown` we
+    /// posted ourselves.
+    ///
+    /// One part in 255 is enough for the server and is below the threshold
+    /// of a visible tint; a fully transparent strip is not a design goal, it
+    /// was an accident with teeth.
+    static let hitTestableAlpha: CGFloat = 1.0 / 255.0
+
+    static var hitTestableBackground: NSColor {
+        NSColor.black.withAlphaComponent(hitTestableAlpha)
+    }
+
+    /// Whether the panel is in a state the window server will hit-test at
+    /// all. Asserted by a test against a real AppKit panel, because the two
+    /// properties it reads are exactly the pair whose defaults look
+    /// harmless.
+    var catchSurfaceIsHitTestable: Bool {
+        (panel.backgroundColor.alphaComponent > 0) && !panel.ignoresMouseEvents
+    }
+
+    /// What the window server says is at `screenPoint` right now. See
+    /// `ContinuityCatchHitTest` for why this is asked rather than inferred.
+    func hitTest(at screenPoint: CGPoint) -> ContinuityCatchHitTest {
+        ContinuityCatchHitTest(
+            serverTopWindowNumber: NSWindow.windowNumber(
+                at: screenPoint, belowWindowWithWindowNumber: 0),
+            panelWindowNumber: panel.windowNumber)
+    }
+
+    private static func frame(for edge: ContinuitySharedEdge, catching: Bool,
+                              catchThickness: CGFloat) -> CGRect {
         let thickness: CGFloat = catching ? catchThickness : 2
         switch edge.guestSide {
         case .left:

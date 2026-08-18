@@ -84,7 +84,8 @@ struct ContinuityModuleView: View {
                 edge: controller.edge,
                 previews: previews,
                 guestName: connectedMachineName(),
-                mirrorRunning: controller.edgeModeActive)
+                continuityRunning: controller.edgeModeActive,
+                guestConnected: connected)
                 .padding(14)
                 .frame(maxWidth: .infinity, maxHeight: .infinity,
                        alignment: .topLeading)
@@ -173,6 +174,29 @@ private struct ContinuityPointerCard: View {
                          + String(format: "%.1fs", controller.reconnectDelay))
                 }
                 .disabled(!controller.autoReconnect || !connected)
+                Stepper(value: Binding(
+                    get: { edge.edgeGeometry.entryInsetPixels },
+                    set: { controller.setEdgeEntryInset($0) }),
+                        in: ContinuityEdgeGeometry.entryInsetRange, step: 2) {
+                    Text("Entry inset: "
+                         + "\(Int(edge.edgeGeometry.entryInsetPixels)) px")
+                }
+                .help("How far inside the guest boundary a crossing "
+                      + "re-enters — the click-wiggle guard that keeps an "
+                      + "ordinary click from tipping straight back across "
+                      + "the edge it just crossed.")
+                Stepper(value: Binding(
+                    get: { edge.edgeGeometry.deadzoneDepth },
+                    set: { controller.setEdgeDeadzoneDepth($0) }),
+                        in: ContinuityEdgeGeometry.deadzoneDepthRange,
+                        step: 8) {
+                    Text("File-drag deadzone: "
+                         + "\(Int(edge.edgeGeometry.deadzoneDepth)) px")
+                }
+                .help("How far the file-drag catch surface widens for the "
+                      + "length of a guest→host handoff. Zero means the "
+                      + "cursor must return to the very physical edge "
+                      + "before this Mac tries to take over the drag.")
                 Toggle("Send keyboard input to guest",
                        isOn: $controller.keyboardForwardingEnabled)
                     .disabled(!controller.edgeModeActive)

@@ -13,21 +13,62 @@ import UniformTypeIdentifiers
 /// and NO AppKit drop destination existed at all. Configuration therefore
 /// belongs to the lifetime of edge mode, which is the app's, not a page's.
 ///
-/// What still depends on the Mirror is the SCENE: both directions resolve a
-/// guest item or a drop target by point against the live scene, and nothing
-/// else on this side has one. That dependency is now explicit and named
-/// rather than structural and silent: the destination exists, and a drop
-/// arriving with no scene is refused with a line that says why.
+/// **NO CONTINUITY FILE PATH REQUIRES THE MIRROR.** Michelle's ruling,
+/// 2026-08-16: *"the mirror required thing is weird. it shouldn't be needed,
+/// either from a technical perspective or a product perspective."*
+///
+/// The scene was a Mirror-era convenience for the question "where in the
+/// guest", and it was never the only answer to it. Continuity's edge mapping
+/// answers that question continuously and with no scene at all — it is the
+/// same geometry that drives the pointer, which is running whenever a file
+/// can cross in the first place. So a file crossing to the guest resolves its
+/// landing place from the CROSSING, and a scene, when one happens to exist,
+/// only makes that answer more specific.
+///
+/// Concretely: with a scene, a drop is targeted at the window, folder or
+/// application under the point, exactly as before. Without one it lands on
+/// the guest DESKTOP — the honest, always-available answer, and the one the
+/// classic Finder itself would give a drag released over empty screen. What
+/// used to happen instead was a refusal reading "file drag needs the Mirror
+/// running", which stated an implementation's dependency as if it were a
+/// property of the product.
+///
+/// The one genuine remainder is the OTHER direction, and it is a different
+/// question: picking a guest file up by pointing at it needs to know which
+/// icon is under the pointer, and no geometry can answer that. It refuses in
+/// its own words now, naming what is missing rather than naming the Mirror —
+/// and it is not the path a person normally uses, because the selection lane
+/// beside it needs no scene either.
 @MainActor
 enum ContinuityFileDrag {
     typealias Audit = (HostLog.LogLevel, String) -> Void
 
-    /// The one sentence the human and the log both get when the seam is
-    /// alive but has nothing to aim at. Stated once so the two callbacks
-    /// cannot drift into describing the same gap differently.
-    static let noSceneReason =
-        "file drag needs the Mirror running: this Mac has no scene of the "
-        + "guest screen, so there is nothing to resolve a point against"
+    /// The first real file on a dragged pasteboard, or nil.
+    ///
+    /// Nil is an ordinary answer, not a defect: a drag can carry text, a
+    /// colour, or a promise whose file does not exist yet. The handoff
+    /// simply does not begin, and the transfer lane — which reads the same
+    /// pasteboard again at drop time, including promises — is unaffected.
+    /// The extraction and its refusals live here, once, for whichever lane
+    /// needs one file's identity out of an AppKit object whose lifetime is
+    /// the session's.
+    static func firstFile(on pasteboard: NSPasteboard) -> URL? {
+        let options: [NSPasteboard.ReadingOptionKey: Any] = [
+            .urlReadingFileURLsOnly: true,
+        ]
+        return (pasteboard.readObjects(forClasses: [NSURL.self],
+                                       options: options) ?? [])
+            .compactMap { ($0 as? NSURL).map { $0 as URL } }
+            .first
+    }
+
+    /// Why pointing at a guest file cannot pick it up without a picture of
+    /// the guest screen. Names the missing capability, never the component
+    /// that used to provide it — see the type comment.
+    static let noGuestPictureReason =
+        "nothing here can say which guest file is under the pointer without "
+        + "a picture of the guest screen; select it on the Macintosh and it "
+        + "will cross"
 
     static func configure(
         edge: ContinuityEdgeController,
@@ -35,17 +76,70 @@ enum ContinuityFileDrag {
         scene: @escaping () -> MirrorKit.Scene?,
         selection: (() -> Result<ContinuityDragStub,
                                  ContinuitySelectionCache.Unusable>)? = nil,
+        selectionMark: (() -> ContinuitySelectionMark?)? = nil,
         grab: ContinuityGrabTransfer? = nil,
         audit: @escaping Audit = {
             HostLog.shared.write($0, "continuity", $1)
-        }
+        },
+        /// Where a REFUSAL — as opposed to any terminal outcome — is said
+        /// out loud somewhere a person is actually looking mid-drag, not
+        /// only on the Continuity page's status line nobody watches while
+        /// their cursor is over Finder or the guest window. Wired by
+        /// `HostAppState` to a system notification plus the menu-bar
+        /// flash, the same pair `ScreenHostModuleRuntime` uses for a
+        /// screenshot outcome. Optional so every existing test that builds
+        /// this seam without one keeps behaving exactly as before.
+        refusal: ((String) -> Void)? = nil,
+        /// **The host→guest HANDOFF: the guest's own drag, promise and
+        /// all.**
+        ///
+        /// It replaced a PRESENTATION pair (deleted 2026-08-17) that asked
+        /// the guest to DRAW what was being carried — an honest picture,
+        /// but a picture: an illustration of a drag rather than a drag.
+        /// This asks it to START ONE, which is the blessed path (AGENTS.md,
+        /// "THE BLESSED PATH"; plan `2026-08-17-036`). Two machines cannot
+        /// both own one gesture, so there was never a configuration where
+        /// both were wired, and the product has passed a handoff here since
+        /// the lane landed.
+        handoff: ContinuityEdgeController.HostDragHandoff? = nil
     ) {
+        /* THE HOST→GUEST HALF OF THE SAME SEAM, and it is wired
+           unconditionally rather than inside the `selection`/`grab` pair
+           below, because a copy toward the guest fails on its own terms and
+           does not need either of those lanes to exist. Without it a
+           name-collision refusal reached MirrorFileTransferModel and stopped
+           there — see `reportHostFileFailure`. */
+        fileTransfer.outcomeSink = refusal
+        if let handoff {
+            edge.configureHostDragHandoff(handoff)
+        }
         if let selection, let grab {
+            /* Every terminal grab outcome — refused or completed — becomes
+               the status line a person is actually looking at. Without
+               this, `grab.notice` was published to nobody: the page draws
+               `edge.status`, and a wrong-file refusal
+               (`file.refuse code=stale-selection`) ended with the drag
+               simply vanishing, audited but never said out loud. */
+            grab.outcomeSink = { [weak edge] message in
+                edge?.reportFileGrabOutcome(message)
+            }
+            /* The narrower sibling: only the refusal half of the same
+               sentence, handed to whichever surfacing `refusal` was built
+               with. See the parameter's own comment for why this is a
+               second sink rather than a filter downstream of the first. */
+            grab.refusalSink = refusal
             /* The stub lane is installed only when both halves exist: a
                binding with nothing to redeem it would drag a promise that
                can never be fulfilled, which is worse than not claiming the
                press at all. */
             edge.configureSelectionDragging(
+                /* Two closures because the controller asks the two
+                   questions at two moments: the mark at the press, so the
+                   cross can tell a selection this press created from one it
+                   inherited, and the item only once that is settled. A lane
+                   wired without a mark reader would decide every cross
+                   against `nil` and refuse the ordinary two-step ritual. */
+                guestSelectionMark: { selectionMark?() },
                 guestSelectionItem: { [weak grab] in
                     guard let grab else {
                         audit(.error, "no guest file can be picked up: the "
@@ -64,7 +158,38 @@ enum ContinuityFileDrag {
                             + "type=\(stub.utType.identifier)")
                         return grab.dragItem(for: stub)
                     }
-                })
+                },
+                /* THE LATE-BIND LANE. Wired from the same two halves as the
+                   stub lane above and for the same reason: a crossing this
+                   Mac can revise but never redeem would be a promise nobody
+                   can fill. See `ContinuityLateBind`. */
+                lateBind: ContinuityLateBind.Lane(
+                    pendingItem: { [weak grab] in grab?.pendingDragItem() },
+                    gesture: { [weak grab] in grab?.liveBinding?.gesture },
+                    revise: { [weak grab] mark in
+                        guard let grab else { return .noGesture }
+                        switch selection() {
+                        case .failure(let unusable):
+                            return .unusable(reason: unusable.message)
+                        case .success(let stub):
+                            guard stub.epoch == mark.epoch,
+                                  stub.generation == mark.generation else {
+                                return .unusable(reason: "the Mac's cache no "
+                                    + "longer names generation "
+                                    + "\(mark.generation)")
+                            }
+                            return grab.reviseLiveBinding(to: stub)
+                        }
+                    },
+                    /* NO CACHE CONSULTED, and that is the difference. The
+                       epoch this stub names has ended, so `selection()`
+                       refuses it by construction — the join key is what
+                       makes it safe, not an agreement with something
+                       cached. */
+                    reviseAfterEpoch: { [weak grab] stub in
+                        guard let grab else { return .noGesture }
+                        return grab.joinAfterEpoch(stub)
+                    }))
         }
         edge.configureFileDragging(
             guestFileAtPoint: { [weak fileTransfer] point in
@@ -75,7 +200,7 @@ enum ContinuityFileDrag {
                 }
                 guard let scene = scene() else {
                     audit(.info, "no guest file can be picked up: "
-                        + noSceneReason)
+                        + noGuestPictureReason)
                     return nil
                 }
                 guard case .success(let subject) = DragTargeting.subject(
@@ -105,9 +230,21 @@ enum ContinuityFileDrag {
                         + "model is gone")
                     return false
                 }
+                /* THE POINT IS THE CROSSING'S, AND THE SCENE ONLY SHARPENS
+                   IT. `point` arrived from the edge mapping — the same
+                   arithmetic driving the guest pointer this instant — so
+                   this side always knows WHERE on the guest the file is
+                   going. What a scene adds is WHAT is drawn there, and that
+                   is a refinement, not a prerequisite. See the type comment
+                   for the ruling this implements. */
                 guard let scene = scene() else {
-                    audit(.warn, "file drop refused: " + noSceneReason)
-                    return false
+                    audit(.info, "file drop landing on the guest desktop at "
+                        + "\(point.x),\(point.y): this Mac has no picture of "
+                        + "the guest screen, so it cannot aim at a window "
+                        + "there — the crossing still says where, and the "
+                        + "desktop is a real place")
+                    return fileTransfer.copyHostPasteboard(pasteboard,
+                                                           to: .desktop)
                 }
                 switch CrossMachineFileTargeting.destination(
                     scene, x: point.x, y: point.y) {

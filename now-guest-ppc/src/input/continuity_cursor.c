@@ -7,7 +7,17 @@
    and repeatedly wedged the PowerBook.
 
    This module owns one synthetic absolute device for the PPC application's
-   lifetime and calls it only from the ordinary/nested cooperative wire pump.
+   lifetime. The safety boundary is the CONTEXT, stated exactly: task time,
+   in this application's own process, never interrupt or Time Manager
+   context, never dispatched through the Extension. Three callers satisfy
+   it: the ordinary and nested cooperative wire pumps
+   (continuity_service.c), and the Drag Manager's input proc
+   (continuity_dragmgr.c diag_input) - synchronous inside TrackDrag on this
+   process's own stack while the pumps are blocked, so the callers can
+   never interleave. The input-proc caller's safety argument is the
+   blessed-path plan's Route A-prime
+   (docs/plans/2026-08-17-036-feat-blessed-path-drag-plan.md); the
+   timer-context route it rejects is the one that wedged PowerBooks.
    The Extension never receives this pointer and never enters CDM for P9. */
 #include "continuity_cursor.h"
 
@@ -18,6 +28,7 @@
 
 #include "continuity_cdm_transition.h"
 #include "mirror_debug.h"
+#include "now_continuity_logic.h"
 #include "nowlog.h"
 
 enum {
@@ -230,6 +241,116 @@ long now_continuity_cursor_move(unsigned long epoch, unsigned long sequence,
                        epoch, gMoveCount, sequence, after - before);
     }
     return (long)err;
+}
+
+/* THE BARRIER BETWEEN A POSITION AND THE EDGE THAT ACTS ON IT.
+ *
+ * `now_cdm_move_to` returning noErr says the manager took the point, not
+ * that anything else can see it: the device record is upstream of the mouse
+ * global, and the diagnostics above already count the window where the two
+ * disagree (after_lag_pending). Every guest tracking loop - the Finder's
+ * drag loop above all - samples the GLOBAL. So the question a button edge
+ * must ask is not "did my move succeed" but "has it been exposed".
+ *
+ * TWO STAGES, AND BOTH MUST HAVE IT. The manager takes the point into the
+ * device record and the record propagates to the global; the record is
+ * upstream, so it can be behind while the global is not yet even asked. A
+ * QEMU run on 2026-08-15 measured exactly that split - `CDM settle
+ * immediate-lag=5 caught-up=4` against `CDM exposure waits=0`, so the
+ * record lagged five times while the global was never behind at an edge.
+ * A barrier that asked only the global would have been silent through all
+ * five. The reported point is the FURTHER-BACK stage, because naming the
+ * nearer one hides the other.
+ *
+ * GetGlobalMouse and not LMGetMouseLocation, for the reason input_cmds.c
+ * states at `mouseloc`: this guest is Carbon and LowMem.h names this
+ * accessor as the Carbon usage. Same number; only one of them is promised
+ * to keep answering here.
+ *
+ * A spin, not a yield. The propagation is interrupt-paced and runs whether
+ * or not this application gives up its task time, while the caller that
+ * needs this barrier most is a release during a Finder drag loop - the
+ * exact case where further task time may not come back to us at all.
+ * Yielding here would trade a wrong drop point for a stuck drag. The spin
+ * is bounded by the barrier's own deadline and touches nothing reentrant -
+ * it must not pump the wire either, for the same reason it must not yield.
+ *
+ * TWO BOUNDS, NOT ONE (2026-08-15 metal). `release_edge` selects
+ * kNowContinuityExposureDeadlineTicksRelease (0.5s) for a release that
+ * follows a settle and kNowContinuityExposureDeadlineTicksPress (4 ticks)
+ * for an ordinary press; see now_continuity_logic.h for the argument.
+ * Worst case this call blocks the guest's task time for the full chosen
+ * bound with nothing else running: ~67ms for a press, ~0.5s for a release.
+ * Both are paid only on the rare tick where the record or global has not
+ * yet caught up - the emulator run that calibrated the old shared bound
+ * never measured more than 1 tick of wait, and the diagnostics counters
+ * below (`exposure_waits`, `exposure_wait_ticks`) are already how this
+ * project tells "acceptable, rare, edges" from "systemic hang" without
+ * guessing from a single run. A stuck 0.5s spin from a caller wired to
+ * `release_edge` on every press would be the wrong trade; it stays
+ * confined to the drag-release edge because that is the one case where a
+ * stale point is a real relocated file rather than a feel complaint. */
+int now_continuity_cursor_await_exposure(NowContinuityCursorExposure *out,
+                                         int release_edge,
+                                         int target_valid,
+                                         long target_h, long target_v)
+{
+    NowContinuityCursorExposure state;
+    unsigned long start;
+    Point global;
+    Point record;
+    int verdict;
+    NowPeekU32 deadline_ticks;
+
+    memset(&state, 0, sizeof state);
+    /* The TARGET is the caller's, not this module's last move. Reading
+       gDiagnostics here is what made the barrier unsatisfiable on metal:
+       during a target's own drag loop this side's last applied point is
+       whatever the starvation left behind, and an edge held against that
+       point waits for a return that is never coming. A caller that cannot
+       name the point its edge rides with passes target_valid 0 and gets
+       Exposed - unaskable has always meant apply, never hang. */
+    state.request_valid = target_valid;
+    state.request_h = target_h;
+    state.request_v = target_v;
+    deadline_ticks = release_edge
+        ? (NowPeekU32)kNowContinuityExposureDeadlineTicksRelease
+        : (NowPeekU32)kNowContinuityExposureDeadlineTicksPress;
+    state.deadline_ticks = (unsigned long)deadline_ticks;
+    start = TickCount();
+    for (;;) {
+        GetGlobalMouse(&global);
+        state.observed_valid = 1;
+        state.observed_h = global.h;
+        state.observed_v = global.v;
+        state.observed_is_record = 0;
+        if (device_point(&record)
+                && (record.h != (short)state.request_h
+                    || record.v != (short)state.request_v)) {
+            state.observed_h = record.h;
+            state.observed_v = record.v;
+            state.observed_is_record = 1;
+        }
+        state.waited_ticks = (unsigned long)(TickCount() - start);
+        verdict = now_continuity_button_barrier(
+            state.request_valid, state.observed_valid,
+            (NowPeekI32)state.request_h, (NowPeekI32)state.request_v,
+            (NowPeekI32)state.observed_h, (NowPeekI32)state.observed_v,
+            (NowPeekU32)state.waited_ticks,
+            deadline_ticks);
+        if (verdict != kNowContinuityBarrierWait)
+            break;
+    }
+    state.verdict = verdict;
+    if (state.waited_ticks != 0) {
+        gDiagnostics.exposure_waits++;
+        gDiagnostics.exposure_wait_ticks += state.waited_ticks;
+    }
+    if (verdict == kNowContinuityBarrierExpired)
+        gDiagnostics.exposure_expired++;
+    if (out != NULL)
+        *out = state;
+    return verdict;
 }
 
 void now_continuity_cursor_diagnostics(NowContinuityCursorDiagnostics *out)

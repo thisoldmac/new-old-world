@@ -84,6 +84,122 @@ int main(void)
     /* First event of a chain (no previous): no rewrite. */
     CHECK(now_continuity_when_rewrite(0, 1041, 60, 4) == 0);
 
+    /* The exposure barrier. The case it exists for is the 2026-08-15 metal
+       drop: the release rode a settled point of 274,311 while the guest's
+       mouse global still read the crossing point 0,362. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 0, 4)
+          == kNowContinuityBarrierWait);
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 3, 4)
+          == kNowContinuityBarrierWait);
+    /* Deadline reached: apply and say so, because an edge held forever is a
+       stuck drag - strictly worse than an edge at a stale point. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 4, 4)
+          == kNowContinuityBarrierExpired);
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 99, 4)
+          == kNowContinuityBarrierExpired);
+    /* Exposed: the global caught up, whatever the clock says. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 274, 311, 0, 4)
+          == kNowContinuityBarrierExposed);
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 274, 311, 99, 4)
+          == kNowContinuityBarrierExposed);
+    /* One axis is enough to be behind. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 274, 362, 0, 4)
+          == kNowContinuityBarrierWait);
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 311, 0, 4)
+          == kNowContinuityBarrierWait);
+    /* Negative coordinates compare as coordinates, not as magnitudes. */
+    CHECK(now_continuity_button_barrier(1, 1, -8, -8, -8, -8, 0, 4)
+          == kNowContinuityBarrierExposed);
+    CHECK(now_continuity_button_barrier(1, 1, -8, -8, 8, 8, 0, 4)
+          == kNowContinuityBarrierWait);
+    /* Nothing to wait FOR is not something to wait for: an unaskable
+       instrument must never become a hang. */
+    CHECK(now_continuity_button_barrier(0, 1, 274, 311, 0, 362, 0, 4)
+          == kNowContinuityBarrierExposed);
+    CHECK(now_continuity_button_barrier(1, 0, 274, 311, 0, 362, 0, 4)
+          == kNowContinuityBarrierExposed);
+    CHECK(now_continuity_button_barrier(0, 0, 274, 311, 0, 362, 0, 4)
+          == kNowContinuityBarrierExposed);
+    /* A zero deadline is a barrier that is switched off, and says so with
+       `expired` rather than pretending the point was exposed. */
+    CHECK(now_continuity_button_barrier(1, 1, 274, 311, 0, 362, 0, 0)
+          == kNowContinuityBarrierExpired);
+
+    /* The asymmetric bounds themselves (2026-08-15 metal: PowerBook 1400c
+       routinely exceeded the old shared 4-tick bound on release edges).
+       Press stays tight for feel; release gets a generous 0.5s bound
+       because what is at stake there is a real file's location. Pinned as
+       values, not just as "release > press", because a caller wiring the
+       wrong constant to the wrong edge compiles fine and only shows up as
+       a stale-point relocation on metal. */
+    CHECK(kNowContinuityExposureDeadlineTicksPress == 4);
+    CHECK(kNowContinuityExposureDeadlineTicksRelease == 30);
+    CHECK(kNowContinuityExposureDeadlineTicksRelease
+          > kNowContinuityExposureDeadlineTicksPress);
+    /* The exact release-edge failure from the 2026-08-15 metal round:
+       `gen=282 down=0 applied=18,111 exposed=74,146 via=record waited=4
+       expired` - a release beat the propagation by 60px at the old shared
+       4-tick bound. Same wait must now still be WAITing under the release
+       deadline; the old press-sized bound would still expire it, which is
+       exactly why press and release may not share one constant. */
+    CHECK(now_continuity_button_barrier(
+              1, 1, 18, 111, 74, 146, 4,
+              kNowContinuityExposureDeadlineTicksRelease)
+          == kNowContinuityBarrierWait);
+    CHECK(now_continuity_button_barrier(
+              1, 1, 18, 111, 74, 146, 4,
+              kNowContinuityExposureDeadlineTicksPress)
+          == kNowContinuityBarrierExpired);
+
+    /* Settling the edge's own point before the edge. The 2026-08-15 17:19:06
+       metal line is the case: the epoch had already EXITED (disarmed) when
+       the release was served, so the ordinary active-only apply declined and
+       this side's last applied point was 501,446 - an early drag point the
+       target's own drag loop starved us at - while the edge rode the host's
+       settled origin 504,451. Without this the barrier holds against 501,446
+       and burns its whole 30-tick bound. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitDisarmed, 1, 1, 1,
+              504, 451, 501, 446) == 1);
+    /* Already there: no manager traffic for a point the pointer holds. This
+       is the ordinary active round, where the apply above ran first. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 1, 1,
+              504, 451, 504, 451) == 0);
+    /* One axis is enough to be elsewhere. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 1, 1,
+              504, 451, 504, 446) == 1);
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 1, 1,
+              504, 451, 501, 451) == 1);
+    /* Nothing applied yet: the edge's point is the only one there is. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 1, 0,
+              504, 451, 0, 0) == 1);
+    /* No edge pending, or no position this epoch ever carried: the cell's
+       point is then a previous epoch's and moving to it is a teleport. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 0, 1, 1,
+              504, 451, 501, 446) == 0);
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitNone, 1, 0, 1,
+              504, 451, 501, 446) == 0);
+    /* Never against the human's own hand: a guest-input exit means somebody
+       touched the trackpad, and tidying the release would take the machine
+       off them. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitGuestInput, 1, 1, 1,
+              504, 451, 501, 446) == 0);
+    /* A lease death or host-left still settles: nobody else has the pointer,
+       and the edge is about to be dispatched wherever it sits. */
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitLeaseExpired, 1, 1, 1,
+              504, 451, 501, 446) == 1);
+    CHECK(now_continuity_settle_before_edge(
+              (NowPeekU32)kNowPeekContinuityExitHostLeft, 1, 1, 1,
+              504, 451, 501, 446) == 1);
+
     CHECK(now_continuity_exit_due(
         100, 90, 90, 1, 1, 11, 20, 0, 10, 20, 0)
         == kNowPeekContinuityExitGuestInput);

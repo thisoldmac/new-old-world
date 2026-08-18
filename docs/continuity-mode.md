@@ -18,11 +18,36 @@ movement, and primary up use the same owned input epoch.
 It is off by default and its enable switch is session-only. The update rate is
 user-selectable at 15, 30, or 60 Hz; 30 Hz is the default, and the selection is
 remembered per stable guest identity. Automatic recovery of an interrupted
-pointer epoch and experimental Fast Pump are also remembered per guest.
+pointer epoch and experimental Fast Pump are also remembered per guest. Two
+further per-machine settings tune the shared edge itself
+(`ContinuityEdgeGeometry`, `now-host/Sources/Host/ContinuityDisplayLayout.swift`):
+entry inset (0–96 px, default 24) is the click-wiggle guard that keeps an
+ordinary click from tipping straight back across the edge it just crossed,
+and the file-drag deadzone (0–320 px, default 160) is how far the file-drag
+catch surface widens for the length of a guest→host handoff.
 Keyboard forwarding defaults on, and its host-owned return shortcut is
 configurable and remembered per guest. Fast Pump reuses the guest event loop's
 one-tick work-in-flight sleep while an epoch is armed; it does not move any
 manager or drawing work into the Open Transport notifier or resident timer.
+
+## Accessibility permission and capture refusal
+
+The host's *consuming* input tap (`ContinuityEdgeController`, in
+`now-host/Sources/Host/ContinuityEdgeController.swift`) needs Accessibility
+permission to consume this Mac's own mouse and keyboard events while the
+pointer is on the guest. When it cannot start, the session does not fail
+closed: it degrades to an observe-only monitor, the pointer still crosses,
+but host clicks also reach host apps and window-drag protection is off.
+`captureFailureReason` distinguishes the two ways that happens, because
+each needs a different fix: `missingPermission` when this process is not
+yet trusted for Accessibility — retried automatically the next time the app
+becomes active, since granting the permission and switching back is enough
+— versus `relaunchNeeded` when the process *is* trusted but macOS did not
+pick up the grant for this launch, which no retry in place can fix because
+Accessibility trust is read at process start. The module surfaces the
+missing-permission case as an inline row naming which copy of the app is
+running (Accessibility is granted per signed copy, not per bundle
+identifier) with a button into Privacy & Security › Accessibility.
 
 ## Current mechanism set
 
@@ -41,6 +66,27 @@ click records unusually detailed mouse-event and low-memory evidence. The
 rolling button-timing ring and front-process-at-down evidence remain bounded
 diagnostics. The noisy per-epoch Cursor Device interval table does not print on
 the ordinary path.
+
+**A button edge waits for its own position to be exposed**, and this is
+not one of the optional mechanisms — there is no opt-out and no
+per-machine flag. Applying a point is not exposing it: `now_cdm_move_to`
+returns when the Cursor Device record takes it, and the record then
+propagates to the mouse global that every guest tracking loop samples.
+Acting on an edge inside that window dispatches it against the point the
+guest still believes in, which on 2026-08-15 dropped a dragged file at
+the screen edge instead of the settled press origin. The barrier is
+`now_continuity_button_barrier` (the pure decision) and
+`now_continuity_cursor_await_exposure` (the bounded spin); it asks the
+record and the global, reports the further-back one, and expires rather
+than holding an edge forever. The deadline is asymmetric: four ticks for
+an ordinary press, where latency is feel, and thirty ticks (0.5s) for a
+release that follows a settle, where the caller is inside the guest's own
+drag loop and correctness is a real file's location — the 2026-08-15
+metal round (PowerBook 1400c) found the shared four-tick bound expiring
+on exactly that case. Every edge writes one uploadable `button edge …
+applied=… exposed=… via=… waited=… deadline=…` line, which is what a
+metal round reads. The full account is in
+[open-issues.md](open-issues.md).
 
 The following experimental mechanisms are retired from the implementation and
 wire surface; their contract slots remain reserved so an older field can never
@@ -410,12 +456,93 @@ the Event Manager scope above.
 
 ## Evidence and remaining work
 
-### Where the cross-edge file drag stands (2026-08-14)
+### Where the cross-edge file drag stands (2026-08-17 — SHIPPED, attended-verified)
+
+This subsection supersedes every drag claim below it; the dated sections
+that follow are history and stand as written. What ships on
+`feat/hg-drag-arc-candidate`, verified attended on the PowerBook 1400c on
+2026-08-17:
+
+**The model is the ownership toggle: exactly one OS's drag machinery is
+live at any moment — the one that owns the cursor — and the edge toggles
+it.** The acceptance test both directions were built against: once the
+edge hands off, the recipient sees a normal drag with a promise; nothing
+on the receiving side can tell it from a drag its own user started.
+
+**Host → guest.** The AppKit session ends natively at the crossing (a
+synthetic release over this Mac's own catch strip; the edge drop is
+staging, never the commit). `continuity.hostDragBegin` carries the
+starting state — position and an item skeleton (name, fileType, creator,
+fork sizes) — and the guest begins a real Drag Manager promise drag:
+`TrackDrag` driven by `SetDragInputProc` (the Manager's published seam
+for source-supplied input; the plan's Route A′), the carried button as a
+level on its own wire flag that the resident's press logic never sees,
+the icon's own silhouette as the drag region, the sprite nudged along by
+the input proc through the same task-time cursor apply custody uses. The
+drop lands where the person releases — desktop or an open Finder window —
+and the promise streams over the ordinary file lane. Collision handling
+is the receiver's: the send proc stages into Temporary Items and the
+Finder raises **its own** replace dialog (attended, both buttons
+exercised). Cross-back is a native abort (`userCanceledErr`, promise
+never asked, nothing lands anywhere). If the plane goes silent mid-carry
+the input proc's dead-man releases the button after 3 s and the drag ends
+as an ordinary non-drop — the 2026-08-17 wedge class is closed by
+construction.
+
+**Guest → host.** The resident's tracking handler names the file at drag
+begin (`continuity.dragBegin`, its own MacTCP send from the Finder's
+context — metal-sound, ten frames over minutes without a wedge). The
+drag-bound stub owns the selection table slot until the epoch settles;
+the crossing mints a generation under the epoch the gesture began in
+(`continuity.selection afterEpoch:true`), the host admits it against its
+recorded ended epoch and the drop redeems the minted generation from the
+grant hold, which is the witness — the drag record is gone by grab time
+by construction. Single gesture on an unselected icon, attended-verified.
+
+**Permissions on the host are per-signed-build**: Accessibility survives
+updates (stable designated requirement + monotonic `CFBundleVersion` +
+single-copy install via `scripts/install-host`); Local Network re-keys
+per executable for Apple Development-signed builds and needs its toggle
+per install until the Developer ID channel exists (issue #37).
+
+**Open, tracked:** the drag-image label does not render on metal (#38,
+parked with a self-naming log line); refused `hostDragBegin` verdicts are
+guest-log-only (#39); three plane-liveness timers want one model (#40);
+button state wants a typed model (#41); the drag-witness branch reads the
+wrong loop (#42); script/worktree-identity and datagram-encode cleanups
+(#43). The resident 1.4 redial (host death → re-dial in ~25 s) ships in
+this arc; its shared-oracle bake is promotion ceremony, deferred in
+writing per commit.
+
+### Where the cross-edge file drag stands (2026-08-14, superseded below)
 
 The pointer, click, held-drag and keyboard rows are covered by the dated
 material below and in the engineering ledger. This subsection is only about
 carrying a **file** across the edge, because it is the one arc in flight and
 the sections below predate its rewrite.
+
+**Update, 2026-08-15 (`feat/hg-drag-dragmgr`, slice 2 of the host→guest
+crossing):** the round 4 questions this subsection asked are now answered
+for the host→guest direction, and the honest status moved rather than
+closed. `offer --drag` starts a real Drag Manager promise drag of the
+published item (`flavorTypePromiseHFS`); on a live emulator guest the
+send-data callback, the drop-location resolution, and the streaming pull
+through the file lane are all proven — the received file comes back
+byte-identical to the host original. But the drag **never leaves NOW's own
+process**: three drops onto the Finder desktop all report `loc='null',
+asks=0` — no receive handler anywhere else ever ran. The cause is
+targeting, not the promise machinery: while a button is held, `GetMouse`
+and `Button` correctly follow the resident's low-memory writes (so
+`TrackDrag` runs and the button edges work), but the Drag Manager's own
+window-under-the-pointer tracking does not — it kept reporting `inwin=1`
+for NOW's own window with the pointer 400 px outside it. That is the same
+problem as making a held button real for a foreign application, one layer
+up, and it is judged to belong to edge custody (slice 3), not to another
+implementation inside the promise-drag code. See "THE PROMISE WORKS AND
+THE DRAG NEVER LEAVES THIS APPLICATION" in
+[open-issues.md](open-issues.md) for the full account, including the
+dead-end hypotheses. Host-to-guest dragging (below) and window dragging
+remain as they were.
 
 **Guest to host: the session starts on metal, and no drop has completed.**
 Two attended rounds this day, on the rewritten lane rather than the v1
@@ -462,7 +589,7 @@ having:
 5. Is 30 seconds generous or tight for the post-epoch grant, and does the
    guest icon visibly snap back at its press origin?
 
-**Host to guest is not built in this lane.** v1's frozen entry point was
+**Host to guest is not built in this lane.** *(2026-08-14 claim — superseded by the 2026-08-17 section above: it ships.)* v1's frozen entry point was
 retired with the rest of v1; the steered catch-window direction is slice 5
 and untouched. Folders are refused `folder-not-yet` by name in both
 directions (slice 6), and a multiple selection reports its first item. Guest

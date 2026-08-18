@@ -26,6 +26,11 @@ from continuity_contract import values
 # for, one layer down. The mini_source block keeps its own private 9s:
 # that root is self-consistent on purpose.
 COMPATIBILITY = values(ROOT)
+# And so must the RESIDENT RELEASE the fixture artifacts claim, for
+# exactly the same reason: the verify block below checks them against
+# the real tree, so a hand-copied "1.3" fails the suite the day the
+# resident is released - which it did on 2026-08-17.
+RESIDENT = str(COMPATIBILITY["resident"])
 
 
 def run(*args: str, root: Path = ROOT):
@@ -136,7 +141,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="now-continuity-stack-") as tmp:
         directory = Path(tmp)
         app = artifact(directory, "New Old World.bin", "application", "0.2.0")
-        ext = artifact(directory, "NOW Extension.bin", "extension", "1.3")
+        ext = artifact(directory, "NOW Extension.bin", "extension", RESIDENT)
         good = run("verify", "--application", str(app),
                    "--extension", str(ext))
         if good.returncode:
@@ -144,13 +149,13 @@ def main() -> int:
 
         old = dict(COMPATIBILITY)
         old["continuityTable"] = 7
-        artifact(directory, "NOW Extension.bin", "extension", "1.3", old)
+        artifact(directory, "NOW Extension.bin", "extension", RESIDENT, old)
         mismatch = run("verify", "--application", str(app),
                        "--extension", str(ext))
         if mismatch.returncode == 0 or "compatibility" not in mismatch.stderr:
             raise AssertionError("a V9 application plus V7 extension passed")
 
-        artifact(directory, "NOW Extension.bin", "extension", "1.3")
+        artifact(directory, "NOW Extension.bin", "extension", RESIDENT)
         ext.write_bytes(b"changed after publication")
         changed = run("verify", "--application", str(app),
                       "--extension", str(ext))

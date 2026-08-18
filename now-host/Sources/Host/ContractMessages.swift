@@ -102,7 +102,10 @@ enum ControlMessage: Equatable, Sendable {
     case continuityKey(ContinuityKey)
     case continuityKeyReport(ContinuityKeyReport)
     case continuitySelection(ContinuitySelection)
+    case continuityDragBegin(ContinuityDragBegin)
+    case continuityHostDragBegin(ContinuityHostDragBegin)
     case continuityGrab(ContinuityGrab)
+    case continuityOffer(ContinuityOffer)
     case mirrorInvalidate(MirrorInvalidate)
     case updateOffer(UpdateOffer)
     case updateRequest(UpdateRequest)
@@ -176,8 +179,8 @@ struct HostShown: Codable, Equatable, Sendable {
 
 enum ContinuityContract {
     static let version = Int(ContinuityStateDatagram.version)
-    static let residentTableVersion = 13
-    static let residentVersion = "1.3"
+    static let residentTableVersion = 15
+    static let residentVersion = "1.4"
 }
 
 /// Reliable authority for the lossy UDP lane. A datagram with these values
@@ -312,26 +315,213 @@ struct ContinuitySelection: Codable, Equatable, Sendable {
     /* Optional at the decoder for the same reason every other Continuity
        message treats it so: a missing version must become a readable
        wrong-version answer, not an undecodable frame. */
+    /// Which gesture produced this generation. See the contract's `source`.
+    ///
+    /// `drag` is the item the Drag Manager handed the guest at drag begin,
+    /// with no selection consulted — a stronger fact than the poll can
+    /// produce, and one that may legitimately name a file the Finder does
+    /// not have selected.
+    enum Source: String, Codable, Sendable {
+        case selection
+        case drag
+    }
+
+    /* Optional at the decoder for the same reason every other Continuity
+       message treats it so: a missing version must become a readable
+       wrong-version answer, not an undecodable frame. */
     var version: Int?
     var epoch: UInt32
     var generation: UInt32
+    /// Absent means `selection`: a guest built before the field existed had
+    /// only the poll. Decoded as an optional rather than defaulted at the
+    /// property so an UNKNOWN value is an undecodable frame rather than a
+    /// silent demotion to `selection` — a future third source must not be
+    /// bound as if it were a poll.
+    var source: Source?
+    /// Which drag this generation was minted from, when one was — the
+    /// resident's own drag-begin sequence, and the number that says this
+    /// frame and a `ContinuityDragBegin` are two accounts of ONE gesture.
+    /// Absent for a poll, and absent from a guest older than the resident's
+    /// send, which is then the only account there is.
+    var dragSeq: UInt32?
+    /// THE EPOCH THIS FRAME NAMES HAS ALREADY ENDED, and the Mac sent it
+    /// anyway — for a gesture that began inside that epoch.
+    ///
+    /// The crossing drag is the case: crossing back is what ends the epoch,
+    /// and the crossing's own release is what frees the Macintosh's
+    /// application from the Finder's drag loop, so the generation for the
+    /// file in the hand can only be minted afterwards. The guest's grant
+    /// window keeps it redeemable; this field is how a host tells that
+    /// frame apart from one naming an epoch nobody owns any more.
+    ///
+    /// It may be joined to a crossing already in flight, by `dragSeq`. It
+    /// may NOT be cached as the current selection: no epoch is running, and
+    /// nothing may be bound to a press that has not happened.
+    var afterEpoch: Bool?
     /// Absent means nothing is selected — an instruction to drop whatever
     /// was cached, not a poll that found nothing to say.
     var item: Item?
+
+    /// What this generation is, with the contract's default applied once.
+    var resolvedSource: Source { source ?? .selection }
+
+    /// Whether this frame names an epoch that has already ended, with the
+    /// contract's default applied once. An older guest never sends it.
+    var namesEndedEpoch: Bool { afterEpoch ?? false }
 }
 
-/// Serve the item one `ContinuitySelection` generation named.
+/// THE FILE IN THE HAND, SAID WHILE THE HAND IS STILL MOVING.
 ///
-/// It carries no path on purpose. The host can only ask for what the guest
-/// already told it about, so the reachable set is exactly what a person
-/// selected by hand during a live epoch — which is what makes a read
-/// outside the Files share honest here and nowhere else.
+/// Sent by the RESIDENT over its own liveness channel at the instant a Drag
+/// Manager tracking handler is entered — the only sender on this wire that
+/// runs inside the Finder's drag loop. The application's own account of the
+/// same gesture arrives 462 ticks later (measured 2026-08-16), which is
+/// after the crossing that needed it.
+///
+/// It is a PRE-ANNOUNCEMENT AND NOT A GENERATION. It says which file; it
+/// does not mint a generation and this Mac may not grab with one. The
+/// generation follows on `ContinuitySelection` with the same `dragSeq`,
+/// long before any drop, and that is what a `continuity.grab` names.
+///
+/// No size, no date, no folderness: all three need the File Manager, and a
+/// resident may not call it from a foreign application's context. Their
+/// absence is the design, not a gap to fill in with a guess.
+struct ContinuityDragBegin: Codable, Equatable, Sendable {
+    /// The first drag item's identity, and only the first — the same v1
+    /// narrowing `ContinuitySelection` declares for itself.
+    struct Item: Codable, Equatable, Sendable {
+        var name: String
+        var volumeRef: Int
+        var dirID: Int
+        var fileType: String?
+        var creator: String?
+    }
+
+    /* Optional at the decoder for the reason every Continuity message
+       treats it so: a missing version must be readable enough to be
+       refused by name. */
+    var version: Int?
+    var epoch: UInt32
+    var dragSeq: UInt32
+    /// The guest's TickCount at drag begin, for the arrival-ordering line.
+    var ticks: UInt32?
+    var item: Item
+}
+
+/// **THE HANDOFF ITSELF: start a real Drag Manager drag over there, with a
+/// promise, at this point.**
+///
+/// `continuity.dragBegin` inverted — same beat of the gesture, opposite
+/// sender — and the whole of the host's half of the blessed-path drag
+/// (plan `2026-08-17-036`, slice 3). This host's own `NSDraggingSession`
+/// has just ended at the crossing and the file behind it is staged; this
+/// message is what makes the OTHER machine's Drag Manager the live one.
+///
+/// **It carries the STARTING state and nothing else.** Position and button
+/// travel on the ordinary Continuity datagrams from here — they already
+/// ship, at the pointer plane's own cadence — so a second position channel
+/// would be a slower duplicate of a solved problem. And it names no
+/// target: where the file lands is the Drag Manager's and the receiver's
+/// business entirely (Michelle, 2026-08-17). A field here answering "which
+/// window" would be re-invented targeting.
+///
+/// `item` is the promise SKELETON — what the guest advertises as
+/// `flavorTypePromiseHFS`, and exactly what will actually arrive if the
+/// promise is asked for. The bytes themselves are pulled later, by the
+/// guest's own send proc, over the offer lane (`continuity.grab` →
+/// `ContinuityOfferService`), which is why publishing the offer and sending
+/// this message are one act on the host side.
+struct ContinuityHostDragBegin: Codable, Equatable, Sendable {
+    /// Where on the guest the drag starts, in GLOBAL GUEST COORDINATES —
+    /// the same plane the pointer datagrams use, named `h`/`v` because
+    /// that is what the receiving side calls a `Point`.
+    struct Position: Codable, Equatable, Sendable {
+        var h: Int
+        var v: Int
+    }
+
+    /// The promise skeleton: what the Finder is told it is about to get.
+    /// No path, no volume, no directory — the guest is not being told where
+    /// this file is, because on the guest it is nowhere yet.
+    struct Item: Codable, Equatable, Sendable {
+        var name: String
+        /// Classic four-character type/creator, the same pair
+        /// `ContinuityOffer.Item` carries for the same file. Named
+        /// `fileType` on the wire — `continuity.offer`'s own spelling,
+        /// verbatim, per the schema's "same skeleton" rule.
+        var fileType: String?
+        var creator: String?
+        /// The forks AS THEY WILL ARRIVE, not as they sit on this Mac: a
+        /// plan that sends data only says `resourceSize: 0` rather than
+        /// reporting a resource fork the receiver will never see.
+        var dataSize: Int
+        var resourceSize: Int
+    }
+
+    /* Optional at the decoder for the reason every Continuity message
+       treats it so: a missing version must be readable enough to be
+       refused by name. */
+    var version: Int?
+    /// The live Continuity epoch this drag is steered under — the same
+    /// number the ordinary position datagrams carry. A hostDragBegin
+    /// naming any other epoch is refused guest-side: the cursor authority
+    /// this drag reads belongs to one epoch.
+    var epoch: UInt32
+    /// One host→guest carry, so a log line on either side can be paired
+    /// with the other's without guessing from timestamps.
+    var dragSeq: UInt32
+    var pos: Position
+    var item: Item
+}
+
+/// Serve the item one `ContinuitySelection` generation named — or, sent
+/// the other way, the item one `ContinuityOffer` generation named.
+///
+/// The same message serves both directions of Continuity file crossing:
+/// this host sends it to redeem the guest's selection stub
+/// (`Session.sendContinuityGrab`), and the guest sends it back inverted
+/// to redeem THIS host's offer (`GuestListener.serveContinuityGrab`). It
+/// carries no path on purpose, either way — the receiver can only serve
+/// what it already told the other side about, so the reachable set is
+/// exactly what a person put in view during a live epoch.
 struct ContinuityGrab: Codable, Equatable, Sendable {
     var version: Int
     var id: Int
     var epoch: UInt32
     var generation: UInt32
     var container: String?
+}
+
+/// What the person at THIS Mac has picked up and is carrying toward the
+/// classic Mac, pushed unsolicited while a Continuity epoch is live.
+///
+/// `continuity.selection` inverted — same stub shape, opposite sender —
+/// and the only new wire vocabulary the host→guest drag direction needs.
+/// See `ContinuityOffer` in `contract/asyncapi.yaml` (schema, L2840) for
+/// the full argument; this struct mirrors it field for field.
+struct ContinuityOffer: Codable, Equatable, Sendable {
+    struct Item: Codable, Equatable, Sendable {
+        var name: String
+        /// Present only when converting the name cost something —
+        /// absence means it crossed unchanged.
+        var nameAdjusted: String?
+        var fileType: String?
+        var creator: String?
+        var dataSize: Int
+        var resourceSize: Int?
+        /// Classic seconds since 1904.
+        var modifiedAt: UInt32?
+        var isFolder: Bool
+        /// Declared by the contract, not sent by this host yet.
+        var icon: String?
+    }
+
+    var version: Int
+    var epoch: UInt32
+    var generation: UInt32
+    /// Absent when this Mac is carrying nothing — an instruction to tear
+    /// down whatever drag the guest was drawing, not "nothing to say".
+    var item: Item?
 }
 
 /// An arm/disarm answer when `id` is present; an unsolicited local-takeover
@@ -1342,6 +1532,12 @@ struct FileAccept: Codable, Equatable, Sendable {
     var freeBytes: Int? = nil
     var reservedBytes: Int? = nil
     var staging: String? = nil
+    /// True when accepting this offer overwrites an item the receiver
+    /// already had, and a person over there authorised it. Absent means
+    /// nothing is being replaced — never "the receiver declined to say".
+    /// The sender cannot otherwise tell a first-time write from a
+    /// replacement: both are one accept and one stream.
+    var replacing: Bool? = nil
 }
 
 struct FileDone: Codable, Equatable, Sendable {
@@ -1883,9 +2079,25 @@ enum ControlMessageCodec {
         case "continuity.selection":
             return .continuitySelection(
                 try decoder.decode(ContinuitySelection.self, from: data))
+        case "continuity.dragBegin":
+            return .continuityDragBegin(
+                try decoder.decode(ContinuityDragBegin.self, from: data))
+        case "continuity.hostDragBegin":
+            /* Never sent by a guest — this host is the only sender — but
+               decoded anyway so a test's FakeGuest can read back what was
+               handed off, the same reason `continuity.offer` decodes. */
+            return .continuityHostDragBegin(
+                try decoder.decode(ContinuityHostDragBegin.self, from: data))
         case "continuity.grab":
             return .continuityGrab(
                 try decoder.decode(ContinuityGrab.self, from: data))
+        case "continuity.offer":
+            /* Never sent by a real guest — this host is the only sender
+               — but decoded anyway so a test's FakeGuest can read back
+               what was published, the same reason every other host-to-
+               guest message decodes here. */
+            return .continuityOffer(
+                try decoder.decode(ContinuityOffer.self, from: data))
         case "mirror.invalidate":
             return .mirrorInvalidate(
                 try decoder.decode(MirrorInvalidate.self, from: data))
@@ -2053,8 +2265,14 @@ enum ControlMessageCodec {
             return try tagged("continuity.keyReport", m)
         case .continuitySelection(let m):
             return try tagged("continuity.selection", m)
+        case .continuityDragBegin(let m):
+            return try tagged("continuity.dragBegin", m)
+        case .continuityHostDragBegin(let m):
+            return try tagged("continuity.hostDragBegin", m)
         case .continuityGrab(let m):
             return try tagged("continuity.grab", m)
+        case .continuityOffer(let m):
+            return try tagged("continuity.offer", m)
         case .mirrorInvalidate(let m):
             return try tagged("mirror.invalidate", m)
         case .streamRequest(let m): return try tagged("stream.request", m)

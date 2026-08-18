@@ -85,65 +85,13 @@ final class FileWireTests: XCTestCase {
         })
     }
 
-    /// The success path, which the refusal-shaped tests above are
-    /// structurally unable to see: a granted mirror get (and a granted
-    /// continuity grab, below) must reach delivery, not be cancelled by
-    /// this side's own begin guard. The two senders once skipped
-    /// activeFileGetID, so every granted answer was discarded and
-    /// cancelled — a timeout on a transfer the guest had granted.
-    func testMirrorFileGetReachesDeliveryInsteadOfCancellingItself()
-        async throws {
-        let guest = try await connectedGuest()
-        let staging = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(
-            at: staging, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: staging) }
-        var delivered: GuestListener.FileDelivery?
-        var failure: GuestListener.FileFailure?
-
-        listener.getMirrorFile(
-            source: .init(kind: "desktop", name: "Read Me"),
-            stagingDirectory: staging) { result in
-                switch result {
-                case .success(let delivery): delivered = delivery
-                case .failure(let f): failure = f
-                }
-            }
-        var getId: Int?
-        try await waitUntil("file.get") {
-            for message in guest.received {
-                if case .fileGet(let get) = message,
-                   get.mirrorSource != nil {
-                    getId = get.id
-                    return true
-                }
-            }
-            return false
-        }
-        let id = try XCTUnwrap(getId)
-        let payload = Data("granted bytes".utf8)
-        try guest.send(.fileBegin(FileBegin(
-            id: id, transfer: 9, name: "Read Me", container: "data",
-            bytes: payload.count, dataBytes: payload.count, rsrcBytes: 0,
-            fileType: "TEXT", creator: "ttxt", modified: 3_500_000_000)))
-        guest.sendRaw(try FrameCodec.encode(
-            channel: .bulk, flags: [.end], transfer: 9, payload: payload))
-        try guest.send(.fileEnd(FileEnd(
-            id: id, transfer: 9, ok: true, sendMs: 5,
-            crc32: TransferIdentity.crc32(payload))))
-
-        try await waitUntil("delivery") { delivered != nil || failure != nil }
-        XCTAssertNil(failure, "granted get must not fail: \(String(describing: failure))")
-        XCTAssertEqual(delivered?.name, "Read Me")
-        XCTAssertFalse(guest.received.contains { message in
-            if case .fileCancel = message { return true }
-            return false
-        }, "the host cancelled a transfer it asked for")
-    }
-
-    func testContinuityGrabReachesDeliveryInsteadOfCancellingItself()
-        async throws {
+    /// The ANSWER to a grab, not the ask. Arming the receiver is a separate
+    /// act from sending the request, and this pair is here because the two
+    /// asks that did not arm it shipped: the guest served the file, this
+    /// side cancelled the transfer for naming a pull it was not awaiting,
+    /// and the only symptom was the caller's watchdog reporting `timeout` —
+    /// a word that blames the wire for a door this Mac closed.
+    func testAGrabsFileBeginIsAwaitedRatherThanCancelled() async throws {
         let guest = try await connectedGuest()
         let staging = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -154,42 +102,90 @@ final class FileWireTests: XCTestCase {
         var failure: GuestListener.FileFailure?
 
         listener.grabContinuityFile(
-            epoch: 3, generation: 7,
-            stagingDirectory: staging) { result in
-                switch result {
-                case .success(let delivery): delivered = delivery
-                case .failure(let f): failure = f
-                }
+            epoch: 23, generation: 1, container: nil,
+            stagingDirectory: staging
+        ) { result in
+            switch result {
+            case .success(let file): delivered = file
+            case .failure(let reason): failure = reason
             }
+        }
         var grabId: Int?
         try await waitUntil("continuity.grab") {
             for message in guest.received {
                 if case .continuityGrab(let grab) = message {
                     grabId = grab.id
-                    return true
+                    return grab.epoch == 23 && grab.generation == 1
                 }
             }
             return false
         }
         let id = try XCTUnwrap(grabId)
-        let payload = Data("grabbed bytes".utf8)
+        let payload = Data("int main(void) { return 0; }\r".utf8)
         try guest.send(.fileBegin(FileBegin(
-            id: id, transfer: 11, name: "Clipping", container: "data",
+            id: id, transfer: 22, name: "main.c", container: "data",
             bytes: payload.count, dataBytes: payload.count, rsrcBytes: 0,
-            fileType: "TEXT", creator: "ttxt", modified: 3_500_000_000)))
+            fileType: "TEXT", creator: "CWIE", modified: 3_400_000_100)))
         guest.sendRaw(try FrameCodec.encode(
-            channel: .bulk, flags: [.end], transfer: 11, payload: payload))
-        try guest.send(.fileEnd(FileEnd(
-            id: id, transfer: 11, ok: true, sendMs: 5,
-            crc32: TransferIdentity.crc32(payload))))
+            channel: .bulk, flags: [.end], transfer: 22, payload: payload))
+        try guest.send(.fileEnd(FileEnd(id: id, transfer: 22, ok: true,
+                                        sendMs: 9)))
 
         try await waitUntil("delivery") { delivered != nil || failure != nil }
-        XCTAssertNil(failure, "granted grab must not fail: \(String(describing: failure))")
-        XCTAssertEqual(delivered?.name, "Clipping")
-        XCTAssertFalse(guest.received.contains { message in
-            if case .fileCancel = message { return true }
+        XCTAssertNil(failure, "the grab was refused rather than delivered")
+        let file = try XCTUnwrap(delivered)
+        XCTAssertEqual(file.name, "main.c")
+        XCTAssertEqual(try Data(contentsOf: file.staged.url), payload)
+        XCTAssertFalse(guest.received.contains {
+            if case .fileCancel = $0 { return true }
             return false
-        }, "the host cancelled a grab the guest granted")
+        }, "the grabbed transfer was cancelled by this Mac")
+    }
+
+    func testAMirrorPullsFileBeginIsAwaitedRatherThanCancelled()
+        async throws {
+        let guest = try await connectedGuest()
+        var delivered: GuestListener.FileDelivery?
+        var failure: GuestListener.FileFailure?
+
+        listener.getMirrorFile(
+            source: .init(kind: "desktop", name: "Read Me")
+        ) { result in
+            switch result {
+            case .success(let file): delivered = file
+            case .failure(let reason): failure = reason
+            }
+        }
+        var getId: Int?
+        try await waitUntil("mirror file.get") {
+            for message in guest.received {
+                if case .fileGet(let get) = message, get.mirrorSource != nil {
+                    getId = get.id
+                    return true
+                }
+            }
+            return false
+        }
+        let id = try XCTUnwrap(getId)
+        let payload = Data("First\rSecond\r".utf8)
+        try guest.send(.fileBegin(FileBegin(
+            id: id, transfer: 31, name: "Read Me", container: "data",
+            bytes: payload.count, dataBytes: payload.count, rsrcBytes: 0,
+            fileType: "TEXT", creator: "ttxt", modified: 3_400_000_100)))
+        guest.sendRaw(try FrameCodec.encode(
+            channel: .bulk, flags: [.end], transfer: 31, payload: payload))
+        try guest.send(.fileEnd(FileEnd(id: id, transfer: 31, ok: true,
+                                        sendMs: 9)))
+
+        try await waitUntil("delivery") { delivered != nil || failure != nil }
+        XCTAssertNil(failure, "the Mirror pull was refused rather than "
+                     + "delivered")
+        let file = try XCTUnwrap(delivered)
+        XCTAssertEqual(try Data(contentsOf: file.staged.url), payload)
+        XCTAssertFalse(guest.received.contains {
+            if case .fileCancel = $0 { return true }
+            return false
+        }, "the Mirror transfer was cancelled by this Mac")
     }
 
     func testListingPagesThroughTheShare() async throws {

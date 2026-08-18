@@ -37,7 +37,16 @@
    preserving an AppKit-confirmed double click when either datagram is lost. */
 #define NOW_CONTINUITY_FLAG_PRIMARY_DOWN 0x0002u
 #define NOW_CONTINUITY_FLAG_KEEPALIVE 0x0004u
-#define NOW_CONTINUITY_KNOWN_FLAGS 0x0007u
+/* A LEVEL, NOT AN EDGE. Held for the life of a staged host->guest carry so
+   the guest Drag Manager's input proc reads a held button; deliberately a
+   separate bit from PRIMARY_DOWN so the resident's press logic — which
+   fires on a newer button_generation carrying PRIMARY_DOWN — never posts
+   a phantom press for it. That phantom (a stale generation plus the
+   carried level riding PRIMARY_DOWN) is what clicked and marquee-selected
+   at random on the 2026-08-17 attended runs. Only the input proc reads
+   this bit. */
+#define NOW_CONTINUITY_FLAG_CARRIED_LEVEL 0x0008u
+#define NOW_CONTINUITY_KNOWN_FLAGS 0x000Fu
 #define NOW_CONTINUITY_PREVIOUS_BUTTON_KNOWN_FLAGS \
     NOW_CONTINUITY_FLAG_PRIMARY_DOWN
 

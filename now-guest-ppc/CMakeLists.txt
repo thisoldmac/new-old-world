@@ -288,8 +288,15 @@ add_application(now-guest-ppc
     src/input/continuity_cursor.c
     src/input/continuity_service.c
     src/input/continuity_report_logic.c
+    src/input/continuity_deaf_logic.c
+    src/input/continuity_drain_logic.c
     src/input/continuity_selection.c
+    src/input/continuity_offer_intake.c
+    src/input/continuity_hostdrag_intake.c
+    src/input/continuity_dragmgr.c
     ../now-guest-shared/src/now_continuity_selection.c
+    ../now-guest-shared/src/now_continuity_offer.c
+    ../now-guest-shared/src/now_continuity_drag.c
     ../now-guest-shared/src/now_continuity_wire.c
     ../now-guest-shared/src/now_continuity_logic.c
     ../now-guest-shared/src/now_continuity_keyboard_logic.c

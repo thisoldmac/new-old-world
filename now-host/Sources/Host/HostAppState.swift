@@ -80,6 +80,50 @@ final class HostAppState: ObservableObject {
     /// same reason the lane above is: the gesture it answers to happens at
     /// the shared edge, where no page need ever have been opened.
     let continuityGrab: ContinuityGrabTransfer
+    /// The one path that publishes a `continuity.offer`, shared with the
+    /// agent and console faces rather than duplicated for the gesture.
+    let continuityOfferControl: AgentIntegrationContinuityOfferControl
+    /// The generation for carried drags. Monotonic per carried item, per
+    /// the contract. The epoch is NOT tracked here — it is
+    /// `continuity.currentEpoch`, read fresh at publish/clear time. An
+    /// app-lifetime constant here once stood in for it and only ever
+    /// agreed with the guest's own live epoch at the very first crossing
+    /// of a session (`now_continuity_offer.c` closes the offer the moment
+    /// `table.epoch != live_epoch`) — see docs/open-issues.md, forensics D3.
+    private var hostDragOfferGeneration: UInt32 = 0
+    /// The second renderer for a Continuity file-drag refusal, set by
+    /// `AppDelegate` to flash the menu-bar title — the same pairing
+    /// `ScreenHostModuleRuntime` gives a screenshot outcome, and for the
+    /// same reason `CaptureNotifier` gives its own: an unsigned dev build
+    /// posts no banner at all, so the status item is what a person actually
+    /// sees. `announceDragRefusal` always fires the notification too;
+    /// this closure is additive, not a fallback the notifier depends on.
+    var dragRefusalFeedback: ((String) -> Void)?
+
+    func setDragRefusalFeedback(_ feedback: @escaping (String) -> Void) {
+        dragRefusalFeedback = feedback
+    }
+
+    /// The one place a Continuity file-drag refusal becomes visible outside
+    /// the Continuity page's own status line. Handed the exact sentence
+    /// `ContinuityEdgeController.reportFileGrabOutcome` already set as
+    /// `status` — never a second draft of it — so a system notification, a
+    /// menu-bar flash and the status line always agree about what just
+    /// happened.
+    private func announceDragRefusal(_ message: String) {
+        notifier.announce(continuityDragRefusal: message)
+        dragRefusalFeedback?(message)
+    }
+
+    /// The starvation counterpart, through the same two surfaces. It is not
+    /// folded into `announceDragRefusal` because the two are different
+    /// facts — one drag was refused, versus the whole Mac has stopped
+    /// answering — and a notification titled "File drag refused" for the
+    /// second would be a third draft of neither.
+    private func announceContinuityStarvation(_ message: String) {
+        notifier.announce(continuityStarvation: message)
+        dragRefusalFeedback?(message)
+    }
     /// The guest whose saved continuity settings are currently loaded.
     /// Link events for another connected Mac must not reset active ownership.
     private var continuityGuestKey: GuestKey?
@@ -274,6 +318,8 @@ final class HostAppState: ObservableObject {
             localNetworkAccess: localNetworkAccess)
         fileTransfer = MirrorFileTransferModel(listener: listener)
         continuityGrab = ContinuityGrabTransfer(listener: listener)
+        continuityOfferControl =
+            AgentIntegrationContinuityOfferControl(listener: listener)
         artifactApprovals = try? AgentIntegrationArtifactApprovalStore()
         let integration = AgentIntegrationHostAdapter(
             listener: listener,
@@ -379,7 +425,70 @@ final class HostAppState: ObservableObject {
             selection: { [weak self] in
                 self?.continuity.bindableSelection() ?? .failure(.noSelection)
             },
-            grab: continuityGrab)
+            selectionMark: { [weak self] in self?.continuity.selectionMark },
+            grab: continuityGrab,
+            refusal: { [weak self] message in
+                self?.announceDragRefusal(message)
+            },
+            /* THE HANDOFF, bound to the SAME seam the agent and console
+               faces already drive — `AgentIntegrationContinuityOfferControl`
+               exists precisely so the gesture lane would not grow a third
+               path beside them, and its own comment says so. The generation
+               is monotonic per carried gesture, which is what the contract
+               asks of an offer: it must move whenever the item behind it
+               could differ.
+
+               IT REPLACES THE CARRY PRESENTATION on this lane. That pair
+               published an offer at the EDGE and asked the guest to draw
+               the carried file; this publishes at the STAGING POINT and
+               asks the guest to begin a real drag on it. The offer is still
+               published because the offer IS the promise — what changed is
+               that nothing over there is drawing an illustration of a drag
+               any more, because a drag is happening. */
+            handoff: .init(
+                begin: { [weak self] staged, point, gesture in
+                    guard let self else { return false }
+                    guard let url = ContinuityFileDrag.firstFile(on: staged) else {
+                        HostLog.shared.write(
+                            .warn, "continuity",
+                            "drag handoff #\(gesture): the staged carry "
+                                + "names no file this Mac can read, so the "
+                                + "Macintosh starts no drag")
+                        return false
+                    }
+                    self.hostDragOfferGeneration &+= 1
+                    switch self.continuityOfferControl.beginDrag(
+                        fileAt: url, epoch: self.continuity.currentEpoch,
+                        generation: self.hostDragOfferGeneration,
+                        dragSeq: UInt32(truncatingIfNeeded: gesture),
+                        pos: .init(h: Int(point.x), v: Int(point.y))) {
+                    case .handedOff:
+                        return true
+                    case .guestUnavailable:
+                        HostLog.shared.write(
+                            .info, "continuity",
+                            "drag handoff #\(gesture): no Macintosh is "
+                                + "listening, so the crossing keeps the file "
+                                + "staged and the release still decides")
+                        return false
+                    case .failed(let reason):
+                        HostLog.shared.write(
+                            .warn, "continuity",
+                            "drag handoff #\(gesture) for "
+                                + "\(url.lastPathComponent) failed "
+                                + "(\(reason)); the crossing keeps the file "
+                                + "staged and the release still decides")
+                        return false
+                    }
+                },
+                abandon: { [weak self] reason, gesture in
+                    self?.continuityOfferControl.endDrag(
+                        dragSeq: UInt32(truncatingIfNeeded: gesture),
+                        reason: reason)
+                }))
+        continuity.onStarvation = { [weak self] message in
+            self?.announceContinuityStarvation(message)
+        }
         if settings.listenAtLaunch {
             startListening()
         }

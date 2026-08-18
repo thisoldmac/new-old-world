@@ -56,6 +56,235 @@ final class GuestWireFixtureTests: XCTestCase {
                        "late confirmation keeps its earlier timeout")
     }
 
+    /// service_continuity_selection() in now-guest-ppc/src/core/wire.c,
+    /// both sources, exactly as the three templates write them.
+    ///
+    /// The field is on ALL THREE — empty, folder and file — and that is
+    /// what this fixture is really for: a `source` sent only when it is
+    /// `drag` would be indistinguishable, from over here, from a guest too
+    /// old to have the field, and the host's default would then quietly
+    /// call a drag a selection.
+    func testContinuitySelectionSourceAsTheGuestWritesIt() throws {
+        let dragged = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":4,"source":"drag","item":{"name":"main.c",\
+        "volumeRef":-1,"dirID":2,"fileType":"TEXT","creator":"ttxt",\
+        "dataSize":5,"resourceSize":0,"modifiedAt":3400000000,\
+        "isFolder":false}}
+        """
+        guard case .continuitySelection(let drag) = try decode(dragged) else {
+            return XCTFail("not a continuity selection")
+        }
+        XCTAssertEqual(drag.resolvedSource, .drag)
+        XCTAssertEqual(drag.item?.name, "main.c")
+
+        let polled = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":3,"source":"selection","item":{"name":"hello.txt",\
+        "volumeRef":-1,"dirID":2,"fileType":"TEXT","creator":"ttxt",\
+        "dataSize":5,"resourceSize":0,"modifiedAt":3400000000,\
+        "isFolder":false}}
+        """
+        guard case .continuitySelection(let poll) = try decode(polled) else {
+            return XCTFail("not a continuity selection")
+        }
+        XCTAssertEqual(poll.resolvedSource, .selection)
+
+        let cleared = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":5,"source":"selection"}
+        """
+        guard case .continuitySelection(let empty) = try decode(cleared) else {
+            return XCTFail("not a continuity selection")
+        }
+        XCTAssertNil(empty.item)
+        XCTAssertEqual(empty.resolvedSource, .selection)
+    }
+
+    /// build_drag_begin() in ext/src/now_liveness_net.c, byte for byte as
+    /// the RESIDENT builds it — no snprintf, no library, appended by hand
+    /// from inside the Finder's drag loop.
+    ///
+    /// This is the frame the whole plane exists for, and the fixture is
+    /// what makes it a two-halves-met test rather than two hopeful
+    /// implementations: the resident cannot be run over here, so the only
+    /// place its bytes and this decoder can meet is a fixture.
+    ///
+    /// NOTE WHAT IS NOT IN IT. No dataSize, no modifiedAt, no isFolder.
+    /// The resident makes no File Manager call by charter, so it does not
+    /// know them; a decoder that required any of them would refuse every
+    /// real frame this route will ever send.
+    func testContinuityDragBeginAsTheResidentWritesIt() throws {
+        let json = """
+        {"type":"continuity.dragBegin","version":4,"epoch":7,"dragSeq":2,\
+        "ticks":32817,"item":{"name":"HELLO_CLAUDE.txt","volumeRef":-1,\
+        "dirID":2,"fileType":"TEXT","creator":"ttxt"}}
+        """
+        guard case .continuityDragBegin(let begin) = try decode(json) else {
+            return XCTFail("not a continuity drag begin")
+        }
+        XCTAssertEqual(begin.epoch, 7)
+        XCTAssertEqual(begin.dragSeq, 2)
+        XCTAssertEqual(begin.ticks, 32817)
+        XCTAssertEqual(begin.item.name, "HELLO_CLAUDE.txt")
+        XCTAssertEqual(begin.item.volumeRef, -1)
+        XCTAssertEqual(begin.item.dirID, 2)
+        XCTAssertEqual(begin.item.fileType, "TEXT")
+        XCTAssertEqual(begin.item.creator, "ttxt")
+    }
+
+    /// **THE HANDOFF FRAME, INVERTED — and this one is OURS to write.**
+    ///
+    /// The fixtures above pin bytes the guest emits; this pins the bytes
+    /// this host emits, for the same reason and against the same risk. The
+    /// guest half of `continuity.hostDragBegin` is being built tonight
+    /// against the declared shape, and the two halves meet only here until
+    /// they meet on a wire.
+    ///
+    /// NOTE WHAT IS NOT IN IT. No target, no window, no container, no
+    /// volume, no directory: after this frame the receiving Drag Manager
+    /// owns the gesture, and where the file lands is its business. A field
+    /// answering "which window" would be re-invented targeting.
+    func testHostDragBeginIsEncodedAsTheHandoffShape() throws {
+        let message = ControlMessage.continuityHostDragBegin(.init(
+            version: ContinuityContract.version, epoch: 7, dragSeq: 3,
+            pos: .init(h: 24, v: 450),
+            item: .init(name: "main.c", fileType: "TEXT", creator: "ttxt",
+                        dataSize: 4096, resourceSize: 0)))
+        let encoded = try ControlMessageCodec.encode(message)
+        let text = String(decoding: encoded, as: UTF8.self)
+        XCTAssertTrue(text.contains("\"type\":\"continuity.hostDragBegin\""),
+                      text)
+        for field in ["\"epoch\"", "\"dragSeq\"", "\"pos\"", "\"h\"", "\"v\"",
+                      "\"item\"", "\"name\"", "\"fileType\"", "\"creator\"",
+                      "\"dataSize\"", "\"resourceSize\""] {
+            XCTAssertTrue(text.contains(field), "\(field) missing from \(text)")
+        }
+        XCTAssertFalse(text.contains("container"),
+                       "the handoff names no container: the promise is "
+                        + "pulled over the offer lane, which names its own")
+        XCTAssertEqual(try ControlMessageCodec.decode(encoded), message,
+                       "and it reads back as what it was")
+    }
+
+    /// The skeleton says what will ARRIVE, not what is on this Mac. A plan
+    /// that sends the data fork alone claims no resource fork, and a
+    /// MacBinary plan splits the two out of the header that is about to
+    /// travel rather than measuring the file again.
+    func testThePromiseSkeletonDescribesTheForksAsTheyWillArrive() throws {
+        let data = OutboundFile.Plan(
+            name: "Notes", container: "data",
+            bytes: Data(repeating: 0x41, count: 66),
+            fileType: "TEXT", creator: "ttxt", modified: nil, note: nil)
+        let plain = ContinuityHostDragSkeleton.item(for: data)
+        XCTAssertEqual(plain.dataSize, 66)
+        XCTAssertEqual(plain.resourceSize, 0,
+                       "the data lane sends one fork, so promising two would "
+                        + "be a promise this Mac cannot keep")
+
+        var header = Data(repeating: 0, count: 128)
+        header[83] = 0; header[84] = 0; header[85] = 0x01; header[86] = 0x00
+        header[87] = 0; header[88] = 0; header[89] = 0; header[90] = 0x20
+        var both = header
+        both.append(Data(repeating: 0x42, count: 0x120))
+        let binary = ContinuityHostDragSkeleton.item(for: OutboundFile.Plan(
+            name: "App", container: "macbinary", bytes: both,
+            fileType: nil, creator: nil, modified: nil, note: nil))
+        XCTAssertEqual(binary.dataSize, 256)
+        XCTAssertEqual(binary.resourceSize, 32)
+
+        /* A header claiming more than the file holds is corrupt, and a
+           Finder that reserved from it would fail the copy for a reason
+           nobody could see. */
+        var lying = header
+        lying[85] = 0xFF
+        lying.append(Data(repeating: 0x42, count: 16))
+        let refused = ContinuityHostDragSkeleton.item(for: OutboundFile.Plan(
+            name: "App", container: "macbinary", bytes: lying,
+            fileType: nil, creator: nil, modified: nil, note: nil))
+        XCTAssertEqual(refused.dataSize, lying.count)
+        XCTAssertEqual(refused.resourceSize, 0)
+    }
+
+    /// The same gesture's OTHER account, from the application, with the
+    /// number that joins them. `dragSeq` rides beside `source` exactly
+    /// where service_continuity_selection() splices its fragment in.
+    func testContinuitySelectionCarriesTheDragJoinKey() throws {
+        let json = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":4,"source":"drag","dragSeq":2,\
+        "item":{"name":"HELLO_CLAUDE.txt","volumeRef":-1,"dirID":2,\
+        "fileType":"TEXT","creator":"ttxt","dataSize":499,\
+        "resourceSize":0,"modifiedAt":3400000000,"isFolder":false}}
+        """
+        guard case .continuitySelection(let selection) = try decode(json)
+        else { return XCTFail("not a continuity selection") }
+        XCTAssertEqual(selection.resolvedSource, .drag)
+        XCTAssertEqual(selection.dragSeq, 2,
+                       "the join key must survive the decoder, or a host "
+                       + "has to decide by timing whether two frames are "
+                       + "one gesture")
+        XCTAssertEqual(selection.generation, 4)
+
+        /* A polled selection has no drag behind it and says so by
+           silence rather than by a zero. */
+        let polled = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":5,"source":"selection","item":{"name":"hello.txt",\
+        "volumeRef":-1,"dirID":2,"fileType":"TEXT","creator":"ttxt",\
+        "dataSize":5,"resourceSize":0,"modifiedAt":3400000000,\
+        "isFolder":false}}
+        """
+        guard case .continuitySelection(let poll) = try decode(polled) else {
+            return XCTFail("not a continuity selection")
+        }
+        XCTAssertNil(poll.dragSeq)
+    }
+
+    /// THE CROSSING GESTURE'S OWN FRAME, as service_continuity_selection()
+    /// writes it when the epoch it names has already ended.
+    ///
+    /// The fragment rides beside `dragSeq` because both mean something on
+    /// one kind of frame only. This fixture is what stops the two halves
+    /// disagreeing about a field whose whole job is to make a dead epoch
+    /// readable rather than ignorable: without it the host's only honest
+    /// answer to an epoch it does not own is to drop the frame, which is
+    /// what it did through the attended round of 2026-08-16.
+    func testContinuitySelectionMintedAfterItsEpochEnded() throws {
+        let json = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":4,"source":"drag","dragSeq":2,"afterEpoch":true,\
+        "item":{"name":"HELLO_CLAUDE.txt","volumeRef":-1,"dirID":2,\
+        "fileType":"TEXT","creator":"ttxt","dataSize":42,\
+        "resourceSize":0,"modifiedAt":3400000000,"isFolder":false}}
+        """
+        guard case .continuitySelection(let selection) = try decode(json)
+        else { return XCTFail("not a continuity selection") }
+        XCTAssertTrue(selection.namesEndedEpoch,
+                      "a frame naming an ended epoch must survive the "
+                        + "decoder saying so, or the host reads the one "
+                        + "gesture it exists for as a mistake")
+        XCTAssertEqual(selection.epoch, 7)
+        XCTAssertEqual(selection.generation, 4)
+        XCTAssertEqual(selection.dragSeq, 2)
+        XCTAssertEqual(selection.item?.name, "HELLO_CLAUDE.txt")
+
+        /* An ordinary frame says nothing, and a guest too old to have the
+           field says nothing in exactly the same way — both mean the epoch
+           named is the one that is running. */
+        let live = """
+        {"type":"continuity.selection","version":4,"epoch":7,\
+        "generation":5,"source":"drag","dragSeq":3,\
+        "item":{"name":"main.c","volumeRef":-1,"dirID":2,\
+        "fileType":"TEXT","creator":"ttxt","dataSize":5,\
+        "resourceSize":0,"modifiedAt":3400000000,"isFolder":false}}
+        """
+        guard case .continuitySelection(let ordinary) = try decode(live)
+        else { return XCTFail("not a continuity selection") }
+        XCTAssertNil(ordinary.afterEpoch)
+        XCTAssertFalse(ordinary.namesEndedEpoch)
+    }
+
     /// send_scene_same() in now-guest-ppc/src/core/wire.c, built across
     /// several snprintf calls because its phases block loops over the
     /// phase table. This is the answer a guest gives when the machine did
@@ -311,6 +540,123 @@ final class GuestWireFixtureTests: XCTestCase {
                        "0123456789abcdef")
         XCTAssertEqual(listing.root, "Macintosh HD:Lab:")
         XCTAssertEqual(listing.freeBytes, 1_073_637_376)
+    }
+
+    /// **EVERY REFUSAL CODE THE GUEST CAN SAY IS ONE THE CONTRACT
+    /// DECLARES.** Derived from the guest's own `file_refuse` call sites
+    /// against `FileRefuse.code`'s enum, rather than remembered.
+    ///
+    /// The gap this closes is the file family's oldest one, named in the
+    /// contract itself: `bad-source` and `project-file-unavailable` "have
+    /// been on the wire since the Mirror drag and Development lanes
+    /// shipped and were simply never written down". Nothing checked, so
+    /// the enum was documentation. A code the guest emits and the contract
+    /// has never heard of is the defect class this repository has paid
+    /// most for, one layer down from the fields it already gates.
+    func testEveryGuestRefusalCodeIsDeclaredInTheContract() throws {
+        let source = try GateSource.guestC("now-guest-ppc/src/core/wire.c")
+        let contract = try GateSource.raw("contract/asyncapi.yaml")
+        guard let enumStart = contract.range(
+            of: "enum: [busy, exists, declined,") else {
+            return XCTFail("FileRefuse's code enum has moved or been "
+                + "renamed; this gate reads it by its first members")
+        }
+        guard let enumEnd = contract.range(
+            of: "]", range: enumStart.lowerBound..<contract.endIndex) else {
+            return XCTFail("unterminated enum")
+        }
+        let declared = Set(
+            contract[enumStart.lowerBound..<enumEnd.lowerBound]
+                .replacingOccurrences(of: "enum: [", with: "")
+                .split(whereSeparator: { ",\n ".contains($0) })
+                .map(String.init))
+        XCTAssertTrue(declared.contains("declined"), "\(declared)")
+
+        /* Every `file_refuse(<id>, "code"` literal in the guest. The first
+           string literal after the call is the code; `file_refuse_rc` and
+           the forward declaration carry none and fall out on their own. */
+        var emitted: Set<String> = []
+        var cursor = source.startIndex
+        while let call = source.range(of: "file_refuse(",
+                                      range: cursor..<source.endIndex) {
+            cursor = call.upperBound
+            let window = source.index(cursor, offsetBy: 60,
+                                      limitedBy: source.endIndex)
+                ?? source.endIndex
+            guard let open = source.range(of: "\"",
+                                          range: cursor..<window) else {
+                continue
+            }
+            guard let close = source.range(
+                of: "\"", range: open.upperBound..<source.endIndex) else {
+                continue
+            }
+            emitted.insert(String(source[open.upperBound..<close.lowerBound]))
+        }
+        XCTAssertFalse(emitted.isEmpty, "the scanner found no refusals at "
+            + "all, so this gate is asserting nothing")
+        XCTAssertTrue(emitted.contains("declined"),
+                      "the guest never says `declined`, so a person who "
+                        + "kept their file is indistinguishable on the wire "
+                        + "from a receiver that never asked: \(emitted)")
+        let undeclared = emitted.subtracting(declared)
+        XCTAssertEqual(undeclared, [],
+                       "the guest can send refusal codes the contract has "
+                        + "never heard of: \(undeclared.sorted())")
+    }
+
+    /// **A REPLACEMENT AND A FIRST-TIME WRITE STOP LOOKING IDENTICAL.**
+    /// Both are one accept followed by one stream, and the collision is
+    /// knowable only on the side that looked — so a sender that had just
+    /// overwritten somebody's file recorded it as an ordinary copy.
+    ///
+    /// The exact frame the guest emits from `now_wire_put_resolve_replace`
+    /// after a person answered Replace.
+    func testAGuestAcceptThatOverwritesSaysSo() throws {
+        guard case .fileAccept(let accept) = try decode(
+            #"{"type":"file.accept","id":7,"reservedBytes":4096,"staging":"same-folder-temp","replacing":true}"#
+        ) else {
+            return XCTFail("not an accept")
+        }
+        XCTAssertEqual(accept.replacing, true)
+        XCTAssertEqual(accept.staging, "same-folder-temp")
+    }
+
+    /// Absence means nothing is being replaced — never "the receiver
+    /// declined to say". Every accept that shipped before this field
+    /// existed is one of these, and must keep decoding unchanged.
+    func testAnAcceptWithoutTheFieldIsNotAReplacement() throws {
+        guard case .fileAccept(let accept) = try decode(
+            #"{"type":"file.accept","id":3,"staging":"same-folder-temp"}"#
+        ) else {
+            return XCTFail("not an accept")
+        }
+        XCTAssertNil(accept.replacing)
+    }
+
+    /// **`declined` IS `exists` AFTER SOMEBODY WAS ASKED**, and the two
+    /// are separate words on purpose. `exists` says a receiver found the
+    /// name taken and applied its own policy; `declined` says a person was
+    /// shown the collision and chose to keep what they had. A sender
+    /// cannot tell them apart from the outcome — nothing arrives either
+    /// way — and only one of them is a gap worth closing.
+    func testAPersonKeepingTheirFileIsNotTheSameRefusalAsAPolicy() throws {
+        guard case .fileRefuse(let declined) = try decode(
+            #"{"type":"file.refuse","id":9,"code":"declined","reason":"somebody chose to keep the file already there"}"#
+        ) else {
+            return XCTFail("not a refusal")
+        }
+        XCTAssertEqual(declined.code, "declined")
+
+        guard case .fileRefuse(let policy) = try decode(
+            #"{"type":"file.refuse","id":9,"code":"exists","reason":"a file of that name is already there"}"#
+        ) else {
+            return XCTFail("not a refusal")
+        }
+        XCTAssertEqual(policy.code, "exists")
+        XCTAssertNotEqual(declined.code, policy.code,
+                          "a receiver that never asked and a person who "
+                            + "said no must not spell themselves the same")
     }
 
     func testGuestReservationAndFinalizationEvidenceDecodes() throws {

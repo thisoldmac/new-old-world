@@ -54,6 +54,61 @@ struct ContinuitySharedEdge: Equatable, Sendable {
     let overlap: ClosedRange<CGFloat>
 }
 
+/// The two numbers that decide how forgiving the shared edge is, stated
+/// ONCE here and read by everything else that touches it — the guest-entry
+/// inset (`ContinuityDisplayGeometry.guestEntryPoint`) and the file-drag
+/// catch surface's width (`ContinuityFileEdge`).
+///
+/// Both used to be `static let` constants with nowhere a person could see
+/// or change them. The catch surface's 160 px, in particular, was
+/// discovered — not designed — to be a felt "drop dead zone": widened for
+/// the length of a guest→host file handoff and never narrowed until the
+/// session ends (`ContinuityFileEdge.setCatching`, `returnGuestFileToHost`),
+/// its own destination view refuses this app's OWN drag session
+/// (`EdgeView.isOwnSession`) rather than passing it through — and a refusal
+/// answers a drag instead of asking whatever is really underneath, so no
+/// `+` badge could appear until the cursor physically cleared 160 px of
+/// screen. `ContinuityFileEdge.setDropsThroughOwnSession` fixes that
+/// specific refusal (see its doc); `deadzoneDepth` remains configurable
+/// on top of the fix because the catch surface still exists for a
+/// different reason — giving the returning press somewhere of this app's
+/// own to land before AppKit can own the gesture — and a person may
+/// legitimately want to trade that arming cushion away, down to zero.
+struct ContinuityEdgeGeometry: Equatable, Sendable {
+    /// How far inside the guest boundary a crossing re-enters — the
+    /// click-wiggle guard. See `ContinuityDisplayGeometry.guestEntryPoint`.
+    var entryInsetPixels: CGFloat
+    /// How wide the file-drag catch surface widens to for the length of a
+    /// handoff. Zero is legal and means cursor-at-the-physical-edge
+    /// handoff: no arming cushion at all, so a returning drag must land its
+    /// first real event exactly at the seed point or the handoff is
+    /// abandoned (`ContinuityEdgeController.armSessionButtonIfSurfaceIsReady`).
+    /// See `ContinuityFileEdge.catchThickness`.
+    var deadzoneDepth: CGFloat
+
+    static let entryInsetRange: ClosedRange<CGFloat> = 0...96
+    static let deadzoneDepthRange: ClosedRange<CGFloat> = 0...320
+
+    /// The values this shipped with before either was configurable —
+    /// unchanged as the default so nobody's feel changes without asking.
+    static let `default` = ContinuityEdgeGeometry(
+        entryInsetPixels: 24, deadzoneDepth: 160)
+
+    /// Guards a stale or hand-edited defaults value the same way
+    /// `MirrorContinuityController.clampReconnectDelay` guards the
+    /// reconnect wait: a value outside the sane range reads as a hang (too
+    /// large) or a guard that no longer guards anything (negative).
+    func clamped() -> ContinuityEdgeGeometry {
+        ContinuityEdgeGeometry(
+            entryInsetPixels: min(max(entryInsetPixels,
+                                      Self.entryInsetRange.lowerBound),
+                                  Self.entryInsetRange.upperBound),
+            deadzoneDepth: min(max(deadzoneDepth,
+                                   Self.deadzoneDepthRange.lowerBound),
+                               Self.deadzoneDepthRange.upperBound))
+    }
+}
+
 enum ContinuityDisplayGeometry {
     static let adjacencyTolerance: CGFloat = 0.5
 
@@ -233,6 +288,25 @@ enum ContinuityDisplayGeometry {
         return closest.origin
     }
 
+    /// **A guest display is never unattached** — the 2026-08-16 ruling on
+    /// attachment 24 hours after `attachToDefaultEdgeIfNeverPlaced` shipped:
+    /// that fix only ever reached a virgin install, and a machine with a
+    /// persisted island from BEFORE the fix stayed an island forever,
+    /// faithfully preserved by the very guard meant to stop that. The
+    /// distance ceiling is what made `snappedOrigin` decline to answer —
+    /// this is that same candidate search with the ceiling removed, so the
+    /// nearest host edge wins regardless of how far away the guest was
+    /// released or loaded from. It is used at exactly two moments: a
+    /// drag-release (`finishGuestMove`) and a load-time repair
+    /// (`ContinuityDisplayLayout.init`) — never mid-drag, where fighting the
+    /// gesture with an unwanted snap would be its own defect.
+    static func nearestEdgeOrigin(proposed: CGPoint, guestSize: CGSize,
+                                  scale: CGFloat,
+                                  hosts: [HostDisplayDescriptor]) -> CGPoint {
+        snappedOrigin(proposed: proposed, guestSize: guestSize, scale: scale,
+                     hosts: hosts, threshold: .greatestFiniteMagnitude)
+    }
+
     static func resolvedOrigin(proposed: CGPoint, previous: CGPoint,
                                guestSize: CGSize, scale: CGFloat,
                                hosts: [HostDisplayDescriptor]) -> CGPoint {
@@ -275,16 +349,23 @@ enum ContinuityDisplayGeometry {
        physical wiggle of a click (+4 px measured) tipped straight back
        across - seven "clicks send me home" returns in one minute of the
        2026-08-13 202005 run. A deliberate exit still only costs this many
-       pixels of motion toward the edge. */
-    static let entryInsetPixels: CGFloat = 24
+       pixels of motion toward the edge.
 
+       The number itself now lives in `ContinuityEdgeGeometry.default`, so
+       this stays a doc comment on the RULE rather than a second place
+       holding the value; the parameter below defaults to it so every call
+       site that has not been taught about the geometry seam keeps today's
+       behaviour unchanged. */
     static func guestEntryPoint(at hostPoint: CGPoint,
                                 edge: ContinuitySharedEdge,
                                 guestFrame: CGRect,
                                 guestPixels: CGSize,
-                                scale: CGFloat) -> CGPoint {
-        let insetX = min(entryInsetPixels, max(0, guestPixels.width - 1))
-        let insetY = min(entryInsetPixels, max(0, guestPixels.height - 1))
+                                scale: CGFloat,
+                                insetPixels: CGFloat =
+                                    ContinuityEdgeGeometry.default
+                                        .entryInsetPixels) -> CGPoint {
+        let insetX = min(insetPixels, max(0, guestPixels.width - 1))
+        let insetY = min(insetPixels, max(0, guestPixels.height - 1))
         switch edge.guestSide {
         case .left:
             return CGPoint(x: insetX,
@@ -396,10 +477,26 @@ final class ContinuityDisplayLayout: ObservableObject {
     /// real coordinate scale rather than a drawing trick.
     @Published private(set) var guestScale: CGFloat
     @Published private(set) var guestOrigin: CGPoint
+    /// True once a placement has been WRITTEN to defaults — by a drag, a
+    /// resize, a scale change, or a display-change recovery. False only for
+    /// a fresh install (or a fresh prefs domain that has never run), which
+    /// is the one case `attachToDefaultEdgeIfNeverPlaced` exists for. This
+    /// is deliberately about what was PERSISTED, not what the constructor
+    /// computed in memory: the constructor's own default is only as good as
+    /// the `displayProvider()` read it was built from, and nothing wrote it
+    /// down, so a `hostDisplays` snapshot taken before the window server was
+    /// ready would otherwise stay uncorrected for the life of the process.
+    private(set) var hasPersistedPlacement: Bool
 
     private let defaults: UserDefaults?
     private let displayProvider: @MainActor () -> [HostDisplayDescriptor]
     private var screenSubscription: AnyCancellable?
+    /// Where a load-time repair (an unattached persisted placement coerced
+    /// to the nearest edge) gets said out loud. Defaults to the same
+    /// `HostLog` funnel every other Continuity component audits through, so
+    /// a repair shows up beside everything else this feature already logs
+    /// rather than in a channel nobody reads.
+    private let audit: (HostLog.LogLevel, String) -> Void
 
     private static let scaleModeKey = "mirror.continuity.guestDisplayScaleMode"
     /// The numeric zoom this pill replaced. Read once, only to be discarded.
@@ -413,9 +510,11 @@ final class ContinuityDisplayLayout: ObservableObject {
          defaults: UserDefaults? = ProductIdentity.defaults,
          observeScreens: Bool = true,
          displayProvider: @escaping @MainActor () -> [HostDisplayDescriptor]
-            = ContinuityDisplayLayout.liveDisplays) {
+            = ContinuityDisplayLayout.liveDisplays,
+         audit: ((HostLog.LogLevel, String) -> Void)? = nil) {
         self.defaults = defaults
         self.displayProvider = displayProvider
+        self.audit = audit ?? { HostLog.shared.write($0, "continuity", $1) }
         let resolvedHosts = hostDisplays ?? displayProvider()
         let resolvedGuestSize = Self.validGuestSize(guestSize)
         self.hostDisplays = resolvedHosts
@@ -438,7 +537,9 @@ final class ContinuityDisplayLayout: ObservableObject {
            below, once there is a resolved placement to read an edge from. */
         let resolvedScale: CGFloat = 1
         guestScale = resolvedScale
-        if defaults?.bool(forKey: Self.hasOriginKey) == true {
+        let storedPlacement = defaults?.bool(forKey: Self.hasOriginKey) == true
+        hasPersistedPlacement = storedPlacement
+        if storedPlacement {
             guestOrigin = CGPoint(
                 x: defaults?.double(forKey: Self.originXKey) ?? 0,
                 y: defaults?.double(forKey: Self.originYKey) ?? 0)
@@ -454,6 +555,29 @@ final class ContinuityDisplayLayout: ObservableObject {
             proposed: guestOrigin, previous: safeDefault,
             guestSize: resolvedGuestSize, scale: resolvedScale,
             hosts: resolvedHosts)
+        /* INVARIANT, not a default: a guest display is never unattached
+           (2026-08-16). `resolvedOrigin` only pulls a placement onto an edge
+           within the felt 48pt magnetic threshold, so a placement persisted
+           from BEFORE this ruling — a genuine island, sitting exactly where
+           some earlier build's collision-avoidance or a person's own drag
+           left it — comes back out of `defaults` still an island. This is
+           the load-time repair: coerce it onto the nearest host edge,
+           preserving as much of the original position as the edge search
+           can. It is a REPAIR, not routine placement, so it is the one path
+           here that talks to the log. */
+        if sharedEdge == nil, !resolvedHosts.isEmpty {
+            let repaired = ContinuityDisplayGeometry.nearestEdgeOrigin(
+                proposed: guestOrigin, guestSize: resolvedGuestSize,
+                scale: resolvedScale, hosts: resolvedHosts)
+            if repaired != guestOrigin {
+                self.audit(.warn, "repairing an unattached guest placement "
+                    + "at \(guestOrigin) — coercing to the nearest host "
+                    + "edge at \(repaired); a guest display is never "
+                    + "unattached")
+                guestOrigin = repaired
+                if storedPlacement { persistOrigin() }
+            }
+        }
         applyFitScaleIfNeeded()
         if observeScreens {
             screenSubscription = NotificationCenter.default.publisher(
@@ -495,6 +619,36 @@ final class ContinuityDisplayLayout: ObservableObject {
         applyFitScaleIfNeeded()
     }
 
+    /// Call once, when the arrangement page first appears. A fresh install
+    /// (or a fresh prefs domain) has never had a placement WRITTEN, so the
+    /// constructor's own default — attached to the widest host's own right
+    /// edge — is only ever held in memory until something persists it. If
+    /// nothing ever does, the guest is an island that looked attached in
+    /// the geometry the instant the constructor ran but is one stale
+    /// `displayProvider()` read away from staying that way for the rest of
+    /// the process — the constructor can run before the window server has
+    /// settled, well before a person ever sees the page. This re-reads the
+    /// CURRENT display list, re-derives the attach against it, and makes it
+    /// durable, so a first appearance always shows an attached guest and
+    /// every appearance after is a no-op.
+    ///
+    /// A placement that was ever written is left exactly alone — this is
+    /// the "never placed" case only. A WRITTEN placement that is still
+    /// unattached is a different case with its own fix, the load-time
+    /// repair in `init`: since 2026-08-16 there is no longer a legal way
+    /// for a guest display to be an island, written or not.
+    func attachToDefaultEdgeIfNeverPlaced() {
+        guard !hasPersistedPlacement else { return }
+        let refreshed = displayProvider()
+        if !refreshed.isEmpty {
+            hostDisplays = refreshed
+        }
+        guestOrigin = ContinuityDisplayGeometry.defaultGuestOrigin(
+            hosts: hostDisplays, guestSize: guestSize, scale: guestScale)
+        applyFitScaleIfNeeded()
+        persistOrigin()
+    }
+
     func updateGuestSize(_ proposed: CGSize) {
         let valid = Self.validGuestSize(proposed)
         guard valid != guestSize else { return }
@@ -520,6 +674,17 @@ final class ContinuityDisplayLayout: ObservableObject {
         guestOrigin = ContinuityDisplayGeometry.resolvedOrigin(
             proposed: guestOrigin, previous: guestOrigin,
             guestSize: guestSize, scale: guestScale, hosts: hostDisplays)
+        /* INVARIANT: a guest display is never unattached. `resolvedOrigin`
+           snaps within the felt 48pt magnetic threshold, which is right for
+           a drag that ends NEAR an edge but leaves an island exactly where
+           it was released for a drag that ends far from every edge — the
+           end state `snappedOrigin`'s threshold used to allow, and no
+           longer does. Nearest edge wins, however far the release was. */
+        if sharedEdge == nil, !hostDisplays.isEmpty {
+            guestOrigin = ContinuityDisplayGeometry.nearestEdgeOrigin(
+                proposed: guestOrigin, guestSize: guestSize,
+                scale: guestScale, hosts: hostDisplays)
+        }
         // The attachment settled here: a different edge, or a different host
         // on the same side, is a different fit. Deliberately not during the
         // drag - resizing the tile under the pointer fights the gesture.
@@ -595,6 +760,7 @@ final class ContinuityDisplayLayout: ObservableObject {
         defaults?.set(guestOrigin.x, forKey: Self.originXKey)
         defaults?.set(guestOrigin.y, forKey: Self.originYKey)
         defaults?.set(true, forKey: Self.hasOriginKey)
+        hasPersistedPlacement = true
     }
 
     private static func validGuestSize(_ size: CGSize) -> CGSize {

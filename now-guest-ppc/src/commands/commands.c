@@ -17,6 +17,9 @@
 #include <string.h>
 
 #include "machine_names.h"
+#include "continuity_intake.h"       /* now_continuity_live_epoch */
+#include "continuity_offer_intake.h"
+#include "continuity_dragmgr.h"
 #include "capture.h"
 #include "census.h"
 #include "census_decode.h"
@@ -924,6 +927,223 @@ static void run_mirrorlog(const char *request_json, long id,
              id, now_mirror_debug_on() ? "on" : "off");
 }
 
+/* The console face of the inverted crossing (contract's x-commands
+   `offer`, declared 2026-08-15 ahead of any guest). A bare call REPORTS
+   what continuity.offer last published, honestly distinguishing "no
+   live epoch" from "no offer under it" from "closed with its epoch" —
+   see now_continuity_offer_report_kind. "--take" sends the
+   continuity.grab and reports only that it was ASKED, the same shape
+   `put`'s console reply already uses for a transfer this call cannot
+   wait out: the answer streams down the ordinary file lane and its
+   outcome shows up in the Files pane, putstat or tail, not in this
+   reply.
+
+   ONE IMPLEMENTATION BEHIND BOTH FACES, like every command here: this
+   is the only place either the wire's command.request or the console's
+   fallback (console_model.c, which sends no explicit dispatch line of
+   its own for a verb whose grammar is exactly the raw rest-of-line —
+   see CommandParityTests' reachedByFallback) reaches this capability. */
+static void run_offer(const char *request_json, long id, char *out, long cap)
+{
+    const NowContinuityOfferTable *offer = now_continuity_offer_table();
+    unsigned long live = now_continuity_live_epoch();
+    /* 16 UNTIL SLICE 0. The scaffold's own grammar is the longest thing
+       this buffer ever holds - `--drag --x=24@420,180` is 21 characters
+       and would have been silently truncated into `--drag --x=24@420` -
+       so it is sized for the scaffold and comes back down with it. The
+       verb's real actions are all under ten. */
+    char action[48];
+    char esc_name[80];
+
+    action[0] = '\0';
+    now_cmd_arg_rest(request_json, "action", action, sizeof action);
+
+    if (strcmp(action, "--take") == 0) {
+        char err[96];
+        char esc_err[192];
+
+        /* No id wanted: `--take` lands the file in the downloads folder
+           and says so in words. Only the promise drag has to hand the
+           FSSpec on to somebody. */
+        if (now_wire_get_offer((long *)0, err, sizeof err) != 0) {
+            now_json_escape(err, esc_err, sizeof esc_err);
+            snprintf(out, (size_t)cap,
+                     "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                     "\"error\":{\"code\":\"refused\",\"message\":\"%s\"}}",
+                     id, esc_err);
+            return;
+        }
+        now_json_escape(offer->item.name, esc_name, sizeof esc_name);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Asked for\",\"%s\"],"
+                 "[\"Status\",\"requested; see putstat or tail for "
+                 "progress\"]]}}",
+                 id, esc_name);
+        return;
+    }
+
+    /* `--drag` PICKS IT UP rather than filing it. Same offer, same
+       lane, same refusals; the difference is that the bytes are pulled
+       by a Drag Manager promise when the person drops it, so the file
+       lands where they pointed instead of in the downloads folder.
+
+       It reports ARMED and not "dragging", deliberately. The drag does
+       not begin here — it begins when the applied button says so, which
+       is a fact about the plane rather than about this call, and
+       reporting a drag that has not started would be the apply race
+       written into the console's own words. `offer` alone reports what
+       became of it. */
+    /* SLICE-2 DIAGNOSTIC SCAFFOLD, not product, and it comes out with
+       the block it drives (continuity_dragmgr.c). `offer --drag --x=N`
+       sets the experiment mask so one boot answers several hypotheses;
+       a build/spin cycle is ~20 minutes and there are three left.
+
+       SLICE 0 WIDENED IT, twice over. The mask was one DIGIT, which
+       cannot express bit 8 beside bit 4, and Route A' needs `--x=24` to
+       run the plane-fed proc under our own receiver. And the scripted
+       control needs somewhere to aim, so an optional `@H,V` follows:
+
+           offer --drag --x=8            plane-fed input proc
+           offer --drag --x=16@10,300    scripted ramp to the desktop
+           offer --drag --x=24@420,180   scripted, with our own receiver
+
+       Everything after `--x=` is parsed here rather than by the arg
+       reader, because `action` is the whole rest of the line and this
+       grammar is a scaffold's, not the verb's. */
+    if (strncmp(action, "--drag --x=", 11) == 0
+        && action[11] >= '0' && action[11] <= '9') {
+        const char *p = action + 11;
+        long mask = 0;
+
+        while (*p >= '0' && *p <= '9') {
+            mask = mask * 10 + (*p++ - '0');
+        }
+        now_continuity_dragmgr_diag(mask);
+        if (*p == '@') {
+            long h = 0, v = 0;
+            int neg = 0;
+
+            p++;
+            if (*p == '-') { neg = 1; p++; }
+            while (*p >= '0' && *p <= '9') { h = h * 10 + (*p++ - '0'); }
+            if (neg) { h = -h; }
+            if (*p == ',') {
+                neg = 0;
+                p++;
+                if (*p == '-') { neg = 1; p++; }
+                while (*p >= '0' && *p <= '9') { v = v * 10 + (*p++ - '0'); }
+                if (neg) { v = -v; }
+                now_continuity_dragmgr_diag_target((short)h, (short)v);
+            }
+        }
+        action[6] = '\0';
+    }
+
+    if (strcmp(action, "--drag") == 0) {
+        char err[128];
+        char esc_err[260];
+
+        if (now_continuity_dragmgr_request(err, sizeof err) != 0) {
+            now_json_escape(err, esc_err, sizeof esc_err);
+            snprintf(out, (size_t)cap,
+                     "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                     "\"error\":{\"code\":\"refused\",\"message\":\"%s\"}}",
+                     id, esc_err);
+            return;
+        }
+        now_json_escape(offer->item.name, esc_name, sizeof esc_name);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Picking up\",\"%s\"],"
+                 "[\"Status\",\"armed; the drag starts when the button "
+                 "is down\"]]}}",
+                 id, esc_name);
+        return;
+    }
+
+    /* The cancel path is a verb of its own and not an afterthought:
+       classic Finder is unforgiving of a drag that never ends, and a
+       person who armed one needs a way out that does not involve the
+       mouse. */
+    if (strcmp(action, "--stop") == 0) {
+        char err[96];
+        char esc_err[192];
+
+        if (now_continuity_dragmgr_cancel(err, sizeof err) != 0) {
+            now_json_escape(err, esc_err, sizeof esc_err);
+            snprintf(out, (size_t)cap,
+                     "{\"type\":\"command.result\",\"id\":%ld,\"ok\":false,"
+                     "\"error\":{\"code\":\"refused\",\"message\":\"%s\"}}",
+                     id, esc_err);
+            return;
+        }
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Drag\",\"stopping\"]]}}", id);
+        return;
+    }
+
+    switch (now_continuity_offer_report_kind(offer, live)) {
+    case kNowOfferReportNoEpoch:
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Offer\","
+                 "\"no live Continuity epoch\"]]}}", id);
+        return;
+    case kNowOfferReportClosed:
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Offer\","
+                 "\"the last one closed with its epoch\"]]}}", id);
+        return;
+    case kNowOfferReportPresent:
+        break;
+    default:
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Offer\","
+                 "\"nothing published yet\"]]}}", id);
+        return;
+    }
+
+    {
+        char type_word[8], creator_word[8];
+        char esc_type[16], esc_creator[16];
+        /* What became of the last `--drag`, reported beside the offer
+           itself rather than in a verb of its own: "armed" and "the
+           button never came" are facts ABOUT this offer, and a person
+           who has to ask a second question to learn the first one
+           failed will not ask it. */
+        const char *drag_state = "idle";
+        const char *drag_verdict = "ok";
+
+        now_continuity_dragmgr_status(&drag_state, &drag_verdict);
+        now_json_escape(offer->item.name, esc_name, sizeof esc_name);
+        type_word[0] = '\0';
+        creator_word[0] = '\0';
+        if (offer->item.have_file_type) {
+            memcpy(type_word, &offer->item.file_type, 4);
+            type_word[4] = '\0';
+        }
+        if (offer->item.have_creator) {
+            memcpy(creator_word, &offer->item.creator, 4);
+            creator_word[4] = '\0';
+        }
+        now_json_escape(type_word, esc_type, sizeof esc_type);
+        now_json_escape(creator_word, esc_creator, sizeof esc_creator);
+        snprintf(out, (size_t)cap,
+                 "{\"type\":\"command.result\",\"id\":%ld,\"ok\":true,"
+                 "\"output\":{\"offer\":[[\"Name\",\"%s\"],"
+                 "[\"Kind\",\"%s\"],[\"Type\",\"%s\"],[\"Creator\",\"%s\"],"
+                 "[\"Size\",\"%ld bytes\"],[\"Generation\",\"%lu\"],"
+                 "[\"Drag\",\"%s\"],[\"Last drag\",\"%s\"]]}}",
+                 id, esc_name, offer->item.is_folder ? "folder" : "file",
+                 esc_type, esc_creator, offer->item.data_size,
+                 offer->generation, drag_state, drag_verdict);
+    }
+}
+
 static void run_net(long id, char *out, long cap)
 {
     NetFacts facts;
@@ -1777,6 +1997,10 @@ void now_command_run(const char *name, const char *request_json, long id,
     }
     if (strcmp(name, "mirrorlog") == 0) {
         run_mirrorlog(request_json, id, out, cap);
+        return;
+    }
+    if (strcmp(name, "offer") == 0) {
+        run_offer(request_json, id, out, cap);
         return;
     }
     if (strcmp(name, "cycle") == 0) {

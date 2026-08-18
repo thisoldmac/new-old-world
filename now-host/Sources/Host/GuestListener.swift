@@ -165,6 +165,18 @@ final class GuestListener: ObservableObject {
     /// active session only, like the two reports above: a background Mac's
     /// selection is not what the pointer is standing on.
     var onContinuitySelection: ((GuestKey, ContinuitySelection) -> Void)?
+    /// The RESIDENT's account of a drag that is still in flight, delivered
+    /// under the guest key of the application it belongs to.
+    ///
+    /// The frame arrives on a channel that is deliberately not a session and
+    /// has no `GuestKey` of its own, so the key is resolved here by machine
+    /// fingerprint — the same join, and the same ambiguity rule, that
+    /// `machineIsAnswering` uses: exactly one live session for that machine,
+    /// or nothing is delivered. Two Macs calling themselves the same thing
+    /// from one address are indistinguishable, and binding one machine's
+    /// drag to the other's crossing would put a file on somebody's desktop
+    /// that nobody dragged.
+    var onContinuityDragBegin: ((GuestKey, ContinuityDragBegin) -> Void)?
 
     /// One exec in flight, from exec.request to its terminal exec.result.
     ///
@@ -327,6 +339,19 @@ final class GuestListener: ObservableObject {
             $0.machineFingerprint == print
         }
         return matching.count == 1
+    }
+
+    /// The one live session for a machine fingerprint, or nil.
+    ///
+    /// AMBIGUOUS MEANS NO, for the reason `machineIsAnswering` above says at
+    /// length: two sessions matching one fingerprint cannot be told apart
+    /// here, and guessing which of them a resident speaks for is a wrong
+    /// file rather than a missing one.
+    func sessionKey(forMachine fingerprint: String) -> GuestKey? {
+        let matching = sessions.filter {
+            $0.value.machineFingerprint == fingerprint
+        }
+        return matching.count == 1 ? matching.first?.key : nil
     }
 
     /// Whether the guest for this key is answering, or is STARVED — alive
@@ -1133,6 +1158,162 @@ final class GuestListener: ObservableObject {
     /// without anyone here doing anything.
     let share = HostShare()
 
+    // MARK: - continuity.offer / the inverted continuity.grab
+
+    /// What this Mac is carrying toward the guest, and the lifetime bound
+    /// on serving it after Continuity ends. See ContinuityOfferService.swift.
+    let continuityOfferService = ContinuityOfferService()
+
+    /// Publishes ONE local file as this Mac's offer for `epoch`/`generation`,
+    /// converting it exactly as `serveGet` converts a Files pull — same
+    /// `OutboundFile.plan`, so the bytes a later grab serves are the bytes
+    /// whose facts were already announced on the wire, never re-derived.
+    ///
+    /// Driven from a testable seam (an agent command or a debug console
+    /// verb), never from the drag gesture itself: this function does not
+    /// know or care whether a person's hand is on a mouse.
+    @discardableResult
+    func publishContinuityOffer(guestKey: GuestKey, epoch: UInt32,
+                                generation: UInt32, fileAt url: URL,
+                                handoffDragSeq: UInt32? = nil)
+        throws -> ContinuityOffer.Item {
+        guard let session = sessions[guestKey] else {
+            throw HostShare.ShareError.notFound
+        }
+        let data = try Data(contentsOf: url)
+        let plan = OutboundFile.plan(url: url, data: data,
+                                     convertText: convertServedText)
+        let original = url.lastPathComponent
+        let item = ContinuityOffer.Item(
+            name: plan.name, nameAdjusted: ClassicName.adjustment(for: original),
+            fileType: plan.fileType, creator: plan.creator,
+            dataSize: plan.bytes.count, resourceSize: nil,
+            modifiedAt: plan.modified.map(UInt32.init), isFolder: false,
+            icon: nil)
+        continuityOfferService.publish(guestKey: guestKey, epoch: epoch,
+                                       generation: generation, url: url,
+                                       plan: plan, item: item,
+                                       handoffDragSeq: handoffDragSeq)
+        note("offer #\(epoch)/\(generation) published: \(item.name), "
+             + "\(item.dataSize) bytes", area: "continuity",
+             session: guestKey)
+        session.sendContinuityOffer(epoch: epoch, generation: generation,
+                                    item: item)
+        return item
+    }
+
+    /// **THE HANDOFF, AS ONE ACT: publish the promise, then start the
+    /// guest's own drag on it.**
+    ///
+    /// Publishing and handing off are one call because they are one fact —
+    /// the skeleton the guest advertises and the bytes a later
+    /// `continuity.grab` serves are derived from a single
+    /// `OutboundFile.Plan` (`ContinuityHostDragSkeleton`). Two calls would
+    /// be two reads of the file and a window in which the guest could
+    /// promise something this Mac is not holding.
+    ///
+    /// After this returns, the host's remaining duty is exactly one thing:
+    /// keep serving that offer until the guest's send proc asks for it.
+    /// Position and button ride the ordinary datagrams; where the file
+    /// lands is not this side's business.
+    @discardableResult
+    func beginHostDrag(guestKey: GuestKey, epoch: UInt32,
+                       generation: UInt32, fileAt url: URL,
+                       dragSeq: UInt32,
+                       pos: ContinuityHostDragBegin.Position)
+        throws -> ContinuityHostDragBegin.Item {
+        try publishContinuityOffer(guestKey: guestKey, epoch: epoch,
+                                   generation: generation, fileAt: url,
+                                   handoffDragSeq: dragSeq)
+        guard let session = sessions[guestKey],
+              let plan = continuityOfferService.current?.plan else {
+            throw HostShare.ShareError.notFound
+        }
+        let item = ContinuityHostDragSkeleton.item(for: plan)
+        note("drag handoff #\(dragSeq): \(item.name) "
+             + "type=\(item.fileType ?? "-") creator=\(item.creator ?? "-") "
+             + "data=\(item.dataSize) rsrc=\(item.resourceSize) at "
+             + "\(pos.h),\(pos.v) — the Macintosh's Drag Manager owns the "
+             + "gesture from here", area: "continuity", session: guestKey)
+        session.sendContinuityHostDragBegin(epoch: epoch, dragSeq: dragSeq,
+                                            pos: pos, item: item)
+        return item
+    }
+
+    /// Tells the guest the drag is over — an absent item under a fresh
+    /// generation, the contract's own instruction to tear down whatever
+    /// the guest was drawing. Does not itself end the offer's lifetime
+    /// window; a separate epoch end does that (`endContinuityOfferEpoch`).
+    func clearContinuityOffer(guestKey: GuestKey, epoch: UInt32,
+                              generation: UInt32) {
+        guard let session = sessions[guestKey] else { return }
+        session.sendContinuityOffer(epoch: epoch, generation: generation,
+                                    item: nil)
+    }
+
+    /// **The host→guest carry ended without a drop: let the promise go.**
+    ///
+    /// The abort half of `beginHostDrag`. The guest's own drag has already
+    /// ended natively over there (its input proc reports a point nothing
+    /// accepts, then button-up, and the Drag Manager plays its own
+    /// snap-back) — so nothing is holding this promise and it stops being
+    /// serveable this instant, rather than after `endEpoch`'s window.
+    ///
+    /// Named `reason` because every one of these lines has to be readable
+    /// on its own in an attended run: a promise that stopped being served
+    /// and no sentence saying why is the shape of defect this lane keeps
+    /// paying for.
+    func endHostDragOffer(dragSeq: UInt32, reason: String) {
+        guard let offer = continuityOfferService.release() else {
+            note("drag handoff #\(dragSeq) ended with no promise still "
+                 + "held (\(reason))", area: "continuity")
+            return
+        }
+        note("drag handoff #\(dragSeq): the promise for \(offer.item.name) "
+             + "was let go without a pull — \(reason). Nothing was copied",
+             area: "continuity", level: .warn)
+    }
+
+    /// Continuity ended while an item was still carried: starts the
+    /// bounded serveable window rather than dropping the offer outright.
+    func endContinuityOfferEpoch() {
+        continuityOfferService.endEpoch()
+    }
+
+    /// Answers a `continuity.grab` the ASKING guest sent — the inverted
+    /// use, serving this host's own published offer down the ordinary
+    /// file lane, same as `serveGet` serves a Files pull.
+    fileprivate func serveContinuityGrab(_ grab: ContinuityGrab,
+                                         on session: Session) {
+        guard let key = session.guestKey else {
+            session.refuseFile(id: grab.id, code: "no-selection",
+                               reason: "This Mac does not recognise that "
+                                   + "connection.")
+            return
+        }
+        switch continuityOfferService.grab(guestKey: key, epoch: grab.epoch,
+                                           generation: grab.generation) {
+        case .refuse(let code, let reason):
+            note("#\(grab.id) offer grab refused: \(code) (\(reason))",
+                 area: "continuity", level: .warn, session: key)
+            session.refuseFile(id: grab.id, code: code, reason: reason)
+        case .serve(let plan):
+            /* THE PROMISE PULL, and on the native lane it happens INSIDE
+               the guest's drop — the one moment this Mac's only remaining
+               duty is being discharged. Tagged with the handoff it belongs
+               to so an attended run can read the whole gesture off this
+               log alone: handoff sent, pull served, and how much. */
+            let handoff = continuityOfferService.handoffDragSeq
+                .map { "drag handoff #\($0): " } ?? ""
+            note("#\(grab.id) \(handoff)serving offered \(plan.name), "
+                 + "\(plan.bytes.count) bytes", area: "continuity",
+                 session: key)
+            session.serveFile(id: grab.id, plan: plan,
+                              container: grab.container,
+                              modified: plan.modified)
+        }
+    }
+
     /// The cloud services this Mac may offer a guest. Lazy and a var so
     /// a test can hand it a registry of fakes; the real providers cost
     /// nothing until a guest asks or the iCloud page looks.
@@ -1789,6 +1970,21 @@ final class GuestListener: ObservableObject {
             completion(.failure(.init(
                 code: "disconnected",
                 message: "No \(MachineNaming.commonNoun) is connected")))
+            return
+        }
+        /* GENERATION 0 IS NOT A GENERATION. It is what a stub carries when
+           the only thing this Mac has heard about the gesture is the
+           resident's mid-drag announcement — an identity, sent before any
+           generation was minted. The Macintosh mints them and refuses every
+           number it did not, so asking with a zero would spend the one
+           grab this transfer gets on a certain `stale-selection`. Refused
+           here instead, by name, so the reason names the race rather than
+           the symptom. */
+        guard generation != 0 else {
+            completion(.failure(.init(
+                code: "drag-not-yet-named",
+                message: "the Mac named this file mid-drag but has not "
+                    + "published the generation a grab must ask for yet")))
             return
         }
         guard pendingFile == nil else {
@@ -3479,6 +3675,10 @@ final class GuestListener: ObservableObject {
                 guard let self, let asker = origin.session else { return }
                 self.serveGet(request, on: asker)
             },
+            onServeContinuityGrab: { [weak self] grab in
+                guard let self, let asker = origin.session else { return }
+                self.serveContinuityGrab(grab, on: asker)
+            },
             onAcceptOffer: { [weak self] offer in
                 guard let self, let asker = origin.session else { return }
                 self.acceptOffer(offer, on: asker)
@@ -3587,6 +3787,11 @@ final class GuestListener: ObservableObject {
                 }
                 guard let key = closedSession.guestKey,
                       self.sessions[key] === closedSession else { return }
+                /* "The LINK dropping ends it immediately" — the offer's
+                   own contract clause, distinct from the epoch-end window
+                   above: consent was given to one Macintosh over one
+                   connection, and this connection is gone. */
+                self.continuityOfferService.linkDropped(guestKey: key)
                 // A conversation is per connection; a turn still
                 // streaming to a dead socket is cancelled, not leaked.
                 self.chatService?.sessionClosed(key: key)
@@ -3629,6 +3834,16 @@ final class GuestListener: ObservableObject {
             guard let self, let key = newSession?.guestKey,
                   key == self.activeKey else { return }
             self.onContinuitySelection?(key, sel)
+        }
+        /* The resident channel's one non-liveness frame, routed to the
+           application it speaks for. Same active-session gate as the stub
+           above: a background Mac's drag is not what this pointer is
+           standing on. */
+        newSession.onContinuityDragBegin = { [weak self, weak newSession] begin in
+            guard let self, let print = newSession?.machineFingerprint,
+                  let key = self.sessionKey(forMachine: print),
+                  key == self.activeKey else { return }
+            self.onContinuityDragBegin?(key, begin)
         }
         origin.session = newSession
         pending.append(newSession)

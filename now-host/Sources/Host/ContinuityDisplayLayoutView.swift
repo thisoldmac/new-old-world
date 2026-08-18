@@ -1,11 +1,46 @@
 import SwiftUI
 
+/// What the arrangement pane has to say about a guest before it draws
+/// anything. Two states: `.connected` draws the tile, anything else draws
+/// the empty state — full stop.
+///
+/// **This shipped as three states for about a day, and was overruled in
+/// review the same day (2026-08-16).** The removed `.remembered` state kept
+/// an editable tile on screen for a machine the host had seen before but
+/// was not currently on the wire — dashed, secondary-tinted, labelled
+/// "remembered, not connected" — reasoned from the idiom other modules
+/// (`ConnectionsModuleView`'s `.known` presence) already use for exactly
+/// that distinction. Michelle's ruling was narrower than that idiom: "it
+/// should not show any guest display when no guest is connected," and the
+/// label undermined the design on its own terms besides — a dashed tile
+/// still reads as a machine that is there, and it named an absence rather
+/// than a remembered one. The persisted placement itself
+/// (`ContinuityDisplayLayout`'s `guestOrigin`/`guestScale`) is UNTOUCHED
+/// by this reversal — a reconnecting machine still comes back exactly
+/// where it was — only the RENDERING of an offline placement, and the
+/// `MirrorContinuityController.hasRememberedGuest` roster read that fed
+/// it, were removed.
+enum ContinuityArrangementPresence: Equatable {
+    case connected
+    case empty
+
+    init(guestConnected: Bool) {
+        self = guestConnected ? .connected : .empty
+    }
+}
+
 struct ContinuityDisplayLayoutView: View {
     @ObservedObject var layout: ContinuityDisplayLayout
     @ObservedObject var edge: ContinuityEdgeController
     @ObservedObject var previews: ContinuityDisplayPreviewStore
     let guestName: String
-    let mirrorRunning: Bool
+    let continuityRunning: Bool
+    /// Whether a guest is on the wire right now.
+    let guestConnected: Bool
+
+    private var presence: ContinuityArrangementPresence {
+        ContinuityArrangementPresence(guestConnected: guestConnected)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -22,81 +57,175 @@ struct ContinuityDisplayLayoutView: View {
                 Button("Refresh Host Displays") { layout.refreshDisplays() }
             }
 
-            ContinuityArrangementCanvas(layout: layout, previews: previews,
-                                        guestName: guestName)
-                .frame(minHeight: 280)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color(nsColor: .separatorColor))
-                }
-                .overlay(alignment: .bottomLeading) {
-                    /* A preview that could not be taken says why, in the
-                       canvas. The alternative - flat fills with no
-                       explanation - is indistinguishable from a Mac whose
-                       displays are simply grey, and a black rectangle is
-                       worse still. */
-                    if let note = previews.note {
-                        Text(note.message)
-                            .font(.caption)
+            if presence == .empty {
+                emptyState
+                    .frame(minHeight: 280)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color(nsColor: .separatorColor))
+                    }
+            } else {
+                // presence == .connected: the only other case there is.
+                ContinuityArrangementCanvas(
+                    layout: layout, previews: previews, guestName: guestName)
+                    .frame(minHeight: 280)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color(nsColor: .separatorColor))
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        /* A preview that could not be taken says why, in the
+                           canvas. The alternative - flat fills with no
+                           explanation - is indistinguishable from a Mac whose
+                           displays are simply grey, and a black rectangle is
+                           worse still. Permission missing gets the full
+                           affordance (deep link, running-copy note) the
+                           Accessibility row uses; any other failure just
+                           names itself. */
+                        if let note = previews.note {
+                            previewNote(note)
+                                .padding(8)
+                        }
+                    }
+
+                /* This row squished to a one-letter-per-line sliver on a
+                   narrow window: an HStack has no compression resistance of
+                   its own, so a parent narrower than the row's ideal width
+                   shrank every Text and Button down with it, and SwiftUI's
+                   last resort for text that has nowhere left to go is
+                   wrapping mid-word rather than clipping. `.fixedSize` tells
+                   the row to lay out at its IDEAL width regardless of what
+                   the parent offers; the ScrollView around it is what makes
+                   that safe — an oversized row scrolls horizontally instead
+                   of overflowing the pane, so the controls stay one line
+                   and clickable at any window width the app permits. */
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .center, spacing: 16) {
+                        Text("Guest size")
+                            .font(.headline)
+                        Text("\(Int(layout.guestSize.width)) × "
+                             + "\(Int(layout.guestSize.height))")
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.thinMaterial,
-                                        in: RoundedRectangle(cornerRadius: 6))
-                            .padding(8)
+                            .lineLimit(1)
+                        Divider().frame(height: 24)
+                        Text("Layout scale")
+                            .font(.headline)
+                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            ForEach(GuestDisplayScaleMode.allCases) { mode in
+                                Button(mode.label) {
+                                    layout.selectScaleMode(mode)
+                                }
+                                .buttonStyle(ContinuityChoiceButtonStyle(
+                                    selected: layout.scaleMode == mode))
+                            }
+                        }
+                        Divider().frame(height: 24)
+                        Toggle("Screen previews", isOn: Binding(
+                            get: { previews.enabled },
+                            set: { previews.setEnabled($0) }))
+                            .toggleStyle(.switch)
+                            .help("Show live stills of each screen in the "
+                                  + "arrangement. The host side needs Screen "
+                                  + "Recording permission to capture its own "
+                                  + "displays.")
+                            .lineLimit(1)
+                            .fixedSize()
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                 }
 
-            HStack(alignment: .center, spacing: 16) {
-                Text("Guest size")
-                    .font(.headline)
-                Text("\(Int(layout.guestSize.width)) × "
-                     + "\(Int(layout.guestSize.height))")
-                    .foregroundStyle(.secondary)
-                Divider().frame(height: 24)
-                Text("Layout scale")
-                    .font(.headline)
-                HStack(spacing: 4) {
-                    ForEach(GuestDisplayScaleMode.allCases) { mode in
-                        Button(mode.label) { layout.selectScaleMode(mode) }
-                            .buttonStyle(ContinuityChoiceButtonStyle(
-                                selected: layout.scaleMode == mode))
-                    }
+                VStack(alignment: .leading, spacing: 5) {
+                    Label(layoutLine,
+                          systemImage: layout.sharedEdge == nil
+                            ? "rectangle.on.rectangle.slash"
+                            : "rectangle.connected.to.line.below")
+                        .font(.callout.weight(.medium))
+                    Text(continuityRunning ? edge.status
+                         : "Turn on Continuity before crossing into the "
+                           + "guest display.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Text("Cursor traversal is copy-free in this version. "
+                         + "Files and held drags do not cross the display "
+                         + "edge.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Divider().frame(height: 24)
-                Toggle("Screen previews", isOn: Binding(
-                    get: { previews.enabled },
-                    set: { previews.setEnabled($0) }))
-                    .toggleStyle(.switch)
-                    .help("Show live stills of each screen in the "
-                          + "arrangement. The host side needs Screen "
-                          + "Recording permission to capture its own "
-                          + "displays.")
-                Spacer()
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                Label(layoutLine,
-                      systemImage: layout.sharedEdge == nil
-                        ? "rectangle.on.rectangle.slash"
-                        : "rectangle.connected.to.line.below")
-                    .font(.callout.weight(.medium))
-                Text(mirrorRunning ? edge.status
-                     : "Start Mirror before crossing into the guest display.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Text("Cursor traversal is copy-free in this version. Files "
-                     + "and held drags do not cross the display edge.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
+        // First appearance only, in effect: a placement already on disk
+        // makes this a no-op. See `attachToDefaultEdgeIfNeverPlaced`. A
+        // written placement that is still unattached is repaired earlier,
+        // at load, in `ContinuityDisplayLayout.init` — a guest display is
+        // never unattached, written or not.
+        .onAppear { layout.attachToDefaultEdgeIfNeverPlaced() }
+    }
+
+    /// The app's plain empty-state idiom — a glyph, a title, a sentence —
+    /// matching `CensusModuleView.emptyState` and
+    /// `DiagnosticsModuleView.emptyState`. Kept local for the same reason
+    /// those are: it works on macOS 13, where `ContentUnavailableView`
+    /// does not exist yet.
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "rectangle.on.rectangle.slash")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+            Text("No guest has ever connected").font(.title3.weight(.semibold))
+            Text("Connect \(MachineNaming.simpleReference) to arrange its "
+                 + "display beside this Mac's.")
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    /// What the canvas overlays for a preview note. A plain capture failure
+    /// is just its message, unchanged. A missing-permission note gets the
+    /// same affordance shape as `ContinuityPointerCard.accessibilityRow`:
+    /// the reason, a working deep link, and — only when it would explain
+    /// an otherwise-baffling "but Settings says it's on" — which copy of
+    /// the app is actually running.
+    @ViewBuilder
+    private func previewNote(_ note: ContinuityPreviewNote) -> some View {
+        if note == .screenRecordingDenied {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(note.message)
+                    .font(.caption.weight(.semibold))
+                if !previews.runningCopy.isInApplicationsFolder {
+                    Text("Running from \(previews.runningCopy.path)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                Button("Open Screen Recording Settings…") {
+                    previews.openScreenRecordingSettings()
+                }
+                .font(.caption)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+        } else {
+            Text(note.message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 6))
+        }
     }
 
     private var layoutLine: String {
@@ -122,6 +251,8 @@ struct ContinuityChoiceButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .lineLimit(1)
+            .fixedSize()
             .font(.callout.weight(selected ? .semibold : .regular))
             .foregroundStyle(selected ? Color.white : Color.primary)
             .padding(.horizontal, 10)
@@ -137,6 +268,11 @@ struct ContinuityChoiceButtonStyle: ButtonStyle {
     }
 }
 
+/// This canvas only ever renders while a guest is CONNECTED —
+/// `ContinuityDisplayLayoutView` draws the empty state for every other
+/// case, so there is no "offline" styling to carry here. (There briefly
+/// was: see `ContinuityArrangementPresence`'s doc comment for the
+/// same-day reversal.)
 private struct ContinuityArrangementCanvas: View {
     @ObservedObject var layout: ContinuityDisplayLayout
     @ObservedObject var previews: ContinuityDisplayPreviewStore
@@ -212,8 +348,6 @@ private struct ContinuityArrangementCanvas: View {
         return ZStack {
             RoundedRectangle(cornerRadius: 7)
                 .fill(Color.accentColor.opacity(0.22))
-            // No guest connected is not a failure: the tile keeps the flat
-            // fill and the machine name, exactly as before previews existed.
             if let preview = previews.guestPreview {
                 Image(decorative: preview, scale: 1)
                     .resizable()

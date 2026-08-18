@@ -207,6 +207,60 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertEqual(rig.controller.phase, .arming)
     }
 
+    /* THE FOREIGN-MODAL SENTENCE. A guest inside another application's
+       modal alert stops acknowledging while the resident's Time Manager
+       liveness keeps answering — the exact split these two tests hold the
+       controller to. Reproduced on the emulator 2026-08-16 (guest
+       `4e7f6404953a`): `wirestat` reported `pass max 30,060,017 us` across a
+       30 s window, so the guest's event loop did not run once, and one
+       acknowledgement arrived out of 818 datagrams sent. */
+    func testProlongedStarvationIsAnnouncedOnceWithWhatToDo() async throws {
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.2, starvationAnnounceAfter: 0.6)
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+        var announced: [String] = []
+        rig.controller.onStarvation = { announced.append($0) }
+
+        try await waitUntil("the starvation announcement") {
+            !announced.isEmpty
+        }
+        let message = try XCTUnwrap(announced.first)
+        /* Not a spelling test: each clause is a separate promise the page
+           and the notification both make. What is known (the Mac is silent
+           but running), and what the person can do about it (dismiss it
+           themselves, because Continuity cannot). */
+        XCTAssertTrue(message.contains("has not answered"), message)
+        XCTAssertTrue(message.contains("still running"), message)
+        XCTAssertTrue(message.contains("Dismiss it at the Mac"), message)
+        XCTAssertEqual(message, rig.controller.status,
+                       "the status line and the notification must be the "
+                       + "same sentence, never two drafts of it")
+
+        try await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertEqual(announced.count, 1,
+                       "a two-minute modal is one notification, not sixty")
+    }
+
+    func testBriefStarvationIsNotAnnouncedAtAll() async throws {
+        /* The status line already changes at `acknowledgementTimeout`, which
+           is short enough that an ordinary tracking loop — a menu held down,
+           a window being dragged — trips it. Escalating there would train a
+           person to ignore the one that matters. */
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.2, starvationAnnounceAfter: 30)
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+        var announced: [String] = []
+        rig.controller.onStarvation = { announced.append($0) }
+
+        try await Task.sleep(nanoseconds: 1_500_000_000)
+        XCTAssertTrue(announced.isEmpty,
+                      "announced a one-second stall: \(announced)")
+        XCTAssertTrue(rig.controller.status.contains("busy in another"),
+                      rig.controller.status)
+    }
+
     private struct ArmingRig {
         let guest: FakeGuest
         let controller: MirrorContinuityController
@@ -219,6 +273,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         fastPump: Bool = false,
         deepClickLog: Bool = false,
         acknowledgementTimeout: TimeInterval = 3,
+        starvationAnnounceAfter: TimeInterval = 10,
+        starvationBackstop: TimeInterval = 300,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ArmingRig {
         let guest = FakeGuest(port: try XCTUnwrap(listener.boundPort))
@@ -231,7 +287,9 @@ final class MirrorContinuityControllerTests: XCTestCase {
 
         let controller = MirrorContinuityController(
             listener: listener, defaults: defaults,
-            acknowledgementTimeout: acknowledgementTimeout, audit: audit)
+            acknowledgementTimeout: acknowledgementTimeout,
+            starvationAnnounceAfter: starvationAnnounceAfter,
+            starvationBackstop: starvationBackstop, audit: audit)
         controller.autoReconnect = autoReconnect
         controller.fastPump = fastPump
         controller.deepClickLog = deepClickLog
@@ -255,6 +313,8 @@ final class MirrorContinuityControllerTests: XCTestCase {
         autoReconnect: Bool = false,
         fastPump: Bool = false,
         acknowledgementTimeout: TimeInterval = 3,
+        starvationAnnounceAfter: TimeInterval = 10,
+        starvationBackstop: TimeInterval = 300,
         audit: MirrorContinuityController.Audit? = nil
     ) async throws -> ActiveRig {
         let port = try XCTUnwrap(listener.boundPort)
@@ -264,7 +324,9 @@ final class MirrorContinuityControllerTests: XCTestCase {
         let rig = try await makeArmingRig(
             initial: initial, autoReconnect: autoReconnect,
             fastPump: fastPump,
-            acknowledgementTimeout: acknowledgementTimeout, audit: audit)
+            acknowledgementTimeout: acknowledgementTimeout,
+            starvationAnnounceAfter: starvationAnnounceAfter,
+            starvationBackstop: starvationBackstop, audit: audit)
         try rig.guest.send(.continuityReport(.init(
             version: ContinuityContract.version,
             id: rig.arm.id, epoch: rig.arm.epoch, state: "armed",
@@ -431,6 +493,194 @@ final class MirrorContinuityControllerTests: XCTestCase {
         }
         XCTAssertTrue(rig.controller.isActive)
         XCTAssertTrue(rig.controller.status.contains("direct pointer connected"))
+    }
+
+    /// THE KEY TEST: an indefinitely held gesture — modal, menu hold,
+    /// whatever shape — must survive for as long as resident liveness
+    /// answers, well past several multiples of `acknowledgementTimeout`.
+    /// This is the behaviour the ack-silence watchdog must never regress:
+    /// silence with a live resident is starvation, not death, and starving
+    /// for a while longer must not be distinguishable from starving for a
+    /// moment in the one place that matters — whether the epoch survives.
+    func testExtendedStarvationWithLiveResidentNeverEndsTheEpoch()
+        async throws {
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.05, starvationBackstop: 300)
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+
+        // Many multiples of acknowledgementTimeout, none of the backstop:
+        // long enough that the old unconditional watchdog would have ended
+        // the epoch dozens of times over.
+        try await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertTrue(rig.controller.isActive,
+                      "resident liveness answered throughout; the epoch "
+                      + "must still be owned")
+        XCTAssertTrue(rig.controller.isEnabled)
+    }
+
+    /// Every additional `acknowledgementTimeout` of tolerated silence is
+    /// audited on its own line, not just the onset — the log must be able
+    /// to narrate how long a hold has been tolerated without the reader
+    /// re-deriving it from timestamps.
+    func testToleratedStarvationIsAuditedPeriodicallyNotOnlyAtOnset()
+        async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.05, starvationBackstop: 300) {
+                audit.append(($0, $1))
+            }
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+
+        try await waitUntil("more than one tolerated-silence line",
+                            timeout: 2) {
+            audit.filter {
+                $0.1.contains("tolerated: resident liveness answering "
+                    + "(starvation, not death)")
+            }.count >= 3
+        }
+    }
+
+    /// THE BACKSTOP. Resident liveness is a TCP read, and this project
+    /// already argues elsewhere that such a channel can answer "alive"
+    /// long after the machine behind it stopped being reachable. Past the
+    /// backstop, ack silence ends the epoch even while liveness still
+    /// claims the machine is there — the dead-man fallback for evidence
+    /// that may itself be lying.
+    func testStarvationPastTheBackstopEndsTheEpochDespiteLiveResident()
+        async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.05, starvationBackstop: 0.3) {
+                audit.append(($0, $1))
+            }
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+
+        try await waitUntil("backstop ends the epoch", timeout: 2) {
+            !rig.controller.isEnabled
+        }
+        XCTAssertFalse(rig.controller.isActive)
+        XCTAssertTrue(audit.contains {
+            $0.1.contains("exceeded the") && $0.1.contains("backstop")
+        }, "no backstop line was audited: \(audit.map(\.1))")
+        XCTAssertTrue(
+            rig.controller.status.contains("UDP acknowledgements")
+                && rig.controller.status.contains("backstop exceeded"),
+            rig.controller.status)
+    }
+
+    /// The lease clock that keeps the GUEST's own timeout armed is driven
+    /// on its own queue by `ContinuityKeepaliveClock`, independent of the
+    /// ack-silence watchdog. Confirms host patience does not come at the
+    /// cost of the datagrams the guest's lease depends on hearing.
+    func testKeepalivesKeepFlowingThroughoutTolerableStarvation()
+        async throws {
+        let rig = try await makeActiveRig(
+            acknowledgementTimeout: 0.05, starvationBackstop: 300)
+        defer { rig.udp.stop() }
+        rig.controller.machineIsAnsweringOverride = { _ in true }
+        try await waitUntil("initial state") { !rig.udp.packets.isEmpty }
+        let baseline = rig.udp.packets.count
+
+        try await Task.sleep(nanoseconds: 900_000_000)
+        XCTAssertTrue(rig.controller.isActive,
+                      "the epoch must still be owned while asserting on "
+                      + "keepalive delivery")
+        XCTAssertTrue(
+            rig.udp.packets.dropFirst(baseline).contains {
+                $0.flags.contains(.keepalive)
+            }, "no keepalive datagrams arrived during the tolerated hold; "
+                + "the guest's host-fed lease would have expired")
+    }
+
+    /// **THE LEVEL AND THE EDGE ARE ONE BIT AND TWO CONSUMERS, TOLD APART
+    /// BY THE GENERATION** (F2 defect B, attended metal 2026-08-17).
+    ///
+    /// The guest's drag input proc reads the LEVEL out of the datagram
+    /// flags; the resident applies a press only on a NEWER
+    /// `button_generation` (`now_continuity_logic.c:47-49`). So a carried
+    /// button must appear in the flags and must NOT move the generation —
+    /// that is what lets a host→guest drag hold a button for the length of a
+    /// human gesture while no synthetic click ever reaches the guest's
+    /// Finder, which is the D5 guarantee this fix was not allowed to break.
+    func testTheCarriedButtonIsALevelWithNoGenerationBehindIt() async throws {
+        let rig = try await makeActiveRig()
+        defer { rig.udp.stop() }
+        let before = try await awaitPacket(in: rig.udp, "a settled datagram") {
+            !$0.flags.contains(.primaryDown)
+        }
+
+        XCTAssertTrue(rig.controller.setCarriedButtonLevel(
+            true, gesture: 4, reason: "a file is being carried"))
+        let held = try await awaitPacket(in: rig.udp, "the carried level") {
+            $0.flags.contains(.carriedLevel)
+        }
+        XCTAssertFalse(held.flags.contains(.primaryDown),
+                       "the level must NEVER ride .primaryDown: a stale "
+                        + "generation plus that flag at a fresh epoch is "
+                        + "the phantom press that clicked and "
+                        + "marquee-selected at random on 2026-08-17")
+        XCTAssertEqual(held.buttonGeneration, before.buttonGeneration,
+                       "a carried level that advances the generation is a "
+                        + "click the resident will apply — D5, and the "
+                        + "reason a drag opened Classilla")
+        XCTAssertEqual(held.previousButtonGeneration,
+                       before.previousButtonGeneration,
+                       "nor may it disturb the pair the resident reads")
+
+        XCTAssertTrue(rig.controller.setCarriedButtonLevel(
+            false, gesture: 4, reason: "the person let the file go"))
+        let released = try await awaitPacket(
+            in: rig.udp, "the cleared level", timeout: 5
+        ) { $0.positionSequence >= held.positionSequence
+            && !$0.flags.contains(.carriedLevel) }
+        XCTAssertEqual(released.buttonGeneration, before.buttonGeneration,
+                       "and the clear is a level too: the guest's TrackDrag "
+                        + "reads it and returns, and nothing was posted")
+
+        /* AND THE CLICK CYCLE IS UNTOUCHED. The level is not
+           `wireButtonDown`; an ordinary press after a carry must still mint
+           its own generation. */
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 45, y: 55)))
+        let click = try await awaitPacket(in: rig.udp, "an ordinary press") {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        }
+        XCTAssertNotEqual(click.buttonGeneration, before.buttonGeneration)
+    }
+
+    /// A level cannot outlive the epoch it was raised in: the next epoch's
+    /// guest holds nothing, and a stale level would hand its first drag a
+    /// button nobody is pressing.
+    func testAnEndingEpochDropsTheCarriedLevel() async throws {
+        var lines: [String] = []
+        let rig = try await makeActiveRig(audit: { _, line in
+            lines.append(line)
+        })
+        defer { rig.udp.stop() }
+        XCTAssertTrue(rig.controller.setCarriedButtonLevel(
+            true, gesture: 9, reason: "a file is being carried"))
+        _ = try await awaitPacket(in: rig.udp, "the carried level") {
+            $0.flags.contains(.carriedLevel)
+        }
+
+        rig.controller.cancel(reason: "the pointer left")
+        try await waitUntil("the epoch to end") {
+            rig.controller.phase == .idle
+        }
+
+        /* Asked by RAISING it again: a level the teardown dropped is a
+           transition and says so, while a level still held would make this
+           call a silent no-op. That difference is the whole assertion —
+           there is no wire left to read the answer off. */
+        lines.removeAll()
+        _ = rig.controller.setCarriedButtonLevel(
+            true, gesture: 10, reason: "a second carry")
+        XCTAssertTrue(lines.contains { $0.contains("carried button level "
+            + "RAISED") },
+                      "the epoch's teardown left the level standing: "
+                        + "\(lines)")
     }
 
     func testDirectClickStreamsReleaseWithoutWaitingForPressAck()
@@ -944,6 +1194,142 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertTrue(audit.contains {
             $0.1.contains("modifier state forwarded")
         })
+    }
+
+    /// **A settled release is the last thing the guest can possibly see.**
+    ///
+    /// The wire is a latest-state mailbox and a guest starved inside the
+    /// Finder's drag-tracking loop reads ONE snapshot of it per pass. The
+    /// cross-edge handback used to put three datagrams on it inside a
+    /// millisecond — settle to the press origin, release carrying that same
+    /// origin, then the epoch teardown with `inside` cleared — and both the
+    /// resident's timer task and the guest application honour a cleared
+    /// `inside` BEFORE they take the snapshot's position. The settled origin
+    /// went with it and the release landed on whatever mid-drag point the
+    /// guest had last ingested.
+    ///
+    /// Metal, 2026-08-15: this side commanded and logged origin=522,199 and
+    /// 524,203; the guest settled at 792,231 and 799,232, one drag sample
+    /// short of the 802,231 and 800,232 crosses. Slow drags only, because a
+    /// slow drag is the one where the guest is starved deeply enough for the
+    /// three to collapse into one.
+    ///
+    /// The epoch still ends — over the RELIABLE control stream, asserted
+    /// here — so the withheld datagram costs nothing and buys the shape the
+    /// fast path already had by accident.
+    func testASettledReleaseIsNotFollowedByTheEpochTeardownDatagram()
+        async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig { audit.append(($0, $1)) }
+        defer { rig.udp.stop() }
+        let origin = MirrorKit.Point(x: 522, y: 199)
+
+        XCTAssertTrue(rig.controller.primaryDown(at: origin))
+        try await waitUntil("the press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        let down = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        /* Acknowledged, then dragged: this is the SLOW path, the one where
+           the settle becomes a datagram of its own. An unacknowledged press
+           defers instead and never had the defect. */
+        rig.udp.acknowledge(down)
+        XCTAssertTrue(rig.controller.primaryDragged(to: .init(x: 794, y: 231)))
+        try await waitUntil("the held drag") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration == down.buttonGeneration
+                    && $0.h == 794 && $0.v == 231
+            }
+        }
+
+        XCTAssertTrue(rig.controller.settleHeldPosition(to: origin))
+        XCTAssertTrue(rig.controller.primaryUp(at: origin))
+        try await waitUntil("the settled release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != down.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+                    && $0.h == origin.x && $0.v == origin.y
+            }
+        }
+        rig.controller.pointerLeft()
+        try await waitUntil("the reliable disarm") {
+            rig.guest.received.contains {
+                guard case .continuityDisarm(let disarm) = $0 else {
+                    return false
+                }
+                return disarm.epoch == rig.arm.epoch
+            }
+        }
+        /* Sampled AFTER a wait long enough for a teardown datagram to have
+           landed. Asserting the absence at the instant of the call would pass
+           while the packet was still on the wire — the shape that let a
+           sibling test in this file pass against its own mutation. */
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        XCTAssertFalse(rig.udp.packets.contains {
+            !$0.flags.contains(.inside)
+        }, "the epoch-ending datagram followed the settled release onto the "
+            + "wire; a starved guest reads only the last one and drops the "
+            + "settled origin with it")
+        let last = try XCTUnwrap(rig.udp.packets.last)
+        XCTAssertEqual(MirrorKit.Point(x: Int(last.h), y: Int(last.v)), origin,
+                       "the last datagram must carry the press origin")
+        XCTAssertFalse(last.flags.contains(.primaryDown),
+                       "and the release edge beside it")
+        XCTAssertTrue(audit.contains {
+            $0.1.contains("epoch-ending datagram withheld")
+                && $0.1.contains("\(origin.x),\(origin.y)")
+        }, "a withheld packet is a decision and must name itself")
+    }
+
+    /// The withholding is scoped to a settled release, not to leaving.
+    ///
+    /// Asserted on the DECISION rather than on the packet's arrival. The
+    /// teardown datagram is sent one statement before `relinquish` cancels
+    /// the connection under it, so whether loopback delivers it is a race
+    /// this suite loses on a busy Mac — and a gate that fails for the
+    /// machine's reasons teaches nothing about this branch. The branch is
+    /// what a mutation flips, and the audit line names which one ran.
+    func testAnOrdinaryReleaseStillEndsTheEpochOnTheWire() async throws {
+        var audit: [(HostLog.LogLevel, String)] = []
+        let rig = try await makeActiveRig { audit.append(($0, $1)) }
+        defer { rig.udp.stop() }
+
+        XCTAssertTrue(rig.controller.primaryDown(at: .init(x: 45, y: 55)))
+        try await waitUntil("the press") {
+            rig.udp.packets.contains {
+                $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+            }
+        }
+        let down = try XCTUnwrap(rig.udp.packets.last {
+            $0.flags.contains(.primaryDown) && $0.buttonGeneration != 0
+        })
+        rig.udp.acknowledge(down)
+        XCTAssertTrue(rig.controller.primaryUp(at: .init(x: 46, y: 56)))
+        try await waitUntil("the release") {
+            rig.udp.packets.contains {
+                $0.buttonGeneration != down.buttonGeneration
+                    && !$0.flags.contains(.primaryDown)
+            }
+        }
+
+        rig.controller.pointerLeft()
+        try await waitUntil("the reliable disarm") {
+            rig.guest.received.contains {
+                guard case .continuityDisarm(let disarm) = $0 else {
+                    return false
+                }
+                return disarm.epoch == rig.arm.epoch
+            }
+        }
+        XCTAssertFalse(audit.contains {
+            $0.1.contains("epoch-ending datagram withheld")
+        }, "an ordinary release must leave the epoch ending on the wire; "
+            + "withholding it everywhere would silence a signal the guest "
+            + "uses to end an epoch it is not starved for")
     }
 
     func testLeavingV0DisarmsImmediately() async throws {

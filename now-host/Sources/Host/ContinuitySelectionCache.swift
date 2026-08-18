@@ -10,10 +10,36 @@ import UniformTypeIdentifiers
 /// objects is how a grant outlives what it was granted for.
 struct ContinuityDragStub: Equatable, Sendable {
     var epoch: UInt32
+    /// **Zero means no generation has been minted for this gesture yet.**
+    ///
+    /// It is what a stub carries when the only account this Mac has of the
+    /// drag is the resident's mid-gesture `continuity.dragBegin` — which
+    /// names a file but cannot name a generation, because the guest's
+    /// application mints those and it is not running yet. The identity is
+    /// usable immediately, which is the whole point; the grab is not, and
+    /// is refused by name until the application's own frame joins on
+    /// `dragSeq` and supplies the number.
     var generation: UInt32
     var item: ContinuitySelection.Item
+    /// WHICH GESTURE THIS IDENTITY CAME FROM, when a gesture named it.
+    ///
+    /// Carried on the stub rather than only on the mark because it is the
+    /// join key, and the join is the thing every log line about a late
+    /// generation has to be readable against: "generation 0" alone cannot
+    /// say whether the number that arrives next belongs to this drag or
+    /// the next one. Nil for a poll, which has no drag behind it.
+    var dragSeq: UInt32?
 
     var isFolder: Bool { item.isFolder }
+
+    /// Whether two accounts name the same file, by the identity the File
+    /// Manager itself uses. The resident and the application describe one
+    /// gesture from two places; a name alone would call two files in two
+    /// folders the same one.
+    static func sameItem(_ a: ContinuitySelection.Item,
+                         _ b: ContinuitySelection.Item) -> Bool {
+        a.name == b.name && a.volumeRef == b.volumeRef && a.dirID == b.dirID
+    }
 
     /// The name macOS should show while the promise is unfulfilled, and the
     /// name the file lands under. Classic names use HFS rules.
@@ -63,6 +89,140 @@ struct ContinuityDragStub: Equatable, Sendable {
     ]
 }
 
+/// WHICH published selection this is, and WHEN this Mac learned of it.
+///
+/// The generation alone answers "is this the same selection"; it cannot
+/// answer "did this arrive because of the press I am holding". Both
+/// questions are asked at the cross, seconds apart from the press, and the
+/// second one is the difference between the file a person dragged and the
+/// file they dragged a minute ago.
+struct ContinuitySelectionMark: Equatable, Sendable {
+    var epoch: UInt32
+    var generation: UInt32
+    /// `ProcessInfo.systemUptime` when the cache applied it. Uptime rather
+    /// than a wall clock: this is only ever compared with another reading
+    /// of the same clock taken seconds earlier, and a wall clock can move
+    /// under it.
+    var appliedAt: TimeInterval
+    /// Which gesture produced the generation. A `drag` mark is the item the
+    /// Drag Manager itself handed the guest at drag begin, so it needs no
+    /// clock comparison to be attributed to the gesture in flight — see
+    /// `ContinuitySelectionBind.decide`.
+    var source: ContinuitySelection.Source = .selection
+    /// The gesture that minted this generation, when one did. Same join key
+    /// as `ContinuityDragStub.dragSeq`, carried here so every bind decision
+    /// can say which drag it is deciding about.
+    var dragSeq: UInt32?
+
+    /// The same published selection, whenever either side heard about it.
+    func isSameSelection(as other: ContinuitySelectionMark) -> Bool {
+        epoch == other.epoch && generation == other.generation
+    }
+}
+
+/// What a cross-edge drag should be bound to, decided at the cross rather
+/// than at the press.
+///
+/// THE PRESS IS THE WRONG MOMENT AND ALWAYS WAS. The host binds on its own
+/// mouse-down, which is before the guest has even applied that down — so a
+/// press that selects the file it drags binds whatever the last gesture
+/// left cached. On metal at 2026-08-15 17:19 that shipped `hello.txt` while
+/// Michelle watched `main.c` leave.
+///
+/// The cross is seconds later and is the first moment both facts exist: the
+/// press, and whatever the guest published under it.
+enum ContinuitySelectionBind: Equatable {
+    /// THE DRAG ITSELF, named by the guest at the moment it began.
+    ///
+    /// This is the case that ends the ritual. Every other outcome below is
+    /// reasoning about a CACHE of what a person had selected before they
+    /// pressed — necessarily so, because nothing could see the drag. A
+    /// drag-sourced generation is not a better cache; it is a different
+    /// kind of fact, read from a live DragRef in the dragging application's
+    /// own context, and it names the file in the hand rather than the file
+    /// in the selection. Single-gesture press-and-drag of a file that was
+    /// never selected lands here, and so does a stale cache disagreeing
+    /// with a fresh drag.
+    ///
+    /// It needs no clock comparison, which is the property worth stating:
+    /// `adopted` below attributes an arrival to this press by arguing that
+    /// nothing else could have caused it, and that argument is sound but
+    /// circumstantial. A drag-sourced generation carries its own
+    /// attribution — the gesture is what published it.
+    case dragged(ContinuitySelectionMark)
+    /// The cache holds exactly what the press bound. The two-step ritual —
+    /// select, release, press again, drag — lands here and must keep
+    /// working, because it is the one that works today.
+    case bound(ContinuitySelectionMark)
+    /// A selection published WHILE THIS PRESS WAS HELD, which nothing else
+    /// could have caused. This is the single-gesture select-and-drag, and
+    /// adopting it is what makes that gesture bind the right file rather
+    /// than nothing (or, worse, the last one).
+    case adopted(ContinuitySelectionMark)
+    /// The selection moved under this press and this Mac cannot attribute
+    /// the move to it. Refusing is not a lesser outcome than guessing: the
+    /// person gets a snap-back and a line naming both, instead of a file
+    /// they did not ask for arriving on their desktop.
+    case superseded(pressed: ContinuitySelectionMark,
+                    current: ContinuitySelectionMark)
+    /// The cache no longer says anything, and the press stands.
+    ///
+    /// This is the ORDINARY cross, not a corner: crossing back is what ends
+    /// the epoch, and the epoch ending drops the cache — measured on metal
+    /// 2026-08-14, where `selection dropped: the Continuity epoch ended`
+    /// fired as the pointer crossed. A cleared cache contradicts nothing, so
+    /// treating it as a refusal would refuse every drag that works today.
+    /// The guest's own grant hold is what redeems this one.
+    case unchallenged(ContinuitySelectionMark)
+    /// Nothing bindable at the cross.
+    case nothing
+
+    /// The whole decision, kept pure so the wrong-file case can be watched
+    /// failing without a Macintosh, a drag, or an edge.
+    ///
+    /// `downSentAt` is when the press went out on the wire, not when the
+    /// guest applied it — this Mac cannot know the latter, and the error is
+    /// in the safe direction: an arrival stamped before the down cannot be
+    /// claimed by the press, so it refuses rather than adopts.
+    static func decide(pressed: ContinuitySelectionMark?,
+                       current: ContinuitySelectionMark?,
+                       downSentAt: TimeInterval) -> ContinuitySelectionBind {
+        guard let current else {
+            return pressed.map(ContinuitySelectionBind.unchallenged)
+                ?? .nothing
+        }
+        /* THE DRAG WINS, AND IT WINS FIRST. Every test below this line is
+           an argument about a cache; this one is a report of the gesture.
+           It is placed above `bound` as well as above `superseded` on
+           purpose: a drag that happens to name the same generation the
+           press was made under is still a drag, and saying so is what lets
+           one audit line distinguish the ritual working from the ritual
+           being unnecessary.
+
+           IT WINS THE NAME, NOT A NUMBER IT DOES NOT HAVE. A drag mark
+           reaching here at generation 0 is one the cache could not join to
+           anything it held — a different file, or nothing at all — so it
+           binds an identity and no grant. That is deliberately not a
+           refusal: the identity is the fact the whole plane exists to get
+           across, and `ContinuityGrabTransfer` holds the grab until the
+           application mints the number rather than spending it on a zero.
+           The case where a generation DID survive is settled one layer
+           up, in `ContinuitySelectionCache.apply`, because only the cache
+           can see whether the two accounts name the same file. */
+        if current.source == .drag {
+            return .dragged(current)
+        }
+        if let pressed, pressed.isSameSelection(as: current) {
+            return .bound(current)
+        }
+        if current.appliedAt > downSentAt {
+            return .adopted(current)
+        }
+        guard let pressed else { return .nothing }
+        return .superseded(pressed: pressed, current: current)
+    }
+}
+
 /// The host's copy of what the person at the classic Mac has selected.
 ///
 /// It exists because the guest is unqueryable during a drag — the Finder
@@ -101,10 +261,18 @@ final class ContinuitySelectionCache {
     }
 
     private(set) var stub: ContinuityDragStub?
+    /// When this Mac applied what it currently holds. See
+    /// `ContinuitySelectionMark`; nil exactly when `stub` is nil.
+    private(set) var mark: ContinuitySelectionMark?
     private let audit: Audit
+    private let now: () -> TimeInterval
 
-    init(audit: @escaping Audit) {
+    init(audit: @escaping Audit,
+         now: @escaping () -> TimeInterval = {
+             ProcessInfo.processInfo.systemUptime
+         }) {
         self.audit = audit
+        self.now = now
     }
 
     /// Applies one `continuity.selection`. `activeEpoch` is what this Mac
@@ -126,16 +294,74 @@ final class ContinuitySelectionCache {
         }
         guard let item = selection.item else {
             stub = nil
+            mark = nil
             audit(.info, "selection cleared: epoch=\(selection.epoch), "
                 + "generation=\(selection.generation) — nothing is selected "
                 + "on the Mac")
             return
         }
+        /* AN IDENTITY-ONLY DRAG MAY FILL A SLOT OR ANNOTATE ONE. IT MAY NOT
+           EMPTY ONE.
+
+           The resident names the file in the hand and cannot name a
+           generation, so its stub arrives at generation 0. Written straight
+           through, that stub OVERWRITES a generation this Mac already has —
+           and on metal 2026-08-16 (epoch 4 of `221834`) it overwrote
+           generation 3 of the very same file, whose bytes were already
+           fetched onto this Mac, leaving a stub nothing could redeem. The
+           drag is still the better account of WHAT is being dragged; it is
+           never a reason to lose the number a grab must ask for.
+
+           So when the drag names the file already cached, the generation
+           survives and only the source, the sequence and the clock move.
+           When it names a DIFFERENT file the cache is stale and the drag
+           wins — but it wins with its own generation of 0, because the
+           cached number belongs to the other file and serving it under this
+           name would be the wrong-file bug wearing a valid generation. */
+        if selection.resolvedSource == .drag, selection.generation == 0,
+           let held = stub, held.epoch == selection.epoch,
+           held.generation != 0 {
+            if ContinuityDragStub.sameItem(held.item, item) {
+                stub = ContinuityDragStub(epoch: held.epoch,
+                                          generation: held.generation,
+                                          item: held.item,
+                                          dragSeq: selection.dragSeq)
+                mark = ContinuitySelectionMark(epoch: held.epoch,
+                                               generation: held.generation,
+                                               appliedAt: now(),
+                                               source: .drag,
+                                               dragSeq: selection.dragSeq)
+                audit(.info, "the drag names the file this Mac already "
+                    + "holds: epoch=\(held.epoch), source=drag, "
+                    + "dragSeq=\(selection.dragSeq.map(String.init) ?? "none"), "
+                    + "name=\(item.name) — keeping generation "
+                    + "\(held.generation), which is what a grab must ask "
+                    + "for, and binding this gesture to the drag")
+                return
+            }
+            audit(.warn, "the drag names \(item.name) while this Mac had "
+                + "generation \(held.generation) cached for "
+                + "\(held.item.name): epoch=\(selection.epoch), "
+                + "source=drag, "
+                + "dragSeq=\(selection.dragSeq.map(String.init) ?? "none") — "
+                + "the drag is the better account of what is in the hand, "
+                + "so the name wins and the generation does not travel with "
+                + "it; this gesture has none until the application mints one")
+        }
         stub = ContinuityDragStub(epoch: selection.epoch,
                                   generation: selection.generation,
-                                  item: item)
+                                  item: item,
+                                  dragSeq: selection.dragSeq)
+        mark = ContinuitySelectionMark(epoch: selection.epoch,
+                                       generation: selection.generation,
+                                       appliedAt: now(),
+                                       source: selection.resolvedSource,
+                                       dragSeq: selection.dragSeq)
         audit(.info, "selection cached: epoch=\(selection.epoch), "
-            + "generation=\(selection.generation), name=\(item.name), "
+            + "generation=\(selection.generation), "
+            + "source=\(selection.resolvedSource.rawValue), "
+            + "dragSeq=\(selection.dragSeq.map(String.init) ?? "none"), "
+            + "name=\(item.name), "
             + "type=\(item.fileType ?? "none"), "
             + "creator=\(item.creator ?? "none"), "
             + "dataSize=\(item.dataSize ?? 0), "
@@ -148,6 +374,7 @@ final class ContinuitySelectionCache {
     func clear(reason: String) {
         guard stub != nil else { return }
         stub = nil
+        mark = nil
         audit(.info, "selection dropped: \(reason)")
     }
 

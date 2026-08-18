@@ -61,6 +61,11 @@ final class Session {
        is not the active one — the frame still decodes, so an unbound stub
        can never drop a connection. */
     var onContinuitySelection: ((ContinuitySelection) -> Void)?
+    /* The one thing a RESIDENT channel says that is not liveness. A `var`
+       for the same reason as its neighbour above: nil is honest for a
+       channel nobody is listening to, and an unbound frame must never
+       drop a machine's heartbeat. */
+    var onContinuityDragBegin: ((ContinuityDragBegin) -> Void)?
     private let onCapture:
         (Result<GuestListener.CaptureDelivery, GuestListener.CaptureFailure>)
         -> Void
@@ -82,6 +87,11 @@ final class Session {
     private let onFileAccept: (FileAccept) -> Void
     private let onServeList: (FileList) -> Void
     private let onServeGet: (FileGet) -> Void
+    /// The inverted direction: a guest redeeming THIS host's published
+    /// offer. Same message the host sends to redeem the guest's
+    /// selection (`onFileDelivery` answers that one); this is the other
+    /// sender using it.
+    private let onServeContinuityGrab: (ContinuityGrab) -> Void
     private let onAcceptOffer: (FileOffer) -> Void
     private let onServeChange: (GuestListener.ChangeRequest) -> Void
     private let onServeCloud: (GuestListener.CloudAsk) -> Void
@@ -231,6 +241,8 @@ final class Session {
          onFileAccept: @escaping (FileAccept) -> Void,
          onServeList: @escaping (FileList) -> Void,
          onServeGet: @escaping (FileGet) -> Void,
+         onServeContinuityGrab: @escaping (ContinuityGrab) -> Void
+             = { _ in },
          onAcceptOffer: @escaping (FileOffer) -> Void,
          onServeChange: @escaping (GuestListener.ChangeRequest) -> Void,
          onServeCloud: @escaping (GuestListener.CloudAsk) -> Void
@@ -286,6 +298,7 @@ final class Session {
         self.onFileAccept = onFileAccept
         self.onServeList = onServeList
         self.onServeGet = onServeGet
+        self.onServeContinuityGrab = onServeContinuityGrab
         self.onAcceptOffer = onAcceptOffer
         self.onServeChange = onServeChange
         self.onServeCloud = onServeCloud
@@ -510,9 +523,17 @@ final class Session {
             case .bye(let bye):
                 onLog(byeDescription(bye, guest: guestName), "wire", .info)
                 finish(reason: "Closed by guest")
+            case .continuityDragBegin(let begin):
+                /* THE ONE EXCEPTION, and the contract argues it where
+                   both sides read it: this fact is known inside the
+                   Finder's drag loop and the application gets no task
+                   time until that loop ends, so no scheduled sender can
+                   state it in time. It is still not a command — nothing
+                   is answered, and an unbound handler drops it. */
+                onContinuityDragBegin?(begin)
             default:
                 protocolError("a resident liveness channel may send only "
-                              + "hello, ping and bye")
+                              + "hello, ping, bye and continuity.dragBegin")
             }
             return
         }
@@ -544,15 +565,19 @@ final class Session {
             onContinuityKeyReport(report)
         case .continuitySelection(let selection):
             onContinuitySelection?(selection)
-        case .continuityArm, .continuityDisarm, .continuityKey,
-             .continuityGrab:
+        case .continuityArm, .continuityDisarm, .continuityKey:
             /* Declared asymmetry: authority is host-to-guest. A guest may
                report that its resident relinquished ownership, but it may
-               never arm the host's input lane or disarm another session -
-               nor grab from it, which is the same rule one layer on: a
-               grant is something the guest gives, never something it
-               collects. */
+               never arm the host's input lane or disarm another session. */
             break
+        case .continuityGrab(let grab):
+            /* THE INVERTED USE: the guest sends this too, to redeem an
+               offer THIS host published — `operations.guestReportsContinuity`
+               in the contract. It used to be lumped with the arm/disarm/key
+               family above under "a grant is something the guest gives,
+               never something it collects"; that rule stood only until the
+               offer direction existed to need the opposite of it. */
+            onServeContinuityGrab(grab)
         case .fileListing(let listing):
             onFileListing(listing)
         case .fileResult(let result):
@@ -665,6 +690,18 @@ final class Session {
                 break
             }
             guard activeFileGetID == begin.id else {
+                /* SAID OUT LOUD, because this is the shape of failure that
+                   reached metal once already: the guest serves the file,
+                   this side cancels it for naming a pull we are not
+                   awaiting, and the caller learns nothing until its
+                   watchdog fires twenty seconds later with `timeout` — a
+                   word that points at the wire rather than at us. */
+                onLog("\(guestName) began sending \(begin.name) for request "
+                      + "\(begin.id), which this Mac is not awaiting"
+                      + (activeFileGetID.map { " (awaiting \($0))" }
+                         ?? " (awaiting nothing)")
+                      + "; cancelling transfer \(begin.transfer)",
+                      "files", .error)
                 discardingTransfers.insert(begin.transfer)
                 send(.fileCancel(FileCancel(transfer: begin.transfer)))
                 break
@@ -812,25 +849,33 @@ final class Session {
     func sendFileRestore(_ m: FileRestore) { send(.fileRestore(m)) }
     func sendFileMkdir(_ m: FileMkdir) { send(.fileMkdir(m)) }
 
-    func sendFileGet(id: Int, path: String, container: String?,
-                     stagingDirectory: URL) {
+    /// Arms this side to RECEIVE the answer to one pull, whatever asked for
+    /// it. Every ask that expects bytes back goes through here, because the
+    /// arming is four facts that must move together and forgetting one of
+    /// them is silent: `file.begin` is matched against `activeFileGetID`,
+    /// and a begin that matches nothing is cancelled and discarded without
+    /// a word. Two of the four asks used to inline this and both dropped
+    /// the id, so `continuity.grab` and every Mirror pull answered into a
+    /// closed door — the guest served the file, this side cancelled it, and
+    /// the only symptom was the caller's 20-second watchdog.
+    private func beginFileGet(id: Int, stagingDirectory: URL) {
         activeFileGetID = id
         fileBegin = nil
         fileSink?.abort()
         fileSink = nil
         fileStagingDirectory = stagingDirectory
         fileStart = Date()
+    }
+
+    func sendFileGet(id: Int, path: String, container: String?,
+                     stagingDirectory: URL) {
+        beginFileGet(id: id, stagingDirectory: stagingDirectory)
         send(.fileGet(FileGet(id: id, path: path, container: container)))
     }
 
     func sendMirrorFileGet(id: Int, source: MirrorFileSource,
                            container: String?, stagingDirectory: URL) {
-        activeFileGetID = id
-        fileBegin = nil
-        fileSink?.abort()
-        fileSink = nil
-        fileStagingDirectory = stagingDirectory
-        fileStart = Date()
+        beginFileGet(id: id, stagingDirectory: stagingDirectory)
         send(.fileGet(FileGet(id: id, path: "", container: container,
                               mirrorSource: source)))
     }
@@ -841,27 +886,44 @@ final class Session {
     /// there is one bulk receiver on this side and a grab uses it.
     func sendContinuityGrab(id: Int, epoch: UInt32, generation: UInt32,
                             container: String?, stagingDirectory: URL) {
-        activeFileGetID = id
-        fileBegin = nil
-        fileSink?.abort()
-        fileSink = nil
-        fileStagingDirectory = stagingDirectory
-        fileStart = Date()
+        beginFileGet(id: id, stagingDirectory: stagingDirectory)
         send(.continuityGrab(.init(version: ContinuityContract.version,
                                    id: id, epoch: epoch,
                                    generation: generation,
                                    container: container)))
     }
 
+    /// Publishes what this Mac is carrying toward the guest — or, with
+    /// `item` nil, tears down whatever drag the guest was drawing under
+    /// the prior generation. Unlike every `sendFileGet`/`sendContinuityGrab`
+    /// sibling above, this arms nothing: it is a push, not a pull, so there
+    /// is no reply to await and no `activeFileGetID` to set.
+    func sendContinuityOffer(epoch: UInt32, generation: UInt32,
+                             item: ContinuityOffer.Item?) {
+        send(.continuityOffer(.init(version: ContinuityContract.version,
+                                    epoch: epoch, generation: generation,
+                                    item: item)))
+    }
+
+    /// Hands the gesture over: the guest starts a real Drag Manager drag
+    /// with a promise at `pos`. Arms nothing here for the same reason
+    /// `sendContinuityOffer` does not — it is a push, and the pull that
+    /// follows is the guest's own `continuity.grab` against the offer this
+    /// message's skeleton describes.
+    func sendContinuityHostDragBegin(
+        epoch: UInt32, dragSeq: UInt32,
+        pos: ContinuityHostDragBegin.Position,
+        item: ContinuityHostDragBegin.Item
+    ) {
+        send(.continuityHostDragBegin(
+            .init(version: ContinuityContract.version, epoch: epoch,
+                  dragSeq: dragSeq, pos: pos, item: item)))
+    }
+
     func sendDevelopmentProjectFileGet(id: Int, projectID: String,
                                        path: String,
                                        stagingDirectory: URL) {
-        activeFileGetID = id
-        fileBegin = nil
-        fileSink?.abort()
-        fileSink = nil
-        fileStagingDirectory = stagingDirectory
-        fileStart = Date()
+        beginFileGet(id: id, stagingDirectory: stagingDirectory)
         send(.fileGet(FileGet(id: id, path: path, container: "macbinary",
                               developmentProject: projectID)))
     }
@@ -1087,6 +1149,15 @@ final class Session {
                                     reason: fault.reason)))
     }
 
+    /// The same refusal, for a caller that already has its own vocabulary
+    /// rather than a thrown `Error` — the offer family's `bad-epoch`,
+    /// `stale-selection`, `no-selection` and `offer-expired`, none of
+    /// which `HostShare.WireFault` (a filesystem's own words) can name.
+    func refuseFile(id: Int, code: String, reason: String) {
+        onLog("#\(id) refused: \(code) (\(reason))", "files", .warn)
+        send(.fileRefuse(FileRefuse(id: id, code: code, reason: reason)))
+    }
+
     /// Serves a file we hold: begin, metered bulk, end — the same path
     /// an outbound put takes, because it is the same journey.
     func serveFile(id: Int, plan: OutboundFile.Plan, container: String?,
@@ -1104,6 +1175,7 @@ final class Session {
                             source: .memory(plan.bytes),
                             sent: 0, cancelled: false,
                             crc32: TransferIdentity.crc32(plan.bytes))
+        outboundProgressAt = Date()
         onOutboundProgress(0, plan.bytes.count)
         sendNextOutboundChunk()
     }
@@ -1380,6 +1452,7 @@ final class Session {
                                           + "data: \(error)")
                     return
                 }
+                self.outboundProgressAt = Date()
                 self.onOutboundProgress(progress, total)
                 self.sendNextOutboundChunk()
             }
@@ -2059,12 +2132,34 @@ final class Session {
         })
     }
 
+    /// When an outbound transfer last had bytes taken by the socket. It is
+    /// this session's own evidence of a live peer, and it is a DIFFERENT
+    /// kind of evidence from an inbound frame: the guest said nothing, but
+    /// its TCP window kept opening, which a dead machine's does not.
+    ///
+    /// It exists for the promise pull. On the native drag lane the pull
+    /// happens INSIDE the guest's drop — a nested Toolbox loop, where the
+    /// application answers nothing on the control channel — so a multi-MB
+    /// file is minutes of one-way traffic with no frame coming back. The
+    /// idle clock read that as a dead guest and closed the connection out
+    /// from under the very transfer it was watching.
+    private var outboundProgressAt: Date?
+
     private func resetIdleClock() {
         idleTask?.cancel()
         let timeout = timing.idleTimeout
         idleTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1e9))
             guard !Task.isCancelled, let self else { return }
+            /* **A TRANSFER IN FLIGHT IS NOT SILENCE.** Asked before the
+               verdict below, because it is a stronger fact than any of the
+               reasoning there: bytes of ours are still being taken by this
+               connection, right now, for a file the guest asked for. */
+            if self.outbound != nil, let progress = self.outboundProgressAt,
+               Date().timeIntervalSince(progress) < timeout {
+                self.resetIdleClock()
+                return
+            }
             /* **Silence is not death, and this is the one place that used
                to assume it was.** A cooperatively-scheduled Macintosh
                starves every application while one blocks — measured

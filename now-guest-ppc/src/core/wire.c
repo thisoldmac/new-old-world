@@ -18,6 +18,9 @@
 #include "console_model.h"   /* the exec plane runs the Console's dispatch */
 #include "continuity_intake.h"
 #include "continuity_selection.h"
+#include "continuity_offer_intake.h"
+#include "continuity_hostdrag_intake.h"
+#include "continuity_dragmgr.h"
 #include "json.h"
 #include "loopstat.h"
 #include "mirror_policy.h"
@@ -529,6 +532,14 @@ static void link_drop_transfers(void)
        generation grantable across a reconnect would let the next session
        collect a drag the previous one set up. */
     now_continuity_selection_forget();
+    /* Same rule, inverted: what the host was holding out is consent given
+       over ONE connection too, and a stale offer must not answer for a
+       session that ended. */
+    now_continuity_offer_forget();
+    /* And a drag OF that offer. Mid-drag this can only ask - the Drag
+       Manager owns the loop and TrackDrag's return will find the flag -
+       which is why it is a forget rather than a reset. */
+    now_continuity_dragmgr_forget();
 }
 
 /* Move to backoff after a failure; status keeps the reason already set. */
@@ -3792,6 +3803,31 @@ static void service_host_show(void)
 
 enum { kGetTimeoutTicks = 60 * 30 };
 
+/* How often a RECEIVING lane tells the host what has landed, in bytes.
+ *
+ * This is not only a progress bar: the host clocks its sender on these
+ * reports and will not run more than a few of them ahead. So the step is
+ * flow control, and a coarse one caps how tightly the sender can be
+ * bounded - at 32 KB the host could not go below a 64 KB window without
+ * deadlocking (it parks, then waits for a report needing bytes it has
+ * decided not to send). Matching the host's 8 KB bulk frame means one
+ * report per frame, which is what makes a ~24 KB in-flight bound work.
+ *
+ * ONE NUMBER FOR BOTH INBOUND LANES, and it is stated here rather than
+ * beside either of them because the push lane having it and the pull
+ * lane not is exactly how a 600 KB promise drop died: same host window,
+ * same collapse, one lane silent. A limit stated where only one reader
+ * looks is a limit the other reader does not have.
+ *
+ * Reports stay advisory and are still dropped when the control queue is
+ * busy; `received` is cumulative, so a skipped one costs nothing. */
+enum { kXferProgressStep = 8 * 1024 };
+
+/* Forward reference: defined below with finish_put, which checks the
+   same field for the other direction. */
+static unsigned long json_find_u32(const char *json, const char *key,
+                                   Boolean *found);
+
 static struct {
     Boolean pending;                  /* asked; no bytes yet */
     Boolean receiving;                /* file.begin seen; writing */
@@ -3802,6 +3838,18 @@ static struct {
                                           landed in, resolved once at
                                           get_begin so get_end's outcome
                                           names the same place */
+    /* Nobody is watching this one. A pull a PAGE asked for is drawn by
+       that page (now_wire_get_active, and conn_set_get_note's hook); a
+       continuity grab is a person's drag with no page involved at all,
+       and until this flag existed it landed in total silence. Set at
+       the two entry points rather than inferred here, because "which
+       caller asked" is the fact and the lane's state is not. */
+    Boolean unattended;
+    /* How much of this pull the host has already been told about. The
+       PUSH lane has had one of these since large transfers were fixed;
+       this lane had none, and that is why it could not carry a large
+       file. See get_report_progress. */
+    long reported;
     FileReceive rx;
     unsigned long deadline;
 } g_get;
@@ -3849,6 +3897,65 @@ static void get_note(const char *line)
     if (g_get_note != NULL) {
         g_get_note(line);
     }
+    /* An unattended pull has no page holding this hook, so its ending —
+       and especially its failure — would be said to nobody. Feeding the
+       same line into the receive lane's outcome is what lets the
+       windoid replace its bar with how it went, exactly as a push
+       already does. Attended pulls are left alone: their page is the
+       one place that ending belongs. */
+    if (g_get.unattended) {
+        rx_outcome(line);
+    }
+}
+
+/* WHERE THE LAST PULL LANDED, tied to the transfer it belongs to.
+
+   A pull already says in words that it finished and names the folder,
+   which is everything a person reading the Files pane needs. A caller
+   that has to HAND THE FILE ON needs the FSSpec itself — the promise
+   drag is the first: the Drag Manager's send-data callback must give
+   the Finder an FSSpec of the file it just materialised, and "it is in
+   Downloads" is not one.
+
+   THE ID IS NOT DECORATION. Without it, a caller whose own transfer
+   failed would read whatever the previous pull left here and hand the
+   Finder a stale file with total confidence — the worst shape of defect
+   this direction can produce, because it looks exactly like success.
+   Paired with the id, a caller compares against the transfer it started
+   and a mismatch is simply "mine did not land". */
+static struct {
+    Boolean valid;
+    long id;
+    FSSpec spec;
+} g_landed;
+
+Boolean now_wire_get_landed(long id, FSSpec *spec_out)
+{
+    if (!g_landed.valid || g_landed.id != id) {
+        return false;
+    }
+    if (spec_out != NULL) {
+        *spec_out = g_landed.spec;
+    }
+    return true;
+}
+
+/* DIAGNOSTIC. The refusing call and its code, written where the refusal
+   happens rather than reconstructed from the sentence a page would have
+   shown. See now_wire_get_last_failure in wire.h. */
+static char g_get_fail[96];
+
+static void get_failed(const char *what, long code)
+{
+    snprintf(g_get_fail, sizeof g_get_fail, "%.60s=%ld", what, code);
+}
+
+void now_wire_get_last_failure(char *out, long cap)
+{
+    if (out == NULL || cap <= 0) {
+        return;
+    }
+    snprintf(out, (size_t)cap, "%s", g_get_fail);
 }
 
 static void get_cleanup(Boolean keep_file)
@@ -3858,6 +3965,37 @@ static void get_cleanup(Boolean keep_file)
     }
     g_get.pending = false;
     g_get.receiving = false;
+}
+
+/* WHAT THIS PULL HAS ACTUALLY TAKEN, told to the host that is sending
+   it. The push lane's twin (put_report_progress) with one difference
+   worth naming: nothing on this side is drawing a bar for a promise
+   drop, so this exists ENTIRELY as flow control. The host parks its
+   sender on these; without them it runs unbounded and collapses (see
+   kXferProgressStep, and docs/large-transfers.md for the collapse).
+
+   Advisory, exactly like the other lane: the control queue is eight
+   slots deep and shared with messages that carry meaning, so a report
+   yields rather than crowding them out. `received` is cumulative, so a
+   dropped one costs the sender one step of window and nothing else. */
+static void get_report_progress(Boolean force)
+{
+    char json[128];
+
+    if (!g_get.receiving) {
+        return;
+    }
+    if (!force && g_get.rx.received - g_get.reported < kXferProgressStep) {
+        return;
+    }
+    if (!force && g_ctlq.count >= kCtlQueueSlots / 2) {
+        return;                       /* real traffic first */
+    }
+    g_get.reported = g_get.rx.received;
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.progress\",\"id\":%ld,\"received\":%ld}",
+             g_get.id, g_get.rx.received);
+    send_control(json);               /* best effort: a drop is not a fault */
 }
 
 /* Stop the pull in flight, from this side. Two halves, in this order:
@@ -3929,6 +4067,7 @@ int now_wire_get_host(const char *path, const char *name, char *err, long cap)
     ++g.offer_seq;
     g_get.id = g.offer_seq;
     g_get.expected = 0;
+    g_get.unattended = false;         /* a page asked; a page draws it */
     snprintf(g_get.name, sizeof g_get.name, "%.31s", name != NULL ? name : "");
     snprintf(json, sizeof json,
              "{\"type\":\"file.get\",\"id\":%ld,\"path\":\"%s\"}",
@@ -3939,6 +4078,73 @@ int now_wire_get_host(const char *path, const char *name, char *err, long cap)
     }
     g_get.pending = true;
     g_get.deadline = TickCount() + kGetTimeoutTicks;
+    return 0;
+}
+
+/* Ask for the item the host published via continuity.offer — the
+   inverted grab, guest-initiated. This is the ONE place the guest reads
+   outside the Files share on the host's word (see the schema's own
+   argument for why that is safe); everything past the send is the
+   ordinary pull g_get already is, so a grabbed offer resumes no
+   differently, cancels the same way and gets the same crc check at
+   get_end.
+
+   Names no path — only the offer's own epoch and generation, which is
+   the whole of what a continuity.grab may ask for in this direction. */
+int now_wire_get_offer(long *id_out, char *err, long cap)
+{
+    const NowContinuityOfferTable *offer = now_continuity_offer_table();
+    unsigned long ask_epoch, ask_generation;
+    char json[160];
+
+    if (g.phase != kConnConnected) {
+        snprintf(err, (size_t)cap, "Not connected");
+        return -1;
+    }
+    if (g_get.pending || g_get.receiving || wire_busy()) {
+        snprintf(err, (size_t)cap, "A transfer is already in flight");
+        return -1;
+    }
+    if (!now_continuity_offer_grab_ready(offer, now_continuity_live_epoch(),
+                                         &ask_epoch, &ask_generation)) {
+        snprintf(err, (size_t)cap, "Nothing is being held out right now");
+        return -1;
+    }
+    if (offer->item.is_folder) {
+        /* Refused HERE, locally and silently on the wire — the same
+           shape as a Finder declining a drop, and the same reason
+           kNowGrabFolderNotYet refuses one in the other direction: the
+           file lane serves one file, and an empty folder is a lie
+           shaped like a transfer. */
+        snprintf(err, (size_t)cap,
+                 "That is a folder; this Mac cannot take one yet");
+        return -1;
+    }
+    ++g.offer_seq;
+    g_get.id = g.offer_seq;
+    g_get.expected = 0;
+    /* This pull's own record starts empty: a caller reading it after a
+       failure must not be handed the previous pull's reason. */
+    g_get_fail[0] = '\0';
+    /* No page asked for this and none will draw it: the grab is a
+       person's drag (or `offer --take`), so the receive windoid is the
+       only thing that will say a file is landing. */
+    g_get.unattended = true;
+    snprintf(g_get.name, sizeof g_get.name, "%.31s", offer->item.name);
+    snprintf(json, sizeof json,
+             "{\"type\":\"continuity.grab\",\"version\":%u,\"id\":%ld,"
+             "\"epoch\":%lu,\"generation\":%lu}",
+             (unsigned)NOW_CONTINUITY_VERSION, g_get.id, ask_epoch,
+             ask_generation);
+    if (!send_control(json)) {
+        snprintf(err, (size_t)cap, "Connection lost");
+        return -1;
+    }
+    g_get.pending = true;
+    g_get.deadline = TickCount() + kGetTimeoutTicks;
+    if (id_out != NULL) {
+        *id_out = g_get.id;
+    }
     return 0;
 }
 
@@ -4028,6 +4234,7 @@ static void get_begin(const char *reply)
     if (rc == kFilesExists) {
         /* Not an error and not a silent overwrite: the file is already
            there, and this machine keeps what it has. */
+        get_failed("now_files_receive_begin_at kFilesExists", (long)rc);
         get_cleanup(false);
         snprintf(line, sizeof line, "%.31s is already in %.48s",
                  g_get.name, g_get.dest_name);
@@ -4035,12 +4242,18 @@ static void get_begin(const char *reply)
         return;
     }
     if (rc != kFilesOK) {
+        get_failed("now_files_receive_begin_at", (long)rc);
         get_cleanup(false);
         get_note(rc == kFilesTooBig ? "Not enough room on the disk"
                                     : "Could not create the file");
         return;
     }
     g_get.receiving = true;
+    /* Zeroed with the transfer it counts, not once at startup: a pull
+       that inherited the last one's high-water mark would report nothing
+       until it passed it, and the host would park a sender nobody was
+       acking. */
+    g_get.reported = 0;
     g_get.deadline = TickCount() + kGetTimeoutTicks;
     now_log(kLogInfo, "get", "#%ld %.31s, %ld bytes, into %s", g_get.id,
             g_get.name, g_get.expected, g_get.dest_name);
@@ -4053,6 +4266,8 @@ static void get_begin(const char *reply)
 static void get_end(const char *reply)
 {
     char line[128];
+    unsigned long want_crc;
+    Boolean has_crc;
 
     if (!g_get.receiving || now_json_find_int(reply, "id", -1) != g_get.id) {
         return;
@@ -4062,17 +4277,42 @@ static void get_end(const char *reply)
 
         now_log(kLogWarn, "get", "#%ld ended early at %ld of %ld bytes",
                 g_get.id, g_get.rx.received, g_get.expected);
+        get_failed("file.end ok=false", g_get.rx.received);
         get_cleanup(false);
         conn_peer_label(peer, sizeof peer);
         snprintf(line, sizeof line, "%s stopped sending", peer);
         get_note(line);
         return;
     }
+    /* The same seam check finish_put makes for the other direction. An
+       absent crc32 is "unchecked" and the pull completes anyway; a
+       mismatch discards the bytes rather than keeping a corrupt file
+       under the real name — the one thing worse than no file here is
+       one that looks like it arrived. */
+    want_crc = json_find_u32(reply, "crc32", &has_crc);
+    if (has_crc && want_crc != g_get.rx.crc) {
+        now_log(kLogError, "get",
+                "#%ld checksum failed: wanted %08lX, got %08lX, %ld bytes "
+                "discarded", g_get.id, want_crc, g_get.rx.crc,
+                g_get.rx.received);
+        get_failed("crc32 mismatch", (long)g_get.rx.received);
+        get_cleanup(false);
+        get_note("The checksum did not match - nothing was kept");
+        return;
+    }
     if (now_files_receive_finish(&g_get.rx) != kFilesOK) {
+        get_failed("now_files_receive_finish", -1);
         get_cleanup(false);
         get_note("Could not finish writing the file");
         return;
     }
+    /* Taken here, after receive_finish has renamed the temp and made
+       rx.final authoritative, and BEFORE get_cleanup — the one moment
+       the landed file's own FSSpec is both true and still readable.
+       See g_landed on why the id travels with it. */
+    g_landed.valid = true;
+    g_landed.id = g_get.id;
+    g_landed.spec = g_get.rx.final;
     now_log(kLogInfo, "get", "#%ld %.31s complete, %ld bytes, into %s",
             g_get.id, g_get.name, g_get.rx.received, g_get.dest_name);
     /* dest_name was resolved once at get_begin against whatever the
@@ -4092,6 +4332,8 @@ static void service_get(void)
         char peer[40];
         char line[64];
 
+        get_failed("pull timed out, phase pending/receiving",
+                   g_get.receiving ? 1 : 0);
         get_cleanup(false);
         conn_peer_label(peer, sizeof peer);
         snprintf(line, sizeof line, "%s stopped answering", peer);
@@ -4458,6 +4700,18 @@ static struct {
     char update_sha256[65];
     Boolean mirror_drop;
     NowMirrorFileTarget drop_target;
+    /* A person released a file over this Macintosh, the name is already
+       taken, and NOBODY HAS BEEN ASKED YET. The offer is deliberately
+       unanswered while this is set: the wire is inside a pumped network
+       callback here and pump.h forbids opening a dialog from one, so the
+       question is raised as a flag and put to a person at the top of the
+       event loop, exactly as the SEND direction has done since it
+       shipped (now_wire_send_pending_replace). */
+    Boolean awaiting_confirm;
+    /* The accept about to go out overwrites something, because a person
+       said it could. Reported to the sender so a replacement and a
+       first-time write stop looking identical from over there. */
+    Boolean replacing;
 } g_put;
 
 /* A nested target is copied out before flat lookup. Without that boundary,
@@ -4597,10 +4851,47 @@ Boolean now_wire_update_relaunch_required(void)
    show ITS download and ignore an unrelated push. */
 Boolean now_wire_receive_active(long *received, long *expected,
                                 Boolean *cloud_get,
-                                char *name, long name_cap)
+                                char *name, long name_cap,
+                                Boolean *is_pull)
 {
     if (!g_put.active) {
-        return false;
+        /* The other inbound lane. Answered here rather than by a second
+           entry point a caller must remember to also ask, because a
+           receive nobody is drawing is exactly the case that shipped
+           invisible once already — and it shipped invisible on THIS
+           side of the same question. */
+        if (!g_get.receiving || !g_get.unattended) {
+            return false;
+        }
+        /* NOT ON THE DRAG LANE, AND SAID RATHER THAN LEFT TO LUCK.
+           A promise pull runs inside the receiver's drop, so the event
+           loop that opens the windoid is not running and it has never
+           in fact appeared there. That is an accident of scheduling,
+           not a decision, and the blessed path makes it one: while a
+           native drag is in flight the OS's own drop is the progress
+           surface, and a windoid of ours beside it would be the second
+           imitation this slice exists to delete. The wire-offer and MCP
+           put lanes keep the windoid untouched — nobody is dragging
+           there. */
+        if (now_continuity_drag_in_flight()) {
+            return false;
+        }
+        if (received != NULL) {
+            *received = g_get.rx.received;
+        }
+        if (expected != NULL) {
+            *expected = g_get.expected;
+        }
+        if (cloud_get != NULL) {
+            *cloud_get = false;
+        }
+        if (name != NULL && name_cap > 0) {
+            snprintf(name, (size_t)name_cap, "%s", g_get.name);
+        }
+        if (is_pull != NULL) {
+            *is_pull = true;
+        }
+        return true;
     }
     if (received != NULL) {
         *received = g_put.rx.received;
@@ -4613,6 +4904,9 @@ Boolean now_wire_receive_active(long *received, long *expected,
     }
     if (name != NULL && name_cap > 0) {
         snprintf(name, (size_t)name_cap, "%s", g_put.name);
+    }
+    if (is_pull != NULL) {
+        *is_pull = false;
     }
     return true;
 }
@@ -4655,23 +4949,9 @@ static unsigned long json_find_u32(const char *json, const char *key,
     return negative ? (0UL - v) & 0xFFFFFFFFUL : v;
 }
 
-/* How often the guest says where it has got to. The write batch is the
-   natural cadence — one report per flush — and on a 2.7 MB file that is
-   about 85 control frames across several minutes, which is nothing next
-   to the bulk stream they describe. */
-/* How often the guest tells the host what it has taken.
- *
- * This is not only a progress bar: the host clocks its sender on these
- * reports and will not run more than a few of them ahead. So the step is
- * flow control, and a coarse one caps how tightly the sender can be
- * bounded — at 32 KB the host could not go below a 64 KB window without
- * deadlocking (it parks, then waits for a report needing bytes it has
- * decided not to send). Matching the host's 8 KB bulk frame means one
- * report per frame, which is what makes a ~24 KB in-flight bound work.
- *
- * Reports stay advisory and are still dropped when the control queue is
- * busy; `received` is cumulative, so a skipped one costs nothing. */
-enum { kPutProgressStep = 8 * 1024 };
+/* The step this lane reports on is kXferProgressStep, stated once beside
+   the pull lane's own timeout — see its comment for why it is that
+   number and why both inbound lanes share it. */
 
 /* Tells the host what has actually landed. The sender cannot know this:
    its own completion fires when the local socket accepts a chunk, which
@@ -4819,8 +5099,27 @@ static void take_bulk_in(const unsigned char *bytes, long len)
         if (rc != kFilesOK) {
             get_cleanup(false);
             get_note("Could not write the file");
+            return;
         }
         g_get.deadline = TickCount() + kGetTimeoutTicks;
+        /* AND THEN SAY SO. The push lane has reported its progress since
+           large transfers were fixed, and the host clocks its SENDER on
+           those reports (Session.swift's outbound window): no report, no
+           ack, no park, and the sender runs unbounded against whatever
+           this machine can take.
+
+           This lane never sent one. For a file that fits in a single
+           bulk frame nothing noticed; for a 600 KB promise pulled inside
+           a Finder drop it is the whole defect - the sender ratchets into
+           the retransmit collapse docs/large-transfers.md names, which
+           does not recover, and the pull dies of its own silence timeout
+           having received almost nothing.
+
+           So the two lanes now report identically, on the same 8 KB step
+           matched to the host's bulk frame, through the same advisory
+           rules: dropped when the control queue is busy, cumulative, and
+           never a fault when one is missed. */
+        get_report_progress(false);
         return;
     }
     /* A preview we asked for: raw indexed rows into the buffer the
@@ -4855,7 +5154,7 @@ static void take_bulk_in(const unsigned char *bytes, long len)
        this guest reports at all, so it can stop trusting its own send
        counter early rather than after the first 32 KB. */
     if (g_put.reported == 0
-        || g_put.rx.received - g_put.reported >= kPutProgressStep) {
+        || g_put.rx.received - g_put.reported >= kXferProgressStep) {
         put_report_progress(false);
     }
 }
@@ -5087,6 +5386,25 @@ static void serve_file_offer(const char *request)
 
         switch (rc) {
         case kFilesExists:
+            /* A HUMAN DROP GETS ASKED; ANYTHING ELSE KEEPS THE OLD
+               POLICY. The collision Michelle met on 2026-08-16 was a
+               person's own drag, and refusing it without a word is the
+               defect. An automated put is a different event with nobody
+               standing at the machine, and inventing consent for it
+               would be worse than refusing it.
+
+               Nothing is answered here. The offer stays open across the
+               question, which is what makes the ordering right: the
+               person has already released, no byte has moved, and the
+               dialog decides whether any does. */
+            if (g_put.mirror_drop) {
+                g_put.id = id;
+                g_put.awaiting_confirm = true;
+                now_log(kLogInfo, "put",
+                        "#%ld %.31s is already there; asking", id, name);
+                rx_outcome("Waiting for an answer about replacing");
+                return;
+            }
             why = "a file of that name is already there";
             file_refuse(id, "exists", why);
             break;
@@ -5116,31 +5434,37 @@ static void serve_file_offer(const char *request)
             name, bytes, g_put.at_candidate ? "a Development candidate" :
             (g_put.at_dest ? "the chosen folder" : "the share"));
     /* `have` is omitted rather than sent as 0, so an accept to an old
-       host looks exactly as it always did. */
+       host looks exactly as it always did. `replacing` is omitted on the
+       same terms and for the same reason. */
+    {
+        const char *replacing = g_put.replacing ? ",\"replacing\":true" : "";
     if (have > 0 && g_put.rx.free_before >= 0) {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.accept\",\"id\":%ld,\"have\":%ld,"
                  "\"freeBytes\":%ld,\"reservedBytes\":%ld,"
-                 "\"staging\":\"same-folder-temp\"}",
-                 id, have, g_put.rx.free_before, g_put.rx.reserved_bytes);
+                 "\"staging\":\"same-folder-temp\"%s}",
+                 id, have, g_put.rx.free_before, g_put.rx.reserved_bytes,
+                 replacing);
     } else if (have > 0) {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.accept\",\"id\":%ld,\"have\":%ld,"
                  "\"reservedBytes\":%ld,"
-                 "\"staging\":\"same-folder-temp\"}",
-                 id, have, g_put.rx.reserved_bytes);
+                 "\"staging\":\"same-folder-temp\"%s}",
+                 id, have, g_put.rx.reserved_bytes, replacing);
     } else if (g_put.rx.free_before >= 0) {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.accept\",\"id\":%ld,"
                  "\"freeBytes\":%ld,\"reservedBytes\":%ld,"
-                 "\"staging\":\"same-folder-temp\"}",
-                 id, g_put.rx.free_before, g_put.rx.reserved_bytes);
+                 "\"staging\":\"same-folder-temp\"%s}",
+                 id, g_put.rx.free_before, g_put.rx.reserved_bytes,
+                 replacing);
     } else {
         snprintf(json, sizeof json,
                  "{\"type\":\"file.accept\",\"id\":%ld,"
                  "\"reservedBytes\":%ld,"
-                 "\"staging\":\"same-folder-temp\"}",
-                 id, g_put.rx.reserved_bytes);
+                 "\"staging\":\"same-folder-temp\"%s}",
+                 id, g_put.rx.reserved_bytes, replacing);
+    }
     }
     if (!send_control(json)) {
         now_files_receive_abort(&g_put.rx);
@@ -5153,6 +5477,79 @@ static void serve_file_offer(const char *request)
     } else {
         snprintf(note, sizeof note, "Receiving %.31s...", name);
     }
+    note_shot(note);
+}
+
+/* What the event loop needs to know to ask, and the answer. The exact
+   shape of the SEND direction's pair above (now_wire_send_pending_replace
+   / now_wire_send_resolve_replace), deliberately: this is the same
+   question asked of the same person about the same kind of collision, and
+   two spellings of one interaction is how the two directions drift.
+
+   THE ORDERING IS THE PRODUCT DECISION. The person has already released
+   — the offer only exists because they dropped — and not one byte has
+   moved, because the offer is what goes unanswered while they think.
+   Release, then dialog, then bytes. */
+Boolean now_wire_put_pending_replace(char *name, long cap)
+{
+    if (!g_put.awaiting_confirm) {
+        return false;
+    }
+    if (name != NULL && cap > 0) {
+        strncpy(name, g_put.name, (size_t)cap - 1);
+        name[cap - 1] = '\0';
+    }
+    return true;
+}
+
+void now_wire_put_resolve_replace(Boolean replace)
+{
+    char json[320];
+    char note[128];
+    int rc;
+
+    if (!g_put.awaiting_confirm) {
+        return;
+    }
+    g_put.awaiting_confirm = false;
+    if (!replace) {
+        /* `declined` and not `exists`: a person was asked and kept what
+           they had. The sender cannot tell those apart from the outcome
+           — nothing arrives either way — and only one of them is a gap
+           worth closing. See the contract's own note on the pair. */
+        file_refuse(g_put.id, "declined",
+                    "somebody chose to keep the file already there");
+        rx_outcome("Not received: the existing file was kept");
+        return;
+    }
+    /* The SAME offer, re-begun with overwrite. Nothing is re-read from
+       the wire and nothing was buffered, so the only thing that changed
+       between the question and here is the answer to it. */
+    rc = now_files_mirror_receive_begin(
+        &g_put.drop_target, g_put.name, g_put.container, g_put.bytes,
+        g_put.file_type, g_put.creator, g_put.modified, true, &g_put.rx);
+    if (rc != kFilesOK) {
+        file_refuse(g_put.id, rc == kFilesTooBig ? "too-big" : "io-error",
+                    rc == kFilesTooBig ? "not enough room on that disk"
+                                       : "could not replace the file");
+        rx_outcome("Not received: could not replace the existing file");
+        return;
+    }
+    g_put.active = true;
+    g_put.replacing = true;
+    snprintf(json, sizeof json,
+             "{\"type\":\"file.accept\",\"id\":%ld,\"reservedBytes\":%ld,"
+             "\"staging\":\"same-folder-temp\",\"replacing\":true}",
+             g_put.id, g_put.rx.reserved_bytes);
+    if (!send_control(json)) {
+        now_files_receive_abort(&g_put.rx);
+        g_put.active = false;
+        g_put.replacing = false;
+        rx_outcome("Connection lost during the transfer");
+        return;
+    }
+    now_log(kLogInfo, "put", "#%ld replacing %.31s", g_put.id, g_put.name);
+    snprintf(note, sizeof note, "Replacing %.31s...", g_put.name);
     note_shot(note);
 }
 
@@ -6242,6 +6639,13 @@ static void serve_file_get(const char *request)
                  esc_type, esc_creator, stage.modified);
     }
     if (!send_control(json)) {
+        /* The one exit from this function that tells the host nothing: a
+           refusal is a message and so is a transfer, but a file.begin that
+           cannot be queued leaves the asker with only its watchdog. Say so
+           here, where the ring can be read afterwards. */
+        now_log(kLogWarn, "files",
+                "get #%ld: file.begin for %.31s could not be queued",
+                id, stage.name);
         now_files_stage_dispose(&stage);
         return;
     }
@@ -6308,10 +6712,21 @@ static void serve_continuity_grab(const char *request)
            still in flight, which is ordinary, and the window for finishing
            it closed. Saying "no longer names what it was given" there
            would send a person looking at their selection. */
-        file_refuse(id, code,
-                    verdict == kNowGrabGrantExpired
-                        ? "the drag was held too long after Continuity ended"
-                        : "the drag no longer names what it was given");
+        {
+            /* The guest's own state rides the refusal so the HOST log
+               carries both halves of the disagreement — three attended
+               rounds were diagnosed one-sided for want of this. */
+            char state[160];
+            char reason[224];
+
+            now_continuity_selection_describe(state, sizeof state);
+            snprintf(reason, sizeof reason, "%s [%s]",
+                     verdict == kNowGrabGrantExpired
+                         ? "the drag was held too long after Continuity ended"
+                         : "the drag no longer names what it was given",
+                     state);
+            file_refuse(id, code, reason);
+        }
         return;
     }
     if (now_json_find_string(request, "container", container_arg,
@@ -6355,12 +6770,23 @@ static void serve_continuity_grab(const char *request)
                  stage.total_bytes, stage.data_bytes, stage.rsrc_bytes,
                  esc_type, esc_creator, stage.modified);
     }
-    now_log(kLogInfo, "mirror", "grab granted #%ld epoch=%lu gen=%lu %.31s",
-            id, epoch, generation, stage.name);
+    /* THE DECISION IS NOT THE ANSWER, so this line no longer claims to be
+       one. It said "granted" before anything was queued and stayed silent
+       when the send failed, which is how a grant whose file.begin never
+       left could read as a working guest for a whole metal round. The
+       transfer number is here so it can be followed to the file.end. */
     if (!send_control(json)) {
+        now_log(kLogWarn, "mirror",
+                "grab granted #%ld epoch=%lu gen=%lu %.31s but file.begin "
+                "could not be queued",
+                id, epoch, generation, stage.name);
         now_files_stage_dispose(&stage);
         return;
     }
+    now_log(kLogInfo, "mirror",
+            "grab granted #%ld epoch=%lu gen=%lu %.31s: file.begin sent "
+            "xfer=%u",
+            id, epoch, generation, stage.name, (unsigned)xfer);
     if (!arm_file_transfer(id, xfer, &stage, chunk, pace_ms)) {
         now_files_stage_dispose(&stage);
         file_start_failed(id, xfer);
@@ -7322,12 +7748,25 @@ static void serve_continuity_key(const char *request)
 
 /* Poll the Finder's selection and push a stub when it moved.
 
-   CALLED FROM conn_service() AND NOWHERE ELSE, which is the whole safety
-   argument: now_wire_pump() bounces every nested entry (see its guard),
-   so this cannot be reached from inside a Toolbox loop. An Apple Event
-   sent from a nested loop would be one wait inside another, and the
-   Finder's answer would arrive underneath a machine already waiting for
-   something else.
+   CALLED FROM conn_service() AND NOWHERE ELSE — and the safety argument
+   that used to be written here was WRONG, which cost a 600 KB file.
+
+   It said: now_wire_pump() bounces every nested entry, so this cannot be
+   reached from inside a Toolbox loop. The guard does bounce a pump
+   reached from a request handler. It does not bounce a nested loop
+   entered from the MAIN loop, and the promise drag's send proc is
+   exactly that — TrackDrag runs at main-loop level, the Finder's drop
+   calls back into us, and the send proc pumps by hand. Every one of
+   those passes reached this poll, which then sent an Apple Event to the
+   Finder that was blocked waiting for that very callback to return, and
+   waited out the whole timeout with the AE's own idle hook bounced.
+
+   So the gate is now where it can be true: the poll itself refuses while
+   a NOW-originated drag is in flight (now_continuity_selection_poll).
+   Anything NEW added to this function inherits that hazard and not that
+   fix — an Apple Event sent from a nested loop is one wait inside
+   another, and the answer arrives underneath a machine already waiting
+   for something else.
 
    The gates that decide whether to ask at all — epoch, held button,
    cadence — belong to the poll rather than to this caller, so they hold
@@ -7337,11 +7776,50 @@ static void service_continuity_selection(void)
     const NowContinuityStubTable *table;
     char json[512];
     char esc_name[128];
+    /* `,"dragSeq":N` or nothing. A fragment rather than a fourth
+       template: the field exists on exactly one of the two sources and
+       duplicating both item templates to say so would double the number
+       of places a field can go missing from. */
+    char drag_seq[32];
+    /* `,"afterEpoch":true` or nothing, spliced beside the join key for the
+       same reason it is: the field means something on one kind of frame
+       only, and a false on every other one would be a value where the
+       contract wants a silence. */
+    const char *after_epoch;
+    const char *source;
 
     if (!now_continuity_selection_poll(now_continuity_live_epoch())) {
         return;
     }
     table = now_continuity_selection_table();
+    /* THE EPOCH ON THIS FRAME HAS ALREADY ENDED, said out loud rather than
+       left for the host to work out. A crossing gesture is drained after
+       the cross ended its epoch, so its generation is minted under the
+       epoch it began in; without this field the host's only honest reading
+       of an epoch it no longer owns is "ignore it", which is exactly what
+       it did through the whole attended round of 2026-08-16. */
+    after_epoch = now_continuity_selection_published_after_epoch()
+                  ? ",\"afterEpoch\":true" : "";
+    /* WHICH GESTURE MADE THIS GENERATION. Sent on every stub rather than
+       only on a drag: a host that sees the field only sometimes cannot
+       tell an old guest from a quiet one, and the contract's default
+       exists for guests that never had the field at all. */
+    source = (table->have_item
+              && table->item.source == kNowStubSourceDrag)
+             ? "drag" : "selection";
+    /* THE JOIN KEY. The resident named this same gesture over its own
+       channel while the button was still down; this is the number that
+       says the host is hearing about one drag twice rather than two
+       drags. Sent only where it means something - a polled selection has
+       no drag behind it, and a zero would be a value rather than a
+       silence. */
+    drag_seq[0] = '\0';
+    if (table->have_item
+            && table->item.source == kNowStubSourceDrag
+            && table->item.drag_seq != 0) {
+        snprintf(drag_seq, sizeof drag_seq, ",\"dragSeq\":%lu",
+                 table->item.drag_seq);
+    }
     if (!table->have_item) {
         /* An empty selection is a stub with a generation and no item, and
            it is sent for a reason: the host has a cached stub to drop,
@@ -7349,9 +7827,9 @@ static void service_continuity_selection(void)
            stopped running. */
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.selection\",\"version\":%u,"
-                 "\"epoch\":%lu,\"generation\":%lu}",
+                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\"}",
                  (unsigned)NOW_CONTINUITY_VERSION,
-                 table->epoch, table->generation);
+                 table->epoch, table->generation, source);
         send_control(json);
         return;
     }
@@ -7364,12 +7842,14 @@ static void service_continuity_selection(void)
            a host would have to know to ignore. */
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.selection\",\"version\":%u,"
-                 "\"epoch\":%lu,\"generation\":%lu,\"item\":{"
+                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\"%s%s,"
+                 "\"item\":{"
                  "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
                  "\"dataSize\":0,\"resourceSize\":0,"
                  "\"modifiedAt\":%lu,\"isFolder\":true}}",
                  (unsigned)NOW_CONTINUITY_VERSION,
-                 table->epoch, table->generation,
+                 table->epoch, table->generation, source, drag_seq,
+                 after_epoch,
                  esc_name, (int)table->item.volume_ref, table->item.dir_id,
                  table->item.modified);
     } else {
@@ -7386,13 +7866,15 @@ static void service_continuity_selection(void)
         now_json_escape(creator, esc_creator, sizeof esc_creator);
         snprintf(json, sizeof json,
                  "{\"type\":\"continuity.selection\",\"version\":%u,"
-                 "\"epoch\":%lu,\"generation\":%lu,\"item\":{"
+                 "\"epoch\":%lu,\"generation\":%lu,\"source\":\"%s\"%s%s,"
+                 "\"item\":{"
                  "\"name\":\"%s\",\"volumeRef\":%d,\"dirID\":%ld,"
                  "\"fileType\":\"%s\",\"creator\":\"%s\","
                  "\"dataSize\":%ld,\"resourceSize\":%ld,"
                  "\"modifiedAt\":%lu,\"isFolder\":false}}",
                  (unsigned)NOW_CONTINUITY_VERSION,
-                 table->epoch, table->generation,
+                 table->epoch, table->generation, source, drag_seq,
+                 after_epoch,
                  esc_name, (int)table->item.volume_ref, table->item.dir_id,
                  esc_type, esc_creator,
                  table->item.data_size, table->item.rsrc_size,
@@ -7465,6 +7947,28 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "continuity.grab")) {
         serve_continuity_grab(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.offer")) {
+        /* THE INVERTED HALF: what the host is carrying toward this Mac.
+           No answer is owed - see the schema's own "AN OFFER IS NOT
+           ANSWERED" - so this just folds it into the table the `offer`
+           command and now_wire_get_offer both read. */
+        now_continuity_offer_intake(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "continuity.hostDragBegin")) {
+        /* THE EDGE HANDED OFF. No answer is owed and none is sent: the
+           only honest report on an instruction is what the drag does,
+           and the drag's own log says that, joined to the host's account
+           by dragSeq.
+
+           Note what this does NOT do — start the drag. It is held for
+           the service pass one statement after this one returns, because
+           now_wire_pump() bounces every nested entry and the promise's
+           byte pull happens inside the drop. See
+           now_continuity_dragmgr_host_request. */
+        now_continuity_hostdrag_intake(reply);
         return 1;
     }
     if (now_json_type_is(reply, "capture.request")) {
@@ -7666,15 +8170,30 @@ static int handle_frame(const char *reply)
             g_update.pending = false;
         } else if (g_get.pending && refused_id == g_get.id) {
             char reason[96];
+            char code[32];
+            char line[144];
 
             get_cleanup(false);
+            code[0] = '\0';
+            now_json_find_string(reply, "code", code, sizeof code);
             if (!now_json_find_text(reply, "reason", reason, sizeof reason)) {
                 char peer[40];
 
                 conn_peer_label(peer, sizeof peer);
                 snprintf(reason, sizeof reason, "%.30s refused", peer);
             }
-            get_note(reason);
+            /* THE CODE, NAMED, not just the prose. bad-epoch,
+               stale-selection, no-selection and offer-expired are the
+               continuity.grab family's refusals, and a person reading
+               "the other Mac refused" cannot tell an offer that closed
+               from a plain file.get failure - the whole point of a
+               named vocabulary is that it survives being read back. */
+            if (code[0] != '\0') {
+                snprintf(line, sizeof line, "%.90s (%.30s)", reason, code);
+                get_note(line);
+            } else {
+                get_note(reason);
+            }
         } else if (!browse_refused(reply)) {
             send_refused(reply);
         }

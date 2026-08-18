@@ -1,0 +1,72 @@
+#!/bin/sh
+# Install a built host DMG the way the permission daemons need it done:
+# ONE registered copy, in /Applications, with the DMG ejected before the
+# app ever runs.
+#
+#     scripts/install-host /path/to/New-Old-World-X.Y.Z.dmg
+#     scripts/install-host            # newest DMG under ~/Lab/Builds
+#
+# Why this exists (attended, 2026-08-17): installs left five DMGs mounted,
+# so LaunchServices held six same-version copies of the same bundle id and
+# the Local Network / Accessibility grants could attach to a mounted copy
+# that was later ejected - "I granted this an hour ago and it's gone."
+# Quitting first matters too: replacing a running app's bundle underneath
+# it is how a grant ends up attributed to a dead inode.
+set -eu
+
+dmg=${1:-}
+if [ -z "$dmg" ]; then
+    dmg=$(ls -t "$HOME"/Lab/Builds/New-Old-World-*/New-Old-World-*.dmg \
+              2>/dev/null | head -1 || true)
+    [ -n "$dmg" ] || { echo "install-host: no DMG found under ~/Lab/Builds" >&2; exit 64; }
+    echo "install-host: newest build is $dmg"
+fi
+[ -f "$dmg" ] || { echo "install-host: no such DMG: $dmg" >&2; exit 64; }
+
+app="/Applications/New Old World.app"
+
+# Quit a running copy before touching its bundle.
+if pgrep -x "New Old World" >/dev/null 2>&1; then
+    echo "install-host: quitting the running app"
+    osascript -e 'tell application "New Old World" to quit' 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pgrep -x "New Old World" >/dev/null 2>&1 || break
+        sleep 1
+    done
+fi
+
+# Eject every stale mount of this app's DMGs, ours included, before and
+# after - stale mounts are also what fails `diskutil image create` (153).
+for v in "/Volumes/New Old World"*; do
+    [ -e "$v" ] && hdiutil detach "$v" -quiet 2>/dev/null || true
+done
+
+mount=$(hdiutil attach -nobrowse -readonly "$dmg" \
+            | awk -F'\t' '/\/Volumes\//{print $NF}' | tail -1)
+[ -n "$mount" ] || { echo "install-host: mount failed" >&2; exit 70; }
+trap 'hdiutil detach "$mount" -quiet 2>/dev/null || true' EXIT
+
+src=$(ls -d "$mount"/*.app | head -1)
+[ -n "$src" ] || { echo "install-host: no app in the DMG" >&2; exit 70; }
+
+# Replace atomically: build the new bundle beside the old, then swap.
+staging="/Applications/.New Old World.installing.app"
+rm -rf "$staging"
+cp -R "$src" "$staging"
+rm -rf "$app"
+mv "$staging" "$app"
+
+hdiutil detach "$mount" -quiet 2>/dev/null || true
+trap - EXIT
+
+echo "install-host: installed $(defaults read "$app/Contents/Info" \
+    CFBundleVersion 2>/dev/null || echo '?') at $app; launching"
+open "$app"
+
+# Local Network is keyed to the EXECUTABLE for non-notarized builds and is
+# silently prohibited after every update, usually without re-prompting
+# (attended, 2026-08-17: Accessibility survived the version-stamped update,
+# Local Network did not). Until a notarized channel exists, the toggle is
+# per-install - so end where the toggle is.
+echo "install-host: Local Network needs its per-build toggle - opening the pane"
+open "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork" 2>/dev/null || true

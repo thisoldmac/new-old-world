@@ -44,7 +44,35 @@ typedef struct {
     long rsrc_size;
     unsigned long modified;       /* classic seconds since 1904 */
     int is_folder;
+
+    /* WHICH GESTURE PRODUCED THIS, carried on the item rather than beside
+       it. The stub travels table -> grant hold -> the grab that redeems
+       it, and every one of those hops would have had to learn a second
+       field; a source that can be separated from the item it describes is
+       a source that will be, at exactly one of them.
+
+       THE SOURCE BELONGS TO THE GENERATION, NOT TO THE LAST LOOK AT IT.
+       A poll that re-observes an item the drag plane already published
+       must not quietly demote it: same item means no new generation, and
+       a generation's source cannot change without the generation moving.
+       now_continuity_stub_observe enforces that. */
+    int source;                   /* kNowStubSource* */
+    /* The resident's drag-begin sequence this identity came from. Zero
+       for a polled selection. It is what the grab confirmation checks:
+       the same drag, not merely the same file. */
+    unsigned long drag_seq;
 } NowContinuityStubItem;
+
+enum {
+    /* The Apple Event poll of the Finder's selection. The original, the
+       default, and what a machine without the resident still has. */
+    kNowStubSourceSelection = 0,
+    /* The item the Drag Manager handed a tracking handler at drag begin,
+       read from a live DragRef in the dragging application's own context.
+       No selection was consulted, so it may legitimately name a file the
+       Finder does not have selected — see the contract's `source`. */
+    kNowStubSourceDrag = 1
+};
 
 typedef struct {
     unsigned long epoch;
@@ -78,6 +106,23 @@ int now_continuity_stub_same(const NowContinuityStubItem *a,
    it by silence is indistinguishable from a poll that stopped running. */
 int now_continuity_stub_observe(NowContinuityStubTable *table,
                                 const NowContinuityStubItem *item);
+
+/* Fold in what the DRAG PLANE saw, and it is a different rule.
+
+   `drag_seq` is the resident's drag-begin sequence. A sequence already
+   recorded moves nothing (the drain is edge-triggered but the table must
+   be idempotent anyway); a NEW sequence always bumps the generation, even
+   when it names the item the table already held.
+
+   THAT IS THE DIFFERENCE FROM THE POLL, and it is the point rather than
+   an inconsistency. The poll suppresses an unchanged item because it is
+   sampling a standing state and a resample is not news. A drag is not a
+   state, it is an act: picking up the same file a second time is a second
+   consent, and a host that could not tell the two apart would bind the
+   first gesture's generation to the second gesture's cross. */
+int now_continuity_stub_observe_drag(NowContinuityStubTable *table,
+                                     const NowContinuityStubItem *item,
+                                     unsigned long drag_seq);
 
 /* --- the grant that outlives its epoch ------------------------------------
 
@@ -150,6 +195,70 @@ int now_continuity_selection_settle(NowContinuityStubTable *table,
    the gesture was redeemed. */
 void now_continuity_grant_release(NowContinuityGrantHold *hold);
 
+/* --- the generation minted after its epoch ended --------------------------
+
+   THE GRANT ABOVE IS ONE STEP TOO LATE FOR A CROSSING GESTURE, and the
+   crossing is the whole point. The grant survives the epoch its gesture
+   began in — but only for a generation that was MINTED while the epoch was
+   still live. On a single-gesture drag of a file nobody selected there is
+   no such generation: the Drag Manager names the item to the resident from
+   inside the Finder's drag loop, the application gets no task time until
+   that loop ends, and on a crossing gesture the cross is what ends it. So
+   the identity is drained AFTER the epoch is over, with nothing in the
+   table to hold — measured on metal 2026-08-16, where six crossings
+   published nothing at all and the host refused every one of them by name.
+
+   The rule is the grant's rule one step earlier: THE MINT SURVIVES THE
+   EPOCH ITS GESTURE BEGAN IN, under the same bounded window and the same
+   consent. Nothing else about consent moves. The item is still the one the
+   person picked up with their own hand, the number is still one this guest
+   minted, the grab still names it, and the window is still
+   kNowContinuityGrantTicks from the moment the epoch's end was NOTICED. */
+
+/* What the epoch that just ended was, kept so a drain that arrives after it
+   can still say which consent it belongs to. Zero epoch means none. */
+typedef struct {
+    unsigned long epoch;          /* the epoch that ended; 0 when none */
+    unsigned long generation;     /* its last generation, so the next mint
+                                     is a number nobody has published */
+    unsigned long ended_at;       /* TickCount() when the end was noticed */
+} NowContinuityEndedEpoch;
+
+/* Record an epoch's end. Called with the table's epoch and generation as
+   they stood BEFORE the settle reset them, because after it neither exists
+   anywhere else. */
+void now_continuity_epoch_ended(NowContinuityEndedEpoch *ended,
+                                unsigned long epoch,
+                                unsigned long generation,
+                                unsigned long now_ticks);
+
+/* Forget the ended epoch — a new one is running, or the link went away. */
+void now_continuity_epoch_ended_release(NowContinuityEndedEpoch *ended);
+
+/* Mint a generation for a drag whose epoch is already over, and make it
+   grantable.
+
+   `post` is the table the WIRE publishes from: it names the ended epoch, so
+   it cannot be the live table (which the settle has already reset onto the
+   new epoch, or onto none). `hold` is written from it, because a mint that
+   the host could name and this guest would refuse is worse than no mint.
+
+   Returns 1 when a generation was minted and the wire owes the host a
+   continuity.selection carrying the ENDED epoch; 0 for every refusal:
+
+     - no ended epoch recorded (nothing to publish under),
+     - the window has closed (same window as the grant's, and for the same
+       reason: a person's gesture, not a standing consent),
+     - no item, a folder, or no drag sequence,
+     - the same drag sequence already minted under this epoch, so the drain
+       is idempotent the way the live one is. */
+int now_continuity_stub_publish_post_epoch(NowContinuityStubTable *post,
+                                           NowContinuityGrantHold *hold,
+                                           const NowContinuityEndedEpoch *ended,
+                                           const NowContinuityStubItem *item,
+                                           unsigned long drag_seq,
+                                           unsigned long now_ticks);
+
 enum {
     kNowGrabOK = 0,
     /* The epoch is not the live one — the consent has expired with the
@@ -203,6 +312,73 @@ int now_continuity_grab_resolve(NowContinuityStubTable *table,
                                 unsigned long now_ticks,
                                 const NowContinuityStubItem **item_out,
                                 int *after_epoch_out);
+
+/* --- the last check before the bytes leave ---------------------------------
+
+   EVERY CHECK ABOVE IS ABOUT CONSENT AND NONE OF THEM ASKS THE MACHINE.
+   `grab_resolve` proves that some generation was published, that the host
+   asked for that generation, and that its window is open — all of it
+   reasoning over a table this side wrote earlier. It cannot notice that the
+   table is describing a file the person is no longer holding.
+
+   On metal at 2026-08-15 17:19 that gap transferred the wrong file.
+   Michelle dragged `main.c` and `hello.txt` arrived: the poll publishes only
+   on a CHANGE and is suppressed for the whole gesture, so the press that
+   selected `main.c` published nothing, and the host bound — legitimately,
+   by every rule above — the generation before it.
+
+   So the serve is confirmed against the Finder ITSELF, immediately before
+   the file is opened. By the time a grab arrives the guest press has already
+   been released at the cross, so the Finder is out of its drag loop and can
+   answer; whatever it says is the truth this whole table is a cache of.
+
+   `read_ok` is 0 when the Finder could not be asked. THAT REFUSES TOO, and
+   deliberately: an unanswered Finder says nothing about what is selected,
+   and "we could not check" is not a reason to send somebody's file. A
+   refusal costs a retry; the other way costs a wrong file.
+
+   Identity only — volume, directory, name, folderness. Not the modification
+   date `now_continuity_stub_same` compares: a file whose date moved between
+   the publish and the grab is still the file the person is dragging, and
+   refusing that would be this guard inventing a second defect. */
+int now_continuity_grab_confirm(const NowContinuityStubItem *serve,
+                                int read_ok,
+                                const NowContinuityStubItem *observed);
+
+/* THE SAME CHECK FOR A DRAG-SOURCED GENERATION, AGAINST A DIFFERENT
+   WITNESS — and asking the right witness is the whole content of it.
+
+   Confirming a drag against the Finder's SELECTION would refuse exactly
+   the gesture the drag source exists to serve. Dragging a file nobody
+   selected is an ordinary Macintosh act; the selection is then something
+   else, both facts are true, and the one that matches the consent is the
+   drag. The contract says this once, under `source`.
+
+   So the witness is the resident's own published drag identity, and the
+   question asked of it is sharper than "same file": `observed_seq` must
+   still be the drag-begin sequence this generation was minted from. A
+   second drag of the same file is a second consent with a generation of
+   its own (see now_continuity_stub_observe_drag), and serving it under
+   the first one's name would be the stale-generation hole reopened one
+   layer down.
+
+   `read_ok` 0 refuses, for the reason the selection confirmation refuses:
+   an unread witness says nothing, and "we could not check" is not a
+   reason to send somebody's file.
+
+   A serve that is NOT drag-sourced is a programming error rather than a
+   refusal case, and is reported as one — kNowGrabNoSelection — because
+   the caller chose the wrong witness for the stub in its hand. */
+int now_continuity_grab_confirm_drag(const NowContinuityStubItem *serve,
+                                     int read_ok,
+                                     const NowContinuityStubItem *observed,
+                                     unsigned long observed_seq);
+
+/* Whether two stubs name the same item, ignoring anything that can change
+   without the item changing. See above for why the grab confirmation cannot
+   use now_continuity_stub_same. */
+int now_continuity_stub_same_item(const NowContinuityStubItem *a,
+                                  const NowContinuityStubItem *b);
 
 /* The refusal's contract code, for the wire. NULL for kNowGrabOK. */
 const char *now_continuity_grab_code(int verdict);

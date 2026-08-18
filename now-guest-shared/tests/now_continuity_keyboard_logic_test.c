@@ -112,6 +112,42 @@ static int test_invalid_input_is_not_published(void)
     return 0;
 }
 
+/* Forensics D3/D6 round, 2026-08-16 (docs/open-issues.md): a `modifiers`
+   `continuity.key` frame was refused `malformed` on metal. The contract
+   (`ContinuityKey.action`, contract/asyncapi.yaml) declares `modifiers` a
+   legal action, so the first read was "this queue must learn to accept
+   it". It must not: `modifiers` "IS NOT A KEY" by the contract's own
+   words, carries `code: 0`/`character: 0` that "a receiver must not post
+   a key event for", and this queue exists to be drained into
+   `PPostEvent` (`continuity_keyboard_safety_source_test.py` pins that
+   drain). A modifiers entry admitted here would eventually be posted as
+   a bogus zero keystroke. The dispatcher
+   (`now-guest-ppc/src/core/wire.c :: serve_continuity_key`) already
+   special-cases `action == "modifiers"` and routes it to
+   `now_continuity_modifiers`, a side channel that stamps
+   `cell->host_modifiers` directly and never touches this queue — so this
+   function correctly has no ordinal for `modifiers` to match at all.
+   This test pins that exclusion as deliberate: any action value this
+   queue does not name, `modifiers` included were it ever handed one, is
+   `kNowContinuityKeyEnqueueInvalid`, not a queue slot. */
+static int test_modifiers_is_not_a_queue_action(void)
+{
+    NowPeekContinuityCell cell;
+    NowContinuityKeySnapshot event;
+
+    memset(&cell, 0, sizeof cell);
+    CHECK((int)kNowPeekContinuityKeyRepeat == 3);
+    CHECK(now_continuity_keyboard_enqueue(
+              &cell, 1, 0x1234, 0, 1,
+              (NowPeekU32)kNowPeekContinuityKeyRepeat + 1u, 0, 0, 0x300u)
+          == kNowContinuityKeyEnqueueInvalid);
+    CHECK(cell.key_write_seq == 0);
+    CHECK(cell.key_enqueued == 0);
+    CHECK(now_continuity_keyboard_peek(&cell, 0x1234, &event)
+          == kNowContinuityKeyPeekNone);
+    return 0;
+}
+
 static int test_sequence_wrap_skips_reserved_zero(void)
 {
     NowPeekContinuityCell cell;
@@ -135,6 +171,7 @@ int main(void)
     CHECK(test_target_switch_discards_old_keys() == 0);
     CHECK(test_flush_and_bound() == 0);
     CHECK(test_invalid_input_is_not_published() == 0);
+    CHECK(test_modifiers_is_not_a_queue_action() == 0);
     CHECK(test_sequence_wrap_skips_reserved_zero() == 0);
     puts("now_continuity_keyboard_logic_test: ok");
     return 0;
