@@ -89,6 +89,10 @@ ext:
 # Network privacy is attached to the bundle identifier, and a fresh one
 # mints a fresh macOS identity. Team-signed and release builds stay in
 # scripts/build-host-app and scripts/release-dmg.
+#
+# CURRENT_PROJECT_VERSION mirrors build-host-app: every build claiming
+# CFBundleVersion 1 left LaunchServices unable to tell an update from a
+# duplicate, and per-binary grants were lost on every install.
 host:
 	xcodebuild \
 	    -project now-host/NewOldWorld.xcodeproj \
@@ -99,6 +103,7 @@ host:
 	    PRODUCT_BUNDLE_IDENTIFIER=$$(tools/host-build-identity canonical bundle-id) \
 	    NOW_PRODUCT_NAME="$$(tools/host-build-identity canonical display-name)" \
 	    NOW_DISPLAY_NAME="$$(tools/host-build-identity canonical display-name)" \
+	    CURRENT_PROJECT_VERSION=$$(git rev-list --count HEAD 2>/dev/null || echo 1) \
 	    CODE_SIGNING_ALLOWED=NO \
 	    build
 	codesign --force --sign - "$(BUILD)/host/New Old World.app"
