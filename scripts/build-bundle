@@ -1,6 +1,8 @@
 #!/bin/sh
-# Build the complete development bundle: the host app with every guest
-# component staged inside it for in-app deployment, wrapped in a DMG.
+# Build the complete development bundle: all four components - the host
+# app, the PowerPC guest, the 68K guest, and the NOW Extension - with
+# the three classic ones staged inside the app for in-app deployment,
+# wrapped in a DMG.
 #
 #     scripts/build-bundle           # -> build/bundle/New-Old-World-<version>-b<n>.dmg
 #
@@ -14,7 +16,7 @@
 # the host actually reads (OnboardingAssets.swift): the PPC application
 # and the extension with their .now-update.json sidecars beside them,
 # because UpdateProvider reads identity from the sidecar. The 68K guest
-# is staged too so the bundle carries all three, but the onboarding
+# is staged too so the bundle carries every classic component, but the onboarding
 # catalog has no 68K entry yet - the host cannot deploy it in-app, and
 # that asymmetry is declared here rather than left to be discovered.
 #
