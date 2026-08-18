@@ -99,18 +99,6 @@ class Profile:
                     out[env_key] = value
         return out
 
-    def require(self, key, script):
-        """A value this machine's file must carry. Missing STOPS and says
-        which key and which file, because the failure being avoided is a
-        deploy that quietly went somewhere else."""
-        value = self.values.get(key)
-        if not value:
-            raise ProfileError(
-                "%s has no `%s` (%s).\n"
-                "  Add it to %s"
-                % (self.title, key, FIELDS[key][0], self.path))
-        return value
-
 
 def _parse(text, path, machine_id):
     values = {}
