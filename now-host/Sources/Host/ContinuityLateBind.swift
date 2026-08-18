@@ -151,8 +151,7 @@ final class ContinuityDragBinding {
 enum ContinuityLateBind {
     /// The three calls the late-bind lane needs, named together because a
     /// controller holding only some of them could start a crossing it can
-    /// never fill in. Same shape, and the same reason, as
-    /// `ContinuityFileDrag.Presentation`.
+    /// never fill in.
     @MainActor
     struct Lane {
         /// A drag to start when the cross binds nothing at all.

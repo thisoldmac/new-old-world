@@ -266,8 +266,8 @@ final class ContinuityEdgeController: ObservableObject {
     private var hostDragCursorHiddenOn: UInt32?
     /// Identifies one host→guest file-drag gesture in the log, so an
     /// attended run can pair a "hid" line with its "restored" line without
-    /// guessing from timestamps. Incremented once per arrival — the same
-    /// false→true edge that announces `hostDragArrived`.
+    /// guessing from timestamps. Incremented once per arrival — the
+    /// `announcedHostDragArrival` false→true edge.
     private var hostFileDragGestureID: UInt64 = 0
     private var inputCapture: AnyObject?
     @Published private(set) var captureFailureReason: CaptureFailureReason?
@@ -457,29 +457,10 @@ final class ContinuityEdgeController: ObservableObject {
     /// than off which reporter won.
     private var hostDragOverThisMac = false
     /// Whether this gesture's identity has already crossed. The strip is
-    /// asked on every motion, and the offer is published once.
+    /// asked on every motion, and the arrival is taken once — it is the
+    /// false→true edge that numbers the gesture and hides the host
+    /// cursor's visible layer, and `endHostDragVisuals` is what clears it.
     private var announcedHostDragArrival = false
-    /// What this Mac is carrying has reached the edge: publish the offer so
-    /// the guest can draw an honest drag, and start the guest's own
-    /// presentation drag.
-    ///
-    /// **PRESENTATION, NOT TRANSPORT.** The guest's Drag Manager drag exists
-    /// so a person sees the right icon and name follow the pointer on the
-    /// other machine. It carries no bytes and its drop location is not
-    /// consulted: for a FOREIGN drag, AppKit owns the session and this app
-    /// can neither end it early nor carry it across, so the release lands on
-    /// our own strip and the transfer runs on the existing proven lane
-    /// (`performDragOperation` → `copyHostFiles` → `putMirrorFile` → the
-    /// guest's `mirrorDrop`) at the crossing's coordinate. That is a real
-    /// reduction in placement fidelity against the promise design, taken
-    /// deliberately for v1 — it sidesteps the unresolved `loc='null' /
-    /// promise-never-asked` defect entirely, and the promise path remains
-    /// available later as an upgrade with no rework here.
-    private var hostDragArrived: ((NSPasteboard) -> Void)?
-    /// The drag left, dropped, or was released: tear down whatever the guest
-    /// is drawing. Paired with `hostDragArrived` on every path, because a
-    /// classic Finder is unforgiving of a drag that never ends.
-    private var hostDragDeparted: (() -> Void)?
     private var announcedOwnDragRefusal = false
     private var heldGesture: HeldGestureCustody?
     /// The last button state any sample reported. The escape chord arrives
@@ -668,28 +649,11 @@ final class ContinuityEdgeController: ObservableObject {
     /// so it is a zombie bound, not a responsiveness bound.
     static let stagedCarryLifetime: TimeInterval = 180
 
-    /// Installs the handoff. Optional in the same sense as the
-    /// presentation pair below: a controller without one still stages and
-    /// still transfers on release — the crossing simply never becomes a
-    /// native drag on the other side.
+    /// Installs the handoff. Optional: a controller without one still
+    /// stages and still transfers on release — the crossing simply never
+    /// becomes a native drag on the other side.
     func configureHostDragHandoff(_ handoff: HostDragHandoff) {
         self.hostDragHandoff = handoff
-    }
-
-    /// Installs the host→guest PRESENTATION half: what the guest draws while
-    /// a person carries a file across, and its teardown.
-    ///
-    /// Separate from `configureFileDragging` because it is separate in kind.
-    /// That pair moves bytes; this pair moves a picture, and the product
-    /// degrades honestly without it — an unwired presentation is a crossing
-    /// that transfers correctly and looks like nothing is happening, which
-    /// is exactly what shipped before this seam existed.
-    func configureHostDragPresentation(
-        arrived: @escaping (NSPasteboard) -> Void,
-        departed: @escaping () -> Void
-    ) {
-        self.hostDragArrived = arrived
-        self.hostDragDeparted = departed
     }
 
     /// Binds a cross-edge drag to the guest's PUBLISHED SELECTION rather
@@ -1067,7 +1031,7 @@ final class ContinuityEdgeController: ObservableObject {
             /* The guest is still drawing a drag for a gesture that has
                ended. Same backstop, same reason: the teardown must not be
                reachable only through the callback that failed to arrive. */
-            endHostDragPresentation()
+            endHostDragVisuals()
         }
         guard var ownership else { return }
         if stagedCarryTimedOut, sample.kind == .primaryUp {
@@ -1081,7 +1045,7 @@ final class ContinuityEdgeController: ObservableObject {
                 + "but this Mac had already let the carry go on the "
                 + "\(Int(Self.stagedCarryLifetime))s bound, so the release "
                 + "commits nothing (gesture=\(hostFileDragGestureID))")
-            endHostDragPresentation()
+            endHostDragVisuals()
             hostFileDrag = false
             hostDragEndedAtCross = false
             crossEndRefusal = nil
@@ -1475,7 +1439,7 @@ final class ContinuityEdgeController: ObservableObject {
                               keepInputCapture: Bool = false) {
         /* The defensive half of the hide/show balance, not the ordinary
            one: `hostFileExited`/`hostFileDropped` already call
-           `endHostDragPresentation` on the paths that go through them, and
+           `endHostDragVisuals` on the paths that go through them, and
            this repeats there as a no-op (the `announcedHostDragArrival`
            guard). What this line actually catches is every OTHER way
            ownership can end while a host file drag is still announced —
@@ -1484,7 +1448,7 @@ final class ContinuityEdgeController: ObservableObject {
            through `returnToHost` without visiting `hostFileExited` first,
            relying on AppKit's own `draggingExited` to arrive after). None
            of those should be able to leave the host cursor hidden. */
-        endHostDragPresentation()
+        endHostDragVisuals()
         /* The same defensive reasoning one line up, for the staging: an
            ownership that ends any other way than a guest release must not
            leave a file staged for a gesture nobody is making any more. */
@@ -2038,7 +2002,7 @@ final class ContinuityEdgeController: ObservableObject {
 
     /// The only place that clears `hostDragCursorHiddenOn`. Safe to call
     /// whether or not the cursor is currently hidden by this path — every
-    /// exit funnels through here (directly via `endHostDragPresentation`,
+    /// exit funnels through here (directly via `endHostDragVisuals`,
     /// or defensively via `endOwnership`/`deinit`) so a hide can never
     /// outlive the gesture that requested it.
     private func showHostDragCursor() {
@@ -2360,22 +2324,20 @@ final class ContinuityEdgeController: ObservableObject {
            this edge right now. That forgetting is the 17:22 defect; see
            `hostDragOverThisMac`. */
         hostDragOverThisMac = true
-        /* THE IDENTITY CROSSES HERE, ONCE PER GESTURE. Announced on the
-           false→true edge rather than on every `draggingUpdated`, which the
-           strip receives on every motion. Announced BEFORE the steering
-           decision below for the same reason the flag is set before it: the
-           person is carrying this file whether or not this controller ends
-           up driving the guest pointer for them, and the guest should be
-           drawing it either way. */
+        /* THE GESTURE IS TAKEN HERE, ONCE. Taken on the false→true edge
+           rather than on every `draggingUpdated`, which the strip receives
+           on every motion. Taken BEFORE the steering decision below for the
+           same reason the flag is set before it: the person is carrying
+           this file whether or not this controller ends up driving the
+           guest pointer for them. */
         if !announcedHostDragArrival {
             announcedHostDragArrival = true
             hostFileDragGestureID &+= 1
-            hostDragArrived?(pasteboard)
-            /* The guest is now drawing its own honest carried-file image
-               (the call just above). Hide the host's real cursor layer so
-               the two don't read as competing cursors — see
-               `hideHostDragCursor`'s doc comment for what this is and is
-               not proven to suppress. */
+            /* The other machine is about to draw this carry — the handoff's
+               own drag, once the crossing hands it over. Hide the host's
+               real cursor layer so the two don't read as competing cursors
+               — see `hideHostDragCursor`'s doc comment for what this is and
+               is not proven to suppress. */
             if let id = layout.sharedEdge?.host.id {
                 hideHostDragCursor(on: id)
             } else {
@@ -2448,7 +2410,7 @@ final class ContinuityEdgeController: ObservableObject {
     /// carries nothing that can outlive its own session (a promise-only
     /// drag) or when the window server refuses the post. The gesture then
     /// runs exactly as it did before this change — ghost, badge and all —
-    /// which is a worse presentation, not a broken transfer.
+    /// which looks worse, not a broken transfer.
     private func endHostDragAtCross(_ pasteboard: NSPasteboard,
                                     at hostPoint: CGPoint) {
         guard hostFileDrag, !hostDragEndedAtCross, !expectingCrossDrop,
@@ -2806,7 +2768,7 @@ final class ContinuityEdgeController: ObservableObject {
                 + "(gesture=\(hostFileDragGestureID), "
                 + "buttonReArmed=\(carry.reArmed ? 1 : 0), "
                 + "suppressedPresses=\(carry.suppressedPresses))")
-            endHostDragPresentation()
+            endHostDragVisuals()
             hostFileDrag = false
             hostDragEndedAtCross = false
             crossEndRefusal = nil
@@ -2821,7 +2783,7 @@ final class ContinuityEdgeController: ObservableObject {
                 + "(gesture=\(hostFileDragGestureID), "
                 + "buttonReArmed=\(carry.reArmed ? 1 : 0), "
                 + "suppressedPresses=\(carry.suppressedPresses))")
-        endHostDragPresentation()
+        endHostDragVisuals()
         hostFileDrag = false
         hostDragEndedAtCross = false
         crossEndRefusal = nil
@@ -2832,8 +2794,8 @@ final class ContinuityEdgeController: ObservableObject {
 
     /// The undo, and it is a small one BY DESIGN: nothing has been copied
     /// while a file is merely staged, so letting the staging go is the whole
-    /// of the abort — no partial file on the guest, and no presentation left
-    /// running (its own teardown funnel runs beside this one).
+    /// of the abort — no partial file on the guest, and nothing left drawn
+    /// on this side (`endHostDragVisuals` runs beside this one).
     private func abandonStagedHostFiles(reason: String) {
         guard stagedHostFiles != nil else { return }
         stagedHostFiles = nil
@@ -2890,24 +2852,32 @@ final class ContinuityEdgeController: ObservableObject {
                 + "the drag leaving instead (gesture="
                 + "\(hostFileDragGestureID)). Nothing was transferred")
         }
-        endHostDragPresentation()
+        endHostDragVisuals()
         guard hostFileDrag, let current = ownership ?? pending else { return }
         returnToHost(current, reason: "host file left the shared edge")
     }
 
-    /// Ends the guest's presentation drag exactly once, on whichever path
-    /// gets there first. Every exit from a carried drag runs through here:
-    /// leaving the strip, dropping on it, and the self-healing release.
-    private func endHostDragPresentation() {
+    /// Ends what this Mac is DRAWING for a carried drag — exactly once, on
+    /// whichever path gets there first. Every exit from a carried drag runs
+    /// through here: leaving the strip, dropping on it, and the
+    /// self-healing release.
+    ///
+    /// Two things, and both are load-bearing. It clears
+    /// `announcedHostDragArrival`, which is what makes a second call a
+    /// no-op and what lets a later gesture be numbered as its own. And it
+    /// restores the host cursor's visible layer, because the moment this
+    /// Mac stops speaking for the gesture is the moment the human's own
+    /// cursor should be theirs again.
+    ///
+    /// It used to also call a `departed` closure that told the guest to
+    /// stop drawing a PRESENTATION drag. That lane was deleted 2026-08-17
+    /// — the guest starts its own native drag from the handoff now, and
+    /// ends it itself — so what survives here is this side's own visuals,
+    /// which is what the name says.
+    private func endHostDragVisuals() {
         guard announcedHostDragArrival else { return }
         announcedHostDragArrival = false
-        /* Restore the visible cursor layer before telling the guest to
-           drop its presentation, not after: the moment this Mac stops
-           speaking for the gesture is the moment the human's own cursor
-           should be theirs again, not whenever the guest gets around to
-           it. */
         showHostDragCursor()
-        hostDragDeparted?()
     }
 
     private func hostFileDropped(_ pasteboard: NSPasteboard) -> Bool {
@@ -2915,8 +2885,8 @@ final class ContinuityEdgeController: ObservableObject {
         if expectingCrossDrop {
             /* Handled BEFORE the teardown below, because this drop is not
                the end of anything a person is doing: they are still
-               carrying the file, on the guest, and the presentation must
-               keep running. */
+               carrying the file, on the guest, and this side's drag
+               visuals must keep running. */
             return acceptCrossDrop(pasteboard)
         }
         /* Torn down BEFORE the transfer is handed off, not after. The drop
@@ -2924,7 +2894,7 @@ final class ContinuityEdgeController: ObservableObject {
            drawing a drag while its file is being written is the shape of lie
            this project keeps paying for. The transfer's own outcome speaks
            for itself afterwards. */
-        endHostDragPresentation()
+        endHostDragVisuals()
         guard hostFileDrag, let current = ownership ?? pending,
               let hostFilesDropped else { return false }
         let accepted = hostFilesDropped(

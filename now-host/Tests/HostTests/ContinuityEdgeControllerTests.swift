@@ -812,17 +812,14 @@ final class ContinuityEdgeControllerTests: XCTestCase {
                 dropped.append((board, point))
                 return true
             })
-        var arrived = 0
-        var departed = 0
-        controller.configureHostDragPresentation(
-            arrived: { _ in arrived += 1 },
-            departed: { departed += 1 })
         controller.start()
         let callbacks = try XCTUnwrap(environment.fileCallbacks)
 
         XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450),
                                         .init(name: .drag)))
-        XCTAssertEqual(arrived, 1)
+        XCTAssertEqual(environment.hidden, [host.id],
+                       "the arrival is taken once and hides the host "
+                        + "cursor's visible layer for the gesture")
         XCTAssertEqual(environment.syntheticHIDButtonPosts.count, 1,
                        "one release, posted at the HID level, ends the host "
                         + "drag at the crossing")
@@ -839,9 +836,9 @@ final class ContinuityEdgeControllerTests: XCTestCase {
            drawing the drag, nothing is transferred, and ownership is not
            returned. */
         XCTAssertTrue(callbacks.dropped(.init(name: .drag)))
-        XCTAssertEqual(departed, 0,
-                       "the person is still carrying the file; the guest "
-                        + "keeps drawing it")
+        XCTAssertTrue(environment.shown.isEmpty,
+                      "the person is still carrying the file; nothing this "
+                        + "Mac hid for the gesture comes back yet")
         XCTAssertTrue(dropped.isEmpty, "nothing is transferred at the edge")
         XCTAssertEqual(environment.catchChanges.last, false,
                        "the strip narrows again once the drop has landed")
@@ -865,8 +862,8 @@ final class ContinuityEdgeControllerTests: XCTestCase {
                        "THE GUEST RELEASE IS THE COMMIT")
         XCTAssertEqual(dropped.first?.1, entry,
                        "and it lands where the pointer was on the guest")
-        XCTAssertEqual(departed, 1,
-                       "the guest stops drawing the carried file at the "
+        XCTAssertEqual(environment.shown, [host.id],
+                       "and the drag's own cursor hide is given back at the "
                         + "release, not before")
     }
 
@@ -920,9 +917,6 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         controller.configureFileDragging(
             guestFileAtPoint: { _ in nil },
             hostFilesDropped: { _, _ in dropped += 1; return true })
-        var departed = 0
-        controller.configureHostDragPresentation(arrived: { _ in },
-                                                 departed: { departed += 1 })
         controller.start()
         let callbacks = try XCTUnwrap(environment.fileCallbacks)
 
@@ -938,7 +932,9 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         XCTAssertTrue(callbacks.dropped(.init(name: .drag)))
         XCTAssertEqual(dropped, 1, "the drop on the strip is a real drop "
                         + "again, exactly as before this change")
-        XCTAssertEqual(departed, 1)
+        XCTAssertEqual(environment.shown, [host.id],
+                       "and the drop ends the gesture here, so the cursor "
+                        + "layer this Mac hid comes back")
         XCTAssertEqual(controller.state, .ready)
     }
 
@@ -1117,19 +1113,13 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         controller.stageHostFiles = { _ in staged }
         controller.configureFileDragging(guestFileAtPoint: { _ in nil },
                                          hostFilesDropped: { _, _ in true })
-        var arrived = 0
-        var departed = 0
-        controller.configureHostDragPresentation(
-            arrived: { _ in arrived += 1 },
-            departed: { departed += 1 })
         controller.start()
 
         let callbacks = try XCTUnwrap(environment.fileCallbacks)
         XCTAssertTrue(callbacks.entered(CGPoint(x: 1439, y: 450), .init(name: .drag)))
-        XCTAssertEqual(arrived, 1)
         XCTAssertEqual(environment.hidden, [host.id],
-                       "the visible cursor layer hides once the guest starts "
-                        + "drawing the carried file")
+                       "the visible cursor layer hides once the carry is "
+                        + "taken at the crossing")
         XCTAssertTrue(callbacks.dropped(.init(name: .drag)))
         controller.transportPhaseChanged(.active)
         XCTAssertEqual(environment.hidden, [host.id, host.id],
@@ -1139,7 +1129,6 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         environment.emitCaptured(.init(kind: .primaryUp,
                                        location: CGPoint(x: 1439, y: 450),
                                        delta: .zero, buttonsDown: false))
-        XCTAssertEqual(departed, 1)
         XCTAssertEqual(environment.shown, [host.id],
                        "the release gives back the drag's own hide")
 
@@ -1938,7 +1927,6 @@ private extension ContinuityEdgeControllerTests {
         let controller: ContinuityEdgeController
         let recorder = AuditRecorder()
         var dropped: [(NSPasteboard, MirrorKit.Point)] = []
-        var departed = 0
         /// What the HARDWARE says about the primary button. True by
         /// default: the person is holding a file, which is the whole
         /// premise of a carry.
@@ -1963,9 +1951,6 @@ private extension ContinuityEdgeControllerTests {
                     self?.dropped.append((board, point))
                     return true
                 })
-            controller.configureHostDragPresentation(
-                arrived: { _ in },
-                departed: { [weak self] in self?.departed += 1 })
             controller.start()
 
             let callbacks = try XCTUnwrap(environment.fileCallbacks)

@@ -2863,44 +2863,38 @@ final class ContinuityGuestDragTests: XCTestCase {
         return board
     }
 
-    /// **THE IDENTITY CROSSES AT THE CROSSING** — the plan's one early
-    /// decision. The guest must be able to draw an honest drag, right name
-    /// and right icon, before a single byte moves; `draggingEntered` is the
-    /// only moment this side holds both the pointer and what is being
-    /// carried, so a gesture that reached the edge without publishing here
-    /// would have to publish from memory later or not at all.
-    func testCarryingAFileToTheEdgePublishesItOnceForTheGuestToDraw() throws {
+    /// **THE CARRY IS TAKEN AT THE CROSSING, ONCE** — the plan's one early
+    /// decision. `draggingEntered` is the only moment this side holds both
+    /// the pointer and what is being carried, and the strip is asked again
+    /// on every motion of the drag, so the arrival has to be an edge rather
+    /// than a repeat: a gesture numbered on every `draggingUpdated` names
+    /// nothing, and a cursor hidden on every one of them can never be
+    /// balanced.
+    func testCarryingAFileToTheEdgeIsTakenOncePerGesture() throws {
         let rig = Rig()
-        var carried: [String] = []
-        var released = 0
-        rig.controller.configureHostDragPresentation(
-            arrived: { board in
-                carried.append(ContinuityFileDrag.firstFile(on: board)?
-                    .lastPathComponent ?? "none")
-            },
-            departed: { released += 1 })
         let url = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)/main.c")
         let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
 
         _ = callbacks.entered(CGPoint(x: 1439, y: 450),
                               Self.fileDrag(url))
-        XCTAssertEqual(carried, ["main.c"])
+        XCTAssertEqual(rig.environment.hidden.count, 1)
         /* The strip is asked again on every motion of the drag. */
         _ = callbacks.entered(CGPoint(x: 1439, y: 460),
                               Self.fileDrag(url))
         _ = callbacks.entered(CGPoint(x: 1439, y: 470),
                               Self.fileDrag(url))
-        XCTAssertEqual(carried, ["main.c"],
-                       "the offer is published once per gesture, not once "
-                        + "per draggingUpdated: a generation that moves on "
-                        + "every mouse motion names nothing")
-        XCTAssertEqual(released, 0)
+        XCTAssertEqual(rig.environment.hidden.count, 1,
+                       "the arrival is taken once per gesture, not once per "
+                        + "draggingUpdated")
+        XCTAssertTrue(rig.environment.shown.isEmpty,
+                      "and nothing has ended it: the person is still "
+                        + "carrying the file")
     }
 
-    /// **A DRAG THAT BEGINS ON THE GUEST AND IS NEVER TOLD TO STOP** is the
-    /// failure classic Finder punishes hardest, so every departure path
-    /// tears the presentation down — and each does it exactly once.
-    func testEveryDeparturePathEndsThePresentationExactlyOnce() throws {
+    /// **A HIDE THAT OUTLIVES ITS GESTURE** is a cursor a person cannot get
+    /// back, so every departure path runs the teardown funnel — and each
+    /// does it exactly once.
+    func testEveryDeparturePathEndsTheDragVisualsExactlyOnce() throws {
         /* "drop" is gone from this list ON PURPOSE (2026-08-16). The drop at
            the edge is now the release this Mac posts to END the host's own
            drag, and the person is still carrying the file afterwards — on
@@ -2908,10 +2902,14 @@ final class ContinuityGuestDragTests: XCTestCase {
            that carry actually ends. */
         for departure in ["exit", "release on the guest", "cross back"] {
             let rig = Rig()
-            var carried = 0
-            var released = 0
-            rig.controller.configureHostDragPresentation(
-                arrived: { _ in carried += 1 }, departed: { released += 1 })
+            /* The drag lane's own restore says so in its own words, which
+               is what separates it from the ordinary custody's restore on
+               the two paths that take custody at all. */
+            let restores = {
+                rig.recorder.lines.filter {
+                    $0.1.contains("restored the host cursor's visible layer")
+                }.count
+            }
             let staged = NSPasteboard(
                 name: .init("now.test.presentation.\(UUID().uuidString)"))
             rig.controller.stageHostFiles = { _ in staged }
@@ -2920,14 +2918,14 @@ final class ContinuityGuestDragTests: XCTestCase {
 
             _ = callbacks.entered(CGPoint(x: 1439, y: 450),
                                   Self.fileDrag(url))
-            XCTAssertEqual(carried, 1, departure)
+            XCTAssertEqual(rig.environment.hidden.count, 1, departure)
             switch departure {
             case "exit":
                 callbacks.exited()
             case "release on the guest":
                 _ = callbacks.dropped(Self.fileDrag(url))
                 rig.controller.transportPhaseChanged(.active)
-                XCTAssertEqual(released, 0,
+                XCTAssertEqual(restores(), 0,
                                "the edge drop is a staging, not a departure")
                 rig.releaseOnGuest()
             default:
@@ -2935,27 +2933,24 @@ final class ContinuityGuestDragTests: XCTestCase {
                 rig.controller.transportPhaseChanged(.active)
                 rig.crossBackHolding()
             }
-            XCTAssertEqual(released, 1,
-                           "the guest is still drawing a drag after \(departure)")
-            /* Idempotent: a strip can be told twice, and telling the guest
-               to stop a drag it already stopped is a second refusal in the
-               log for no reason. */
+            XCTAssertEqual(restores(), 1,
+                           "the hide outlived the gesture after \(departure)")
+            /* Idempotent: a strip can be told twice, and a second restore
+               of a layer nobody hid is a second line in the log for no
+               reason. */
             callbacks.exited()
-            XCTAssertEqual(released, 1, "torn down twice after \(departure)")
+            XCTAssertEqual(restores(), 1, "torn down twice after \(departure)")
         }
     }
 
-    /// The release backstop reaches the PICTURE too. `draggingExited`
+    /// The release backstop reaches the VISUALS too. `draggingExited`
     /// belongs to another application's session and can simply not arrive;
-    /// a guest left drawing a drag for a gesture that ended is the visible
-    /// half of the same stuck-flag defect.
-    func testTheSelfHealingReleaseAlsoEndsThePresentation() throws {
+    /// a cursor left hidden for a gesture that ended is the visible half of
+    /// the same stuck-flag defect.
+    func testTheSelfHealingReleaseAlsoEndsTheDragVisuals() throws {
         let rig = Rig()
         var held = true
-        var released = 0
         rig.controller.physicalPrimaryButtonHeld = { held }
-        rig.controller.configureHostDragPresentation(
-            arrived: { _ in }, departed: { released += 1 })
         rig.enterGuest()
         _ = try XCTUnwrap(rig.environment.fileCallbacks)
             .entered(CGPoint(x: 1439, y: 450),
@@ -2964,33 +2959,11 @@ final class ContinuityGuestDragTests: XCTestCase {
         rig.press()
         rig.crossBackHolding()
 
-        XCTAssertEqual(released, 1,
+        XCTAssertEqual(rig.recorder.lines.filter {
+            $0.1.contains("restored the host cursor's visible layer")
+        }.count, 1,
                        "the drag ended where no callback could see it and "
-                        + "the guest was left holding the picture")
-    }
-
-    /// A drag carrying no file this Mac can name publishes nothing, and
-    /// that is an ordinary answer rather than a defect: a drag can hold
-    /// text, a colour, or a promise whose file does not exist yet. The DROP
-    /// still decides — the transfer lane reads the pasteboard again, and it
-    /// understands promises this path deliberately does not.
-    func testADragWithNoNameableFileDrawsNothingAndRefusesNothing() throws {
-        let rig = Rig()
-        var carried = 0
-        rig.controller.configureHostDragPresentation(
-            arrived: { _ in carried += 1 }, departed: {})
-        let callbacks = try XCTUnwrap(rig.environment.fileCallbacks)
-
-        let text = NSPasteboard(name: .init("text.\(UUID().uuidString)"))
-        text.clearContents()
-        text.setString("not a file", forType: .string)
-        _ = callbacks.entered(CGPoint(x: 1439, y: 450), text)
-
-        XCTAssertNil(ContinuityFileDrag.firstFile(on: text))
-        XCTAssertEqual(carried, 1,
-                       "the controller still announces the arrival; deciding "
-                        + "there is nothing to draw belongs to the wiring, "
-                        + "which is the only place that can say so once")
+                        + "this Mac was left holding the hide")
     }
 
     // MARK: - The handoff: the guest's own drag, with a promise
@@ -3813,8 +3786,14 @@ private final class Rig {
             _ = token
             dragWitnessStops += 1
         }
-        func hideCursor(on displayID: UInt32) { _ = displayID }
-        func showCursor(on displayID: UInt32) { _ = displayID }
+        /// The visible-layer hide/show pair, recorded rather than
+        /// discarded: it is what a carried host drag actually does to this
+        /// Mac's cursor, and the only thing left to watch on the paths that
+        /// used to be watched through the deleted presentation callbacks.
+        var hidden: [UInt32] = []
+        var shown: [UInt32] = []
+        func hideCursor(on displayID: UInt32) { hidden.append(displayID) }
+        func showCursor(on displayID: UInt32) { shown.append(displayID) }
         func moveCursor(on displayID: UInt32, to point: CGPoint) {
             _ = (displayID, point)
         }

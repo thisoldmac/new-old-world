@@ -43,26 +43,15 @@ import UniformTypeIdentifiers
 enum ContinuityFileDrag {
     typealias Audit = (HostLog.LogLevel, String) -> Void
 
-    /// Why pointing at a guest file cannot pick it up without a picture of
-    /// the guest screen. Names the missing capability, never the component
-    /// that used to provide it — see the type comment.
-    /// The two calls the presentation half needs, named together because
-    /// they must be installed together: a drag that begins on the guest and
-    /// is never told to stop is the failure classic Finder punishes hardest.
-    struct Presentation {
-        /// One local file has reached the edge in a person's hand.
-        var carry: (URL) -> Void
-        /// It left, dropped, or was released. Must be safe to call when
-        /// `carry` never succeeded.
-        var release: () -> Void
-    }
-
     /// The first real file on a dragged pasteboard, or nil.
     ///
     /// Nil is an ordinary answer, not a defect: a drag can carry text, a
-    /// colour, or a promise whose file does not exist yet. The presentation
-    /// simply does not start, and the transfer lane — which reads the same
+    /// colour, or a promise whose file does not exist yet. The handoff
+    /// simply does not begin, and the transfer lane — which reads the same
     /// pasteboard again at drop time, including promises — is unaffected.
+    /// The extraction and its refusals live here, once, for whichever lane
+    /// needs one file's identity out of an AppKit object whose lifetime is
+    /// the session's.
     static func firstFile(on pasteboard: NSPasteboard) -> URL? {
         let options: [NSPasteboard.ReadingOptionKey: Any] = [
             .urlReadingFileURLsOnly: true,
@@ -73,6 +62,9 @@ enum ContinuityFileDrag {
             .first
     }
 
+    /// Why pointing at a guest file cannot pick it up without a picture of
+    /// the guest screen. Names the missing capability, never the component
+    /// that used to provide it — see the type comment.
     static let noGuestPictureReason =
         "nothing here can say which guest file is under the pointer without "
         + "a picture of the guest screen; select it on the Macintosh and it "
@@ -98,28 +90,17 @@ enum ContinuityFileDrag {
         /// screenshot outcome. Optional so every existing test that builds
         /// this seam without one keeps behaving exactly as before.
         refusal: ((String) -> Void)? = nil,
-        /// The host→guest PRESENTATION half: publishes the offer so the
-        /// guest can draw an honest drag of what is being carried, and
-        /// starts the guest's own Drag Manager drag. Optional, and the
-        /// product degrades honestly without it — the transfer still works,
-        /// the crossing just looks like nothing is happening.
+        /// **The host→guest HANDOFF: the guest's own drag, promise and
+        /// all.**
         ///
-        /// Takes a URL rather than the pasteboard because the pasteboard is
-        /// an AppKit object with a lifetime tied to a live session, and
-        /// everything downstream of here wants one file's identity. The
-        /// extraction and its refusals live in this file, once.
-        presentation: ContinuityFileDrag.Presentation? = nil,
-        /// **The host→guest HANDOFF, which supersedes the presentation pair
-        /// above on the drag lane.**
-        ///
-        /// The presentation asked the guest to DRAW what was being carried
-        /// — an honest picture, but a picture: an illustration of a drag
-        /// rather than a drag. This asks it to START ONE, promise and all,
-        /// which is the blessed path (AGENTS.md, "THE BLESSED PATH"; plan
-        /// `2026-08-17-036`). When a handoff is wired, the drag lane uses
-        /// it and the presentation pair is not wired beside it — two
-        /// machines cannot both own one gesture, and a guest drawing a
-        /// carry underneath its own live `TrackDrag` would be exactly that.
+        /// It replaced a PRESENTATION pair (deleted 2026-08-17) that asked
+        /// the guest to DRAW what was being carried — an honest picture,
+        /// but a picture: an illustration of a drag rather than a drag.
+        /// This asks it to START ONE, which is the blessed path (AGENTS.md,
+        /// "THE BLESSED PATH"; plan `2026-08-17-036`). Two machines cannot
+        /// both own one gesture, so there was never a configuration where
+        /// both were wired, and the product has passed a handoff here since
+        /// the lane landed.
         handoff: ContinuityEdgeController.HostDragHandoff? = nil
     ) {
         /* THE HOST→GUEST HALF OF THE SAME SEAM, and it is wired
@@ -131,22 +112,6 @@ enum ContinuityFileDrag {
         fileTransfer.outcomeSink = refusal
         if let handoff {
             edge.configureHostDragHandoff(handoff)
-        }
-        if let presentation, handoff == nil {
-            edge.configureHostDragPresentation(
-                arrived: { pasteboard in
-                    guard let url = firstFile(on: pasteboard) else {
-                        audit(.info, "a drag reached the shared edge carrying "
-                            + "no file this Mac can name; the guest draws "
-                            + "nothing and the drop still decides")
-                        return
-                    }
-                    audit(.info, "carrying \(url.lastPathComponent) to the "
-                        + "guest: publishing the offer so the Macintosh can "
-                        + "draw the drag before any byte moves")
-                    presentation.carry(url)
-                },
-                departed: presentation.release)
         }
         if let selection, let grab {
             /* Every terminal grab outcome — refused or completed — becomes
