@@ -2,8 +2,14 @@
 .build/
 
 # Lab configuration: addresses, credentials and toolchain paths that
-# describe one desk. Start from .env.lab.example; see docs/lab-setup.md.
+# describe one desk. Start from .env.example; see docs/lab-setup.md.
+# (.env.lab is the older name; scripts still read either.)
+.env
 .env.lab
+
+# The Makefile's per-checkout build trees. In-repo so every worktree
+# brings its own and no two checkouts ever share a CMake cache.
+/build/
 
 # Scratch docs: session notes, investigation logs, working plans. docs/
 # is published and deliberate; docs/local/ is neither, and keeping them
