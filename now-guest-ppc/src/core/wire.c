@@ -6712,10 +6712,21 @@ static void serve_continuity_grab(const char *request)
            still in flight, which is ordinary, and the window for finishing
            it closed. Saying "no longer names what it was given" there
            would send a person looking at their selection. */
-        file_refuse(id, code,
-                    verdict == kNowGrabGrantExpired
-                        ? "the drag was held too long after Continuity ended"
-                        : "the drag no longer names what it was given");
+        {
+            /* The guest's own state rides the refusal so the HOST log
+               carries both halves of the disagreement — three attended
+               rounds were diagnosed one-sided for want of this. */
+            char state[160];
+            char reason[224];
+
+            now_continuity_selection_describe(state, sizeof state);
+            snprintf(reason, sizeof reason, "%s [%s]",
+                     verdict == kNowGrabGrantExpired
+                         ? "the drag was held too long after Continuity ended"
+                         : "the drag no longer names what it was given",
+                     state);
+            file_refuse(id, code, reason);
+        }
         return;
     }
     if (now_json_find_string(request, "container", container_arg,

@@ -1,5 +1,6 @@
 #include "continuity_selection.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include <Carbon.h>
@@ -644,6 +645,22 @@ static int confirm_serve(const NowContinuityStubItem *serve)
         return confirm_serve_against_drag(serve);
     }
     return confirm_serve_against_finder(serve);
+}
+
+void now_continuity_selection_describe(char *out, unsigned long size)
+{
+    if (out == NULL || size == 0) {
+        return;
+    }
+    snprintf(out, (size_t)size,
+             "table=%lu/%lu src=%d seq=%lu %.31s hold=%lu/%lu seq=%lu %.31s",
+             g_table_epoch, g_table.generation,
+             g_table.have_item ? (int)g_table.item.source : -1,
+             g_table.have_item ? g_table.item.drag_seq : 0UL,
+             g_table.have_item ? g_table.item.name : "<none>",
+             g_hold.epoch, g_hold.generation,
+             g_hold.epoch != 0 ? g_hold.item.drag_seq : 0UL,
+             g_hold.epoch != 0 ? g_hold.item.name : "<none>");
 }
 
 int now_continuity_selection_grab(unsigned long live_epoch,

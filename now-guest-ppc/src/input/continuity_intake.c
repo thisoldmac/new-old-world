@@ -229,6 +229,19 @@ static void accept_datagram(const NowContinuityStatePacket *packet)
         gRejected++;
         return;
     }
+    /* LATEST-STATE MEANS LATEST. UDP reorders, and a packet from before a
+       state change overwriting the cell replays the OLD state for a pass —
+       on 2026-08-17 a pre-raise packet without the carried level made the
+       drag's input proc sample button-up once and TrackDrag dropped the
+       file at the entry edge (onto whatever lived there, including an
+       application alias). Same serial rule the button generation uses. */
+    if (shared->packet_seq != 0
+        && packet->position_seq != shared->position_seq
+        && !((packet->position_seq - shared->position_seq)
+                 < 0x80000000UL)) {
+        gRejected++;
+        return;
+    }
     shared->packet_epoch = packet->epoch;
     shared->position_seq = packet->position_seq;
     shared->want_h = packet->h;

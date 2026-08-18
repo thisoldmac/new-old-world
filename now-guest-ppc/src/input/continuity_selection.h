@@ -115,4 +115,9 @@ int now_continuity_selection_grab(unsigned long live_epoch,
    session that consented to it. */
 void now_continuity_selection_forget(void);
 
+/* Format the table+hold state into `out` (NUL-terminated, truncated to
+   `size`). Carried inside a grab refusal's reason so the HOST log names
+   the guest's side of the disagreement without a guest log pull. */
+void now_continuity_selection_describe(char *out, unsigned long size);
+
 #endif /* NOW_CONTINUITY_SELECTION_POLL_H */
