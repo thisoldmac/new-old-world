@@ -1207,6 +1207,16 @@
         "ext/src/now_liveness_net.c"
       ],
       "reason": "merge; resident 1.4 source (redial) baked+drilled in lane image now-stage-fix-resident-net-redial.qcow2 with sidecar receipt; shared-oracle promotion awaits Michelle"
+    },
+    {
+      "at": "2026-08-17T20:11:06-0400",
+      "branch": "fix/grab-survives-the-cross",
+      "extDigest": "1d01de403c66705d0d6ed7ca421bcd356ff99640",
+      "kind": "deferral",
+      "paths": [
+        "contract/peek_table.h"
+      ],
+      "reason": "rapid-fire iteration DMG; peek_table.h gains only kNowPeekContinuityCarriedLevel, a bit the resident never reads (its press mask is unchanged); shared-oracle bake at promotion per Michelle"
     }
   ]
 }

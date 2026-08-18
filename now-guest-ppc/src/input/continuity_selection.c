@@ -675,6 +675,22 @@ int now_continuity_selection_grab(unsigned long live_epoch,
         return verdict;
     }
     if (verdict != kNowGrabOK) {
+        /* THE STATE, NAMED AT THE REFUSAL. Three attended rounds were
+           diagnosed from the host's side of this refusal alone; this line
+           is the guest's half — what the table and the hold actually held
+           when the ask arrived. */
+        now_log(kLogWarn, "mirror",
+                "grab state at refusal: asked=%lu/%lu live=%lu "
+                "table=%lu/%lu src=%d seq=%lu %.31s "
+                "hold=%lu/%lu seq=%lu %.31s",
+                epoch, generation, live_epoch,
+                g_table_epoch, g_table.generation,
+                g_table.have_item ? (int)g_table.item.source : -1,
+                g_table.have_item ? g_table.item.drag_seq : 0UL,
+                g_table.have_item ? g_table.item.name : "<none>",
+                g_hold.epoch, g_hold.generation,
+                g_hold.epoch != 0 ? g_hold.item.drag_seq : 0UL,
+                g_hold.epoch != 0 ? g_hold.item.name : "<none>");
         return verdict;
     }
     /* THE LAST CHECK, AND THE ONLY ONE THAT ASKS THE MACHINE. Everything

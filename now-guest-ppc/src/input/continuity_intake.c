@@ -1159,7 +1159,13 @@ int now_continuity_latest_input(short *h, short *v, int *down,
         *v = (short)shared->want_v;
     }
     if (down != NULL) {
-        *down = (shared->flags & (NowPeekU32)kNowPeekContinuityPrimaryDown)
+        /* The input proc's button is the click's edge-tracked down OR the
+           carried level a staged host->guest drag holds. The carried bit
+           exists so this read can see a held button WITHOUT the resident's
+           press logic ever seeing one — see continuity_udp.h. */
+        *down = (shared->flags
+                     & ((NowPeekU32)kNowPeekContinuityPrimaryDown
+                        | (NowPeekU32)kNowPeekContinuityCarriedLevel))
             ? 1 : 0;
     }
     if (seq != NULL) {

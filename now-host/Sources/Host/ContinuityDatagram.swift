@@ -13,7 +13,11 @@ struct ContinuityStateDatagram: Equatable, Sendable {
         static let inside = Flags(rawValue: 1 << 0)
         static let primaryDown = Flags(rawValue: 1 << 1)
         static let keepalive = Flags(rawValue: 1 << 2)
-        static let known: Flags = [.inside, .primaryDown, .keepalive]
+        /// A level, not an edge: held for the life of a staged carry so the
+        /// guest drag's input proc reads a held button. Deliberately not
+        /// `.primaryDown` — the resident's press logic must never see it.
+        static let carriedLevel = Flags(rawValue: 1 << 3)
+        static let known: Flags = [.inside, .primaryDown, .keepalive, .carriedLevel]
     }
 
     var nonceHi: UInt32

@@ -615,8 +615,13 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertTrue(rig.controller.setCarriedButtonLevel(
             true, gesture: 4, reason: "a file is being carried"))
         let held = try await awaitPacket(in: rig.udp, "the carried level") {
-            $0.flags.contains(.primaryDown)
+            $0.flags.contains(.carriedLevel)
         }
+        XCTAssertFalse(held.flags.contains(.primaryDown),
+                       "the level must NEVER ride .primaryDown: a stale "
+                        + "generation plus that flag at a fresh epoch is "
+                        + "the phantom press that clicked and "
+                        + "marquee-selected at random on 2026-08-17")
         XCTAssertEqual(held.buttonGeneration, before.buttonGeneration,
                        "a carried level that advances the generation is a "
                         + "click the resident will apply — D5, and the "
@@ -630,7 +635,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         let released = try await awaitPacket(
             in: rig.udp, "the cleared level", timeout: 5
         ) { $0.positionSequence >= held.positionSequence
-            && !$0.flags.contains(.primaryDown) }
+            && !$0.flags.contains(.carriedLevel) }
         XCTAssertEqual(released.buttonGeneration, before.buttonGeneration,
                        "and the clear is a level too: the guest's TrackDrag "
                         + "reads it and returns, and nothing was posted")
@@ -657,7 +662,7 @@ final class MirrorContinuityControllerTests: XCTestCase {
         XCTAssertTrue(rig.controller.setCarriedButtonLevel(
             true, gesture: 9, reason: "a file is being carried"))
         _ = try await awaitPacket(in: rig.udp, "the carried level") {
-            $0.flags.contains(.primaryDown)
+            $0.flags.contains(.carriedLevel)
         }
 
         rig.controller.cancel(reason: "the pointer left")

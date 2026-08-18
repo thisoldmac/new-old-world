@@ -1516,7 +1516,13 @@ final class MirrorContinuityController: ObservableObject,
            whether the button is down, which under a carry it is. What
            separates them is `buttonGeneration`, which only the cycle
            advances. See `carriedButtonLevel`. */
-        if wireButtonDown || carriedButtonLevel { flags.insert(.primaryDown) }
+        if wireButtonDown { flags.insert(.primaryDown) }
+        /* The carry rides its OWN bit. Folding it into .primaryDown gave a
+           stale button_generation a down flag at every fresh epoch, and the
+           resident posted the phantom press that clicked and
+           marquee-selected at random on 2026-08-17. Only the guest drag's
+           input proc reads this level. */
+        if carriedButtonLevel { flags.insert(.carriedLevel) }
         if keepalive { flags.insert(.keepalive) }
         let packet = ContinuityStateDatagram(
             nonceHi: nonceHi, nonceLo: nonceLo, epoch: epoch,

@@ -1051,6 +1051,11 @@ typedef struct {
 enum {
     kNowPeekContinuityInside = 1u << 0,
     kNowPeekContinuityPrimaryDown = 1u << 1,
+    /* The carried level (NOW_CONTINUITY_FLAG_CARRIED_LEVEL), copied
+       verbatim from the datagram. Read ONLY by the application's drag
+       input proc; the resident's press logic masks kNowPeekContinuityPrimaryDown
+       alone and must never act on this bit. */
+    kNowPeekContinuityCarriedLevel = 1u << 3,
     kNowPeekContinuityKeepalive = 1u << 2,
     kNowPeekContinuityLeaseMinTicks = 15,
     kNowPeekContinuityLeaseMaxTicks = 600,
