@@ -51,13 +51,22 @@ is its own business.
 
 ### What is verified, and what is not
 
-- **Tested.** 12 new tests over the anchor, the edit path and a real
-  two-socket listener; the full host suite is 2829 passed / 63 skipped / 0
-  failures. Three mutations were watched failing on the assertions that name
-  them: the port dropped from the `identify` match, `accept()` reading
-  `boundPort` instead of its own listener's port, and live slots counted
-  across ports. A fourth mutation — `anchorPort` ignoring
-  `distinguishesMachines` — was watched against the routable-address test.
+- **Tested.** 14 new tests over the anchor, the edit path and a real
+  two-socket listener. `scripts/test-all` passes end to end (stage 8 skips:
+  no `NOW_GUEST_LIVE`, so nothing in the run reached a Macintosh), with both
+  guests genuinely cross-compiling rather than skipping. Five mutations were
+  watched failing on the assertions that name them: the port dropped from
+  the `identify` match, `accept()` reading `boundPort` instead of its own
+  listener's port, live slots counted across ports, `anchorPort` ignoring
+  `distinguishesMachines`, and `ensure(ports:)` falling back to
+  `start(ports:)`.
+- **A rig note, paid for here.** An earlier gate run failed
+  `HostAppStateWiringTests` with `listener never became ready: idle`, and it
+  was not the change: a second `swift test` was running in this worktree at
+  the same time, and that test binds a pid-derived port while `FakeGuest`
+  draws source ports from a range that can overlap it ACROSS PROCESSES. The
+  file's own comments describe this collision; it is worth restating that it
+  reaches the gate itself. Do not run the suite beside the gate.
 - **NOT emulator-measured.** No two-VM run has been made against this build.
   The failure it fixes is precisely a two-emulated-guest failure, so this is
   the gate that matters most and it is outstanding.
