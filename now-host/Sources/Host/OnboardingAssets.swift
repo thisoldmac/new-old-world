@@ -1,9 +1,37 @@
 import CryptoKit
 import Foundation
 
+/// Which classic Mac the onboarding surface is serving. The PPC flavor is
+/// the Carbon application with its CarbonLib dependency and companions; the
+/// 68K flavor is NOW-68K alone plus the extension, which is 68K by nature.
+/// CodeKitten and CarbonLib are Carbon and have no 68K meaning, and NOW-68K
+/// ships no preferences as a product property (n68_devsettings.h), so the
+/// 68K flavor offers no settings download either.
+enum OnboardingGuestFlavor: String, CaseIterable, Identifiable {
+    case powerpc
+    case m68k
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .powerpc: return "PowerPC"
+        case .m68k: return "68K"
+        }
+    }
+
+    var applicationDisplayName: String {
+        switch self {
+        case .powerpc: return "New Old World"
+        case .m68k: return "NOW-68K"
+        }
+    }
+}
+
 struct OnboardingAsset: Identifiable, Equatable {
     enum Kind: Equatable {
         case application
+        case application68K
         case codeKitten
         case extensionComponent
         case dependency
@@ -19,13 +47,33 @@ struct OnboardingAsset: Identifiable, Equatable {
 
 struct OnboardingAssetSnapshot: Equatable {
     let application: OnboardingAsset?
+    let application68K: OnboardingAsset?
     let codeKitten: OnboardingAsset?
     let extensionComponent: OnboardingAsset?
     let dependencies: [OnboardingAsset]
 
+    init(application: OnboardingAsset?,
+         application68K: OnboardingAsset? = nil,
+         codeKitten: OnboardingAsset?,
+         extensionComponent: OnboardingAsset?,
+         dependencies: [OnboardingAsset]) {
+        self.application = application
+        self.application68K = application68K
+        self.codeKitten = codeKitten
+        self.extensionComponent = extensionComponent
+        self.dependencies = dependencies
+    }
+
     static let empty = OnboardingAssetSnapshot(
-        application: nil, codeKitten: nil, extensionComponent: nil,
-        dependencies: [])
+        application: nil, application68K: nil, codeKitten: nil,
+        extensionComponent: nil, dependencies: [])
+
+    func application(for flavor: OnboardingGuestFlavor) -> OnboardingAsset? {
+        switch flavor {
+        case .powerpc: return application
+        case .m68k: return application68K
+        }
+    }
 
     var hasCarbonLib: Bool {
         OnboardingDependencyCatalog.carbonLib.installedAsset(in: self) != nil
@@ -82,6 +130,14 @@ struct OnboardingAssetCatalog {
             application: firstAsset(
                 named: ["New Old World.bin", "now-guest-ppc.bin"],
                 kind: .application),
+            // deploy-68k stamps versioned names ("NOW-68K 0.6.bin"), so the
+            // 68K application also matches by prefix where the PPC one is
+            // exact - the build-tree name stays accepted beside it.
+            application68K: firstAsset(
+                named: ["NOW-68K.bin", "now-guest-68k.bin"],
+                kind: .application68K)
+                ?? prefixedAsset(prefix: "NOW-68K ", suffix: ".bin",
+                                 kind: .application68K),
             codeKitten: firstAsset(
                 named: ["CodeKitten.bin", "codekitten.bin"],
                 kind: .codeKitten),
@@ -118,6 +174,31 @@ struct OnboardingAssetCatalog {
                                      kind: kind) {
                     return asset
                 }
+            }
+        }
+        return nil
+    }
+
+    private func prefixedAsset(prefix: String, suffix: String,
+                               kind: OnboardingAsset.Kind)
+        -> OnboardingAsset? {
+        for root in roots {
+            let urls = (try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey,
+                                             .fileSizeKey],
+                options: [.skipsHiddenFiles])) ?? []
+            let match = urls.filter {
+                $0.lastPathComponent.hasPrefix(prefix)
+                    && $0.lastPathComponent.hasSuffix(suffix)
+            }.sorted {
+                // Highest version first, so a folder holding several
+                // deploys offers the newest.
+                $0.lastPathComponent.localizedStandardCompare(
+                    $1.lastPathComponent) == .orderedDescending
+            }.first
+            if let match, let asset = asset(at: match, kind: kind) {
+                return asset
             }
         }
         return nil

@@ -1,8 +1,12 @@
 import Foundation
 
 struct ClassicSetupImageBuilder: Sendable {
-    private static func instructions(host: String, port: UInt16) -> String {
-        """
+    private static func instructions(host: String, port: UInt16,
+                                     flavor: OnboardingGuestFlavor)
+        -> String {
+        switch flavor {
+        case .powerpc:
+            return """
             NEW OLD WORLD SETUP\r
             \r
             1. Copy New Old World anywhere on your hard disk.\r
@@ -15,6 +19,19 @@ struct ClassicSetupImageBuilder: Sendable {
             Dependencies downloaded by the host are in the Dependencies folder.\r
             Run the CarbonLib installer if CarbonLib 1.6 is not installed.\r
             """
+        case .m68k:
+            // NOW-68K remembers nothing between launches on purpose, so
+            // the address is written here for the human to type.
+            return """
+            NOW-68K SETUP\r
+            \r
+            1. Copy NOW-68K anywhere on your hard disk.\r
+            2. Open NOW-68K. Type \(host) into Host and \(port) into Port.\r
+            \r
+            OPTIONAL\r
+            Put NOW Extension in System Folder:Extensions and restart.\r
+            """
+        }
     }
 
     enum BuildError: LocalizedError {
@@ -46,22 +63,38 @@ struct ClassicSetupImageBuilder: Sendable {
     static let downloadFileName = "New Old World Setup.img.bin"
     static let classicImageName = "New Old World Setup.img"
     static let volumeName = "NOW Setup"
+
+    static func classicImageName(for flavor: OnboardingGuestFlavor)
+        -> String {
+        switch flavor {
+        case .powerpc: return "New Old World Setup.img"
+        case .m68k: return "NOW-68K Setup.img"
+        }
+    }
+
+    static func downloadFileName(for flavor: OnboardingGuestFlavor)
+        -> String {
+        classicImageName(for: flavor) + ".bin"
+    }
     static let maximumImageBytes = 128 * 1_024 * 1_024
 
     private var fileManager: FileManager { .default }
 
     func build(host: String, wirePort: UInt16,
-               assets: OnboardingAssetSnapshot) async throws -> Data {
+               assets: OnboardingAssetSnapshot,
+               flavor: OnboardingGuestFlavor = .powerpc)
+        async throws -> Data {
         try await Task.detached(priority: .userInitiated) {
             try buildSynchronously(host: host, wirePort: wirePort,
-                                   assets: assets)
+                                   assets: assets, flavor: flavor)
         }.value
     }
 
     private func buildSynchronously(host: String, wirePort: UInt16,
-                                    assets: OnboardingAssetSnapshot)
+                                    assets: OnboardingAssetSnapshot,
+                                    flavor: OnboardingGuestFlavor)
         throws -> Data {
-        guard assets.application != nil else {
+        guard assets.application(for: flavor) != nil else {
             throw BuildError.missingApplication
         }
         try DevelopmentStarterPackManifest.validate(in: assets)
@@ -79,7 +112,7 @@ struct ClassicSetupImageBuilder: Sendable {
         try fileManager.createDirectory(
             at: contents, withIntermediateDirectories: true)
         try populate(destination: contents, host: host, wirePort: wirePort,
-                     assets: assets,
+                     assets: assets, flavor: flavor,
                      dependencies: selectedDependencies)
 
         let fittedImage = workspace.appendingPathComponent(
@@ -91,47 +124,65 @@ struct ClassicSetupImageBuilder: Sendable {
 
         let disk = try Data(contentsOf: rawImage, options: [.mappedIfSafe])
         guard let image = NDIFImage.macBinary(
-            name: Self.classicImageName, volumeName: Self.volumeName,
+            name: Self.classicImageName(for: flavor),
+            volumeName: Self.volumeName,
             disk: disk) else { throw BuildError.couldNotEncode }
         return image
     }
 
     private func populate(destination: URL, host: String, wirePort: UInt16,
                           assets: OnboardingAssetSnapshot,
+                          flavor: OnboardingGuestFlavor,
                           dependencies selectedDependencies:
                             [OnboardingAsset]) throws {
-        guard let application = assets.application else {
+        guard let application = assets.application(for: flavor) else {
             throw BuildError.missingApplication
         }
-        try writeMacBinary(application.fileURL, to: destination)
-        if let codeKitten = assets.codeKitten {
-            try writeMacBinary(codeKitten.fileURL, to: destination,
-                               nameOverride: "CodeKitten")
-        }
-        guard let preferences = OnboardingPreferences.macBinary(
-            host: host, port: wirePort) else {
-            throw BuildError.couldNotEncode
-        }
-        _ = try MacBinaryFile.decode(preferences).write(to: destination)
-        if let extensionComponent = assets.extensionComponent {
-            try writeMacBinary(extensionComponent.fileURL, to: destination,
-                               nameOverride: "NOW Extension")
-        }
+        switch flavor {
+        case .powerpc:
+            try writeMacBinary(application.fileURL, to: destination)
+            if let codeKitten = assets.codeKitten {
+                try writeMacBinary(codeKitten.fileURL, to: destination,
+                                   nameOverride: "CodeKitten")
+            }
+            guard let preferences = OnboardingPreferences.macBinary(
+                host: host, port: wirePort) else {
+                throw BuildError.couldNotEncode
+            }
+            _ = try MacBinaryFile.decode(preferences).write(to: destination)
+            if let extensionComponent = assets.extensionComponent {
+                try writeMacBinary(extensionComponent.fileURL,
+                                   to: destination,
+                                   nameOverride: "NOW Extension")
+            }
 
-        let dependencies = destination.appendingPathComponent(
-            "Dependencies", isDirectory: true)
-        try fileManager.createDirectory(
-            at: dependencies, withIntermediateDirectories: true)
-        for asset in selectedDependencies {
-            try installDependency(asset, in: dependencies,
-                                  workspace:
-                                    destination.deletingLastPathComponent())
+            let dependencies = destination.appendingPathComponent(
+                "Dependencies", isDirectory: true)
+            try fileManager.createDirectory(
+                at: dependencies, withIntermediateDirectories: true)
+            for asset in selectedDependencies {
+                try installDependency(
+                    asset, in: dependencies,
+                    workspace: destination.deletingLastPathComponent())
+            }
+        case .m68k:
+            // The build-tree artifact carries its target name; a deploy
+            // stamp carries a version. Either way the disk shows the
+            // product's name.
+            try writeMacBinary(application.fileURL, to: destination,
+                               nameOverride: "NOW-68K")
+            if let extensionComponent = assets.extensionComponent {
+                try writeMacBinary(extensionComponent.fileURL,
+                                   to: destination,
+                                   nameOverride: "NOW Extension")
+            }
         }
 
         let readMe = MacBinaryFile(
             name: "Read Me First", type: "TEXT", creator: "ttxt",
             finderFlags: 0,
-            dataFork: Self.instructions(host: host, port: wirePort)
+            dataFork: Self.instructions(host: host, port: wirePort,
+                                        flavor: flavor)
                 .data(using: .macOSRoman) ?? Data(),
             resourceFork: Data())
         _ = try readMe.write(to: destination)

@@ -26,7 +26,8 @@ struct OnboardingSetupImage: Equatable {
 @MainActor
 final class OnboardingPortal: ObservableObject {
     typealias SetupImageBuilder = @Sendable (
-        String, UInt16, OnboardingAssetSnapshot) async throws -> Data
+        String, UInt16, OnboardingAssetSnapshot, OnboardingGuestFlavor)
+        async throws -> Data
 
     enum State: Equatable {
         case stopped
@@ -62,6 +63,7 @@ final class OnboardingPortal: ObservableObject {
         [String: DependencyAcquisitionState] = [:]
     @Published private(set) var selectedAssetIDs: Set<String> = []
     @Published private(set) var setupImageState: SetupImageState = .notBuilt
+    @Published var guestFlavor: OnboardingGuestFlavor = .powerpc
 
     private let catalog: OnboardingAssetCatalog
     private let dependencyAcquirer: OnboardingDependencyAcquirer
@@ -73,13 +75,14 @@ final class OnboardingPortal: ObservableObject {
     private var knownAssetIDs: Set<String> = []
     private var setupImageData: Data?
     private var setupImageSelection: Set<String> = []
+    private var setupImageFlavor: OnboardingGuestFlavor = .powerpc
 
     init(catalog: OnboardingAssetCatalog = .live(),
          dependencyAcquirer: OnboardingDependencyAcquirer? = nil,
          setupImageBuilder: @escaping SetupImageBuilder = {
-             host, port, assets in
+             host, port, assets, flavor in
              try await ClassicSetupImageBuilder().build(
-                 host: host, wirePort: port, assets: assets)
+                 host: host, wirePort: port, assets: assets, flavor: flavor)
          },
          advertisedAddress: @escaping () -> String? = {
              HostAddressDetector.primaryIPv4()
@@ -156,17 +159,25 @@ final class OnboardingPortal: ObservableObject {
         if let application = assets.application {
             selectedAssetIDs.insert(application.id)
         }
+        if let application68K = assets.application68K {
+            selectedAssetIDs.insert(application68K.id)
+        }
         knownAssetIDs = availableIDs
     }
 
+    // Both flavors' applications stay selectable so a discovered asset is
+    // auto-selected whichever pill is active; what a flavor OFFERS is the
+    // page's and image's decision, made per request from `guestFlavor`.
     var selectableAssets: [OnboardingAsset] {
-        [assets.application, assets.codeKitten,
+        [assets.application, assets.application68K, assets.codeKitten,
          assets.extensionComponent].compactMap { $0 }
             + OnboardingDependencyCatalog.setupAssets(in: assets)
     }
 
     var hasPendingSetupImageChanges: Bool {
-        setupImageData != nil && setupImageSelection != selectedAssetIDs
+        setupImageData != nil
+            && (setupImageSelection != selectedAssetIDs
+                || setupImageFlavor != guestFlavor)
     }
 
     func isSelected(_ asset: OnboardingAsset) -> Bool {
@@ -174,7 +185,9 @@ final class OnboardingPortal: ObservableObject {
     }
 
     func setSelected(_ selected: Bool, asset: OnboardingAsset) {
-        if asset.kind == .application { return }
+        if asset.kind == .application || asset.kind == .application68K {
+            return
+        }
         var selection = selectedAssetIDs
         if selected {
             selection.insert(asset.id)
@@ -214,12 +227,15 @@ final class OnboardingPortal: ObservableObject {
         setupImageState = .building
         do {
             let selection = selectedAssetIDs
+            let flavor = guestFlavor
             let selected = selectedAssets(selection: selection)
             let image = try await setupImageBuilder(
-                endpoint.host, endpoint.wirePort, selected)
-            let summary = setupImageSummary(image, assets: selected)
+                endpoint.host, endpoint.wirePort, selected, flavor)
+            let summary = setupImageSummary(image, assets: selected,
+                                            flavor: flavor)
             setupImageData = image
             setupImageSelection = selection
+            setupImageFlavor = flavor
             setupImageState = .ready(summary)
             return summary
         } catch {
@@ -238,6 +254,9 @@ final class OnboardingPortal: ObservableObject {
             application: assets.application.flatMap {
                 selection.contains($0.id) ? $0 : nil
             },
+            application68K: assets.application68K.flatMap {
+                selection.contains($0.id) ? $0 : nil
+            },
             codeKitten: assets.codeKitten.flatMap {
                 selection.contains($0.id) ? $0 : nil
             },
@@ -250,21 +269,35 @@ final class OnboardingPortal: ObservableObject {
     }
 
     private func setupImageSummary(_ image: Data,
-                                   assets: OnboardingAssetSnapshot)
+                                   assets: OnboardingAssetSnapshot,
+                                   flavor: OnboardingGuestFlavor)
         -> OnboardingSetupImage {
         let diskBytes = (try? MacBinaryFile.decode(image))
             .map { Int64($0.dataFork.count) } ?? 0
-        var items = ["New Old World", "Host settings", "Read Me First"]
-        if assets.codeKitten != nil { items.append("CodeKitten") }
-        if assets.extensionComponent != nil { items.append("NOW Extension") }
-        items += OnboardingDependencyCatalog.setupAssets(in: assets).map {
-            asset in
-            OnboardingDependencyCatalog.all.first(where: { dependency in
-                dependency.matches(asset)
-            })?.displayName ?? asset.fileName
+        var items: [String]
+        switch flavor {
+        case .powerpc:
+            items = ["New Old World", "Host settings", "Read Me First"]
+            if assets.codeKitten != nil { items.append("CodeKitten") }
+            if assets.extensionComponent != nil {
+                items.append("NOW Extension")
+            }
+            items += OnboardingDependencyCatalog.setupAssets(in: assets)
+                .map { asset in
+                    OnboardingDependencyCatalog.all.first(
+                        where: { $0.matches(asset) })?.displayName
+                        ?? asset.fileName
+                }
+        case .m68k:
+            // No settings: NOW-68K ships no preferences as a product
+            // property. No CodeKitten or CarbonLib: both are Carbon.
+            items = ["NOW-68K", "Read Me First"]
+            if assets.extensionComponent != nil {
+                items.append("NOW Extension")
+            }
         }
         return OnboardingSetupImage(
-            fileName: ClassicSetupImageBuilder.classicImageName,
+            fileName: ClassicSetupImageBuilder.classicImageName(for: flavor),
             transferByteCount: Int64(image.count), diskByteCount: diskBytes,
             includedItems: items, builtAt: Date())
     }
@@ -413,7 +446,8 @@ final class OnboardingPortal: ObservableObject {
             if envelopeFallback {
                 return .download(
                     data: image,
-                    fileName: ClassicSetupImageBuilder.downloadFileName,
+                    fileName: ClassicSetupImageBuilder.downloadFileName(
+                        for: setupImageFlavor),
                     contentType: "application/macbinary")
             }
             return .data(
@@ -438,6 +472,7 @@ final class OnboardingPortal: ObservableObject {
             let page = OnboardingPage.render(host: host,
                                              wirePort: wirePort,
                                              assets: assets,
+                                             flavor: guestFlavor,
                                              setupImage: setupImage)
             return .data(status: 200, reason: "OK",
                          contentType: "text/html; charset=utf-8",
@@ -452,7 +487,7 @@ final class OnboardingPortal: ObservableObject {
                              fileName: "New Old World Prefs.bin",
                              contentType: "application/macbinary")
         case "/now/application.bin":
-            return assetResponse(assets.application)
+            return assetResponse(assets.application(for: guestFlavor))
         case "/now/codekitten.bin":
             return assetResponse(assets.codeKitten)
         case "/now/extension.bin":

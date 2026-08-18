@@ -20,7 +20,7 @@ final class OnboardingPortalTests: XCTestCase {
         let portal = OnboardingPortal(
             catalog: OnboardingAssetCatalog(
                 roots: [temporary], writableRoot: temporary),
-            setupImageBuilder: { host, port, _ in
+            setupImageBuilder: { host, port, _, _ in
                 Data("setup-\(host)-\(port)".utf8)
             },
             advertisedAddress: { "127.0.0.1" })
@@ -127,7 +127,7 @@ final class OnboardingPortalTests: XCTestCase {
         let portal = OnboardingPortal(
             catalog: OnboardingAssetCatalog(
                 roots: [temporary], writableRoot: temporary),
-            setupImageBuilder: { _, _, assets in
+            setupImageBuilder: { _, _, assets, _ in
                 Data(("codekitten=\(assets.codeKitten != nil);"
                      + "extension=\(assets.extensionComponent != nil);"
                      + "dependencies=\(assets.dependencies.count)").utf8)
@@ -171,6 +171,76 @@ final class OnboardingPortalTests: XCTestCase {
         XCTAssertTrue(html.contains("Served image:"))
         XCTAssertTrue(html.contains("New Old World, Host settings, Read Me First"))
         XCTAssertFalse(html.contains("Contains:</b> NOW Extension"))
+    }
+
+    func test68KFlavorServesNOW68KWithoutSettingsCodeKittenOrCarbonLib()
+        async throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try Data("macbinary-app".utf8).write(to: temporary
+            .appendingPathComponent("New Old World.bin"))
+        // The versioned deploy stamp is the name a lab folder actually
+        // holds, so the prefix match is what this test exercises.
+        try Data("macbinary-68k".utf8).write(to: temporary
+            .appendingPathComponent("NOW-68K 0.6.bin"))
+        try Data("macbinary-codekitten".utf8).write(to: temporary
+            .appendingPathComponent("CodeKitten.bin"))
+        try Data("macbinary-ext".utf8).write(to: temporary
+            .appendingPathComponent("NOW Extension.bin"))
+
+        let portal = OnboardingPortal(
+            catalog: OnboardingAssetCatalog(
+                roots: [temporary], writableRoot: temporary),
+            setupImageBuilder: { _, _, assets, flavor in
+                Data(("flavor=\(flavor.rawValue);"
+                     + "app=\(assets.application(for: flavor)?.fileName ?? "none")")
+                    .utf8)
+            },
+            advertisedAddress: { "127.0.0.1" })
+        portal.start(wirePort: 5_412)
+        let endpoint = try await runningEndpoint(portal)
+        defer { portal.stop() }
+        _ = try await readyImage(portal)
+
+        portal.guestFlavor = .m68k
+        XCTAssertTrue(portal.hasPendingSetupImageChanges,
+                      "a flavor switch must mark the served image stale")
+        let image = try await portal.rebuildSetupImage()
+        XCTAssertEqual(image.fileName, "NOW-68K Setup.img")
+        XCTAssertEqual(image.includedItems,
+                       ["NOW-68K", "Read Me First", "NOW Extension"])
+
+        let page = try await fetch(try XCTUnwrap(endpoint.pageURL))
+        let html = try XCTUnwrap(String(data: page.data, encoding: .utf8))
+        XCTAssertTrue(html.contains("NOW-68K"))
+        XCTAssertTrue(html.contains("into Host and"))
+        XCTAssertFalse(html.contains("/now/settings.bin"),
+                       "NOW-68K ships no preferences as a product property")
+        XCTAssertFalse(html.contains("/now/codekitten.bin"))
+        XCTAssertFalse(html.contains("CarbonLib"))
+
+        let app = try await fetch(endpointURL(endpoint,
+                                              path: "/now/application.bin"))
+        XCTAssertEqual(app.data, Data("macbinary-68k".utf8),
+                       "application.bin serves the active flavor's guest")
+
+        let served = try await fetch(endpointURL(
+            endpoint, path: "/now/setup.img"))
+        XCTAssertEqual(String(data: served.data, encoding: .utf8),
+                       "flavor=m68k;app=NOW-68K 0.6.bin")
+        let envelope = try await fetch(endpointURL(
+            endpoint, path: "/now/setup.img.bin"))
+        XCTAssertTrue(envelope.contentDisposition?.contains(
+            "NOW-68K Setup.img.bin") == true)
+
+        portal.guestFlavor = .powerpc
+        _ = try await portal.rebuildSetupImage()
+        let ppc = try await fetch(endpointURL(endpoint,
+                                              path: "/now/application.bin"))
+        XCTAssertEqual(ppc.data, Data("macbinary-app".utf8))
     }
 
     private func runningEndpoint(_ portal: OnboardingPortal) async throws
