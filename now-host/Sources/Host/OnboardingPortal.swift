@@ -8,7 +8,7 @@ struct OnboardingEndpoint: Equatable {
     let wirePort: UInt16
 
     var pageURL: URL? {
-        URL(string: "http://\(host):\(httpPort)/now")
+        URL(string: "http://\(host):\(httpPort)/")
     }
 }
 
@@ -25,6 +25,12 @@ struct OnboardingSetupImage: Equatable {
 /// page, generated settings, and files already admitted by the catalog.
 @MainActor
 final class OnboardingPortal: ObservableObject {
+    /// The port a person types on a 1993 keyboard. Stable so a bookmark or
+    /// a remembered number keeps working across sessions; when something
+    /// else holds it, the listener falls back to an ephemeral port rather
+    /// than refusing to onboard at all.
+    static let preferredPort: UInt16 = 5280
+
     typealias SetupImageBuilder = @Sendable (
         String, UInt16, OnboardingAssetSnapshot, OnboardingGuestFlavor)
         async throws -> Data
@@ -65,6 +71,7 @@ final class OnboardingPortal: ObservableObject {
     @Published private(set) var setupImageState: SetupImageState = .notBuilt
     @Published var guestFlavor: OnboardingGuestFlavor = .powerpc
 
+    private let preferredPort: UInt16
     private let catalog: OnboardingAssetCatalog
     private let dependencyAcquirer: OnboardingDependencyAcquirer
     private let setupImageBuilder: SetupImageBuilder
@@ -78,6 +85,7 @@ final class OnboardingPortal: ObservableObject {
     private var setupImageFlavor: OnboardingGuestFlavor = .powerpc
 
     init(catalog: OnboardingAssetCatalog = .live(),
+         preferredPort: UInt16 = OnboardingPortal.preferredPort,
          dependencyAcquirer: OnboardingDependencyAcquirer? = nil,
          setupImageBuilder: @escaping SetupImageBuilder = {
              host, port, assets, flavor in
@@ -88,6 +96,7 @@ final class OnboardingPortal: ObservableObject {
              HostAddressDetector.primaryIPv4()
          }) {
         self.catalog = catalog
+        self.preferredPort = preferredPort
         self.dependencyAcquirer = dependencyAcquirer ?? .live()
         self.setupImageBuilder = setupImageBuilder
         self.advertisedAddress = advertisedAddress
@@ -112,12 +121,17 @@ final class OnboardingPortal: ObservableObject {
         refreshAssets()
         state = .starting
         generation += 1
+        listen(on: NWEndpoint.Port(rawValue: preferredPort) ?? .any,
+               fallback: true)
+    }
+
+    private func listen(on port: NWEndpoint.Port, fallback: Bool) {
         let run = generation
 
         do {
             let parameters = NWParameters.tcp
             parameters.allowLocalEndpointReuse = true
-            let listener = try NWListener(using: parameters, on: .any)
+            let listener = try NWListener(using: parameters, on: port)
             self.listener = listener
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor in
@@ -131,14 +145,19 @@ final class OnboardingPortal: ObservableObject {
             listener.stateUpdateHandler = { [weak self, weak listener] value in
                 Task { @MainActor in
                     guard let self, self.generation == run else { return }
-                    self.listenerStateChanged(value, listener: listener)
+                    self.listenerStateChanged(value, listener: listener,
+                                              fallback: fallback)
                 }
             }
             listener.start(queue: .main)
         } catch {
             listener = nil
-            state = .failed("Could not start onboarding: "
-                            + error.localizedDescription)
+            if fallback {
+                listen(on: .any, fallback: false)
+            } else {
+                state = .failed("Could not start onboarding: "
+                                + error.localizedDescription)
+            }
         }
     }
 
@@ -303,7 +322,8 @@ final class OnboardingPortal: ObservableObject {
     }
 
     private func listenerStateChanged(_ value: NWListener.State,
-                                      listener: NWListener?) {
+                                      listener: NWListener?,
+                                      fallback: Bool) {
         switch value {
         case .ready:
             guard let port = listener?.port?.rawValue else {
@@ -324,8 +344,16 @@ final class OnboardingPortal: ObservableObject {
             }
         case .failed(let error):
             self.listener = nil
-            state = .failed("Onboarding stopped: "
-                            + error.localizedDescription)
+            // The preferred port being held (another host instance, an
+            // earlier session) is an expected state, not a failure: fall
+            // back to an ephemeral port once, then report honestly.
+            if fallback {
+                generation += 1
+                listen(on: .any, fallback: false)
+            } else {
+                state = .failed("Onboarding stopped: "
+                                + error.localizedDescription)
+            }
         case .cancelled:
             self.listener = nil
             if case .starting = state { state = .stopped }

@@ -245,6 +245,38 @@ final class OnboardingPortalTests: XCTestCase {
         XCTAssertEqual(ppc.data, Data("macbinary-app".utf8))
     }
 
+    func testPreferredPortIsUsedAndFallsBackWhenHeld() async throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let catalog = OnboardingAssetCatalog(
+            roots: [temporary], writableRoot: temporary)
+        let preferred: UInt16 = 5_281
+
+        let first = OnboardingPortal(
+            catalog: catalog, preferredPort: preferred,
+            advertisedAddress: { "127.0.0.1" })
+        first.start(wirePort: 5_250)
+        let held = try await runningEndpoint(first)
+        defer { first.stop() }
+        XCTAssertEqual(held.httpPort, preferred,
+                       "a free preferred port is taken as-is")
+        XCTAssertEqual(held.pageURL?.absoluteString,
+                       "http://127.0.0.1:\(preferred)/",
+                       "the advertised URL is the root - nothing to type "
+                       + "after the port")
+
+        let second = OnboardingPortal(
+            catalog: catalog, preferredPort: preferred,
+            advertisedAddress: { "127.0.0.1" })
+        second.start(wirePort: 5_250)
+        let fallback = try await runningEndpoint(second)
+        defer { second.stop() }
+        XCTAssertNotEqual(fallback.httpPort, preferred,
+                          "a held preferred port falls back, not fails")
+        let page = try await fetch(try XCTUnwrap(fallback.pageURL))
+        XCTAssertEqual(page.status, 200)
+    }
+
     private func runningEndpoint(_ portal: OnboardingPortal) async throws
         -> OnboardingEndpoint {
         for _ in 0..<100 {
