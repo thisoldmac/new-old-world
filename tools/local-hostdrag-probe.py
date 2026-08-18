@@ -27,6 +27,14 @@ transport question out of a File Manager answer. The pattern is
 positional, so a chunk that landed at the wrong offset fails as loudly as
 a chunk that arrived wrong.
 
+--shots ALSO NEEDS --lab-root (the lab checkout holding tools/qmp) and
+--qmp; without them the screendumps are skipped, and the probe now says
+so rather than returning an empty list. Note the drag itself is short —
+around 30 ticks for a small file — so the `-01-mid` and `-02-held` shots
+can easily land outside it and show a desktop with nothing in flight.
+Catching the Drag Manager's ghost wants a longer scripted drag (the
+guest's diag bit 16 ramp), not faster shooting.
+
 RECEIPTS GO WHERE YOU POINT --shots, and that must be OUTSIDE
 $NOW_SPIN_RUN: `lane-ports reclaim` deletes the run directory, and it has
 already eaten one measurement's screendumps.
@@ -348,6 +356,19 @@ class Shots:
         self.taken = []
         if directory:
             os.makedirs(directory, exist_ok=True)
+        # SAY SO, LOUDLY. Asking for --shots and silently taking none cost
+        # four measurement runs on 2026-08-18: --lab-root is the LAB
+        # checkout (it holds tools/qmp), not the NOW repo, and without it
+        # every take() returned None without a word.
+        if directory and not (self.tool and os.path.exists(self.tool)):
+            where = self.tool or "<no --lab-root given>"
+            print(f"[probe] --shots asked for screendumps but {where} is not "
+                  "there, so NONE will be taken. --lab-root is the lab "
+                  "checkout that holds tools/qmp (NOW_LAB_ROOT), not this "
+                  "repository.", file=sys.stderr, flush=True)
+        if directory and not qmp:
+            print("[probe] --shots needs --qmp; no screendumps will be taken.",
+                  file=sys.stderr, flush=True)
 
     def take(self, name):
         if not (self.qmp and self.dir and self.tool
