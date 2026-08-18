@@ -36,8 +36,9 @@ final class OnboardingPortalTests: XCTestCase {
         XCTAssertTrue(html.contains("127.0.0.1:5412"))
         XCTAssertTrue(html.contains("/now/application.bin"))
         XCTAssertTrue(html.contains("/now/codekitten.bin"))
-        XCTAssertTrue(html.contains("href=\"/now/setup.img\""))
-        XCTAssertTrue(html.contains("/now/setup.img.bin"))
+        XCTAssertTrue(html.contains("href=\"/now/setup.img.bin\""),
+                      "the recommended link carries the .bin suffix classic "
+                      + "browsers map to their MacBinary decoder")
         XCTAssertTrue(html.contains("/now/settings.bin"))
         XCTAssertTrue(html.contains("CarbonLib 1.6.1"))
         XCTAssertTrue(html.contains("macintoshgarden.org/apps/carbonlib"))
@@ -60,8 +61,9 @@ final class OnboardingPortalTests: XCTestCase {
             endpoint, path: "/now/setup.img"))
         XCTAssertEqual(setup.status, 200)
         XCTAssertEqual(setup.data, Data("setup-127.0.0.1-5412".utf8))
-        XCTAssertEqual(setup.contentType, "application/x-macbinary")
-        XCTAssertNil(setup.contentDisposition)
+        XCTAssertEqual(setup.contentType, "application/macbinary",
+                       "one MacBinary type on every route: the x- variant "
+                       + "is a spelling some classic browsers do not know")
 
         let setupEnvelope = try await fetch(endpointURL(
             endpoint, path: "/now/setup.img.bin"))
