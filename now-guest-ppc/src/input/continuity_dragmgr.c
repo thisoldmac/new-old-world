@@ -723,7 +723,10 @@ static int icon_silhouette_region(const Rect *bounds, RgnHandle out)
     /* The label's outline under it, sized from the name - the width is an
        estimate (the port's metrics are not worth borrowing here), and an
        outline a few pixels generous reads native where a slab does not. */
-    width = (short)(strlen(g_drag.item.name) * 6 + 6);
+    width = (short)(strlen(g_drag.item.name) * 7 + 8);
+    if (width < 24) {
+        width = 24;
+    }
     if (width > (short)(bounds->right - bounds->left)) {
         width = (short)(bounds->right - bounds->left);
     }
@@ -836,10 +839,23 @@ static GWorldPtr build_drag_image(const Rect *bounds)
     CopyCStringToPascal(g_drag.item.name, pname);
     if (pname[0] > 0) {
         short width = StringWidth(pname);
+        short x = (short)((local.right - width) / 2);
+        short y = (short)(icon_rect.bottom + kDragNameGap + 10);
 
-        MoveTo((short)((local.right - width) / 2),
-               (short)(icon_rect.bottom + kDragNameGap + 10));
+        /* A name wider than the image starts left of it and the Manager
+           clips the overhang - clamped, the head of the name survives,
+           which is what a person needs from a label. */
+        if (x < 2) {
+            x = 2;
+        }
+        MoveTo(x, y);
         DrawString(pname);
+        /* The label named in the log beside the icon, because a missing
+           label photographed on metal (2026-08-17) could not say whether
+           it was unmeasured, undrawn, or masked away. */
+        now_log(kLogInfo, "mirror",
+                "drag label: w=%d at %d,%d of %d,%d", (int)width, (int)x,
+                (int)y, (int)local.right, (int)local.bottom);
     }
 
     /* Deliberately still locked; see the header comment. */
