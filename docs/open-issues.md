@@ -7,6 +7,78 @@ search:
 
 # Open issues
 
+## THE WIRE PORT WAS APP-SCOPED, SO TWO EMULATED MACS WERE TOLD APART BY DIAL ORDER — FIXED, TESTED, EMULATOR AND METAL PENDING (2026-08-18, `feat/per-profile-listen-port`)
+
+One `NWListener` on one settings value. Every Mac dialled the same socket,
+and a person had no way to say "this one is on 5251" — the port belonged to
+the application, not to any machine.
+
+That was survivable for one Mac and quietly wrong for two. `GuestRegistry`
+anchors a machine on the address the host observed plus a product
+fingerprint, and behind an emulator **every guest arrives from 127.0.0.1
+wearing the same fingerprint**, because they are the same build of the same
+product on the same System. All that was left to separate them was `slot`,
+handed out in the order they happened to dial. Restart the pair in the other
+order and they swapped identities — names, display titles and rename history
+following the wrong Mac.
+
+### The fix
+
+A machine profile (`GuestRegistry.Record`) carries its own port. The host
+binds one listener per port, the default leading, and each listener names
+its own port when it accepts, rather than every connection reading one
+global `boundPort`.
+
+**The port anchors only where the address cannot distinguish.** This is the
+half that was not obvious, and an existing test caught the first cut of it:
+`testACustomDisplayNamePersistsAcrossReconnects` asserts a machine that
+reconnects on a different port keeps its display name. The test was right.
+At a routable address, address plus fingerprint already identify one Mac,
+and folding the port into every anchor would turn an ordinary
+reconfiguration into the silent loss of a name.
+`GuestRegistry.Record.anchorPort` states the rule once, so `identify`, `key`
+and the listener's slot filter cannot disagree about what the anchor is.
+
+### The contract
+
+No schema change, and none was needed: `asyncapi.yaml` says port selection
+is out-of-band, and no message has ever carried a host port. The prose,
+however, still said identity was `hello.name` and that a duplicate name was
+refused `busy` — which the host stopped doing some time ago and nothing
+noticed. That paragraph now describes what is actually true: identity is per
+connection, `hello.name` is a label, and how a host tells two machines apart
+is its own business.
+
+### What is verified, and what is not
+
+- **Tested.** 12 new tests over the anchor, the edit path and a real
+  two-socket listener; the full host suite is 2829 passed / 63 skipped / 0
+  failures. Three mutations were watched failing on the assertions that name
+  them: the port dropped from the `identify` match, `accept()` reading
+  `boundPort` instead of its own listener's port, and live slots counted
+  across ports. A fourth mutation — `anchorPort` ignoring
+  `distinguishesMachines` — was watched against the routable-address test.
+- **NOT emulator-measured.** No two-VM run has been made against this build.
+  The failure it fixes is precisely a two-emulated-guest failure, so this is
+  the gate that matters most and it is outstanding.
+- **NOT metal-verified.** Nothing has dialled a real machine on a
+  non-default port.
+
+### Known limits, stated rather than left to be discovered
+
+- **Assigning a port does not move the Mac.** The host cannot repoint a
+  running guest; the field says so, and the settings download is the only
+  thing that actually moves one. A person who misses that gets a profile on
+  one port and a Mac dialling another indefinitely.
+- **Continuity's UDP lane rides the same numeric port** (contract, transport
+  rules). A guest on a non-default port needs its QEMU forward for both
+  protocols on that number. Untested here.
+- **A port that will not bind does not fail the run**, deliberately — the
+  other profiles are serving real machines. It lands in
+  `GuestListener.failedPorts` and is noted, but **nothing on the Connections
+  page renders it yet**, so a held port currently looks like a Mac that is
+  switched off. That is the first thing to close.
+
 ## CORRECTED, 2026-08-18: `hostDragOfferEpoch` was prose, then a constant, then retired
 
 An earlier entry below describes `hostDragOfferEpoch: UInt32 = 1` as a
