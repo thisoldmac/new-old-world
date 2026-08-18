@@ -1157,6 +1157,25 @@ int now_continuity_button_is_down(void)
    the plane advanced" - two readings that would otherwise share one
    frozen coordinate. Returns 0 when there is no epoch, no cell, or no
    datagram has ever arrived, and writes nothing in that case. */
+/* How long ago the last accepted datagram arrived, in ticks. The drag's
+   input proc bounds itself on this: a plane that has gone silent cannot be
+   allowed to hold the button forever - a frozen carried level held a
+   TrackDrag open past every recovery and wedged the PowerBook (attended,
+   2026-08-17). No packet or no epoch reads as maximally stale. */
+unsigned long now_continuity_input_age_ticks(void)
+{
+    NowPeekContinuityCell *shared;
+
+    if (gEpoch == 0) {
+        return 0xFFFFFFFFUL;
+    }
+    shared = cell();
+    if (shared == NULL || shared->packet_seq == 0) {
+        return 0xFFFFFFFFUL;
+    }
+    return (unsigned long)TickCount() - (unsigned long)shared->arrival_ticks;
+}
+
 int now_continuity_latest_input(short *h, short *v, int *down,
                                 unsigned long *seq)
 {

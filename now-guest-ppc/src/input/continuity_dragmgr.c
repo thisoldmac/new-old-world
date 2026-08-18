@@ -208,6 +208,8 @@ static void diag_install_handlers(void)
    thing about this contract easy to get backwards, and getting it
    backwards would present as a drag that drops instantly. */
 static DragInputUPP g_diag_input_upp;
+enum { kNowContinuityDragStaleTicks = 180 };  /* 3 s of plane silence */
+static long g_stale_releases;        /* dead-man reported the button up   */
 static long g_diag_input_calls;      /* the Manager sampled us            */
 static long g_diag_input_fed;        /* ...and we had something to say    */
 static unsigned long g_diag_input_first_seq;
@@ -286,6 +288,21 @@ static pascal OSErr diag_input(Point *mouse, SInt16 *modifiers, void *refcon,
            the Manager's own sample alone and let it do what it would
            have done without us. */
         return noErr;
+    }
+
+    /* THE DEAD-MAN. This proc OVERRIDES the Manager's view of the button,
+       so neither the physical button nor the resident's lease release can
+       end a drag it keeps calling held - a plane frozen mid-carry held a
+       TrackDrag open and wedged the whole cooperative machine (attended,
+       2026-08-17: trackpad moved, nothing clicked, keyboard dead). Fresh
+       datagrams are the proof of a live host; silence past the bound
+       reports the button up and the drag ends as an ordinary non-drop -
+       with the host gone the promise is unservable, so nothing lands. */
+    if (down && (g_diag_mask & 16) == 0
+            && now_continuity_input_age_ticks()
+                   > (unsigned long)kNowContinuityDragStaleTicks) {
+        down = 0;
+        g_stale_releases++;
     }
 
     mouse->h = h;
