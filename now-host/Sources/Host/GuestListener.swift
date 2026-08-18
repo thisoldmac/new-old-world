@@ -301,6 +301,11 @@ final class GuestListener: ObservableObject {
     /// away because a profile whose port is held looks exactly like a
     /// profile whose Mac is switched off.
     private(set) var failedPorts: [UInt16: String] = [:]
+    /// Ports actually accepting connections. A socket exists from the
+    /// moment it is made and answers nothing until it is ready, so this is
+    /// a different question from `boundPorts` — and it is the one a person
+    /// asking "can my Mac dial in yet" means.
+    private(set) var readyPorts: Set<UInt16> = []
 
     /// Every guest currently past the hello gate, by SESSION identity —
     /// one entry per connection, never per name.
@@ -703,6 +708,7 @@ final class GuestListener: ObservableObject {
         for listener in listeners { listener.cancel() }
         listeners = []
         failedPorts = [:]
+        readyPorts = []
         state = .idle
     }
 
@@ -733,6 +739,7 @@ final class GuestListener: ObservableObject {
         for listener in listeners { listener.cancel() }
         listeners = []
         failedPorts = [:]
+        readyPorts = []
         state = .idle
 
         guard !leaving.isEmpty else {
@@ -3390,6 +3397,7 @@ final class GuestListener: ObservableObject {
         switch nwState {
         case .ready:
             failedPorts[port] = nil
+            readyPorts.insert(port)
             note("Listening on port \(port)")
             if case .connected = state { return }
             state = .listening(port: boundPort ?? port)
@@ -3401,6 +3409,7 @@ final class GuestListener: ObservableObject {
                does not have. The state falls over only when nothing is
                left listening at all. */
             failedPorts[port] = error.localizedDescription
+            readyPorts.remove(port)
             note("Listener on \(port) failed: \(error.localizedDescription)")
             if boundPorts.isEmpty {
                 state = .failed(error.localizedDescription)
