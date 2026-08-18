@@ -612,6 +612,17 @@ final class ConnectionsModel: ObservableObject {
         renameProblem = message
     }
 
+    /// Why this machine's port is not accepting, when it is not.
+    ///
+    /// A port something else is holding and a Mac that is switched off give
+    /// the page the same empty row, and only one of them is the person's to
+    /// fix. The listener already keeps the reason rather than discarding it;
+    /// this is the one place the page reads it, keyed the same way the row's
+    /// address is so the two can never name different ports.
+    func portIsNotOpen(_ row: ConnectionRow) -> String? {
+        listener.failedPorts[row.listenPort ?? basePort()]
+    }
+
     /// **Gives one machine its own port, and opens the socket for it.**
     ///
     /// The two halves are one action deliberately. A port written into the

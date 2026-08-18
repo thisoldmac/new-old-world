@@ -75,9 +75,11 @@ is its own business.
   protocols on that number. Untested here.
 - **A port that will not bind does not fail the run**, deliberately — the
   other profiles are serving real machines. It lands in
-  `GuestListener.failedPorts` and is noted, but **nothing on the Connections
-  page renders it yet**, so a held port currently looks like a Mac that is
-  switched off. That is the first thing to close.
+  `GuestListener.failedPorts`, is noted in the log, and the machine's own row
+  now says so beside its port, because a held port and a switched-off Mac
+  otherwise produce the same empty row and only one of them is the person's
+  to fix. Not yet watched failing against a mutation, and not yet seen with a
+  genuinely held port on a running desk.
 
 ## CORRECTED, 2026-08-18: `hostDragOfferEpoch` was prose, then a constant, then retired
 

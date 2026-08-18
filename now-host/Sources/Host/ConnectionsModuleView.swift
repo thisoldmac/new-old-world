@@ -741,7 +741,21 @@ private struct ConnectionCard: View {
                     + "reaches this Mac from the same address. Changing it "
                     + "here opens the socket; the machine itself keeps "
                     + "dialling the old one until you repoint it.")
-                PortField(row: row, model: model)
+                VStack(alignment: .leading, spacing: 3) {
+                    PortField(row: row, model: model)
+                    /* A port something else is holding and a Mac that is
+                       switched off produce the same empty row, and only one
+                       of them is the person's to fix. The listener keeps the
+                       reason; saying it here is the difference between an
+                       hour of looking at the wrong machine and a sentence. */
+                    if let why = model.portIsNotOpen(row) {
+                        Label("This port is not open: \(why)",
+                              systemImage: "exclamationmark.triangle")
+                            .font(.callout)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
     }
