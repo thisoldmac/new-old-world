@@ -114,8 +114,20 @@ trap 'rm -rf "$dmg_src"' EXIT
 cp -R "$staged" "$dmg_src/New Old World.app"
 ln -s /Applications "$dmg_src/Applications"
 rm -f "$dmg"
-diskutil image create from --format UDZO --volumeName "New Old World" \
-    "$dmg_src" "$dmg" >/dev/null
+# The absolute /Applications symlink has made diskutil fail with error
+# code 153 on this desk (2026-08-18) while the identical invocation
+# succeeded an hour earlier - environmental, never pinned (Time Machine
+# and TCC suspected). Keep the failing output as evidence, then retry
+# without the symlink: a DMG that installs by hand beats no DMG.
+if ! diskutil_out=$(diskutil image create from --verbose --format UDZO \
+        --volumeName "New Old World" "$dmg_src" "$dmg" 2>&1); then
+    printf '%s\n' "$diskutil_out" | sed 's/^/    /' >&2
+    echo "warning: diskutil refused the image with the /Applications symlink present (output above)" >&2
+    echo "warning: retrying without it - this DMG will NOT carry the drag-to-install affordance" >&2
+    rm -f "$dmg" "$dmg_src/Applications"
+    diskutil image create from --format UDZO --volumeName "New Old World" \
+        "$dmg_src" "$dmg" >/dev/null
+fi
 
 team=$(codesign -dvv "$staged" 2>&1 | sed -n 's/^TeamIdentifier=//p')
 [ "$team" = "not set" ] && team=""
