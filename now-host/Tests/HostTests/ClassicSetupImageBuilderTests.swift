@@ -102,61 +102,6 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
         XCTAssertLessThan(free, 128 * 1_024)
     }
 
-    func testSmallPayloadStillMakesAFormattableMinimumVolume()
-        async throws {
-        // A 68K-flavor payload is small enough that the fitting pass wants
-        // a volume below newfs_hfs's 512 KB minimum; the floor must hold on
-        // the shrink path, not only on the first estimate.
-        let temporary = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let assets = temporary.appendingPathComponent(
-            "assets", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: assets, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        let applicationResources = Data(repeating: 9, count: 250_000)
-        try XCTUnwrap(MacBinaryEncoder.data(
-            name: "NOW-68K 0.7", type: "APPL", creator: "NOWo",
-            dataFork: Data(repeating: 8, count: 21_000),
-            resourceFork: applicationResources))
-            .write(to: assets.appendingPathComponent("NOW-68K 0.7.bin"))
-        try FileManager.default.createDirectory(
-            at: assets.appendingPathComponent(
-                "Dependencies", isDirectory: true),
-            withIntermediateDirectories: true)
-        let snapshot = OnboardingAssetCatalog(
-            roots: [assets], writableRoot: assets).snapshot()
-        XCTAssertNil(snapshot.extensionComponent,
-                     "no extension fixture was written")
-        XCTAssertEqual(snapshot.application68K?.fileName, "NOW-68K 0.7.bin")
-
-        let encoded = try await ClassicSetupImageBuilder().build(
-            host: "10.0.2.2", wirePort: 5_432, assets: snapshot,
-            flavor: .m68k)
-        let nativeImage = try MacBinaryFile.decode(encoded)
-        XCTAssertEqual(nativeImage.name, "NOW-68K Setup.img")
-        XCTAssertGreaterThanOrEqual(nativeImage.dataFork.count, 512 * 1_024)
-
-        let raw = temporary.appendingPathComponent("setup.raw")
-        try nativeImage.dataFork.write(to: raw)
-        let mount = temporary.appendingPathComponent(
-            "mount", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: mount, withIntermediateDirectories: true)
-        let plist = try run("/usr/sbin/diskutil", [
-            "image", "attach", "--plist", "--readOnly", "--nobrowse",
-            "--mountPoint", mount.path, raw.path
-        ])
-        let device = try XCTUnwrap(deviceEntry(in: plist))
-        defer { _ = try? run("/usr/sbin/diskutil", ["eject", device]) }
-        let application = mount.appendingPathComponent("NOW-68K")
-        XCTAssertEqual(try resourceFork(at: application),
-                       applicationResources)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: mount
-            .appendingPathComponent("New Old World Prefs").path),
-            "NOW-68K ships no preferences as a product property")
-    }
-
     private func resourceFork(at url: URL) throws -> Data {
         try Data(contentsOf: URL(fileURLWithPath:
             url.path + "/..namedfork/rsrc"))

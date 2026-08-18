@@ -303,12 +303,7 @@ struct ClassicSetupImageBuilder: Sendable {
                 let free = (attributes[.systemFreeSize] as? NSNumber)?
                     .intValue ?? 0
                 try eject(device)
-                // The floor binds the SHRINK pass too: a small payload
-                // leaves enough free space that the refit lands under
-                // newfs_hfs's 512 KB minimum, and the second format
-                // refuses - the 68K flavor's payload found this on metal.
-                let fitted = max(minimumHFSVolume,
-                                 insufficientCapacity + growthStep, roundUp(
+                let fitted = max(insufficientCapacity + growthStep, roundUp(
                     capacity - max(0, free - maximumFreeBytes),
                     to: allocationBlock))
                 if fitted < capacity {
