@@ -1217,6 +1217,28 @@
         "contract/peek_table.h"
       ],
       "reason": "rapid-fire iteration DMG; peek_table.h gains only kNowPeekContinuityCarriedLevel, a bit the resident never reads (its press mask is unchanged); shared-oracle bake at promotion per Michelle"
+    },
+    {
+      "at": "2026-08-18T00:40:06-0400",
+      "baseImage": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "branch": "feat/continuity",
+      "commit": "015394bd8a8361efc2fa141b76600e749415a55a",
+      "extBuildFingerprint": "83cdac8f0317f441b4e68ce1c6391bdf2c9dfe81",
+      "extDigest": "1d01de403c66705d0d6ed7ca421bcd356ff99640",
+      "image": "~/Lab/Assets/os91-qemu/now-mirror-stage.qcow2",
+      "imageBytes": 658440192,
+      "imageName": "feat-continuity",
+      "imageSha256": "ec174395b4ec4a380678f481991c7ea889d6190707609e3bb090d438abaa5f82",
+      "kind": "bake",
+      "previousImage": "now-mirror-stage.qcow2.bak-20260818",
+      "qemuImgCheck": "clean",
+      "residentCapabilities": 1023,
+      "residentLifecycle": "active",
+      "scope": "shared",
+      "shutdown": "guest-clean",
+      "shutdownPath": "finder-menuact-then-applet",
+      "sourceManifest": "e1d63be6a43ec210a7e721d6a90b0e7406695273",
+      "volumeClean": "clean"
     }
   ]
 }
