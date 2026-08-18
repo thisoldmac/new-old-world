@@ -310,6 +310,18 @@ final class GuestProfilePortTests: XCTestCase {
                       "its socket is still bound")
     }
 
+    /// A person who stopped the listener meant it. Assigning a machine a
+    /// port is a change to the book, not a request to start serving, and
+    /// reopening the socket here would be the app quietly overruling them.
+    func testAssigningAPortWhileStoppedDoesNotStartListening() {
+        let listener = GuestListener(
+            identity: .init(version: "0.1-test", name: "Test Host"),
+            timing: .init(idleTimeout: 60))
+        listener.ensure(ports: [5250, 5251])
+        XCTAssertTrue(listener.boundPorts.isEmpty)
+        XCTAssertEqual(listener.state, .idle)
+    }
+
     private func waitUntil(_ what: String, timeout: TimeInterval = 5,
                            _ condition: @escaping () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)

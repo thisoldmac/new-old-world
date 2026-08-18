@@ -741,7 +741,12 @@ final class GuestListener: ObservableObject {
     /// a guest on a port a person just reassigned stays connected until it
     /// next dials, which is the honest moment for it to move.
     func ensure(ports: [UInt16]) {
-        guard !listeners.isEmpty else { return start(ports: ports) }
+        /* A stopped host stays stopped. Editing a machine's port is not a
+           request to start listening, and starting here would mean a person
+           who deliberately stopped the listener silently reopened it by
+           typing a number on a page about one Mac. The next `startListening`
+           reads the book and binds this port with the rest. */
+        guard !listeners.isEmpty else { return }
         var wanted: [UInt16] = []
         for port in ports where !wanted.contains(port) { wanted.append(port) }
 
