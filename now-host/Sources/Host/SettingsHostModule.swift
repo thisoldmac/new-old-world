@@ -36,7 +36,8 @@ final class SettingsHostModuleRuntime: HostModuleRuntime {
         model = ConnectionsModel(
             listener: context.listener,
             addressing: addressing,
-            select: context.selectGuest)
+            select: context.selectGuest,
+            basePort: { [settings] in settings.listenPort })
     }
 }
 

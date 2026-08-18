@@ -121,9 +121,16 @@ struct ConnectionRow: Identifiable, Equatable, Sendable {
     let name: String
     /// Host-owned title used by both this page and agent discovery.
     let displayName: String
-    /// Guest IP plus the host listener port this machine used. This is not
-    /// the transient remote source port from its TCP socket.
+    /// Guest IP plus the host listener port this machine dials. This is
+    /// not the transient remote source port from its TCP socket — the two
+    /// halves come from opposite ends of the connection.
     let address: String
+    /// **This machine's own port**, or nil when it dials the host default.
+    ///
+    /// Kept beside `address` rather than only inside it because the page
+    /// now lets a person CHANGE it, and a field parsed back out of a
+    /// composed string is a second place to be wrong.
+    let listenPort: UInt16?
     let liveSessionID: String?
     /// The last session this machine had, when the pane watched it end.
     let lastSessionID: String?
@@ -243,6 +250,7 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                      guests: [ConnectedGuest],
                      known: [GuestRegistry.Record],
                      ended: [String: EndedGuestSession],
+                     defaultPort: UInt16 = SettingsModel.defaultPort,
                      resolve: (String) -> AgentIntegrationUnavailable?)
         -> ConnectionsSnapshot {
         var rows: [ConnectionRow] = []
@@ -260,7 +268,8 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 name: guest.name,
                 displayName: guest.label,
                 address: Self.listenerAddress(guest.address.text,
-                    port: guest.listenPort ?? SettingsModel.defaultPort),
+                    port: guest.listenPort ?? defaultPort),
+                listenPort: guest.listenPort,
                 liveSessionID: guest.sessionID,
                 lastSessionID: ended[guest.id.slug]?.sessionID,
                 since: guest.connectedAt,
@@ -291,7 +300,8 @@ struct ConnectionsSnapshot: Equatable, Sendable {
                 name: record.lastName,
                 displayName: record.displayName ?? record.lastName,
                 address: Self.listenerAddress(record.address,
-                    port: record.listenPort ?? SettingsModel.defaultPort),
+                    port: record.listenPort ?? defaultPort),
+                listenPort: record.listenPort,
                 liveSessionID: nil,
                 lastSessionID: last,
                 since: record.lastSeen,
@@ -410,6 +420,11 @@ final class ConnectionsModel: ObservableObject {
     private let select: (GuestKey) -> Bool
     private let disconnect: (GuestKey) -> Bool
     private let forget: (GuestRegistry.Record.Key) -> Bool
+    /// The host's default port — the one a machine with no port of its own
+    /// dials. A closure rather than a captured number because a person can
+    /// change it in the page above this one, and a stale copy here would
+    /// print one port beside a machine listening on another.
+    private let basePort: () -> UInt16
     private var ended: [String: EndedGuestSession] = [:]
     private var liveGuests: [GuestKey: ConnectedGuest] = [:]
     private var watch: HostEventSubscription?
@@ -426,7 +441,9 @@ final class ConnectionsModel: ObservableObject {
          select: ((GuestKey) -> Bool)? = nil,
          disconnect: ((GuestKey) -> Bool)? = nil,
          forget: ((GuestRegistry.Record.Key) -> Bool)? = nil,
+         basePort: (() -> UInt16)? = nil,
          defaults: UserDefaults = ProductIdentity.defaults) {
+        self.basePort = basePort ?? { SettingsModel.defaultPort }
         self.defaults = defaults
         self.rosterCollapsed = defaults.object(
             forKey: Keys.rosterCollapsed) as? Bool ?? false
@@ -472,12 +489,14 @@ final class ConnectionsModel: ObservableObject {
     convenience init(listener: GuestListener,
                      addressing: AgentIntegrationHostAdapter,
                      select: ((GuestKey) -> Bool)? = nil,
+                     basePort: (() -> UInt16)? = nil,
                      defaults: UserDefaults = ProductIdentity.defaults) {
         self.init(listener: listener,
                   resolve: { [addressing] selector in
                       addressing.addressingRefusal(selector)
                   },
                   select: select,
+                  basePort: basePort,
                   defaults: defaults)
     }
 
@@ -490,6 +509,7 @@ final class ConnectionsModel: ObservableObject {
             guests: listener.guests,
             known: listener.registry.known,
             ended: ended,
+            defaultPort: basePort(),
             resolve: resolve)
     }
 
@@ -577,6 +597,45 @@ final class ConnectionsModel: ObservableObject {
 
     func clearRenameProblem() {
         renameProblem = nil
+    }
+
+    /// **Gives one machine its own port, and opens the socket for it.**
+    ///
+    /// The two halves are one action deliberately. A port written into the
+    /// book that nothing is listening on is a profile that can never be
+    /// dialled, and it would look exactly like a Mac that is switched off —
+    /// which is the failure mode this whole page is trying to make legible.
+    ///
+    /// `nil` returns the machine to the host's default port.
+    @discardableResult
+    func setListenPort(_ row: ConnectionRow, to port: UInt16?) -> Bool {
+        renameProblem = nil
+        let outcome: Result<UInt16?, GuestRegistry.PortFailure>
+        if let key = row.key {
+            outcome = listener.setGuestListenPort(key, to: port)
+        } else if let registryKey = row.registryKey {
+            outcome = listener.registry.setListenPort(registryKey, to: port)
+        } else {
+            outcome = .failure(.notFound)
+        }
+        switch outcome {
+        case .success:
+            /* The book and the sockets move together. A port nothing is
+               listening on is a machine that can never arrive, wearing the
+               face of a machine that simply has not. */
+            listener.ensure(ports: listener.registry.portsToBind(
+                base: basePort()))
+            refresh()
+            return true
+        case .failure(.notFound):
+            renameProblem = "That machine is no longer available."
+        case .failure(.reserved):
+            renameProblem = "Choose a port between 1 and 65535."
+        case .failure(.taken(by: let holder)):
+            renameProblem = "\(holder) already uses port "
+                + "\(port.map(String.init) ?? "that")."
+        }
+        return false
     }
 
     func updateAvailability(for row: ConnectionRow,

@@ -71,6 +71,30 @@ final class GuestProfilePortTests: XCTestCase {
                            + "nobody has separated yet")
     }
 
+    /// **The port anchors only where the address cannot.**
+    ///
+    /// The counterpart to the test above, and the reason the rule is not
+    /// simply "the port is part of the key". A PowerBook on the LAN that a
+    /// person repoints at another port is the same PowerBook: address and
+    /// fingerprint already identify it, and treating the new port as a new
+    /// machine would turn an ordinary reconfiguration into the silent loss
+    /// of its name and its history.
+    func testAMachineAtARoutableAddressKeepsItsNameWhenItsPortChanges() {
+        let book = GuestRegistry()
+        let lan = GuestAddress(text: "10.0.0.7")
+        let first = book.identify(address: lan, name: guestName,
+                                  operatingSystem: os, occupiedSlots: [],
+                                  listenPort: 5250)
+        book.renameDisplayName(first.key, to: "The PowerBook")
+
+        let moved = book.identify(address: lan, name: guestName,
+                                  operatingSystem: os, occupiedSlots: [],
+                                  listenPort: 5251)
+        XCTAssertEqual(moved.id, first.id)
+        XCTAssertEqual(moved.displayName, "The PowerBook")
+        XCTAssertEqual(book.known.count, 1)
+    }
+
     // MARK: - The desks that already exist
 
     func testARecordWrittenBeforePortsIsAdoptedRatherThanDuplicated() throws {

@@ -42,11 +42,14 @@ import Foundation
 ///    trade, because the alternative — adopting on address alone — hands
 ///    `pb1400c` to whoever picks up the lease next.
 /// 4. Where the address cannot tell machines apart (loopback, and so every
-///    emulated guest and every test), the anchor is completed by a SLOT:
-///    the first live connection with that anchor takes slot 0, a
-///    concurrent second takes slot 1. Reconnection into a free slot
-///    re-adopts its id. This is a guess and is labelled one —
-///    `idIsAnchored` is false for the whole life of such a session.
+///    emulated guest and every test), the anchor is completed by the
+///    machine's own PORT, and then by a SLOT. A person who gives each Mac
+///    its own port has stated the distinction the address cannot carry, and
+///    it holds whatever order they dial in. Without one, the first live
+///    connection with that anchor takes slot 0 and a concurrent second
+///    takes slot 1 — a guess, labelled one: `idIsAnchored` stays false for
+///    the whole life of such a session either way, because the host is
+///    trusting configuration rather than observing a difference.
 @MainActor
 final class GuestRegistry {
     /// One machine, as the host remembers it.
@@ -57,17 +60,37 @@ final class GuestRegistry {
         struct Key: Hashable, Sendable {
             let address: String
             let fingerprint: String
-            /// The host port this machine dials. Part of the anchor because
-            /// it is the only discriminator that survives an emulator: every
-            /// QEMU guest arrives from the loopback address, so without it
-            /// two Macs are told apart by `slot` alone — which is assigned in
-            /// connection order and therefore swaps their identities when
-            /// they happen to dial in the other order.
+            /// The host port this machine dials — **and only where the
+            /// address cannot tell machines apart.**
             ///
-            /// Nil is a record written before ports scoped a profile. It is
-            /// adopted rather than duplicated: see `identify`.
+            /// This is rule 4 again, with a better instrument. Behind an
+            /// emulator every guest arrives from the loopback address
+            /// wearing the same fingerprint, and the anchor was completed
+            /// by `slot` alone: assigned in the order they dialled, so the
+            /// machines swapped identities whenever they came up in the
+            /// other order. A port a person configured is a fact about the
+            /// machine, and it does not reorder itself.
+            ///
+            /// At a routable address it is deliberately NOT part of the
+            /// anchor. There, address and fingerprint already identify one
+            /// Mac; folding the port in would mean a machine repointed at a
+            /// new port arrived as a stranger and lost its name, which is a
+            /// person's ordinary reconfiguration turned into data loss.
+            ///
+            /// Nil therefore means either "this address distinguishes" or
+            /// "written before ports scoped a profile" — the second is
+            /// adopted rather than duplicated, see `identify`.
             let listenPort: UInt16?
             let slot: Int
+        }
+
+        /// The port as the ANCHOR sees it: nil wherever the address is
+        /// enough on its own. One place, because `identify` and `key` must
+        /// agree or a record would be findable by one and not the other.
+        static func anchorPort(address: String,
+                               listenPort: UInt16?) -> UInt16? {
+            GuestAddress(text: address).distinguishesMachines
+                ? nil : listenPort
         }
 
         var id: GuestID
@@ -98,7 +121,9 @@ final class GuestRegistry {
 
         var key: Key {
             Key(address: address, fingerprint: fingerprint,
-                listenPort: listenPort, slot: slot)
+                listenPort: Self.anchorPort(address: address,
+                                            listenPort: listenPort),
+                slot: slot)
         }
     }
 
@@ -180,11 +205,15 @@ final class GuestRegistry {
            names and rename history across the version that adds this. It
            adopts the port it arrived on, so it upgrades once and is exact
            from then on. */
+        /* The port completes the anchor only where the address cannot.
+           At a routable address a Mac that moves ports is the same Mac. */
+        let anchored = !address.distinguishesMachines
         let exact = records.firstIndex {
             $0.address == address.text && $0.fingerprint == print
-                && $0.listenPort == listenPort && $0.slot == slot
+                && $0.slot == slot
+                && (!anchored || $0.listenPort == listenPort)
         }
-        let legacy = exact == nil ? records.firstIndex {
+        let legacy = (exact == nil && anchored) ? records.firstIndex {
             $0.address == address.text && $0.fingerprint == print
                 && $0.listenPort == nil && $0.slot == slot
         } : nil

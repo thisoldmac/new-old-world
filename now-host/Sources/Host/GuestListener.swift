@@ -503,9 +503,19 @@ final class GuestListener: ObservableObject {
             name: hello.name, operatingSystem: hello.os)
         /* Only slots held by a LIVE session count. A machine reconnecting
            into a slot nobody is using re-adopts the id it had. */
+        /* Slots are counted within a PORT wherever the port anchors — two
+           emulated Macs each on their own socket are both slot 0, and
+           counting them together would hand the second one the first's
+           slot and undo the distinction the port was configured to make.
+           `anchorPort` decides, in one place, so this cannot disagree with
+           the registry about what the anchor is. */
+        let anchor = GuestRegistry.Record.anchorPort(
+            address: address.text, listenPort: listenPort)
         let occupied = Set(machineBySession.values.filter {
             $0.address == address.text && $0.fingerprint == print
-                && $0.listenPort == listenPort
+                && GuestRegistry.Record.anchorPort(
+                    address: $0.address,
+                    listenPort: $0.listenPort) == anchor
         }.map(\.slot))
         let record = registry.identify(
             address: address, name: hello.name, operatingSystem: hello.os,
@@ -573,6 +583,33 @@ final class GuestListener: ObservableObject {
             for (session, held) in machineBySession
                 where held.key == record.key {
                 machineBySession[session]?.displayName = renamed
+            }
+            publishActive()
+        }
+        return outcome
+    }
+
+    /// **Gives a CONNECTED machine its own port**, and carries the change
+    /// into the session records so the roster stops describing the old one.
+    ///
+    /// The machine on the wire does not move. It dialled the port it was
+    /// configured to dial and is still on that socket; what changes is
+    /// where the host expects it NEXT time, and what its generated settings
+    /// will say. Telling it to move is the guest's own edit, or a fresh
+    /// onboarding download — this side cannot reach into a running Mac and
+    /// re-point it, and pretending otherwise is how a person ends up with a
+    /// profile on 5251 and a Mac that still dials 5250 forever.
+    @discardableResult
+    func setGuestListenPort(_ key: GuestKey, to port: UInt16?)
+        -> Result<UInt16?, GuestRegistry.PortFailure> {
+        guard let record = machineBySession[key] else {
+            return .failure(.notFound)
+        }
+        let outcome = registry.setListenPort(record.key, to: port)
+        if case .success = outcome {
+            for (session, held) in machineBySession
+                where held.key == record.key {
+                machineBySession[session]?.listenPort = port
             }
             publishActive()
         }
@@ -654,41 +691,71 @@ final class GuestListener: ObservableObject {
         var wanted: [UInt16] = []
         for port in ports where !wanted.contains(port) { wanted.append(port) }
         if wanted.isEmpty { wanted = [SettingsModel.defaultPort] }
-        for port in wanted {
-            do {
-                let nwPort = NWEndpoint.Port(rawValue: port)
-                    ?? NWEndpoint.Port(rawValue: 0)!
-                let listener = try NWListener(using: .tcp, on: nwPort)
-                listeners.append(listener)
-                /* The accepting listener names its own port. Reading the
-                   bound port off `self` here — which is what one listener
-                   allowed — would file every guest under whichever listener
-                   happened to be first in the list, so the port could not
-                   distinguish anything it was configured to distinguish. */
-                listener.newConnectionHandler = {
-                    [weak self, weak listener] connection in
-                    let accepted = listener?.port?.rawValue
-                    Task { @MainActor in
-                        self?.accept(connection, on: accepted)
-                    }
-                }
-                listener.stateUpdateHandler = {
-                    [weak self, weak listener] nwState in
-                    let requested = listener?.port?.rawValue ?? port
-                    Task { @MainActor in
-                        self?.listenerStateChanged(nwState, port: requested)
-                    }
-                }
-                listener.start(queue: .main)
-            } catch {
-                failedPorts[port] = error.localizedDescription
-                note("Could not listen on \(port): "
-                     + "\(error.localizedDescription)")
-            }
-        }
+        for port in wanted { bind(port) }
         if listeners.isEmpty {
             let reason = failedPorts.values.first ?? "no port to bind"
             state = .failed("Could not listen: \(reason)")
+        }
+    }
+
+    private func bind(_ port: UInt16) {
+        do {
+            let nwPort = NWEndpoint.Port(rawValue: port)
+                ?? NWEndpoint.Port(rawValue: 0)!
+            let listener = try NWListener(using: .tcp, on: nwPort)
+            listeners.append(listener)
+            /* The accepting listener names its own port. Reading the bound
+               port off `self` here — which is what one listener allowed —
+               would file every guest under whichever listener happened to be
+               first in the list, so the port could not distinguish anything
+               it was configured to distinguish. */
+            listener.newConnectionHandler = {
+                [weak self, weak listener] connection in
+                let accepted = listener?.port?.rawValue
+                Task { @MainActor in
+                    self?.accept(connection, on: accepted)
+                }
+            }
+            listener.stateUpdateHandler = {
+                [weak self, weak listener] nwState in
+                let requested = listener?.port?.rawValue ?? port
+                Task { @MainActor in
+                    self?.listenerStateChanged(nwState, port: requested)
+                }
+            }
+            listener.start(queue: .main)
+        } catch {
+            failedPorts[port] = error.localizedDescription
+            note("Could not listen on \(port): \(error.localizedDescription)")
+        }
+    }
+
+    /// **Brings the bound ports in line with the profiles, without
+    /// disturbing anybody who is already here.**
+    ///
+    /// Giving a Mac its own port is an edit to a page, and it must not cost
+    /// the desk the machine it is currently driving. `start(ports:)` would:
+    /// it begins by saying goodbye to every guest. So this adds what is
+    /// missing and cancels what is no longer wanted, and cancelling a
+    /// listener does not touch connections already accepted through it —
+    /// a guest on a port a person just reassigned stays connected until it
+    /// next dials, which is the honest moment for it to move.
+    func ensure(ports: [UInt16]) {
+        guard !listeners.isEmpty else { return start(ports: ports) }
+        var wanted: [UInt16] = []
+        for port in ports where !wanted.contains(port) { wanted.append(port) }
+
+        for listener in listeners where !wanted.contains(
+            listener.port?.rawValue ?? 0) {
+            listener.cancel()
+        }
+        listeners.removeAll { !wanted.contains($0.port?.rawValue ?? 0) }
+        readyPorts.formIntersection(wanted)
+        failedPorts = failedPorts.filter { wanted.contains($0.key) }
+
+        let bound = Set(boundPorts)
+        for port in wanted where !bound.contains(port) {
+            bind(port)
         }
     }
 
