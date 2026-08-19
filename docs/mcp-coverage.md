@@ -1202,7 +1202,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 7b91fc7b360b1eae70952cb9175af9a4c04f0cbd
+sources-sha1: 137368c535fb60cb58598b1a029481215395e295
 derive ppc-inbound-types sha256=327f192230ce9c4d4233c07f7acb9e22aed37c83e95261c4cf1ad529e661ace7 lines=61 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1426,6 +1426,7 @@ rederived: 2026-08-17T23:36:26-0400 5aa1092c sources
 rederived: 2026-08-17T23:52:46-0400 91fe237e unchanged
 rederived: 2026-08-18T15:09:50-0400 c33eb6ee unchanged
 rederived: 2026-08-18T17:19:00-0400 ffc561f4 sources
+rederived: 2026-08-18T21:43:39-0400 eae627f6 sources
 rederived: 2026-08-18T23:04:15-0400 fc295bcc unchanged
 rederived: 2026-08-18T23:13:33-0400 ce4dc746 sources
 rederived: 2026-08-18T23:19:31-0400 3341acb1 unchanged
@@ -1446,4 +1447,5 @@ rederived: 2026-08-19T03:53:11-0400 f9d1bd67 unchanged
 rederived: 2026-08-19T03:59:55-0400 14486719 unchanged
 rederived: 2026-08-19T04:47:57-0400 ba4e78ae sources
 rederived: 2026-08-19T05:41:21-0400 a8ee7d50 unchanged
+rederived: 2026-08-19T14:24:10-0400 d6583bbd sources
 -->

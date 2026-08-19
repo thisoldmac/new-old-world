@@ -12,7 +12,7 @@ final class OnboardingDependencyTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: dependencies, withIntermediateDirectories: true)
         try Data("carbon".utf8).write(to: dependencies
-            .appendingPathComponent("CarbonLib_161.sit.bin"))
+            .appendingPathComponent("CarbonLib_1.6.smi.bin"))
         try Data("expander".utf8).write(to: dependencies
             .appendingPathComponent("StuffIt Expander 5.5.bin"))
 
@@ -20,10 +20,10 @@ final class OnboardingDependencyTests: XCTestCase {
             roots: [temporary], writableRoot: temporary).snapshot()
 
         XCTAssertEqual(OnboardingDependencyCatalog.all.map(\.displayName),
-                       ["CarbonLib 1.6.1", "MPW (GM)"])
+                       ["CarbonLib 1.6 Installer", "MPW (GM)"])
         XCTAssertEqual(OnboardingDependencyCatalog.carbonLib
             .installedAsset(in: snapshot)?.fileName,
-            "CarbonLib_161.sit.bin")
+            "CarbonLib_1.6.smi.bin")
         XCTAssertEqual(OnboardingDependencyCatalog.additionalAssets(
             in: snapshot).map(\.fileName), ["StuffIt Expander 5.5.bin"])
     }
@@ -75,7 +75,7 @@ final class OnboardingDependencyTests: XCTestCase {
         try Data("native".utf8).write(to: dependencies
             .appendingPathComponent("CarbonLib.bin"))
         try Data("archive".utf8).write(to: dependencies
-            .appendingPathComponent("CarbonLib_161.sit.bin"))
+            .appendingPathComponent("CarbonLib_1.5.smi_.sit.bin"))
         try Data("other".utf8).write(to: dependencies
             .appendingPathComponent("Other Package.bin"))
 
@@ -143,6 +143,30 @@ final class OnboardingDependencyTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: temporary
             .appendingPathComponent("Dependencies/Package.sit.bin").path))
+    }
+
+    /// A desk that downloaded the superseded 1.6.1 .sit under the old
+    /// pin must heal itself: the stale file is neither the installed
+    /// entry nor an additional asset, so Get reappears and fetches the
+    /// official installer.
+    func testRetiredArtifactNoLongerMasksTheCurrentPin() throws {
+        let temporary = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let dependencies = temporary.appendingPathComponent(
+            "Dependencies", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dependencies, withIntermediateDirectories: true)
+        try Data("stale".utf8).write(to: dependencies
+            .appendingPathComponent("CarbonLib_161.sit.bin"))
+
+        let snapshot = OnboardingAssetCatalog(
+            roots: [temporary], writableRoot: temporary).snapshot()
+        XCTAssertNil(OnboardingDependencyCatalog.carbonLib
+            .installedAsset(in: snapshot),
+            "the retired repack must not read as installed")
+        XCTAssertTrue(OnboardingDependencyCatalog.additionalAssets(
+            in: snapshot).isEmpty,
+            "nor be offered as an operator-provided extra")
     }
 
     private func fixtureDependency(payload: Data) -> OnboardingDependency {

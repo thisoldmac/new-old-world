@@ -315,6 +315,48 @@ Also unverified: nothing yet reads a profile except `deploy-68k` and
 directory — deliberate, but it means a suite run without
 `eval "$(tools/lab-machine env <id>)"` and without `deploy-68k --test` is
 exactly as unguarded as it was before.
+## 68K ONBOARDING OVER HTTP: SERVED, ORACLE-VERIFIED, PARKED BEFORE THE 180c COULD ANSWER (2026-08-18, `feat/68k-onboarding`)
+
+The Set Up a New Mac sheet grew a 68K/PPC flavor pill, and the 68K
+flavor now serves a Disk Copy 4.2 container on an HFS Standard volume
+written by our own code (`HFSStandardVolume`, `DiskCopy42Image`) - built
+entirely in memory, no disk tools. DC 4.2 is data-fork-only by design,
+so a browser with no MacBinary decoder (MacWeb saves transfers raw
+under a `/tmp/`-prefixed name; that is its behavior, verified) still
+delivers a byte-perfect image, and stock System 7's own Disk Copy is
+the intended opener. hfsutils mounts the volume and round-trips forks
+byte-identical; catalog order is asserted against machfs's sort and was
+watched failing against a reversed-comparator mutation (the hfsutils
+oracle alone is order-blind - that mutation survived it).
+
+Along the way, two transport defects fixed and one platform finding:
+the portal was rewritten from Network.framework onto BSD sockets after
+a packet capture showed every first transmission of every segment
+vanishing with only the ~250 ms retransmission ACKed (4-5 KB/s
+lockstep) while python's socket server did 300-400 KB/s on the same
+wire - something on this Mac interferes with framework flows
+per-process; and the socket rewrite's missing `SO_NOSIGPIPE` let an
+aborted download kill the app silently (watched failing: signal 13).
+After both, the G3 measured 200 KB/s. The portal logs every route, UA,
+and per-transfer KB/s under log area `onboarding`.
+
+**Open, parked with the 180c (machine put away 2026-08-18):**
+
+- Nobody has watched Disk Copy 4.2 on a real System 7.1 machine mount
+  the served image. That is the acceptance step for the whole 68K
+  flavor, and the q800 emulator is the cheaper first rig for it.
+- The 180c-side MacWeb save was never re-run against the raw DC 4.2
+  route; the save dialog is now the success path, not the failure.
+- The advertised onboarding address comes from
+  `HostAddressDetector.primaryIPv4()`, which on this desk picked
+  10.91.5.44 - an address that appears to belong to a virtual
+  interface (locally-administered MAC) and is not reachable from the
+  LAN. The page worked because a human typed .25. Interface selection
+  belongs with the per-profile port-scoping work.
+- The 180c's network flapped all evening (half its pings lost at
+  hundreds of ms, then fine); never attributed. Note that in-sandbox
+  probes from agent sessions lie about LAN reachability - measure from
+  iTerm.
 
 ## CORRECTED, 2026-08-18: `hostDragOfferEpoch` was prose, then a constant, then retired
 

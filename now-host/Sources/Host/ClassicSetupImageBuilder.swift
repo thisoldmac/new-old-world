@@ -2,8 +2,11 @@ import Foundation
 
 struct ClassicSetupImageBuilder: Sendable {
     private static func instructions(host: String, port: UInt16,
+                                     flavor: OnboardingGuestFlavor,
                                      carriesMPW: Bool) -> String {
-        var text = """
+        switch flavor {
+        case .powerpc:
+            var text = """
             NEW OLD WORLD SETUP\r
             \r
             1. Copy New Old World anywhere on your hard disk.\r
@@ -16,20 +19,35 @@ struct ClassicSetupImageBuilder: Sendable {
             Dependencies downloaded by the host are in the Dependencies folder.\r
             Run the CarbonLib installer if CarbonLib 1.6 is not installed.\r
             """
-        if carriesMPW {
-            /* The copy is not optional advice: a ToolServer launched from the
-               read-only image cannot run its own tools (open-issues,
-               2026-08-19), so a person who registers the mounted volume gets
-               a build that fails on its first action. */
-            text += """
-                \r
-                MPW is in the Dependencies folder. Open it, copy the MPW\r
-                folder to your hard disk, then use Register MPW Folder in\r
-                New Old World's Projects page. Register the copy on your\r
-                disk, not the mounted image.\r
-                """
+            if carriesMPW {
+                /* The copy is not optional advice: a ToolServer launched
+                   from the read-only image cannot run its own tools
+                   (open-issues, 2026-08-19), so a person who registers the
+                   mounted volume gets a build that fails on its first
+                   action. */
+                text += """
+                    \r
+                    MPW is in the Dependencies folder. Open it, copy the MPW\r
+                    folder to your hard disk, then use Register MPW Folder in\r
+                    New Old World's Projects page. Register the copy on your\r
+                    disk, not the mounted image.\r
+                    """
+            }
+            return text
+        case .m68k:
+            // NOW-68K remembers nothing between launches on purpose, so
+            // the address is written here for the human to type.
+            // MPW is Carbon-desk tooling; the 68K image never carries it.
+            return """
+            NOW-68K SETUP\r
+            \r
+            1. Copy NOW-68K anywhere on your hard disk.\r
+            2. Open NOW-68K. Type \(host) into Host and \(port) into Port.\r
+            \r
+            OPTIONAL\r
+            Put NOW Extension in System Folder:Extensions and restart.\r
+            """
         }
-        return text
     }
 
     enum BuildError: LocalizedError {
@@ -61,25 +79,45 @@ struct ClassicSetupImageBuilder: Sendable {
     static let downloadFileName = "New Old World Setup.img.bin"
     static let classicImageName = "New Old World Setup.img"
     static let volumeName = "NOW Setup"
+
+    static func classicImageName(for flavor: OnboardingGuestFlavor)
+        -> String {
+        switch flavor {
+        case .powerpc: return "New Old World Setup.img"
+        case .m68k: return "NOW-68K Setup.img"
+        }
+    }
+
+    static func downloadFileName(for flavor: OnboardingGuestFlavor)
+        -> String {
+        classicImageName(for: flavor) + ".bin"
+    }
     static let maximumImageBytes = 128 * 1_024 * 1_024
 
     private var fileManager: FileManager { .default }
 
     func build(host: String, wirePort: UInt16,
-               assets: OnboardingAssetSnapshot) async throws -> Data {
+               assets: OnboardingAssetSnapshot,
+               flavor: OnboardingGuestFlavor = .powerpc)
+        async throws -> Data {
         try await Task.detached(priority: .userInitiated) {
             try buildSynchronously(host: host, wirePort: wirePort,
-                                   assets: assets)
+                                   assets: assets, flavor: flavor)
         }.value
     }
 
     private func buildSynchronously(host: String, wirePort: UInt16,
-                                    assets: OnboardingAssetSnapshot)
+                                    assets: OnboardingAssetSnapshot,
+                                    flavor: OnboardingGuestFlavor)
         throws -> Data {
-        guard assets.application != nil else {
+        guard assets.application(for: flavor) != nil else {
             throw BuildError.missingApplication
         }
         try DevelopmentStarterPackManifest.validated(in: assets)
+        if flavor == .m68k {
+            return try build68KImage(host: host, wirePort: wirePort,
+                                     assets: assets)
+        }
         let selectedDependencies = OnboardingDependencyCatalog.setupAssets(
             in: assets)
         let carriesMPW = selectedDependencies.contains {
@@ -110,7 +148,8 @@ struct ClassicSetupImageBuilder: Sendable {
 
         let disk = try Data(contentsOf: rawImage, options: [.mappedIfSafe])
         guard let image = NDIFImage.macBinary(
-            name: Self.classicImageName, volumeName: Self.volumeName,
+            name: Self.classicImageName(for: flavor),
+            volumeName: Self.volumeName,
             disk: disk) else { throw BuildError.couldNotEncode }
         return image
     }
@@ -134,7 +173,8 @@ struct ClassicSetupImageBuilder: Sendable {
         }
         _ = try MacBinaryFile.decode(preferences).write(to: destination)
         if let extensionComponent = assets.extensionComponent {
-            try writeMacBinary(extensionComponent.fileURL, to: destination,
+            try writeMacBinary(extensionComponent.fileURL,
+                               to: destination,
                                nameOverride: "NOW Extension")
         }
 
@@ -143,19 +183,73 @@ struct ClassicSetupImageBuilder: Sendable {
         try fileManager.createDirectory(
             at: dependencies, withIntermediateDirectories: true)
         for asset in selectedDependencies {
-            try installDependency(asset, in: dependencies,
-                                  workspace:
-                                    destination.deletingLastPathComponent())
+            try installDependency(
+                asset, in: dependencies,
+                workspace: destination.deletingLastPathComponent())
         }
 
         let readMe = MacBinaryFile(
             name: "Read Me First", type: "TEXT", creator: "ttxt",
             finderFlags: 0,
             dataFork: Self.instructions(host: host, port: wirePort,
+                                        flavor: .powerpc,
                                         carriesMPW: carriesMPW)
                 .data(using: .macOSRoman) ?? Data(),
             resourceFork: Data())
         _ = try readMe.write(to: destination)
+    }
+
+    /// The 68K flavor's image: an HFS Standard volume in a Disk Copy 4.2
+    /// container, entirely in memory - no hdiutil, no mount, no forks on
+    /// the way through. DC 4.2 is data-fork-only by design, so even a
+    /// browser that saves the transfer raw (MacWeb) has delivered a
+    /// usable image, and the Disk Copy on a stock System 7 machine opens
+    /// it. The MacBinary envelope on top is for transfer paths that CAN
+    /// carry the dImg type; the raw route serves the container bare.
+    private func build68KImage(host: String, wirePort: UInt16,
+                               assets: OnboardingAssetSnapshot)
+        throws -> Data {
+        guard let application = assets.application68K else {
+            throw BuildError.missingApplication
+        }
+        var files: [HFSStandardVolume.File] = []
+        let app = try MacBinaryFile.decode(
+            Data(contentsOf: application.fileURL, options: [.mappedIfSafe]))
+        files.append(HFSStandardVolume.File(
+            name: "NOW-68K", type: app.type, creator: app.creator,
+            finderFlags: app.finderFlags,
+            dataFork: app.dataFork, resourceFork: app.resourceFork))
+        if let extensionComponent = assets.extensionComponent {
+            let ext = try MacBinaryFile.decode(
+                Data(contentsOf: extensionComponent.fileURL,
+                     options: [.mappedIfSafe]))
+            files.append(HFSStandardVolume.File(
+                name: "NOW Extension", type: ext.type,
+                creator: ext.creator, finderFlags: ext.finderFlags,
+                dataFork: ext.dataFork, resourceFork: ext.resourceFork))
+        }
+        files.append(HFSStandardVolume.File(
+            name: "Read Me First", type: "TEXT", creator: "ttxt",
+            finderFlags: 0,
+            dataFork: Self.instructions(host: host, port: wirePort,
+                                        flavor: .m68k, carriesMPW: false)
+                .data(using: .macOSRoman) ?? Data(),
+            resourceFork: Data()))
+
+        guard let capacity = HFSStandardVolume.fittingCapacity(
+            for: files, volumeName: Self.volumeName) else {
+            throw BuildError.packageTooLarge
+        }
+        guard let volume = HFSStandardVolume.build(
+                  volumeName: Self.volumeName, files: files,
+                  capacity: capacity),
+              let container = DiskCopy42Image.data(
+                  name: Self.classicImageName(for: .m68k), disk: volume),
+              let envelope = MacBinaryEncoder.data(
+                  name: Self.classicImageName(for: .m68k),
+                  type: "dImg", creator: "dCpy", dataFork: container)
+        else { throw BuildError.couldNotEncode }
+        return envelope
     }
 
     private func writeMacBinary(_ url: URL, to directory: URL,
