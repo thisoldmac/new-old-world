@@ -573,7 +573,8 @@ final class OnboardingPortal: ObservableObject {
                         socklen_t(INET_ADDRSTRLEN)) != nil else {
             return nil
         }
-        let value = String(cString: text)
+        let bytes = text.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        let value = String(decoding: bytes, as: UTF8.self)
         return value == "0.0.0.0" ? nil : value
     }
 
