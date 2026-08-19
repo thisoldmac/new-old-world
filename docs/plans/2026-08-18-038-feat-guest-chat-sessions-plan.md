@@ -89,6 +89,48 @@ row added without a line in it would be silently writable.
 - **Slice 5 — docs.** The module page, the reversed privacy sentence
   said out loud, and `docs/contract-coverage.md` re-derived.
 
+## Slice 6 — the chat family reaches the MCP (Michelle, 2026-08-18)
+
+**Decided against this plan's first instinct, and the instinct is recorded
+because it was wrong.** The coverage gate caught `chat.roster`,
+`chat.transcript` and `chat.projectroster` as undeclared gaps, and they
+were first written up as DELIBERATE ones on the argument that a person's
+saved conversations are not an agent capability. Michelle's answer:
+*"this should be part of the mcp for sure — it's the agentic loop we're
+trying to close right now."*
+
+That is the stronger reading, and the earlier argument mistook a privacy
+question for an architectural one. The person's own agent, running on
+their own Mac against their own store, reading and continuing the
+conversation they are having at the classic machine, IS the loop this
+product is for. An agent that can drive the machine but cannot see or
+answer the chat about it leaves the human as the only wire between the
+two halves.
+
+What the slice adds, in the order it should be built (**W6**, numbered so
+`docs/mcp-coverage.md` can cite one item rather than a wish):
+
+**W6 #1.** `now_chats` — one projection with an operation discriminant, the
+   `now_projects` shape: `list` (paged), `read` (a transcript page, from
+   the end, the same lazy rule the wire follows), `create`, `file`
+   (under a project or none), and `projects` (the roster).
+**W6 #2.** `append` — an agent writing INTO the conversation a person is having,
+   which is the cheapest half of closing the loop and needs no model turn.
+**W6 #3.** `send` — running a real turn, with the mode field the wire already
+   carries. It is last because it is the only one that is long-running,
+   and a local-socket call that can take minutes needs its own deadline
+   argument rather than inheriting one by accident.
+
+The plumbing is the `projects` path exactly: a method on
+`AgentIntegrationClient`, a case in `AgentIntegrationLocalProtocol` with
+its key set and well-formedness check, both clients, the host adapter,
+then the projection and its catalog row. The store is already shared by
+both faces, so nothing new owns the data.
+
+**Until it lands, `docs/mcp-coverage.md` carries the three rows as
+`planned`, citing this slice.** They are not deliberate gaps and must not
+read as settled.
+
 ## Boundaries
 
 - **Nothing about a chat crosses until it is asked for, and then in
