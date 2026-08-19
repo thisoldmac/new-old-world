@@ -7117,10 +7117,17 @@ The remaining open boundaries are narrower and separately owned:
   dispatch and foregrounding rather than a returned handler receipt. Shared
   fixtures and any neutral receipt vocabulary must be completed in the sibling
   CodeKitten repository; NOW must not absorb the IDE or executor.
-- **Starter payload:** the relocatable, versioned Development starter-pack
-  manifest and onboarding input are implemented and tested, including license
-  and provenance fields. No redistributable MPW bytes are committed. A combined
-  NOW + CodeKitten + MPW image cannot be accepted until payload licensing and
+- **Starter payload (updated 2026-08-18, `feat/mpw-starter-pack`):** the
+  operator-supplied lane is now the resolution, on the CarbonLib pattern —
+  NOW never redistributes or downloads MPW; the operator drops their own
+  MacBinary image plus a completed manifest into the Onboarding
+  `Dependencies` folder, and NOW pins the digest, delivers the artifact
+  through the NDIF setup image (manifest stays host-side), and the guest
+  qualifies the registered folder. The manifest may only promise the
+  implemented `structural-1` probe (ToolServer + `Tools:MrC`); an
+  unimplemented probe name or overclaimed item list refuses the build.
+  No redistributable MPW bytes are committed and a shipped combined
+  NOW + CodeKitten + MPW image stays blocked until payload licensing and
   provenance are settled.
 - **Metal:** the earlier PowerBook result remains the fork-aware host-home
   build/run/dialog proof. Typed test, retry/restart recovery, guest-home
