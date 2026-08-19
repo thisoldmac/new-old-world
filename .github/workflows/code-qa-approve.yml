@@ -1,0 +1,98 @@
+# Record Emulator/Metal QA - or the owner's metal override - from GitHub
+# itself: a `/qa` command in a PR comment or review, or this workflow's
+# Run button. The desk CLI (tools/code-qa attest-*/override-metal) remains
+# for runs recorded beside the rig; this exists so approval is never
+# locked behind one machine's terminal.
+#
+#   /qa emulator: <evidence>        needs write permission
+#   /qa metal: <evidence>           needs write permission
+#   /qa override-metal: <reason>    policy human_override_actors only
+#
+# Runs trusted default-branch code only; nothing from the PR tree
+# executes with this token. The standing working rule from AGENTS.md
+# carries over: agents do not post /qa commands or dispatch this
+# workflow - these gestures belong to humans.
+name: Code QA approvals
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: number
+      command:
+        description: "QA command, e.g. '/qa emulator: swept modules on the ppc rig'"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+
+jobs:
+  record:
+    name: Record QA from a GitHub gesture
+    if: >
+      github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'issue_comment'
+          && github.event.issue.pull_request
+          && contains(github.event.comment.body, '/qa '))
+      || (github.event_name == 'pull_request_review'
+          && contains(github.event.review.body || '', '/qa '))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve the gesture
+        id: gesture
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_PR: ${{ inputs.pr }}
+          COMMENT_PR: ${{ github.event.issue.number }}
+          REVIEW_PR: ${{ github.event.pull_request.number }}
+        run: |
+          case "$EVENT_NAME" in
+            workflow_dispatch) echo "pr=$INPUT_PR" >> "$GITHUB_OUTPUT" ;;
+            issue_comment) echo "pr=$COMMENT_PR" >> "$GITHUB_OUTPUT" ;;
+            pull_request_review) echo "pr=$REVIEW_PR" >> "$GITHUB_OUTPUT" ;;
+          esac
+          permission=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/collaborators/${GITHUB_ACTOR}/permission" \
+            --jq .permission)
+          echo "permission=$permission" >> "$GITHUB_OUTPUT"
+      - name: Record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # The body travels by environment, never through a shell line.
+          QA_BODY: >-
+            ${{ github.event_name == 'workflow_dispatch' && inputs.command
+                || github.event_name == 'issue_comment'
+                   && github.event.comment.body
+                || github.event.review.body }}
+        run: |
+          set -o pipefail
+          tools/code-qa github-command \
+            --pr "${{ steps.gesture.outputs.pr }}" \
+            --actor "${GITHUB_ACTOR}" \
+            --permission "${{ steps.gesture.outputs.permission }}" \
+            2>&1 | tee /tmp/code-qa-output
+      - name: Reply with the refusal
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body="**Code QA**: the gesture was refused.
+          \`\`\`
+          $(tail -5 /tmp/code-qa-output 2>/dev/null || echo 'no detail')
+          \`\`\`"
+          gh api -X POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${{ steps.gesture.outputs.pr }}/comments" \
+            -f body="$body" >/dev/null

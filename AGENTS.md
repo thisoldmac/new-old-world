@@ -260,11 +260,27 @@ MacBinary `.bin` on arrival; verify by comparing fork sizes, not by
 re-downloading.
 
 The address, account and toolchain path are **not in this repository** —
-they describe one desk. They come from `.env.lab`, which is gitignored;
-copy `.env.lab.example` and see [docs/lab-setup.md](docs/lab-setup.md).
-`scripts/deploy-68k` reads it and stops naming the missing key rather
-than guessing, because the failure it exists to prevent is a deploy that
-quietly went to whatever machine a stale default named.
+they describe one desk. `scripts/deploy-68k` stops naming the missing key
+and the file it belongs in rather than guessing, because the failure it
+exists to prevent is a deploy that quietly went to whatever machine a
+stale default named. Two gitignored places, split by what the fact is
+*about*; copy both examples and see
+[docs/lab-setup.md](docs/lab-setup.md):
+
+- **A machine is a profile.** `.lab/machines/<id>.machine` carries one
+  Mac's address, FTP account, deploy folder and metal facts, keyed by the
+  id the host already calls it — the same `GuestID` slug a person types
+  at the picker and an agent types in a tool call. **Say which machine**:
+  `scripts/deploy-68k --machine pb180c`. With one profile it is optional;
+  with several a deploy refuses and names them, and `--which` answers
+  "where would this land" without touching anything. A machine's
+  `address` is ONE fact — the FTP deploy and the metal machine-busy guard
+  both read it, where they used to be two flat keys that nothing checked
+  agreed.
+- **The desk is `.env.lab`.** Toolchain paths, emulator images, signing
+  identity: one of each, so flat keys are right. Machine keys left there
+  still work on a desk that has written no profile, and a profile that
+  disagrees with one says so out loud rather than winning in silence.
 
 - **The canonical binary is `New Old World`.** The build emits it as
   `New Old World.bin` beside `now-guest-ppc.bin` (the CMake target name can't

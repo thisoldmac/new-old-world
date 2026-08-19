@@ -312,6 +312,11 @@ run_py_path tools/mirror-gate-tests/test_shutdown_always_available.py
 run_py_path tools/mirror-gate-tests/test_public_ci_portability.py
 run_py_path tools/mirror-gate-tests/test_continuity_probe.py
 run_py_path tools/mirror-gate-tests/test_build_guests_env.py
+# Which machine a deploy chose, and who won when two places named one.
+# Driven through `scripts/deploy-68k --which`, which resolves and stops -
+# so every refusal here is exercised without a network, a version bump or
+# a Macintosh.
+run_py_path tools/mirror-gate-tests/test_machine_profiles.py
 run_py_path tools/mirror-gate-tests/test_extension_product_name.py
 run_py_path tools/mirror-gate-tests/test_qemu_memory_oracle.py
 # The tool that reports where the arc stands, driven against a synthetic

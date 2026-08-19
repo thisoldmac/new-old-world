@@ -155,4 +155,14 @@ jobs:
             echo "::error::.env.lab is tracked; it must stay gitignored"
             fail=1
           fi
+          # The same rule for machine profiles, which are the OTHER file
+          # family carrying one desk's addresses and FTP credentials. The
+          # committed `.machine.example` is deliberately not a `.machine`,
+          # so this needs no carve-out: anything matching is a real
+          # profile that reached the index.
+          if git ls-files -- '.lab/machines/*.machine' | grep .; then
+            echo "::error::a machine profile is tracked; .lab/machines/*.machine must stay gitignored"
+            echo "::error::see docs/lab-setup.md for where such values belong"
+            fail=1
+          fi
           exit $fail
