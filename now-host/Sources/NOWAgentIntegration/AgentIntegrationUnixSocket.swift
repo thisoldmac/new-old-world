@@ -31,12 +31,24 @@ public struct AgentIntegrationEndpoint: Equatable, Sendable {
     /// Bounded and sanitised: it becomes a directory name, and a suffix
     /// carrying a separator would name a path outside the temporary
     /// directory. Unset — the product's case — nothing changes.
+    /// The environment key, spelled ONCE in the product.
+    ///
+    /// Public because a second process has to agree with it and could
+    /// not until this existed: the chat workspace lane spawns
+    /// `New Old World --mcp-stdio` under a runtime whose environment is
+    /// a deliberate whitelist, and a companion that does not inherit
+    /// this reaches the DEFAULT socket — another session's host, and
+    /// whatever Macintosh it is driving, with both sides looking
+    /// healthy. That caller carries the variable; it does not read it,
+    /// and `AgentEndpointIsolationTests` still finds one reader here.
+    public static let suffixEnvironmentKey = "NOW_AGENT_SOCKET_SUFFIX"
+
     public static func currentUser(uid: uid_t = geteuid()) throws
         -> AgentIntegrationEndpoint {
         try forUser(
             uid: uid,
             rawSuffix: ProcessInfo.processInfo
-                .environment["NOW_AGENT_SOCKET_SUFFIX"])
+                .environment[suffixEnvironmentKey])
     }
 
     /// The single spelling of a per-user endpoint, with an injectable raw

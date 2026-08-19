@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import NOWAgentIntegration
 
 struct ChatSubprocessRequest: Sendable {
     let executable: URL
@@ -30,14 +31,17 @@ enum ChatSubprocessEnvironment {
         /* Carried on purpose, and the one entry here that is not about
            the runtime's own configuration. A workspace lane spawns
            `New Old World --mcp-stdio` UNDERNEATH the runtime, and that
-           companion finds its host by this suffix. Stripped, a host
-           running on its own endpoint would hand the lane a companion
-           that reached the DEFAULT socket — another session's host, and
-           whatever Macintosh that one happens to be driving, with
-           neither side able to tell. The hazard is stated at
-           AgentIntegrationEndpoint.currentUser; this is the second
-           process that has to agree with it. */
-        "NOW_AGENT_SOCKET_SUFFIX",
+           companion finds its host by this suffix. Stripped, a host on
+           its own endpoint would hand the lane a companion that reached
+           the DEFAULT socket — another session's host, and whatever
+           Macintosh that one is driving, with neither side able to tell.
+
+           By the CONSTANT, never by the string: `AgentEndpointIsolation
+           Tests` requires the spelling to exist in exactly one file, and
+           it is right to — the rule it protects is that a host and its
+           companion cannot disagree about where the socket is. This is
+           the second PROCESS agreeing, not a second reader. */
+        AgentIntegrationEndpoint.suffixEnvironmentKey,
     ]
 
     /// Child runtimes need their own config and Keychain identity, not every
