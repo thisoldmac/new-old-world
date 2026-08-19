@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "control_kind.h"
 #include "pump.h"
 
 /* Item numbers must match DITL 303 in resources/app.r. */
@@ -118,6 +119,6 @@ Boolean now_chat_project_new(char *name, long name_cap,
             break;
         }
     }
-    DisposeDialog(dialog);
+    now_control_dispose_dialog(dialog);
     return created;
 }
