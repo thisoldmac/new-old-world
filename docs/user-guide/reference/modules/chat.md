@@ -40,6 +40,10 @@ Which one you have picked is shown in the provider's own description, in both
 the macOS popup and the classic machine's page, and the model is told the same
 thing — so a model without tools says it cannot look rather than promising to.
 
+The classic machine's Chat page goes further: a provider's reach travels
+with its catalog row, so picking a text-only one dims the mode popup
+instead of offering you Build for a model that cannot build.
+
 ## The chat workspace (experimental)
 
 Settings > Chat can point Claude (Experimental) at **one folder on the modern

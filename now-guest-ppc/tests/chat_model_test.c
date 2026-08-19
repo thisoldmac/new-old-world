@@ -360,6 +360,27 @@ static void test_a_malformed_page_reads_as_failure(void)
     assert(chat_parse_roster(NULL, rows, 2, NULL) == -1);
 }
 
+/* The reach a provider reports, and what SILENCE about it means. An
+   older host sends no `tools`, and every provider such a host serves
+   has them — so absent must read as full, or the page would grey out a
+   mode popup that works. */
+static void test_provider_reach_defaults_to_full_when_absent(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.catalog\",\"id\":1,\"providers\":["
+        "{\"provider\":\"claude\",\"label\":\"Claude\","
+        "\"state\":\"serving\",\"tools\":\"none\"},"
+        "{\"provider\":\"anthropic\",\"label\":\"Anthropic\","
+        "\"state\":\"serving\"}"
+        "]}";
+    ChatProviderRow rows[kChatMaxProviders];
+    int n = chat_parse_providers(reply, rows, kChatMaxProviders);
+
+    assert(n == 2);
+    assert(strcmp(rows[0].tools, "none") == 0);
+    assert(strcmp(rows[1].tools, "full") == 0);
+}
+
 int main(void)
 {
     test_providers_fill_rows_whatever_their_state();
@@ -374,6 +395,7 @@ int main(void)
     test_projects_carry_their_home();
     test_history_keeps_who_said_it();
     test_a_malformed_page_reads_as_failure();
+    test_provider_reach_defaults_to_full_when_absent();
     puts("chat_model_test: all passed");
     return 0;
 }

@@ -338,14 +338,28 @@ final class ChatModuleModel: ObservableObject {
     /// Every provider, whatever its state — the cloud.report rule: one
     /// that cannot serve is still a row saying WHY. Labels leave
     /// converted and bounded (<= 31 bytes, the cloud rule).
-    private func wireProviders() async -> [ChatCatalogProvider] {
-        let entries = await providerEntries()
-        return entries.map { entry in
+    func wireProviders() async -> [ChatCatalogProvider] {
+        /* The reach travels beside the state, because the guest's mode
+           popup is a promise: offering Build for a text-only relay says
+           the turn may change the machine when nothing can (metal,
+           2026-08-19). Asked of the provider itself rather than
+           inferred from its detail sentence — prose is not an API. */
+        return await providerReports().map { report in
             ChatCatalogProvider(
-                provider: entry.id,
-                label: ChatWireText.label(entry.label),
-                state: entry.state,
-                detail: CloudText.displayable(entry.detail))
+                provider: report.entry.id,
+                label: ChatWireText.label(report.entry.label),
+                state: report.entry.state,
+                detail: CloudText.displayable(report.entry.detail),
+                tools: ChatModuleModel.wireReach(report.reach))
+        }
+    }
+
+    /// The contract's spelling of a reach.
+    static func wireReach(_ reach: ChatToolReach) -> String {
+        switch reach {
+        case .harness: return "full"
+        case .workspace: return "workspace"
+        case .none: return "none"
         }
     }
 
@@ -368,6 +382,17 @@ final class ChatModuleModel: ObservableObject {
     }
 
     func providerEntries() async -> [ChatProviderEntry] {
+        await providerReports().map(\.entry)
+    }
+
+    /// Each provider's report AND its reach, from the same walk.
+    ///
+    /// One walk rather than two: the reach is asked of the provider
+    /// object, so a second pass would build a second registry and could
+    /// answer for a differently-configured one — the workspace lane can
+    /// be pointed somewhere else between two calls.
+    func providerReports() async
+        -> [(entry: ChatProviderEntry, reach: ChatToolReach)] {
         let store = store
         let transport = transport
         let runtimeProviders = runtimeProviders
@@ -375,11 +400,11 @@ final class ChatModuleModel: ObservableObject {
             let passive = makePassiveChatProviderRegistry(
                 store: store, transport: transport,
                 runtimeProviders: runtimeProviders)
-            var entries: [ChatProviderEntry] = []
+            var reports: [(entry: ChatProviderEntry, reach: ChatToolReach)] = []
             for provider in passive.registry.all() {
-                entries.append(await provider.entry())
+                reports.append((await provider.entry(), provider.toolReach))
             }
-            return entries
+            return reports
         }.value
     }
 

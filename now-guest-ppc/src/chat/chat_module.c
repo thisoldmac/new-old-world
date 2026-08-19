@@ -480,6 +480,32 @@ static void ask_history(void)
     }
 }
 
+/* The mode popup is a PROMISE about what a turn may do, so it follows
+   the selected provider's reach rather than standing on its own. A
+   text-only relay gets a dimmed popup and a status line saying why —
+   offering Build to a model with no hands is the thing that sent a
+   person into build mode against a model that could not build (metal,
+   2026-08-19). */
+static void sync_mode_popup(void)
+{
+    Boolean has_tools = true;
+
+    if (g_provider_sel >= 0 && g_provider_sel < g_provider_count) {
+        has_tools = strcmp(g_providers[g_provider_sel].tools, "none") != 0;
+    }
+    if (g_mode_popup == NULL) {
+        return;
+    }
+    HiliteControl(g_mode_popup, (short)(has_tools ? 0 : 255));
+    if (!has_tools) {
+        /* Chat is what the host will run for it anyway: a turn with no
+           tools is the tier that changes nothing, whatever this popup
+           was left showing. */
+        g_mode_sel = 0;
+        SetControlValue(g_mode_popup, 1);
+    }
+}
+
 /* Ask for the selected provider's models, from the top. Lazy by
    design: nothing is listed until somebody selects it. */
 static void ask_models(void)
@@ -963,6 +989,7 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     rebuild_model_popup();
     rebuild_project_popup();
     SetControlValue(g_mode_popup, (short)(g_mode_sel + 1));
+    sync_mode_popup();
     conn_set_chat_note(chat_note);
     return noErr;
 }
@@ -1463,6 +1490,7 @@ static Boolean chat_click(const EventRecord *event, Point local)
             if (picked >= 0 && picked < g_provider_count
                 && picked != g_provider_sel) {
                 g_provider_sel = picked;
+                sync_mode_popup();
                 ask_models();         /* lazy: listed on selection */
             }
         }

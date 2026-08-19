@@ -40,6 +40,12 @@ typedef struct {
     char label[32];                   /* MacRoman, drawn in the popup */
     char state[16];                   /* serving | off | no-access | ... */
     char detail[96];                  /* MacRoman, display only */
+    /* full | workspace | none - how far a turn with this provider
+       reaches. ABSENT reads as "full": an older host that never heard
+       of the field serves providers that all have tools, and greying
+       the mode popup out on silence would take away something that
+       works. */
+    char tools[12];
 } ChatProviderRow;
 
 typedef struct {

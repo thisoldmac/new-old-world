@@ -25,6 +25,30 @@ final class ChatSessionTests: XCTestCase {
             chatStore: store)
     }
 
+    /* The mapping itself, not the plumbing around it. A serving test can
+       hand ChatWireService any providers array it likes and prove
+       nothing about where the field comes from — that mutation
+       (`tools: nil` in wireProviders) passed the wire test and is the
+       reason this one exists. */
+    func testTheCatalogRowsCarryEachProvidersOwnReach() async throws {
+        let store = try store()
+        let model = makeModel(store: store)
+
+        let rows = await model.wireProviders()
+
+        XCTAssertFalse(rows.isEmpty)
+        for row in rows {
+            XCTAssertNotNil(row.tools, "\(row.provider) reported no reach")
+        }
+        // The four API providers speak through the harness; the two
+        // subprocess runtimes are text-only until a workspace is chosen,
+        // and no workspace is configured in a test's own defaults.
+        XCTAssertEqual(rows.first { $0.provider == "anthropic" }?.tools,
+                       "full")
+        XCTAssertEqual(rows.first { $0.provider == "claude" }?.tools, "none")
+        XCTAssertEqual(rows.first { $0.provider == "codex" }?.tools, "none")
+    }
+
     private func store() throws -> ChatStore {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("now-chat-session-\(UUID().uuidString)")

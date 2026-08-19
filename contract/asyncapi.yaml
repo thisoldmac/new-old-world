@@ -3675,6 +3675,25 @@ components:
                   One converted sentence of state ("Signed in",
                   "Nothing answering at localhost:11434"). Display
                   only.
+              tools:
+                enum: [full, workspace, none]
+                description: >
+                  HOW FAR A TURN WITH THIS PROVIDER REACHES, so a guest
+                  can stop offering what it cannot deliver. full is the
+                  whole capability catalog through the host's harness;
+                  workspace is a runtime with its own file and command
+                  tools that reaches the same capabilities another way;
+                  none is a text-only relay that cannot look at the
+                  machine at all.
+
+                  Absent means unknown, and a guest reads that as full
+                  rather than none — an older host that never heard of
+                  this field serves the four API providers, all of which
+                  have tools, and a page that greyed out its mode popup
+                  on silence would take away something that works. The
+                  cost of being wrong the other way is a mode popup that
+                  offers Build to a model with no hands, which is the
+                  defect this field exists to end (metal, 2026-08-19).
         provider:
           type: string
           maxLength: 24

@@ -35,6 +35,10 @@ int chat_parse_providers(const char *reply, ChatProviderRow *rows,
                                 sizeof row->label)) {
             strncpy(row->label, row->provider, sizeof row->label - 1);
         }
+        if (!now_json_find_string(object, "tools", row->tools,
+                                  sizeof row->tools)) {
+            strcpy(row->tools, "full");
+        }
         if (!now_json_find_string(object, "state", row->state,
                                   sizeof row->state)) {
             strcpy(row->state, "serving");

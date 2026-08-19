@@ -738,6 +738,10 @@ struct ChatCatalogProvider: Codable, Equatable, Sendable, Identifiable {
     /// WHY a thing is missing.
     var state: String
     var detail: String?
+    /// "full" | "workspace" | "none" — how far a turn with this
+    /// provider reaches. Absent reads as full on the guest; see the
+    /// contract on ChatCatalog.providers.tools.
+    var tools: String?
 
     var id: String { provider }
 }

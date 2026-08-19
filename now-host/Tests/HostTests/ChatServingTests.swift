@@ -437,6 +437,42 @@ final class ChatServingTests: XCTestCase {
         XCTAssertEqual(projects.projects.first?.current, true)
     }
 
+    /* The guest's mode popup is a promise, and it can only be honest if
+       the reach crosses. Before this, a text-only provider looked
+       identical on the wire to one with the whole catalog, and the page
+       offered Build for both (metal, 2026-08-19). */
+    func testTheProviderCatalogCarriesEachProvidersReach() async throws {
+        installChat(script: [], providers: [
+            ChatCatalogProvider(
+                provider: "fake", label: "Fake", state: "serving",
+                detail: nil, tools: "none"),
+        ])
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatModels(ChatModels(id: 90)))
+        try await waitUntil("providers catalog") {
+            guest.received.contains {
+                if case .chatCatalog(let c) = $0 { return c.id == 90 }
+                return false
+            }
+        }
+        guard case .chatCatalog(let catalog)? = guest.received.last(where: {
+            if case .chatCatalog(let c) = $0 { return c.id == 90 }
+            return false
+        }) else { return XCTFail("no catalog") }
+
+        XCTAssertEqual(catalog.providers?.first?.tools, "none")
+    }
+
+    /// The spelling the contract uses, from the type the harness reads.
+    func testEveryReachHasOneWireSpelling() {
+        XCTAssertEqual(ChatModuleModel.wireReach(.harness), "full")
+        XCTAssertEqual(
+            ChatModuleModel.wireReach(.workspace(summary: "anything")),
+            "workspace")
+        XCTAssertEqual(ChatModuleModel.wireReach(.none(reason: "why")), "none")
+    }
+
     func testARefRidesBackToTheRealModelID() async throws {
         installChat(script: [[
             .textDelta("hey"), .finished(.endTurn),
