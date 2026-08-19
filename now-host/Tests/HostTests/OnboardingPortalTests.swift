@@ -40,7 +40,7 @@ final class OnboardingPortalTests: XCTestCase {
                       "the recommended link carries the .bin suffix classic "
                       + "browsers map to their MacBinary decoder")
         XCTAssertTrue(html.contains("/now/settings.bin"))
-        XCTAssertTrue(html.contains("CarbonLib 1.6.1"))
+        XCTAssertTrue(html.contains("CarbonLib 1.6 Installer"))
         XCTAssertTrue(html.contains("macintoshgarden.org/apps/carbonlib"))
         XCTAssertFalse(html.contains("/now/archive.sit"))
         XCTAssertFalse(html.contains("<script"))
@@ -141,7 +141,7 @@ final class OnboardingPortalTests: XCTestCase {
         let first = try await readyImage(portal)
         XCTAssertEqual(first.includedItems,
                        ["New Old World", "Host settings", "Read Me First",
-                        "CodeKitten", "NOW Extension", "CarbonLib 1.6.1"])
+                        "CodeKitten", "NOW Extension", "CarbonLib 1.6 Installer"])
 
         let codeKitten = try XCTUnwrap(portal.assets.codeKitten)
         let extensionComponent = try XCTUnwrap(

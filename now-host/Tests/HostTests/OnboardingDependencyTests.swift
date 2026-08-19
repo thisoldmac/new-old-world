@@ -20,7 +20,7 @@ final class OnboardingDependencyTests: XCTestCase {
             roots: [temporary], writableRoot: temporary).snapshot()
 
         XCTAssertEqual(OnboardingDependencyCatalog.all.map(\.displayName),
-                       ["CarbonLib 1.6.1"])
+                       ["CarbonLib 1.6 Installer"])
         XCTAssertEqual(OnboardingDependencyCatalog.carbonLib
             .installedAsset(in: snapshot)?.fileName,
             "CarbonLib_161.sit.bin")
