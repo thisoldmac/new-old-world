@@ -91,9 +91,13 @@ row added without a line in it would be silently writable.
 
 ## Boundaries
 
-- **The transcript is paged, never pushed.** A classic ring holds 300
-  lines; a long chat opened from the guest sends bounded pages the guest
-  asks for, the `chat.models` cursor shape exactly.
+- **Nothing about a chat crosses until it is asked for, and then in
+  pages.** The roster is paged (cursor/more, the `chat.models` shape) and
+  carries metadata only — never a byte of any transcript. Opening a chat
+  transfers nothing by itself: the guest then asks for history a bounded
+  page at a time, and a person who opens a long chat typed on the modern
+  Mac pays for the lines they scroll to, not the whole thing. A classic
+  ring holds 300 lines and a slow wire cannot afford an eager push.
 - **A mode is per turn on the wire, remembered per session on the host.**
   One field, no synchronisation problem, no second verb.
 - **NOW-68K is unchanged.** Chat is a PPC-asked family; the asymmetry is
