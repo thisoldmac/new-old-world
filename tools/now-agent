@@ -36,7 +36,7 @@ import socket
 import sys
 import uuid
 
-PROTOCOL_VERSION = 13
+PROTOCOL_VERSION = 14
 MAX_MESSAGE_BYTES = 64 * 1024
 
 
