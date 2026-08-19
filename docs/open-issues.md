@@ -7117,6 +7117,71 @@ The remaining open boundaries are narrower and separately owned:
   dispatch and foregrounding rather than a returned handler receipt. Shared
   fixtures and any neutral receipt vocabulary must be completed in the sibling
   CodeKitten repository; NOW must not absorb the IDE or executor.
+## EMULATOR-VERIFIED: operator-supplied MPW starter pack, delivered and qualified (2026-08-19, `feat/mpw-starter-pack`)
+
+A mac99/OS 9.1 session guest running build `36e9a906b9363aeb` (resident
+`83cdac8f0317`, base `now-mirror-stage.qcow2` sha256 `ec174395b4ec4a38`,
+receipt-accounted and volume-clean) carried one operator-supplied Apple MPW
+GM image end to end. NOW committed no MPW bytes and downloaded nothing: the
+25,109,760-byte MacBinary and its completed manifest sat in the operator's
+Application Support drop, and the guest received `MPW-GM.img` at exactly
+25,105,337 data and 4,131 resource bytes, `rohd`/`ddsk`. Disk Copy — not
+NOW — mounted it after a person accepted Apple's license, then quit itself.
+The Finder's own copy moved the 2,189-item folder to the hard disk with its
+own progress window. Registration and qualification stayed the human act
+they already were.
+
+`now_development_environment` reported both states honestly: with nothing
+registered, `not registered` / `unavailable` / `not found`; after
+registration, `mpw-ffff-00001486`, `structural-1`, `qualified`, ToolServer
+and MrC `found`. The agentic loop then ran entirely over authenticated
+loopback HTTP MCP — project authored, `Project.ckp` applied at revision 2,
+candidate `candidate-314dea840f904543` sealed at digest `d6c9458ddf3279b7`,
+MrC/PPCLink/Rez completing 3 of 3, product `APPL/PQAA` at 1,952 data and 441
+resource bytes, and `ckproject.test-receipt/1` returning **exact process
+identity matched**.
+
+**A mounted starter pack is not a usable toolchain, and the copy step is
+load-bearing.** Four builds of the same source on one rig separate the
+cause:
+
+| ToolServer's folder | ToolServer state | Result |
+|---|---|---|
+| hard-disk copy (`mpw-ffff-00001486`) | cold launch | succeeded 3 of 3 |
+| mounted pack (`mpw-fffe-000005f8`) | already resident from the hard disk | succeeded 3 of 3 |
+| mounted pack | cold launch | **failed at action 1 of 3, status −1** |
+| hard-disk copy | cold launch, after that failure | succeeded 3 of 3 |
+
+So a ToolServer launched from the read-only pack volume cannot run its own
+tools, while the same pack's tools copied to a writable disk build fine.
+The read-only property is visible in the OS itself — Navigation Services
+disables New Folder on that volume. The failing build writes only the
+`[[NOW:…:STAGE:0:-1]]` marker into its transcript and no tool output at
+all, which is what a Shell-level "command not found" looks like from
+inside the redirect. This is why the Read Me the setup image now writes,
+and the starter-pack reference page, both say to copy the MPW folder to
+the hard disk before registering it. It was first read as a transport or
+licensing defect on 2026-08-18 and is neither.
+
+Two narrower findings from the same run:
+
+- **The toolchain pin records the registration, not the tools that ran.**
+  The middle row above is the proof: a build pinned to the mounted volume
+  succeeded because an unrelated ToolServer was already resident and served
+  it. Nothing in the build receipt distinguishes the two, so a pin is not
+  evidence of which installation executed. A receipt that named the running
+  ToolServer's own folder would close this.
+- **Upload commit has a retry race.** `now_guest_files_upload_commit`
+  refuses `now-files-busy` while the wire drains, but a client that retries
+  then collides with its own first commit and gets
+  `now-files-upload-conflict`; the transfer completes regardless. The two
+  codes need to say plainly which one means "wait" and which means "you
+  already asked".
+
+Not covered by this row: metal, promotion, CodeKitten handoff, and the
+68K guest, which has no starter-pack lane because MPW does not fit its
+floppy-sized media.
+
 - **Starter payload (updated 2026-08-18, `feat/mpw-starter-pack`):** the
   operator-supplied lane is now the resolution, on the CarbonLib pattern —
   NOW never redistributes or downloads MPW; the operator drops their own
