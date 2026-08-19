@@ -521,17 +521,19 @@ final class AgentIntegrationHostAdapter {
     /// Mints the ProjectStore half of a chat-created project: a
     /// host-home starter the guest's own MPW can build, grounded by the
     /// same rules as an agent create. The chat wire carries no
-    /// toolchain (the guest dialog gains one in a later slice), so the
-    /// pin comes from `ProjectGround`'s one defaulting rule; a guest
-    /// home is the same typed refusal story, and either way the CHAT
-    /// folder already exists — this is the code half, not the folder.
-    func mintChatLinkedProject(name: String, home: ProjectHome) async
+    /// toolchain and passes nil, so its pin comes from `ProjectGround`'s
+    /// one defaulting rule; the host sidebar's sheet passes the person's
+    /// explicit choice. A guest home is the same typed refusal story,
+    /// and either way the CHAT folder already exists — this is the code
+    /// half, not the folder.
+    func mintChatLinkedProject(name: String, home: ProjectHome,
+                               toolchain: String? = nil) async
         -> Result<ProjectID, ProjectGround.Refusal> {
         guard projectStore != nil else { return .failure(.storeUnavailable) }
         if home == .guest { return .failure(.guestHome) }
         let pin: String
         switch await ProjectGround.resolvePin(
-            toolchain: nil,
+            toolchain: toolchain,
             environment: { await self.readDevelopmentEnvironment() }) {
         case .failure(let refusal): return .failure(refusal)
         case .success(let resolved): pin = resolved

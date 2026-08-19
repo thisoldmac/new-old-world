@@ -847,6 +847,8 @@ run_c now-guest-ppc development_history_test.c "" \
       src/development/development_history.c
 run_c now-guest-ppc development_sha256_test.c "" \
       src/development/development_sha256.c
+run_c now-guest-ppc development_stage_reply_test.c "" \
+      src/development/development_stage_reply.c src/core/json.c
 run_c now-guest-ppc development_open_test.c "" \
       src/development/development_open.c
 run_py now-guest-ppc development_open_wiring_source_test.py

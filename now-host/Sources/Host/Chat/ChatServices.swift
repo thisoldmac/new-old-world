@@ -109,7 +109,7 @@ final class ChatWireService {
     /// because the store project is the adapter's authority, not this
     /// service's; nil (tests, degraded hosts) files the chat folder
     /// alone, which is still worth having.
-    private let mintLinkedProject: ((String, ProjectHome) async
+    private let mintLinkedProject: ((String, ProjectHome, String?) async
         -> Result<ProjectID, ProjectGround.Refusal>)?
     private struct ActiveTurn {
         let requestID: Int
@@ -174,7 +174,7 @@ final class ChatWireService {
         models: @escaping (String) async -> [ChatModel]?,
         store: ChatStore? = nil,
         heartbeatInterval: TimeInterval = ChatWireService.heartbeat,
-        mintLinkedProject: ((String, ProjectHome) async
+        mintLinkedProject: ((String, ProjectHome, String?) async
             -> Result<ProjectID, ProjectGround.Refusal>)? = nil
     ) {
         self.harness = harness
@@ -699,7 +699,9 @@ final class ChatWireService {
                     : "Filed. Its code lives on the modern Mac.")
             }
             Task { @MainActor in
-                switch await mintLinkedProject(name, home) {
+                /* The wire carries home only; the toolchain follows
+                   from ProjectGround's defaulting rule. */
+                switch await mintLinkedProject(name, home, nil) {
                 case .success(let projectID):
                     _ = try? store.associate(record.id, with: projectID)
                     answer(true, nil, "Filed. A starter project was "

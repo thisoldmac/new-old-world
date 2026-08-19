@@ -7,6 +7,65 @@ search:
 
 # Open issues
 
+## GUEST-SIDE MPW: BOTH LANES RE-VERIFIED ON THIS BRANCH, AND WHAT THE RIG TAUGHT (2026-08-19, `feat/agentic-loop`)
+
+The same mac99/OS 9.1 rig that closed the Retro68 lane re-verified the
+guest-toolchain lane end to end, on this branch's build, through the
+MCP surface alone (a scripted stdio companion — no model in the loop,
+every receipt quoted from the tools' own answers):
+
+- **Delivery, scripted where it was a human act**: the operator MPW GM
+  image pushed to the guest over the anchor (25 MB in 25 s), Disk Copy
+  licensed and mounted (checksum VALID), the pack copied fork-true to
+  the hard disk, Register MPW Folder driven through the real Nav
+  dialog. `now_development_environment` answered
+  `mpw-ffff-00001461@structural-1`, qualified.
+- **The ground decision works live**: `now_projects create` with
+  `toolchain=guest-mpw` wrote the guest's own measured pin into
+  Project.ckp; the guest's pin gate accepted it; MrC/PPCLink built
+  2 of 2; `run` answered "accepted and process identity matched",
+  repeatedly.
+- **Guest-home, the whole story**: a guest-authored project imported
+  as a verified snapshot, edited in the host workspace, staged, built
+  2 of 2, and PROMOTED — publication reached the guest byte-exactly
+  (the re-import measured exactly the edited digest, revision 2), and
+  the divergence guard refused correctly both times it should have.
+
+Five findings, three of them product wounds:
+
+1. **A lone MPW folder qualifies and cannot compile.** structural-1
+   checks ToolServer and MrC, never headers; MPW's Startup resolves
+   Interfaces&Libraries as the registered folder's SIBLING (`{MPW}::`).
+   Copy only "MPW" and every build dies with "unable to open input
+   file 'MacTypes.h'". The Read Me and both docs pages now name both
+   folders; the qualification probe still cannot see the gap.
+2. **A promote against a busy guest times out AND publishes.** The
+   product's run loop held the machine; promote's answer leg died at
+   the deadline while publication completed. The idempotent replay
+   honestly returned the original terminal answer ("did not answer in
+   time") — which is the WRONG fact, since the guest tree measured the
+   published digest. A receipt that outlives the answer leg is owed.
+3. **The recovery from (2) strands the workspace.** After the designed
+   re-import (new verified base), the still-open workspace can neither
+   promote (stale base — refused `guest-diverged`, correctly) nor be
+   discarded (unpromoted commits — refused, correctly). Two correct
+   refusals compose into a dead end; the store needs a rebase or an
+   explicit abandon-with-confirmation.
+4. **Import demands canonical serialization.** A hand-authored
+   Project.ckp with identical semantics was refused ("imported bytes
+   do not match the coherent guest snapshot") because the host
+   normalizes file-info lines before re-digesting; the working recipe
+   is to reuse the store's own serialization byte-for-byte. Fine for
+   agents, hostile to a person authoring on the guest — CodeKitten or
+   the import needs to say so.
+5. **The anchor worker's `list` truncates at 128 with no paging**, and
+   this rig's first copy silently lost 269 headers to it — the
+   instrument, not the product. Recorded because the failure it
+   produced was indistinguishable from (1) until the worksheet's own
+   `Files | Count` said 128.
+
+Not covered: metal, the 68K guest (no MPW lane by design), CodeKitten.
+
 ## THE AGENTIC LOOP CLOSED IN THE EMULATOR — and what it took (2026-08-19, `feat/agentic-loop`)
 
 A Build-mode `chat.send` over the wire had the Claude workspace lane
@@ -7130,6 +7189,13 @@ The refused `stage` result also omits the minted candidate ID, so MCP cannot
 address `stage-status` or `stage-discard`; the host's finalize-refusal path
 does not automatically discard the guest candidate. The two attempts may
 therefore have left inactive residue with no agent-visible recovery handle.
+(**Closed 2026-08-19**, plan 039 slice E: a guest `candidate-unavailable`
+refusal now carries the addressed candidate as a `development-stage` output
+row beside the error (`development_stage_reply.c`, mutation-checked native
+test), and every host stage refusal that retains a candidate — unrecorded
+transfer, digest mismatch, unrecorded verification, and the paired-guest-
+changed guards — names the candidate ID and the `stage-status` /
+`stage-discard` recovery in its message. Tested, not metal-verified.)
 
 **Updated 2026-08-10:** the candidate was accepting. The host encoded
 `expectedFiles` as the JSON string `"3"`, while the contract and guest parser

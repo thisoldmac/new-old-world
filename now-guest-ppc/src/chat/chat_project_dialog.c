@@ -106,7 +106,11 @@ Boolean now_chat_project_new(char *name, long name_cap,
                 break;
             }
             /* The contract's words, not this dialog's: the host reads
-               guest-home as authoritative on this Mac. */
+               guest-home as authoritative on this Mac. The radios say
+               where the project lives AND what builds it — "built here
+               with MPW" is guest home, "built there and sent here" is
+               host home — but the wire still carries home only; the
+               toolchain follows from the home on the host's side. */
             strncpy(home, here ? "guest" : "host", (size_t)(home_cap - 1));
             home[home_cap - 1] = '\0';
             created = true;

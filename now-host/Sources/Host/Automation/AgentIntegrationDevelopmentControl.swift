@@ -283,7 +283,9 @@ final class AgentIntegrationDevelopmentControl {
         guard currentSessionID() == sessionID else {
             return .refused(.init(
                 code: "now-development-outcome-unknown",
-                message: "The paired guest changed while the candidate was being prepared."))
+                message: "The paired guest changed while the candidate was being prepared. "
+                    + "Host candidate \(candidateID) was retained; "
+                    + "use stage-status or stage-discard."))
         }
         guard prepared.ok else {
             try? projectStore.discardCandidate(
@@ -333,15 +335,23 @@ final class AgentIntegrationDevelopmentControl {
         guard currentSessionID() == sessionID else {
             return .refused(.init(
                 code: "now-development-outcome-unknown",
-                message: "The paired guest changed while the candidate was transferring."))
+                message: "The paired guest changed while the candidate was transferring. "
+                    + "Candidate \(candidateID) was retained; "
+                    + "use stage-status or stage-discard."))
         }
         do {
             _ = try projectStore.recordGuestTransfer(
                 candidateID: candidate.receipt.candidateID)
         } catch {
             audit(.warn, "stage \(candidateID) host receipt did not record transfer")
-            return .refused(.init(code: "now-development-stage-unsettled",
-                                  message: error.localizedDescription))
+            return .refused(.init(
+                code: "now-development-stage-unsettled",
+                message: AgentIntegrationBoundedText.prefix(
+                    "Candidate \(candidateID) was retained on both machines "
+                        + "but its transfer was not recorded: "
+                        + error.localizedDescription
+                        + " Use stage-status or stage-discard.",
+                    scalars: 256)))
         }
         audit(.info, "stage \(candidateID) transferred "
               + "\(candidate.receipt.manifest.count) files; verifying")
@@ -354,7 +364,9 @@ final class AgentIntegrationDevelopmentControl {
         guard currentSessionID() == sessionID else {
             return .refused(.init(
                 code: "now-development-outcome-unknown",
-                message: "The paired guest changed while candidate verification was settling."))
+                message: "The paired guest changed while candidate verification was settling. "
+                    + "Candidate \(candidateID) was retained; "
+                    + "use stage-status or stage-discard."))
         }
         guard finalized.ok else {
             return await settleFailedFinalization(
@@ -365,14 +377,22 @@ final class AgentIntegrationDevelopmentControl {
               digest == candidate.receipt.contentDigest else {
             return .refused(.init(
                 code: "now-development-candidate-mismatch",
-                message: "The guest did not return the exact staged source digest."))
+                message: "The guest did not return the exact staged source digest. "
+                    + "Candidate \(candidateID) was retained; "
+                    + "use stage-status or stage-discard."))
         }
         do {
             _ = try projectStore.recordGuestVerification(
                 candidateID: candidate.receipt.candidateID, digest: digest)
         } catch {
-            return .refused(.init(code: "now-development-stage-unsettled",
-                                  message: error.localizedDescription))
+            return .refused(.init(
+                code: "now-development-stage-unsettled",
+                message: AgentIntegrationBoundedText.prefix(
+                    "Candidate \(candidateID) was retained but its "
+                        + "verification was not recorded: "
+                        + error.localizedDescription
+                        + " Use stage-status or stage-discard.",
+                    scalars: 256)))
         }
         audit(.info, "stage \(candidateID) verified \(digest.prefix(12))")
         let rows = [
@@ -754,7 +774,7 @@ final class AgentIntegrationDevelopmentControl {
         let message = AgentIntegrationBoundedText.prefix(
             (failure.error?.message
                 ?? "The inactive candidate did not verify on the guest.")
-                + " The failed candidate was discarded on both machines.",
+                + " Candidate \(candidateID.rawValue) was discarded on both machines.",
             scalars: 256)
         return .refused(.init(code: code, message: message))
     }

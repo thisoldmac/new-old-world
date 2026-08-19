@@ -65,7 +65,7 @@ final class ChatServingTests: XCTestCase {
             "fake": [ChatModel(providerID: "fake", modelID: "m",
                                displayName: "m")]
         ],
-        mintLinkedProject: ((String, ProjectHome) async
+        mintLinkedProject: ((String, ProjectHome, String?) async
             -> Result<ProjectID, ProjectGround.Refusal>)? = nil
     ) {
         _ = makeStore()
@@ -429,9 +429,9 @@ final class ChatServingTests: XCTestCase {
     func testCreatingAHostProjectMintsAndAssociatesTheStoreProject()
         async throws {
         let minted = ProjectID.mint()
-        var asked: [(String, ProjectHome)] = []
-        installChat(script: [], mintLinkedProject: { name, home in
-            asked.append((name, home))
+        var asked: [(String, ProjectHome, String?)] = []
+        installChat(script: [], mintLinkedProject: { name, home, toolchain in
+            asked.append((name, home, toolchain))
             return .success(minted)
         })
         let guest = try await connectedGuest()
@@ -445,6 +445,9 @@ final class ChatServingTests: XCTestCase {
                       made.message ?? "no message")
         XCTAssertEqual(asked.map(\.0), ["Beeper"])
         XCTAssertEqual(asked.map(\.1), [.host])
+        XCTAssertEqual(asked.map(\.2), [nil],
+                       "the wire carries home only; the toolchain "
+                           + "defaults in ProjectGround")
         let record = try XCTUnwrap(try store?.listProjects().first)
         XCTAssertEqual(record.linkedProjectID, minted,
                        "the chat folder was not associated with the "
@@ -456,7 +459,7 @@ final class ChatServingTests: XCTestCase {
     /// was refused.
     func testARefusedMintStillCreatesTheChatFolderAndSaysWhy()
         async throws {
-        installChat(script: [], mintLinkedProject: { _, _ in
+        installChat(script: [], mintLinkedProject: { _, _, _ in
             .failure(.storeRefused("the disk said no"))
         })
         let guest = try await connectedGuest()
@@ -476,7 +479,7 @@ final class ChatServingTests: XCTestCase {
     /// A guest home reaches the same minting authority and comes back
     /// as the import-path story, with the folder still filed.
     func testAGuestHomeCreateCarriesTheImportPathStory() async throws {
-        installChat(script: [], mintLinkedProject: { _, home in
+        installChat(script: [], mintLinkedProject: { _, home, _ in
             home == .guest
                 ? .failure(.guestHome)
                 : .failure(.storeRefused("unexpected home"))

@@ -397,9 +397,9 @@ resource 'DITL' (303) {
         /* 2 Cancel */ {140, 150, 160, 220}, Button { enabled, "Cancel" };
         /* 3 name   */ {20, 76, 36, 304}, EditText { enabled, "" };
         /* 4 here   */ {48, 16, 64, 304},
-            RadioButton { enabled, "Lives on this Mac" };
+            RadioButton { enabled, "On this Mac, built here with MPW" };
         /* 5 there  */ {70, 16, 86, 304},
-            RadioButton { enabled, "Lives on the other Mac" };
+            RadioButton { enabled, "On the other Mac, built there and sent here" };
         /* 6 status */ {94, 16, 132, 304}, StaticText { disabled, "" };
         /* 7 label  */ {20, 16, 36, 70}, StaticText { disabled, "Name:" };
     }

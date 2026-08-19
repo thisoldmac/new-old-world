@@ -390,6 +390,53 @@ final class AgentIntegrationProjectsTests: XCTestCase {
             "toolchain=host-retro68@1"), sentinelDescriptor)
     }
 
+    /// The sidebar's sheet passes an explicit choice through the chat
+    /// mint seam, and it beats the default: a qualified guest with the
+    /// person choosing Retro68 still writes the sentinel, and choosing
+    /// MPW writes exactly what the guest measured.
+    func testChatMintThreadsTheExplicitToolchainChoice() async throws {
+        let projectStore = try store()
+        let adapter = adapter(
+            store: projectStore,
+            environment: environment(toolchain: "mpw-cccc-00000003",
+                                     version: "structural-1",
+                                     qualification: "qualified"))
+        let sentinel = try (await adapter.mintChatLinkedProject(
+            name: "Lane Chosen", home: .host,
+            toolchain: "host-retro68")).get()
+        let sentinelDescriptor = try await descriptor(
+            of: sentinel.rawValue, through: adapter)
+        XCTAssertTrue(sentinelDescriptor.contains("toolchain=host-retro68@1"),
+                      sentinelDescriptor)
+
+        let pinned = try (await adapter.mintChatLinkedProject(
+            name: "MPW Chosen", home: .host,
+            toolchain: "guest-mpw")).get()
+        let pinnedDescriptor = try await descriptor(
+            of: pinned.rawValue, through: adapter)
+        XCTAssertTrue(pinnedDescriptor.contains(
+            "toolchain=mpw-cccc-00000003@structural-1"), pinnedDescriptor)
+    }
+
+    /// The explicit MPW ask refuses with the guest's own vocabulary
+    /// when nothing is qualified — the sheet shows these words on the
+    /// disabled option.
+    func testChatMintRefusesAnUnqualifiedExplicitMPWAsk() async throws {
+        let adapter = adapter(
+            store: try store(),
+            environment: environment(toolchain: "not registered",
+                                     version: "unavailable",
+                                     qualification: "unavailable"))
+        let refused = await adapter.mintChatLinkedProject(
+            name: "MPW Wish", home: .host, toolchain: "guest-mpw")
+        guard case .failure(let refusal) = refused else {
+            return XCTFail("an unqualified explicit MPW ask minted anyway")
+        }
+        XCTAssertEqual(refusal, .guestToolchainUnqualified)
+        XCTAssertTrue(refusal.message.contains("Register MPW Folder"),
+                      refusal.message)
+    }
+
     /// The agent template used to emit NO build-action lines, so every
     /// created project refused `build-plan-empty` on the guest. The
     /// descriptor must now parse to a nonempty single-file MrC/PPCLink

@@ -164,7 +164,13 @@ final class ChatModuleModel: ObservableObject {
     /// service so a chat-created project also becomes a real
     /// ProjectStore project (the associate seam, wired 2026-08-19).
     private let mintLinkedProject:
-        (String, ProjectHome) async -> Result<ProjectID, ProjectGround.Refusal>
+        (String, ProjectHome, String?) async
+            -> Result<ProjectID, ProjectGround.Refusal>
+    /// The guest's development-environment read, for the New Project
+    /// sheet's MPW option — the same rows ProjectGround resolves a
+    /// guest-mpw pin from.
+    private let readDevelopmentEnvironment:
+        () async -> AgentIntegrationGuestRowReportResult
     @Published private(set) var chats: [ChatSummary] = []
     @Published private(set) var chatProjects: [ChatProjectRecord] = []
     @Published private(set) var selectedChatID: ChatID?
@@ -198,9 +204,12 @@ final class ChatModuleModel: ObservableObject {
         self.transport = transport
         self.defaults = defaults
         self.chatStore = chatStore
-        self.mintLinkedProject = { name, home in
+        self.mintLinkedProject = { name, home, toolchain in
             await agentIntegration.mintChatLinkedProject(
-                name: name, home: home)
+                name: name, home: home, toolchain: toolchain)
+        }
+        self.readDevelopmentEnvironment = {
+            await agentIntegration.developmentEnvironment()
         }
         selectedWireModelID = defaults.string(forKey: Self.modelKey) ?? ""
 
@@ -748,6 +757,40 @@ final class ChatModuleModel: ObservableObject {
         } catch {
             note(error)
             return nil
+        }
+    }
+
+    /// What the guest's development-environment read says about MPW —
+    /// whether a guest-mpw pin could honestly be written right now.
+    /// The New Project sheet's MPW option enables on this.
+    func guestToolchainQualified() async -> Bool {
+        ProjectGround.qualifiedToolchain(
+            in: await readDevelopmentEnvironment()) != nil
+    }
+
+    /// The sidebar's New Project: the SAME create the wire serves
+    /// (`ChatWireService.serveProject "create"`) — a chat folder plus a
+    /// real ProjectStore starter through the mint/associate seam, with
+    /// the person's explicit toolchain choice. A mint refusal still
+    /// files the folder, with the refusal's own story on the notice —
+    /// the folder is not worthless without a store project.
+    func createChatProject(name: String, toolchain: String) async {
+        guard let chatStore else { return }
+        let record: ChatProjectRecord
+        do {
+            record = try chatStore.createProject(
+                name: name, intendedHome: .host)
+        } catch {
+            note(error)
+            return
+        }
+        reloadChatCatalog()
+        switch await mintLinkedProject(name, .host, toolchain) {
+        case .success(let projectID):
+            _ = try? chatStore.associate(record.id, with: projectID)
+            reloadChatCatalog()
+        case .failure(let refusal):
+            storageNotice = "Filed as a chat folder. " + refusal.message
         }
     }
 

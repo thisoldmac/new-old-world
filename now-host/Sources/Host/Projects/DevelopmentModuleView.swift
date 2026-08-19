@@ -5,6 +5,7 @@ struct DevelopmentModuleView: View {
     @State private var showingCreate = false
     @State private var showingImport = false
     @State private var projectName = "Untitled Project"
+    @State private var projectToolchain = ProjectGround.hostRetro68Token
     @State private var guestProjectID = ""
 
     var body: some View {
@@ -163,22 +164,32 @@ struct DevelopmentModuleView: View {
 
     private var createSheet: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("New Host Project").font(.headline)
+            Text("New Project").font(.headline)
             TextField("Project Name", text: $projectName)
+            ProjectLocationPicker(
+                toolchain: $projectToolchain,
+                guestToolchainQualified: model.guestToolchainQualified)
             Text("The working source and its Git history stay inside New Old World's application-owned Projects directory.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
                 Button("Cancel") { showingCreate = false }
                 Button("Create") {
-                    model.createHostProject(name: projectName)
+                    model.createHostProject(name: projectName,
+                                            toolchain: projectToolchain)
                     showingCreate = false
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                          || (projectToolchain == ProjectGround.guestMPWToken
+                              && !model.guestToolchainQualified))
             }
         }
-        .padding(20).frame(width: 420)
+        .padding(20).frame(width: 460)
+        .onAppear {
+            projectToolchain = ProjectLocationPicker.defaultToken(
+                guestToolchainQualified: model.guestToolchainQualified)
+        }
     }
 
     private var importSheet: some View {

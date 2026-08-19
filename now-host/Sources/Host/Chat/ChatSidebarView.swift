@@ -18,6 +18,10 @@ struct ChatSidebar: View {
     @State private var renamingProject: ChatProjectID?
     @State private var draftName = ""
     @FocusState private var nameFocused: Bool
+    @State private var showingNewProject = false
+    @State private var newProjectName = ""
+    @State private var newProjectToolchain = ProjectGround.hostRetro68Token
+    @State private var newProjectGuestQualified = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,6 +31,7 @@ struct ChatSidebar: View {
         }
         .frame(minWidth: 180, idealWidth: 220, maxWidth: 320,
                maxHeight: .infinity)
+        .sheet(isPresented: $showingNewProject) { newProjectSheet }
     }
 
     private var list: some View {
@@ -177,19 +182,54 @@ struct ChatSidebar: View {
             .disabled(model.isStreaming)
 
             Button {
-                guard let created = model.newChatProject(
-                    name: "New Project") else { return }
-                draftName = created.name
-                renamingProject = created.id
-                nameFocused = true
+                newProjectName = ""
+                showingNewProject = true
             } label: {
                 Image(systemName: "folder.badge.plus")
             }
-            .help("New project folder")
+            .help("New project")
             Spacer()
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
+    }
+
+    /* The same decision the Projects module's create sheet asks, and
+       the same create the wire serves: a chat folder that is also a
+       real ProjectStore project, through the mint/associate seam —
+       never a bare folder named "New Project". */
+    private var newProjectSheet: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("New Project").font(.headline)
+            TextField("Project Name", text: $newProjectName)
+            ProjectLocationPicker(
+                toolchain: $newProjectToolchain,
+                guestToolchainQualified: newProjectGuestQualified)
+            Text("Chats filed under the project sit beside its code, which lives in New Old World's application-owned Projects directory.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel") { showingNewProject = false }
+                Button("Create") {
+                    let name = newProjectName
+                    let toolchain = newProjectToolchain
+                    Task { await model.createChatProject(
+                        name: name, toolchain: toolchain) }
+                    showingNewProject = false
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(newProjectName.trimmingCharacters(
+                    in: .whitespacesAndNewlines).isEmpty
+                    || (newProjectToolchain == ProjectGround.guestMPWToken
+                        && !newProjectGuestQualified))
+            }
+        }
+        .padding(20).frame(width: 460)
+        .task {
+            newProjectGuestQualified = await model.guestToolchainQualified()
+            newProjectToolchain = ProjectLocationPicker.defaultToken(
+                guestToolchainQualified: newProjectGuestQualified)
+        }
     }
 }

@@ -6,6 +6,7 @@
 
 #include "development_projects.h"
 #include "development_sha256.h"
+#include "development_stage_reply.h"
 #include "development_project.h"
 #include "json.h"
 #include "nowlog.h"
@@ -709,7 +710,12 @@ void now_development_stage_command(const char *request_json, long id,
                 id, escaped, current_digest);
             return;
         }
-        error_reply(out, cap, id, "candidate-unavailable", reason);
+        /* The refusal names the candidate when one was addressed, so
+           the caller can stage-status or stage-discard the residue —
+           an anonymous refusal left two unaddressable candidates on a
+           real PowerBook (open-issues, 2026-08-09). */
+        dev_stage_refusal_reply(out, cap, id, "candidate-unavailable",
+                                reason, candidate_id);
         return;
     }
     if (strcmp(action, "finalize") == 0) {
