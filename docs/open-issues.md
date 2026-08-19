@@ -89,6 +89,37 @@ is its own business.
   otherwise produce the same empty row and only one of them is the person's
   to fix. Not yet watched failing against a mutation, and not yet seen with a
   genuinely held port on a running desk.
+## BUILT AND TESTED, NO DEPLOY HAS RUN THROUGH IT: machine facts moved from flat `.env.lab` keys into per-machine profiles (2026-08-18, `feat/guest-machine-profiles`)
+
+`.lab/machines/<id>.machine` now carries one Mac's address, FTP account,
+deploy folder and metal facts, keyed by the host's own `GuestID` slug;
+`scripts/deploy-68k --machine <id>` selects one and refuses, naming both,
+when a desk has several. Precedence is explicit environment variable →
+profile → `.env.lab`, and a desk that has written no profile keeps
+working on the old flat keys.
+
+What it fixes that was invisible before: `NOW68K_FTP_HOST` and
+`NOW_METAL_MACHINE` were the SAME FACT set twice with nothing checking
+they agreed, so a deploy could go to one machine while the machine-busy
+guard cleared another. There is now one `address` and both fall out of
+it.
+
+**What is unverified.** No deploy has gone to a real Macintosh through
+this path. `scripts/test-all` is green and
+`tools/mirror-gate-tests/test_machine_profiles.py` was watched failing
+against nine separate mutations — each one failing exactly and only the
+test that names it — but every deploy-side case runs through
+`deploy-68k --which`, which resolves and stops. The FTP conversation, the
+fork comparison and the metal suite below it are untouched code on an
+untested path, and the first live run is the thing that would find a
+wiring mistake between resolution and `FTP(host)`.
+
+Also unverified: nothing yet reads a profile except `deploy-68k` and
+`tools/lab-machine`. The Swift metal suites still take
+`NOW_METAL_MACHINE` from the environment and know nothing about the
+directory — deliberate, but it means a suite run without
+`eval "$(tools/lab-machine env <id>)"` and without `deploy-68k --test` is
+exactly as unguarded as it was before.
 
 ## CORRECTED, 2026-08-18: `hostDragOfferEpoch` was prose, then a constant, then retired
 

@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""What this desk's machine profiles say — and the env block for anything
+that cannot read them itself.
+
+    tools/lab-machine list             # every profile, with its address
+    tools/lab-machine show pb180c      # one profile, resolved
+    tools/lab-machine env pb180c       # exports, for `eval`
+
+`env` exists for the Swift metal suites. They read `NOW_METAL_MACHINE`
+and `NOW_METAL_PORT` from the environment and have no business learning
+about a directory of files, so the values reach them the way
+`tools/lane-ports --env` reaches a shell:
+
+    eval "$(tools/lab-machine env pb180c)"
+    swift test --package-path now-host --filter Metal68KTests
+
+`scripts/deploy-68k --machine pb180c` does this for you; this is for a
+suite run on its own.
+"""
+
+import argparse
+import shlex
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import machine_profiles as mp  # noqa: E402
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("action", choices=("list", "show", "env"))
+    ap.add_argument("machine", nargs="?",
+                    help="machine id; optional when this desk has one")
+    args = ap.parse_args()
+
+    try:
+        profiles = mp.discover(REPO)
+    except mp.ProfileError as exc:
+        print("lab-machine: %s" % exc, file=sys.stderr)
+        return 1
+
+    directory = mp.profile_dir(REPO)
+    if not profiles:
+        # Not an error for `list` — a desk with no vintage Mac is a
+        # perfectly good desk, and saying where the files would go is
+        # more use than a refusal.
+        print("no machine profiles in %s"
+              % (directory or (REPO / mp.PROFILE_DIR)))
+        print("  cp .lab/machines/pb180c.machine.example "
+              ".lab/machines/<id>.machine")
+        return 0 if args.action == "list" else 1
+
+    if args.action == "list":
+        for profile in sorted(profiles.values(), key=lambda p: p.id):
+            guest = (" %s guest" % profile.guest) if profile.guest else ""
+            print("%-12s %-16s%s" % (profile.id, profile.address, guest))
+        print("\n(%s)" % directory)
+        return 0
+
+    try:
+        profile = mp.select(profiles, args.machine)
+    except mp.ProfileError as exc:
+        print("lab-machine: %s" % exc, file=sys.stderr)
+        return 1
+
+    if args.action == "show":
+        print("%s\n  %s" % (profile.title, profile.path))
+        for key in sorted(profile.values):
+            # The password is a value this file holds and not one this
+            # tool should put on a terminal, in a scrollback or in a
+            # transcript an agent later quotes.
+            shown = "(set)" if key == "ftp_pass" else profile.values[key]
+            print("  %-13s %s" % (key, shown))
+        return 0
+
+    # The password is deliberately not here. `eval` puts what this prints
+    # into a shell's history and a session's scrollback, and the thing
+    # that actually needs it — scripts/deploy-68k — reads the profile
+    # itself rather than an exported copy.
+    for env_key, value in sorted(profile.environment().items()):
+        if env_key == "NOW68K_FTP_PASS":
+            continue
+        print("export %s=%s" % (env_key, shlex.quote(value)))
+    print("# %s's FTP password is not exported; deploy-68k reads the "
+          "profile.\n# (%s)" % (profile.id, profile.path))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
