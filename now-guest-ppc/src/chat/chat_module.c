@@ -353,6 +353,17 @@ static void ask_models(void)
         rebuild_model_popup();
         return;
     }
+    /* What this provider can actually DO, on the line under the
+       transcript, the moment it is picked. The host puts a provider's
+       REACH at the front of its detail - two of them cannot use tools
+       at all - and a person at this machine otherwise learns that from
+       the model apologising a turn later. Transient by design: the
+       first delta of the next answer clears it. */
+    if (g_providers[g_provider_sel].detail[0] != '\0') {
+        snprintf(g_status, sizeof g_status, "%.120s",
+                 g_providers[g_provider_sel].detail);
+        inval(&g_r.status);
+    }
     strncpy(g_models_provider, g_providers[g_provider_sel].provider,
             sizeof g_models_provider - 1);
     g_models_provider[sizeof g_models_provider - 1] = '\0';

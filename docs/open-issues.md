@@ -7,6 +7,53 @@ search:
 
 # Open issues
 
+## BUILT, SUITE-TESTED ONLY: Chat declares its tool reach, supplies the whole registry, and can be given a workspace (2026-08-18, `feat/chat-agentic-lane`)
+
+Chat has run an agentic loop over the whole host projection registry since it
+shipped, and on 2026-08-18 it read to its own author as a chatbot that could
+not see the machine it was sitting on. Three separate causes:
+
+- **Two of the six providers cannot use tools and looked exactly like the four
+  that can.** `Claude (Experimental)` was spawned with `--tools ""` and a
+  literal "Do not use tools."; Codex with every tool disabled. The model popup
+  was therefore a silent choice between an agent and a chatbot, and the person
+  found out from the model's own apology a turn later. A provider now declares
+  `toolReach`, the harness asks rather than assumes, the reason rides the
+  provider entry's `detail` to BOTH popups, and the system prompt tells a
+  tool-less model plainly that it has no hands.
+- **`now_projects`, `now_development` and `now_development_environment` were
+  behind a keyword sniffer** over the person's own words — thirteen hardcoded
+  terms. "Build me an applet" got project tools; "make a thing that beeps" got
+  an honest apology. Deleted; every row is supplied every turn.
+- **Nothing in the registry reaches New Old World's own source**, by design of
+  every authority domain in the catalog. The workspace lane is the answer, and
+  it is deliberately NOT another projection: pointed at a folder, the Claude
+  runtime is spawned with its own file and command tools, that folder as its
+  working directory, and this app's `--mcp-stdio` face attached under
+  `--strict-mcp-config`.
+
+**What is not verified.** Everything above passes the host suites and both
+guests compile. Nobody has driven a lane turn end to end — not from the host
+pane, not from the classic machine's own Chat page — so the lane is `Builds`
+plus unit evidence, and nothing here may be described as working. The specific
+unknowns, in the order they will bite:
+
+1. Whether a spawned `claude` reaches the running app through `--mcp-stdio`
+   when the app's own local endpoint is off. The lane does not check, and the
+   likely symptom is a turn whose `now_` tools all fail while its file tools
+   work — which reads like a broken guest.
+2. Whether `--permission-mode acceptEdits` declines a command silently enough
+   that a build looks like a hang to somebody on a 68030 watching one status
+   line.
+3. Whether the 900-second lane deadline is anywhere near a real
+   `scripts/build-guests`, which nothing has timed from inside a chat turn.
+
+**The honesty half, which is the durable part.** A face that cannot do a thing
+must say so where the person CHOOSES, not in a paragraph after they have asked.
+A tool-less provider rendered identically to an agentic one is the chat-shaped
+version of the rule this repository already pays for elsewhere: a gate that
+reads green having never reached a machine.
+
 ## CORRECTED, 2026-08-18: `hostDragOfferEpoch` was prose, then a constant, then retired
 
 An earlier entry below describes `hostDragOfferEpoch: UInt32 = 1` as a

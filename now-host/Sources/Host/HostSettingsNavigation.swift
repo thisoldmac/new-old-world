@@ -8,6 +8,7 @@ import Foundation
 enum HostSettingsTab: String, CaseIterable, Identifiable, Sendable {
     case appearance
     case sidebar
+    case chat
     case mcp
     case web
     case logs
@@ -19,6 +20,7 @@ enum HostSettingsTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .appearance: return "Appearance"
         case .sidebar: return "Sidebar"
+        case .chat: return "Chat"
         case .mcp: return "MCP"
         case .web: return "Web"
         case .logs: return "Logs"
@@ -30,6 +32,7 @@ enum HostSettingsTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .appearance: return "paintbrush"
         case .sidebar: return "sidebar.left"
+        case .chat: return "bubble.left.and.text.bubble.right"
         case .mcp: return "app.connected.to.app.below.fill"
         case .web: return "globe"
         case .logs: return "text.alignleft"

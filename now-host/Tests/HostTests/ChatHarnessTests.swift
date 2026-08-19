@@ -369,6 +369,75 @@ final class ChatHarnessTests: XCTestCase {
             provider.requests[0].system.contains("sitting AT the classic"))
     }
 
+    /* The declaration is the whole point of the reach work, so it is
+       asserted rather than assumed: a provider that says it has no
+       hands must be SENT none and TOLD so. Without this, the harness
+       can go back to rendering the registry for a runtime spawned with
+       `--tools ""` and every test still passes — which is how the
+       original defect read as working code. */
+    func testAToollessProviderIsSentNoToolsAndToldWhy() async {
+        let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+        provider.toolReach = .none(reason: "Codex answers from knowledge")
+        let harness = makeHarness(provider: provider)
+        let log = EventLog()
+
+        await harness.run(
+            conversation: "t", wireModelID: "fake/m",
+            transcript: [.user("what is in the process table?")],
+            addressing: nil, origin: .hostPane, events: log.sink)
+        _ = log.wait(self)
+
+        XCTAssertTrue(provider.requests[0].tools.isEmpty,
+                      "a provider that cannot use tools was sent some")
+        XCTAssertTrue(
+            provider.requests[0].system.contains("YOU HAVE NO TOOLS"),
+            provider.requests[0].system)
+        XCTAssertTrue(
+            provider.requests[0].system.contains(
+                "Codex answers from knowledge"),
+            provider.requests[0].system)
+    }
+
+    /// A workspace provider reaches the same capabilities by another
+    /// road (MCP), so a second copy in the request would be two names
+    /// for one act — and the turn must still be told where it is.
+    func testAWorkspaceProviderIsSentNoDescriptorsButKeepsItsFrame() async {
+        let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+        provider.toolReach = .workspace(summary: "Full access to now")
+        let harness = makeHarness(provider: provider)
+        let log = EventLog()
+
+        await harness.run(
+            conversation: "t", wireModelID: "fake/m",
+            transcript: [.user("build the guest")],
+            addressing: nil, origin: .hostPane, events: log.sink)
+        _ = log.wait(self)
+
+        XCTAssertTrue(provider.requests[0].tools.isEmpty)
+        XCTAssertTrue(
+            provider.requests[0].system.contains("Full access to now"),
+            provider.requests[0].system)
+    }
+
+    /// The harness's own loop is unchanged for the four providers that
+    /// use it — and it is sent the WHOLE registry, project rows and all.
+    func testAHarnessProviderIsSentEveryRegistryRow() async {
+        let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+        let harness = makeHarness(provider: provider)
+        let log = EventLog()
+
+        await harness.run(
+            conversation: "t", wireModelID: "fake/m",
+            transcript: [.user("hello")],
+            addressing: nil, origin: .hostPane, events: log.sink)
+        _ = log.wait(self)
+
+        let names = Set(provider.requests[0].tools.map(\.name))
+        XCTAssertEqual(names.count,
+                       HostProjectionRegistry.hostFaces.projections.count)
+        XCTAssertTrue(names.contains("now_development"))
+    }
+
     func testToolSchemasCarryNoTopLevelCombinators() throws {
         // The Anthropic API rejects a top-level oneOf/anyOf/allOf/not
         // in input_schema (metal, 2026-08-02: now_launch_software

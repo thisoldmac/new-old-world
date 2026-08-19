@@ -7,9 +7,9 @@ audience: user
 lifecycle: experimental
 authority: [contract/asyncapi.yaml, docs/agent-integration.md]
 module_ids: [chat]
-source_dependencies: [contract/asyncapi.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/Chat/ChatStore.swift, now-guest-ppc/src/chat, docs/agent-integration.md]
+source_dependencies: [contract/asyncapi.yaml, now-host/Sources/Host/ModuleRegistry.swift, now-host/Sources/Host/Chat/ChatStore.swift, now-host/Sources/Host/Chat/ChatWorkspaceLane.swift, now-guest-ppc/src/chat, docs/agent-integration.md]
 media_ids: [chat-host, chat-ppc, chat-detail]
-last_verified: 2026-08-15
+last_verified: 2026-08-18
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -27,6 +27,38 @@ machine context the current grant permits.
 ## Availability
 
 Chat is a host-served, PowerPC-asked family. NOW-68K does not expose it.
+
+## What a model can reach
+
+Not every provider can act. Four of them (Anthropic, OpenAI, and the local
+Ollama, LM Studio and oMLX runtimes) are given New Old World's own tools and
+can observe and drive the connected classic machine. Two of them — Claude
+(Experimental) and Codex — are runtimes this app drives as a subprocess with
+their tools disabled, and can only answer from knowledge.
+
+Which one you have picked is shown in the provider's own description, in both
+the macOS popup and the classic machine's page, and the model is told the same
+thing — so a model without tools says it cannot look rather than promising to.
+
+## The chat workspace (experimental)
+
+Settings > Chat can point Claude (Experimental) at **one folder on the modern
+Mac**. That turns it into a coding agent: it gets its own file and command
+tools inside that folder, and — unless you turn it off — New Old World's
+capabilities alongside them, so a single conversation can read source, build
+it, run the tests, and drive the classic machine to try the result. It is how
+New Old World's own guest software can be worked on from the classic Mac's own
+Chat page.
+
+Two things to know before turning it on:
+
+- **The folder's tools are not this app's tools.** Everything else Chat does
+  goes through capabilities New Old World owns, logs on the Logs page, and
+  gates by the machine's consent setting. The workspace's file and command
+  tools do not: they are governed by the mode you choose ("Edit files", or
+  "Edit files and run commands") and by whatever policy that folder carries.
+- **It applies to that one provider.** Models chosen from any other provider
+  are unaffected.
 
 ## On the modern Mac
 
@@ -71,6 +103,10 @@ error retain separate status.
 
 Chat availability depends on a configured host harness. It is not an offline
 guarantee and has no 68K UI.
+
+The workspace lane is experimental and **not metal-verified**: it has been
+exercised by the host suites only, and nobody has yet driven a build of the
+guest from the guest's own Chat page.
 
 ## For developers
 
