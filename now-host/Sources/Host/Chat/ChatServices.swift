@@ -830,6 +830,15 @@ final class ChatWireService {
             // The next delta or status says what happened; a per-tool
             // "done" line would be noise on a one-line display.
             break
+        case .skillLoaded(let name):
+            /* Recorded so the NEXT turn's system prompt carries the
+               body; this turn already read it as the tool result. */
+            var loaded = loadedSkills[key] ?? []
+            if !loaded.contains(name) {
+                loaded.append(name)
+                loadedSkills[key] = loaded
+            }
+            status("Loaded skill \(name)", key: key, on: asker)
         case .finished(let outcome):
             flush(key: key, on: asker)
             status("", key: key, on: asker)

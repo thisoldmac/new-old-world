@@ -106,24 +106,31 @@ struct ChatSkillLibrary: Sendable {
 
     var names: [String] { skills.map(\.name) }
 
-    /// Every skill's name and sentence, cheap enough to carry in every
-    /// prompt: a model that cannot see what it may ask for will never
-    /// ask, and a person should not have to know the list by heart.
+    /// One row per skill, the shared half of every catalogue frame.
+    var catalogueRows: String {
+        skills.map { "- \($0.command) — \($0.description)" }
+            .joined(separator: "\n")
+    }
+
+    /// The catalogue for a turn with NO hands — the only reach left
+    /// where loading is genuinely the person's act.
+    ///
+    /// "Never a precondition" is measured, not stylistic: the first
+    /// live Build turn through the wire (2026-08-19) answered a
+    /// build-upload-launch request with "type /x and I will proceed"
+    /// and did nothing. A skill deepens a turn that already happened;
+    /// it must not gate one. Turns WITH hands get self-service wording
+    /// from ChatSystemPrompt instead.
     var catalogue: String {
         guard !skills.isEmpty else { return "" }
-        let rows = skills.map { "- \($0.command) — \($0.description)" }
-        /* "Never a precondition" is measured, not stylistic: the first
-           live Build turn through the wire (2026-08-19) answered a
-           build-upload-launch request with "type /x and I will proceed"
-           and did nothing. A skill deepens a turn that already
-           happened; it must not gate one. */
         return """
             Skills this conversation can load, by typing the command on \
-            its own line. You cannot load one yourself. Do the work \
-            asked of you with what you have, and mention — once, \
-            briefly — a skill that would deepen it; never make loading \
-            one a precondition for acting.
-            \(rows.joined(separator: "\n"))
+            its own line (for example /\(skills[0].name)). You cannot \
+            load one yourself this turn. Do the work asked of you with \
+            what you have, and mention — once, briefly — a skill that \
+            would deepen it; never make loading one a precondition for \
+            acting.
+            \(catalogueRows)
             """
     }
 

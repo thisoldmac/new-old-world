@@ -71,12 +71,36 @@ enum ChatSystemPrompt {
             sections.append(projectAuthority)
             sections.append(toolGuidance)
         }
-        /* The catalogue rides EVERY turn, loaded skills or not: a model
-           that cannot see what it may be given will never say "load the
-           Carbon UI skill and I can answer this properly". It is a
-           handful of lines against a 40-KB tool catalog. */
-        if !skills.catalogue.isEmpty {
-            sections.append(skills.catalogue)
+        /* The catalogue rides EVERY turn, loaded skills or not — and
+           its FRAME follows the reach, because who loads a skill does:
+           a turn with hands loads them ITSELF (the chat_load_skill
+           tool, or the workspace's staged tree) and must never ask;
+           only the toolless turn is entitled to say "type /x". The
+           first live Build turn stalled on exactly that confusion
+           (2026-08-19). */
+        if !skills.skills.isEmpty {
+            switch reach {
+            case .harness:
+                sections.append("""
+                    Skills — deeper craft instructions for classic Mac \
+                    work. Load whichever fits the task YOURSELF with the \
+                    \(ChatHarness.loadSkillToolName) tool, the moment \
+                    the work calls for one (pass the name without the \
+                    leading slash); never ask the person to. A loaded \
+                    skill stays for the conversation.
+                    \(skills.catalogueRows)
+                    """)
+            case .workspace:
+                sections.append("""
+                    Skills — deeper craft instructions for classic Mac \
+                    work, staged in your workspace under .claude/skills. \
+                    Load whichever fits the task yourself; never ask the \
+                    person to.
+                    \(skills.catalogueRows)
+                    """)
+            case .none:
+                sections.append(skills.catalogue)
+            }
         }
         for skill in loaded {
             sections.append(skillFrame(skill))

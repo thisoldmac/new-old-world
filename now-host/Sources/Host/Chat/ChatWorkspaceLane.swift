@@ -186,11 +186,13 @@ final class ChatWorkspaceLaneStore: @unchecked Sendable {
     static let rootKey = "chat.workspace.root"
     static let permissionKey = "chat.workspace.permission"
     static let nowToolsKey = "chat.workspace.attachesNOWTools"
-    /* The one click: with no folder chosen, true means the lane
-       self-provisions NOW's own workspace. Off by default because the
-       spawned runtime's shell is the one power this app cannot audit —
-       see ChatWorkspaceDefault's header for why it is ONE click and
-       not a configuration. */
+    /* With no folder chosen, the lane self-provisions NOW's own
+       workspace UNLESS this key is explicitly false. It began life as
+       an off-by-default one-click grant (the runtime's shell is the
+       one power this app cannot audit); the product's owner overruled
+       that on 2026-08-19 — a first-class agentic harness must build
+       out of the box, and the person who does not want that has Turn
+       Off, one click, remembered. Absent therefore means GRANTED. */
     static let grantKey = "chat.workspace.grant"
     /* Not lane state — the person's own standing instructions, carried
        into every turn whatever the provider. They live in this store
@@ -222,8 +224,9 @@ final class ChatWorkspaceLaneStore: @unchecked Sendable {
                sentence the grant used and a build runs commands. The
                person's chosen tier still wins once they have chosen
                one. */
-            guard defaults.bool(forKey: Self.grantKey) else {
-                return .off
+            if let explicit = defaults.object(forKey: Self.grantKey)
+                as? Bool, !explicit {
+                return .off           /* the person turned it off */
             }
             guard let root = provision() else {
                 return .unusable(reason:

@@ -172,6 +172,14 @@ private final class EventLog: @unchecked Sendable {
         for case .finished(let outcome) in events { return outcome }
         return nil
     }
+
+    func skillLoads() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        var names: [String] = []
+        for case .skillLoaded(let name) in events { names.append(name) }
+        return names
+    }
 }
 
 private func toolCallEvents(_ name: String, arguments: String = "{}")
@@ -233,6 +241,51 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(recorded[0].face, .chat)
         XCTAssertEqual(recorded[0].capability, "now_list_processes")
         XCTAssertEqual(recorded[0].outcome, .answered)
+    }
+
+    /// Skills are self-service: the model calls chat_load_skill, the
+    /// body comes back as the TOOL RESULT (loading is reading), and the
+    /// caller hears skillLoaded so later turns carry it in the prompt.
+    /// A wrong name is an error the model reads, never a crash.
+    func testTheModelLoadsASkillItselfAndTheBodyIsTheResult() async {
+        let provider = ScriptedChatProvider([
+            toolCallEvents(ChatHarness.loadSkillToolName,
+                           arguments: #"{"name": "carbon-craft"}"#),
+            [.textDelta("Applying it."), .finished(.endTurn)],
+        ])
+        let registry = ChatProviderRegistry()
+        registry.register(provider)
+        let harness = ChatHarness(
+            registry: registry,
+            makeClient: { _ in StubMachineClient(access: .fullAccess) },
+            audit: AuditSpy(),
+            skills: ChatSkillLibrary(skills: [ChatSkill(
+                name: "carbon-craft", description: "Carbon craft rules",
+                body: "A UPP is never a cast on this runtime.")]))
+        let log = EventLog()
+        await harness.run(
+            conversation: "s", wireModelID: "fake/m",
+            transcript: [.user("build me a window")],
+            addressing: nil, origin: .hostPane, events: log.sink)
+        _ = log.wait(self)
+
+        XCTAssertEqual(log.outcome()?.ok, true)
+        XCTAssertTrue(log.skillLoads().contains("carbon-craft"),
+                      "the caller must hear the load to keep it")
+        // The tool result the model read IS the skill body.
+        let toolTurn = log.outcome()?.appended.first { $0.role == .tool }
+        guard case .toolResult(_, let text, _, let isError)?
+            = toolTurn?.content.first else {
+            return XCTFail("the load answers as a tool result")
+        }
+        XCTAssertFalse(isError)
+        XCTAssertTrue(text.contains("A UPP is never a cast"), text)
+        // The prompt told the model to load skills itself, not to ask.
+        XCTAssertTrue(provider.requests[0].system
+            .contains(ChatHarness.loadSkillToolName),
+            provider.requests[0].system)
+        XCTAssertTrue(provider.requests[0].tools
+            .contains { $0.name == ChatHarness.loadSkillToolName })
     }
 
     func testConsentDenialBecomesAToolErrorAndTheChatContinues() async {
@@ -433,9 +486,12 @@ final class ChatHarnessTests: XCTestCase {
         _ = log.wait(self)
 
         let names = Set(provider.requests[0].tools.map(\.name))
+        // Every registry row, plus the harness's own skill loader
+        // (self-service skills, 2026-08-19).
         XCTAssertEqual(names.count,
-                       HostProjectionRegistry.hostFaces.projections.count)
+                       HostProjectionRegistry.hostFaces.projections.count + 1)
         XCTAssertTrue(names.contains("now_development"))
+        XCTAssertTrue(names.contains(ChatHarness.loadSkillToolName))
     }
 
     // MARK: - Modes are gates
@@ -466,7 +522,11 @@ final class ChatHarnessTests: XCTestCase {
             XCTAssertTrue(names.contains("now_list_processes"), "\(mode)")
             // Every row it DID get says of itself that it changes
             // nothing — asserted against the registry, not a list here.
+            // The one non-registry row is the skill loader, which is in
+            // every mode because loading a skill changes nothing on the
+            // machine.
             for name in names {
+                if name == ChatHarness.loadSkillToolName { continue }
                 let projection = try? XCTUnwrap(
                     HostProjectionRegistry.hostFaces.projection(named: name))
                 XCTAssertTrue(
@@ -489,9 +549,13 @@ final class ChatHarnessTests: XCTestCase {
             events: log.sink)
         _ = log.wait(self)
 
+        // The whole registry, plus the one harness-owned row: the
+        // skill loader (self-service skills, 2026-08-19).
         XCTAssertEqual(
             provider.requests[0].tools.count,
-            HostProjectionRegistry.hostFaces.projections.count)
+            HostProjectionRegistry.hostFaces.projections.count + 1)
+        XCTAssertTrue(provider.requests[0].tools
+            .contains { $0.name == ChatHarness.loadSkillToolName })
     }
 
     /// Absent and unrecognised both land on the tier that changes

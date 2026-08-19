@@ -895,6 +895,12 @@ final class ChatModuleModel: ObservableObject {
             }) {
                 transcript[index].kind = .tool(name: name, ok: ok)
             }
+        case .skillLoaded(let name):
+            if !loadedSkills.contains(name) {
+                loadedSkills.append(name)
+            }
+            transcript.append(ChatDisplayRow(
+                kind: .note, text: "Loaded /\(name) (the model's own ask)."))
         case .finished(let outcome):
             isStreaming = false
             conversation.append(contentsOf: outcome.appended)

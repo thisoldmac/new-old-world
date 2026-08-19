@@ -152,6 +152,10 @@ final class ClaudeCodeClientTests: XCTestCase {
     func testAMissingWorkspaceFolderIsUnusableAndNamesItself() {
         let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
         let store = ChatWorkspaceLaneStore(defaults: defaults)
+        /* Explicitly off: with no keys at all the lane self-provisions
+           now (the 2026-08-19 default flip); this test is about the
+           chosen-folder path. */
+        store.setGranted(false)
         XCTAssertEqual(store.state(), .off)
 
         defaults.set("/nowhere/at/all", forKey: ChatWorkspaceLaneStore.rootKey)
@@ -161,10 +165,10 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertTrue(reason.contains("/nowhere/at/all"), reason)
     }
 
-    /// The frictionless default: no folder chosen, one grant, and the
-    /// lane self-provisions NOW's own workspace at full tier. Ungranted
-    /// stays OFF — the runtime's shell is the one power this app cannot
-    /// audit, so silence must never become a workspace.
+    /// The frictionless default: OUT OF THE BOX, no folder chosen and
+    /// no click given, the lane self-provisions NOW's own workspace at
+    /// full tier — the owner's 2026-08-19 decision, overruling the
+    /// one-click grant this began as. Only an explicit Turn Off is off.
     func testTheGrantAloneProvisionsTheDefaultWorkspaceAtFullTier() throws {
         let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
         let temporary = FileManager.default.temporaryDirectory
@@ -174,7 +178,13 @@ final class ClaudeCodeClientTests: XCTestCase {
             defaults: defaults,
             provision: { ChatWorkspaceDefault.provision(support: temporary) })
 
-        XCTAssertEqual(store.state(), .off, "silence is not a workspace")
+        guard case .ready = store.state() else {
+            return XCTFail("out of the box, the lane provisions itself")
+        }
+
+        store.setGranted(false)
+        XCTAssertEqual(store.state(), .off,
+                       "an explicit Turn Off is the one off there is")
 
         store.setGranted(true)
         guard case .ready(let lane) = store.state() else {
@@ -290,8 +300,14 @@ final class ClaudeCodeClientTests: XCTestCase {
                 + "\"type\":\"text_delta\",\"text\":\"lo\"}}}",
             "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false}",
         ]])
+        /* Lane explicitly off: since the 2026-08-19 default flip, a
+           store with no keys provisions the real default workspace, and
+           this test is about the text-only translation. */
+        let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
+        defaults.set(false, forKey: ChatWorkspaceLaneStore.grantKey)
         let client = ClaudeCodeClient(
-            runner: runner, executable: executable, environment: [:])
+            runner: runner, executable: executable, environment: [:],
+            lanes: ChatWorkspaceLaneStore(defaults: defaults))
         let completion = ChatCompletionRequest(
             model: "sonnet", system: "", turns: [.user("hi")],
             tools: [], maxTokens: 100)

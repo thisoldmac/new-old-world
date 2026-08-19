@@ -432,16 +432,19 @@ private struct ChatWorkspaceSettingsSection: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if !model.isOn {
-                    /* The one click. Everything after it is a default:
-                       NOW's own folder, skills staged, full tier there. */
+                    /* Visible only after an explicit Turn Off: building
+                       is on out of the box (the owner's 2026-08-19
+                       decision), so this row is the way back, not a
+                       setup step. */
                     HStack {
-                        Text("Claude can build software for the classic "
+                        Text("Building is turned off. Turn it back on and "
+                             + "Claude builds software for the classic "
                              + "machine in New Old World's own workspace "
                              + "on this Mac.")
                             .font(.callout)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer()
-                        Button("Allow") { model.allowDefaultWorkspace() }
+                        Button("Turn On") { model.allowDefaultWorkspace() }
                             .keyboardShortcut(.defaultAction)
                     }
                 }

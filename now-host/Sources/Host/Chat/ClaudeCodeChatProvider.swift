@@ -16,7 +16,7 @@ final class ClaudeCodeChatProvider: ChatProvider, @unchecked Sendable {
             return .none(reason: reason)
         case .off:
             return .none(
-                reason: "Text only until building is allowed once in "
+                reason: "Text only - building was turned off in "
                     + "Settings > Chat on the modern Mac")
         }
     }

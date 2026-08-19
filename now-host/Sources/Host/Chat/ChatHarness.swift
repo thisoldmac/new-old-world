@@ -19,6 +19,11 @@ enum ChatHarnessEvent: Sendable {
     case activity(String)
     case toolStarted(name: String)
     case toolFinished(name: String, ok: Bool)
+    /// The model loaded a skill itself (`chat_load_skill`). The caller
+    /// records it so later turns of the same conversation carry the
+    /// body in their system prompt; THIS turn already read it as the
+    /// tool's own result.
+    case skillLoaded(name: String)
     case finished(ChatChatOutcome)
 }
 
@@ -170,9 +175,17 @@ actor ChatHarness {
            beeps" got a model with no project tools and an honest
            apology. The catalog is the surface; a keyword is not a
            capability check. */
-        let tools = reach.suppliesDescriptors
+        var tools = reach.suppliesDescriptors
             ? ChatToolRendering.descriptors(registry: projections, mode: mode)
             : []
+        /* Skills are self-service on every turn that has hands at all:
+           the loaded ones already ride the system prompt, so the tool
+           offers only what is not yet loaded. */
+        if reach.suppliesDescriptors,
+           let loader = Self.loadSkillDescriptor(
+               names: skills.names.filter { !loadedSkills.contains($0) }) {
+            tools.append(loader)
+        }
         let dispatch = HostProjectionDispatch(
             face: .chat, registry: projections, audit: audit)
 
@@ -241,6 +254,16 @@ actor ChatHarness {
                         return
                     }
                     events(.toolStarted(name: call.name))
+                    if call.name == Self.loadSkillToolName {
+                        let (result, loaded) = loadSkill(call)
+                        if let loaded {
+                            events(.skillLoaded(name: loaded))
+                        }
+                        events(.toolFinished(name: call.name,
+                                             ok: loaded != nil))
+                        results.append(result)
+                        continue
+                    }
                     let result = await invoke(
                         call, dispatch: dispatch, selector: selector,
                         through: client)
@@ -279,6 +302,68 @@ actor ChatHarness {
             ok: false, code: "turn-limit",
             message: "The model kept asking for tools past the ceiling",
             appended: appended)))
+    }
+
+    /* --- the one tool this harness serves itself ---------------------
+       Skills used to reach a turn only when a person typed a slash
+       command, and the first live Build turn answered a build request
+       with "type /x and I will proceed" (2026-08-19). A skill is text;
+       the model that wants it should fetch it. The body IS the tool
+       result — loading is reading — and the caller records the load so
+       later turns carry it in the system prompt too. */
+    static let loadSkillToolName = "chat_load_skill"
+
+    static func loadSkillDescriptor(
+        names: [String]
+    ) -> ChatToolDescriptor? {
+        guard !names.isEmpty else { return nil }
+        let schema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "name": [
+                    "type": "string",
+                    "enum": names,
+                    "description": "The skill to load, by its listed name.",
+                ],
+            ],
+            "required": ["name"],
+            "additionalProperties": false,
+        ]
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: schema) else { return nil }
+        return ChatToolDescriptor(
+            name: loadSkillToolName,
+            description: "Load one of the listed skills into this "
+                + "conversation. The result is the skill's full text; it "
+                + "applies immediately and stays loaded for later turns. "
+                + "Load whatever skill fits the work yourself - never ask "
+                + "the person to.",
+            inputSchemaJSON: data)
+    }
+
+    private func loadSkill(_ call: ChatToolCall)
+        -> (ChatContent, loaded: String?) {
+        let object = (try? JSONSerialization.jsonObject(
+            with: Data(call.argumentsJSON.utf8))) as? [String: Any]
+        guard let name = object?["name"] as? String,
+              let skill = skills[name] else {
+            return (.toolResult(
+                id: call.id,
+                text: "No skill by that name. The listed names: "
+                    + skills.names.joined(separator: ", "),
+                imagePNG: nil, isError: true), nil)
+        }
+        return (.toolResult(
+            id: call.id,
+            text: """
+                Skill "\(skill.name)" is now loaded, for this turn and \
+                the rest of the conversation. Follow it for craft \
+                decisions; where it disagrees with the machine and \
+                consent rules in your instructions, those rules win.
+
+                \(skill.body)
+                """,
+            imagePNG: nil, isError: false), skill.name)
     }
 
     private func invoke(

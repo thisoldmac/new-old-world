@@ -40,12 +40,16 @@ final class ChatSessionTests: XCTestCase {
         for row in rows {
             XCTAssertNotNil(row.tools, "\(row.provider) reported no reach")
         }
-        // The four API providers speak through the harness; the two
-        // subprocess runtimes are text-only until a workspace is chosen,
-        // and no workspace is configured in a test's own defaults.
+        // The four API providers speak through the harness; Codex is
+        // text-only by decision. Claude's reach reads the DESK's real
+        // lane state (the model builds its registry on the product
+        // defaults), and since the 2026-08-19 default flip that is
+        // "workspace" out of the box and "none" only after an explicit
+        // Turn Off — so this row asserts presence, not a value the
+        // desk can change under the test.
         XCTAssertEqual(rows.first { $0.provider == "anthropic" }?.tools,
                        "full")
-        XCTAssertEqual(rows.first { $0.provider == "claude" }?.tools, "none")
+        XCTAssertNotNil(rows.first { $0.provider == "claude" }?.tools)
         XCTAssertEqual(rows.first { $0.provider == "codex" }?.tools, "none")
     }
 
