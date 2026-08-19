@@ -71,6 +71,14 @@ final class OnboardingPortal: ObservableObject {
     @Published private(set) var setupImageState: SetupImageState = .notBuilt
     @Published var guestFlavor: OnboardingGuestFlavor = .powerpc
 
+    /// The transport's own queue. Connections used to run on .main, and
+    /// a busy UI throttled every flow-control resume: loopback (where the
+    /// whole body fits the socket buffers in one gulp) ran at memory
+    /// speed while a G3 on ethernet drained at kilobytes per second -
+    /// python's http.server on the same wire did 300-400 KB/s. Nothing
+    /// here was ever deliberately paced; the main queue was the pacer.
+    private nonisolated let transportQueue = DispatchQueue(
+        label: "now.onboarding.transport")
     private let preferredPort: UInt16
     private let catalog: OnboardingAssetCatalog
     private let dependencyAcquirer: OnboardingDependencyAcquirer
@@ -149,7 +157,7 @@ final class OnboardingPortal: ObservableObject {
                                               fallback: fallback)
                 }
             }
-            listener.start(queue: .main)
+            listener.start(queue: transportQueue)
         } catch {
             listener = nil
             if fallback {
@@ -368,7 +376,7 @@ final class OnboardingPortal: ObservableObject {
         connection.stateUpdateHandler = { state in
             if case .failed = state { connection.cancel() }
         }
-        connection.start(queue: .main)
+        connection.start(queue: transportQueue)
         receiveRequest(on: connection, accumulated: Data())
     }
 
@@ -600,14 +608,17 @@ final class OnboardingPortal: ObservableObject {
                                 let seconds = max(0.001,
                                     Date().timeIntervalSince(started))
                                 let rate = Double(bytes) / seconds / 1_024
-                                HostLog.shared.write(
-                                    error == nil ? .info : .warn,
-                                    "onboarding",
-                                    String(format: "sent %dB in %.1fs "
-                                           + "(%.0f KB/s)%@", bytes,
-                                           seconds, rate,
-                                           error.map { " error: \($0)" }
-                                               ?? ""))
+                                let line = String(
+                                    format: "sent %dB in %.1fs "
+                                        + "(%.0f KB/s)%@", bytes,
+                                    seconds, rate,
+                                    error.map { " error: \($0)" } ?? "")
+                                let level: HostLog.LogLevel =
+                                    error == nil ? .info : .warn
+                                Task { @MainActor in
+                                    HostLog.shared.write(
+                                        level, "onboarding", line)
+                                }
                             }
                             connection.cancel()
                         })
