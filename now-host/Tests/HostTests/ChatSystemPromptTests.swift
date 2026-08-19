@@ -164,6 +164,25 @@ final class ChatSystemPromptTests: XCTestCase {
                        HostProjectionRegistry.hostFaces.projections.count)
     }
 
+    /* Plan 029's R26 — "Development capability must not impose a large
+       prompt tax on ordinary machine-only Chat turns" — was carried by a
+       test that measured the DIFFERENCE the three project rows made,
+       which only existed because they were conditional. They are not any
+       more, so the requirement is measured where it now lives: the whole
+       catalog every turn pays for. The ceiling is a budget with room, not
+       a snapshot of today's bytes; if a new row breaks it, the question
+       R26 asks is whether that row's schema is too chatty. */
+    func testTheWholeCatalogStaysInsideItsPromptBudget() {
+        let tools = ChatToolRendering.descriptors()
+        let bytes = tools.reduce(0) {
+            $0 + $1.name.utf8.count + $1.description.utf8.count
+                + $1.inputSchemaJSON.count
+        }
+
+        XCTAssertLessThan(bytes, 90_000,
+                          "the tool catalog is \(bytes) bytes of every turn")
+    }
+
     func testAToollessTurnIsToldSoAndKeepsTheProjectRulesOut() {
         let result = health(guest: machine("pb1400c"))
         let toolless = ChatSystemPrompt.compose(
