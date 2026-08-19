@@ -2250,6 +2250,19 @@ means it proved nothing. The fix then turned out to break the app's
 launch. Both were reverted. The invariant kept a test; the claim did
 not.
 
+**THE HOST GATE ENDED THE NIGHT RED, AND IT IS NOT THIS BRANCH.** Three
+`ResidentLivenessTests` — `testAResidentWillNotVouchWhenTwoMachinesShare
+ItsName`, `testAStarvedGuestSurvivesWhileItsMachineKeepsAnswering`,
+`testTheSessionDiesOnceTheResidentChannelGoesToo` — fail in the full
+suite and pass in isolation, the same three in every run. Attributed
+rather than assumed, by the cheapest experiment that could have
+falsified it: re-running the whole host suite with EVERY chat test class
+skipped (thirteen of them, including all the new ones). The same three
+still failed, plus a `MultiGuestListenerTests` timeout. So the trigger is
+the suite under load, not this branch's tests. `mediaanalysisd` was
+taking 113% of a core throughout, which is the starvation these
+listener-binding tests are known to lose to (see the entry below).
+
 **A FLAKE THAT LOOKED LIKE A CAUSE.** The isolated host sometimes failed
 to bind port 18497 right after `spin-up-ppc` released it, launching but
 never listening. One A/B "confirmed" the reverted fix on the strength of
