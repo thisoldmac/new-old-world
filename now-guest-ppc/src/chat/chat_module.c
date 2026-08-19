@@ -90,7 +90,19 @@ static ChatRosterRow g_chats[kChatMaxChats];
 static int g_chat_count;
 static int g_chat_sel = -1;           /* index into g_chats, or -1 */
 static int g_chat_top;                /* first visible sidebar row */
-static Boolean g_chats_loading;
+/* Three states, because "nobody has asked" and "asked and heard
+   nothing back" are different things and only one of them is worth
+   showing a person a spinner for. The wire declares an unanswered ask
+   dead after 15 seconds (kChatAskTimeoutTicks) and reports it as
+   kChatAnswerError; without this the panel sat on "(asking...)"
+   forever, which reads as a hang and was exactly what the first build
+   on metal showed. */
+enum {
+    kChatListIdle = 0,
+    kChatListLoading = 1,
+    kChatListUnanswered = 2
+};
+static int g_chats_state;
 static ChatProjectRow g_projects[kChatMaxProjects];
 static int g_project_count;
 static Boolean g_sidebar_shown = true;
@@ -435,10 +447,12 @@ static void ask_chats(void)
     g_chat_top = 0;
     if (now_wire_chat_chats(0, err, sizeof err) != 0) {
         snprintf(g_status, sizeof g_status, "%.120s", err);
+        g_chats_state = kChatListUnanswered;
         inval(&g_r.status);
+        inval(&g_r.sidebar);
         return;
     }
-    g_chats_loading = true;
+    g_chats_state = kChatListLoading;
 }
 
 static void ask_projects(void)
@@ -599,7 +613,7 @@ static void chat_note(int kind, const char *reply)
         int i;
 
         if (n < 0) {
-            g_chats_loading = false;
+            g_chats_state = kChatListIdle;
             break;
         }
         for (i = 0; i < n; ++i) {
@@ -615,10 +629,10 @@ static void chat_note(int kind, const char *reply)
                loop's shape, for the same reason. */
             if (now_wire_chat_chats((long)g_chat_count, err,
                                     sizeof err) != 0) {
-                g_chats_loading = false;
+                g_chats_state = kChatListIdle;
             }
         } else {
-            g_chats_loading = false;
+            g_chats_state = kChatListIdle;
         }
         inval(&g_r.sidebar);
         break;
@@ -715,6 +729,13 @@ static void chat_note(int kind, const char *reply)
         break;
     }
     case kChatAnswerError:
+        /* An unanswered LISTING is not a dead turn: it means this host
+           said nothing, which the contract reads as one that predates
+           the family. The panel has to stop claiming to be asking. */
+        if (g_chats_state == kChatListLoading) {
+            g_chats_state = kChatListUnanswered;
+            inval(&g_r.sidebar);
+        }
         chat_transcript_end_answer(&g_transcript);
         chat_transcript_add(&g_transcript, kChatLineMarker, "* ", reply);
         g_streaming = false;
@@ -977,7 +998,7 @@ static void chat_show(Boolean visible)
         /* Asked on SHOW rather than on create: a page nobody has opened
            has no business spending a slow wire on a listing, and the
            roster can have moved since the last time it was open. */
-        if (!g_chats_loading) {
+        if (g_chats_state != kChatListLoading) {
             ask_chats();
         }
         if (g_project_count == 0) {
@@ -1299,9 +1320,18 @@ static void draw_sidebar(void)
     }
     TextFace(normal);
     if (g_chat_count == 0) {
+        const char *empty = "(no saved chats)";
+
+        if (g_chats_state == kChatListLoading) {
+            empty = "(asking...)";
+        } else if (g_chats_state == kChatListUnanswered) {
+            /* NOT "(no saved chats)": this side never heard back, and
+               claiming the person has none would be inventing an answer
+               out of silence. */
+            empty = "(no answer)";
+        }
         draw_at((short)(g_r.sidebar.left + 4),
-                (short)(g_r.sidebar.top + 14),
-                g_chats_loading ? "(asking...)" : "(no saved chats)");
+                (short)(g_r.sidebar.top + 14), empty);
     }
 }
 
@@ -1411,7 +1441,8 @@ static void toggle_sidebar(void)
     /* The whole body: the transcript changed width, so its wrapped
        lines and the panel beside it are both stale. */
     inval(&g_body);
-    if (g_sidebar_shown && g_chat_count == 0 && !g_chats_loading) {
+    if (g_sidebar_shown && g_chat_count == 0
+        && g_chats_state != kChatListLoading) {
         ask_chats();
     }
 }
