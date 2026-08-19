@@ -12,6 +12,11 @@ import NOWAgentIntegration
 
 enum ChatHarnessEvent: Sendable {
     case delta(String)
+    /// A workspace provider's own tool use, already converted to one
+    /// readable line. It travels the same road `toolStarted` does and
+    /// carries no ok/failed half, because this harness did not run it
+    /// and will not pretend to know how it went.
+    case activity(String)
     case toolStarted(name: String)
     case toolFinished(name: String, ok: Bool)
     case finished(ChatChatOutcome)
@@ -133,14 +138,21 @@ actor ChatHarness {
         log(.info, "turn begins: \(wireModelID), "
             + "\(transcript.count) turn(s) of history")
         let client = makeClient(selector)
-        let developmentIntent = ChatDevelopmentContext.isRelevant(transcript)
+        /* Asked of the provider, not assumed of the model. A text-only
+           runtime told nothing about its own hands spends the turn
+           offering to go and look at a machine it cannot see. */
+        let reach = provider.toolReach
         let system = ChatSystemPrompt.compose(
             health: await client.sessionHealth(), origin: origin,
-            screen: await guestScreen(), development: developmentIntent)
-        let tools = ChatToolRendering.descriptors(
-            registry: projections,
-            include: ChatDevelopmentContext.capabilityFilter(
-                development: developmentIntent))
+            screen: await guestScreen(), reach: reach)
+        /* Every row, every turn. They used to be filtered by a sniffer
+           over the person's own words, so asking for "a thing that
+           beeps" got a model with no project tools and an honest
+           apology. The catalog is the surface; a keyword is not a
+           capability check. */
+        let tools = reach.suppliesDescriptors
+            ? ChatToolRendering.descriptors(registry: projections)
+            : []
         let dispatch = HostProjectionDispatch(
             face: .chat, registry: projections, audit: audit)
 
@@ -159,6 +171,8 @@ actor ChatHarness {
                     case .textDelta(let part):
                         text += part
                         events(.delta(part))
+                    case .activity(let line):
+                        events(.activity(line))
                     case .finished(let f):
                         finish = f
                     }
@@ -273,41 +287,6 @@ actor ChatHarness {
             guest: selector,
             through: client)
         return ChatToolRendering.toolResult(id: call.id, outcome: outcome)
-    }
-}
-
-/// Development is a deliberately optional context lane. The dispatcher still
-/// owns one complete registry, but ordinary machine turns do not pay for three
-/// project/build schemas they have no reason to select.
-enum ChatDevelopmentContext {
-    private static let capabilities: Set<String> = [
-        "now_projects", "now_development_environment", "now_development",
-    ]
-    private static let terms = [
-        "project", "source code", "codekitten", "toolchain", "tool server",
-        "toolserver", "compile", "build", "applet", "program", "develop",
-        ".ckp", "ckproject", "mpw",
-    ]
-
-    static func isRelevant(_ transcript: [ChatTurn]) -> Bool {
-        for turn in transcript.reversed() {
-            for content in turn.content {
-                switch content {
-                case .text(let text):
-                    let lowered = text.lowercased()
-                    if terms.contains(where: lowered.contains) { return true }
-                case .toolCall(let call):
-                    if capabilities.contains(call.name) { return true }
-                case .toolResult:
-                    break
-                }
-            }
-        }
-        return false
-    }
-
-    static func capabilityFilter(development: Bool) -> (String) -> Bool {
-        { capability in development || !capabilities.contains(capability) }
     }
 }
 

@@ -138,44 +138,57 @@ final class ChatSystemPromptTests: XCTestCase {
 
     func testProjectAuthorityNamesBothHomesAndDoesNotConflateWorkspaceTruth() {
         let result = health(guest: machine("pb1400c"))
-        let ordinary = ChatSystemPrompt.compose(
+        let whole = ChatSystemPrompt.compose(
             health: result, origin: .hostPane)
-        let development = ChatSystemPrompt.compose(
-            health: result, origin: .hostPane, development: true)
-        XCTAssertTrue(ordinary.contains(
-            "No project or Development tools are supplied"), ordinary)
-        XCTAssertTrue(development.contains("host-home project is authoritative"),
-                      development)
-        XCTAssertTrue(development.contains("guest-home project is authoritative"),
-                      development)
-        XCTAssertTrue(development.contains(
+
+        XCTAssertTrue(whole.contains("host-home project is authoritative"),
+                      whole)
+        XCTAssertTrue(whole.contains("guest-home project is authoritative"),
+                      whole)
+        XCTAssertTrue(whole.contains(
             "Never describe that workspace or its history mirror as current guest truth"),
-            development)
+            whole)
     }
 
-    func testDevelopmentToolsAreFilteredFromOrdinaryTurnsAndBoundedWhenRelevant() {
-        XCTAssertFalse(ChatDevelopmentContext.isRelevant([.user("how much RAM?")]))
-        XCTAssertTrue(ChatDevelopmentContext.isRelevant(
-            [.user("build me a memory monitor applet")]))
+    /* The keyword sniffer that used to hide these three is gone: it made
+       "build me a memory monitor applet" a project turn and "make a thing
+       that beeps" a machine-only one, and the model then correctly told
+       the person it had no project tools. */
+    func testEveryRegistryRowIsSuppliedIncludingTheProjectLane() {
+        let names = Set(ChatToolRendering.descriptors().map(\.name))
 
-        let ordinary = ChatToolRendering.descriptors(
-            include: ChatDevelopmentContext.capabilityFilter(development: false))
-        let development = ChatToolRendering.descriptors(
-            include: ChatDevelopmentContext.capabilityFilter(development: true))
-        let ordinaryNames = Set(ordinary.map(\.name))
-        XCTAssertFalse(ordinaryNames.contains("now_projects"))
-        XCTAssertFalse(ordinaryNames.contains("now_development_environment"))
-        XCTAssertFalse(ordinaryNames.contains("now_development"))
-        XCTAssertEqual(development.count - ordinary.count, 3)
+        XCTAssertTrue(names.contains("now_projects"))
+        XCTAssertTrue(names.contains("now_development_environment"))
+        XCTAssertTrue(names.contains("now_development"))
+        XCTAssertEqual(names.count,
+                       HostProjectionRegistry.hostFaces.projections.count)
+    }
 
-        let addedBytes = development.reduce(0) {
-            $0 + $1.name.utf8.count + $1.description.utf8.count
-                + $1.inputSchemaJSON.count
-        } - ordinary.reduce(0) {
-            $0 + $1.name.utf8.count + $1.description.utf8.count
-                + $1.inputSchemaJSON.count
-        }
-        XCTAssertLessThan(addedBytes, 6_000,
-                          "Development context must stay a compact opt-in lane")
+    func testAToollessTurnIsToldSoAndKeepsTheProjectRulesOut() {
+        let result = health(guest: machine("pb1400c"))
+        let toolless = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane,
+            reach: .none(reason: "Codex answers from knowledge"))
+
+        XCTAssertTrue(toolless.contains("YOU HAVE NO TOOLS THIS TURN"),
+                      toolless)
+        XCTAssertTrue(toolless.contains("Codex answers from knowledge"),
+                      toolless)
+        // Nothing about using tools well, and no project authority: both
+        // are instructions for hands this turn does not have.
+        XCTAssertFalse(toolless.contains("Observe before acting"), toolless)
+        XCTAssertFalse(toolless.contains("host-home project"), toolless)
+    }
+
+    func testAWorkspaceTurnIsToldItHasTwoPlacesToTouch() {
+        let result = health(guest: machine("pb1400c"))
+        let workspace = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane,
+            reach: .workspace(summary: "Full access to now"))
+
+        XCTAssertTrue(workspace.contains("Full access to now"), workspace)
+        XCTAssertTrue(workspace.contains("now_"), workspace)
+        // The machine half survives: a workspace turn still drives a Mac.
+        XCTAssertTrue(workspace.contains("host-home project"), workspace)
     }
 }

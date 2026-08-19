@@ -72,9 +72,126 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertTrue(arguments.contains("--no-session-persistence"))
         XCTAssertEqual(arguments.value(after: "--tools"), "")
         XCTAssertEqual(arguments.value(after: "--setting-sources"), "")
+        XCTAssertFalse(arguments.contains("--mcp-config"))
         XCTAssertFalse(arguments.joined().contains("private prompt"))
-        XCTAssertTrue(ClaudeCodeClient.prompt(completion)
-            .contains("private prompt"))
+        let prompt = ClaudeCodeClient.prompt(completion)
+        XCTAssertTrue(prompt.contains("private prompt"))
+        XCTAssertTrue(prompt.contains("Do not use tools"))
+    }
+
+    // MARK: - The workspace lane
+
+    private func lane(
+        _ permission: ChatWorkspaceLane.Permission = .acceptEdits,
+        attaches: Bool = true
+    ) -> ChatWorkspaceLane {
+        ChatWorkspaceLane(
+            root: URL(fileURLWithPath: "/tmp/now-lane", isDirectory: true),
+            permission: permission, attachesNOWTools: attaches, timeout: 900)
+    }
+
+    func testALaneUnclampsTheRuntimeAndNamesTheWorkspace() {
+        let arguments = ClaudeCodeClient.arguments(
+            model: "sonnet", lane: lane(.bypassPermissions),
+            mcpConfig: ChatWorkspaceMCPConfig.json(
+                executable: URL(fileURLWithPath: "/Apps/New Old World")))
+
+        XCTAssertEqual(arguments.value(after: "--tools"), "default")
+        XCTAssertEqual(arguments.value(after: "--permission-mode"),
+                       "bypassPermissions")
+        XCTAssertEqual(arguments.value(after: "--add-dir"), "/tmp/now-lane")
+        // The chosen folder's own policy applies; the person's global
+        // configuration is not the lane's business.
+        XCTAssertEqual(arguments.value(after: "--setting-sources"),
+                       "project,local")
+        XCTAssertFalse(arguments.contains("--safe-mode"))
+        XCTAssertTrue(arguments.contains("--strict-mcp-config"))
+        let config = arguments.value(after: "--mcp-config") ?? ""
+        XCTAssertTrue(config.contains("--mcp-stdio"), config)
+        XCTAssertTrue(config.contains("/Apps/New Old World"), config)
+    }
+
+    func testALaneTurnIsNotToldToAvoidTools() {
+        let completion = ChatCompletionRequest(
+            model: "sonnet", system: "Be concise",
+            turns: [.user("build it")], tools: [], maxTokens: 100)
+
+        XCTAssertFalse(ClaudeCodeClient.prompt(completion, lane: lane())
+            .contains("Do not use tools"))
+    }
+
+    func testTheLaneDecidesTheWorkingDirectoryAndTheDeadline() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-lane-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
+        defaults.set(root.path, forKey: ChatWorkspaceLaneStore.rootKey)
+        let runner = ScriptedChatProcessRunner([[
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false}",
+        ]])
+        let client = ClaudeCodeClient(
+            runner: runner, executable: executable, environment: [:],
+            lanes: ChatWorkspaceLaneStore(defaults: defaults),
+            hostExecutable: URL(fileURLWithPath: "/Apps/New Old World"))
+
+        for try await _ in client.stream(ChatCompletionRequest(
+            model: "sonnet", system: "", turns: [.user("hi")], tools: [],
+            maxTokens: 100)) {}
+
+        let request = try XCTUnwrap(runner.requests.first)
+        XCTAssertEqual(request.workingDirectory?.standardizedFileURL,
+                       root.standardizedFileURL)
+        XCTAssertEqual(request.timeout, ChatWorkspaceLaneStore.defaultTimeout)
+        XCTAssertEqual(request.arguments.value(after: "--tools"), "default")
+    }
+
+    func testAMissingWorkspaceFolderIsUnusableAndNamesItself() {
+        let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
+        let store = ChatWorkspaceLaneStore(defaults: defaults)
+        XCTAssertEqual(store.state(), .off)
+
+        defaults.set("/nowhere/at/all", forKey: ChatWorkspaceLaneStore.rootKey)
+        guard case .unusable(let reason) = store.state() else {
+            return XCTFail("a missing folder is not a lane")
+        }
+        XCTAssertTrue(reason.contains("/nowhere/at/all"), reason)
+    }
+
+    /* Recorded from a real `claude -p --output-format stream-json` run on
+       2026-08-18, not composed here: a test that writes the lines it then
+       parses tests one half twice. */
+    func testRecordedToolUseBecomesOneReadableLineEach() throws {
+        let glob = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\","
+            + "\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_01\","
+            + "\"name\":\"Glob\",\"input\":{\"pattern\":\"**/note.txt\"}}]}}"
+        let read = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\","
+            + "\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_02\","
+            + "\"name\":\"Read\",\"input\":{\"file_path\":"
+            + "\"/now/now-guest-ppc/src/chat/chat_module.c\"}}]}}"
+        let text = "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\","
+            + "\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}"
+
+        XCTAssertEqual(try ClaudeCodeClient.events(line: glob).activityLines,
+                       ["Glob **/note.txt"])
+        XCTAssertEqual(try ClaudeCodeClient.events(line: read).activityLines,
+                       ["Read chat_module.c"])
+        /* The whole-message copy of an answer must NOT arrive as text:
+           the partial deltas already carried it, and a second copy is
+           the answer said twice. */
+        XCTAssertTrue(try ClaudeCodeClient.events(line: text).isEmpty)
+    }
+
+    func testNOWCapabilitiesKeepTheirOwnNamesThroughMCP() {
+        XCTAssertEqual(
+            ClaudeCodeClient.activity(
+                tool: "mcp__now__now_list_processes", input: nil),
+            "Using now_list_processes")
+        XCTAssertEqual(
+            ClaudeCodeClient.activity(
+                tool: "Bash", input: ["command": "scripts/build-guests --ppc"]),
+            "Bash scripts/build-guests")
     }
 
     func testStreamTranslatesTextAndOneFinish() async throws {
@@ -98,6 +215,7 @@ final class ClaudeCodeClientTests: XCTestCase {
         for try await event in client.stream(completion) {
             switch event {
             case .textDelta(let part): text += part
+            case .activity: break
             case .finished: finishes += 1
             }
         }
@@ -150,6 +268,13 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertEqual(paths?.prefix(2), ["/usr/bin", "/bin"])
         XCTAssertTrue(paths?.contains("/opt/homebrew/bin") == true)
         XCTAssertTrue(paths?.contains("/usr/local/bin") == true)
+    }
+}
+
+private extension Array where Element == ChatStreamEvent {
+    var activityLines: [String] {
+        compactMap { if case .activity(let line) = $0 { return line }
+                     else { return nil } }
     }
 }
 

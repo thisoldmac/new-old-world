@@ -11,6 +11,9 @@ import XCTest
 private final class ScriptedChatProvider: ChatProvider, @unchecked Sendable {
     let id = "fake"
     let label = "Fake"
+    /// Overridable: the harness asks the provider what it can reach, so
+    /// a reach is a thing this double must be able to lie about.
+    var toolReach = ChatToolReach.harness
     private let lock = NSLock()
     private var script: [[ChatStreamEvent]]
     private(set) var requests: [ChatCompletionRequest] = []

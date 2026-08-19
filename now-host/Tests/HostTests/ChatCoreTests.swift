@@ -143,6 +143,7 @@ final class ChatProviderRegistryTests: XCTestCase {
     private final class StubProvider: ChatProvider, @unchecked Sendable {
         let id: String
         let label: String
+        let toolReach = ChatToolReach.harness
         init(id: String) {
             self.id = id
             self.label = id

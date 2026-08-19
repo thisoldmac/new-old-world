@@ -120,6 +120,7 @@ final class CodexAppServerClientTests: XCTestCase {
             for try await event in stream {
                 switch event {
                 case .textDelta(let part): text += part
+                case .activity: break
                 case .finished: finishes += 1
                 }
             }

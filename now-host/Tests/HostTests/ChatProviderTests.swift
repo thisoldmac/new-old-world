@@ -58,6 +58,7 @@ private func collect(
     for try await event in stream {
         switch event {
         case .textDelta(let part): text += part
+        case .activity: break
         case .finished(let f): finish = f
         }
     }

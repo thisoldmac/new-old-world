@@ -4,6 +4,23 @@ final class ClaudeCodeChatProvider: ChatProvider, @unchecked Sendable {
     let id = "claude"
     let label = "Claude (Experimental)"
 
+    /* The one provider that can be either thing, so it is asked rather
+       than assumed. With no workspace configured it is the text-only
+       relay it has always been — and now SAYS so, in the popup, before
+       somebody asks it to go and look at their machine. */
+    var toolReach: ChatToolReach {
+        switch client.laneState() {
+        case .ready(let lane):
+            return .workspace(summary: lane.summary)
+        case .unusable(let reason):
+            return .none(reason: reason)
+        case .off:
+            return .none(
+                reason: "Text only until a chat workspace folder is chosen "
+                    + "in Settings")
+        }
+    }
+
     private let client: ClaudeCodeClient
     private static let models = [
         ChatModel(providerID: "claude", modelID: "sonnet",
@@ -22,9 +39,20 @@ final class ClaudeCodeChatProvider: ChatProvider, @unchecked Sendable {
         switch await client.status() {
         case .success(let status) where status.isSubscription:
             let plan = status.subscriptionType?.capitalized ?? "subscription"
+            /* The reach comes FIRST in the detail. It is the fact that
+               decides whether this row can do the thing the person is
+               about to ask for, and the detail is bounded to 96 bytes on
+               the wire — a truncated sentence must lose the plan name,
+               never the hands. */
+            let reach: String
+            switch toolReach {
+            case .workspace(let summary): reach = summary
+            case .none(let reason): reach = reason
+            case .harness: reach = "Full tools"
+            }
             return ChatProviderEntry(
                 id: id, label: label, state: "serving",
-                detail: "Experimental - \(plan) runtime")
+                detail: "\(reach) - \(plan) runtime")
         case .success(let status) where status.loggedIn:
             return ChatProviderEntry(
                 id: id, label: label, state: "unavailable",

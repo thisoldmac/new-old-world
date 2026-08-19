@@ -57,16 +57,55 @@ enum ChatSystemPrompt {
 
     static func compose(
         health: AgentIntegrationSessionHealthResult, origin: Origin,
-        screen: Screen? = nil, development: Bool = false
+        screen: Screen? = nil, reach: ChatToolReach = .harness
     ) -> String {
         var sections = [preamble]
         sections.append(machineFrame(health: health, origin: origin))
-        sections.append(projectAuthority(development: development))
-        sections.append(toolGuidance)
+        sections.append(reachFrame(reach))
+        if case .none = reach {} else {
+            sections.append(projectAuthority)
+            sections.append(toolGuidance)
+        }
         if case .guestWire = origin {
             sections.append(wireOutputRules(screen: screen))
         }
         return sections.joined(separator: "\n\n")
+    }
+
+    /// What this turn's hands are. Composed from the provider's own
+    /// declaration rather than written into the fixed body, because the
+    /// same prompt serves six providers and two of them cannot act at
+    /// all — and a model that has not been told so will promise to go
+    /// and look, which is the most misleading thing this app can say.
+    static func reachFrame(_ reach: ChatToolReach) -> String {
+        switch reach {
+        case .harness:
+            return """
+                You have New Old World's own tools this turn: they \
+                observe and act on the connected classic machine, and on \
+                this app's Projects storage.
+                """
+        case .workspace(let summary):
+            return """
+                You are also a coding agent in a workspace on the modern \
+                Mac (\(summary)), with your own file and command tools. \
+                New Old World's capabilities are supplied alongside them \
+                as tools whose names begin with "now_". Use the workspace \
+                for source, builds and tests; use the now_ tools to \
+                observe and act on the connected classic machine. Say \
+                which of the two you are about to touch before a change \
+                that is hard to undo.
+                """
+        case .none(let reason):
+            return """
+                YOU HAVE NO TOOLS THIS TURN. \(reason). You cannot look \
+                at the classic machine, read a file, or run anything. \
+                Answer from knowledge, and where an answer needs the \
+                machine, say plainly that this model cannot reach it and \
+                that a tool-capable model can. Never say you will go and \
+                check, and never describe a tool result you did not get.
+                """
+        }
     }
 
     private static let preamble = """
@@ -77,21 +116,20 @@ enum ChatSystemPrompt {
         application-owned Projects storage on the modern Mac.
         """
 
-    private static func projectAuthority(development: Bool) -> String {
-        guard development else {
-            return "No project or Development tools are supplied for this machine-only turn."
-        }
-        return """
-            Project and Development tools are supplied for this turn. Every \
-            project result names its home. A host-home project is authoritative \
-            in New Old World's bounded Projects storage. A guest-home project \
-            is authoritative on the connected classic machine; edits happen in \
-            a recoverable host workspace until a separately authorized, \
-            digest-guarded promotion. Never describe that workspace or its \
-            history mirror as current guest truth. Guest reads require Read \
-            Only access; publication, build, run and handoff require Full access.
-            """
-    }
+    /// Supplied whenever the turn has tools at all. It used to be
+    /// conditional on a keyword sniffer over the person's own words,
+    /// which meant the authority rules for project work arrived only
+    /// when somebody happened to say "project".
+    private static let projectAuthority = """
+        Project and Development tools are supplied. Every \
+        project result names its home. A host-home project is authoritative \
+        in New Old World's bounded Projects storage. A guest-home project \
+        is authoritative on the connected classic machine; edits happen in \
+        a recoverable host workspace until a separately authorized, \
+        digest-guarded promotion. Never describe that workspace or its \
+        history mirror as current guest truth. Guest reads require Read \
+        Only access; publication, build, run and handoff require Full access.
+        """
 
     /// The one part of the prompt that is not fixed: who is speaking,
     /// which machines are on the wire this second, and therefore what

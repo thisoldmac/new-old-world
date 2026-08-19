@@ -387,6 +387,7 @@ final class ChatDeltaChunkingTests: XCTestCase {
 private final class WireScriptedProvider: ChatProvider, @unchecked Sendable {
     let id = "fake"
     let label = "Fake"
+    var toolReach = ChatToolReach.harness
     private let lock = NSLock()
     private var script: [[ChatStreamEvent]]
     private(set) var requests: [ChatCompletionRequest] = []

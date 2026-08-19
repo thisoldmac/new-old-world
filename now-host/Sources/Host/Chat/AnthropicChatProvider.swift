@@ -7,6 +7,7 @@ import Foundation
 final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
     let id = "anthropic"
     let label = "Anthropic"
+    let toolReach = ChatToolReach.harness
 
     private let store: ChatCredentialStore
     private let transport: ChatHTTPTransport

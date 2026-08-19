@@ -294,6 +294,9 @@ final class ChatWireService {
                     self.flush(key: key, on: asker)
                 }
             }
+        case .activity(let line):
+            flush(key: key, on: asker)
+            status(line, key: key, on: asker)
         case .toolStarted(let name):
             flush(key: key, on: asker)
             status("Using \(name)", key: key, on: asker)

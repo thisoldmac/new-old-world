@@ -34,6 +34,34 @@ struct ChatModel: Equatable, Sendable {
     var wireID: String { "\(providerID)/\(modelID)" }
 }
 
+/// How far a provider's turn can reach past its own words.
+///
+/// Declared by the provider rather than assumed by the harness, because
+/// two of the six cannot use tools at all and used to present in the
+/// model popup exactly like the four that can — so choosing a model was
+/// silently choosing between an agent and a chatbot, and the person
+/// found out from the model's own apology a turn later.
+///
+/// The reason travels: it becomes part of the provider entry's `detail`,
+/// which the guest's popup already draws.
+enum ChatToolReach: Equatable, Sendable {
+    /// The harness renders the projection registry into the request and
+    /// runs the tool loop itself. The four API-speaking providers.
+    case harness
+    /// The provider runs its OWN agentic loop with its own tools, and
+    /// reaches New Old World's capabilities through MCP rather than
+    /// through this harness. The workspace lane; `summary` is what the
+    /// person is told it can touch.
+    case workspace(summary: String)
+    /// No tools this turn, with the reason in the person's words.
+    case none(reason: String)
+
+    /// What the harness sends. A workspace provider is handed no
+    /// descriptors: it already has the same capabilities by another
+    /// road, and a second copy would be two names for one act.
+    var suppliesDescriptors: Bool { self == .harness }
+}
+
 /// A provider's report of itself — the cloud.report vocabulary
 /// exactly: a provider with no key is still reported, with the reason,
 /// so a popup can say why a thing is missing instead of not showing it.
@@ -106,6 +134,12 @@ enum ChatFinish: Sendable {
 
 enum ChatStreamEvent: Sendable {
     case textDelta(String)
+    /// Something the provider is DOING, in one converted line — the
+    /// workspace lane's own tool use, which this harness never sees as
+    /// a tool call because the provider ran it. Display only, and it
+    /// travels the same road a harness tool does: `chat.status` to the
+    /// guest, a tool row in the host pane. Never transcript text.
+    case activity(String)
     case finished(ChatFinish)
 }
 

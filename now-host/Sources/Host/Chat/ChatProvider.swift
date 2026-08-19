@@ -10,6 +10,9 @@ protocol ChatProvider: AnyObject, Sendable {
     /// wire-model-id prefix, so it may not contain "/".
     var id: String { get }
     var label: String { get }
+    /// How far this provider's turn reaches. Asked per turn, because a
+    /// lane can be configured while the app is open.
+    var toolReach: ChatToolReach { get }
     func entry() async -> ChatProviderEntry
     func listModels() async throws -> [ChatModel]
     /// Streams one completion. Text arrives live; tool calls arrive

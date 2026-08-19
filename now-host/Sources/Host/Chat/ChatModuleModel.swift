@@ -743,6 +743,13 @@ final class ChatModuleModel: ObservableObject {
             } else {
                 transcript.append(ChatDisplayRow(kind: .model, text: part))
             }
+        case .activity(let line):
+            /* A workspace provider's own tool, shown the same way a
+               registry tool is — but with no ok/failed half, because
+               this side did not run it and the provider does not report
+               one. `ok: true` would be a claim; nil is the truth. */
+            transcript.append(ChatDisplayRow(
+                kind: .tool(name: line, ok: nil), text: line))
         case .toolStarted(let name):
             transcript.append(ChatDisplayRow(
                 kind: .tool(name: name, ok: nil), text: name))
