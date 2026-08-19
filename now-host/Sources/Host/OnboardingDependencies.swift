@@ -61,10 +61,16 @@ enum OnboardingDependencyCatalog {
         }
     }
 
+    /// The guest-bound dependency set. The starter-pack manifest is host
+    /// validation metadata, not a classic payload, so it never crosses.
     static func setupAssets(in snapshot: OnboardingAssetSnapshot)
         -> [OnboardingAsset] {
-        all.compactMap { $0.installedAsset(in: snapshot) }
-            + additionalAssets(in: snapshot)
+        (all.compactMap { $0.installedAsset(in: snapshot) }
+            + additionalAssets(in: snapshot))
+            .filter {
+                !DevelopmentStarterPackManifest.isManifestFileName(
+                    $0.fileName)
+            }
     }
 }
 
