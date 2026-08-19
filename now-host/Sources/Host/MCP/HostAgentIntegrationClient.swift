@@ -36,6 +36,14 @@ struct HostAgentIntegrationClient: AgentIntegrationClient {
         await adapter.projects(request)
     }
 
+    /// No addressing refusal, deliberately, and for `projects`' reason:
+    /// the store belongs to this Mac, so a chat is readable with nothing
+    /// connected at all.
+    func chats(_ request: AgentIntegrationChatRequest) async
+        -> AgentIntegrationChatResult {
+        await adapter.chats(request)
+    }
+
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         await adapter.sessionHealth()
     }

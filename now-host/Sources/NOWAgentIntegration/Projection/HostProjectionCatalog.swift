@@ -18,6 +18,13 @@ public enum HostProjectionCatalog {
 
     private static func makeProjections() -> [any HostProjection.Type] { [
         ProjectsProjection.self,
+        /* Immediately after the projects it files chats under, and before
+           the development lane: the three read as one subject — what the
+           person is working on, what they have said about it, and what
+           gets built. It is the row that lets an agent see the
+           conversation happening at the classic machine instead of
+           leaving the person to relay it. */
+        ChatsProjection.self,
         DevelopmentEnvironmentProjection.self,
         DevelopmentProjection.self,
         SessionHealthProjection.self,

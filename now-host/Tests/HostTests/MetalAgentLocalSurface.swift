@@ -226,6 +226,11 @@ final class MetalAgentLocalSurface {
                 return record(.projects(.hostUnavailable))
             }
             return record(.projects(adapter.projects(project)))
+        case .chats:
+            guard let chat = request.chatRequest else {
+                return record(.chats(.unavailable(.host)))
+            }
+            return record(.chats(adapter.chats(chat)))
         case .development:
             guard let development = request.developmentRequest else {
                 return record(.development(.unavailable(.host)))

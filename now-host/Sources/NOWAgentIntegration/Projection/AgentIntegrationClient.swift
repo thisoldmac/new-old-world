@@ -235,6 +235,13 @@ public protocol AgentIntegrationClient: Sendable {
     /// stage or build on the classic Mac use a separate cross-domain lane.
     func projects(_ request: AgentIntegrationProjectRequest) async
         -> AgentIntegrationProjectResult
+
+    /// The person's saved conversations, on the running host. Independent
+    /// of guest consent for the same reason `projects` is: the store is
+    /// the modern Mac's, not the classic machine's, and a chat exists
+    /// whether or not anything is connected.
+    func chats(_ request: AgentIntegrationChatRequest) async
+        -> AgentIntegrationChatResult
 }
 
 extension AgentIntegrationClient {
@@ -249,6 +256,14 @@ extension AgentIntegrationClient {
     public func projects(_ request: AgentIntegrationProjectRequest) async
         -> AgentIntegrationProjectResult {
         .hostUnavailable
+    }
+    /// Defaulted in the same edit that declared it, per the rule at the
+    /// top of this file: no host means no store, which is a refusal and
+    /// not an empty listing — an empty listing is a claim that the person
+    /// has no chats.
+    public func chats(_ request: AgentIntegrationChatRequest) async
+        -> AgentIntegrationChatResult {
+        .unavailable(.host)
     }
     /// Defaulted in the same edit that declared it, per the rule at the top
     /// of this file. "No host" and not an empty page: an empty page would

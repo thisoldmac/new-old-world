@@ -108,6 +108,12 @@ enum MCPConformanceRecipes {
             "Lists the bounded host-owned Projects root without changing it "
                 + "and without addressing a Macintosh.",
             ["operation": "list"]),
+        "now_chats": .fixed(
+            "Lists the host-owned chats store without changing it and "
+                + "without addressing a Macintosh — the read that proves "
+                + "an agent can see the conversation happening at the "
+                + "classic machine.",
+            ["operation": "list"]),
         "now_development_environment": .fixed(
             "Reads the guest's path-free qualified environment; needs nothing."),
         "now_development": .fixed(

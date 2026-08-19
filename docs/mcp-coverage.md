@@ -142,6 +142,7 @@ The test compares both against the code literally.
 | MCP tool | Requires | Exposes | Guest plane |
 |---|---|---|---|
 | `now_projects` | — | — | none; bounded host-owned project storage and recoverable history, independent of guest consent |
+| `now_chats` | — | — | none; the host-owned chats store, independent of guest consent — a saved conversation exists whether or not a Macintosh is connected. Reads page (a transcript from its newest end); `append` writes a NOTE and runs no model turn |
 | `now_development_environment` | `development` | `development` | command; path-free PPC guest qualification facts |
 | `now_development` | `development-project`, `development-stage`, `development-build`, `development-run`, `development-test` | `development-project`, `development-stage`, `development-build`, `development-run`, `development-test` | command; one closed semantic family for verified guest snapshots, inactive candidates, declarative ToolServer jobs, exact-product test receipts and exact-product launch; optional CodeKitten handoff remains a human-only app action |
 | `now_list_machines` | — | — | none; host listener state |
@@ -634,9 +635,9 @@ to exist:
 | `chat.catalog` | message | ppc | deliberate | The host's answer to a guest-initiated `chat.models` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The chat family runs guest-to-host by definition — its subject is the host's own model harness, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for; the MCP is a client of guests, not of the host's own services ([command-parity.md](command-parity.md), and the `guestAsksChat` / `hostServesChat` operations in the contract). The agent-facing reading of the same harness is the chat face itself, not a projection. |
 | `chat.delta` | message | ppc | deliberate | The streamed half of the host's answer to `chat.send` — same definitional direction as `chat.catalog`, same citation ([command-parity.md](command-parity.md)). |
 | `chat.result` | message | ppc | deliberate | The terminal half of the same turn, same reason ([command-parity.md](command-parity.md)). |
-| `chat.projectroster` | message | ppc | planned | The host's answer to `chat.projects`, added 2026-08-18. W6 #1 of the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) projects the chat family as `now_chats`; this row is the project roster an agent needs to file a conversation where the person is working. |
-| `chat.roster` | message | ppc | planned | One page of saved chats, added 2026-08-18. Written up as a deliberate gap for one afternoon on the argument that a person's conversations are not an agent capability, and CORRECTED the same day (Michelle): the person's own agent reading and continuing the conversation they are having at the classic machine is the loop this product exists to close, and an agent that can drive the machine but not see the chat about it leaves the human as the only wire between the halves. W6 #1 of the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) is the row, with W6 #2 (append) and W6 #3 (send) closing the loop. |
-| `chat.transcript` | message | ppc | planned | One page of a saved chat's contents, added 2026-08-18. The `read` operation of W6 #1 in the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md), paged from the end the way the wire pages it. |
+| `chat.projectroster` | message | ppc | deliberate | Reached by `now_chats` (`projects`) since 2026-08-19. The argument, and the correction that produced it, are in the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) (W6). |
+| `chat.roster` | message | ppc | deliberate | Reached by `now_chats` (`list`) since 2026-08-19. Written up as a deliberate gap for one afternoon on the argument that a person's saved conversations are not an agent capability, and corrected the same day (Michelle): an agent that can drive the classic machine but cannot see the conversation happening AT it leaves the human as the only wire between the halves. The wire message itself stays guest-to-host — the guest asks the host for its own store — and the agent-facing reading of the same store is the projection, not this message. The argument, and the correction that produced it, are in the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) (W6). |
+| `chat.transcript` | message | ppc | deliberate | Reached by `now_chats` (`read`) since 2026-08-19, paged from the newest end the way the wire pages it — one rule, read by both faces. The argument, and the correction that produced it, are in the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) (W6). |
 | `chat.status` | message | ppc | deliberate | The transient liveness line of the same family, same reason ([command-parity.md](command-parity.md)). |
 | `cloud.card` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.detail` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The cloud family runs guest-to-host by definition — its subject is the host's own iCloud, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for; the MCP is a client of guests, not of the host's own services ([command-parity.md](command-parity.md), and the `guestAsksCloud` / `hostServesCloud` operations in the contract). |
 | `cloud.listing` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.list` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
@@ -1201,14 +1202,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: b7404aa6a77732c13f0e72c85c734f73bdebf065
+sources-sha1: 34d05080895184b5f146a3801c5f3c32410e52f6
 derive ppc-inbound-types sha256=327f192230ce9c4d4233c07f7acb9e22aed37c83e95261c4cf1ad529e661ace7 lines=61 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=2da7588a38609672976e5562eeb8706e6864bf489b9d7e15a532e50783b7e63c lines=3
+derive disposition-census sha256=3ad3fc4fb992fce8be4179670b61c7824940d47b08a10f890f1f51252ab11c6a lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1428,4 +1429,5 @@ rederived: 2026-08-18T23:13:33-0400 ce4dc746 sources
 rederived: 2026-08-18T23:33:03-0400 2c64a5c4 sources, ppc-inbound-types 58->61
 rederived: 2026-08-18T23:44:44-0400 6692e45b disposition-census 3->3
 rederived: 2026-08-18T23:57:03-0400 d10402f4 disposition-census 3->3
+rederived: 2026-08-19T00:06:05-0400 b3b2ee57 sources, disposition-census 3->3
 -->

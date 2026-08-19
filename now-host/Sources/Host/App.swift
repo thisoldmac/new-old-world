@@ -596,6 +596,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 if request.operation != .sessionHealth,
                    request.operation != .audit,
                    request.operation != .projects,
+                   /* Like projects: the store is this Mac's own and a
+                      chat exists whether or not anything is connected,
+                      so an unaddressed caller must not be refused for
+                      naming no guest. */
+                   request.operation != .chats,
                    request.operation != .hostLogTail,
                    let refusal = agentIntegration.addressingRefusal(
                        request.guestSelector) {
@@ -609,6 +614,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                             message: "The Projects request is missing.")))
                     }
                     return .projects(agentIntegration.projects(project))
+                case .chats:
+                    guard let chat = request.chatRequest else {
+                        return .chats(.unavailable(.init(
+                            code: "now-chats-invalid-request",
+                            message: "The chats request is missing.")))
+                    }
+                    return .chats(agentIntegration.chats(chat))
                 case .development:
                     guard let development = request.developmentRequest else {
                         return .development(.refused(.init(

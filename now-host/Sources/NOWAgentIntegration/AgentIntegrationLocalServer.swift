@@ -409,6 +409,9 @@ public final class AgentIntegrationLocalServer: @unchecked Sendable {
             case .projects(let result):
                 response = .init(requestID: request.requestID,
                                  projectResult: result)
+            case .chats(let result):
+                response = .init(requestID: request.requestID,
+                                 chatResult: result)
             case .development(let result):
                 response = .init(requestID: request.requestID,
                                  developmentResult: result)
