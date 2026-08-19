@@ -58,7 +58,9 @@ enum ChatSystemPrompt {
     static func compose(
         health: AgentIntegrationSessionHealthResult, origin: Origin,
         screen: Screen? = nil, reach: ChatToolReach = .harness,
-        mode: ChatMode = .build
+        mode: ChatMode = .build,
+        skills: ChatSkillLibrary = ChatSkillLibrary(skills: []),
+        loaded: [ChatSkill] = []
     ) -> String {
         var sections = [preamble]
         sections.append(machineFrame(health: health, origin: origin))
@@ -67,6 +69,16 @@ enum ChatSystemPrompt {
             sections.append(modeFrame(mode))
             sections.append(projectAuthority)
             sections.append(toolGuidance)
+        }
+        /* The catalogue rides EVERY turn, loaded skills or not: a model
+           that cannot see what it may be given will never say "load the
+           Carbon UI skill and I can answer this properly". It is a
+           handful of lines against a 40-KB tool catalog. */
+        if !skills.catalogue.isEmpty {
+            sections.append(skills.catalogue)
+        }
+        for skill in loaded {
+            sections.append(skillFrame(skill))
         }
         if case .guestWire = origin {
             sections.append(wireOutputRules(screen: screen))
@@ -140,6 +152,23 @@ enum ChatSystemPrompt {
                 question.
                 """
         }
+    }
+
+    /// One loaded skill, marked as what it is. The body is somebody
+    /// else's instructions, quoted into this prompt — so it is fenced by
+    /// name rather than blended in, and the model is told plainly that
+    /// the machine rules above still bind. A skill that could quietly
+    /// override the consent frame would be an authority nobody granted.
+    static func skillFrame(_ skill: ChatSkill) -> String {
+        """
+        --- SKILL: \(skill.name) ---
+        The person loaded this skill for this conversation. Follow it for \
+        craft decisions, and where it disagrees with anything above about \
+        what you may TOUCH, the rules above win.
+
+        \(skill.body)
+        --- end of skill: \(skill.name) ---
+        """
     }
 
     private static let preamble = """

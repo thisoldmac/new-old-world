@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Re-extract the vendored classic Mac skill tree, out loud.
+
+The copy in `skills/` is the one that ships and the one the chat harness
+reads; the source lives outside this repository and has no remote. A sync
+is therefore a deliberate act with a blast radius — it can overwrite a
+fix somebody made HERE, which is the failure vendoring invites — so this
+prints every difference and asks before writing.
+
+    tools/sync-classic-skills            # report only
+    tools/sync-classic-skills --apply    # copy, then rewrite PROVENANCE
+"""
+
+from __future__ import annotations
+
+import argparse
+import filecmp
+import hashlib
+import pathlib
+import shutil
+import subprocess
+import sys
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+VENDORED = REPO / "skills"
+SOURCE = pathlib.Path("/Users/michelle/Lab/Skills/classic-mac-development/skills")
+SKILLS = [
+    "classic-mac-development",
+    "classic-mac-carbon-ui",
+    "classic-mac-carbon-platform",
+    "classic-mac-toolbox-ui",
+    "classic-mac-toolbox-platform",
+    "classic-mac-init-platform",
+    "classic-mac-emulator-harness",
+    "classic-mac-render-preview",
+]
+
+
+def files(root: pathlib.Path) -> set[pathlib.Path]:
+    return {
+        p.relative_to(root)
+        for p in root.rglob("*")
+        if p.is_file() and p.name != ".DS_Store"
+    }
+
+
+def digest(root: pathlib.Path) -> str:
+    outer = hashlib.sha256()
+    for relative in sorted(files(root)):
+        inner = hashlib.sha256((root / relative).read_bytes()).hexdigest()
+        outer.update(f"{inner}  {relative}\n".encode())
+    return outer.hexdigest()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--apply", action="store_true")
+    arguments = parser.parse_args()
+
+    if not SOURCE.is_dir():
+        print(f"[sync-classic-skills] source is not here: {SOURCE}")
+        print("  Nothing to sync from. The vendored copy stands on its own;")
+        print("  see skills/PROVENANCE.md.")
+        return 1
+
+    changed, added, removed = [], [], []
+    for skill in SKILLS:
+        source, vendored = SOURCE / skill, VENDORED / skill
+        if not source.is_dir():
+            print(f"[sync-classic-skills] source lacks {skill}")
+            continue
+        source_files, vendored_files = files(source), files(vendored)
+        added += [f"{skill}/{p}" for p in sorted(source_files - vendored_files)]
+        removed += [f"{skill}/{p}" for p in sorted(vendored_files - source_files)]
+        for relative in sorted(source_files & vendored_files):
+            if not filecmp.cmp(source / relative, vendored / relative, shallow=False):
+                changed.append(f"{skill}/{relative}")
+
+    if not (changed or added or removed):
+        print("[sync-classic-skills] the vendored copy matches the source")
+        return 0
+
+    for label, rows in (("changed", changed), ("only in source", added),
+                        ("only here", removed)):
+        for row in rows:
+            print(f"  {label:<14} {row}")
+    print(f"[sync-classic-skills] {len(changed)} changed, {len(added)} added, "
+          f"{len(removed)} only here")
+
+    if not arguments.apply:
+        print("  Report only. Re-run with --apply to overwrite the vendored")
+        print("  copy — and read 'only here' first: those are edits this")
+        print("  repository has and the source does not.")
+        return 1
+
+    for skill in SKILLS:
+        if (SOURCE / skill).is_dir():
+            shutil.rmtree(VENDORED / skill, ignore_errors=True)
+            shutil.copytree(SOURCE / skill, VENDORED / skill,
+                            ignore=shutil.ignore_patterns(".DS_Store"))
+    head = subprocess.run(["git", "-C", str(SOURCE.parent), "rev-parse", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    print(f"[sync-classic-skills] copied at source commit {head or 'unknown'}")
+    print(f"[sync-classic-skills] new content digest {digest(VENDORED)}")
+    print("  Update skills/PROVENANCE.md with both, in the same commit.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

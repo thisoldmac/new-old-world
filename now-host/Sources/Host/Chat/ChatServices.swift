@@ -74,6 +74,9 @@ enum ChatDeltaChunking {
 @MainActor
 final class ChatWireService {
     private let harness: ChatHarness
+    /// Cached at construction from the harness, because reading it is
+    /// an actor hop and a slash command is answered on the main actor.
+    private let skills: ChatSkillLibrary
     /// Asked fresh per chat.models — a guest never reads a page cache.
     private let providers: () async -> [ChatCatalogProvider]
     /// The named provider's full list; the paging and the refs happen
@@ -93,6 +96,11 @@ final class ChatWireService {
     /// Minted refs for chats and projects, per connection — the model
     /// ref rule: a title or a project name is a person's sentence and
     /// outgrows a classic buffer, so only opaque refs cross.
+    /// Which skills this connection has loaded, in the order they were
+    /// asked for. Per connection rather than per chat: a person loads a
+    /// skill for the work they are doing now, and carrying it into a
+    /// chat they reopen a week later would be a surprise.
+    private var loadedSkills: [GuestKey: [String]] = [:]
     private var chatRefs: [GuestKey: [String: ChatID]] = [:]
     private var projectRefs: [GuestKey: [String: ChatProjectID]] = [:]
     private struct ActiveTurn {
@@ -160,6 +168,7 @@ final class ChatWireService {
         heartbeatInterval: TimeInterval = ChatWireService.heartbeat
     ) {
         self.harness = harness
+        self.skills = harness.skills
         self.providers = providers
         self.models = models
         self.store = store
@@ -243,6 +252,7 @@ final class ChatWireService {
            about one connection's listing and nothing else. */
         conversations[key] = nil
         currentChat[key] = nil
+        loadedSkills[key] = nil
         chatRefs[key] = nil
         projectRefs[key] = nil
         refs[key] = nil
@@ -290,6 +300,16 @@ final class ChatWireService {
                     (try? store.loadTranscript(chatID))?.turns ?? []
             }
         }
+        /* A slash is a command, answered HERE with no model turn and no
+           line in the conversation the model is re-sent. It reaches the
+           same place from either face because it is only ever prompt
+           text — which is why this costs no contract change and no
+           second verb for the console to fall behind on. */
+        if let command = ChatSlashCommand.parse(
+            request.prompt, known: harnessSkills.names) {
+            serveSlash(command, request: request, key: key, on: asker)
+            return
+        }
         var conversation = conversations[key] ?? []
         conversation.append(.user(request.prompt))
         conversations[key] = conversation
@@ -301,6 +321,7 @@ final class ChatWireService {
         beat(key: key, on: asker, requestID: request.id)
 
         let mode = ChatMode(wire: request.mode)
+        let loaded = skillsFor(key)
         let turns = conversation
         Task { [weak self, weak asker, harness] in
             let started = await harness.run(
@@ -309,7 +330,8 @@ final class ChatWireService {
                 transcript: turns,
                 addressing: key.text,
                 origin: .guestWire,
-                mode: mode
+                mode: mode,
+                loadedSkills: loaded
             ) { [weak self, weak asker] event in
                 Task { @MainActor [weak self, weak asker] in
                     guard let self, let asker else { return }
@@ -368,6 +390,84 @@ final class ChatWireService {
         }
         asker.send(.chatResult(ChatResult(
             id: request.id, ok: true, code: nil, message: nil)))
+    }
+
+    // MARK: - Skills
+
+    /// The library the HARNESS holds, asked of it rather than read
+    /// again here: two libraries could list different names, and a
+    /// command the parser accepted but the prompt never carried would
+    /// be a skill that loads and does nothing.
+    private var harnessSkills: ChatSkillLibrary { skills }
+
+    /// What the wire face will accept as a slash command. Exposed so a
+    /// test drives the names this build actually installed rather than
+    /// a name it invented — a fixture name would pass with `skills/`
+    /// missing entirely.
+    var installedSkillNames: [String] { harnessSkills.names }
+
+    private func skillsFor(_ key: GuestKey) -> [String] {
+        loadedSkills[key] ?? []
+    }
+
+    private func serveSlash(
+        _ command: ChatSlashCommand, request: ChatSend,
+        key: GuestKey, on asker: Session
+    ) {
+        func answer(_ text: String) {
+            /* Delivered as DELTA then result, the family's one shape for
+               "here is some text": a guest that had to learn a second
+               way to receive words would be a second thing to get
+               wrong, and the page already draws deltas. */
+            let converted = CloudText.displayable(text)
+            for frame in ChatDeltaChunking.frames(
+                id: request.id, firstSeq: 0, text: converted) {
+                asker.send(.chatDelta(frame))
+            }
+            asker.send(.chatResult(ChatResult(
+                id: request.id, ok: true, code: nil, message: nil)))
+        }
+        switch command {
+        case .list:
+            let skills = harnessSkills.skills
+            guard !skills.isEmpty else {
+                return answer("No skills are installed on the other Mac.")
+            }
+            var lines = ["Skills you can load:"]
+            for skill in skills {
+                lines.append("\(skill.command)")
+                lines.append("   \(skill.description)")
+            }
+            if !skillsFor(key).isEmpty {
+                lines.append("Loaded now: "
+                    + skillsFor(key).map { "/" + $0 }.joined(separator: " "))
+            }
+            answer(lines.joined(separator: "\n"))
+        case .unknown(let name):
+            /* Not passed to the model. Somebody who mistyped wants to be
+               told, not to watch a model improvise an answer to it. */
+            answer("No skill called /\(name). Type /skills for the list.")
+        case .load(let name, let rest):
+            var loaded = skillsFor(key)
+            if !loaded.contains(name) {
+                loaded.append(name)
+                loadedSkills[key] = loaded
+            }
+            let skill = harnessSkills[name]
+            if rest.isEmpty {
+                answer("Loaded /\(name). "
+                    + (skill?.description ?? "")
+                    + " It applies from your next message.")
+            } else {
+                /* A command with a question after it does both, so
+                   "/classic-mac-carbon-ui how do I draw a tab?" is one
+                   round trip rather than two. */
+                answer("Loaded /\(name).")
+                var followUp = request
+                followUp.prompt = rest
+                serveSend(followUp, on: asker)
+            }
+        }
     }
 
     // MARK: - Sessions, history and projects

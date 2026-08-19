@@ -112,6 +112,32 @@ path rather than being created on the spot: a guest-home project is
 authoritative on the classic machine and requires a verified digest, so
 New Old World will not mint one behind your back and call it yours.
 
+## Skills
+
+New Old World ships the classic Mac development skill tree — eight
+skills covering Carbon and Toolbox UI, the platform layers, INITs, the
+emulator harness and render previews. They are instructions, not tools:
+loading one puts its rules in front of the model for the rest of the
+conversation.
+
+Type them like any other message, at either screen:
+
+| Command | What it does |
+| --- | --- |
+| `/skills` | list what is installed, with a sentence each |
+| `/classic-mac-carbon-ui` | load that skill for this conversation |
+| `/classic-mac-carbon-ui how do I draw a tab?` | load it and ask, in one go |
+
+The model is always told which skills exist so it can suggest one, but it
+cannot load a skill itself — that stays a decision you make. A loaded
+skill governs craft; it cannot widen what the turn may touch, because the
+machine and consent rules are stated after it and win.
+
+Skills matter most in Build mode with project tools: without them a model
+will write a UPP as a cast and skip pumping the wire inside a nested
+Toolbox loop — mistakes that compile cleanly and misbehave only on the
+real machine.
+
 ## Chat, Plan and Build
 
 Every turn runs in one of three modes, and the mode decides which tools

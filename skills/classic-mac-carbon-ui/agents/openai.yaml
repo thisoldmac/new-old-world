@@ -1,0 +1,4 @@
+interface:
+  display_name: "Classic Mac Carbon UI"
+  short_description: "Design faithful Mac OS 8.6–9.2.2 application UI"
+  default_prompt: "Use $classic-mac-carbon-ui to design and platform-gate a polished CarbonLib interface for classic Mac OS."

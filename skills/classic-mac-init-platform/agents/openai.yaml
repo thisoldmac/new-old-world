@@ -1,0 +1,4 @@
+interface:
+  display_name: "Classic Mac INIT Platform"
+  short_description: "Build safe classic Mac system extensions"
+  default_prompt: "Use $classic-mac-init-platform to design, build, package, and verify this classic Mac INIT or resident system extension."

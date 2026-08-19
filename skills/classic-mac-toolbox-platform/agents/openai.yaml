@@ -1,0 +1,4 @@
+interface:
+  display_name: "Classic Mac Toolbox Platform"
+  short_description: "Build and verify non-Carbon classic Mac apps"
+  default_prompt: "Use $classic-mac-toolbox-platform to build, diagnose, or verify this non-Carbon classic Mac application."

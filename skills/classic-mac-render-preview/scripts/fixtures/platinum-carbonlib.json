@@ -1,0 +1,15 @@
+{
+  "target": "platinum-carbonlib",
+  "presentation": {"chrome": "target-native"},
+  "screen": {"width": 800, "height": 600, "depth": 8},
+  "application": "Archive Browser",
+  "window": {"x": 90, "y": 62, "width": 620, "height": 450, "title": "Archive Browser", "active": true},
+  "components": [
+    {"id": "tabs", "type": "tabs", "x": 22, "y": 24, "width": 574, "height": 314, "text": "Files", "items": ["Files", "Info"], "selected": 0, "pane_for": ["browser"]},
+    {"id": "browser", "type": "databrowser", "x": 42, "y": 62, "width": 534, "height": 245, "columns": [{"title": "Name", "width": 270}, {"title": "Kind", "width": 130}, {"title": "State", "width": 115}], "items": [["Applications", "Folder", "Ready"], ["Documents", "Folder", "Ready"], ["System Folder", "System", "Active"]], "selected": 1},
+    {"id": "inspect", "type": "bevel_button", "x": 42, "y": 374, "width": 96, "height": 24, "text": "Inspect"},
+    {"id": "status", "type": "placard", "x": 150, "y": 376, "width": 250, "height": 20, "text": "CarbonLib 1.6 - Appearance active", "label_mode": "adjacent-static-text"},
+    {"id": "open", "type": "button", "x": 486, "y": 374, "width": 90, "height": 24, "text": "Open", "default": true}
+  ],
+  "assets": []
+}

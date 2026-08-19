@@ -321,6 +321,44 @@ final class ChatModuleModel: ObservableObject {
     /// a guest reaches is exactly what the test pane proved. The
     /// service pages and mints refs; this page only answers what the
     /// registry knows, when asked.
+    /// A slash command at this screen: answered as a note, never as a
+    /// turn, and never added to the conversation the model is re-sent.
+    func runSlash(_ command: ChatSlashCommand) {
+        switch command {
+        case .list:
+            let skills = skillLibrary.skills
+            guard !skills.isEmpty else {
+                transcript.append(ChatDisplayRow(
+                    kind: .note, text: "No skills are installed."))
+                return
+            }
+            var lines = ["Skills you can load:"]
+            for skill in skills {
+                lines.append("\(skill.command) — \(skill.description)")
+            }
+            if !loadedSkills.isEmpty {
+                lines.append("Loaded now: "
+                    + loadedSkills.map { "/" + $0 }.joined(separator: " "))
+            }
+            transcript.append(ChatDisplayRow(
+                kind: .note, text: lines.joined(separator: "\n")))
+        case .unknown(let name):
+            transcript.append(ChatDisplayRow(
+                kind: .note,
+                text: "No skill called /\(name). Type /skills for the list."))
+        case .load(let name, let rest):
+            if !loadedSkills.contains(name) {
+                loadedSkills.append(name)
+            }
+            transcript.append(ChatDisplayRow(
+                kind: .note,
+                text: "Loaded /\(name). It applies from your next message."))
+            if !rest.isEmpty {
+                send(rest)
+            }
+        }
+    }
+
     private(set) lazy var wireService = ChatWireService(
         harness: harness,
         providers: { [weak self] in
@@ -502,9 +540,21 @@ final class ChatModuleModel: ObservableObject {
 
     // MARK: - The test chat pane
 
+    /// Skills this pane has loaded, in the order asked for.
+    private(set) var loadedSkills: [String] = []
+
+    var skillLibrary: ChatSkillLibrary { harness.skills }
+
     func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
+        /* The same slash vocabulary the wire serves, so a person who
+           learned it at one screen has not learned a local dialect. */
+        if let command = ChatSlashCommand.parse(
+            trimmed, known: skillLibrary.names) {
+            runSlash(command)
+            return
+        }
         guard !selectedWireModelID.isEmpty else {
             transcript.append(ChatDisplayRow(
                 kind: .note, text: "Pick a model first"))
@@ -518,6 +568,7 @@ final class ChatModuleModel: ObservableObject {
         isStreaming = true
         let turns = conversation
         let model = selectedWireModelID
+        let skills = loadedSkills
         Task { [weak self] in
             guard let self else { return }
             let started = await self.harness.run(
@@ -525,7 +576,8 @@ final class ChatModuleModel: ObservableObject {
                 wireModelID: model,
                 transcript: turns,
                 addressing: nil,
-                origin: .hostPane
+                origin: .hostPane,
+                loadedSkills: skills
             ) { [weak self] event in
                 Task { @MainActor [weak self] in
                     self?.handle(event)

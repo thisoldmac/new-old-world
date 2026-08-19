@@ -43,6 +43,10 @@ actor ChatHarness {
     private let guestScreen: @Sendable () async -> ChatSystemPrompt.Screen?
     private let maxToolTurns: Int
     private let maxTokens: Int
+    /// The skills on disk. Read once at construction: a tree that
+    /// changed under a running app is a support question nobody wants,
+    /// and the shipped one cannot change at all.
+    let skills: ChatSkillLibrary
     private var running: [String: Task<Void, Never>] = [:]
 
     init(
@@ -58,8 +62,10 @@ actor ChatHarness {
            round is bounded by the tools themselves; the ceiling is a
            runaway stop, not a budget. */
         maxToolTurns: Int = 40,
-        maxTokens: Int = 4096
+        maxTokens: Int = 4096,
+        skills: ChatSkillLibrary = ChatSkillLibrary()
     ) {
+        self.skills = skills
         self.registry = registry
         self.projections = projections
         self.makeClient = makeClient
@@ -80,6 +86,7 @@ actor ChatHarness {
         addressing selector: String?,
         origin: ChatSystemPrompt.Origin,
         mode: ChatMode = .build,
+        loadedSkills: [String] = [],
         events: @escaping @Sendable (ChatHarnessEvent) -> Void
     ) -> Bool {
         guard running[conversation] == nil else { return false }
@@ -87,7 +94,7 @@ actor ChatHarness {
             await self.turn(
                 wireModelID: wireModelID, transcript: transcript,
                 selector: selector, origin: origin, mode: mode,
-                events: events)
+                loadedSkills: loadedSkills, events: events)
             self.finished(conversation)
         }
         running[conversation] = task
@@ -128,6 +135,7 @@ actor ChatHarness {
         selector: String?,
         origin: ChatSystemPrompt.Origin,
         mode: ChatMode,
+        loadedSkills: [String],
         events: @escaping @Sendable (ChatHarnessEvent) -> Void
     ) async {
         guard let (provider, modelID) = registry.resolve(wireID: wireModelID)
@@ -147,7 +155,9 @@ actor ChatHarness {
         let reach = provider.toolReach
         let system = ChatSystemPrompt.compose(
             health: await client.sessionHealth(), origin: origin,
-            screen: await guestScreen(), reach: reach, mode: mode)
+            screen: await guestScreen(), reach: reach, mode: mode,
+            skills: skills,
+            loaded: loadedSkills.compactMap { skills[$0] })
         /* Every row, every turn. They used to be filtered by a sniffer
            over the person's own words, so asking for "a thing that
            beeps" got a model with no project tools and an honest

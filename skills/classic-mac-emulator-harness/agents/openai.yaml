@@ -1,0 +1,4 @@
+interface:
+  display_name: "Classic Mac Emulator Harness"
+  short_description: "Drive a classic Mac QEMU guest headlessly and deterministically"
+  default_prompt: "Use $classic-mac-emulator-harness to launch, drive, verify, and stop a classic Mac emulator guest without falling into cursor or screenshot loops."

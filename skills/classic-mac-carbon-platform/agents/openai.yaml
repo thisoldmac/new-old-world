@@ -1,0 +1,4 @@
+interface:
+  display_name: "Classic Mac Carbon Platform"
+  short_description: "Build and debug PowerPC Carbon applications"
+  default_prompt: "Use $classic-mac-carbon-platform to diagnose and verify this classic Mac PowerPC Carbon build or runtime problem."

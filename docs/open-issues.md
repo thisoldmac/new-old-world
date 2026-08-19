@@ -7,6 +7,48 @@ search:
 
 # Open issues
 
+## THE CHAT KNOWS THE PLATFORM NOW — the classic Mac skill tree ships, with slash commands (2026-08-19, `feat/chat-agentic-lane`)
+
+Chat could reach the machine and, with the workspace lane, its own source
+— and it was told nothing about the platform that source is FOR. A model
+in Build mode will write a UPP as a cast and skip pumping the wire inside
+a nested Toolbox loop: the exact lessons this project already paid for
+and wrote down.
+
+**Where that knowledge was.** In eight `classic-mac-*` skills under
+`~/Lab/Skills`, reachable by a turn only BY ACCIDENT — the workspace
+lane's spawned runtime discovers whatever skill tree the machine's owner
+happens to have installed. Accidental capability is what this branch has
+spent its time ending, so the tree is now vendored into `skills/`, shipped
+in the application bundle, and read by the harness itself.
+
+**What ships and what does not.** The chat reads `SKILL.md` — front
+matter for the listing, body when a person loads it. The `references/`
+and `scripts/` directories ship for a person and for a workspace-lane
+runtime with file tools; a model talking through the harness cannot open
+them, and the provenance file says so rather than implying the whole tree
+reaches the model.
+
+**A skill is text, deliberately.** No execution, no tool, no second
+registry. It is fenced in the prompt by name and told that the machine
+and consent rules stated above it win — a skill that could quietly widen
+what a turn may touch would be an authority nobody granted.
+
+**The vendoring cost, written down where it will be read.** There are now
+two copies of a versioned thing, and the source has its own git history
+and no remote. `skills/PROVENANCE.md` records the source commit, that the
+source tree was DIRTY at extraction (so this copy matches no commit of
+it), and the content digest; `tools/sync-classic-skills` reports every
+difference and refuses to overwrite without `--apply`, because a sync
+that quietly replaced a fix made here is how the second copy becomes the
+wrong one.
+
+**Unverified**: nothing has loaded a skill on metal, and no model has yet
+been watched writing better Carbon code because of one. The guards prove
+the plumbing — that a slash never reaches the model, that an unloaded
+skill's body never enters the prompt, and that the tree this repository
+ships is readable and complete.
+
 ## CORRECTED SAME DAY — `testTrustedButStillFailingTapNamesRelaunchNotPermission` is INTERMITTENT, not a standing red (2026-08-19)
 
 Written up hours earlier as "red on `origin/main`", and that was an

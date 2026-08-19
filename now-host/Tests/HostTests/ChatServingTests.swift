@@ -473,6 +473,49 @@ final class ChatServingTests: XCTestCase {
         XCTAssertEqual(ChatModuleModel.wireReach(.none(reason: "why")), "none")
     }
 
+    /* The whole point of the skill lane, from the far end: a person at
+       the classic machine types a slash and the model's NEXT turn is
+       told the platform rules. Asserted through the real wire because
+       the parts each passing proves nothing about the seam. */
+    func testASlashLoadsASkillAndNeverBecomesAModelTurn() async throws {
+        installChat(script: [[.textDelta("ok"), .finished(.endTurn)]])
+        let guest = try await connectedGuest()
+        let ref = try await mintedRef(on: guest)
+        let name = try XCTUnwrap(chatService.installedSkillNames.first)
+
+        try guest.send(.chatSend(ChatSend(
+            id: 100, ref: ref, prompt: "/\(name)")))
+        let loaded = try await result(on: guest, id: 100)
+        XCTAssertTrue(loaded.ok)
+        XCTAssertTrue(provider.requests.isEmpty,
+                      "a slash command was sent to the model")
+
+        try guest.send(.chatSend(ChatSend(
+            id: 101, ref: ref, prompt: "how do I draw a tab?")))
+        _ = try await result(on: guest, id: 101)
+
+        let system = try XCTUnwrap(provider.requests.first?.system)
+        XCTAssertTrue(system.contains("SKILL: \(name)"), system)
+    }
+
+    func testAnUnknownSlashAnswersAndDoesNotReachTheModel() async throws {
+        installChat(script: [[.textDelta("ok"), .finished(.endTurn)]])
+        let guest = try await connectedGuest()
+        let ref = try await mintedRef(on: guest)
+
+        try guest.send(.chatSend(ChatSend(
+            id: 110, ref: ref, prompt: "/carbn")))
+        let answered = try await result(on: guest, id: 110)
+
+        XCTAssertTrue(answered.ok)
+        XCTAssertTrue(provider.requests.isEmpty)
+        let text = guest.received.compactMap { frame -> String? in
+            if case .chatDelta(let d) = frame, d.id == 110 { return d.text }
+            return nil
+        }.joined()
+        XCTAssertTrue(text.contains("No skill called /carbn"), text)
+    }
+
     func testARefRidesBackToTheRealModelID() async throws {
         installChat(script: [[
             .textDelta("hey"), .finished(.endTurn),
