@@ -68,13 +68,19 @@ For an already-connected guest, the guest-files upload lane
 (`now_guest_files_upload_begin` / `append` / `commit`) can carry the same
 MacBinary image directly instead of rebuilding setup media.
 
-**Copy the MPW folder to a writable disk before registering it.** Mounting
-the image is not enough: a ToolServer launched from the read-only volume
-cannot run its own tools, and the build fails on its first action with
-status −1 and an empty transcript. The same tools copied to the hard disk
-build normally. This was measured four ways on one emulator guest and the
-matrix is in [open issues](../../open-issues.md); the setup image's Read Me
-carries the same instruction whenever it carries MPW.
+**Copy the whole MPW-GM folder — MPW and Interfaces&Libraries together —
+to a writable disk, then register the MPW folder inside the copy.** Two
+measured failure shapes hide here. Mounting the image is not enough: a
+ToolServer launched from the read-only volume cannot run its own tools,
+and the build fails on its first action with status −1 and an empty
+transcript (measured four ways on one emulator guest, 2026-08-19 — the
+matrix is in [open issues](../../open-issues.md)). And a copy of the MPW
+folder ALONE is not enough either: MPW's Startup resolves
+Interfaces&Libraries as the registered folder's sibling (`{MPW}::`), so
+the lone copy qualifies — the `structural-1` probe checks ToolServer and
+MrC, never headers — and then fails every compile with "unable to open
+input file 'MacTypes.h'" (measured 2026-08-19, same rig). The setup
+image's Read Me carries both instructions whenever it carries MPW.
 
 ## Qualification is the guest's, and the manifest may not overclaim
 

@@ -24,13 +24,22 @@ struct ClassicSetupImageBuilder: Sendable {
                    from the read-only image cannot run its own tools
                    (open-issues, 2026-08-19), so a person who registers the
                    mounted volume gets a build that fails on its first
-                   action. */
+                   action.
+
+                   BOTH folders, said out loud: MPW's own Startup finds
+                   Interfaces&Libraries as the copied folder's sibling, so
+                   a person who copies only "MPW" gets a toolchain that
+                   qualifies and then fails every compile on the first
+                   #include (measured 2026-08-19 - the qualification probe
+                   checks ToolServer and MrC, not headers). */
                 text += """
                     \r
-                    MPW is in the Dependencies folder. Open it, copy the MPW\r
-                    folder to your hard disk, then use Register MPW Folder in\r
-                    New Old World's Projects page. Register the copy on your\r
-                    disk, not the mounted image.\r
+                    MPW is in the Dependencies folder. Open it and copy\r
+                    the WHOLE MPW-GM folder (MPW and Interfaces&Libraries\r
+                    together) to your hard disk. Then use\r
+                    Register MPW Folder in New Old World's Projects page\r
+                    and pick the MPW folder INSIDE your copy. Register\r
+                    the copy on your disk, not the mounted image.\r
                     """
             }
             return text

@@ -66,9 +66,14 @@ require it.
 MPW, the classic build toolchain, is optional in the same way CarbonLib is.
 Press **Get** beside it and the host downloads one checksum-pinned image
 into its Dependencies folder; select it and the setup image carries it to
-the PowerPC Mac. On that Mac, open the image and **copy the MPW folder to
-the hard disk before registering it** — a toolchain registered on the
-mounted image cannot build. The Read Me on the setup disk says so too.
+the PowerPC Mac. On that Mac, open the image and **copy the whole MPW-GM
+folder — MPW and Interfaces&Libraries together — to the hard disk before
+registering the MPW folder inside your copy**. A toolchain registered on
+the mounted image cannot build, and a copy of the MPW folder alone
+qualifies and then fails every compile on its first `#include`: MPW's own
+Startup finds Interfaces&Libraries beside the MPW folder, and the
+qualification probe checks the tools, not the headers. The Read Me on the
+setup disk says so too.
 
 ## 4. Download the complete setup disk
 
