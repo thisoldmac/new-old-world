@@ -2216,6 +2216,43 @@ anything needing a mid-gesture fact — live drop-target feedback on the host �
 will require, and it is a contract change plus attended metal. Late bind buys
 the single gesture without either.
 
+## CONFIRMED WITH A CULPRIT, 2026-08-19: concurrent host suites are what makes the gate red
+
+The entry below has said since 2026-08-16 that two host gates on this Mac
+make each other red, and called itself unverified. Here is the
+observation it was missing.
+
+Three consecutive `scripts/test-all` runs on `feat/chat-agentic-lane`
+failed at the host gate, each in a DIFFERENT suite and every failure a
+timeout: `ContinuityEdgeControllerTests`, then
+`MirrorContinuityControllerTests` ("timed out waiting for UDP listener"),
+then `ResidentLivenessTests`. Each passed on its own immediately
+afterwards — the second and third two runs out of two.
+
+While the third gate ran, `ps` showed an `xctest` at 207% CPU **from
+another checkout**: `/private/tmp/base-chat`, a detached HEAD sitting on
+this branch's own newest commit, created minutes earlier by a session
+that is not this one. Load average was 8.4 on a Mac whose owner had
+already said it was misbehaving, with `diagnosticd` and `log` taking
+another 240% between them.
+
+**So the shape is: these suites bind real listeners, and a second host
+suite running at the same time starves them.** Nothing was killed to
+prove it — that process belongs to another session, and the rule about
+not touching another lane's work outranks a tidy green here.
+
+**What this means for reading a red host gate.** Look at `ps` before
+diagnosing. A timeout in a suite your change never touched, in a
+different suite each run, with another `xctest` alive, is contention and
+not a defect. The corollary is the uncomfortable one: **a green host gate
+taken while another suite was running is also not evidence**, and neither
+is a red one — which is why this belongs in the ledger rather than in a
+commit message.
+
+Not fixed: the suites still bind fixed listeners rather than
+per-run ones, and until they do, "run the gate on a quiet machine"
+is the whole mitigation.
+
 ## UNVERIFIED, ENVIRONMENTAL: two host gates on this Mac make each other red (2026-08-16, `chore/recover-034-orphans`)
 
 `LoggingSpecTests.testALineMatchesTheFormatTheSpecDefines` failed once in
