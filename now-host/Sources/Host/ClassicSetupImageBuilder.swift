@@ -1,8 +1,11 @@
 import Foundation
 
 struct ClassicSetupImageBuilder: Sendable {
-    private static func instructions(host: String, port: UInt16) -> String {
-        """
+    private static func instructions(host: String, port: UInt16,
+                                     starterPack:
+                                        DevelopmentStarterPackManifest?)
+        -> String {
+        var text = """
             NEW OLD WORLD SETUP\r
             \r
             1. Copy New Old World anywhere on your hard disk.\r
@@ -15,6 +18,15 @@ struct ClassicSetupImageBuilder: Sendable {
             Dependencies downloaded by the host are in the Dependencies folder.\r
             Run the CarbonLib installer if CarbonLib 1.6 is not installed.\r
             """
+        if starterPack != nil {
+            text += """
+                \r
+                A Development Starter Pack disk image is in Dependencies.\r
+                Mount it, copy its MPW folder to your hard disk, then use\r
+                Register MPW Folder in New Old World's Projects page.\r
+                """
+        }
+        return text
     }
 
     enum BuildError: LocalizedError {
@@ -64,7 +76,8 @@ struct ClassicSetupImageBuilder: Sendable {
         guard assets.application != nil else {
             throw BuildError.missingApplication
         }
-        try DevelopmentStarterPackManifest.validate(in: assets)
+        let starterPack = try DevelopmentStarterPackManifest.validated(
+            in: assets)
         let selectedDependencies = OnboardingDependencyCatalog.setupAssets(
             in: assets)
 
@@ -80,7 +93,8 @@ struct ClassicSetupImageBuilder: Sendable {
             at: contents, withIntermediateDirectories: true)
         try populate(destination: contents, host: host, wirePort: wirePort,
                      assets: assets,
-                     dependencies: selectedDependencies)
+                     dependencies: selectedDependencies,
+                     starterPack: starterPack)
 
         let fittedImage = workspace.appendingPathComponent(
             "setup.dmg", isDirectory: false)
@@ -99,7 +113,9 @@ struct ClassicSetupImageBuilder: Sendable {
     private func populate(destination: URL, host: String, wirePort: UInt16,
                           assets: OnboardingAssetSnapshot,
                           dependencies selectedDependencies:
-                            [OnboardingAsset]) throws {
+                            [OnboardingAsset],
+                          starterPack:
+                            DevelopmentStarterPackManifest?) throws {
         guard let application = assets.application else {
             throw BuildError.missingApplication
         }
@@ -131,7 +147,8 @@ struct ClassicSetupImageBuilder: Sendable {
         let readMe = MacBinaryFile(
             name: "Read Me First", type: "TEXT", creator: "ttxt",
             finderFlags: 0,
-            dataFork: Self.instructions(host: host, port: wirePort)
+            dataFork: Self.instructions(host: host, port: wirePort,
+                                        starterPack: starterPack)
                 .data(using: .macOSRoman) ?? Data(),
             resourceFork: Data())
         _ = try readMe.write(to: destination)
