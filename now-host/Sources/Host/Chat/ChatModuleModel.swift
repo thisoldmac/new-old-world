@@ -160,6 +160,11 @@ final class ChatModuleModel: ObservableObject {
        should still WORK — it degrades to the old in-memory behaviour
        with the reason on screen, rather than refusing to talk. */
     private let chatStore: ChatStore?
+    /// The adapter's project-minting authority, carried into the wire
+    /// service so a chat-created project also becomes a real
+    /// ProjectStore project (the associate seam, wired 2026-08-19).
+    private let mintLinkedProject:
+        (String, ProjectHome) async -> Result<ProjectID, ProjectGround.Refusal>
     @Published private(set) var chats: [ChatSummary] = []
     @Published private(set) var chatProjects: [ChatProjectRecord] = []
     @Published private(set) var selectedChatID: ChatID?
@@ -193,6 +198,10 @@ final class ChatModuleModel: ObservableObject {
         self.transport = transport
         self.defaults = defaults
         self.chatStore = chatStore
+        self.mintLinkedProject = { name, home in
+            await agentIntegration.mintChatLinkedProject(
+                name: name, home: home)
+        }
         selectedWireModelID = defaults.string(forKey: Self.modelKey) ?? ""
 
         let codexClient = CodexAppServerClient()
@@ -371,7 +380,8 @@ final class ChatModuleModel: ObservableObject {
            typed at the classic machine appears in this sidebar, and one
            typed here is listed over the wire — the widening decided
            2026-08-18, and the reason a roster row carries its origin. */
-        store: chatStore)
+        store: chatStore,
+        mintLinkedProject: mintLinkedProject)
 
     /// Every provider, whatever its state — the cloud.report rule: one
     /// that cannot serve is still a row saying WHY. Labels leave

@@ -39,6 +39,12 @@ final class AgentIntegrationHostAdapter {
     private let mirrorEngines: MirrorStateEngineRegistry?
     private let hostIssues: () -> [AgentIntegrationHostIssue]
     private let projectStore: ProjectStore?
+    /// Injected for the tests' sake only: a project create resolving a
+    /// guest-mpw pin must read what the GUEST measured, and a stub of
+    /// that read is the only honest way to test the resolution without
+    /// a live machine. nil means the real development-environment lane.
+    private let developmentEnvironmentOverride:
+        (() async -> AgentIntegrationGuestRowReportResult)?
     /// The SAME store the Chat page and the guest wire read. One store,
     /// three faces: what an agent lists here is what the person sees in
     /// the sidebar and what the classic machine can open.
@@ -214,7 +220,9 @@ final class AgentIntegrationHostAdapter {
         mirrorEngines: MirrorStateEngineRegistry? = nil,
         hostIssues: @escaping () -> [AgentIntegrationHostIssue] = { [] },
         projectStore: ProjectStore? = try? ProjectStore(),
-        chatStore: ChatStore? = try? ChatStore()
+        chatStore: ChatStore? = try? ChatStore(),
+        developmentEnvironmentOverride:
+            (() async -> AgentIntegrationGuestRowReportResult)? = nil
     ) {
         /* Compatibility hashes the running executable. Do that while the
            adapter is being constructed, before a local server can expose it:
@@ -232,6 +240,17 @@ final class AgentIntegrationHostAdapter {
         self.hostIssues = hostIssues
         self.projectStore = projectStore
         self.chatStore = chatStore
+        self.developmentEnvironmentOverride = developmentEnvironmentOverride
+    }
+
+    /// The read a project create resolves its guest-mpw pin from — the
+    /// stub in tests, the live lane everywhere else.
+    private func readDevelopmentEnvironment() async
+        -> AgentIntegrationGuestRowReportResult {
+        if let developmentEnvironmentOverride {
+            return await developmentEnvironmentOverride()
+        }
+        return await developmentEnvironment()
     }
 
     /// The person's saved conversations, for an agent.
@@ -367,7 +386,7 @@ final class AgentIntegrationHostAdapter {
             turnCount: summary.turnCount, updatedAt: summary.updatedAt)
     }
 
-    func projects(_ request: AgentIntegrationProjectRequest)
+    func projects(_ request: AgentIntegrationProjectRequest) async
         -> AgentIntegrationProjectResult {
         guard request.isWellFormed, let projectStore else {
             return request.isWellFormed ? .hostUnavailable : .init(
@@ -379,6 +398,27 @@ final class AgentIntegrationHostAdapter {
             case .list:
                 return .init(projects: try projectStore.list().map(projectSummary))
             case .create:
+                /* The GROUND first: a "guest" home is refused with the
+                   import path rather than silently minted host-home —
+                   ProjectStore.create's digest guard is the authority
+                   story, not an obstacle — and the toolchain choice
+                   resolves to a pin the guest's own build gate can
+                   pass. Both rules live in ProjectGround. */
+                if request.home == "guest" {
+                    let refusal = ProjectGround.Refusal.guestHome
+                    return .init(failure: .init(code: refusal.code,
+                                                message: refusal.message))
+                }
+                let pin: String
+                switch await ProjectGround.resolvePin(
+                    toolchain: request.toolchain,
+                    environment: { await self.readDevelopmentEnvironment() }) {
+                case .failure(let refusal):
+                    return .init(failure: .init(code: refusal.code,
+                                                message: refusal.message))
+                case .success(let resolved):
+                    pin = resolved
+                }
                 let name = request.name!
                 let changes = try request.changes!.map(projectChange)
                 let dataChanges = changes.filter {
@@ -397,19 +437,27 @@ final class AgentIntegrationHostAdapter {
                     throw ProjectStoreError.invalidProject(
                         "Every created project file requires type, creator and Finder flags.")
                 }
+                /* A short fixed product name, NOT the display name: a
+                   debug link output must leave room for PPCLink's
+                   .xcoff sidecar inside HFS's 31-byte component, and a
+                   64-character display name would fail that parse. */
+                let buildLines = ProjectGround.buildActionLines(
+                    dataWritePaths: paths, product: "Build/Product")
+                    .joined(separator: "\n")
                 let document = Data("""
                     CKPROJECT 1
                     id=\(identity)
                     name=\(name)
                     target=application
                     configuration=debug
-                    toolchain=unselected@0
+                    toolchain=\(pin)
                     product=Build/Product
                     type=APPL
                     creator=????
                     architecture=powerpc
                     \(fileLines)
                     \(infoLines)
+                    \(buildLines)
                     """.utf8)
                 let receipt = try projectStore.create(
                     name: name, home: .host, projectDocument: document,
@@ -467,6 +515,58 @@ final class AgentIntegrationHostAdapter {
         } catch {
             return .init(failure: .init(code: projectErrorCode(error),
                                        message: error.localizedDescription))
+        }
+    }
+
+    /// Mints the ProjectStore half of a chat-created project: a
+    /// host-home starter the guest's own MPW can build, grounded by the
+    /// same rules as an agent create. The chat wire carries no
+    /// toolchain (the guest dialog gains one in a later slice), so the
+    /// pin comes from `ProjectGround`'s one defaulting rule; a guest
+    /// home is the same typed refusal story, and either way the CHAT
+    /// folder already exists — this is the code half, not the folder.
+    func mintChatLinkedProject(name: String, home: ProjectHome) async
+        -> Result<ProjectID, ProjectGround.Refusal> {
+        guard projectStore != nil else { return .failure(.storeUnavailable) }
+        if home == .guest { return .failure(.guestHome) }
+        let pin: String
+        switch await ProjectGround.resolvePin(
+            toolchain: nil,
+            environment: { await self.readDevelopmentEnvironment() }) {
+        case .failure(let refusal): return .failure(refusal)
+        case .success(let resolved): pin = resolved
+        }
+        let source = "Sources/Main.c"
+        let document = Data("""
+            CKPROJECT 1
+            id=\(String(repeating: "0", count: 32))
+            name=\(name)
+            target=application
+            configuration=debug
+            toolchain=\(pin)
+            product=Build/Product
+            type=APPL
+            creator=????
+            architecture=powerpc
+            file=\(source)
+            file-info=TEXT|MPS |0000|\(source)
+            \(ProjectGround.buildActionLines(
+                dataWritePaths: [source], product: "Build/Product")
+                .joined(separator: "\n"))
+            """.utf8)
+        do {
+            let receipt = try projectStore!.create(
+                name: name, home: .host, projectDocument: document,
+                files: [ProjectFileChange(
+                    path: source,
+                    fork: .data, type: "TEXT", creator: "MPS ",
+                    finderFlags: 0,
+                    contents: Data(
+                        "/* \(name) */\nint main(void) { return 0; }\n"
+                            .utf8))])
+            return .success(receipt.projectID)
+        } catch {
+            return .failure(.storeRefused(error.localizedDescription))
         }
     }
 

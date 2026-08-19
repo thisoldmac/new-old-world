@@ -104,6 +104,13 @@ final class ChatWireService {
     private var loadedSkills: [GuestKey: [String]] = [:]
     private var chatRefs: [GuestKey: [String: ChatID]] = [:]
     private var projectRefs: [GuestKey: [String: ChatProjectID]] = [:]
+    /// Mints the ProjectStore half of a created chat project — the
+    /// once-dead `linkedProjectID`/`associate` seam, wired. Injected
+    /// because the store project is the adapter's authority, not this
+    /// service's; nil (tests, degraded hosts) files the chat folder
+    /// alone, which is still worth having.
+    private let mintLinkedProject: ((String, ProjectHome) async
+        -> Result<ProjectID, ProjectGround.Refusal>)?
     private struct ActiveTurn {
         let requestID: Int
         var seq: Int = 0
@@ -166,7 +173,9 @@ final class ChatWireService {
         providers: @escaping () async -> [ChatCatalogProvider],
         models: @escaping (String) async -> [ChatModel]?,
         store: ChatStore? = nil,
-        heartbeatInterval: TimeInterval = ChatWireService.heartbeat
+        heartbeatInterval: TimeInterval = ChatWireService.heartbeat,
+        mintLinkedProject: ((String, ProjectHome) async
+            -> Result<ProjectID, ProjectGround.Refusal>)? = nil
     ) {
         self.harness = harness
         self.skills = harness.skills
@@ -174,6 +183,7 @@ final class ChatWireService {
         self.models = models
         self.store = store
         self.heartbeatInterval = heartbeatInterval
+        self.mintLinkedProject = mintLinkedProject
     }
 
     func serve(_ ask: GuestListener.ChatAsk, on asker: Session) {
@@ -672,18 +682,34 @@ final class ChatWireService {
                               "The project could not be made")
             }
             _ = try? store.move(chat, to: record.id)
-            /* A guest-home project cannot be MINTED here: ProjectStore
-               requires a verified guest digest, because the classic
-               Mac holds the authoritative copy and a second minter of
-               guest projects is exactly the drift this contract exists
-               to prevent. So the answer is ok and says what is true —
-               the chat is filed, the code half arrives by the existing
-               stage-and-promote path — rather than quietly making a
-               host project and calling it a guest one. */
-            answer(true, nil, home == .guest
-                ? "Filed. Its code is staged here and promoted to this "
-                    + "machine when you build it."
-                : "Filed. Its code lives on the modern Mac.")
+            /* The chat folder exists either way — it is not worthless
+               without a store project. The CODE half is minted through
+               the same ground rules as an agent create (ProjectGround):
+               a guest home is a typed refusal there, because
+               ProjectStore requires a verified guest digest — the
+               classic Mac holds the authoritative copy and a second
+               minter of guest projects is exactly the drift this
+               contract exists to prevent — so the answer is ok, filed,
+               with the refusal's own story. A host home mints a real
+               starter project and wires the once-dead associate seam. */
+            guard let mintLinkedProject else {
+                return answer(true, nil, home == .guest
+                    ? "Filed. Its code is staged here and promoted to "
+                        + "this machine when you build it."
+                    : "Filed. Its code lives on the modern Mac.")
+            }
+            Task { @MainActor in
+                switch await mintLinkedProject(name, home) {
+                case .success(let projectID):
+                    _ = try? store.associate(record.id, with: projectID)
+                    answer(true, nil, "Filed. A starter project was "
+                        + "minted on the modern Mac and linked; build "
+                        + "it to see it here.")
+                case .failure(let refusal):
+                    answer(true, nil,
+                           "Filed as a chat folder. " + refusal.message)
+                }
+            }
         default:
             answer(false, "provider-error", "Unknown project operation")
         }

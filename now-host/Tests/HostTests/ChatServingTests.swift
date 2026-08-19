@@ -64,7 +64,9 @@ final class ChatServingTests: XCTestCase {
         models: [String: [ChatModel]] = [
             "fake": [ChatModel(providerID: "fake", modelID: "m",
                                displayName: "m")]
-        ]
+        ],
+        mintLinkedProject: ((String, ProjectHome) async
+            -> Result<ProjectID, ProjectGround.Refusal>)? = nil
     ) {
         _ = makeStore()
         let scripted = WireScriptedProvider(script)
@@ -81,7 +83,8 @@ final class ChatServingTests: XCTestCase {
             providers: { providers },
             models: { models[$0] },
             store: store,
-            heartbeatInterval: heartbeatInterval)
+            heartbeatInterval: heartbeatInterval,
+            mintLinkedProject: mintLinkedProject)
         listener.chatService = chatService
     }
 
@@ -419,6 +422,77 @@ final class ChatServingTests: XCTestCase {
                       refused.message ?? "no message")
         XCTAssertEqual(try store?.listProjects().count, 0,
                        "a refused create still made a project")
+    }
+
+    /// The once-dead seam, wired: a host-home chat create also mints a
+    /// real ProjectStore project and associates the chat folder with it.
+    func testCreatingAHostProjectMintsAndAssociatesTheStoreProject()
+        async throws {
+        let minted = ProjectID.mint()
+        var asked: [(String, ProjectHome)] = []
+        installChat(script: [], mintLinkedProject: { name, home in
+            asked.append((name, home))
+            return .success(minted)
+        })
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 85, op: "create", name: "Beeper", home: "host")))
+        let made = try await result(on: guest, id: 85)
+
+        XCTAssertTrue(made.ok)
+        XCTAssertTrue(made.message?.contains("minted") == true,
+                      made.message ?? "no message")
+        XCTAssertEqual(asked.map(\.0), ["Beeper"])
+        XCTAssertEqual(asked.map(\.1), [.host])
+        let record = try XCTUnwrap(try store?.listProjects().first)
+        XCTAssertEqual(record.linkedProjectID, minted,
+                       "the chat folder was not associated with the "
+                           + "minted project")
+    }
+
+    /// A refused mint still files the chat folder — it is not worthless
+    /// without a store project — and the answer says why the code half
+    /// was refused.
+    func testARefusedMintStillCreatesTheChatFolderAndSaysWhy()
+        async throws {
+        installChat(script: [], mintLinkedProject: { _, _ in
+            .failure(.storeRefused("the disk said no"))
+        })
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 86, op: "create", name: "Beeper", home: "host")))
+        let made = try await result(on: guest, id: 86)
+
+        XCTAssertTrue(made.ok, "the chat folder half still succeeded")
+        XCTAssertTrue(made.message?.contains("the disk said no") == true,
+                      made.message ?? "no message")
+        let record = try XCTUnwrap(try store?.listProjects().first)
+        XCTAssertNil(record.linkedProjectID)
+        XCTAssertEqual(record.name, "Beeper")
+    }
+
+    /// A guest home reaches the same minting authority and comes back
+    /// as the import-path story, with the folder still filed.
+    func testAGuestHomeCreateCarriesTheImportPathStory() async throws {
+        installChat(script: [], mintLinkedProject: { _, home in
+            home == .guest
+                ? .failure(.guestHome)
+                : .failure(.storeRefused("unexpected home"))
+        })
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 87, op: "create", name: "Beeper", home: "guest")))
+        let made = try await result(on: guest, id: 87)
+
+        XCTAssertTrue(made.ok)
+        XCTAssertTrue(made.message?.contains("import") == true,
+                      made.message ?? "no message")
+        let record = try XCTUnwrap(try store?.listProjects().first)
+        XCTAssertNil(record.linkedProjectID)
+        XCTAssertEqual(record.intendedHome, .guest)
     }
 
     func testCreatingAProjectFilesTheChatAndRemembersItsHome() async throws {

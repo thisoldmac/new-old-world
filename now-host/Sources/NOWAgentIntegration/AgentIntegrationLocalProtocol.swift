@@ -1,6 +1,13 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
+    /// Version 14 lets a project create say its GROUND: `home` and
+    /// `toolchain` on the create operation. The version moves because a
+    /// v13 host would decode the new request minus those two fields and
+    /// silently mint a host-home, unpinned project against an explicit
+    /// "guest"/"guest-mpw" ask — exactly the silent wrong default this
+    /// slice exists to remove.
+    ///
     /// Version 12 adds a typed settlement read by semantic operation ID and
     /// makes a version mismatch observable as compatibility, not malformed
     /// data. A v12 companion can therefore name an older host once, before a
@@ -49,7 +56,7 @@ public enum AgentIntegrationLocalProtocol {
     /// edges, the host log's shape — rather than the row report. A v12
     /// companion would read the new result as a malformed row report, so
     /// the version moves.
-    public static let version = 13
+    public static let version = 14
     public static let maximumMessageBytes = 64 * 1024
 }
 

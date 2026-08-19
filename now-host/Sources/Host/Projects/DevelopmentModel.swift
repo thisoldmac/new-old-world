@@ -74,35 +74,55 @@ final class DevelopmentModel: ObservableObject {
     }
 
     func createHostProject(name: String) {
-        guard let store else { return }
-        let identity = String(repeating: "0", count: 32)
-        let document = Data("""
-            CKPROJECT 1
-            id=\(identity)
-            name=\(name)
-            target=application
-            configuration=debug
-            toolchain=unselected@0
-            product=Build/\(name)
-            type=APPL
-            creator=????
-            architecture=powerpc
-            file=Sources/Main.c
-            file-info=TEXT|MPS |0000|Sources/Main.c
-            build-action=compile|Sources/Main.c|Build/Main.c.o
-            build-action=link|Build/Main.c.o|Build/\(name)
-            """.utf8)
-        do {
-            let receipt = try store.create(
-                name: name, home: .host, projectDocument: document,
-                files: [ProjectFileChange(
-                    path: "Sources/Main.c",
-                    contents: Data("/* \(name) */\nint main(void) { return 0; }\n".utf8))])
-            latestRevision = receipt
-            selectedProjectID = receipt.projectID
-            refresh()
-        } catch {
-            problem = error.localizedDescription
+        guard let store, !developmentBusy else { return }
+        developmentBusy = true
+        problem = nil
+        /* The pin is resolved rather than emitted as `unselected@0`:
+           the guest refuses `toolchain-pin-mismatch` against anything
+           but its own measured identity, so a template pin nothing can
+           build is a project broken by construction. The defaulting
+           rule (guest's qualified MPW when it reports one, the
+           host-retro68 sentinel otherwise) lives in ProjectGround. */
+        Task { @MainActor in
+            defer { developmentBusy = false }
+            let pin: String
+            switch await ProjectGround.resolvePin(
+                toolchain: nil, environment: { await self.readEnvironment() }) {
+            case .failure(let refusal):
+                problem = refusal.message
+                return
+            case .success(let resolved):
+                pin = resolved
+            }
+            let identity = String(repeating: "0", count: 32)
+            let document = Data("""
+                CKPROJECT 1
+                id=\(identity)
+                name=\(name)
+                target=application
+                configuration=debug
+                toolchain=\(pin)
+                product=Build/\(name)
+                type=APPL
+                creator=????
+                architecture=powerpc
+                file=Sources/Main.c
+                file-info=TEXT|MPS |0000|Sources/Main.c
+                build-action=compile|Sources/Main.c|Build/Main.c.o
+                build-action=link|Build/Main.c.o|Build/\(name)
+                """.utf8)
+            do {
+                let receipt = try store.create(
+                    name: name, home: .host, projectDocument: document,
+                    files: [ProjectFileChange(
+                        path: "Sources/Main.c",
+                        contents: Data("/* \(name) */\nint main(void) { return 0; }\n".utf8))])
+                latestRevision = receipt
+                selectedProjectID = receipt.projectID
+                refresh()
+            } catch {
+                problem = error.localizedDescription
+            }
         }
     }
 

@@ -613,7 +613,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                             code: "now-projects-invalid-request",
                             message: "The Projects request is missing.")))
                     }
-                    return .projects(agentIntegration.projects(project))
+                    return .projects(await agentIntegration.projects(project))
                 case .chats:
                     guard let chat = request.chatRequest else {
                         return .chats(.unavailable(.init(

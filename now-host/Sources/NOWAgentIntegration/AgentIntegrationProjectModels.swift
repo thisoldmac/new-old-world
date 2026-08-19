@@ -86,6 +86,15 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
     public var projectID: String?
     public var workspaceID: String?
     public var name: String?
+    /// Create only: which machine holds the authoritative copy —
+    /// "host" or "guest". Absent reads as "host", because that is the
+    /// only home this surface can mint; a "guest" ask is answered with
+    /// the import path rather than a silently-host project.
+    public var home: String?
+    /// Create only: an opaque toolchain choice token — "guest-mpw" or
+    /// "host-retro68". Absent defaults by what the connected guest
+    /// reports (the rule lives in `ProjectGround`).
+    public var toolchain: String?
     public var expectedRevision: Int?
     public var expectedCommit: String?
     public var path: String?
@@ -97,7 +106,8 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
 
     public init(operation: AgentIntegrationProjectOperation,
                 projectID: String? = nil, workspaceID: String? = nil,
-                name: String? = nil, expectedRevision: Int? = nil,
+                name: String? = nil, home: String? = nil,
+                toolchain: String? = nil, expectedRevision: Int? = nil,
                 expectedCommit: String? = nil, path: String? = nil,
                 fork: AgentIntegrationProjectFork? = nil,
                 maximumBytes: Int? = nil, message: String? = nil,
@@ -107,6 +117,8 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
         self.projectID = projectID
         self.workspaceID = workspaceID
         self.name = name
+        self.home = home
+        self.toolchain = toolchain
         self.expectedRevision = expectedRevision
         self.expectedCommit = expectedCommit
         self.path = path
@@ -118,6 +130,14 @@ public struct AgentIntegrationProjectRequest: Codable, Equatable, Sendable {
     }
 
     public var isWellFormed: Bool {
+        /* Ground fields ride the create operation only, and only in
+           their closed vocabularies — every other operation acts on a
+           project whose ground was decided when it was made. */
+        guard home.map({ $0 == "host" || $0 == "guest" }) ?? true,
+              toolchain.map({ $0 == "guest-mpw" || $0 == "host-retro68" })
+                ?? true,
+              operation == .create || (home == nil && toolchain == nil)
+        else { return false }
         guard projectID.map(Self.isProjectID) ?? true,
               workspaceID.map(Self.isWorkspaceID) ?? true,
               name.map({ !$0.isEmpty && $0.count <= 64
