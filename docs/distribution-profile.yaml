@@ -46,6 +46,10 @@ licensed_inputs:
 excluded_inputs:
   codekitten:
     reason: Not part of the alpha distribution profile.
+  mpw_starter_pack:
+    reason: >-
+      Operator-supplied only; Apple's later free MPW download is not a
+      redistribution right, so no release output may carry the payload.
 
 outputs:
   macos_dmg:

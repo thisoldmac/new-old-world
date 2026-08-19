@@ -103,7 +103,7 @@ work; it does not mean NOW-68K ships in the alpha.
 
 <!-- derived-doc v1
 sources: docs/module-manifest.yaml now-host/Sources/Host/ModuleRegistry.swift now-guest-ppc/src/workshop/workshop_module.h now-guest-68k/src/commands/commands68.c scripts/docs-inventory tools/docs-gate
-sources-sha1: 2947baf752fe3d256ad1859ab623000e722adc98
+sources-sha1: d8c0bbfdb9abb7fda3078162f7b2f43486087f7b
 derive module-map sha256=03dd8a0eabf715800bf6f0c52d475342279647d27fef813faa4a4bb5f4b49062 lines=17
     scripts/docs-inventory
 rederived: pending
@@ -293,4 +293,5 @@ rederived: 2026-08-17T23:36:26-0400 5aa1092c unchanged
 rederived: 2026-08-17T23:52:46-0400 91fe237e unchanged
 rederived: 2026-08-18T15:09:50-0400 c33eb6ee unchanged
 rederived: 2026-08-18T17:19:00-0400 ffc561f4 unchanged
+rederived: 2026-08-18T23:19:31-0400 3341acb1 sources
 -->

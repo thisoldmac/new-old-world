@@ -63,6 +63,13 @@ CodeKitten is not part of the release bundle. A locally supplied copy may still
 appear in a personalized development setup, but the normal product does not
 require it.
 
+The same is true of MPW. New Old World never downloads or redistributes
+Apple's developer tools, but if you place your own MPW disk image and its
+completed manifest in the Onboarding folder's `Dependencies` drop, the setup
+image carries the image to the PowerPC Mac and the Read Me explains how to
+register it. The manifest format and the exact steps are in the
+developer guide's Development starter pack reference.
+
 ## 4. Download the complete setup disk
 
 In the classic Mac's browser, open the exact `http://…/now` address shown by
