@@ -92,6 +92,143 @@ int chat_parse_models(const char *reply, ChatModelRow *rows, int max,
     return count;
 }
 
+int chat_parse_roster(const char *reply, ChatRosterRow *rows, int max,
+                      int *more)
+{
+    const char *p;
+    char object[512];
+    int count = 0;
+
+    if (more != NULL) {
+        *more = 0;
+    }
+    if (reply == NULL || rows == NULL || max <= 0) {
+        return -1;
+    }
+    p = now_json_array(reply, "chats");
+    if (p == NULL) {
+        return -1;
+    }
+    if (more != NULL) {
+        *more = now_json_find_bool(reply, "more", 0) == 1;
+    }
+    while (count < max
+           && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
+        ChatRosterRow *row = &rows[count];
+
+        memset(row, 0, sizeof *row);
+        if (!now_json_find_string(object, "ref", row->ref,
+                                  sizeof row->ref)) {
+            continue;                 /* a row without its ref is no row */
+        }
+        if (!now_json_find_text(object, "label", row->label,
+                                sizeof row->label)) {
+            strncpy(row->label, row->ref, sizeof row->label - 1);
+        }
+        /* Absent origin reads as the OTHER machine, never as this one:
+           a chat this guest did not type is the one a person needs
+           warning about, so silence must not claim local authorship. */
+        if (!now_json_find_string(object, "origin", row->origin,
+                                  sizeof row->origin)) {
+            strcpy(row->origin, "host");
+        }
+        now_json_find_string(object, "project", row->project,
+                             sizeof row->project);
+        now_json_find_text(object, "detail", row->detail,
+                           sizeof row->detail);
+        row->current = now_json_find_bool(object, "current", 0) == 1;
+        ++count;
+    }
+    return count;
+}
+
+int chat_parse_projects(const char *reply, ChatProjectRow *rows, int max,
+                        int *more)
+{
+    const char *p;
+    char object[512];
+    int count = 0;
+
+    if (more != NULL) {
+        *more = 0;
+    }
+    if (reply == NULL || rows == NULL || max <= 0) {
+        return -1;
+    }
+    p = now_json_array(reply, "projects");
+    if (p == NULL) {
+        return -1;
+    }
+    if (more != NULL) {
+        *more = now_json_find_bool(reply, "more", 0) == 1;
+    }
+    while (count < max
+           && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
+        ChatProjectRow *row = &rows[count];
+
+        memset(row, 0, sizeof *row);
+        if (!now_json_find_string(object, "ref", row->ref,
+                                  sizeof row->ref)) {
+            continue;
+        }
+        if (!now_json_find_text(object, "label", row->label,
+                                sizeof row->label)) {
+            strncpy(row->label, row->ref, sizeof row->label - 1);
+        }
+        now_json_find_string(object, "home", row->home, sizeof row->home);
+        row->current = now_json_find_bool(object, "current", 0) == 1;
+        ++count;
+    }
+    return count;
+}
+
+int chat_parse_history(const char *reply, ChatHistoryRow *rows, int max,
+                       int *more)
+{
+    const char *p;
+    char object[kChatCols + 128];
+    char kind[12];
+    int count = 0;
+
+    if (more != NULL) {
+        *more = 0;
+    }
+    if (reply == NULL || rows == NULL || max <= 0) {
+        return -1;
+    }
+    p = now_json_array(reply, "rows");
+    if (p == NULL) {
+        return -1;
+    }
+    if (more != NULL) {
+        *more = now_json_find_bool(reply, "more", 0) == 1;
+    }
+    while (count < max
+           && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
+        ChatHistoryRow *row = &rows[count];
+
+        memset(row, 0, sizeof *row);
+        if (!now_json_find_text(object, "text", row->text,
+                                sizeof row->text)) {
+            continue;
+        }
+        /* Anything but "person" draws as the model said it. A row whose
+           kind this build has never heard of is still CONTENT - dropping
+           it would put a hole in a transcript, and drawing it as the
+           person's would put words in their mouth. */
+        if (now_json_find_string(object, "kind", kind, sizeof kind)
+            && strcmp(kind, "person") == 0) {
+            row->kind = kChatLinePerson;
+        } else if (strcmp(kind, "tool") == 0 || strcmp(kind, "note") == 0) {
+            row->kind = kChatLineMarker;
+        } else {
+            row->kind = kChatLineModel;
+        }
+        ++count;
+    }
+    return count;
+}
+
 int chat_parse_delta(const char *reply, char *out, long cap, long *seq)
 {
     if (reply == NULL || out == NULL || cap <= 0) {

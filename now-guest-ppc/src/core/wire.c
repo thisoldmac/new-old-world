@@ -3505,6 +3505,12 @@ int now_wire_chat_model_page(const char *provider, long cursor,
 int now_wire_chat_send(const char *ref, const char *prompt,
                        char *err, long cap)
 {
+    return now_wire_chat_send_mode(ref, prompt, NULL, err, cap);
+}
+
+int now_wire_chat_send_mode(const char *ref, const char *prompt,
+                            const char *mode, char *err, long cap)
+{
     /* 512 raw escapes to at most 3072 plus envelope — the exec chunk
        arithmetic — so the frame buffer is the control cap itself. The
        cap's one statement is the contract's (ChatSend.prompt); refusing
@@ -3527,10 +3533,24 @@ int now_wire_chat_send(const char *ref, const char *prompt,
     now_json_escape(ref, esc_ref, sizeof esc_ref);
     now_json_escape(prompt, esc_prompt, sizeof esc_prompt);
     ++g.offer_seq;
-    snprintf(json, sizeof json,
-             "{\"type\":\"chat.send\",\"id\":%ld,\"ref\":\"%s\","
-             "\"prompt\":\"%s\"}",
-             g.offer_seq, esc_ref, esc_prompt);
+    /* Two whole frames rather than one assembled in pieces: the wire
+       conformance reader matches a message against a SINGLE snprintf,
+       and a frame stitched from fragments is the shape it cannot check
+       (see AGENTS.md > Testing). */
+    if (mode != NULL && mode[0] != '\0') {
+        char esc_mode[16];
+
+        now_json_escape(mode, esc_mode, sizeof esc_mode);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"chat.send\",\"id\":%ld,\"ref\":\"%s\","
+                 "\"mode\":\"%s\",\"prompt\":\"%s\"}",
+                 g.offer_seq, esc_ref, esc_mode, esc_prompt);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"chat.send\",\"id\":%ld,\"ref\":\"%s\","
+                 "\"prompt\":\"%s\"}",
+                 g.offer_seq, esc_ref, esc_prompt);
+    }
     if (cloud_send(json, err, cap) != 0) {
         return -1;
     }
@@ -3539,6 +3559,113 @@ int now_wire_chat_send(const char *ref, const char *prompt,
     g_chat.next_seq = 0;
     g_chat.quiet_deadline = TickCount() + kChatQuietTimeoutTicks;
     return 0;
+}
+
+/* --- the sessions half -------------------------------------------------
+   Each of these is one ask with one answer, and every one of them is
+   refused locally while a turn streams where that would race the
+   answer sink - the chat.reset rule, applied once per verb rather than
+   discovered per verb. */
+
+static int chat_ask_begin(const char *json, int kind, char *err, long cap)
+{
+    if (cloud_send(json, err, cap) != 0) {
+        return -1;
+    }
+    g_chatask.pending = true;
+    g_chatask.id = g.offer_seq;
+    g_chatask.kind = kind;
+    g_chatask.deadline = TickCount() + kChatAskTimeoutTicks;
+    return 0;
+}
+
+int now_wire_chat_chats(long cursor, char *err, long cap)
+{
+    char json[96];
+
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.chats\",\"id\":%ld,\"cursor\":%ld}",
+             g.offer_seq, cursor);
+    return chat_ask_begin(json, kChatAnswerRoster, err, cap);
+}
+
+int now_wire_chat_open(const char *ref, char *err, long cap)
+{
+    char json[128];
+    char esc_ref[32];
+
+    if (g_chat.pending) {
+        snprintf(err, (size_t)cap,
+                 "an answer is still arriving - chat --stop first");
+        return -1;
+    }
+    now_json_escape(ref, esc_ref, sizeof esc_ref);
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.open\",\"id\":%ld,\"ref\":\"%s\"}",
+             g.offer_seq, esc_ref);
+    return chat_ask_begin(json, kChatAnswerResult, err, cap);
+}
+
+int now_wire_chat_history(long cursor, char *err, long cap)
+{
+    char json[96];
+
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.history\",\"id\":%ld,\"cursor\":%ld}",
+             g.offer_seq, cursor);
+    return chat_ask_begin(json, kChatAnswerTranscript, err, cap);
+}
+
+int now_wire_chat_projects(long cursor, char *err, long cap)
+{
+    char json[96];
+
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.projects\",\"id\":%ld,\"cursor\":%ld}",
+             g.offer_seq, cursor);
+    return chat_ask_begin(json, kChatAnswerProjects, err, cap);
+}
+
+int now_wire_chat_project(const char *op, const char *ref,
+                          const char *name, const char *home,
+                          char *err, long cap)
+{
+    char json[kNowMaxControl];
+    char esc_op[16];
+    char esc_ref[32];
+    char esc_name[256];
+    char esc_home[16];
+
+    now_json_escape(op, esc_op, sizeof esc_op);
+    ++g.offer_seq;
+    /* One whole frame per shape, never a stitched one: select names a
+       ref, create names a name and a home, none names neither. The
+       host refuses a create with no home rather than choosing a
+       machine for somebody's source, so this side never invents one
+       either. */
+    if (strcmp(op, "create") == 0) {
+        now_json_escape(name != NULL ? name : "", esc_name, sizeof esc_name);
+        now_json_escape(home != NULL ? home : "", esc_home, sizeof esc_home);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"chat.project\",\"id\":%ld,\"op\":\"%s\","
+                 "\"name\":\"%s\",\"home\":\"%s\"}",
+                 g.offer_seq, esc_op, esc_name, esc_home);
+    } else if (strcmp(op, "select") == 0) {
+        now_json_escape(ref != NULL ? ref : "", esc_ref, sizeof esc_ref);
+        snprintf(json, sizeof json,
+                 "{\"type\":\"chat.project\",\"id\":%ld,\"op\":\"%s\","
+                 "\"ref\":\"%s\"}",
+                 g.offer_seq, esc_op, esc_ref);
+    } else {
+        snprintf(json, sizeof json,
+                 "{\"type\":\"chat.project\",\"id\":%ld,\"op\":\"%s\"}",
+                 g.offer_seq, esc_op);
+    }
+    return chat_ask_begin(json, kChatAnswerResult, err, cap);
 }
 
 int now_wire_chat_cancel(char *err, long cap)
@@ -3594,6 +3721,19 @@ static void chat_catalog_answer(const char *reply)
         return;
     }
     kind = g_chatask.kind;
+    g_chatask.pending = false;
+    chat_note(kind, reply);
+}
+
+/* One answer, one pending, matched by the kind WE asked for and the
+   echoed id - the catalog rule, generalised so three more shapes did
+   not each grow their own copy of it. */
+static void chat_paged_answer(const char *reply, int kind)
+{
+    if (!g_chatask.pending || g_chatask.kind != kind
+        || now_json_find_int(reply, "id", -1) != g_chatask.id) {
+        return;
+    }
     g_chatask.pending = false;
     chat_note(kind, reply);
 }
@@ -8097,6 +8237,18 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "chat.catalog")) {
         chat_catalog_answer(reply);
+        return 1;
+    }
+    if (now_json_type_is(reply, "chat.roster")) {
+        chat_paged_answer(reply, kChatAnswerRoster);
+        return 1;
+    }
+    if (now_json_type_is(reply, "chat.transcript")) {
+        chat_paged_answer(reply, kChatAnswerTranscript);
+        return 1;
+    }
+    if (now_json_type_is(reply, "chat.projectroster")) {
+        chat_paged_answer(reply, kChatAnswerProjects);
         return 1;
     }
     if (now_json_type_is(reply, "chat.delta")) {

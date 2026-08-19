@@ -48,6 +48,40 @@ typedef struct {
     char detail[96];
 } ChatModelRow;
 
+/* The sessions half. A roster row is metadata ONLY - the contract
+   forbids transcript text here, and a buffer that could hold some
+   would be an invitation to send it. */
+enum {
+    kChatRosterRows = 12,             /* the roster answer's maxItems */
+    kChatHistoryRows = 24,            /* one history page's maxItems */
+    kChatMaxChats = 60,               /* accumulated across pages */
+    kChatMaxProjects = 24
+};
+
+typedef struct {
+    char ref[kChatRefMax + 1];        /* host-minted; never displayed */
+    char label[32];                   /* the chat's title, MacRoman */
+    char origin[8];                   /* "guest" | "host" - where typed */
+    char project[kChatRefMax + 1];    /* empty when the chat is loose */
+    char detail[48];                  /* "3 turns - 18 Aug", display only */
+    Boolean current;                  /* the conversation this link is on */
+} ChatRosterRow;
+
+typedef struct {
+    char ref[kChatRefMax + 1];
+    char label[32];
+    char home[8];                     /* "host" | "guest" | empty */
+    Boolean current;
+} ChatProjectRow;
+
+/* One transcript row as it arrives. `kind` is kChatLine* below: who
+   said it is a DRAWING fact, and the page right-aligns a person's
+   lines whether they were typed a second or a year ago. */
+typedef struct {
+    int kind;
+    char text[kChatCols];
+} ChatHistoryRow;
+
 /* Parsers. A malformed frame reads as failure (-1 / 0), never a crash;
    the wire has already matched type, id and which shape was asked. */
 int chat_parse_providers(const char *reply, ChatProviderRow *rows,
@@ -57,6 +91,17 @@ int chat_parse_providers(const char *reply, ChatProviderRow *rows,
    the person switched popups reads as stale, not as content. */
 int chat_parse_models(const char *reply, ChatModelRow *rows, int max,
                       int *more, char *provider_out, long provider_cap);
+/* One roster page: returns the row count and sets *more when another
+   page follows, the models-page shape exactly. */
+int chat_parse_roster(const char *reply, ChatRosterRow *rows, int max,
+                      int *more);
+int chat_parse_projects(const char *reply, ChatProjectRow *rows, int max,
+                        int *more);
+/* One history page, OLDEST FIRST within the page so it appends in
+   reading order; *more means older rows remain further back. */
+int chat_parse_history(const char *reply, ChatHistoryRow *rows, int max,
+                       int *more);
+
 int chat_parse_delta(const char *reply, char *out, long cap, long *seq);
 int chat_parse_status(const char *reply, char *out, long cap);
 int chat_parse_result(const char *reply, int *ok,

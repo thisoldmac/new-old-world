@@ -262,6 +262,104 @@ static void test_transcript_streams_and_rolls(void)
     }
 }
 
+/* The sessions half. Frames are written the way the host writes them,
+   which is the one thing a parser test must not invent - these are the
+   shapes ChatServingTests asserts on the other side. */
+
+static void test_roster_rows_carry_origin_and_never_transcript_text(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.roster\",\"id\":7,\"chats\":["
+        "{\"ref\":\"c1\",\"label\":\"hello from the classic Mac\","
+        "\"origin\":\"guest\",\"detail\":\"3 turns - 18 Aug\","
+        "\"current\":true},"
+        "{\"ref\":\"c2\",\"label\":\"typed upstairs\","
+        "\"origin\":\"host\",\"project\":\"p3\"}"
+        "],\"more\":true}";
+    ChatRosterRow rows[kChatRosterRows];
+    int more = 0;
+    int n = chat_parse_roster(reply, rows, kChatRosterRows, &more);
+
+    assert(n == 2);
+    assert(more == 1);
+    assert(strcmp(rows[0].ref, "c1") == 0);
+    assert(strcmp(rows[0].origin, "guest") == 0);
+    assert(rows[0].current);
+    assert(rows[0].project[0] == '\0');
+    assert(strcmp(rows[1].origin, "host") == 0);
+    assert(strcmp(rows[1].project, "p3") == 0);
+    assert(!rows[1].current);
+}
+
+/* Silence about origin must not claim this machine typed it: the chat
+   a person needs warning about is the one they wrote somewhere else. */
+static void test_a_row_with_no_origin_is_not_claimed_as_local(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.roster\",\"id\":1,\"chats\":["
+        "{\"ref\":\"c1\",\"label\":\"older than the field\"}"
+        "],\"more\":false}";
+    ChatRosterRow rows[2];
+
+    assert(chat_parse_roster(reply, rows, 2, NULL) == 1);
+    assert(strcmp(rows[0].origin, "host") == 0);
+}
+
+static void test_projects_carry_their_home(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.projectroster\",\"id\":9,\"projects\":["
+        "{\"ref\":\"p1\",\"label\":\"Beeper\",\"home\":\"guest\","
+        "\"current\":true},"
+        "{\"ref\":\"p2\",\"label\":\"Notes\",\"home\":\"host\"}"
+        "],\"more\":false}";
+    ChatProjectRow rows[kChatMaxProjects];
+    int more = 1;
+    int n = chat_parse_projects(reply, rows, kChatMaxProjects, &more);
+
+    assert(n == 2);
+    assert(more == 0);
+    assert(strcmp(rows[0].home, "guest") == 0);
+    assert(rows[0].current);
+    assert(strcmp(rows[1].home, "host") == 0);
+}
+
+static void test_history_keeps_who_said_it(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.transcript\",\"id\":3,\"rows\":["
+        "{\"kind\":\"person\",\"text\":\"what is running?\"},"
+        "{\"kind\":\"tool\",\"text\":\"now_list_processes\"},"
+        "{\"kind\":\"model\",\"text\":\"Finder and NOW.\"},"
+        "{\"kind\":\"seance\",\"text\":\"from a later build\"}"
+        "],\"more\":true}";
+    ChatHistoryRow rows[kChatHistoryRows];
+    int more = 0;
+    int n = chat_parse_history(reply, rows, kChatHistoryRows, &more);
+
+    assert(n == 4);
+    assert(more == 1);
+    assert(rows[0].kind == kChatLinePerson);
+    assert(strcmp(rows[0].text, "what is running?") == 0);
+    assert(rows[1].kind == kChatLineMarker);
+    assert(rows[2].kind == kChatLineModel);
+    /* A kind from a later build is CONTENT: dropping it holes the
+       transcript, and drawing it as the person's puts words in their
+       mouth. */
+    assert(rows[3].kind == kChatLineModel);
+}
+
+static void test_a_malformed_page_reads_as_failure(void)
+{
+    ChatRosterRow rows[2];
+    ChatHistoryRow history[2];
+
+    assert(chat_parse_roster("{\"type\":\"chat.roster\"}", rows, 2, NULL)
+           == -1);
+    assert(chat_parse_history("{}", history, 2, NULL) == -1);
+    assert(chat_parse_roster(NULL, rows, 2, NULL) == -1);
+}
+
 int main(void)
 {
     test_providers_fill_rows_whatever_their_state();
@@ -271,6 +369,11 @@ int main(void)
     test_feed_is_chunk_safe_across_word_boundaries();
     test_feed_wraps_at_spaces_and_hard_breaks_long_words();
     test_transcript_streams_and_rolls();
+    test_roster_rows_carry_origin_and_never_transcript_text();
+    test_a_row_with_no_origin_is_not_claimed_as_local();
+    test_projects_carry_their_home();
+    test_history_keeps_who_said_it();
+    test_a_malformed_page_reads_as_failure();
     puts("chat_model_test: all passed");
     return 0;
 }
