@@ -57,12 +57,14 @@ enum ChatSystemPrompt {
 
     static func compose(
         health: AgentIntegrationSessionHealthResult, origin: Origin,
-        screen: Screen? = nil, reach: ChatToolReach = .harness
+        screen: Screen? = nil, reach: ChatToolReach = .harness,
+        mode: ChatMode = .build
     ) -> String {
         var sections = [preamble]
         sections.append(machineFrame(health: health, origin: origin))
         sections.append(reachFrame(reach))
         if case .none = reach {} else {
+            sections.append(modeFrame(mode))
             sections.append(projectAuthority)
             sections.append(toolGuidance)
         }
@@ -104,6 +106,38 @@ enum ChatSystemPrompt {
                 machine, say plainly that this model cannot reach it and \
                 that a tool-capable model can. Never say you will go and \
                 check, and never describe a tool result you did not get.
+                """
+        }
+    }
+
+    /// What the mode MEANS to the model. The gate itself is the tool
+    /// catalog the turn was handed; this only tells it what it is being
+    /// asked for, which is the whole difference between chat and plan —
+    /// they reach exactly as far as each other.
+    static func modeFrame(_ mode: ChatMode) -> String {
+        switch mode {
+        case .chat:
+            return """
+                MODE: chat. You have been given only the tools that \
+                change nothing, so look freely and answer. If the person \
+                asks for a change, say which mode does it — Build — \
+                rather than attempting one and reporting a refusal.
+                """
+        case .plan:
+            return """
+                MODE: plan. You have been given only the tools that \
+                change nothing. Investigate as much as you need, then \
+                answer with a PLAN: the steps in order, what each one \
+                touches, and what could go wrong. Do not ask to switch \
+                to Build yourself; leave the person to.
+                """
+        case .build:
+            return """
+                MODE: build. You have the whole catalog, including the \
+                rows that change this machine and its files. Say what \
+                you are about to change before a step that is hard to \
+                undo, and prefer the smallest change that answers the \
+                question.
                 """
         }
     }

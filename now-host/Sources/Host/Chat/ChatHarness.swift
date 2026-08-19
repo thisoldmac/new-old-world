@@ -79,13 +79,15 @@ actor ChatHarness {
         transcript: [ChatTurn],
         addressing selector: String?,
         origin: ChatSystemPrompt.Origin,
+        mode: ChatMode = .build,
         events: @escaping @Sendable (ChatHarnessEvent) -> Void
     ) -> Bool {
         guard running[conversation] == nil else { return false }
         let task = Task {
             await self.turn(
                 wireModelID: wireModelID, transcript: transcript,
-                selector: selector, origin: origin, events: events)
+                selector: selector, origin: origin, mode: mode,
+                events: events)
             self.finished(conversation)
         }
         running[conversation] = task
@@ -125,6 +127,7 @@ actor ChatHarness {
         transcript: [ChatTurn],
         selector: String?,
         origin: ChatSystemPrompt.Origin,
+        mode: ChatMode,
         events: @escaping @Sendable (ChatHarnessEvent) -> Void
     ) async {
         guard let (provider, modelID) = registry.resolve(wireID: wireModelID)
@@ -144,14 +147,14 @@ actor ChatHarness {
         let reach = provider.toolReach
         let system = ChatSystemPrompt.compose(
             health: await client.sessionHealth(), origin: origin,
-            screen: await guestScreen(), reach: reach)
+            screen: await guestScreen(), reach: reach, mode: mode)
         /* Every row, every turn. They used to be filtered by a sniffer
            over the person's own words, so asking for "a thing that
            beeps" got a model with no project tools and an honest
            apology. The catalog is the surface; a keyword is not a
            capability check. */
         let tools = reach.suppliesDescriptors
-            ? ChatToolRendering.descriptors(registry: projections)
+            ? ChatToolRendering.descriptors(registry: projections, mode: mode)
             : []
         let dispatch = HostProjectionDispatch(
             face: .chat, registry: projections, audit: audit)

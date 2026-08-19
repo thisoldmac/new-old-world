@@ -28,10 +28,29 @@ final class ChatServingTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        if let storeRoot { try? FileManager.default.removeItem(at: storeRoot) }
+        store = nil
+        storeRoot = nil
         listener.stop()
         listener = nil
         chatService = nil
         provider = nil
+    }
+
+    /// A store in a throwaway directory, so a serving test never writes
+    /// into the real Application Support — and nil where a test wants
+    /// the store-less behaviour on purpose.
+    private var store: ChatStore?
+    private var storeRoot: URL?
+
+    private func makeStore() -> ChatStore {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-chats-\(UUID().uuidString)")
+        storeRoot = root
+        // swiftlint:disable:next force_try
+        let store = try! ChatStore(root: root)
+        self.store = store
+        return store
     }
 
     private func installChat(
@@ -47,6 +66,7 @@ final class ChatServingTests: XCTestCase {
                                displayName: "m")]
         ]
     ) {
+        _ = makeStore()
         let scripted = WireScriptedProvider(script)
         scripted.hangsWhenDry = hangsWhenDry
         provider = scripted
@@ -60,8 +80,51 @@ final class ChatServingTests: XCTestCase {
             harness: harness,
             providers: { providers },
             models: { models[$0] },
+            store: store,
             heartbeatInterval: heartbeatInterval)
         listener.chatService = chatService
+    }
+
+    private func roster(on guest: FakeGuest, id: Int) async throws
+        -> ChatRoster {
+        try await waitUntil("roster \(id)") {
+            guest.received.contains {
+                if case .chatRoster(let r) = $0 { return r.id == id }
+                return false
+            }
+        }
+        for frame in guest.received.reversed() {
+            if case .chatRoster(let r) = frame, r.id == id { return r }
+        }
+        throw WaitTimeout(what: "roster \(id)")
+    }
+
+    private func transcriptPage(on guest: FakeGuest, id: Int) async throws
+        -> ChatTranscript {
+        try await waitUntil("transcript \(id)") {
+            guest.received.contains {
+                if case .chatTranscript(let t) = $0 { return t.id == id }
+                return false
+            }
+        }
+        for frame in guest.received.reversed() {
+            if case .chatTranscript(let t) = frame, t.id == id { return t }
+        }
+        throw WaitTimeout(what: "transcript \(id)")
+    }
+
+    private func projectRoster(on guest: FakeGuest, id: Int) async throws
+        -> ChatProjectRoster {
+        try await waitUntil("projects \(id)") {
+            guest.received.contains {
+                if case .chatProjectRoster(let r) = $0 { return r.id == id }
+                return false
+            }
+        }
+        for frame in guest.received.reversed() {
+            if case .chatProjectRoster(let r) = frame, r.id == id { return r }
+        }
+        throw WaitTimeout(what: "projects \(id)")
     }
 
     private struct WaitTimeout: Error { let what: String }
@@ -258,6 +321,120 @@ final class ChatServingTests: XCTestCase {
                 "the heartbeat invented \(line)")
         }
         _ = try? guest.send(.chatCancel(ChatCancel(id: 40)))
+    }
+
+    // MARK: - Sessions, lazily
+
+    /// The regression this slice answers: a guest conversation used to
+    /// live in a dictionary and die with the link.
+    func testAGuestTurnIsSavedAndListedWithItsOrigin() async throws {
+        installChat(script: [[.textDelta("hello back"), .finished(.endTurn)]])
+        let guest = try await connectedGuest()
+        let ref = try await mintedRef(on: guest)
+
+        try guest.send(.chatSend(ChatSend(
+            id: 50, ref: ref, prompt: "hello from the classic Mac")))
+        _ = try await result(on: guest, id: 50)
+
+        try guest.send(.chatChats(ChatChats(id: 51)))
+        let roster = try await roster(on: guest, id: 51)
+        XCTAssertEqual(roster.chats.count, 1)
+        let row = try XCTUnwrap(roster.chats.first)
+        XCTAssertEqual(row.origin, "guest")
+        XCTAssertEqual(row.current, true)
+        XCTAssertEqual(row.label, "hello from the classic Mac")
+        // Metadata only: not one byte of what was said.
+        let encoded = try ControlMessageCodec.encode(.chatRoster(roster))
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self)
+            .contains("hello back"))
+    }
+
+    /// A chat typed at the modern Mac is listed to the guest — the
+    /// widening decided 2026-08-18 — and it is marked as such.
+    func testAHostChatIsListedToTheGuestAndSaysWhereItWasTyped() async throws {
+        installChat(script: [])
+        let store = try XCTUnwrap(store)
+        _ = try store.createChat(title: "typed upstairs", origin: .host)
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatChats(ChatChats(id: 60)))
+        let roster = try await roster(on: guest, id: 60)
+
+        XCTAssertEqual(roster.chats.map(\.origin), ["host"])
+        XCTAssertEqual(roster.chats.first?.label, "typed upstairs")
+    }
+
+    /// Opening pushes NOTHING; history pages from the end.
+    func testOpeningAChatSendsNoTranscriptAndHistoryPagesFromTheEnd()
+        async throws {
+        installChat(script: [])
+        let store = try XCTUnwrap(store)
+        let saved = try store.createChat(title: "long one", origin: .host)
+        var transcript = StoredChatTranscript()
+        for index in 0..<60 {
+            transcript.rows.append(StoredChatRow(
+                kind: index.isMultiple(of: 2) ? .person : .model,
+                text: "line \(index)", toolName: nil, toolOK: nil))
+        }
+        _ = try store.saveTranscript(transcript, for: saved.id)
+        let guest = try await connectedGuest()
+        try guest.send(.chatChats(ChatChats(id: 70)))
+        let roster = try await roster(on: guest, id: 70)
+        let ref = try XCTUnwrap(roster.chats.first?.ref)
+
+        try guest.send(.chatOpen(ChatOpen(id: 71, ref: ref)))
+        let opened = try await result(on: guest, id: 71)
+        XCTAssertTrue(opened.ok)
+        XCTAssertFalse(
+            guest.received.contains { if case .chatTranscript = $0 {
+                return true } else { return false } },
+            "an open pushed a transcript nobody asked for")
+
+        try guest.send(.chatHistory(ChatHistory(id: 72)))
+        let first = try await transcriptPage(on: guest, id: 72)
+        XCTAssertEqual(first.rows.count, ChatWireService.historyRows)
+        XCTAssertEqual(first.rows.last?.text, "line 59",
+                       "the newest page comes first")
+        XCTAssertTrue(first.more)
+
+        try guest.send(.chatHistory(ChatHistory(
+            id: 73, cursor: first.rows.count)))
+        let second = try await transcriptPage(on: guest, id: 73)
+        XCTAssertEqual(second.rows.last?.text, "line 35")
+    }
+
+    /// The question this product exists to ask must not be answered by
+    /// a default.
+    func testCreatingAProjectWithoutSayingWhereItLivesIsRefused()
+        async throws {
+        installChat(script: [])
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 80, op: "create", name: "Beeper")))
+        let refused = try await result(on: guest, id: 80)
+
+        XCTAssertFalse(refused.ok)
+        XCTAssertTrue(refused.message?.contains("modern") == true,
+                      refused.message ?? "no message")
+        XCTAssertEqual(try store?.listProjects().count, 0,
+                       "a refused create still made a project")
+    }
+
+    func testCreatingAProjectFilesTheChatAndRemembersItsHome() async throws {
+        installChat(script: [])
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 81, op: "create", name: "Beeper", home: "guest")))
+        let made = try await result(on: guest, id: 81)
+        XCTAssertTrue(made.ok)
+
+        try guest.send(.chatProjects(ChatProjects(id: 82)))
+        let projects = try await projectRoster(on: guest, id: 82)
+        XCTAssertEqual(projects.projects.map(\.label), ["Beeper"])
+        XCTAssertEqual(projects.projects.first?.home, "guest")
+        XCTAssertEqual(projects.projects.first?.current, true)
     }
 
     func testARefRidesBackToTheRealModelID() async throws {

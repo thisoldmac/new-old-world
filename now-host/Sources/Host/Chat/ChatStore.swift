@@ -60,6 +60,16 @@ struct ChatProjectID: RawRepresentable, Codable, Hashable, Sendable {
     }
 }
 
+/// Where a chat was typed.
+///
+/// Optional on the record and absent-reads-as-host, because every chat
+/// that existed before 2026-08-18 was typed at the modern Mac and a
+/// stored record must not have to be rewritten to say so.
+enum ChatOrigin: String, Codable, Equatable, Sendable {
+    case host
+    case guest
+}
+
 /// A chat as the sidebar knows it — metadata only, deliberately. Not
 /// one byte of the conversation is in here.
 struct ChatSummary: Codable, Equatable, Sendable, Identifiable {
@@ -72,6 +82,13 @@ struct ChatSummary: Codable, Equatable, Sendable, Identifiable {
     /// How many turns the transcript holds, so a row can say "empty"
     /// without reading the transcript to find out.
     var turnCount: Int
+    /// Where it was typed. Both faces list both, so a person opening a
+    /// chat is told which machine they wrote it at.
+    var origin: ChatOrigin?
+
+    /// The reading a missing field gets: everything written before
+    /// chats could be typed anywhere was typed here.
+    var whereTyped: ChatOrigin { origin ?? .host }
 }
 
 /// A chat project: a folder this store owns, optionally pointing at a
@@ -83,6 +100,18 @@ struct ChatProjectRecord: Codable, Equatable, Sendable, Identifiable {
     /// The Projects-module project this one is associated with, if a
     /// person has associated one. A reference — never a copy.
     var linkedProjectID: ProjectID?
+    /// Which machine the person said should hold the code, asked when
+    /// the project was created.
+    ///
+    /// Separate from the linked project's OWN `home`, and deliberately:
+    /// a guest-home project cannot be minted blank — `ProjectStore.
+    /// create` requires a verified guest digest, because the
+    /// authoritative copy is the one on the classic Mac and inventing
+    /// one here would be a second minter of guest projects. So an
+    /// answered "guest" is recorded as INTENT and realised by the
+    /// existing stage-and-promote path; until then the linked project
+    /// is host-home and the person is told so in the same breath.
+    var intendedHome: ProjectHome?
 }
 
 /// One transcript row as persisted. The live `ChatDisplayRow` mints a
@@ -238,11 +267,13 @@ final class ChatStore {
     @discardableResult
     func createChat(title: String = ChatStore.untitled,
                     in projectID: ChatProjectID? = nil,
+                    origin: ChatOrigin = .host,
                     now: Date = Date()) throws -> ChatSummary {
         if let projectID { _ = try project(projectID) }
         let summary = ChatSummary(
             id: .mint(), title: try validated(title), createdAt: now,
-            updatedAt: now, projectID: projectID, turnCount: 0)
+            updatedAt: now, projectID: projectID, turnCount: 0,
+            origin: origin)
         try write(summary)
         return summary
     }
@@ -336,10 +367,11 @@ final class ChatStore {
 
     @discardableResult
     func createProject(name: String, linkedProjectID: ProjectID? = nil,
+                       intendedHome: ProjectHome? = nil,
                        now: Date = Date()) throws -> ChatProjectRecord {
         let record = ChatProjectRecord(
             id: .mint(), name: try validated(name), createdAt: now,
-            linkedProjectID: linkedProjectID)
+            linkedProjectID: linkedProjectID, intendedHome: intendedHome)
         try fileManager.createDirectory(
             at: folderURL(for: record.id), withIntermediateDirectories: true)
         try write(record)

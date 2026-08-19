@@ -438,6 +438,88 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(names.contains("now_development"))
     }
 
+    // MARK: - Modes are gates
+
+    /* The claim the contract makes in capitals: "A MODE IS A GATE, NOT
+       A LABEL". If this only checked the prompt text, a mode that
+       supplied the whole catalog would pass while telling the model to
+       behave — which is the shape of failure this repository has
+       already paid for elsewhere. So it checks the CATALOG. */
+    func testChatAndPlanAreHandedNoRowThatCanChangeTheMachine() async {
+        for mode in [ChatMode.chat, .plan] {
+            let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+            let harness = makeHarness(provider: provider)
+            let log = EventLog()
+
+            await harness.run(
+                conversation: "t", wireModelID: "fake/m",
+                transcript: [.user("have a look")],
+                addressing: nil, origin: .hostPane, mode: mode,
+                events: log.sink)
+            _ = log.wait(self)
+
+            let names = Set(provider.requests[0].tools.map(\.name))
+            XCTAssertFalse(names.isEmpty, "\(mode) was given nothing at all")
+            XCTAssertFalse(names.contains("now_guest_files_mutate"), "\(mode)")
+            XCTAssertFalse(names.contains("now_launch_software"), "\(mode)")
+            XCTAssertFalse(names.contains("now_control_act"), "\(mode)")
+            XCTAssertTrue(names.contains("now_list_processes"), "\(mode)")
+            // Every row it DID get says of itself that it changes
+            // nothing — asserted against the registry, not a list here.
+            for name in names {
+                let projection = try? XCTUnwrap(
+                    HostProjectionRegistry.hostFaces.projection(named: name))
+                XCTAssertTrue(
+                    ChatToolRendering.isReadOnly(projection!),
+                    "\(mode) was handed \(name), which does not claim to be "
+                        + "read-only")
+            }
+        }
+    }
+
+    func testBuildGetsTheWholeCatalog() async {
+        let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+        let harness = makeHarness(provider: provider)
+        let log = EventLog()
+
+        await harness.run(
+            conversation: "t", wireModelID: "fake/m",
+            transcript: [.user("change it")],
+            addressing: nil, origin: .hostPane, mode: .build,
+            events: log.sink)
+        _ = log.wait(self)
+
+        XCTAssertEqual(
+            provider.requests[0].tools.count,
+            HostProjectionRegistry.hostFaces.projections.count)
+    }
+
+    /// Absent and unrecognised both land on the tier that changes
+    /// nothing. An older guest sends no mode; a newer one could send a
+    /// word this build has never heard of.
+    func testAnUnknownModeReadsAsTheSafeOne() {
+        XCTAssertEqual(ChatMode(wire: nil), .chat)
+        XCTAssertEqual(ChatMode(wire: ""), .chat)
+        XCTAssertEqual(ChatMode(wire: "BUILD"), .chat)
+        XCTAssertEqual(ChatMode(wire: "supervisor"), .chat)
+        XCTAssertEqual(ChatMode(wire: "build"), .build)
+    }
+
+    /// Silence reads as UNSAFE. Untestable through the registry — every
+    /// row there declares the hint — so it is asserted over the reading
+    /// itself, which is the only place the default lives.
+    func testARowThatDoesNotSaySoIsNotTreatedAsReadOnly() {
+        XCTAssertTrue(ChatToolRendering.isReadOnly(
+            descriptor: ["annotations": ["readOnlyHint": true]]))
+        XCTAssertFalse(ChatToolRendering.isReadOnly(
+            descriptor: ["annotations": ["readOnlyHint": false]]))
+        XCTAssertFalse(ChatToolRendering.isReadOnly(
+            descriptor: ["annotations": [:] as [String: Any]]),
+            "a row that forgot to declare was treated as safe")
+        XCTAssertFalse(ChatToolRendering.isReadOnly(descriptor: [:]),
+                       "a row with no annotations was treated as safe")
+    }
+
     func testToolSchemasCarryNoTopLevelCombinators() throws {
         // The Anthropic API rejects a top-level oneOf/anyOf/allOf/not
         // in input_schema (metal, 2026-08-02: now_launch_software

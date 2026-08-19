@@ -18,6 +18,11 @@ extension GuestListener {
         case send(ChatSend)
         case cancel(ChatCancel)
         case reset(ChatReset)
+        case chats(ChatChats)
+        case open(ChatOpen)
+        case history(ChatHistory)
+        case projects(ChatProjects)
+        case project(ChatProject)
     }
 
     /// Like the cloud serves: answered for any connected guest, down
@@ -75,7 +80,21 @@ final class ChatWireService {
     /// here, so the page never learns about frames.
     private let models: (String) async -> [ChatModel]?
 
+    /// Where a guest's conversations live now. Optional because a store
+    /// that cannot be opened must not take chat down with it: without
+    /// one the family behaves exactly as it did before this slice —
+    /// one conversation per connection, held in memory, gone on
+    /// disconnect — and every session ask answers honestly unavailable.
+    private let store: ChatStore?
+    /// Which saved chat each connection is currently on.
+    private var currentChat: [GuestKey: ChatID] = [:]
+    /// The in-memory fallback, and the working copy while a turn runs.
     private var conversations: [GuestKey: [ChatTurn]] = [:]
+    /// Minted refs for chats and projects, per connection — the model
+    /// ref rule: a title or a project name is a person's sentence and
+    /// outgrows a classic buffer, so only opaque refs cross.
+    private var chatRefs: [GuestKey: [String: ChatID]] = [:]
+    private var projectRefs: [GuestKey: [String: ChatProjectID]] = [:]
     private struct ActiveTurn {
         let requestID: Int
         var seq: Int = 0
@@ -128,15 +147,22 @@ final class ChatWireService {
 
     private let heartbeatInterval: TimeInterval
 
+    /// Rows per roster page — the frame bound, `more` carries the rest.
+    static let rosterRows = 12
+    /// Transcript rows per history page.
+    static let historyRows = 24
+
     init(
         harness: ChatHarness,
         providers: @escaping () async -> [ChatCatalogProvider],
         models: @escaping (String) async -> [ChatModel]?,
+        store: ChatStore? = nil,
         heartbeatInterval: TimeInterval = ChatWireService.heartbeat
     ) {
         self.harness = harness
         self.providers = providers
         self.models = models
+        self.store = store
         self.heartbeatInterval = heartbeatInterval
     }
 
@@ -150,6 +176,16 @@ final class ChatWireService {
             serveCancel(request, on: asker)
         case .reset(let request):
             serveReset(request, on: asker)
+        case .chats(let request):
+            serveChats(request, on: asker)
+        case .open(let request):
+            serveOpen(request, on: asker)
+        case .history(let request):
+            serveHistory(request, on: asker)
+        case .projects(let request):
+            serveProjects(request, on: asker)
+        case .project(let request):
+            serveProject(request, on: asker)
         }
     }
 
@@ -201,7 +237,14 @@ final class ChatWireService {
 
     func sessionClosed(key: GuestKey?) {
         guard let key else { return }
+        /* The conversation is no longer lost with the link — it is on
+           disk. What goes is this connection's view of it: the working
+           copy and every ref minted for it, because a ref is a promise
+           about one connection's listing and nothing else. */
         conversations[key] = nil
+        currentChat[key] = nil
+        chatRefs[key] = nil
+        projectRefs[key] = nil
         refs[key] = nil
         minted[key] = nil
         if active[key] != nil {
@@ -235,12 +278,29 @@ final class ChatWireService {
                 key: key, on: asker, clearActive: false)
             return
         }
+        /* The conversation comes from the STORE when there is one, so
+           a turn typed after a reconnect continues the chat the person
+           was in rather than a fresh page that looks identical. The
+           in-memory copy is the working one for the turn. */
+        var chatID: ChatID?
+        if let store {
+            chatID = ensureCurrent(key, store: store)
+            if let chatID, conversations[key] == nil {
+                conversations[key] =
+                    (try? store.loadTranscript(chatID))?.turns ?? []
+            }
+        }
         var conversation = conversations[key] ?? []
         conversation.append(.user(request.prompt))
         conversations[key] = conversation
+        persist(key: key, appending: [
+            StoredChatRow(kind: .person, text: request.prompt,
+                          toolName: nil, toolOK: nil),
+        ], turns: conversation, titledBy: request.prompt)
         active[key] = ActiveTurn(requestID: request.id)
         beat(key: key, on: asker, requestID: request.id)
 
+        let mode = ChatMode(wire: request.mode)
         let turns = conversation
         Task { [weak self, weak asker, harness] in
             let started = await harness.run(
@@ -248,7 +308,8 @@ final class ChatWireService {
                 wireModelID: wireModelID,
                 transcript: turns,
                 addressing: key.text,
-                origin: .guestWire
+                origin: .guestWire,
+                mode: mode
             ) { [weak self, weak asker] event in
                 Task { @MainActor [weak self, weak asker] in
                     guard let self, let asker else { return }
@@ -295,9 +356,297 @@ final class ChatWireService {
             return
         }
         conversations[key] = []
+        /* A blank page is now a NEW CHAT rather than an erasure: the
+           one it replaces is on disk and listed a moment later. It
+           inherits the project the person was working in, because
+           "new chat" while inside a project means another chat in that
+           project, not a trip back to the top. */
+        if let store {
+            let project = (try? currentSummary(key, store: store))?.projectID
+            currentChat[key] = try? store.createChat(
+                in: project, origin: .guest).id
+        }
         asker.send(.chatResult(ChatResult(
             id: request.id, ok: true, code: nil, message: nil)))
     }
+
+    // MARK: - Sessions, history and projects
+
+    /// The store, or a served refusal. One place, so every session ask
+    /// answers the same way when saving is unavailable rather than
+    /// four subtly different ways.
+    private func requireStore(id: Int, on asker: Session) -> ChatStore? {
+        guard let store else {
+            asker.send(.chatResult(ChatResult(
+                id: id, ok: false, code: "unreachable",
+                message: "Saved chats are unavailable on this Mac")))
+            return nil
+        }
+        return store
+    }
+
+    private func currentSummary(_ key: GuestKey, store: ChatStore) throws
+        -> ChatSummary? {
+        guard let id = currentChat[key] else { return nil }
+        return try? store.summary(id)
+    }
+
+    /// The chat this connection writes to, made if it does not exist —
+    /// a person who just starts typing gets a saved chat without having
+    /// asked for one.
+    private func ensureCurrent(_ key: GuestKey, store: ChatStore) -> ChatID? {
+        if let id = currentChat[key], (try? store.summary(id)) != nil {
+            return id
+        }
+        let made = try? store.createChat(origin: .guest)
+        currentChat[key] = made?.id
+        return made?.id
+    }
+
+    private func serveChats(_ request: ChatChats, on asker: Session) {
+        guard let key = asker.guestKey,
+              let store = requireStore(id: request.id, on: asker) else { return }
+        guard let all = try? store.list() else {
+            asker.send(.chatResult(ChatResult(
+                id: request.id, ok: false, code: "provider-error",
+                message: "The saved chats could not be read")))
+            return
+        }
+        let start = min(max(0, request.cursor ?? 0), all.count)
+        let page = all[start..<min(start + Self.rosterRows, all.count)]
+        let current = currentChat[key]
+        let rows = page.map { summary -> ChatRosterRow in
+            let ref = mintChatRef(summary.id, key: key)
+            var detail = summary.turnCount == 0
+                ? "empty" : "\(summary.turnCount) turns"
+            detail += " - " + Self.when.string(from: summary.updatedAt)
+            return ChatRosterRow(
+                ref: ref,
+                label: ChatWireText.label(summary.title),
+                origin: summary.whereTyped.rawValue,
+                project: summary.projectID.flatMap {
+                    projectRef(for: $0, key: key)
+                },
+                detail: CloudText.displayable(detail),
+                current: summary.id == current ? true : nil)
+        }
+        asker.send(.chatRoster(ChatRoster(
+            id: request.id, chats: Array(rows),
+            more: start + page.count < all.count)))
+    }
+
+    private func serveOpen(_ request: ChatOpen, on asker: Session) {
+        guard let key = asker.guestKey,
+              let store = requireStore(id: request.id, on: asker) else { return }
+        guard active[key] == nil else {
+            asker.send(.chatResult(ChatResult(
+                id: request.id, ok: false, code: "busy",
+                message: "Cancel the streaming answer first")))
+            return
+        }
+        guard let id = chatRefs[key]?[request.ref],
+              let summary = try? store.summary(id) else {
+            asker.send(.chatResult(ChatResult(
+                id: request.id, ok: false, code: "unknown-model",
+                message: "No chat with that ref on this connection")))
+            return
+        }
+        /* The turns are read HERE and the rows are not: the model needs
+           the conversation to answer, the guest asks for the rows it can
+           draw. Opening a long chat therefore costs one read on this
+           side and nothing on the wire. */
+        currentChat[key] = summary.id
+        conversations[key] = (try? store.loadTranscript(summary.id))?.turns ?? []
+        asker.send(.chatResult(ChatResult(
+            id: request.id, ok: true, code: nil, message: nil)))
+    }
+
+    private func serveHistory(_ request: ChatHistory, on asker: Session) {
+        guard let key = asker.guestKey,
+              let store = requireStore(id: request.id, on: asker) else { return }
+        guard let id = currentChat[key],
+              let transcript = try? store.loadTranscript(id) else {
+            // A conversation nobody has saved yet has no history, and
+            // that is an answer rather than a fault.
+            asker.send(.chatTranscript(ChatTranscript(
+                id: request.id, rows: [], more: false)))
+            return
+        }
+        /* Counted from the END: the newest page first, older pages by
+           asking again. That is what makes an open cheap on a machine
+           that can hold 300 lines of a transcript with thousands. */
+        let rows = transcript.rows
+        let taken = min(max(0, request.cursor ?? 0), rows.count)
+        let end = rows.count - taken
+        let start = max(0, end - Self.historyRows)
+        let page = rows[start..<end].map {
+            ChatTranscriptRow(
+                kind: $0.kind.rawValue,
+                text: CloudText.displayable($0.text))
+        }
+        asker.send(.chatTranscript(ChatTranscript(
+            id: request.id, rows: Array(page), more: start > 0)))
+    }
+
+    private func serveProjects(_ request: ChatProjects, on asker: Session) {
+        guard let key = asker.guestKey,
+              let store = requireStore(id: request.id, on: asker) else { return }
+        let all = (try? store.listProjects()) ?? []
+        let start = min(max(0, request.cursor ?? 0), all.count)
+        let page = all[start..<min(start + Self.rosterRows, all.count)]
+        let current = (try? currentSummary(key, store: store))??.projectID
+        let rows = page.map { record -> ChatProjectRow in
+            ChatProjectRow(
+                ref: mintProjectRef(record.id, key: key),
+                label: ChatWireText.label(record.name),
+                home: record.intendedHome?.rawValue,
+                current: record.id == current ? true : nil)
+        }
+        asker.send(.chatProjectRoster(ChatProjectRoster(
+            id: request.id, projects: Array(rows),
+            more: start + page.count < all.count)))
+    }
+
+    private func serveProject(_ request: ChatProject, on asker: Session) {
+        guard let key = asker.guestKey,
+              let store = requireStore(id: request.id, on: asker) else { return }
+        func answer(_ ok: Bool, _ code: String? = nil, _ message: String? = nil) {
+            asker.send(.chatResult(ChatResult(
+                id: request.id, ok: ok, code: code,
+                message: message.map(CloudText.displayable))))
+        }
+        guard let chat = ensureCurrent(key, store: store) else {
+            return answer(false, "provider-error", "This chat could not be saved")
+        }
+        switch request.op {
+        case "none":
+            _ = try? store.move(chat, to: nil)
+            answer(true)
+        case "select":
+            guard let ref = request.ref,
+                  let project = projectRefs[key]?[ref] else {
+                return answer(false, "unknown-model",
+                              "No project with that ref on this connection")
+            }
+            guard (try? store.move(chat, to: project)) != nil else {
+                return answer(false, "provider-error",
+                              "The chat could not be filed there")
+            }
+            answer(true)
+        case "create":
+            guard let name = request.name, !name.isEmpty else {
+                return answer(false, "provider-error", "A project needs a name")
+            }
+            /* Absent home is REFUSED rather than defaulted. Which
+               machine holds the authoritative copy is the question this
+               product exists to ask, and a default would answer it
+               silently for somebody's source. */
+            guard let home = request.home.flatMap(ProjectHome.init(rawValue:))
+            else {
+                return answer(false, "provider-error",
+                              "Say whether the project lives on this Mac or "
+                                  + "the modern one")
+            }
+            guard let record = try? store.createProject(
+                name: name, intendedHome: home) else {
+                return answer(false, "provider-error",
+                              "The project could not be made")
+            }
+            _ = try? store.move(chat, to: record.id)
+            /* A guest-home project cannot be MINTED here: ProjectStore
+               requires a verified guest digest, because the classic
+               Mac holds the authoritative copy and a second minter of
+               guest projects is exactly the drift this contract exists
+               to prevent. So the answer is ok and says what is true —
+               the chat is filed, the code half arrives by the existing
+               stage-and-promote path — rather than quietly making a
+               host project and calling it a guest one. */
+            answer(true, nil, home == .guest
+                ? "Filed. Its code is staged here and promoted to this "
+                    + "machine when you build it."
+                : "Filed. Its code lives on the modern Mac.")
+        default:
+            answer(false, "provider-error", "Unknown project operation")
+        }
+    }
+
+    /// Appends to the current chat's saved transcript, refreshing the
+    /// turns wholesale and the rows by addition.
+    ///
+    /// Best-effort by design: a store that cannot be written must not
+    /// take a live conversation down, so a failure here loses the
+    /// SAVING of a turn and never the turn.
+    private func persist(
+        key: GuestKey, appending rows: [StoredChatRow],
+        turns: [ChatTurn], titledBy prompt: String?
+    ) {
+        guard let store, let id = ensureCurrent(key, store: store) else {
+            return
+        }
+        var transcript = (try? store.loadTranscript(id)) ?? StoredChatTranscript()
+        transcript.rows.append(contentsOf: rows)
+        transcript.turns = turns
+        _ = try? store.saveTranscript(transcript, for: id)
+        /* A chat names itself after the first thing said in it, the way
+           the host's own sidebar does — an untouched title only. */
+        if let prompt, let summary = try? store.summary(id),
+            summary.title == ChatStore.untitled {
+            _ = try? store.rename(id, to: String(prompt.prefix(60)))
+        }
+    }
+
+    /// What a finished turn leaves on the page. Tool calls become tool
+    /// rows so a reopened chat still shows the model's hands.
+    private static func rows(from turns: [ChatTurn]) -> [StoredChatRow] {
+        turns.flatMap { turn -> [StoredChatRow] in
+            turn.content.compactMap { content in
+                switch content {
+                case .text(let text):
+                    return StoredChatRow(kind: .model, text: text,
+                                         toolName: nil, toolOK: nil)
+                case .toolCall(let call):
+                    return StoredChatRow(kind: .tool, text: call.name,
+                                         toolName: call.name, toolOK: nil)
+                case .toolResult:
+                    return nil
+                }
+            }
+        }
+    }
+
+    private func mintChatRef(_ id: ChatID, key: GuestKey) -> String {
+        if let existing = chatRefs[key]?.first(where: { $0.value == id })?.key {
+            return existing
+        }
+        let count = (minted[key] ?? 0) + 1
+        minted[key] = count
+        let ref = "c\(count)"
+        chatRefs[key, default: [:]][ref] = id
+        return ref
+    }
+
+    private func mintProjectRef(_ id: ChatProjectID, key: GuestKey) -> String {
+        if let existing = projectRefs[key]?
+            .first(where: { $0.value == id })?.key {
+            return existing
+        }
+        let count = (minted[key] ?? 0) + 1
+        minted[key] = count
+        let ref = "p\(count)"
+        projectRefs[key, default: [:]][ref] = id
+        return ref
+    }
+
+    private func projectRef(for id: ChatProjectID, key: GuestKey) -> String? {
+        projectRefs[key]?.first(where: { $0.value == id })?.key
+            ?? mintProjectRef(id, key: key)
+    }
+
+    private static let when: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d MMM"
+        return formatter
+    }()
 
     // MARK: - Streaming back
 
@@ -340,6 +689,12 @@ final class ChatWireService {
             var conversation = conversations[key] ?? []
             conversation.append(contentsOf: outcome.appended)
             conversations[key] = conversation
+            /* Saved at the END of the turn, and only the answer text:
+               the rows are what a page draws, the turns are what the
+               model is re-sent, and both halves are needed because
+               either alone loses something (ChatStore's own rule). */
+            persist(key: key, appending: Self.rows(from: outcome.appended),
+                    turns: conversation, titledBy: nil)
             result(
                 ChatResult(
                     id: turn.requestID, ok: outcome.ok,

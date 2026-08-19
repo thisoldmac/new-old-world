@@ -328,7 +328,12 @@ final class ChatModuleModel: ObservableObject {
         },
         models: { [weak self] providerID in
             await self?.wireModels(provider: providerID)
-        })
+        },
+        /* THE SAME store this page reads. One store, both faces: a chat
+           typed at the classic machine appears in this sidebar, and one
+           typed here is listed over the wire — the widening decided
+           2026-08-18, and the reason a roster row carries its origin. */
+        store: chatStore)
 
     /// Every provider, whatever its state — the cloud.report rule: one
     /// that cannot serve is still a row saying WHY. Labels leave
