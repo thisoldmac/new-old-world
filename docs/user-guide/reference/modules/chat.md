@@ -69,9 +69,59 @@ Chats are saved on the modern Mac and listed in a sidebar beside the
 conversation. A chat can be renamed, deleted, or filed under a project — a
 folder on disk that may also be associated with a Projects-module project for
 its code. Only the chat you select is read from disk; the sidebar itself holds
-names and dates alone. Saved chats stay on the modern Mac: they are never
-served to the classic guest, and a transcript can contain what the classic
-Mac's screen looked like, so the files are local and unshared.
+names and dates alone. The files stay on the modern Mac and are never uploaded
+anywhere; they can be READ from the classic machine's own Chat page, which is
+the deliberate 2026-08-18 change described above.
+
+## Saved chats, on both machines
+
+Chats are saved on the modern Mac and listed in a sidebar beside the
+conversation — and since 2026-08-18 the classic machine can list and open
+them too, its own and the ones typed at the modern Mac alike. Every row
+says which machine it was typed at.
+
+**This is a deliberate change to what the classic Mac may see.** Until
+that date this page promised that saved chats were "never served to the
+classic guest". They now are, on request, because a chat you cannot reach
+from the machine you are sitting at is the reason people keep two windows
+open. What that widens is real and worth knowing: a transcript typed at
+the modern Mac can quote work done there and can hold captured
+guest-screen images, and a classic Mac sitting on a desk is a different
+exposure surface from a laptop that locks itself.
+
+Nothing is sent before it is asked for. The classic machine receives a
+page of TITLES — never transcript text — and opening a chat transfers
+nothing by itself; the page then asks for what was said newest-first, a
+bounded page at a time, so opening a long conversation on a 68030 costs
+the lines you scroll to rather than the whole thing.
+
+## Working in a project
+
+A chat can be filed under a project, or under none. Creating one from the
+classic Mac asks the question this product exists to ask: **does the
+project live on this machine, or on the modern one?** The console spells
+it `here|there`.
+
+Answering "here" files the chat and records that the code belongs on the
+classic Mac. The code half arrives by the existing staged-and-promoted
+path rather than being created on the spot: a guest-home project is
+authoritative on the classic machine and requires a verified digest, so
+New Old World will not mint one behind your back and call it yours.
+
+## Chat, Plan and Build
+
+Every turn runs in one of three modes, and the mode decides which tools
+the model is given rather than merely what it is told:
+
+| Mode | What the model may do |
+| --- | --- |
+| Chat | look at anything — processes, screen, files — and change nothing |
+| Plan | the same, and answer with a plan rather than an action |
+| Build | everything, including writing files, applying project changes, building and running |
+
+Chat and Plan reach exactly as far as each other; the difference you feel
+is what the model is asked for. Build is the only mode whose turn is
+handed a tool that can change the machine.
 
 ## On the classic Mac
 
@@ -103,6 +153,13 @@ error retain separate status.
 
 Chat availability depends on a configured host harness. It is not an offline
 guarantee and has no 68K UI.
+
+The classic machine's own Chat page does not yet draw the sidebar: on that
+side, sessions, projects and modes are reachable from the Console
+(`chat --chats`, `--open`, `--history`, `--projects`, `--project`,
+`--mode`) while the page still shows one conversation. The page is the
+next slice, not a missing capability — both faces already reach the same
+verbs, which is what `CommandParityTests` enforces.
 
 The workspace lane is experimental and **not metal-verified**: it has been
 exercised by the host suites only, and nobody has yet driven a build of the

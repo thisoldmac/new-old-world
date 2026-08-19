@@ -7,6 +7,52 @@ search:
 
 # Open issues
 
+## THE GUEST'S CHAT NOW REMEMBERS — sessions, lazy history, projects and modes, PAGE STILL TO COME (2026-08-18, `feat/chat-agentic-lane`)
+
+Nothing had regressed: saved chats and project filing were always host-only,
+and the guest's single conversation lived in a dictionary that
+`ChatWireService.sessionClosed` emptied. It now lives in the store both faces
+share.
+
+**Landed and green**: the contract family (`chat.chats`/`chat.roster`,
+`chat.open`, `chat.history`/`chat.transcript`, `chat.projects`/
+`chat.projectroster`, `chat.project`, and `mode` on `chat.send`), the host
+serving half, the guest's wire client and parsers, and the console verbs. A
+guest turn is saved, titled after the first thing said, listed to either face
+with where it was typed, and continued after a reconnect.
+
+**Not landed**: the Chat PAGE still draws one conversation with no sidebar.
+Every capability is reachable from the Console, and `CommandParityTests`
+passes because both faces reach the same verbs — which is exactly the
+situation that rule exists to make visible rather than to hide. Whoever
+takes the page next needs the collapsible sidebar, the mode popup and the
+project row; the model, the parsers and the wire are done and tested.
+
+**Two readings of silence, both chosen and both guarded.** A roster row with
+no `origin` reads as the OTHER machine, because the chat a person needs
+warning about is the one they wrote somewhere else. A `mode` that is absent
+or unrecognised reads as `chat`, the tier that changes nothing — an older
+guest sends none, and a newer one may send a word this build has never heard
+of.
+
+**A guest-home project is recorded as INTENT, not minted.** `ProjectStore.
+create` requires a verified guest digest because the classic Mac holds the
+authoritative copy, so answering "here" files the chat and says the code half
+arrives by the staged-and-promoted path. The alternative — quietly making a
+host project and calling it a guest one — is the kind of half-truth this
+ledger exists to catch, so it is written here as a known limit rather than
+left to be discovered.
+
+**A privacy promise was deliberately reversed**, on Michelle's decision:
+`docs/user-guide/reference/modules/chat.md` said saved chats were never served
+to the classic guest, and now they are listed and openable there. The page
+says so in the same words rather than quietly dropping the old sentence.
+
+**Unverified**: nothing has run on metal, and nothing has opened a
+host-typed chat from a PowerBook. The lazy-loading claim is proven by a
+serving test that asserts an open pushes no transcript and that history pages
+from the end — not by watching a slow wire.
+
 ## BUILT, SUITE-TESTED ONLY: Chat declares its tool reach, supplies the whole registry, and can be given a workspace (2026-08-18, `feat/chat-agentic-lane`)
 
 Chat has run an agentic loop over the whole host projection registry since it
