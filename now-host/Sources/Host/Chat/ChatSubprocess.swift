@@ -27,6 +27,17 @@ enum ChatSubprocessEnvironment {
         "HOME", "USER", "LOGNAME", "PATH", "TMPDIR", "SHELL",
         "LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM",
         "CODEX_HOME", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME",
+        /* Carried on purpose, and the one entry here that is not about
+           the runtime's own configuration. A workspace lane spawns
+           `New Old World --mcp-stdio` UNDERNEATH the runtime, and that
+           companion finds its host by this suffix. Stripped, a host
+           running on its own endpoint would hand the lane a companion
+           that reached the DEFAULT socket — another session's host, and
+           whatever Macintosh that one happens to be driving, with
+           neither side able to tell. The hazard is stated at
+           AgentIntegrationEndpoint.currentUser; this is the second
+           process that has to agree with it. */
+        "NOW_AGENT_SOCKET_SUFFIX",
     ]
 
     /// Child runtimes need their own config and Keychain identity, not every

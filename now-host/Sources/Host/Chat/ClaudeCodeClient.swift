@@ -268,6 +268,14 @@ final class ClaudeCodeClient: @unchecked Sendable {
                 .split(separator: " ").first.map(String.init)
         case "Grep", "Glob":
             subject = input?["pattern"] as? String
+        /* Measured 2026-08-18 rather than guessed: the runtime hands a
+           lane turn its MCP tools DEFERRED, so the first sign of life on
+           the guest's status line is the model searching for the
+           capability it is about to use. Nameless, that reads as a
+           stall on a one-line display. */
+        case "ToolSearch":
+            subject = (input?["query"] as? String)?
+                .replacingOccurrences(of: "select:", with: "")
         default:
             subject = nil
         }

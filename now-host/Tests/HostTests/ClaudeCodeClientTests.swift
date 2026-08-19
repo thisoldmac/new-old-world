@@ -183,11 +183,26 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertTrue(try ClaudeCodeClient.events(line: text).isEmpty)
     }
 
-    func testNOWCapabilitiesKeepTheirOwnNamesThroughMCP() {
-        XCTAssertEqual(
-            ClaudeCodeClient.activity(
-                tool: "mcp__now__now_list_processes", input: nil),
-            "Using now_list_processes")
+    /* Both lines recorded from a real lane run on 2026-08-18, driving
+       `claude` with exactly the argument vector `arguments(model:lane:
+       mcpConfig:)` builds, against a stub MCP server standing in for
+       this app. The mangled name and the deferred tool search are what
+       the runtime actually emits, not what this side expected. */
+    func testNOWCapabilitiesKeepTheirOwnNamesThroughMCP() throws {
+        let call = "{\"type\":\"assistant\",\"message\":{\"model\":"
+            + "\"claude-sonnet-5\",\"role\":\"assistant\",\"content\":"
+            + "[{\"type\":\"tool_use\",\"id\":\"toolu_01SSzz\",\"name\":"
+            + "\"mcp__now__now_list_processes\",\"input\":{},"
+            + "\"caller\":{\"type\":\"direct\"}}]}}"
+        let search = "{\"type\":\"assistant\",\"message\":{\"role\":"
+            + "\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":"
+            + "\"toolu_01WMP6\",\"name\":\"ToolSearch\",\"input\":{\"query\":"
+            + "\"select:mcp__now__now_list_processes\",\"max_results\":1}}]}}"
+
+        XCTAssertEqual(try ClaudeCodeClient.events(line: call).activityLines,
+                       ["Using now_list_processes"])
+        XCTAssertEqual(try ClaudeCodeClient.events(line: search).activityLines,
+                       ["ToolSearch mcp__now__now_list_processes"])
         XCTAssertEqual(
             ClaudeCodeClient.activity(
                 tool: "Bash", input: ["command": "scripts/build-guests --ppc"]),
@@ -257,6 +272,19 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertNil(environment["ANTHROPIC_API_KEY"])
         XCTAssertNil(environment["OPENAI_API_KEY"])
         XCTAssertNil(environment["UNRELATED_SECRET"])
+    }
+
+    /// A lane spawns this app's own MCP companion under the runtime,
+    /// and that companion finds its host by this suffix. Dropped, it
+    /// silently reaches whichever host owns the default socket.
+    func testMinimalEnvironmentCarriesTheAgentSocketSuffix() {
+        let environment = ChatSubprocessEnvironment.minimal(from: [
+            "HOME": "/tmp/home", "PATH": "/usr/bin",
+            "NOW_AGENT_SOCKET_SUFFIX": "lane-under-test",
+        ])
+
+        XCTAssertEqual(environment["NOW_AGENT_SOCKET_SUFFIX"],
+                       "lane-under-test")
     }
 
     func testMinimalEnvironmentMakesFallbackRuntimeDependenciesVisible() {

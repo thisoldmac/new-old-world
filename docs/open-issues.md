@@ -32,6 +32,20 @@ not see the machine it was sitting on. Three separate causes:
   working directory, and this app's `--mcp-stdio` face attached under
   `--strict-mcp-config`.
 
+**Measured, 2026-08-18 (rig, not product).** The argument vector
+`arguments(model:lane:mcpConfig:)` builds was driven against a real `claude`
+with a STUB MCP server standing in for this app, in a scratch folder. The
+runtime reported `mcp_servers: [{name: now, status: connected}]`, listed
+`Bash`, `Edit`, `Read` and `mcp__now__now_list_processes` together, called the
+MCP tool, and edited a file in the folder — so the spawn shape, the MCP attach
+and the mixed file/machine turn are real rather than hoped for. Two facts came
+back that this side had not predicted, and both are now recorded lines in
+`ClaudeCodeClientTests` rather than guesses: a capability arrives mangled as
+`mcp__now__now_list_processes`, and MCP tools are handed over DEFERRED, so the
+first thing a person sees on the guest's one status line is a `ToolSearch`.
+**This proves the lane's plumbing, not the product**: the stub is not New Old
+World, no guest was touched, and nothing ran from a Chat page.
+
 **What is not verified.** Everything above passes the host suites and both
 guests compile. Nobody has driven a lane turn end to end — not from the host
 pane, not from the classic machine's own Chat page — so the lane is `Builds`
