@@ -161,6 +161,75 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertTrue(reason.contains("/nowhere/at/all"), reason)
     }
 
+    /// The frictionless default: no folder chosen, one grant, and the
+    /// lane self-provisions NOW's own workspace at full tier. Ungranted
+    /// stays OFF — the runtime's shell is the one power this app cannot
+    /// audit, so silence must never become a workspace.
+    func testTheGrantAloneProvisionsTheDefaultWorkspaceAtFullTier() throws {
+        let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-lane-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let store = ChatWorkspaceLaneStore(
+            defaults: defaults,
+            provision: { ChatWorkspaceDefault.provision(support: temporary) })
+
+        XCTAssertEqual(store.state(), .off, "silence is not a workspace")
+
+        store.setGranted(true)
+        guard case .ready(let lane) = store.state() else {
+            return XCTFail("the grant alone must provision the lane")
+        }
+        XCTAssertEqual(lane.permission, .bypassPermissions,
+                       "the grant's sentence is 'build software'")
+        XCTAssertTrue(lane.attachesNOWTools)
+        XCTAssertEqual(lane.root.lastPathComponent,
+                       ChatWorkspaceDefault.folderName)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: lane.root.appendingPathComponent("CLAUDE.md").path),
+            "the starter instructions are part of provisioning")
+
+        /* A person's chosen tier still wins over the default. */
+        store.setPermission(.acceptEdits)
+        guard case .ready(let lowered) = store.state() else {
+            return XCTFail("the lane survived a tier change")
+        }
+        XCTAssertEqual(lowered.permission, .acceptEdits)
+
+        /* An explicit folder wins over the default entirely. */
+        defaults.set(temporary.path, forKey: ChatWorkspaceLaneStore.rootKey)
+        guard case .ready(let chosen) = store.state() else {
+            return XCTFail("an explicit folder is a lane")
+        }
+        XCTAssertEqual(chosen.root.standardizedFileURL.path,
+                       URL(fileURLWithPath: temporary.path).standardizedFileURL.path)
+    }
+
+    /// Provisioning stages the shipped skills where the runtime reads
+    /// them natively, once per app version, and never rewrites a
+    /// CLAUDE.md the person edited.
+    func testProvisioningStagesSkillsAndKeepsThePersonsEdits() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-lane-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+
+        let root = try XCTUnwrap(
+            ChatWorkspaceDefault.provision(support: temporary))
+        let staged = root.appendingPathComponent(".claude/skills")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: staged.path),
+                      "the shipped skills reach the runtime natively")
+        let skills = try FileManager.default.contentsOfDirectory(atPath: staged.path)
+            .filter { !$0.hasPrefix(".") }
+        XCTAssertFalse(skills.isEmpty, "an empty staging is a broken copy")
+
+        let claudeMD = root.appendingPathComponent("CLAUDE.md")
+        try "the person's own words".data(using: .utf8)!.write(to: claudeMD)
+        _ = ChatWorkspaceDefault.provision(support: temporary)
+        XCTAssertEqual(try String(contentsOf: claudeMD, encoding: .utf8),
+                       "the person's own words",
+                       "re-provisioning must not rewrite edited instructions")
+    }
+
     /* Recorded from a real `claude -p --output-format stream-json` run on
        2026-08-18, not composed here: a test that writes the lines it then
        parses tests one half twice. */

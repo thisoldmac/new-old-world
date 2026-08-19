@@ -57,6 +57,19 @@ final class ChatWorkspaceSettingsModel: ObservableObject {
 
     func choose(_ url: URL?) {
         store.setRoot(url)
+        /* Turning the folder off means OFF: with the grant left
+           standing, removing the root would quietly bring the default
+           workspace back, which is the opposite of what the button
+           said. */
+        if url == nil {
+            store.setGranted(false)
+        }
+        reload()
+    }
+
+    /// The one click: the lane self-provisions NOW's own workspace.
+    func allowDefaultWorkspace() {
+        store.setGranted(true)
         reload()
     }
 

@@ -16,8 +16,8 @@ final class ClaudeCodeChatProvider: ChatProvider, @unchecked Sendable {
             return .none(reason: reason)
         case .off:
             return .none(
-                reason: "Text only until a chat workspace folder is chosen "
-                    + "in Settings")
+                reason: "Text only until building is allowed once in "
+                    + "Settings > Chat on the modern Mac")
         }
     }
 

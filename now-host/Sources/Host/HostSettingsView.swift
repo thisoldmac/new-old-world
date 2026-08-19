@@ -431,6 +431,20 @@ private struct ChatWorkspaceSettingsSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if !model.isOn {
+                    /* The one click. Everything after it is a default:
+                       NOW's own folder, skills staged, full tier there. */
+                    HStack {
+                        Text("Claude can build software for the classic "
+                             + "machine in New Old World's own workspace "
+                             + "on this Mac.")
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Allow") { model.allowDefaultWorkspace() }
+                            .keyboardShortcut(.defaultAction)
+                    }
+                }
                 HStack {
                     Text("Folder")
                     Spacer()
@@ -440,7 +454,7 @@ private struct ChatWorkspaceSettingsSection: View {
                         .lineLimit(1)
                         .truncationMode(.head)
                     Button("Choose…") { choose() }
-                    if model.chosenPath != nil {
+                    if model.isOn {
                         Button("Turn Off") { model.choose(nil) }
                     }
                 }
