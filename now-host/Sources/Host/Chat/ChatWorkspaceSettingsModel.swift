@@ -25,11 +25,20 @@ final class ChatWorkspaceSettingsModel: ObservableObject {
             reload()
         }
     }
+    /// The person's standing instructions, carried into every turn of
+    /// every provider — not lane state, so it works with the lane off.
+    @Published var instructions = "" {
+        didSet {
+            guard instructions != oldValue else { return }
+            store.setInstructions(instructions)
+        }
+    }
 
     private let store: ChatWorkspaceLaneStore
 
     init(store: ChatWorkspaceLaneStore = ChatWorkspaceLaneStore()) {
         self.store = store
+        instructions = store.instructions()
         reload()
     }
 

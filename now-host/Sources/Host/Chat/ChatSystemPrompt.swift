@@ -60,7 +60,8 @@ enum ChatSystemPrompt {
         screen: Screen? = nil, reach: ChatToolReach = .harness,
         mode: ChatMode = .build,
         skills: ChatSkillLibrary = ChatSkillLibrary(skills: []),
-        loaded: [ChatSkill] = []
+        loaded: [ChatSkill] = [],
+        instructions: String = ""
     ) -> String {
         var sections = [preamble]
         sections.append(machineFrame(health: health, origin: origin))
@@ -79,6 +80,9 @@ enum ChatSystemPrompt {
         }
         for skill in loaded {
             sections.append(skillFrame(skill))
+        }
+        if !instructions.isEmpty {
+            sections.append(instructionsFrame(instructions))
         }
         if case .guestWire = origin {
             sections.append(wireOutputRules(screen: screen))
@@ -171,6 +175,24 @@ enum ChatSystemPrompt {
         """
     }
 
+    /// The person's own standing instructions, from Settings. Fenced the
+    /// way a skill is and for the same reason: it is somebody else's text
+    /// quoted into this prompt, and it may steer tone, approach and
+    /// craft — but not what a turn may touch, which only the frames
+    /// above decide.
+    static func instructionsFrame(_ text: String) -> String {
+        """
+        --- THE PERSON'S OWN INSTRUCTIONS ---
+        Written by the person in Settings, for every conversation. \
+        Follow them for tone, approach and priorities; where they \
+        disagree with anything above about what you may TOUCH, the \
+        rules above win.
+
+        \(text)
+        --- end of the person's instructions ---
+        """
+    }
+
     private static let preamble = """
         You are the assistant built into New Old World, a bridge between \
         a modern Mac and a classic Macintosh running Mac OS. Machine \
@@ -241,7 +263,12 @@ enum ChatSystemPrompt {
             : "\"\(driven)\""
         lines.append("""
             Call the classic machine \(nameRule) - never \
-            "\(MachineNaming.thisMac)", "this machine", or "the host".
+            "\(MachineNaming.thisMac)", "this machine", or "the host". \
+            The rule binds YOUR words only: when the person calls their \
+            machine something else - a nickname, the wrong model - do \
+            not correct them, just answer. A turn that opens with a \
+            correction of the person's own name for their own Mac has \
+            already wasted its first sentence.
             """)
 
         /* The asymmetry, said whatever the state: it is the difference

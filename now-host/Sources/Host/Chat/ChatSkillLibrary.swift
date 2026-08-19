@@ -112,10 +112,17 @@ struct ChatSkillLibrary: Sendable {
     var catalogue: String {
         guard !skills.isEmpty else { return "" }
         let rows = skills.map { "- \($0.command) — \($0.description)" }
+        /* "Never a precondition" is measured, not stylistic: the first
+           live Build turn through the wire (2026-08-19) answered a
+           build-upload-launch request with "type /x and I will proceed"
+           and did nothing. A skill deepens a turn that already
+           happened; it must not gate one. */
         return """
             Skills this conversation can load, by typing the command on \
-            its own line. You cannot load one yourself; say which would \
-            help and why, and let the person type it.
+            its own line. You cannot load one yourself. Do the work \
+            asked of you with what you have, and mention — once, \
+            briefly — a skill that would deepen it; never make loading \
+            one a precondition for acting.
             \(rows.joined(separator: "\n"))
             """
     }

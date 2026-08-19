@@ -82,6 +82,11 @@ final class ChatWorkspaceLaneStore: @unchecked Sendable {
     static let rootKey = "chat.workspace.root"
     static let permissionKey = "chat.workspace.permission"
     static let nowToolsKey = "chat.workspace.attachesNOWTools"
+    /* Not lane state — the person's own standing instructions, carried
+       into every turn whatever the provider. They live in this store
+       because it is the one place chat settings already read and write,
+       and a second store would be a second thing to isolate per run. */
+    static let instructionsKey = "chat.instructions"
     static let defaultTimeout: TimeInterval = 900
 
     private let defaults: UserDefaults
@@ -139,6 +144,21 @@ final class ChatWorkspaceLaneStore: @unchecked Sendable {
 
     func setAttachesNOWTools(_ attaches: Bool) {
         defaults.set(attaches, forKey: Self.nowToolsKey)
+    }
+
+    /// Read fresh every turn, like the lane itself.
+    func instructions() -> String {
+        (defaults.string(forKey: Self.instructionsKey) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func setInstructions(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            defaults.removeObject(forKey: Self.instructionsKey)
+        } else {
+            defaults.set(text, forKey: Self.instructionsKey)
+        }
     }
 }
 

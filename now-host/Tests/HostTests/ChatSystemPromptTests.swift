@@ -210,4 +210,34 @@ final class ChatSystemPromptTests: XCTestCase {
         // The machine half survives: a workspace turn still drives a Mac.
         XCTAssertTrue(workspace.contains("host-home project"), workspace)
     }
+
+    /// The person's Settings instructions ride every turn, fenced and
+    /// subordinate to the touch rules — and an empty setting leaves no
+    /// fence behind, because an empty quoted block reads as a defect.
+    func testThePersonsInstructionsAreFencedAndAbsentWhenEmpty() {
+        let result = health(guest: machine("pb1400c"))
+        let with = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane,
+            instructions: "Answer tersely, and prefer HFS paths.")
+
+        XCTAssertTrue(with.contains("THE PERSON'S OWN INSTRUCTIONS"), with)
+        XCTAssertTrue(with.contains("prefer HFS paths"), with)
+        XCTAssertTrue(with.contains("the rules above win"), with)
+
+        let without = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane)
+        XCTAssertFalse(without.contains("THE PERSON'S OWN INSTRUCTIONS"),
+                       without)
+    }
+
+    /// The naming rule binds the model's words, not the person's: a turn
+    /// must be told not to open by correcting what somebody calls their
+    /// own machine (measured 2026-08-19 — a model spent two turns
+    /// correcting "powerbook").
+    func testTheNamingRuleForbidsCorrectingThePerson() {
+        let result = health(guest: machine("pb1400c"))
+        let prompt = ChatSystemPrompt.compose(
+            health: result, origin: .guestWire)
+        XCTAssertTrue(prompt.contains("do not correct them"), prompt)
+    }
 }

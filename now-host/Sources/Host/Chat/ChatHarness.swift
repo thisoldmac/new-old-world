@@ -47,6 +47,7 @@ actor ChatHarness {
     /// changed under a running app is a support question nobody wants,
     /// and the shipped one cannot change at all.
     let skills: ChatSkillLibrary
+    private let instructions: @Sendable () -> String
     private var running: [String: Task<Void, Never>] = [:]
 
     init(
@@ -63,9 +64,14 @@ actor ChatHarness {
            runaway stop, not a budget. */
         maxToolTurns: Int = 40,
         maxTokens: Int = 4096,
-        skills: ChatSkillLibrary = ChatSkillLibrary()
+        skills: ChatSkillLibrary = ChatSkillLibrary(),
+        /* Read fresh each turn, like the lane: the person can edit
+           their instructions in Settings mid-conversation. */
+        instructions: @escaping @Sendable () -> String
+            = { ChatWorkspaceLaneStore().instructions() }
     ) {
         self.skills = skills
+        self.instructions = instructions
         self.registry = registry
         self.projections = projections
         self.makeClient = makeClient
@@ -157,7 +163,8 @@ actor ChatHarness {
             health: await client.sessionHealth(), origin: origin,
             screen: await guestScreen(), reach: reach, mode: mode,
             skills: skills,
-            loaded: loadedSkills.compactMap { skills[$0] })
+            loaded: loadedSkills.compactMap { skills[$0] },
+            instructions: instructions())
         /* Every row, every turn. They used to be filtered by a sniffer
            over the person's own words, so asking for "a thing that
            beeps" got a model with no project tools and an honest

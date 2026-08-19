@@ -471,6 +471,18 @@ private struct ChatWorkspaceSettingsSection: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Section("Instructions") {
+                Text("Your own standing instructions, added to every "
+                     + "conversation whichever model answers it — tone, "
+                     + "priorities, house rules. They cannot widen what "
+                     + "a turn may touch.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextEditor(text: $model.instructions)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 72, maxHeight: 160)
+            }
         }
         .formStyle(.grouped)
         .onAppear { model.reload() }
