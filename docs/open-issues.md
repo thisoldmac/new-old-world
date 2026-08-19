@@ -7,6 +7,27 @@ search:
 
 # Open issues
 
+## RED ON MAIN, NOT ON A BRANCH: `testTrustedButStillFailingTapNamesRelaunchNotPermission` (2026-08-19)
+
+`scripts/test-all` fails at the host gate on `origin/main` itself
+(01e22c65). One test:
+`ContinuityEdgeControllerTests.testTrustedButStillFailingTapNamesRelaunch
+NotPermission` — the guard that a TRUSTED app whose taps still fail must
+tell the person to relaunch rather than repeating the permission message,
+which would send them to a Settings pane already listing this app as
+trusted.
+
+**Attributed rather than assumed.** It reproduces in a throwaway worktree
+checked out at `origin/main` with nothing else applied, so it is neither
+the chat work nor the merge that carried main into it. Recorded here the
+same day it was met, because the expensive version of this is the next
+lane spending an afternoon on a red they did not cause — and because a
+gate that is red for a reason nobody has written down slowly becomes a
+gate people skip.
+
+Not diagnosed: whether the expectation moved or the controller's message
+did.
+
 ## THE GUEST'S CHAT NOW REMEMBERS — sessions, lazy history, projects and modes, PAGE STILL TO COME (2026-08-18, `feat/chat-agentic-lane`)
 
 Nothing had regressed: saved chats and project filing were always host-only,
