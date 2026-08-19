@@ -235,6 +235,87 @@ static void inval_rows(int from, int to)
     inval(&r);
 }
 
+/* --- transcript selection ------------------------------------------------
+   Row-granular: anchor and extent are LINE indices into the ring, -1
+   when nothing is selected. Rows rather than characters, because the
+   ring stores pre-wrapped fixed-height lines and a row is the unit
+   both the draw and the hit test already share. Copy emits the
+   selected rows; no selection keeps the whole-page scene copy. */
+static int g_sel_anchor = -1;
+static int g_sel_extent = -1;
+
+static int sel_lo(void)
+{
+    return g_sel_anchor < g_sel_extent ? g_sel_anchor : g_sel_extent;
+}
+
+static int sel_hi(void)
+{
+    return g_sel_anchor > g_sel_extent ? g_sel_anchor : g_sel_extent;
+}
+
+static void clear_selection(void)
+{
+    if (g_sel_anchor >= 0) {
+        inval_rows(sel_lo(), sel_hi() + 1);
+    }
+    g_sel_anchor = -1;
+    g_sel_extent = -1;
+}
+
+/* Which transcript line a local point lands on, or -1. Clamped to the
+   rows the pane shows, so a drag past an edge selects to that edge
+   rather than off into rows that are not drawn. */
+static int transcript_line_at(Point local)
+{
+    int lines = chat_transcript_count(&g_transcript);
+    int fit = visible_lines();
+    int row;
+
+    if (lines == 0 || fit <= 0 || !PtInRect(local, &g_r.transcript)) {
+        return -1;
+    }
+    row = (local.v - (g_r.transcript.top + 4)) / kChatLineHeight;
+    if (row < 0) {
+        row = 0;
+    }
+    if (row >= fit) {
+        row = fit - 1;
+    }
+    row += g_top;
+    if (row >= lines) {
+        row = lines - 1;
+    }
+    return row;
+}
+
+/* InvertRect over transcript rows [from, to), clipped to the visible
+   window - inval_rows's math, drawn immediately. Live-tracking
+   feedback only; every update event reconstructs the same bands from
+   the selection state in emit_transcript. */
+static void invert_transcript_rows(int from, int to)
+{
+    int fit = visible_lines();
+    int first = from - g_top;
+    int last = to - g_top;
+    Rect r;
+
+    if (first < 0) {
+        first = 0;
+    }
+    if (last > fit) {
+        last = fit;
+    }
+    if (first >= last) {
+        return;
+    }
+    r.left = (short)(g_r.transcript.left + 1);
+    r.right = (short)(g_r.transcript.right - 1);
+    r.top = (short)(g_r.transcript.top + 4 + first * kChatLineHeight);
+    r.bottom = (short)(g_r.transcript.top + 4 + last * kChatLineHeight);
+    InvertRect(&r);
+}
+
 /* --- the prompt (TextEdit) ----------------------------------------------- */
 
 static void prompt_grew_or_shrank(void);
@@ -1010,6 +1091,8 @@ static void new_chat(void)
         return;
     }
     chat_transcript_reset(&g_transcript);
+    g_sel_anchor = -1;
+    g_sel_extent = -1;
     g_top = 0;
     g_pinned = true;
     g_history_taken = 0;
@@ -1077,6 +1160,8 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
         GetFNum(geneva, &g_font);
     }
     chat_transcript_reset(&g_transcript);
+    g_sel_anchor = -1;
+    g_sel_extent = -1;
 
     text[0] = 0;
     g_provider_popup = now_control_new(owner, &g_r.provider_popup, text, false,
@@ -1394,6 +1479,13 @@ static void emit_transcript(const WorkshopSceneWriter *writer)
             } else {
                 draw_at(x, y, text);
             }
+            if (writer == NULL && g_sel_anchor >= 0
+                && line >= sel_lo() && line <= sel_hi()) {
+                /* The selection band, from state - the same rows the
+                   live tracking inverted. After the text, so the
+                   glyphs invert with the row (the sidebar's lesson). */
+                InvertRect(&band);
+            }
         }
         y = (short)(y + kChatLineHeight);
     }
@@ -1587,6 +1679,34 @@ static long chat_copy_text(char *out, long cap)
     WorkshopSceneText sink;
     WorkshopSceneWriter writer;
 
+    /* A selection narrows Copy to exactly the rows it covers - from
+       the ring, not the screen, so a selection scrolled half out of
+       view still copies whole. No selection keeps the whole-page
+       scene copy this always was. */
+    if (g_sel_anchor >= 0 && g_sel_extent >= 0 && out != NULL && cap > 1) {
+        int lines = chat_transcript_count(&g_transcript);
+        int lo = sel_lo();
+        int hi = sel_hi();
+        long used = 0;
+        int i;
+
+        if (hi >= lines) {
+            hi = lines - 1;
+        }
+        for (i = lo; i <= hi; ++i) {
+            const char *text = chat_transcript_line(&g_transcript, i);
+            long n = (long)strlen(text);
+
+            if (used + n + 1 > cap - 1) {
+                break;                /* what fits, whole rows only */
+            }
+            memcpy(out + used, text, (size_t)n);
+            used += n;
+            out[used++] = '\r';
+        }
+        out[used] = '\0';
+        return used;
+    }
     workshop_scene_text_begin(&sink, &writer, out, cap);
     chat_describe_scene(&writer);
     return workshop_scene_text_end(&sink);
@@ -1614,6 +1734,8 @@ static void open_chat(int row)
     }
     g_chat_sel = row;
     chat_transcript_reset(&g_transcript);
+    g_sel_anchor = -1;
+    g_sel_extent = -1;
     g_history_taken = 0;
     g_history_more = false;
     g_top = 0;
@@ -1808,7 +1930,47 @@ static Boolean chat_click(const EventRecord *event, Point local)
         return true;
     }
     if (PtInRect(local, &g_r.transcript)) {
-        return true;                  /* claimed; nothing to do yet */
+        int line = transcript_line_at(local);
+
+        /* Row selection. Tracking holds the wire for as long as the
+           mouse is down - the TEClick stall above, the same brief
+           human-bounded pause. Feedback is drawn live (the delta rows
+           invert as the mouse moves); the state redraws identically
+           on the next update event. */
+        clear_selection();
+        if (line >= 0) {
+            Point where;
+
+            g_sel_anchor = line;
+            g_sel_extent = line;
+            invert_transcript_rows(line, line + 1);
+            while (StillDown()) {
+                int hit;
+                int old_lo;
+                int old_hi;
+
+                GetMouse(&where);
+                hit = transcript_line_at(where);
+                if (hit < 0 || hit == g_sel_extent) {
+                    continue;
+                }
+                old_lo = sel_lo();
+                old_hi = sel_hi();
+                g_sel_extent = hit;
+                /* Invert only what changed sides. */
+                if (sel_lo() < old_lo) {
+                    invert_transcript_rows(sel_lo(), old_lo);
+                } else if (sel_lo() > old_lo) {
+                    invert_transcript_rows(old_lo, sel_lo());
+                }
+                if (sel_hi() > old_hi) {
+                    invert_transcript_rows(old_hi + 1, sel_hi() + 1);
+                } else if (sel_hi() < old_hi) {
+                    invert_transcript_rows(sel_hi() + 1, old_hi + 1);
+                }
+            }
+        }
+        return true;
     }
     (void)event;
     return false;
