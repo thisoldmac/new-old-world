@@ -7,6 +7,49 @@ search:
 
 # Open issues
 
+## THE AGENTIC LOOP CLOSED IN THE EMULATOR — and what it took (2026-08-19, `feat/agentic-loop`)
+
+A Build-mode `chat.send` over the wire had the Claude workspace lane
+cross-compile a Carbon app with Retro68 in its workspace and drive
+`now_*` tools at the emulated G4 — the loop was never missing, only
+gated and then starved. What the first live runs taught, each fixed on
+this branch:
+
+- **"I have no tools this turn" is a Settings state, not a defect**:
+  the Claude provider is text-only until `chat.workspace.root` is set.
+  The popup already said so; nothing else did, loudly enough.
+- **The skills catalogue taught the model to stall**: told it could not
+  load skills itself, it answered a build request with "type /x and I
+  will proceed" and did nothing. The catalogue now says to act with
+  what it has. Companion fix: the naming rule binds the model's words
+  only — a live session spent two openings correcting the person's
+  "powerbook".
+- **Model-carried upload bytes cannot converge**: 8 KB per append at
+  30-160 s of model output each, against a ~5 min staging expiry and a
+  900 s lane turn — two runs died mid-upload, upload restarts included.
+  `now_guest_files_upload_file` reads the file from the lane's own
+  workspace (root pinned on the companion's command line at spawn,
+  containment mutation-tested) and drives the staging internally.
+- **A wire peer that only listens is dropped at 75 s** — the host never
+  pings and counts guest silence. Real guests ping; the rig peer now
+  pings on a wall clock. Instrument fact, recorded because it read
+  exactly like a chat defect twice.
+
+**Emulator-verified** (native captures, this checkout's staged build):
+the sidebar's selected row draws as an inverted band (the double-invert
+white-on-white is gone); New Chat re-lists the roster with no
+"(asking...)" wedge (asks queue as wants on the wire's one slot, and
+the wire itself now refuses rather than orphans); the Skills popup
+arrives enabled from the new `chat.skills`/`chat.skillroster` pair;
+transcript rows select as inverted bands.
+
+**Unverified**: choosing a skill from the popup (posted clicks cannot
+select from a tracked menu — the standing act-plane limit), the New
+Project dialog end-to-end (same limit; the dialog is the 301/302 idiom
+and cross-compiles), Copy honouring the selection (needs clipboard
+readback), the person's Instructions setting reaching a live turn
+(prompt composition is unit-tested), and everything here on metal.
+
 ## THE CHAT KNOWS THE PLATFORM NOW — the classic Mac skill tree ships, with slash commands (2026-08-19, `feat/chat-agentic-lane`)
 
 Chat could reach the machine and, with the workspace lane, its own source
