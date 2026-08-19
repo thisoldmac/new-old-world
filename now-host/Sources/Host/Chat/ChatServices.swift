@@ -81,6 +81,12 @@ final class ChatWireService {
         var seq: Int = 0
         var pendingText: String = ""
         var flushScheduled = false
+        /// The last thing this turn was seen doing, repeated by the
+        /// heartbeat. Empty until something happens.
+        var lastActivity: String = ""
+        /// When a frame for this turn last left. The heartbeat measures
+        /// silence from here, so a talkative turn costs no extra frames.
+        var lastFrameAt: Date = .init()
     }
     private var active: [GuestKey: ActiveTurn] = [:]
 
@@ -102,15 +108,36 @@ final class ChatWireService {
     /// Rows per chat.catalog models page — the contract's frame bound;
     /// `more` carries the rest.
     static let pageRows = 16
+    /// How long a turn may go without a frame before this side says
+    /// something anyway.
+    ///
+    /// **The contract obliges the host, not the guest**: "a host that
+    /// serves chat MUST keep one of the two flowing while a turn is
+    /// open — a guest is entitled to declare a turn dead after 60
+    /// seconds of total silence and cancel it" (hostServesChat). The
+    /// harness's own tools answer in seconds and never came close. The
+    /// workspace lane does: one `Bash` call running a cross-compile is
+    /// several minutes inside a single tool, and the runtime says
+    /// nothing until it returns — so without this, a guest that asked
+    /// for a build would correctly kill it at sixty seconds and the
+    /// person would watch a build die for looking dead.
+    ///
+    /// Well under the deadline rather than near it, because the frame
+    /// still has a slow wire to cross.
+    static let heartbeat: TimeInterval = 20
+
+    private let heartbeatInterval: TimeInterval
 
     init(
         harness: ChatHarness,
         providers: @escaping () async -> [ChatCatalogProvider],
-        models: @escaping (String) async -> [ChatModel]?
+        models: @escaping (String) async -> [ChatModel]?,
+        heartbeatInterval: TimeInterval = ChatWireService.heartbeat
     ) {
         self.harness = harness
         self.providers = providers
         self.models = models
+        self.heartbeatInterval = heartbeatInterval
     }
 
     func serve(_ ask: GuestListener.ChatAsk, on asker: Session) {
@@ -212,6 +239,7 @@ final class ChatWireService {
         conversation.append(.user(request.prompt))
         conversations[key] = conversation
         active[key] = ActiveTurn(requestID: request.id)
+        beat(key: key, on: asker, requestID: request.id)
 
         let turns = conversation
         Task { [weak self, weak asker, harness] in
@@ -296,9 +324,11 @@ final class ChatWireService {
             }
         case .activity(let line):
             flush(key: key, on: asker)
+            remember(line, key: key)
             status(line, key: key, on: asker)
         case .toolStarted(let name):
             flush(key: key, on: asker)
+            remember("Using \(name)", key: key)
             status("Using \(name)", key: key, on: asker)
         case .toolFinished:
             // The next delta or status says what happened; a per-tool
@@ -334,6 +364,7 @@ final class ChatWireService {
         let frames = ChatDeltaChunking.frames(
             id: turn.requestID, firstSeq: turn.seq, text: converted)
         turn.seq += frames.count
+        turn.lastFrameAt = Date()
         active[key] = turn
         for frame in frames {
             asker.send(.chatDelta(frame))
@@ -341,9 +372,43 @@ final class ChatWireService {
     }
 
     private func status(_ text: String, key: GuestKey, on asker: Session) {
-        guard let turn = active[key] else { return }
+        guard var turn = active[key] else { return }
+        turn.lastFrameAt = Date()
+        active[key] = turn
         asker.send(.chatStatus(ChatStatus(
             id: turn.requestID, text: CloudText.displayable(text))))
+    }
+
+    private func remember(_ line: String, key: GuestKey) {
+        guard var turn = active[key] else { return }
+        turn.lastActivity = line
+        active[key] = turn
+    }
+
+    /// One self-rescheduling beat per turn, ending when the turn does.
+    ///
+    /// It repeats what the turn was last seen doing rather than
+    /// inventing a new line, because the status field is display-only
+    /// and un-sequenced: each replaces the last, so a repeat costs the
+    /// guest nothing and a made-up line would be a claim. `requestID`
+    /// is carried so a beat left over from a finished turn cannot speak
+    /// for the next one.
+    private func beat(key: GuestKey, on asker: Session, requestID: Int) {
+        Task { @MainActor [weak self, weak asker] in
+            let interval = self?.heartbeatInterval
+                ?? ChatWireService.heartbeat
+            try? await Task.sleep(
+                nanoseconds: UInt64(interval * 1_000_000_000))
+            guard let self, let asker,
+                  let turn = self.active[key],
+                  turn.requestID == requestID else { return }
+            if Date().timeIntervalSince(turn.lastFrameAt) >= interval {
+                let line = turn.lastActivity.isEmpty
+                    ? "Working" : "Still: \(turn.lastActivity)"
+                self.status(line, key: key, on: asker)
+            }
+            self.beat(key: key, on: asker, requestID: requestID)
+        }
     }
 
     private func result(

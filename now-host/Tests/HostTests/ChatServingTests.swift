@@ -36,6 +36,7 @@ final class ChatServingTests: XCTestCase {
 
     private func installChat(
         script: [[ChatStreamEvent]], hangsWhenDry: Bool = false,
+        heartbeatInterval: TimeInterval = ChatWireService.heartbeat,
         providers: [ChatCatalogProvider] = [
             ChatCatalogProvider(
                 provider: "fake", label: "Fake", state: "serving",
@@ -58,7 +59,8 @@ final class ChatServingTests: XCTestCase {
         chatService = ChatWireService(
             harness: harness,
             providers: { providers },
-            models: { models[$0] })
+            models: { models[$0] },
+            heartbeatInterval: heartbeatInterval)
         listener.chatService = chatService
     }
 
@@ -207,6 +209,55 @@ final class ChatServingTests: XCTestCase {
                 String(decoding: encoded, as: UTF8.self)
                     .contains("Heretic-v2-MLX-mixed-6bit-variant-0"))
         }
+    }
+
+    /* The contract obliges the HOST to keep deltas or status flowing
+       while a turn is open, and entitles the guest to kill a silent
+       turn at sixty seconds. Every tool the harness runs answers in
+       seconds, so nothing ever tested it. A workspace lane's single
+       `Bash` call is a cross-compile: minutes inside one tool, with the
+       runtime saying nothing until it returns — a build dying at sixty
+       seconds for looking dead. */
+    func testASilentTurnStillSpeaksBeforeTheGuestsDeadline() async throws {
+        /* The turn is held open the way a real one is: the provider
+           says what it is doing, asks for a tool, and the next round
+           never answers — a runtime inside a long `Bash`. */
+        installChat(
+            script: [[
+                .activity("Bash scripts/build-guests"),
+                .finished(.toolUse([ChatToolCall(
+                    id: "c1", name: "now_machine_facts",
+                    argumentsJSON: "{}")])),
+            ]],
+            hangsWhenDry: true, heartbeatInterval: 0.15)
+        let guest = try await connectedGuest()
+        let ref = try await mintedRef(on: guest)
+
+        try guest.send(.chatSend(ChatSend(id: 40, ref: ref, prompt: "build")))
+        try await waitUntil("a repeat of the last thing seen") {
+            guest.received.filter {
+                if case .chatStatus(let s) = $0 {
+                    return s.id == 40 && s.text.hasPrefix("Still:")
+                }
+                return false
+            }.count >= 2
+        }
+
+        let lines = guest.received.compactMap { frame -> String? in
+            if case .chatStatus(let s) = frame { return s.text }
+            return nil
+        }
+        // The first line is what it is doing; the repeats say the same
+        // thing rather than inventing a new claim about the machine.
+        XCTAssertEqual(lines.first, "Bash scripts/build-guests")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Still: ") }, "\(lines)")
+        // A repeat, never a new claim about the machine.
+        for line in lines where line.hasPrefix("Still: ") {
+            XCTAssertTrue(
+                lines.contains(String(line.dropFirst("Still: ".count))),
+                "the heartbeat invented \(line)")
+        }
+        _ = try? guest.send(.chatCancel(ChatCancel(id: 40)))
     }
 
     func testARefRidesBackToTheRealModelID() async throws {

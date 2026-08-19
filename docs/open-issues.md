@@ -46,6 +46,20 @@ first thing a person sees on the guest's one status line is a `ToolSearch`.
 **This proves the lane's plumbing, not the product**: the stub is not New Old
 World, no guest was touched, and nothing ran from a Chat page.
 
+**A defect the lane INTRODUCED, found by reading the contract rather than by
+running anything.** `hostServesChat` obliges the host to keep a delta or a
+status flowing while a turn is open, and entitles the guest to declare a turn
+dead after sixty seconds of total silence and cancel it. Every tool the harness
+runs answers in seconds, so nothing had ever come close and no test covered it.
+A workspace lane's single `Bash` call is a cross-compile: minutes inside one
+tool, with the runtime saying nothing until it returns — so a guest that asked
+for a build would have correctly killed it at sixty seconds, and the person
+would have watched a build die for looking dead. `ChatWireService` now beats
+every 20 s while a turn is open, REPEATING what the turn was last seen doing
+rather than inventing a line, because the status field is display-only and a
+made-up line is a claim about the machine. Watched failing against both the
+missing beat and an invented one.
+
 **What is not verified.** Everything above passes the host suites and both
 guests compile. Nobody has driven a lane turn end to end — not from the host
 pane, not from the classic machine's own Chat page — so the lane is `Builds`
@@ -61,6 +75,9 @@ unknowns, in the order they will bite:
    line.
 3. Whether the 900-second lane deadline is anywhere near a real
    `scripts/build-guests`, which nothing has timed from inside a chat turn.
+4. Whether 20 s of heartbeat is the right cadence over a slow wire to a
+   68030, which only a metal run can answer — the number is chosen well
+   under the contract's sixty, not measured against one.
 
 **The honesty half, which is the durable part.** A face that cannot do a thing
 must say so where the person CHOOSES, not in a paragraph after they have asked.
