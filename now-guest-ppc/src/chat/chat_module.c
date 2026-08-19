@@ -103,6 +103,9 @@ enum {
     kChatListUnanswered = 2
 };
 static int g_chats_state;
+/* The page WANTS its listings; when it gets to ask for them is the
+   wire's business. See ask_lists_when_free. */
+static Boolean g_want_lists;
 static ChatProjectRow g_projects[kChatMaxProjects];
 static int g_project_count;
 static Boolean g_sidebar_shown = true;
@@ -455,6 +458,23 @@ static void ask_chats(void)
     g_chats_state = kChatListLoading;
 }
 
+/* The listings, issued only when the wire has no ask outstanding.
+   Called from the idle pass and after every answer, so a page that
+   wanted them while the catalog was loading gets them the moment it
+   finishes rather than never. */
+static void ask_lists_when_free(void)
+{
+    if (!g_want_lists || now_wire_chat_ask_pending()
+        || now_wire_chat_turn_active()) {
+        return;
+    }
+    if (g_chats_state == kChatListLoading) {
+        return;                       /* a roster page is already in flight */
+    }
+    g_want_lists = false;
+    ask_chats();
+}
+
 static void ask_projects(void)
 {
     char err[96];
@@ -659,6 +679,12 @@ static void chat_note(int kind, const char *reply)
             }
         } else {
             g_chats_state = kChatListIdle;
+            /* The roster is done, so the slot is free: now the projects.
+               Chained rather than parallel, for the reason stated at the
+               ask site. */
+            if (g_project_count == 0) {
+                ask_projects();
+            }
         }
         inval(&g_r.sidebar);
         break;
@@ -758,6 +784,11 @@ static void chat_note(int kind, const char *reply)
         /* An unanswered LISTING is not a dead turn: it means this host
            said nothing, which the contract reads as one that predates
            the family. The panel has to stop claiming to be asking. */
+        /* Any unanswered ask ends the listing's spinner, whichever kind
+           timed out. The wire has ONE pending slot, so a silence
+           reported against a later ask is silence for this one too, and
+           a panel that kept claiming to be asking would be the same lie
+           by a longer route. */
         if (g_chats_state == kChatListLoading) {
             g_chats_state = kChatListUnanswered;
             inval(&g_r.sidebar);
@@ -1024,13 +1055,21 @@ static void chat_show(Boolean visible)
     if (visible) {
         /* Asked on SHOW rather than on create: a page nobody has opened
            has no business spending a slow wire on a listing, and the
-           roster can have moved since the last time it was open. */
-        if (g_chats_state != kChatListLoading) {
-            ask_chats();
-        }
-        if (g_project_count == 0) {
-            ask_projects();
-        }
+           roster can have moved since the last time it was open.
+
+           ONE ASK AT A TIME, AND THIS PAGE DOES NOT DECIDE WHEN. The
+           wire keeps a single pending slot for this family (wire.c ::
+           g_chatask), so a second ask issued before the first is
+           answered ORPHANS it: the answer arrives carrying a kind the
+           pending no longer names and is discarded as stale, and the
+           deadline that would have reported the silence went with it —
+           so the sidebar reads "(asking...)" forever, which is the
+           failure a person sees. Measured twice on the emulator
+           (2026-08-19): first the projects ask stomping the roster, then
+           the CATALOG ask stomping it, because opening the page asks for
+           both. So the page only ever records that it wants the
+           listings, and asks when the wire is free. */
+        g_want_lists = true;
         ShowControl(g_provider_popup);
         ShowControl(g_model_popup);
         ShowControl(g_mode_popup);
@@ -1707,6 +1746,7 @@ static void chat_idle(void)
     }
     /* The catalog is asked once per connection; a page shown before
        the wire came up asks as soon as it is there. */
+    ask_lists_when_free();
     if (!g_asked_catalog && conn_phase() == kConnConnected) {
         ask_catalog();
     }

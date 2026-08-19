@@ -691,6 +691,41 @@ final class ChatDeltaChunkingTests: XCTestCase {
 
 // MARK: - Test doubles
 
+/* The wiring, not the serving: does a host answer a guest's chat asks
+   at all without somebody opening a page on this Mac? */
+@MainActor
+final class ChatServiceWiringTests: XCTestCase {
+    func testAHostServesChatWithoutAnybodyOpeningItsPage() {
+        let suite = "now.chat-wiring.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // Not listening: this is about the SERVICE being wired, and a
+        // test has no business binding a port to find that out.
+        defaults.set(false, forKey: "listenAtLaunch")
+
+        let state = HostAppState(registry: .standard, defaults: defaults)
+
+        /* The invariant, not a fix for anything: module runtimes are
+           built lazily, and `chat`'s runtime is also what assigns
+           `listener.chatService`. If that ever stops happening during
+           construction, every chat.models and chat.chats a classic Mac
+           sends is answered with SILENCE — which the contract reserves
+           for a host that predates the family, so the guest would be
+           told a lie rather than shown an error.
+
+           Written while chasing a guest stuck on "(asking...)" and
+           WRONGLY suspected of being this. It was not: the wiring was
+           always there, the defect was in the guest (one pending ask
+           slot, two asks). Kept because the invariant is real and
+           nothing else asserted it — but it is not evidence about that
+           bug, and the mutation it survives says so. */
+        XCTAssertNotNil(state.listener.chatService,
+                        "a guest's chat asks would be answered with "
+                            + "silence until somebody opened the Chat page "
+                            + "on this Mac")
+    }
+}
+
 private final class WireScriptedProvider: ChatProvider, @unchecked Sendable {
     let id = "fake"
     let label = "Fake"

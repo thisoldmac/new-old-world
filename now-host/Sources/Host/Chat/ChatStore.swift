@@ -177,8 +177,24 @@ final class ChatStore {
         var record: ChatProjectRecord
     }
 
+    /// Where saved chats live, ISOLATED BY `NOW_PREFS_SUFFIX` like the
+    /// preferences and the agent socket.
+    ///
+    /// Found 2026-08-19 while doing emulator QA of this very feature: a
+    /// lane host launched with the suffix, believing itself isolated,
+    /// listed the human's real conversations — because this path was
+    /// fixed. `now_chats` had just made that reachable by an agent, so
+    /// the same run could have filed or appended to a chat somebody was
+    /// having at their own screen.
+    ///
+    /// It is precisely the hazard `ProductIdentity` already records in
+    /// prose ("the isolation a lane was relying on was much narrower
+    /// than its name suggested"), arriving in a new store that did not
+    /// exist when that was written. A shipped launch sets no suffix and
+    /// its path does not move.
     static func applicationSupportRoot(
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> URL {
         guard let support = fileManager.urls(
             for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -186,8 +202,14 @@ final class ChatStore {
             throw ChatStoreError.unavailable(
                 "Application Support is unavailable.")
         }
-        return support.appendingPathComponent(
-            "New Old World/Chats", isDirectory: true)
+        let base = support.appendingPathComponent(
+            "New Old World", isDirectory: true)
+        guard let suffix = environment["NOW_PREFS_SUFFIX"], !suffix.isEmpty
+        else {
+            return base.appendingPathComponent("Chats", isDirectory: true)
+        }
+        return base.appendingPathComponent("Chats-\(suffix)",
+                                           isDirectory: true)
     }
 
     convenience init() throws {

@@ -533,6 +533,12 @@ int now_wire_chat_project(const char *op, const char *ref,
                           const char *name, const char *home,
                           char *err, long cap);
 Boolean now_wire_chat_turn_active(void);
+/* True while an ASK (catalog, models page, roster, history, projects,
+   open, project) is waiting for its answer. This family has ONE pending
+   slot, so a caller that issues a second ask orphans the first: its
+   answer reads as stale and its deadline goes with it. Ask this before
+   adding one that nobody is waiting on. */
+Boolean now_wire_chat_ask_pending(void);
 
 /* --- asking the HOST to show one of its own windows ---------------------
    One direction by definition, the cloud and chat rule: the subject is

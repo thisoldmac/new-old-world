@@ -3460,6 +3460,11 @@ Boolean now_wire_chat_turn_active(void)
     return g_chat.pending;
 }
 
+Boolean now_wire_chat_ask_pending(void)
+{
+    return g_chatask.pending;
+}
+
 int now_wire_chat_providers(char *err, long cap)
 {
     char json[96];

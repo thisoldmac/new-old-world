@@ -2216,6 +2216,53 @@ anything needing a mid-gesture fact — live drop-target feedback on the host �
 will require, and it is a contract change plus attended metal. Late bind buys
 the single gesture without either.
 
+## EMULATOR QA OF THE CHAT SLICE: one real defect, one false diagnosis, one flake (2026-08-19, `feat/chat-agentic-lane`)
+
+Driven overnight on a PowerPC clone (`scripts/spin-up-ppc`, lane block
+812) against an isolated host, with the guest's page reached by
+`now_menu_act` on NOW's own View menu. What it proved and what it cost:
+
+**PROVEN, end to end.** An agent created a chat over MCP
+(`now_chats create`), the host saved it, and the classic Mac's Chat page
+LISTED it — `- QA: agent made this`, the `-` marking a chat typed at the
+modern Mac. That is the loop this branch exists to close, seen on a
+screen rather than in a test. The page also drew the collapsible
+sidebar, the mode popup and the project popup, and `now_chats`
+list/read/create/append/projects all answered against a live OS 9.1
+guest.
+
+**THE DEFECT, and it was mine.** The sidebar sat on "(asking...)"
+forever. The chat wire keeps ONE pending-ask slot (`wire.c ::
+g_chatask`), and the page issued two asks back to back — so the second
+ORPHANED the first: its answer arrived carrying a kind the pending no
+longer named and was discarded as stale, and the deadline that would
+have reported the silence went with it. Fixed twice, because the first
+fix was too narrow: chaining projects behind the roster still left the
+CATALOG ask stomping it. The page now records that it wants its listings
+and asks only when `now_wire_chat_ask_pending()` says the wire is free.
+
+**A FALSE DIAGNOSIS, recorded because it cost real time.** Before
+finding that, the host was suspected: module runtimes are lazy, and
+`chat`'s runtime is what assigns `listener.chatService`, so a host that
+had never rendered its Chat page would answer silence. A fix was written
+and a test with it — and the test passed with the fix REMOVED, which
+means it proved nothing. The fix then turned out to break the app's
+launch. Both were reverted. The invariant kept a test; the claim did
+not.
+
+**A FLAKE THAT LOOKED LIKE A CAUSE.** The isolated host sometimes failed
+to bind port 18497 right after `spin-up-ppc` released it, launching but
+never listening. One A/B "confirmed" the reverted fix on the strength of
+a single run each way; the next run contradicted it. Waiting for the
+port to actually be free made it reliable. Two runs are not a
+distribution — the same lesson this ledger recorded about a flaky test
+hours earlier, learned again from the other side.
+
+**NOT verified on the emulator**: opening a chat from the sidebar and
+paging its history. The rows are custom-drawn, so the act plane cannot
+click them and no route drives them without a person. Metal is where
+that gets answered.
+
 ## THE HOST SUITE CAN WEDGE THE PERSON'S KEYBOARD, AND THE MECHANISM IS OURS (2026-08-19)
 
 Reported by Michelle while this branch was running gates: *"multiple
