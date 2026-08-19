@@ -580,6 +580,8 @@ final class OnboardingPortal: ObservableObject {
 
     private func send(_ response: HTTPResponse, headOnly: Bool,
                       on connection: NWConnection) {
+        let started = Date()
+        let bytes = response.body.count
         var header = "HTTP/1.0 \(response.status) \(response.reason)\r\n"
         header += "Content-Type: \(response.contentType)\r\n"
         header += "Content-Length: \(response.body.count)\r\n"
@@ -590,7 +592,23 @@ final class OnboardingPortal: ObservableObject {
         if !headOnly { message.append(response.body) }
         connection.send(content: message, contentContext: .defaultMessage,
                         isComplete: true,
-                        completion: .contentProcessed { _ in
+                        completion: .contentProcessed { error in
+                            // Backpressure makes this a fair proxy for
+                            // drain time on large bodies: the send only
+                            // completes as the peer actually reads.
+                            if bytes > 64 * 1_024 || error != nil {
+                                let seconds = max(0.001,
+                                    Date().timeIntervalSince(started))
+                                let rate = Double(bytes) / seconds / 1_024
+                                HostLog.shared.write(
+                                    error == nil ? .info : .warn,
+                                    "onboarding",
+                                    String(format: "sent %dB in %.1fs "
+                                           + "(%.0f KB/s)%@", bytes,
+                                           seconds, rate,
+                                           error.map { " error: \($0)" }
+                                               ?? ""))
+                            }
                             connection.cancel()
                         })
     }
