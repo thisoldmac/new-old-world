@@ -1,6 +1,6 @@
 import Combine
+import Darwin
 import Foundation
-import Network
 
 struct OnboardingEndpoint: Equatable {
     let host: String
@@ -71,20 +71,27 @@ final class OnboardingPortal: ObservableObject {
     @Published private(set) var setupImageState: SetupImageState = .notBuilt
     @Published var guestFlavor: OnboardingGuestFlavor = .powerpc
 
-    /// The transport's own queue. Connections used to run on .main, and
-    /// a busy UI throttled every flow-control resume: loopback (where the
-    /// whole body fits the socket buffers in one gulp) ran at memory
-    /// speed while a G3 on ethernet drained at kilobytes per second -
-    /// python's http.server on the same wire did 300-400 KB/s. Nothing
-    /// here was ever deliberately paced; the main queue was the pacer.
+    /// The accept loop's queue; each connection then runs on its own
+    /// utility work item with plain blocking I/O.
+    ///
+    /// This server deliberately speaks BSD sockets, not Network.framework.
+    /// A packet capture (2026-08-18, G3 over 10BASE-T) showed every first
+    /// transmission of every segment from the framework-backed listener
+    /// vanishing and only the ~250 ms timer retransmission being ACKed -
+    /// a 4-5 KB/s lockstep - while python's socket-backed http.server on
+    /// the same wire, same machine, moved 300-400 KB/s. Per-flow
+    /// interference with framework flows on this platform is outside our
+    /// control; the socket path demonstrably is not.
     private nonisolated let transportQueue = DispatchQueue(
-        label: "now.onboarding.transport")
+        label: "now.onboarding.accept")
+    private nonisolated let connectionQueue = DispatchQueue(
+        label: "now.onboarding.connections", attributes: .concurrent)
     private let preferredPort: UInt16
     private let catalog: OnboardingAssetCatalog
     private let dependencyAcquirer: OnboardingDependencyAcquirer
     private let setupImageBuilder: SetupImageBuilder
     private let advertisedAddress: () -> String?
-    private var listener: NWListener?
+    private var serverSocket: Int32 = -1
     private var generation = 0
     private var wirePort: UInt16 = SettingsModel.defaultPort
     private var knownAssetIDs: Set<String> = []
@@ -129,52 +136,98 @@ final class OnboardingPortal: ObservableObject {
         refreshAssets()
         state = .starting
         generation += 1
-        listen(on: NWEndpoint.Port(rawValue: preferredPort) ?? .any,
-               fallback: true)
+        beginListening()
     }
 
-    private func listen(on port: NWEndpoint.Port, fallback: Bool) {
+    private func beginListening() {
         let run = generation
+        // The preferred port being held (another host instance, an
+        // earlier session) is an expected state, not a failure: fall
+        // back to an ephemeral port, then report honestly.
+        var bound = bindAndListen(port: preferredPort)
+        if bound == nil { bound = bindAndListen(port: 0) }
+        guard let (socket, actualPort) = bound else {
+            state = .failed("Could not start onboarding: no listening "
+                            + "socket could be bound.")
+            return
+        }
+        guard let host = advertisedAddress() else {
+            close(socket)
+            state = .failed("No active LAN IPv4 address was found. "
+                            + "Connect this Mac to the same LAN first.")
+            return
+        }
+        serverSocket = socket
+        state = .running(OnboardingEndpoint(
+            host: host, httpPort: actualPort, wirePort: wirePort))
+        Task { @MainActor [weak self] in
+            try? await self?.rebuildSetupImage()
+        }
+        transportQueue.async { [weak self] in
+            self?.acceptLoop(socket: socket, run: run)
+        }
+    }
 
-        do {
-            let parameters = NWParameters.tcp
-            parameters.allowLocalEndpointReuse = true
-            let listener = try NWListener(using: parameters, on: port)
-            self.listener = listener
-            listener.newConnectionHandler = { [weak self] connection in
-                Task { @MainActor in
-                    guard let self, self.generation == run else {
-                        connection.cancel()
-                        return
-                    }
-                    self.accept(connection)
+    private nonisolated func bindAndListen(port: UInt16)
+        -> (Int32, UInt16)? {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return nil }
+        var yes: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes,
+                   socklen_t(MemoryLayout<Int32>.size))
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = INADDR_ANY
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bound == 0, listen(fd, 16) == 0 else {
+            close(fd)
+            return nil
+        }
+        var actual = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &actual) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getsockname(fd, $0, &length)
+            }
+        }
+        guard named == 0 else {
+            close(fd)
+            return nil
+        }
+        return (fd, UInt16(bigEndian: actual.sin_port))
+    }
+
+    private nonisolated func acceptLoop(socket serverFD: Int32, run: Int) {
+        while true {
+            var peer = sockaddr_in()
+            var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let client = withUnsafeMutablePointer(to: &peer) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    accept(serverFD, $0, &length)
                 }
             }
-            listener.stateUpdateHandler = { [weak self, weak listener] value in
-                Task { @MainActor in
-                    guard let self, self.generation == run else { return }
-                    self.listenerStateChanged(value, listener: listener,
-                                              fallback: fallback)
-                }
-            }
-            listener.start(queue: transportQueue)
-        } catch {
-            listener = nil
-            if fallback {
-                listen(on: .any, fallback: false)
-            } else {
-                state = .failed("Could not start onboarding: "
-                                + error.localizedDescription)
+            guard client >= 0 else { return }   // closed by stop()
+            connectionQueue.async { [weak self] in
+                guard let self else { close(client); return }
+                self.serve(client: client, run: run)
+                close(client)
             }
         }
     }
 
     func stop() {
         generation += 1
-        let old = listener
-        listener = nil
+        if serverSocket >= 0 {
+            close(serverSocket)
+            serverSocket = -1
+        }
         state = .stopped
-        old?.cancel()
     }
 
     func refreshAssets() {
@@ -329,146 +382,183 @@ final class OnboardingPortal: ObservableObject {
             includedItems: items, builtAt: Date())
     }
 
-    private func listenerStateChanged(_ value: NWListener.State,
-                                      listener: NWListener?,
-                                      fallback: Bool) {
-        switch value {
-        case .ready:
-            guard let port = listener?.port?.rawValue else {
-                state = .failed("Onboarding started without a usable port.")
-                return
-            }
-            guard let host = advertisedAddress() else {
-                state = .failed("No active LAN IPv4 address was found. "
-                                + "Connect this Mac to the same LAN first.")
-                listener?.cancel()
-                self.listener = nil
-                return
-            }
-            state = .running(OnboardingEndpoint(
-                host: host, httpPort: port, wirePort: wirePort))
-            Task { @MainActor [weak self] in
-                try? await self?.rebuildSetupImage()
-            }
-        case .failed(let error):
-            self.listener = nil
-            // The preferred port being held (another host instance, an
-            // earlier session) is an expected state, not a failure: fall
-            // back to an ephemeral port once, then report honestly.
-            if fallback {
-                generation += 1
-                listen(on: .any, fallback: false)
-            } else {
-                state = .failed("Onboarding stopped: "
-                                + error.localizedDescription)
-            }
-        case .cancelled:
-            self.listener = nil
-            if case .starting = state { state = .stopped }
-        case .setup, .waiting:
-            break
-        @unknown default:
-            break
-        }
-    }
+    /// One connection, blocking I/O, on a utility work item: read the
+    /// request (bounded, with a receive timeout so a stalled peer cannot
+    /// pin the thread), route it on the MainActor where the portal's
+    /// state lives, then write the response to the wire.
+    private nonisolated func serve(client: Int32, run: Int) {
+        var yes: Int32 = 1
+        setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &yes,
+                   socklen_t(MemoryLayout<Int32>.size))
+        var timeout = timeval(tv_sec: 15, tv_usec: 0)
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                   socklen_t(MemoryLayout<timeval>.size))
 
-    private func accept(_ connection: NWConnection) {
-        connection.stateUpdateHandler = { state in
-            if case .failed = state { connection.cancel() }
-        }
-        connection.start(queue: transportQueue)
-        receiveRequest(on: connection, accumulated: Data())
-    }
-
-    private func receiveRequest(on connection: NWConnection,
-                                accumulated: Data) {
-        connection.receive(
-            minimumIncompleteLength: 1,
-            maximumLength: 8_192
-        ) { [weak self] data, _, done, _ in
-            Task { @MainActor in
-                guard let self else {
-                    connection.cancel()
-                    return
-                }
-                var request = accumulated
-                if let data { request.append(data) }
-                if request.count > 8_192 {
-                    self.send(.plain(status: 431,
-                                     reason: "Request Header Too Large",
-                                     text: "Request header too large.\r\n"),
-                              headOnly: false, on: connection)
-                    return
-                }
-                if request.range(of: Data("\r\n\r\n".utf8)) != nil
-                    || request.range(of: Data("\n\n".utf8)) != nil
-                    || done {
-                    self.handle(request, on: connection)
-                } else {
-                    self.receiveRequest(on: connection,
-                                        accumulated: request)
-                }
+        var request = Data()
+        var buffer = [UInt8](repeating: 0, count: 2_048)
+        while request.count <= 8_192 {
+            let got = read(client, &buffer, buffer.count)
+            if got <= 0 { break }
+            request.append(contentsOf: buffer[0..<got])
+            if request.range(of: Data("\r\n\r\n".utf8)) != nil
+                || request.range(of: Data("\n\n".utf8)) != nil {
+                break
             }
         }
-    }
+        if request.count > 8_192 {
+            write(response: .plain(status: 431,
+                                   reason: "Request Header Too Large",
+                                   text: "Request header too large.\r\n"),
+                  headOnly: false, to: client, path: "-")
+            return
+        }
 
-    private func handle(_ request: Data, on connection: NWConnection) {
         guard let text = String(data: request, encoding: .isoLatin1),
               let firstLine = text.split(whereSeparator: \.isNewline).first
         else {
-            send(.plain(status: 400, reason: "Bad Request",
-                        text: "Bad request.\r\n"),
-                 headOnly: false, on: connection)
+            write(response: .plain(status: 400, reason: "Bad Request",
+                                   text: "Bad request.\r\n"),
+                  headOnly: false, to: client, path: "-")
             return
         }
         let fields = firstLine.split(separator: " ",
                                      omittingEmptySubsequences: true)
         guard fields.count >= 2 else {
-            send(.plain(status: 400, reason: "Bad Request",
-                        text: "Bad request.\r\n"),
-                 headOnly: false, on: connection)
+            write(response: .plain(status: 400, reason: "Bad Request",
+                                   text: "Bad request.\r\n"),
+                  headOnly: false, to: client, path: "-")
             return
         }
         let method = String(fields[0]).uppercased()
         guard method == "GET" || method == "HEAD" else {
-            send(.plain(status: 405, reason: "Method Not Allowed",
-                        text: "Only GET and HEAD are supported.\r\n",
-                        extraHeaders: ["Allow: GET, HEAD"]),
-                 headOnly: method == "HEAD", on: connection)
+            write(response: .plain(
+                      status: 405, reason: "Method Not Allowed",
+                      text: "Only GET and HEAD are supported.\r\n",
+                      extraHeaders: ["Allow: GET, HEAD"]),
+                  headOnly: method == "HEAD", to: client, path: "-")
             return
         }
 
         let path = requestPath(String(fields[1]))
-        // Every guest-browser experiment so far has been interpreted from
+        // Every guest-browser experiment so far had been interpreted from
         // memory of what the browser probably did. The log line is the
-        // evidence: which route the guest actually fetched, and as whom -
-        // MacWeb, Netscape and Fetch behave differently enough that the
-        // User-Agent decides which download story applies.
+        // evidence: which route the guest actually fetched, and as whom.
         let userAgent = text.split(whereSeparator: \.isNewline)
             .first { $0.lowercased().hasPrefix("user-agent:") }
             .map { $0.dropFirst("user-agent:".count)
                 .trimmingCharacters(in: .whitespaces) } ?? "-"
-        HostLog.shared.write(.info, "onboarding",
-                             "\(method) \(path) ua=\(userAgent)")
-        let localHost = acceptedHost(on: connection)
-            ?? endpoint?.host
-            ?? advertisedAddress()
-            ?? "127.0.0.1"
-        if path == "/now/setup.img" || path == "/now/setup.img.bin" {
-            Task { [weak self] in
-                guard let self else {
-                    connection.cancel()
+        Task { @MainActor in
+            HostLog.shared.write(.info, "onboarding",
+                                 "\(method) \(path) ua=\(userAgent)")
+        }
+
+        let localHost = localAddress(of: client)
+        let response = routed(path: path, localHost: localHost, run: run)
+        write(response: response, headOnly: method == "HEAD", to: client,
+              path: path)
+    }
+
+    /// Hop to the MainActor for routing - the portal's published state
+    /// lives there - and block this connection's thread until the
+    /// response exists. The image route may build the image first.
+    private nonisolated func routed(path: String, localHost: String?,
+                                    run: Int) -> HTTPResponse {
+        final class Box: @unchecked Sendable {
+            var response = HTTPResponse.plain(
+                status: 500, reason: "Internal Server Error",
+                text: "The host did not answer.\r\n")
+        }
+        let box = Box()
+        let done = DispatchSemaphore(value: 0)
+        Task { @MainActor [weak self] in
+            defer { done.signal() }
+            guard let self, self.generation == run else { return }
+            let host = localHost
+                ?? self.endpoint?.host
+                ?? self.advertisedAddress()
+                ?? "127.0.0.1"
+            if path == "/now/setup.img" || path == "/now/setup.img.bin" {
+                box.response = await self.setupImageResponse(
+                    envelopeFallback: path.hasSuffix(".bin"))
+            } else {
+                box.response = self.response(for: path, host: host)
+            }
+        }
+        done.wait()
+        return box.response
+    }
+
+    /// A plain write loop - partial writes and EINTR are the whole
+    /// story - with the transfer's drain rate logged for anything big
+    /// enough to be a package: the wire number that settles slow-path
+    /// questions, recorded by the server itself.
+    private nonisolated func write(response: HTTPResponse, headOnly: Bool,
+                                   to client: Int32, path: String) {
+        var header = "HTTP/1.0 \(response.status) \(response.reason)\r\n"
+        header += "Content-Type: \(response.contentType)\r\n"
+        header += "Content-Length: \(response.body.count)\r\n"
+        header += "Connection: close\r\n"
+        for line in response.extraHeaders { header += "\(line)\r\n" }
+        header += "\r\n"
+        var message = Data(header.utf8)
+        if !headOnly { message.append(response.body) }
+
+        let started = Date()
+        var failure: Int32 = 0
+        message.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+            var offset = 0
+            while offset < bytes.count {
+                let wrote = Darwin.write(
+                    client, bytes.baseAddress! + offset,
+                    bytes.count - offset)
+                if wrote > 0 {
+                    offset += wrote
+                } else if errno == EINTR {
+                    continue
+                } else {
+                    failure = errno
                     return
                 }
-                let response = await self.setupImageResponse(
-                    envelopeFallback: path.hasSuffix(".bin"))
-                self.send(response, headOnly: method == "HEAD",
-                          on: connection)
             }
-            return
         }
-        send(response(for: path, host: localHost),
-             headOnly: method == "HEAD", on: connection)
+        let bytes = message.count
+        if bytes > 64 * 1_024 || failure != 0 {
+            let seconds = max(0.001, Date().timeIntervalSince(started))
+            let rate = Double(bytes) / seconds / 1_024
+            let line = String(
+                format: "sent %@ %dB in %.1fs (%.0f KB/s)%@", path,
+                bytes, seconds, rate,
+                failure != 0 ? " errno=\(failure)" : "")
+            Task { @MainActor in
+                HostLog.shared.write(failure == 0 ? .info : .warn,
+                                     "onboarding", line)
+            }
+        }
+        // Let the peer drain before close tears the window down: shutdown
+        // sends FIN, and the read waits for the peer's own close.
+        shutdown(client, SHUT_WR)
+        var drain = [UInt8](repeating: 0, count: 1_024)
+        while read(client, &drain, drain.count) > 0 {}
+    }
+
+    private nonisolated func localAddress(of client: Int32) -> String? {
+        var address = sockaddr_in()
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let named = withUnsafeMutablePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getsockname(client, $0, &length)
+            }
+        }
+        guard named == 0, address.sin_family == sa_family_t(AF_INET)
+        else { return nil }
+        var text = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        var raw = address.sin_addr
+        guard inet_ntop(AF_INET, &raw, &text,
+                        socklen_t(INET_ADDRSTRLEN)) != nil else {
+            return nil
+        }
+        let value = String(cString: text)
+        return value == "0.0.0.0" ? nil : value
     }
 
     private func setupImageResponse(envelopeFallback: Bool) async
@@ -586,45 +676,7 @@ final class OnboardingPortal: ObservableObject {
         }
     }
 
-    private func send(_ response: HTTPResponse, headOnly: Bool,
-                      on connection: NWConnection) {
-        let started = Date()
-        let bytes = response.body.count
-        var header = "HTTP/1.0 \(response.status) \(response.reason)\r\n"
-        header += "Content-Type: \(response.contentType)\r\n"
-        header += "Content-Length: \(response.body.count)\r\n"
-        header += "Connection: close\r\n"
-        for line in response.extraHeaders { header += "\(line)\r\n" }
-        header += "\r\n"
-        var message = Data(header.utf8)
-        if !headOnly { message.append(response.body) }
-        connection.send(content: message, contentContext: .defaultMessage,
-                        isComplete: true,
-                        completion: .contentProcessed { error in
-                            // Backpressure makes this a fair proxy for
-                            // drain time on large bodies: the send only
-                            // completes as the peer actually reads.
-                            if bytes > 64 * 1_024 || error != nil {
-                                let seconds = max(0.001,
-                                    Date().timeIntervalSince(started))
-                                let rate = Double(bytes) / seconds / 1_024
-                                let line = String(
-                                    format: "sent %dB in %.1fs "
-                                        + "(%.0f KB/s)%@", bytes,
-                                    seconds, rate,
-                                    error.map { " error: \($0)" } ?? "")
-                                let level: HostLog.LogLevel =
-                                    error == nil ? .info : .warn
-                                Task { @MainActor in
-                                    HostLog.shared.write(
-                                        level, "onboarding", line)
-                                }
-                            }
-                            connection.cancel()
-                        })
-    }
-
-    private func requestPath(_ target: String) -> String {
+    private nonisolated func requestPath(_ target: String) -> String {
         if target.hasPrefix("http://") || target.hasPrefix("https://"),
            let parts = URLComponents(string: target) {
             return parts.percentEncodedPath.isEmpty
@@ -634,14 +686,7 @@ final class OnboardingPortal: ObservableObject {
                                    omittingEmptySubsequences: false)[0])
     }
 
-    private func acceptedHost(on connection: NWConnection) -> String? {
-        guard case .hostPort(let host, _) =
-                connection.currentPath?.localEndpoint else { return nil }
-        let text = HostAddressDetector.text(host)
-        return text == "0.0.0.0" || text == "::" ? nil : text
-    }
-
-    private func contentType(for url: URL) -> String {
+    private nonisolated func contentType(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
         case "bin": return "application/macbinary"
         case "sit": return "application/x-stuffit"
@@ -652,7 +697,7 @@ final class OnboardingPortal: ObservableObject {
     }
 }
 
-private struct HTTPResponse {
+private struct HTTPResponse: Sendable {
     let status: Int
     let reason: String
     let contentType: String
