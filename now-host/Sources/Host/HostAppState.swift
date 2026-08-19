@@ -541,8 +541,13 @@ final class HostAppState: ObservableObject {
         }
     }
 
+    /// Binds the host's default port and every port a remembered machine
+    /// claims as its own. The default leads, so `boundPort` still means what
+    /// it always meant and a desk that never gave a machine its own port
+    /// binds exactly the one socket it used to.
     func startListening() {
-        listener.start(port: settings.listenPort)
+        listener.start(
+            ports: listener.registry.portsToBind(base: settings.listenPort))
     }
 
     func stopListening() {

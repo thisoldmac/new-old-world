@@ -4,6 +4,10 @@ import SwiftUI
 struct OnboardingSheet: View {
     @ObservedObject var portal: OnboardingPortal
     let wirePort: UInt16
+    /// The machine these settings are for, when they are for one already in
+    /// the book. Nil is the "add a machine" path, where there is no profile
+    /// yet and the port is the host's default.
+    var machineName: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var folderProblem: String?
 
@@ -11,7 +15,8 @@ struct OnboardingSheet: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Set Up a New Mac")
+                    Text(machineName.map { "Set Up \($0)" }
+                         ?? "Set Up a New Mac")
                         .font(.title2.weight(.semibold))
                     Text("A temporary download page for a \(MachineNaming.commonNoun) "
                          + "on this LAN.")
