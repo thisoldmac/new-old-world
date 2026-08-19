@@ -6,6 +6,7 @@
 
 #include "chat_layout.h"
 #include "chat_model.h"
+#include "chat_project_dialog.h"
 #include "../core/contract.h"
 #include "../core/pump.h"
 #include "../core/wire.h"
@@ -115,6 +116,9 @@ static Boolean g_want_history;
 static Boolean g_roster_restart;
 static ChatProjectRow g_projects[kChatMaxProjects];
 static int g_project_count;
+/* A create was sent; the next chat.result that lands is its answer,
+   and an ok one means the roster moved. */
+static Boolean g_created_project;
 static Boolean g_sidebar_shown = true;
 /* What this turn may do. Build is NOT the default: the safe tier is the
    one that changes nothing, and the host reads an absent mode the same
@@ -436,6 +440,10 @@ static void rebuild_project_popup(void)
             current = i + 1;
         }
     }
+    /* Last, after a separator: the one row that is a verb. */
+    fill_menu_item(menu, (short)(g_project_count + 2), "-", false);
+    fill_menu_item(menu, (short)(g_project_count + 3),
+                   "New Project...", true);
     if (g_project_popup != NULL) {
         SetControlMaximum(g_project_popup, CountMenuItems(menu));
         SetControlValue(g_project_popup, (short)(current + 1));
@@ -816,6 +824,15 @@ static void chat_note(int kind, const char *reply)
         g_status[0] = '\0';
         retitle_send();
         inval(&g_r.status);
+        if (g_created_project) {
+            /* The create's answer, and the slot just freed: the roster
+               moved on the host, so re-list rather than guessing. */
+            g_created_project = false;
+            if (ok) {
+                g_project_count = 0;
+                ask_projects();
+            }
+        }
         break;
     }
     case kChatAnswerError:
@@ -1598,6 +1615,8 @@ static Boolean chat_click(const EventRecord *event, Point local)
         return true;
     }
     if (control == g_project_popup && part != 0) {
+        short before = GetControlValue(g_project_popup);
+
         if (TrackControl(g_project_popup, local,
                          (ControlActionUPP)-1L) != 0) {
             int picked = GetControlValue(g_project_popup) - 1;
@@ -1614,8 +1633,25 @@ static Boolean chat_click(const EventRecord *event, Point local)
                                            g_projects[picked - 1].ref,
                                            NULL, NULL, err,
                                            sizeof err) == 0;
-            } else {
+            } else if (picked == g_project_count + 2) {
+                char name[48];
+                char home[8];
+
+                /* The verb row. The popup must not sit on it while the
+                   dialog runs - it is not a state a person can be in. */
+                SetControlValue(g_project_popup, before);
+                Draw1Control(g_project_popup);
                 ok = 1;
+                if (now_chat_project_new(name, sizeof name,
+                                         home, sizeof home)) {
+                    ok = now_wire_chat_project("create", NULL, name, home,
+                                               err, sizeof err) == 0;
+                    if (ok) {
+                        g_created_project = true;
+                    }
+                }
+            } else {
+                ok = 1;               /* the separator */
             }
             if (!ok) {
                 snprintf(g_status, sizeof g_status, "%.120s", err);

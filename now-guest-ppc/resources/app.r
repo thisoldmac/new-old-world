@@ -383,6 +383,28 @@ resource 'DITL' (302) {
     }
 };
 
+/* The Chat page's New Project editor: a name and where the project is
+   authoritative. Same Dialog Manager idiom as 301/302 - the modal loop
+   pumps the wire. */
+resource 'DLOG' (303) {
+    {140, 150, 316, 470}, movableDBoxProc, invisible, noGoAway,
+    0, 303, "New Project", centerMainScreen
+};
+
+resource 'DITL' (303) {
+    {
+        /* 1 Create */ {140, 234, 160, 304}, Button { enabled, "Create" };
+        /* 2 Cancel */ {140, 150, 160, 220}, Button { enabled, "Cancel" };
+        /* 3 name   */ {20, 76, 36, 304}, EditText { enabled, "" };
+        /* 4 here   */ {48, 16, 64, 304},
+            RadioButton { enabled, "Lives on this Mac" };
+        /* 5 there  */ {70, 16, 86, 304},
+            RadioButton { enabled, "Lives on the other Mac" };
+        /* 6 status */ {94, 16, 132, 304}, StaticText { disabled, "" };
+        /* 7 label  */ {20, 16, 36, 70}, StaticText { disabled, "Name:" };
+    }
+};
+
 
 
 /* The Apple menu. Item 1 is the About box; item 2 is a separator, below
