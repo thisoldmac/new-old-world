@@ -1226,7 +1226,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 @main
 enum HostMain {
     static func main() {
-        if Array(CommandLine.arguments.dropFirst()) == ["--mcp-stdio"] {
+        /* Two accepted companion spellings, both exact: bare, and with the
+           chat workspace lane's granted folder pinned on. Anything else
+           still launches the app, unchanged — an argument vector this
+           entry point does not recognise must not half-become a server. */
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        let workspaceRoot: URL? =
+            arguments.count == 3 && arguments[0] == "--mcp-stdio"
+                && arguments[1] == "--workspace-root" && !arguments[2].isEmpty
+            ? URL(fileURLWithPath: arguments[2], isDirectory: true)
+            : nil
+        if arguments == ["--mcp-stdio"] || workspaceRoot != nil {
+            HostProjectionLocalRead.configure(workspaceRoot: workspaceRoot)
             Task {
                 await MCPStdioTransport.run()
                 Foundation.exit(0)

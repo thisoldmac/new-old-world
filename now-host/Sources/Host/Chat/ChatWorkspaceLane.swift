@@ -172,13 +172,23 @@ enum ChatWorkspaceMCPConfig {
     /// Nil when the executable cannot be found — the lane then runs
     /// without New Old World's tools rather than with a broken server
     /// the runtime would spend its turn retrying.
-    static func json(executable: URL?) -> String? {
+    ///
+    /// `workspaceRoot` is the lane's granted folder, pinned onto the
+    /// companion's command line so `now_guest_files_upload_file` can read
+    /// files out of it. Spawn-time and explicit on purpose: the companion
+    /// must never discover a readable root ambiently, and nil keeps the
+    /// bare single-argument mode for a lane with no folder to grant.
+    static func json(executable: URL?, workspaceRoot: URL?) -> String? {
         guard let executable else { return nil }
+        var args = ["--mcp-stdio"]
+        if let workspaceRoot {
+            args += ["--workspace-root", workspaceRoot.path]
+        }
         let object: [String: Any] = [
             "mcpServers": [
                 serverName: [
                     "command": executable.path,
-                    "args": ["--mcp-stdio"],
+                    "args": args,
                 ],
             ],
         ]

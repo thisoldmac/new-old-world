@@ -96,7 +96,9 @@ final class ClaudeCodeClient: @unchecked Sendable {
             arguments: Self.arguments(
                 model: completion.model, lane: lane,
                 mcpConfig: lane?.attachesNOWTools == true
-                    ? ChatWorkspaceMCPConfig.json(executable: hostExecutable)
+                    ? ChatWorkspaceMCPConfig.json(
+                        executable: hostExecutable,
+                        workspaceRoot: lane?.root)
                     : nil),
             standardInput: Data(Self.prompt(completion, lane: lane).utf8),
             timeout: lane?.timeout ?? 180,

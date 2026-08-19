@@ -189,6 +189,7 @@ The test compares both against the code literally.
 | `now_guest_files_upload_begin` | — | — | none; host staging only |
 | `now_guest_files_upload_append` | — | — | none; host staging only |
 | `now_guest_files_upload_commit` | `file.put` | `file.put` | message family |
+| `now_guest_files_upload_file` | `file.put` | `file.put` | message family; the file is read from the chat workspace folder pinned at companion spawn, then staged and committed through the same lane as the trio above — no bytes cross the caller |
 
 **The distinct capabilities those rows require is a shorter list than the row
 count, and the ones they expose is shorter still.** Most of the rows above are
@@ -639,6 +640,7 @@ to exist:
 | `chat.roster` | message | ppc | deliberate | Reached by `now_chats` (`list`) since 2026-08-19. Written up as a deliberate gap for one afternoon on the argument that a person's saved conversations are not an agent capability, and corrected the same day (Michelle): an agent that can drive the classic machine but cannot see the conversation happening AT it leaves the human as the only wire between the halves. The wire message itself stays guest-to-host — the guest asks the host for its own store — and the agent-facing reading of the same store is the projection, not this message. The argument, and the correction that produced it, are in the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) (W6). |
 | `chat.transcript` | message | ppc | deliberate | Reached by `now_chats` (`read`) since 2026-08-19, paged from the newest end the way the wire pages it — one rule, read by both faces. The argument, and the correction that produced it, are in the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) (W6). |
 | `chat.status` | message | ppc | deliberate | The transient liveness line of the same family, same reason ([command-parity.md](command-parity.md)). |
+| `chat.skillroster` | message | ppc | deliberate | The host's answer to a guest-initiated `chat.skills` — same definitional direction as `chat.catalog`, same citation ([command-parity.md](command-parity.md)): the subject is the host's own skill catalogue, which no classic Mac has, so no guest will ever serve one and there is nothing here for a projection to ask a guest for. |
 | `cloud.card` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.detail` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The cloud family runs guest-to-host by definition — its subject is the host's own iCloud, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for; the MCP is a client of guests, not of the host's own services ([command-parity.md](command-parity.md), and the `guestAsksCloud` / `hostServesCloud` operations in the contract). |
 | `cloud.listing` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.list` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
 | `cloud.refuse` | message | ppc | deliberate | The refusal half of the same family, same reason ([command-parity.md](command-parity.md)). |
@@ -1202,14 +1204,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: 2013fdfc6a5d6229221c487190c35259d3ebf830
+sources-sha1: c724d1b953c68d0d44c5178198a9857ac52e1085
 derive ppc-inbound-types sha256=deaa05a18ffaec3e8f5f3223631b9b3ceb4a0cbe0ca4ec088bd54957b0a9ee56 lines=62 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=3ad3fc4fb992fce8be4179670b61c7824940d47b08a10f890f1f51252ab11c6a lines=3
+derive disposition-census sha256=47a68e37656997c84a5b1394eb1248dba698434bbd02320c66487fcd3f6dad48 lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1449,4 +1451,5 @@ rederived: 2026-08-19T04:47:57-0400 ba4e78ae sources
 rederived: 2026-08-19T05:41:21-0400 a8ee7d50 unchanged
 rederived: 2026-08-19T14:24:10-0400 d6583bbd sources
 rederived: 2026-08-19T14:49:25-0400 75da2302 sources, ppc-inbound-types 61->62
+rederived: 2026-08-19T15:06:38-0400 c9462eb5 sources, disposition-census 3->3
 -->

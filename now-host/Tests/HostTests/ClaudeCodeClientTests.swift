@@ -94,7 +94,9 @@ final class ClaudeCodeClientTests: XCTestCase {
         let arguments = ClaudeCodeClient.arguments(
             model: "sonnet", lane: lane(.bypassPermissions),
             mcpConfig: ChatWorkspaceMCPConfig.json(
-                executable: URL(fileURLWithPath: "/Apps/New Old World")))
+                executable: URL(fileURLWithPath: "/Apps/New Old World"),
+                workspaceRoot: URL(fileURLWithPath: "/tmp/now-lane",
+                                   isDirectory: true)))
 
         XCTAssertEqual(arguments.value(after: "--tools"), "default")
         XCTAssertEqual(arguments.value(after: "--permission-mode"),

@@ -87,6 +87,11 @@ final class HostFaceParityTests: XCTestCase {
         "now_guest_files_capabilities",
         "now_guest_files_upload_begin",
         "now_guest_files_upload_append",
+        /* The one-call local-file sibling of the pair above: the app's
+           person picks a real file in Files, which enters the same host
+           transfer lane, so the row's reason names the picker rather
+           than a missing pane. */
+        "now_guest_files_upload_file",
         /* The act plane and the observation that mints its targets, all
            registered 2026-07-31. The divergence is the one kind this ledger
            is least worried about and it is still owed: the acts take an

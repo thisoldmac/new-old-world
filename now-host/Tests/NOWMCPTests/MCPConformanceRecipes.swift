@@ -408,6 +408,15 @@ enum MCPConformanceRecipes {
                           "data": uploadProbe.base64EncodedString()],
                          .real)
         },
+        "now_guest_files_upload_file": .fixed(
+            "A workspace-relative name that cannot exist. This companion is "
+                + "spawned without --workspace-root, so the row's own "
+                + "no-lane refusal is the real answer — the containment and "
+                + "read paths are covered by its projection tests, which "
+                + "can pin a root; this surface cannot.",
+            ["localPath": "conformance-never-written.bin",
+             "destinationPath": "probe.bin",
+             "container": "data"]),
         "now_guest_files_upload_commit": Recipe(
             "Closes the same upload. A run that left one open would leave a "
                 + "temp fork on the machine it was measuring."

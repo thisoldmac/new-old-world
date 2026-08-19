@@ -163,5 +163,10 @@ public enum HostProjectionCatalog {
         GuestFilesUploadBeginProjection.self,
         GuestFilesUploadAppendProjection.self,
         GuestFilesUploadCommitProjection.self,
+        /* Last, beside the trio it composes: the same stage-and-commit
+           lane entered from a file the host may read itself — the chat
+           workspace lane's folder — instead of from caller-carried
+           chunks. */
+        GuestFilesUploadFileProjection.self,
     ] }
 }
