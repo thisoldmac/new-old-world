@@ -61,6 +61,14 @@ enum OnboardingDependencyCatalog {
 
     static let all = [carbonLib]
 
+    /// Artifacts a PREVIOUS catalog pin downloaded, since superseded: the
+    /// 1.6.1 .sit repack held only the extension, no installer and no
+    /// license. The file is left on disk - it is not ours to delete -
+    /// but it is no longer offered as installed, matched, or staged, so
+    /// a desk that downloaded it before the pin changed heals itself:
+    /// the entry reads not-installed and Get fetches the official SMI.
+    static let retiredFileNames: Set<String> = ["carbonlib_161.sit.bin"]
+
     static func additionalAssets(in snapshot: OnboardingAssetSnapshot)
         -> [OnboardingAsset] {
         snapshot.dependencies.filter { asset in

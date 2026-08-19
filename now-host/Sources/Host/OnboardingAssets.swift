@@ -221,6 +221,8 @@ struct OnboardingAssetCatalog {
             }) {
                 let key = url.lastPathComponent.lowercased()
                 guard !seen.contains(key),
+                      !OnboardingDependencyCatalog.retiredFileNames
+                          .contains(key),
                       let asset = asset(at: url, kind: .dependency)
                 else { continue }
                 seen.insert(key)
