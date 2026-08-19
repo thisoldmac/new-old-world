@@ -79,16 +79,18 @@ decision, and NOW-68K serves no `putstat`. See the ledger.)
 | `NOW_METAL_REPEATS` | how many times the rungs at or above 1 MB are measured. Default 1. **Use 3 on the 180c** — see [68k-metal-baseline.md](68k-metal-baseline.md). |
 | `NOW_68K_NEW_APP` etc. | set only by `scripts/deploy-68k --handoff`. Do not set them by hand. |
 
-The machine's address is not in this repository — it describes one desk.
-Put it in `.env.lab` (see [lab-setup.md](lab-setup.md)) and export it for
-the shell you run the recipes below in:
+The machine's address is not in this repository — it describes one
+machine on one desk. It lives in that machine's profile,
+`.lab/machines/<id>.machine` (see [lab-setup.md](lab-setup.md)). The
+suites read the environment and know nothing about that directory, so
+hand them the values for the shell you run the recipes below in:
 
 ```bash
-set -a; . ./.env.lab; set +a
+eval "$(tools/lab-machine env pb180c)"
 ```
 
 The recipes name `NOW_METAL` and `NOW_METAL_PORT` on the line, because
-those change per run; `NOW_METAL_MACHINE` comes from that file.
+those change per run; `NOW_METAL_MACHINE` comes from the profile.
 
 **One `swift test` process at a time on this Mac.** The suites share
 external state: `HostLogTests` and `LoggingSpecTests` both write
@@ -101,7 +103,7 @@ document exists to prevent, one floor down.
 
 **Prefer `scripts/deploy-68k --test-only` to a bare `swift test`.** It
 sets `NOW_METAL`, `NOW_METAL_PORT` and `NOW_METAL_MACHINE` (from the
-address it deploys to) and keeps the build scratch outside the
+profile of the machine it deploys to) and keeps the build scratch outside the
 repository, so the common path does not depend on remembering four
 variables:
 

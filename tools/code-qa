@@ -213,6 +213,89 @@ def override_metal(number: int, reason: str) -> None:
     print(f"Metal QA: overridden for {sha[:12]} ({comment_url})")
 
 
+QA_COMMAND = re.compile(
+    r"^/qa\s+(emulator|metal|override-metal)\s*[:\-]?\s*(.*)$")
+
+
+def parse_qa_command(body: str) -> tuple[str, str] | None:
+    """The first /qa line in a comment or review body, or None."""
+    for line in body.splitlines():
+        match = QA_COMMAND.match(line.strip())
+        if match:
+            return match.group(1), match.group(2).strip()
+    return None
+
+
+def github_command(number: int, actor: str, permission: str,
+                   body: str) -> None:
+    """Record QA from a GitHub gesture - a /qa command in a PR comment or
+    review, or the workflow_dispatch form - instead of a desk terminal.
+
+    The CLI's guards translate rather than vanish: the typed confirmation
+    phrase and tty check existed to make the CLI gesture deliberate and
+    human; here the deliberate gesture IS the comment or button, and the
+    identity comes from GitHub (the workflow passes github.actor and the
+    collaborator permission it verified). The override stays restricted
+    to the policy's human_override_actors, and the standing working rule
+    holds: agents do not post /qa commands or dispatch this workflow.
+    """
+    parsed = parse_qa_command(body)
+    if parsed is None:
+        print("no /qa command in this body; nothing recorded")
+        return
+    action, text = parsed
+    pr, paths = pull_request(number)
+    if not needs_product_qa(paths):
+        raise Refusal("this PR changes no paths classified as product code")
+    sha = str(pr["head"]["sha"])
+
+    if action == "override-metal":
+        allowed = set(policy()["human_override_actors"])
+        if actor not in allowed:
+            raise Refusal(f"@{actor} is not authorized to override metal QA")
+        if len(text) < 12:
+            raise Refusal(
+                "override reason must state the concrete reason metal QA "
+                "is omitted, e.g. /qa override-metal: <reason>")
+        comment = (
+            f"<!-- now-code-qa kind=metal-override sha={sha} -->\n"
+            "### Metal QA — explicit human override\n\n"
+            f"- PR head: `{sha}`\n"
+            f"- Authorized by: @{actor} (from GitHub)\n"
+            f"- Reason: {text}\n\n"
+            "No metal-verification claim may be made from this override. "
+            "This authorization applies only to the named head revision."
+        )
+        comment_url = post_comment(number, comment)
+        post_status(sha, "Metal QA", "success",
+                    f"human override by {actor}; not metal-verified",
+                    comment_url)
+        print(f"Metal QA: overridden for {sha[:12]} ({comment_url})")
+        return
+
+    if permission not in {"admin", "write"}:
+        raise Refusal(
+            f"@{actor} has {permission or 'no'} permission; recording QA "
+            "needs write access")
+    if len(text) < 8:
+        raise Refusal(
+            "state the evidence, e.g. /qa emulator: swept modules A-C on "
+            "the spin-up-ppc rig at <sha>")
+    context = "Emulator QA" if action == "emulator" else "Metal QA"
+    comment = (
+        f"<!-- now-code-qa kind={action} sha={sha} -->\n"
+        f"### {context} — passed\n\n"
+        f"- PR head: `{sha}`\n"
+        f"- Recorded by: @{actor} (from GitHub)\n"
+        f"- Evidence: {text}\n\n"
+        "This evidence applies only to the named head revision."
+    )
+    comment_url = post_comment(number, comment)
+    post_status(sha, context, "success",
+                f"passed; recorded from GitHub by {actor}", comment_url)
+    print(f"{context}: success for {sha[:12]} ({comment_url})")
+
+
 def selftest() -> None:
     required = [
         "now-host/Sources/Host/ModuleRegistry.swift",
@@ -260,6 +343,18 @@ def selftest() -> None:
     paged = pull_request_files("owner/repo", 27, 101, fetch_page)
     if len(paged) != 101 or paged[-1] != second_page[0]["filename"]:
         raise AssertionError("pull-request classification stopped at 100 files")
+    commands = [
+        ("/qa emulator: swept the module surfaces", ("emulator", "swept the module surfaces")),
+        ("prose first\n/qa metal - PB1400c full pass", ("metal", "PB1400c full pass")),
+        ("/qa override-metal: machine is away for repair", ("override-metal", "machine is away for repair")),
+        ("/qa emulator", ("emulator", "")),
+        ("nothing here", None),
+        ("/qadison is not a command", None),
+    ]
+    for body, expected in commands:
+        got = parse_qa_command(body)
+        if got != expected:
+            raise AssertionError(f"parse_qa_command({body!r}) = {got!r}, wanted {expected!r}")
     print("code-qa selftest: passed")
 
 
@@ -281,6 +376,13 @@ def parser() -> argparse.ArgumentParser:
     override = sub.add_parser("override-metal", help="interactively authorize no metal QA")
     override.add_argument("--pr", type=int, required=True)
     override.add_argument("--reason", required=True)
+    github = sub.add_parser(
+        "github-command",
+        help="record QA from a /qa command in a PR comment, review, or "
+             "the Actions form (body read from QA_BODY)")
+    github.add_argument("--pr", type=int, required=True)
+    github.add_argument("--actor", required=True)
+    github.add_argument("--permission", required=True)
     sub.add_parser("selftest")
     return result
 
@@ -298,6 +400,9 @@ def main() -> int:
         attest(args.pr, "emulator", args.summary, None)
     elif args.command == "attest-metal":
         attest(args.pr, "metal", args.summary, args.machine)
+    elif args.command == "github-command":
+        github_command(args.pr, args.actor, args.permission,
+                       os.environ.get("QA_BODY", ""))
     elif args.command == "override-metal":
         override_metal(args.pr, args.reason)
     elif args.command == "selftest":

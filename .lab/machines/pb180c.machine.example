@@ -1,0 +1,38 @@
+# A machine profile - copy to <id>.machine, which is gitignored.
+#
+#     cp .lab/machines/pb180c.machine.example .lab/machines/pb180c.machine
+#
+# One file per vintage Mac on this desk, named for the id the host
+# already calls it (GuestID: pb180c, pb1400c) - the same slug a person
+# types at the machine picker and an agent types in a tool call. The
+# file name IS the id; there is no key for it.
+#
+# Nothing here belongs in a commit. See docs/lab-setup.md.
+
+# How a message should refer to it.
+name = PowerBook 180c
+
+# Which guest it runs: 68k or ppc. scripts/deploy-68k refuses a machine
+# that runs the other one, rather than putting a 68K build on it.
+guest = 68k
+
+# Its address on the LAN. This is ONE fact and everything that needs it
+# reads it here - the FTP deploy and the metal machine-busy guard both,
+# which used to be two keys that nothing checked agreed.
+address = 192.0.2.180
+
+# The FTP account NetPresenz or Rumpus answers on, and the folder builds
+# land in (relative to the FTP root).
+ftp_user = changeme
+ftp_pass = changeme
+ftp_dir = Lab/now-68k
+
+# Port this machine's metal runs use. tools/lane-ports derives one per
+# lane; set this only when a machine wants its own.
+# metal_port = 5252
+
+# This Mac's address AS THIS MACHINE MUST DIAL IT, when it differs from
+# the desk-wide NOW68K_HARNESS_HOST in .env.lab. Not localhost and not
+# 10.0.2.2 - the QEMU gateway never answers on real hardware, where it
+# looks exactly like a hang.
+# harness_host = 192.0.2.2

@@ -69,6 +69,11 @@ The short table is navigation, not a claim of parity. The [module reference](doc
 ## Important limitations
 
 - The listener is for a trusted local network; secure transport is not available yet.
+- Each remembered machine can be given its own listening port, which is how
+  the host tells two emulated Macs apart when they all reach it from the same
+  loopback address. Assigning one opens the socket but does not repoint a
+  running guest — download that machine's settings to move it. Tested; not yet
+  exercised with two emulated guests, and never on metal.
 - The macOS app can be signed as part of release assembly, but classic in-app
   updates are still explicitly unsigned. They verify SHA-256, require local
   confirmation on the classic Mac, and still require fork-preserving transfer.

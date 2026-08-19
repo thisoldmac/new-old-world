@@ -130,6 +130,119 @@ must say so where the person CHOOSES, not in a paragraph after they have asked.
 A tool-less provider rendered identically to an agentic one is the chat-shaped
 version of the rule this repository already pays for elsewhere: a gate that
 reads green having never reached a machine.
+## THE WIRE PORT WAS APP-SCOPED, SO TWO EMULATED MACS WERE TOLD APART BY DIAL ORDER — FIXED, TESTED, EMULATOR AND METAL PENDING (2026-08-18, `feat/per-profile-listen-port`)
+
+One `NWListener` on one settings value. Every Mac dialled the same socket,
+and a person had no way to say "this one is on 5251" — the port belonged to
+the application, not to any machine.
+
+That was survivable for one Mac and quietly wrong for two. `GuestRegistry`
+anchors a machine on the address the host observed plus a product
+fingerprint, and behind an emulator **every guest arrives from 127.0.0.1
+wearing the same fingerprint**, because they are the same build of the same
+product on the same System. All that was left to separate them was `slot`,
+handed out in the order they happened to dial. Restart the pair in the other
+order and they swapped identities — names, display titles and rename history
+following the wrong Mac.
+
+### The fix
+
+A machine profile (`GuestRegistry.Record`) carries its own port. The host
+binds one listener per port, the default leading, and each listener names
+its own port when it accepts, rather than every connection reading one
+global `boundPort`.
+
+**The port anchors only where the address cannot distinguish.** This is the
+half that was not obvious, and an existing test caught the first cut of it:
+`testACustomDisplayNamePersistsAcrossReconnects` asserts a machine that
+reconnects on a different port keeps its display name. The test was right.
+At a routable address, address plus fingerprint already identify one Mac,
+and folding the port into every anchor would turn an ordinary
+reconfiguration into the silent loss of a name.
+`GuestRegistry.Record.anchorPort` states the rule once, so `identify`, `key`
+and the listener's slot filter cannot disagree about what the anchor is.
+
+### The contract
+
+No schema change, and none was needed: `asyncapi.yaml` says port selection
+is out-of-band, and no message has ever carried a host port. The prose,
+however, still said identity was `hello.name` and that a duplicate name was
+refused `busy` — which the host stopped doing some time ago and nothing
+noticed. That paragraph now describes what is actually true: identity is per
+connection, `hello.name` is a label, and how a host tells two machines apart
+is its own business.
+
+### What is verified, and what is not
+
+- **Tested.** 14 new tests over the anchor, the edit path and a real
+  two-socket listener. `scripts/test-all` passes end to end (stage 8 skips:
+  no `NOW_GUEST_LIVE`, so nothing in the run reached a Macintosh), with both
+  guests genuinely cross-compiling rather than skipping. Five mutations were
+  watched failing on the assertions that name them: the port dropped from
+  the `identify` match, `accept()` reading `boundPort` instead of its own
+  listener's port, live slots counted across ports, `anchorPort` ignoring
+  `distinguishesMachines`, and `ensure(ports:)` falling back to
+  `start(ports:)`.
+- **A rig note, paid for here.** An earlier gate run failed
+  `HostAppStateWiringTests` with `listener never became ready: idle`, and it
+  was not the change: a second `swift test` was running in this worktree at
+  the same time, and that test binds a pid-derived port while `FakeGuest`
+  draws source ports from a range that can overlap it ACROSS PROCESSES. The
+  file's own comments describe this collision; it is worth restating that it
+  reaches the gate itself. Do not run the suite beside the gate.
+- **NOT emulator-measured.** No two-VM run has been made against this build.
+  The failure it fixes is precisely a two-emulated-guest failure, so this is
+  the gate that matters most and it is outstanding.
+- **NOT metal-verified.** Nothing has dialled a real machine on a
+  non-default port.
+
+### Known limits, stated rather than left to be discovered
+
+- **Assigning a port does not move the Mac.** The host cannot repoint a
+  running guest; the field says so, and the settings download is the only
+  thing that actually moves one. A person who misses that gets a profile on
+  one port and a Mac dialling another indefinitely.
+- **Continuity's UDP lane rides the same numeric port** (contract, transport
+  rules). A guest on a non-default port needs its QEMU forward for both
+  protocols on that number. Untested here.
+- **A port that will not bind does not fail the run**, deliberately — the
+  other profiles are serving real machines. It lands in
+  `GuestListener.failedPorts`, is noted in the log, and the machine's own row
+  now says so beside its port, because a held port and a switched-off Mac
+  otherwise produce the same empty row and only one of them is the person's
+  to fix. Not yet watched failing against a mutation, and not yet seen with a
+  genuinely held port on a running desk.
+## BUILT AND TESTED, NO DEPLOY HAS RUN THROUGH IT: machine facts moved from flat `.env.lab` keys into per-machine profiles (2026-08-18, `feat/guest-machine-profiles`)
+
+`.lab/machines/<id>.machine` now carries one Mac's address, FTP account,
+deploy folder and metal facts, keyed by the host's own `GuestID` slug;
+`scripts/deploy-68k --machine <id>` selects one and refuses, naming both,
+when a desk has several. Precedence is explicit environment variable →
+profile → `.env.lab`, and a desk that has written no profile keeps
+working on the old flat keys.
+
+What it fixes that was invisible before: `NOW68K_FTP_HOST` and
+`NOW_METAL_MACHINE` were the SAME FACT set twice with nothing checking
+they agreed, so a deploy could go to one machine while the machine-busy
+guard cleared another. There is now one `address` and both fall out of
+it.
+
+**What is unverified.** No deploy has gone to a real Macintosh through
+this path. `scripts/test-all` is green and
+`tools/mirror-gate-tests/test_machine_profiles.py` was watched failing
+against nine separate mutations — each one failing exactly and only the
+test that names it — but every deploy-side case runs through
+`deploy-68k --which`, which resolves and stops. The FTP conversation, the
+fork comparison and the metal suite below it are untouched code on an
+untested path, and the first live run is the thing that would find a
+wiring mistake between resolution and `FTP(host)`.
+
+Also unverified: nothing yet reads a profile except `deploy-68k` and
+`tools/lab-machine`. The Swift metal suites still take
+`NOW_METAL_MACHINE` from the environment and know nothing about the
+directory — deliberate, but it means a suite run without
+`eval "$(tools/lab-machine env <id>)"` and without `deploy-68k --test` is
+exactly as unguarded as it was before.
 
 ## CORRECTED, 2026-08-18: `hostDragOfferEpoch` was prose, then a constant, then retired
 

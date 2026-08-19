@@ -7,6 +7,13 @@
 .env
 .env.lab
 
+# Machine profiles: one file per vintage Mac on this desk, carrying its
+# address, FTP account and metal facts. Same reasoning as .env.lab — they
+# describe one desk's hardware — but keyed by machine, because there is
+# more than one and every fact in them is a fact about a particular Mac.
+# The .machine.example beside them is the committed shape.
+.lab/machines/*.machine
+
 # The Makefile's per-checkout build trees. In-repo so every worktree
 # brings its own and no two checkouts ever share a CMake cache.
 /build/

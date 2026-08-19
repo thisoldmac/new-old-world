@@ -3,7 +3,13 @@
 # Lab setup
 
 Everything in this project that knows about a *particular* machine reads
-it from the environment. Nothing about your network is committed.
+it from a file you write and nobody commits. Two kinds of file, split by
+what the facts are *about*:
+
+- **`.lab/machines/<id>.machine`** — one file per vintage Mac, carrying
+  that machine's address, FTP account, deploy folder and metal facts.
+- **`.env.lab`** — this desk: toolchain paths, emulator images, signing
+  identity. One of each, so flat keys are right.
 
 That is not only hygiene. A default address baked into a script is wrong
 for everyone except the person who wrote it, while looking authoritative
@@ -17,38 +23,109 @@ measures a build that never moved.
 cp .env.lab.example .env.lab
 ```
 
-Fill in the values for your desk. `.env.lab` is gitignored. Scripts read
-it from the repository root, and an explicit environment variable still
-wins over it — so a one-off run against a different machine needs no
-edit:
+```bash
+cp .lab/machines/pb180c.machine.example .lab/machines/pb180c.machine
+```
+
+Fill in the values for your desk. Both are gitignored. A worktree with
+neither reads the **main worktree's** — a worktree is the same desk and
+the same machines, and a copy made inside one dies with it.
+
+A script that needs a value you have not set stops and names the key and
+the file it belongs in, rather than guessing.
+
+## Machine profiles
+
+A machine profile is keyed by the id the host already calls that Mac —
+its `GuestID` slug, the same one a person types at the machine picker and
+an agent types in a tool call (`pb180c`, `pb1400c`). The file name **is**
+the id.
+
+```
+# .lab/machines/pb180c.machine
+name = PowerBook 180c
+guest = 68k
+address = 192.0.2.180
+ftp_user = lab
+ftp_pass = ••••••
+ftp_dir = Lab/now-68k
+```
+
+| Key | What it is |
+|---|---|
+| `name` | How a message should refer to it. |
+| `guest` | Which guest it runs: `68k` or `ppc`. `scripts/deploy-68k` refuses a machine that runs the other one. |
+| `address` | Its address on the LAN. |
+| `ftp_user` | FTP account on it — NetPresenz or Rumpus. |
+| `ftp_pass` | That account's password. |
+| `ftp_dir` | Folder builds land in, relative to the FTP root. Defaults to `Lab/now-68k`. |
+| `metal_port` | Port this machine's metal runs use. Optional; `tools/lane-ports` derives one per lane. |
+| `harness_host` | This Mac's address **as this machine must dial it**, when it differs from the desk-wide `NOW68K_HARNESS_HOST`. |
+
+An unknown key is **refused by name** rather than ignored: a typo in
+`ftp_pas` would otherwise leave the value unset and the run would fall
+back to whatever a stale flat key still named, which is the failure this
+whole scheme exists to end.
+
+`address` is one fact and everything that needs it reads it here — the
+FTP deploy and the metal machine-busy guard both. They used to be
+`NOW68K_FTP_HOST` and `NOW_METAL_MACHINE`, set separately, with nothing
+checking they agreed.
+
+### Choosing a machine
+
+```bash
+scripts/deploy-68k --machine pb180c
+```
+
+With one profile there is nothing to ask and `--machine` is optional.
+With several, a deploy **refuses and names them** — a deploy that went to
+a machine nobody chose is the same failure as one that went to a stale
+default. `scripts/deploy-68k --which` resolves and stops, touching
+nothing, when you want to know where a command would land.
+
+```bash
+tools/lab-machine list          # every profile, with its address
+tools/lab-machine show pb180c   # one profile, resolved
+```
+
+The Swift metal suites read the environment and know nothing about this
+directory, so `tools/lab-machine env` hands them the values the way
+`tools/lane-ports --env` hands a shell its ports:
+
+```bash
+eval "$(tools/lab-machine env pb180c)"
+```
+
+FTP is not a security decision, it is what these machines can speak. See
+[SECURITY.md](../SECURITY.md) for the trust boundary this whole project
+assumes. The FTP password is deliberately **not** exported by
+`lab-machine env` — `eval` would put it in shell history and scrollback,
+and the one thing that needs it reads the profile itself.
+
+### Precedence
+
+Explicit environment variable → machine profile → `.env.lab`.
+
+An explicit variable still wins, so a one-off run against a machine with
+no profile needs no edit:
 
 ```bash
 NOW68K_FTP_HOST=192.0.2.44 scripts/deploy-68k
 ```
 
-A script that needs a value you have not set stops and names the key,
-rather than guessing.
+A desk that has written no profile keeps working on the old flat keys. A
+desk mid-migration gets told out loud when `.env.lab` still carries a key
+a profile now answers and the two disagree — silence there would leave a
+plausible wrong address in a file nobody re-reads.
 
-## The keys
-
-### The vintage Mac
-
-| Key | What it is |
-|---|---|
-| `NOW68K_FTP_HOST` | The 68K Mac's address. |
-| `NOW68K_FTP_USER` | FTP account on it — NetPresenz or Rumpus. |
-| `NOW68K_FTP_PASS` | That account's password. |
-| `NOW68K_FTP_DIR` | Folder builds land in, relative to the FTP root. Defaults to `Lab/now-68k`. |
-
-FTP is not a security decision, it is what these machines can speak. See
-[SECURITY.md](../SECURITY.md) for the trust boundary this whole project
-assumes.
+## The desk keys
 
 ### This Mac
 
 | Key | What it is |
 |---|---|
-| `NOW68K_HARNESS_HOST` | This Mac's address **as the guest must dial it**. |
+| `NOW68K_HARNESS_HOST` | This Mac's address **as the guest must dial it**. A machine that needs a different one sets `harness_host` in its profile. |
 
 Not `localhost`, and not `10.0.2.2`. The guest is a separate machine on
 the LAN. `10.0.2.2` is the QEMU user-mode gateway, which is right for an
@@ -92,14 +169,19 @@ never reached a machine is worse than no gate.
 | Key | What it is |
 |---|---|
 | `NOW_METAL` | Opt in to the metal suites at all. |
-| `NOW_METAL_PORT` | Port the harness listens on and the guest dials. |
-| `NOW_METAL_MACHINE` | The vintage machine's address. |
+| `NOW_METAL_PORT` | Port the harness listens on and the guest dials. A machine's `metal_port` sets it. |
+| `NOW_METAL_MACHINE` | The vintage machine's address. A machine's `address` sets it. |
 | `NOW_METAL_REPEATS` | Samples per rung for the baseline suite. |
 
 **Set `NOW_METAL_MACHINE` for any run against real hardware.** Without
 it `MetalMachineGuard` cannot check whether something else on this Mac is
 already talking to that machine, and half the guard cannot run — it says
 so rather than passing quietly.
+
+`scripts/deploy-68k --test` sets both from the profile. A suite run on
+its own gets them from `eval "$(tools/lab-machine env <id>)"` — the
+suites read the environment and are not taught about profiles, so this is
+the seam.
 
 Pick a port nothing else is dialling. Every QEMU guest on a Mac sees the
 host as `10.0.2.2` under user-mode networking, so any session's VM
