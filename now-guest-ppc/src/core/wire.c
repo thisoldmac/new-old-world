@@ -3465,10 +3465,28 @@ Boolean now_wire_chat_ask_pending(void)
     return g_chatask.pending;
 }
 
+/* One ask at a time, refused rather than orphaned: overwriting the
+   pending strands the first answer AND its deadline, so whoever asked
+   stares at a spinner nothing will ever end. Every ask site checks
+   this first; the module keeps wants and asks when free. */
+static int chat_ask_refused(char *err, long cap)
+{
+    if (!g_chatask.pending) {
+        return 0;
+    }
+    if (err != NULL && cap > 0) {
+        snprintf(err, (size_t)cap, "a chat ask is already pending");
+    }
+    return -1;
+}
+
 int now_wire_chat_providers(char *err, long cap)
 {
     char json[96];
 
+    if (chat_ask_refused(err, cap) != 0) {
+        return -1;
+    }
     ++g.offer_seq;
     snprintf(json, sizeof json,
              "{\"type\":\"chat.models\",\"id\":%ld}", g.offer_seq);
@@ -3488,6 +3506,9 @@ int now_wire_chat_model_page(const char *provider, long cursor,
     char json[160];
     char esc_provider[64];
 
+    if (chat_ask_refused(err, cap) != 0) {
+        return -1;
+    }
     now_json_escape(provider, esc_provider, sizeof esc_provider);
     ++g.offer_seq;
     /* cursor always written: 0 and absent mean the same start here,
@@ -3574,6 +3595,9 @@ int now_wire_chat_send_mode(const char *ref, const char *prompt,
 
 static int chat_ask_begin(const char *json, int kind, char *err, long cap)
 {
+    if (chat_ask_refused(err, cap) != 0) {
+        return -1;
+    }
     if (cloud_send(json, err, cap) != 0) {
         return -1;
     }
@@ -3697,6 +3721,9 @@ int now_wire_chat_reset(char *err, long cap)
     if (g_chat.pending) {
         snprintf(err, (size_t)cap,
                  "an answer is still arriving - chat --stop first");
+        return -1;
+    }
+    if (chat_ask_refused(err, cap) != 0) {
         return -1;
     }
     ++g.offer_seq;

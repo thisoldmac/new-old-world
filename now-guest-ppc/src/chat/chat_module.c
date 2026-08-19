@@ -104,8 +104,15 @@ enum {
 };
 static int g_chats_state;
 /* The page WANTS its listings; when it gets to ask for them is the
-   wire's business. See ask_lists_when_free. */
+   wire's business. See ask_when_free. */
 static Boolean g_want_lists;
+static Boolean g_want_catalog;
+static Boolean g_want_history;
+/* The next roster answer REPLACES the rows rather than appending: set
+   by every fresh ask, consumed by the first page. The rows themselves
+   stay drawn until then — clearing them at the ask put "(asking...)"
+   over a list the person was reading. */
+static Boolean g_roster_restart;
 static ChatProjectRow g_projects[kChatMaxProjects];
 static int g_project_count;
 static Boolean g_sidebar_shown = true;
@@ -445,9 +452,6 @@ static void ask_chats(void)
 {
     char err[96];
 
-    g_chat_count = 0;
-    g_chat_sel = -1;
-    g_chat_top = 0;
     if (now_wire_chat_chats(0, err, sizeof err) != 0) {
         snprintf(g_status, sizeof g_status, "%.120s", err);
         g_chats_state = kChatListUnanswered;
@@ -455,24 +459,49 @@ static void ask_chats(void)
         inval(&g_r.sidebar);
         return;
     }
+    g_roster_restart = true;
     g_chats_state = kChatListLoading;
 }
 
-/* The listings, issued only when the wire has no ask outstanding.
-   Called from the idle pass and after every answer, so a page that
-   wanted them while the catalog was loading gets them the moment it
-   finishes rather than never. */
-static void ask_lists_when_free(void)
+static void ask_catalog(void);
+static void ask_history(void);
+
+/* Every listing this page wants is recorded as a WANT and issued here,
+   one at a time, only when the wire's single ask slot is free. The
+   want sites used to call the wire directly, and a second ask ORPHANS
+   the first: its answer arrives carrying a kind the pending no longer
+   names, is dropped as stale, and the deadline that would have
+   reported the silence goes with it — so the sidebar reads
+   "(asking...)" forever. Measured three ways on the emulator
+   (2026-08-19): the projects ask stomping the roster, the catalog ask
+   stomping it, and New Chat stomping its own reset. */
+static void ask_when_free(void)
 {
-    if (!g_want_lists || now_wire_chat_ask_pending()
-        || now_wire_chat_turn_active()) {
+    if (now_wire_chat_ask_pending() || now_wire_chat_turn_active()) {
         return;
     }
-    if (g_chats_state == kChatListLoading) {
-        return;                       /* a roster page is already in flight */
+    if (g_want_history) {
+        /* First: the person just opened a chat and is looking at an
+           empty transcript. */
+        g_want_history = false;
+        ask_history();
+        return;
     }
-    g_want_lists = false;
-    ask_chats();
+    if (g_want_catalog) {
+        if (conn_phase() != kConnConnected) {
+            return;                   /* keep the want for the reconnect */
+        }
+        g_want_catalog = false;
+        ask_catalog();
+        return;
+    }
+    if (g_want_lists) {
+        if (g_chats_state == kChatListLoading) {
+            return;                   /* a roster page is already in flight */
+        }
+        g_want_lists = false;
+        ask_chats();
+    }
 }
 
 static void ask_projects(void)
@@ -654,10 +683,19 @@ static void chat_note(int kind, const char *reply)
     }
     case kChatAnswerRoster: {
         int more = 0;
-        int n = chat_parse_roster(reply, &g_chats[g_chat_count],
-                                  kChatMaxChats - g_chat_count, &more);
+        int n;
         int i;
 
+        if (g_roster_restart) {
+            /* The first page of a fresh roster replaces what was
+               drawn; later pages of the same listing append. */
+            g_roster_restart = false;
+            g_chat_count = 0;
+            g_chat_sel = -1;
+            g_chat_top = 0;
+        }
+        n = chat_parse_roster(reply, &g_chats[g_chat_count],
+                              kChatMaxChats - g_chat_count, &more);
         if (n < 0) {
             g_chats_state = kChatListIdle;
             break;
@@ -906,14 +944,14 @@ static void new_chat(void)
     inval(&g_r.transcript);
     /* The chat just left is saved and listed, and this one is now the
        current row — both facts come from the host, so re-ask rather
-       than guessing at the list. */
-    ask_chats();
+       than guessing at the list. Recorded as wants, never asked here:
+       the reset above holds the wire's one ask slot until its result
+       lands, and asking now orphaned it (the "(asking...)" wedge). */
+    g_want_lists = true;
     /* A fresh page deserves a fresh catalog: the host's providers may
        have changed since the last ask (metal, 2026-08-02: a runtime
        started after the first ask stayed invisible until relaunch). */
-    if (conn_phase() == kConnConnected) {
-        ask_catalog();
-    }
+    g_want_catalog = true;
 }
 
 /* --- scrolling ---------------------------------------------------------- */
@@ -1082,10 +1120,9 @@ static void chat_show(Boolean visible)
             TEActivate(g_te);         /* the caret follows the page */
         }
         /* Every show, not once per connection: the host's providers
-           change while this page is elsewhere (metal, 2026-08-02). */
-        if (conn_phase() == kConnConnected) {
-            ask_catalog();
-        }
+           change while this page is elsewhere (metal, 2026-08-02).
+           A want, not an ask — the roster may already be in flight. */
+        g_want_catalog = true;
         /* Force the caches stale so the first draw is whole. */
         g_shown_lines = -1;
         g_shown_status[0] = '\0';
@@ -1368,10 +1405,6 @@ static void draw_sidebar(void)
         if (index >= g_chat_count) {
             break;
         }
-        if (index == g_chat_sel) {
-            /* The open one, inverted the way a list marks selection. */
-            InvertRect(row);
-        }
         TextFace(index == g_chat_sel ? bold : normal);
         /* One glyph for where it was typed. A chat a person wrote at
            the other Mac is the one they need warning about before they
@@ -1381,6 +1414,11 @@ static void draw_sidebar(void)
                  g_chats[index].label);
         draw_at((short)(row->left + 3), (short)(row->bottom - 3), line);
         if (index == g_chat_sel) {
+            /* The open one, inverted the way a list marks selection —
+               ONCE, after the text, so the glyphs invert with the row.
+               Inverting before and after cancelled out under srcOr and
+               left white text on the white well: the selected row read
+               as empty. */
             InvertRect(row);
         }
     }
@@ -1493,7 +1531,9 @@ static void open_chat(int row)
     g_pinned = true;
     inval(&g_r.transcript);
     inval(&g_r.sidebar);
-    ask_history();
+    /* A want: the chat.open above holds the wire's one ask slot until
+       its result lands, and asking for history now would orphan it. */
+    g_want_history = true;
 }
 
 static void toggle_sidebar(void)
@@ -1509,7 +1549,7 @@ static void toggle_sidebar(void)
     inval(&g_body);
     if (g_sidebar_shown && g_chat_count == 0
         && g_chats_state != kChatListLoading) {
-        ask_chats();
+        g_want_lists = true;
     }
 }
 
@@ -1745,11 +1785,13 @@ static void chat_idle(void)
         TEIdle(g_te);
     }
     /* The catalog is asked once per connection; a page shown before
-       the wire came up asks as soon as it is there. */
-    ask_lists_when_free();
+       the wire came up asks as soon as it is there. Both listings go
+       through the one dispatcher — two direct asks in one idle pass
+       was one of the stomps it exists to end. */
     if (!g_asked_catalog && conn_phase() == kConnConnected) {
-        ask_catalog();
+        g_want_catalog = true;
     }
+    ask_when_free();
     if (g_asked_catalog && conn_phase() != kConnConnected) {
         g_asked_catalog = false;      /* re-ask after a reconnect */
     }
