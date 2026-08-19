@@ -388,10 +388,22 @@ final class OnboardingPortal: ObservableObject {
     /// state lives, then write the response to the wire.
     private nonisolated func serve(client: Int32, run: Int) {
         var yes: Int32 = 1
+        // A peer that aborts mid-transfer must cost one connection, not
+        // the process: without NOSIGPIPE the write loop's first EPIPE
+        // arrives as SIGPIPE and kills the app with no crash report.
+        setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &yes,
+                   socklen_t(MemoryLayout<Int32>.size))
         setsockopt(client, IPPROTO_TCP, TCP_NODELAY, &yes,
                    socklen_t(MemoryLayout<Int32>.size))
         var timeout = timeval(tv_sec: 15, tv_usec: 0)
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                   socklen_t(MemoryLayout<timeval>.size))
+        // Per-write progress timeout: a slow classic reader keeps making
+        // progress and is never cut off; a peer that vanished without an
+        // RST stops the transfer in one minute instead of holding the
+        // connection thread forever.
+        var sendTimeout = timeval(tv_sec: 60, tv_usec: 0)
+        setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout,
                    socklen_t(MemoryLayout<timeval>.size))
 
         var request = Data()
@@ -513,10 +525,10 @@ final class OnboardingPortal: ObservableObject {
                     bytes.count - offset)
                 if wrote > 0 {
                     offset += wrote
-                } else if errno == EINTR {
+                } else if wrote < 0 && errno == EINTR {
                     continue
                 } else {
-                    failure = errno
+                    failure = errno != 0 ? errno : ETIMEDOUT
                     return
                 }
             }
@@ -535,10 +547,14 @@ final class OnboardingPortal: ObservableObject {
             }
         }
         // Let the peer drain before close tears the window down: shutdown
-        // sends FIN, and the read waits for the peer's own close.
+        // sends FIN, and the bounded read waits for the peer's own close
+        // (SO_RCVTIMEO caps each read; the count caps a chatty peer).
         shutdown(client, SHUT_WR)
         var drain = [UInt8](repeating: 0, count: 1_024)
-        while read(client, &drain, drain.count) > 0 {}
+        var drains = 0
+        while drains < 64, read(client, &drain, drain.count) > 0 {
+            drains += 1
+        }
     }
 
     private nonisolated func localAddress(of client: Int32) -> String? {

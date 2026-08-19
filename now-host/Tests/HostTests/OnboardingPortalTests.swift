@@ -287,6 +287,70 @@ final class OnboardingPortalTests: XCTestCase {
         XCTAssertEqual(page.status, 200)
     }
 
+    /// A guest browser that aborts mid-transfer (MacWeb does, with an
+    /// RST) must cost one connection, not the process: an unhandled
+    /// SIGPIPE from the write loop kills the app with no crash report.
+    /// Under the defect this test dies with the whole test runner.
+    func testPeerAbortMidTransferDoesNotKillTheServer() async throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: temporary, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        try Data("macbinary-app".utf8).write(to: temporary
+            .appendingPathComponent("New Old World.bin"))
+        let big = Data(count: 8 * 1_024 * 1_024)
+        let portal = OnboardingPortal(
+            catalog: OnboardingAssetCatalog(
+                roots: [temporary], writableRoot: temporary),
+            setupImageBuilder: { _, _, _, _ in big },
+            advertisedAddress: { "127.0.0.1" })
+        portal.start(wirePort: 5_250)
+        let endpoint = try await runningEndpoint(portal)
+        defer { portal.stop() }
+        _ = try await readyImage(portal)
+
+        // Raw socket: request the big body, read a sliver, then abort
+        // with an RST (SO_LINGER 0) while megabytes are still queued.
+        // OFF the main actor: XCTest async bodies run there, and the
+        // server routes requests there - a blocking read here would
+        // deadlock the test against the very server it exercises.
+        let port = endpoint.httpPort
+        let aborted = await Task.detached { () -> Bool in
+            let fd = socket(AF_INET, SOCK_STREAM, 0)
+            guard fd >= 0 else { return false }
+            defer { close(fd) }
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_port = port.bigEndian
+            address.sin_addr.s_addr = inet_addr("127.0.0.1")
+            let connected = withUnsafePointer(to: &address) { pointer in
+                pointer.withMemoryRebound(to: sockaddr.self,
+                                          capacity: 1) {
+                    connect(fd, $0,
+                            socklen_t(MemoryLayout<sockaddr_in>.size))
+                }
+            }
+            guard connected == 0 else { return false }
+            let request = "GET /now/setup.img HTTP/1.0\r\n\r\n"
+            _ = request.withCString { Darwin.write(fd, $0, strlen($0)) }
+            var sliver = [UInt8](repeating: 0, count: 1_024)
+            _ = read(fd, &sliver, sliver.count)
+            var linger = Darwin.linger(l_onoff: 1, l_linger: 0)
+            setsockopt(fd, SOL_SOCKET, SO_LINGER, &linger,
+                       socklen_t(MemoryLayout<Darwin.linger>.size))
+            return true
+        }.value
+        XCTAssertTrue(aborted, "the abort client could not even connect")
+
+        // Give the write loop time to hit the dead socket, then prove
+        // the server survived by fetching normally.
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let page = try await fetch(try XCTUnwrap(endpoint.pageURL))
+        XCTAssertEqual(page.status, 200)
+    }
+
     private func runningEndpoint(_ portal: OnboardingPortal) async throws
         -> OnboardingEndpoint {
         for _ in 0..<100 {
