@@ -46,6 +46,10 @@ licensed_inputs:
 excluded_inputs:
   codekitten:
     reason: Not part of the alpha distribution profile.
+  mpw_starter_pack:
+    reason: >-
+      Host-side onboarding dependency, fetched on request and carried only by
+      a personalized setup image; no release output may contain MPW.
 
 outputs:
   macos_dmg:

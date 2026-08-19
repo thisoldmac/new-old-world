@@ -62,10 +62,19 @@ the ordinary NOW connection handshake.
   material preserved. Source acquisition cannot silently turn another file
   into that release input. Archive extraction may still use a local `unar`
   prerequisite for operator-provided development dependencies.
+- MPW is an optional catalog dependency on CarbonLib's terms: one
+  checksum-pinned download, saved in Application Support, carried by a
+  personalized setup image, and absent from every release output. A generic
+  operator-assembled pack instead arrives as a manifest plus a digest-pinned
+  artifact; the setup-image build refuses a malformed, mismatched, or
+  overclaiming pair, delivers only the artifact, and keeps the manifest on
+  the host. See
+  [MPW and the development starter pack](../reference/development-starter-pack.md).
 
 ## Verification boundary
 
 Unit tests cover routes, asset precedence, preferences, dependency checks,
-MacBinary, NDIF, and image construction. The setup image has mounted in a Mac
+starter-pack validation and its qualification-probe binding, MacBinary,
+NDIF, and image construction. The setup image has mounted in a Mac
 OS 9.1 QEMU guest. Classic-browser download, automatic decoding, and the first
 hello from physical hardware remain unverified and must be stated that way.

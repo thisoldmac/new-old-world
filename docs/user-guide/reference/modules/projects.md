@@ -7,7 +7,7 @@ audience: operator
 lifecycle: experimental
 authority: [docs/development.md, contract/project/README.md]
 module_ids: [projects]
-source_dependencies: [docs/development.md, contract/project/README.md, now-host/Sources/Host/Projects, now-guest-ppc/src/development, now-host/Sources/NOWAgentIntegration/Projection/DevelopmentProjection.swift]
+source_dependencies: [docs/development.md, contract/project/README.md, now-host/Sources/Host/Projects, now-guest-ppc/src/development, now-host/Sources/NOWAgentIntegration/Projection/DevelopmentProjection.swift, now-host/Sources/Host/OnboardingAssets.swift]
 media_ids: [projects-host, projects-ppc]
 last_verified: 2026-08-14
 ---
@@ -90,8 +90,10 @@ The host-home MPW build/run/dialog lane is metal-verified on a PowerBook
 1400c. Guest-home import and promotion, typed test actions and receipts,
 CodeKitten's positive open receipt, coherent semantic settlement, and the
 authenticated HTTP MCP loop are tested or emulator-verified but have not been
-repeated together on metal. A redistributable starter pack cannot include MPW
-until its payload license and provenance are settled. Recovery also needs a
+repeated together on metal. MPW itself is an optional onboarding download
+rather than part of the product: the host fetches one checksum-pinned image
+and the guest qualifies whatever folder a person registers, which must be a
+copy on the hard disk rather than the mounted image. Recovery also needs a
 clearer policy for candidate receipts retained from an ended guest session, and
 the guest Files surface does not yet expose Finder flags when a logical-file
 digest must be diagnosed.

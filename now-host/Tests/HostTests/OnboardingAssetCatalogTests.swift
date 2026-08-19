@@ -170,36 +170,115 @@ final class OnboardingAssetCatalogTests: XCTestCase {
         let artifact = dependencies.appendingPathComponent(
             "Development Starter Pack.img.bin")
         try payload.write(to: artifact)
+        try writeStarterPackManifest(
+            in: dependencies, artifact: artifact.lastPathComponent,
+            payload: payload)
+        let snapshot = OnboardingAssetCatalog(
+            roots: [temporary], writableRoot: temporary).snapshot()
+        let validated = try DevelopmentStarterPackManifest.validated(
+            in: snapshot)
+        XCTAssertEqual(validated?.components.first?.qualification.probe,
+                       "structural-1")
+
+        try Data("changed".utf8).write(to: artifact)
+        let changed = OnboardingAssetCatalog(
+            roots: [temporary], writableRoot: temporary).snapshot()
+        XCTAssertThrowsError(try DevelopmentStarterPackManifest.validated(
+            in: changed))
+    }
+
+    /// The manifest may only promise a qualification the guest performs:
+    /// an unimplemented probe name, or item claims the named probe never
+    /// measures, are refused even when the artifact digest matches.
+    func testStarterPackManifestRefusesUnimplementedQualification() throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let dependencies = temporary.appendingPathComponent(
+            "Dependencies", isDirectory: true)
+        try makeDirectory(dependencies)
+        let payload = Data("portable-hfs-image".utf8)
+        let artifact = dependencies.appendingPathComponent(
+            "Development Starter Pack.img.bin")
+        try payload.write(to: artifact)
+
+        try writeStarterPackManifest(
+            in: dependencies, artifact: artifact.lastPathComponent,
+            payload: payload,
+            qualification: .init(
+                requiredItems: ["MPW Shell", "ToolServer",
+                                "Interfaces&Libraries", "Tools"],
+                probe: "mpw-toolserver-compile-link-launch-v1"))
+        XCTAssertThrowsError(try DevelopmentStarterPackManifest.validated(
+            in: OnboardingAssetCatalog(roots: [temporary],
+                                       writableRoot: temporary).snapshot()))
+
+        try writeStarterPackManifest(
+            in: dependencies, artifact: artifact.lastPathComponent,
+            payload: payload,
+            qualification: .init(
+                requiredItems: ["ToolServer", "Tools:MrC", "MPW Shell"],
+                probe: "structural-1"))
+        XCTAssertThrowsError(try DevelopmentStarterPackManifest.validated(
+            in: OnboardingAssetCatalog(roots: [temporary],
+                                       writableRoot: temporary).snapshot()))
+    }
+
+    /// The checked-in packaging template must promise only the probe the
+    /// guest implements, and must stay unshippable (zero digest) so nobody
+    /// can pass validation without an operator-measured artifact.
+    func testCheckedInStarterPackTemplateMatchesImplementedProbe() throws {
+        let repository = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let template = repository.appendingPathComponent(
+            "packaging/development-starter-pack/"
+                + "Development Starter Pack.manifest.json")
+        let manifest = try JSONDecoder().decode(
+            DevelopmentStarterPackManifest.self,
+            from: Data(contentsOf: template))
+        XCTAssertEqual(manifest.schema, "now.development-starter-pack/1")
+        XCTAssertFalse(manifest.components.isEmpty)
+        for component in manifest.components {
+            XCTAssertEqual(
+                Set(component.qualification.requiredItems),
+                DevelopmentStarterPackManifest.implementedProbes[
+                    component.qualification.probe],
+                "template promises a qualification the guest does not run")
+            XCTAssertEqual(component.license.redistribution, "unknown")
+        }
+        XCTAssertEqual(manifest.artifactSHA256,
+                       String(repeating: "0", count: 64))
+        XCTAssertEqual(manifest.artifactBytes, 0)
+    }
+
+    private func writeStarterPackManifest(
+        in dependencies: URL, artifact: String, payload: Data,
+        qualification: DevelopmentStarterPackManifest.Component.Qualification
+            = .init(requiredItems: ["ToolServer", "Tools:MrC"],
+                    probe: "structural-1")) throws {
         let digest = SHA256.hash(data: payload).map {
             String(format: "%02x", $0)
         }.joined()
         let manifest = DevelopmentStarterPackManifest(
             schema: "now.development-starter-pack/1",
-            id: "classic-mac-development-starter", version: "1.0.0",
-            artifact: artifact.lastPathComponent,
+            id: "classic-mac-development-starter", version: "1.1.0",
+            artifact: artifact,
             artifactBytes: payload.count, artifactSHA256: digest,
             platforms: [.init(
-                operatingSystem: "classic-mac-os", minimumVersion: "7.1",
-                maximumVersion: "9.2.2", architectures: ["m68k", "powerpc"])],
+                operatingSystem: "classic-mac-os", minimumVersion: "8.6",
+                maximumVersion: "9.2.2", architectures: ["powerpc"])],
             components: [.init(
                 id: "apple-mpw-gm", version: "3.5-gm", purpose: "build",
                 installBytes: 1,
                 license: .init(name: "operator supplied",
                                redistribution: "unknown",
                                provenanceURL: "https://example.invalid/license"),
-                qualification: .init(requiredItems: ["ToolServer"],
-                                     probe: "mpw-v1"))])
+                qualification: qualification)])
         try JSONEncoder().encode(manifest).write(to: dependencies
             .appendingPathComponent("Development Starter Pack.manifest.json"))
-        let snapshot = OnboardingAssetCatalog(
-            roots: [temporary], writableRoot: temporary).snapshot()
-        XCTAssertNoThrow(try DevelopmentStarterPackManifest.validate(in: snapshot))
-
-        try Data("changed".utf8).write(to: artifact)
-        let changed = OnboardingAssetCatalog(
-            roots: [temporary], writableRoot: temporary).snapshot()
-        XCTAssertThrowsError(try DevelopmentStarterPackManifest.validate(
-            in: changed))
     }
 
     private func makeDirectory(_ url: URL) throws {

@@ -105,7 +105,7 @@ def main() -> int:
         shutil.copy2(ROOT / "mkdocs.yml", test_root / "mkdocs.yml")
         for name in (
             "now-host", "now-guest-ppc", "now-guest-68k", "web-bridge",
-            ".github", ".githooks",
+            "packaging", ".github", ".githooks",
         ):
             shutil.copytree(ROOT / name, test_root / name)
         for name in (

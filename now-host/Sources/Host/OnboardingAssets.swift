@@ -160,6 +160,23 @@ struct OnboardingAssetCatalog {
 }
 
 struct DevelopmentStarterPackManifest: Codable, Equatable {
+    /// The closed set of qualification probes the product implements, each
+    /// with the exact items its guest-side measurement checks. `structural-1`
+    /// is the PPC guest's whole probe: a `ToolServer` file and a `Tools`
+    /// folder holding `MrC`, both immediate children of the registered
+    /// folder. A manifest naming any other probe, or claiming items the
+    /// named probe never measures, is refused so the pack cannot promise a
+    /// qualification the guest does not perform.
+    static let implementedProbes: [String: Set<String>] = [
+        "structural-1": ["ToolServer", "Tools:MrC"],
+    ]
+
+    static func isManifestFileName(_ fileName: String) -> Bool {
+        let name = fileName.lowercased()
+        return name.hasSuffix("starter-pack.manifest.json")
+            || name.hasSuffix("starter pack.manifest.json")
+    }
+
     struct Platform: Codable, Equatable {
         let operatingSystem: String
         let minimumVersion: String
@@ -194,17 +211,17 @@ struct DevelopmentStarterPackManifest: Codable, Equatable {
     let platforms: [Platform]
     let components: [Component]
 
-    static func validate(in snapshot: OnboardingAssetSnapshot) throws {
+    @discardableResult
+    static func validated(in snapshot: OnboardingAssetSnapshot) throws
+        -> Self? {
         let manifests = snapshot.dependencies.filter {
-            let name = $0.fileName.lowercased()
-            return name.hasSuffix("starter-pack.manifest.json")
-                || name.hasSuffix("starter pack.manifest.json")
+            isManifestFileName($0.fileName)
         }
         guard manifests.count <= 1 else {
             throw ClassicSetupImageBuilder.BuildError.invalidStarterPack(
                 "More than one starter-pack manifest is installed.")
         }
-        guard let asset = manifests.first else { return }
+        guard let asset = manifests.first else { return nil }
         let manifest = try JSONDecoder().decode(
             Self.self, from: Data(contentsOf: asset.fileURL))
         guard manifest.schema == "now.development-starter-pack/1",
@@ -223,8 +240,8 @@ struct DevelopmentStarterPackManifest: Codable, Equatable {
                     && ["allowed", "forbidden", "unknown"]
                         .contains($0.license.redistribution)
                     && URL(string: $0.license.provenanceURL)?.scheme != nil
-                    && !$0.qualification.requiredItems.isEmpty
-                    && !$0.qualification.probe.isEmpty
+                    && Set($0.qualification.requiredItems)
+                        == implementedProbes[$0.qualification.probe]
               }),
               let payload = snapshot.dependencies.first(where: {
                   $0.fileName == manifest.artifact
@@ -242,5 +259,6 @@ struct DevelopmentStarterPackManifest: Codable, Equatable {
             throw ClassicSetupImageBuilder.BuildError.invalidStarterPack(
                 "The starter-pack artifact does not match its manifest.")
         }
+        return manifest
     }
 }

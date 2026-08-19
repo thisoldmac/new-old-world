@@ -49,6 +49,11 @@ last_verified: 2026-08-13
   build and launch through MPW on the PowerBook, but guest-home promotion,
   typed test receipts, CodeKitten document acceptance, and reliable semantic
   UI settlement after launch remain incomplete or unverified.
+- **MPW is fetched, not shipped.** No release output contains Apple's
+  developer tools; the host downloads one checksum-pinned image on request
+  and a personalized setup image carries it. Registration on the classic Mac
+  stays a human act, and it must name the copy on the hard disk — a
+  toolchain registered on the mounted image cannot build.
 - **Hardware evidence is specific.** A result on the PowerBook 1400c does not
   prove the PowerBook 180c path, and emulator evidence is not metal evidence.
 - **Classic platform recovery matters.** The optional extension must remain

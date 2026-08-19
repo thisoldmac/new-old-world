@@ -75,7 +75,7 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: 0340abf6aecb8ccd2285d693e806071eb6cec561
+sources-sha1: 94cbe5520281837d283af05a9f5f199f7951559a
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -268,6 +268,7 @@ rederived: 2026-08-18T15:09:50-0400 c33eb6ee unchanged
 rederived: 2026-08-18T17:19:00-0400 ffc561f4 unchanged
 rederived: 2026-08-18T23:04:15-0400 fc295bcc unchanged
 rederived: 2026-08-18T23:13:33-0400 ce4dc746 unchanged
+rederived: 2026-08-18T23:19:31-0400 3341acb1 sources
 rederived: 2026-08-18T23:25:22-0400 353a37be sources
 rederived: 2026-08-18T23:33:03-0400 2c64a5c4 unchanged
 rederived: 2026-08-18T23:44:44-0400 6692e45b unchanged
@@ -279,6 +280,8 @@ rederived: 2026-08-19T01:41:12-0400 399d4c78 unchanged
 rederived: 2026-08-19T01:53:16-0400 db827bac unchanged
 rederived: 2026-08-19T02:32:03-0400 a9efa24f unchanged
 rederived: 2026-08-19T03:00:30-0400 26f5c9fc unchanged
+rederived: 2026-08-19T03:14:01-0400 afcf45e6 sources
 rederived: 2026-08-19T03:33:52-0400 648ab89c unchanged
 rederived: 2026-08-19T03:53:11-0400 f9d1bd67 unchanged
+rederived: 2026-08-19T03:59:55-0400 14486719 unchanged
 -->

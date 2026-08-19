@@ -11,14 +11,12 @@
         "provenanceURL": "https://web.archive.org/web/*/developer.apple.com/tools/mpw-tools/",
         "redistribution": "unknown"
       },
-      "purpose": "Guest-native PowerPC and 68K Toolbox builds using separately supplied Apple tools",
+      "purpose": "Guest-native PowerPC builds through NOW's MrC/PPCLink/Rez ToolServer lane using a separately supplied Apple MPW",
       "qualification": {
-        "probe": "mpw-toolserver-compile-link-launch-v1",
+        "probe": "structural-1",
         "requiredItems": [
-          "MPW Shell",
           "ToolServer",
-          "Interfaces&Libraries",
-          "Tools"
+          "Tools:MrC"
         ]
       },
       "version": "3.5-gm"
@@ -28,14 +26,13 @@
   "platforms": [
     {
       "architectures": [
-        "powerpc",
-        "m68k"
+        "powerpc"
       ],
       "maximumVersion": "9.2.2",
-      "minimumVersion": "7.1",
+      "minimumVersion": "8.6",
       "operatingSystem": "classic-mac-os"
     }
   ],
   "schema": "now.development-starter-pack/1",
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

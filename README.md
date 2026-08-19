@@ -82,7 +82,7 @@ The short table is navigation, not a claim of parity. The [module reference](doc
   emulator or physical Mac. Its parser, wire codec, host routing and both
   builds are tested; the Open Transport listener remains runtime-unverified.
   Optional model weights are not distributed.
-- Development is PowerPC-only. The host-owned MPW build/run loop is metal-verified; guest-home promotion, typed tests, positive CodeKitten handoff receipts, semantic settlement, and authenticated HTTP MCP loops are tested or emulator-verified but have not been repeated together on metal. A redistributable MPW starter payload remains blocked on license/provenance.
+- Development is PowerPC-only. The host-owned MPW build/run loop is metal-verified; guest-home promotion, typed tests, positive CodeKitten handoff receipts, semantic settlement, and authenticated HTTP MCP loops are tested or emulator-verified but have not been repeated together on metal. MPW is an optional onboarding dependency on CarbonLib's terms — one checksum-pinned download the host fetches and builds into a personalized setup image, never into a release output; the guest qualifies whatever a person registers, and it must be the copy on the hard disk rather than the mounted image.
 - Pre-Carbon/NOW-68K support is excluded from the alpha; its source and contributor documentation remain for later feature-flagged work.
 - Mirror is experimental. Drawing-content tracing remains off by default and has caused Finder instability on a PowerBook 1400c.
 - The documentation currently contains clearly labeled screenshot placeholders; captures must be privacy-reviewed and replace them at the declared dimensions.

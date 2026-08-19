@@ -43,7 +43,9 @@ class DistributionProfile:
             "carbonlib_1_6_installer"
         }:
             raise ReleaseRefusal(f"{path}: licensed-input contract has drifted")
-        if set(document.get("excluded_inputs", {})) != {"codekitten"}:
+        if set(document.get("excluded_inputs", {})) != {
+            "codekitten", "mpw_starter_pack"
+        }:
             raise ReleaseRefusal(f"{path}: excluded-input contract has drifted")
         version = _product_version(root / "now-host/NewOldWorld.xcodeproj/project.pbxproj")
         return cls(product_version=version, document=document)

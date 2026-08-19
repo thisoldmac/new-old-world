@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 @testable import Host
@@ -45,6 +46,12 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
             dataFork: Data([11]), resourceFork: Data()))
             .write(to: dependencies.appendingPathComponent(
                 "CarbonLib_161.sit.bin"))
+        let mpwData = Data(repeating: 8, count: 65_536)
+        let mpwResources = Data(repeating: 9, count: 4_131)
+        try XCTUnwrap(MacBinaryEncoder.data(
+            name: "MPW-GM.img", type: "rohd", creator: "ddsk",
+            dataFork: mpwData, resourceFork: mpwResources))
+            .write(to: dependencies.appendingPathComponent("mpw-gm.img.bin"))
         let snapshot = OnboardingAssetCatalog(
             roots: [assets], writableRoot: assets).snapshot()
 
@@ -95,11 +102,86 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: mount
             .appendingPathComponent(
                 "Dependencies/CarbonLib_161.sit").path))
+        // MPW rides the image as a real classic disk image, forks intact,
+        // so Disk Copy on the guest can open it.
+        let mpw = mount.appendingPathComponent("Dependencies/MPW-GM.img")
+        XCTAssertEqual(try Data(contentsOf: mpw), mpwData)
+        XCTAssertEqual(try resourceFork(at: mpw), mpwResources)
+        let readMe = try String(
+            data: Data(contentsOf:
+                mount.appendingPathComponent("Read Me First")),
+            encoding: .macOSRoman)
+        XCTAssertTrue(try XCTUnwrap(readMe).contains("Register MPW Folder"))
+        XCTAssertTrue(try XCTUnwrap(readMe)
+            .contains("not the mounted image"),
+            "the Read Me must say to register the copy on the hard disk")
         let fileSystem = try FileManager.default.attributesOfFileSystem(
             forPath: mount.path)
         let free = try XCTUnwrap(
             fileSystem[.systemFreeSize] as? NSNumber).int64Value
         XCTAssertLessThan(free, 128 * 1_024)
+    }
+
+    /// A refused starter pack must stop the build before any disk image
+    /// work begins; a mismatched artifact is the cheapest such refusal.
+    func testInvalidStarterPackBlocksImageProduction() async throws {
+        let temporary = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let dependencies = temporary.appendingPathComponent(
+            "Dependencies", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dependencies, withIntermediateDirectories: true)
+        try XCTUnwrap(MacBinaryEncoder.data(
+            name: "New Old World", type: "APPL", creator: "NOWo",
+            dataFork: Data([1]), resourceFork: Data()))
+            .write(to: temporary.appendingPathComponent("New Old World.bin"))
+        let declared = try XCTUnwrap(MacBinaryEncoder.data(
+            name: "Development Starter Pack.img", type: "rohd",
+            creator: "ddsk", dataFork: Data([2])))
+        try starterPackManifest(artifact: "Development Starter Pack.img.bin",
+                                payload: declared)
+            .write(to: dependencies.appendingPathComponent(
+                "Development Starter Pack.manifest.json"))
+        try (declared + Data([0])).write(to: dependencies
+            .appendingPathComponent("Development Starter Pack.img.bin"))
+        let snapshot = OnboardingAssetCatalog(
+            roots: [temporary], writableRoot: temporary).snapshot()
+
+        do {
+            _ = try await ClassicSetupImageBuilder().build(
+                host: "10.0.2.2", wirePort: 5_432, assets: snapshot)
+            XCTFail("a mismatched starter pack produced a setup image")
+        } catch let error as ClassicSetupImageBuilder.BuildError {
+            guard case .invalidStarterPack = error else {
+                XCTFail("unexpected refusal: \(error)")
+                return
+            }
+        }
+    }
+
+    private func starterPackManifest(artifact: String,
+                                     payload: Data) throws -> Data {
+        let digest = SHA256.hash(data: payload).map {
+            String(format: "%02x", $0)
+        }.joined()
+        return try JSONEncoder().encode(DevelopmentStarterPackManifest(
+            schema: "now.development-starter-pack/1",
+            id: "classic-mac-development-starter", version: "1.1.0",
+            artifact: artifact,
+            artifactBytes: payload.count, artifactSHA256: digest,
+            platforms: [.init(
+                operatingSystem: "classic-mac-os", minimumVersion: "8.6",
+                maximumVersion: "9.2.2", architectures: ["powerpc"])],
+            components: [.init(
+                id: "apple-mpw-gm", version: "3.5-gm", purpose: "build",
+                installBytes: 1,
+                license: .init(name: "operator supplied",
+                               redistribution: "unknown",
+                               provenanceURL: "https://example.invalid/license"),
+                qualification: .init(
+                    requiredItems: ["ToolServer", "Tools:MrC"],
+                    probe: "structural-1"))]))
     }
 
     private func resourceFork(at url: URL) throws -> Data {

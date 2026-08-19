@@ -20,12 +20,49 @@ final class OnboardingDependencyTests: XCTestCase {
             roots: [temporary], writableRoot: temporary).snapshot()
 
         XCTAssertEqual(OnboardingDependencyCatalog.all.map(\.displayName),
-                       ["CarbonLib 1.6.1"])
+                       ["CarbonLib 1.6.1", "MPW (GM)"])
         XCTAssertEqual(OnboardingDependencyCatalog.carbonLib
             .installedAsset(in: snapshot)?.fileName,
             "CarbonLib_161.sit.bin")
         XCTAssertEqual(OnboardingDependencyCatalog.additionalAssets(
             in: snapshot).map(\.fileName), ["StuffIt Expander 5.5.bin"])
+    }
+
+    /// MPW is an optional external input on CarbonLib's terms: pinned mirror,
+    /// checksum verified, never committed. The download is already a
+    /// MacBinary NDIF image, so acquisition must deliver it byte-for-byte
+    /// rather than wrapping it a second time.
+    func testMPWIsAPinnedOptionalDependencyDeliveredUnchanged() async throws {
+        let temporary = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let mpw = OnboardingDependencyCatalog.mpw
+        XCTAssertEqual(mpw.delivery, .unchanged)
+        XCTAssertEqual(mpw.downloadURL.host, "old.mac.gdn")
+
+        let payload = Data("pretend-macbinary-ndif".utf8)
+        let acquirer = OnboardingDependencyAcquirer { url in
+            XCTAssertEqual(url, mpw.downloadURL)
+            return payload
+        }
+        let pinned = OnboardingDependency(
+            id: mpw.id, displayName: mpw.displayName, detail: mpw.detail,
+            downloadFileName: mpw.downloadFileName,
+            acceptedNameFragments: mpw.acceptedNameFragments,
+            downloadURL: mpw.downloadURL, sourcePageURL: mpw.sourcePageURL,
+            expectedSHA1: OnboardingDependencyAcquirer.sha1Hex(payload),
+            delivery: mpw.delivery)
+        let catalog = OnboardingAssetCatalog(roots: [temporary],
+                                             writableRoot: temporary)
+        let written = try await acquirer.acquire(pinned, catalog: catalog)
+
+        XCTAssertEqual(written.lastPathComponent, "mpw-gm.img.bin")
+        XCTAssertEqual(try Data(contentsOf: written), payload)
+        let snapshot = catalog.snapshot()
+        XCTAssertEqual(mpw.installedAsset(in: snapshot)?.fileName,
+                       "mpw-gm.img.bin")
+        XCTAssertTrue(OnboardingDependencyCatalog.setupAssets(in: snapshot)
+            .contains { $0.fileName == "mpw-gm.img.bin" },
+            "a fetched MPW must ride the setup image")
     }
 
     func testNativeKnownDependencyReplacesItsArchiveRepresentation() throws {
