@@ -63,12 +63,12 @@ CodeKitten is not part of the release bundle. A locally supplied copy may still
 appear in a personalized development setup, but the normal product does not
 require it.
 
-The same is true of MPW. New Old World never downloads or redistributes
-Apple's developer tools, but if you place your own MPW disk image and its
-completed manifest in the Onboarding folder's `Dependencies` drop, the setup
-image carries the image to the PowerPC Mac and the Read Me explains how to
-register it. The manifest format and the exact steps are in the
-developer guide's Development starter pack reference.
+MPW, the classic build toolchain, is optional in the same way CarbonLib is.
+Press **Get** beside it and the host downloads one checksum-pinned image
+into its Dependencies folder; select it and the setup image carries it to
+the PowerPC Mac. On that Mac, open the image and **copy the MPW folder to
+the hard disk before registering it** — a toolchain registered on the
+mounted image cannot build. The Read Me on the setup disk says so too.
 
 ## 4. Download the complete setup disk
 

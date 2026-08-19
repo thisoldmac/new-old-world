@@ -48,8 +48,8 @@ excluded_inputs:
     reason: Not part of the alpha distribution profile.
   mpw_starter_pack:
     reason: >-
-      Operator-supplied only; Apple's later free MPW download is not a
-      redistribution right, so no release output may carry the payload.
+      Host-side onboarding dependency, fetched on request and carried only by
+      a personalized setup image; no release output may contain MPW.
 
 outputs:
   macos_dmg:

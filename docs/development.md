@@ -216,13 +216,13 @@ Current limits and friction remain explicit:
 - CodeKitten remains optional and separately owned. NOW now requires a positive
   versioned document-acceptance receipt, but shared fixtures and any neutral
   pure project/receipt module still need coordinated sibling-repository work.
-- The Development starter pack is an operator-supplied lane: the manifest
-  binds the operator's own MPW artifact by digest and to the guest's
-  implemented qualification probe, and the setup image delivers it. This
-  repository still contains no redistributable MPW payload, deliberately —
-  Apple's later free MPW download is not a redistribution right, so a
-  shipped one-image NOW + CodeKitten + MPW pack stays blocked on
-  license/provenance while the operator lane carries development today.
+- MPW is an optional onboarding dependency handled the way CarbonLib is:
+  one checksum-pinned download, saved outside Git in Application Support,
+  carried by a personalized setup image, and absent from every release
+  output. A generic operator-assembled pack still goes through the
+  starter-pack manifest, which binds its artifact by digest and to the
+  guest's implemented qualification probe. A shipped one-image
+  NOW + CodeKitten + MPW release remains out of scope.
 - The hardening changes have not yet repeated the full loop on the PowerBook.
   The previous metal evidence still covers fork-aware host-home build/run and
   human-observed dialog behavior, not the new test, retry, guest-home promotion

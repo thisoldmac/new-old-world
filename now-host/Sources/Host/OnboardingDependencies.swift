@@ -52,7 +52,25 @@ enum OnboardingDependencyCatalog {
         delivery: .macBinary(classicName: "CarbonLib_161.sit",
                              type: "SIT5", creator: "SIT!"))
 
-    static let all = [carbonLib]
+    /// The classic build toolchain the Projects module drives. Optional, and
+    /// fetched the same way CarbonLib is: from the pinned mirror, checksum
+    /// verified, kept outside Git. The download is already a MacBinary NDIF
+    /// image, so it is delivered unchanged and Disk Copy mounts it on the
+    /// classic Mac.
+    static let mpw = OnboardingDependency(
+        id: "mpw-gm",
+        displayName: "MPW (GM)",
+        detail: "Optional: the toolchain Projects builds with on the classic Mac",
+        downloadFileName: "mpw-gm.img.bin",
+        acceptedNameFragments: ["mpw-gm", "mpw_gm"],
+        downloadURL: URL(
+            string: "https://old.mac.gdn/apps/mpw-gm.img__0.bin")!,
+        sourcePageURL: URL(
+            string: "https://macintoshgarden.org/apps/macintosh-programmers-workshop")!,
+        expectedSHA1: "2a57aa9364a165ea0ddfa0611003ee1f13984715",
+        delivery: .unchanged)
+
+    static let all = [carbonLib, mpw]
 
     static func additionalAssets(in snapshot: OnboardingAssetSnapshot)
         -> [OnboardingAsset] {

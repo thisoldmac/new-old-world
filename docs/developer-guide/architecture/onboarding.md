@@ -62,13 +62,14 @@ the ordinary NOW connection handshake.
   material preserved. Source acquisition cannot silently turn another file
   into that release input. Archive extraction may still use a local `unar`
   prerequisite for operator-provided development dependencies.
-- The Development starter pack is operator-supplied only: NOW never
-  downloads or redistributes MPW. A pack is a manifest plus a
-  digest-pinned artifact in the `Dependencies` drop; the setup-image build
-  refuses a malformed, mismatched, or overclaiming pair, delivers only the
-  artifact, and keeps the manifest on the host. See the
-  [Development starter pack](../reference/development-starter-pack.md)
-  reference.
+- MPW is an optional catalog dependency on CarbonLib's terms: one
+  checksum-pinned download, saved in Application Support, carried by a
+  personalized setup image, and absent from every release output. A generic
+  operator-assembled pack instead arrives as a manifest plus a digest-pinned
+  artifact; the setup-image build refuses a malformed, mismatched, or
+  overclaiming pair, delivers only the artifact, and keeps the manifest on
+  the host. See
+  [MPW and the development starter pack](../reference/development-starter-pack.md).
 
 ## Verification boundary
 

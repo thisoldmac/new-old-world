@@ -1,91 +1,80 @@
 ---
 page_id: dev-reference-development-starter-pack
-title: Development starter pack
-description: How an operator supplies an MPW payload that NOW pins, delivers, and qualifies without redistributing Apple software.
+title: MPW and the development starter pack
+description: How NOW fetches, pins, and delivers MPW to a classic Mac as an optional onboarding dependency.
 doc_type: reference
 audience: developer
 lifecycle: experimental
-authority: [now-host/Sources/Host/OnboardingAssets.swift, packaging/development-starter-pack/Development Starter Pack.manifest.json]
+authority: [now-host/Sources/Host/OnboardingDependencies.swift, now-host/Sources/Host/OnboardingAssets.swift, packaging/development-starter-pack/Development Starter Pack.manifest.json]
 source_dependencies: [now-host/Sources/Host/OnboardingAssets.swift, now-host/Sources/Host/OnboardingDependencies.swift, now-host/Sources/Host/ClassicSetupImageBuilder.swift, now-guest-ppc/src/development/development_toolchain_mac.c, packaging/development-starter-pack/Development Starter Pack.manifest.json, docs/development.md]
 media_ids: []
-last_verified: 2026-08-18
+last_verified: 2026-08-19
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
 
-# Development starter pack
+# MPW and the development starter pack
 
-The starter pack is a portable, **operator-supplied** HFS image carried by
-the onboarding setup image beside CodeKitten. NOW never bundles, downloads,
-or redistributes MPW or any other Apple software: the operator places their
-own copy in the host's Application Support drop, and NOW pins its exact
-bytes, delivers it to the PowerPC guest, and qualifies the result. This is
-the same boundary the CarbonLib release input draws — the artifact and its
-license stay outside Git, and the manifest records what the operator
-supplied and where it came from.
+MPW is an **optional onboarding dependency**, handled exactly the way
+CarbonLib is: the host fetches one checksum-pinned artifact on request,
+saves it in the operator's Application Support drop, and builds it into the
+personalized setup image. No MPW bytes live in this repository and no
+release output carries them.
 
-The pack is not a machine-specific `Lab` folder and it does not
-pre-register a toolchain. After copying or mounting the pack on a classic
-Mac, a person selects its MPW folder in NOW's Projects page; NOW qualifies
-that directory on that machine and mints a fresh opaque toolchain identity.
+| | |
+|---|---|
+| Catalog id | `mpw-gm` |
+| Download | `https://old.mac.gdn/apps/mpw-gm.img__0.bin` |
+| Source page | [Macintosh Garden](https://macintoshgarden.org/apps/macintosh-programmers-workshop) |
+| SHA-1 | `2a57aa9364a165ea0ddfa0611003ee1f13984715` |
+| Saved as | `Dependencies/mpw-gm.img.bin` |
+| Delivery | unchanged — the download is already a MacBinary NDIF image |
+| On the setup image | `Dependencies/MPW-GM.img`, forks and `rohd`/`ddsk` intact |
 
-## Supply your own MPW
+Press **Get** beside MPW in the Onboarding window, or drop an equivalent
+file into `~/Library/Application Support/New Old World/Onboarding/
+Dependencies/` yourself. The checksum is verified before the file is
+written; a mismatch refuses with both digests named. The classic download
+page offers the same artifact, and lists the source page when the host does
+not have it yet.
 
-Apple later distributed MPW as a free download, so an operator can hold a
-legitimately obtained copy — the archived Apple tools page is the
-provenance URL the template records. Free availability is not a
-redistribution right, so the manifest's `license.redistribution` stays
-`unknown` and NOW refuses to ship the payload in any release output.
+Nothing pre-registers a toolchain. On the classic Mac a person opens the
+image, copies the MPW folder to the hard disk, and selects that folder in
+NOW's Projects page; the guest qualifies it there and mints a fresh opaque
+toolchain identity.
 
-1. Wrap or keep your MPW disk image as one MacBinary file, for example
-   `Development Starter Pack.img.bin` containing a mountable HFS image
-   with the MPW folder inside.
-2. Copy the template from
-   `packaging/development-starter-pack/Development Starter Pack.manifest.json`
-   and fill in the two artifact measurements from your own file:
+## A generic operator-supplied pack
 
-    ```bash
-    stat -f %z "Development Starter Pack.img.bin"
-    ```
-
-    ```bash
-    shasum -a 256 "Development Starter Pack.img.bin"
-    ```
-
-    Put the byte count in `artifactBytes` and the lowercase digest in
-    `artifactSHA256`. The checked-in template's zero measurements are
-    deliberately unshippable.
-3. Place both files in the host's onboarding drop, in
-   `~/Library/Application Support/New Old World/Onboarding/Dependencies/`
-   (the Onboarding window opens this folder).
-
-The setup-image build validates the pair before producing an image: a
-missing artifact, a second manifest, a byte-count or SHA-256 mismatch, or a
-qualification claim the product does not implement all refuse the build
-with a named reason.
+`now.development-starter-pack/1` remains for a payload that is not the
+pinned MPW image — a curated pack an operator assembles themselves. It is a
+manifest plus a digest-pinned artifact in the same `Dependencies/` folder,
+and the setup-image build refuses a missing artifact, a second manifest, a
+byte-count or SHA-256 mismatch, or a qualification claim the product does
+not implement. The checked-in template lives at
+`packaging/development-starter-pack/Development Starter Pack.manifest.json`
+and its zero artifact measurements are deliberately unshippable.
 
 ## Delivery to the guest
 
-The setup image is the NDIF/PPC lane: the pack rides the image's
-`Dependencies` folder, decoded to its classic name, and the Read Me gains a
-registration instruction when a validated pack is present. The manifest
-itself is host validation metadata and never crosses to the guest. The
-image is bounded at 128 MB; Apple's MPW GM image is roughly 25 MB, so a
-full pack fits beside the application, Extension, and CarbonLib installer.
-MPW does not fit the floppy-sized media a 68K bootstrap uses, so there is
-no 68K starter-pack lane.
+The setup image is the NDIF/PPC lane: MPW rides the image's `Dependencies`
+folder under its classic name, and the Read Me gains registration
+instructions whenever the image carries it. A starter-pack manifest is host
+validation metadata and never crosses to the guest. The image is bounded at
+128 MB; the MPW GM image is roughly 25 MB, so it fits beside the
+application, Extension, and CarbonLib installer. MPW does not fit the
+floppy-sized media a 68K bootstrap uses, so there is no 68K lane.
 
 For an already-connected guest, the guest-files upload lane
 (`now_guest_files_upload_begin` / `append` / `commit`) can carry the same
 MacBinary image directly instead of rebuilding setup media.
 
 **Copy the MPW folder to a writable disk before registering it.** Mounting
-the pack is not enough: a ToolServer launched from the read-only pack
-volume cannot run its own tools, and the build fails on its first action
-with status −1 and an empty transcript. The same tools copied to the hard
-disk build normally. This was measured four ways on one emulator guest and
-the matrix is in [open issues](../../open-issues.md); the setup image's
-Read Me carries the same instruction whenever a validated pack is present.
+the image is not enough: a ToolServer launched from the read-only volume
+cannot run its own tools, and the build fails on its first action with
+status −1 and an empty transcript. The same tools copied to the hard disk
+build normally. This was measured four ways on one emulator guest and the
+matrix is in [open issues](../../open-issues.md); the setup image's Read Me
+carries the same instruction whenever it carries MPW.
 
 ## Qualification is the guest's, and the manifest may not overclaim
 
@@ -109,17 +98,17 @@ and delivery of a pack does not register anything by itself.
 
 | Guest | Useful initial toolchain | What the pack may ship |
 |---|---|---|
-| System 7.1–7.6, 68K | MPW with 68K C/Rez/linker and matching Universal Interfaces | Operator-supplied only until exact Apple redistribution terms for every component are archived and reviewed. Qualify on a 68K guest; a PPC qualification is not evidence. |
-| System 7.1.2–8.6, PowerPC | MPW with PPC C/Rez/PPCLink and matching interfaces/libraries | Operator-supplied only under the same license gate. This is the current NOW guest-native backend. |
-| Mac OS 8.6–9.2.2, PowerPC/CarbonLib | MPW plus Universal Interfaces containing the intended CarbonLib surface | Operator-supplied only; qualify compiler, linker, ToolServer and target interfaces together. |
+| System 7.1–7.6, 68K | MPW with 68K C/Rez/linker and matching Universal Interfaces | Not a lane yet: MPW does not fit 68K bootstrap media. Qualify on a 68K guest before claiming it; a PPC qualification is not evidence. |
+| System 7.1.2–8.6, PowerPC | MPW with PPC C/Rez/PPCLink and matching interfaces/libraries | The pinned `mpw-gm` download covers this, and it is the current NOW guest-native backend. |
+| Mac OS 8.6–9.2.2, PowerPC/CarbonLib | MPW plus Universal Interfaces containing the intended CarbonLib surface | Same download; qualify compiler, linker, ToolServer and target interfaces together. |
 | Mac OS 8.1–9.2.2, PowerPC | CodeWarrior 6/7 can target classic and Carbon applications | Do not redistribute: contemporary releases were commercial per-seat products. CodeKitten may eventually drive a human-installed copy through a separate backend. |
 
-Apple later made MPW available without purchase, but that does not by
-itself establish a current right to redistribute every compiler, SDK,
-sample and third-party component in a new bundle. The manifest therefore
-keeps redistribution as `unknown` until the exact archived license for the
-exact payload is recorded. CodeWarrior remains proprietary and is not a
-starter-pack payload.
+Apple later made MPW available without purchase, which is why it can be
+fetched the way CarbonLib is. That is not the same as a right to
+redistribute it: nothing here is committed to Git or placed in a release
+output, and a generic pack's manifest keeps `redistribution` as `unknown`
+until the exact archived license for its exact payload is recorded.
+CodeWarrior remains proprietary and is not a payload at all.
 
 The matrix is intentionally about a useful baseline, not universal
 coverage. One PPC MPW qualification does not establish that its tools
@@ -131,7 +120,7 @@ compatibility.
 Every VM or metal receipt using the pack records:
 
 - base-image SHA-256;
-- starter-pack manifest and artifact SHA-256;
+- the artifact SHA-1 the catalog pins, or a pack manifest's SHA-256;
 - anchor-policy digest;
 - guest build and resident fingerprint;
 - independently qualified worker and toolchain identities.

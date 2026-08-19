@@ -113,10 +113,11 @@ This is not a claim that every hardening-plan acceptance rung is closed. HTTP
 was an unapproved slice expansion and is retained only after completing its
 security, parity and live-VM gates. NOW now requires CodeKitten's positive
 `ckproject.open-receipt/1`, but shared neutral fixtures remain sibling-owned.
-The starter-pack manifest is validated and bound to the guest's implemented
-qualification probe, and an operator-supplied MPW pack can ride the setup
-image; no redistributable MPW payload is committed, so the shipped one-image
-NOW + CodeKitten + MPW gate remains blocked on licensing/provenance. Stale candidate receipts from ended guest
+MPW is now an optional onboarding dependency fetched and pinned like
+CarbonLib and carried by a personalized setup image, and the starter-pack
+manifest stays bound to the guest's implemented qualification probe; no MPW
+payload is committed or placed in a release output, so a shipped one-image
+NOW + CodeKitten + MPW release remains out of scope. Stale candidate receipts from ended guest
 sessions and missing Finder-flag observation are recorded hardening gaps. These
 new receipts have not yet been repeated on the PowerBook. The final VM's
 runtime receipts are valid, but its cleanup is not volume-clean: a clean base

@@ -46,15 +46,12 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
             dataFork: Data([11]), resourceFork: Data()))
             .write(to: dependencies.appendingPathComponent(
                 "CarbonLib_161.sit.bin"))
-        let starterPayload = try XCTUnwrap(MacBinaryEncoder.data(
-            name: "Development Starter Pack.img", type: "rohd",
-            creator: "ddsk", dataFork: Data(repeating: 8, count: 65_536)))
-        try starterPayload.write(to: dependencies.appendingPathComponent(
-            "Development Starter Pack.img.bin"))
-        try starterPackManifest(artifact: "Development Starter Pack.img.bin",
-                                payload: starterPayload)
-            .write(to: dependencies.appendingPathComponent(
-                "Development Starter Pack.manifest.json"))
+        let mpwData = Data(repeating: 8, count: 65_536)
+        let mpwResources = Data(repeating: 9, count: 4_131)
+        try XCTUnwrap(MacBinaryEncoder.data(
+            name: "MPW-GM.img", type: "rohd", creator: "ddsk",
+            dataFork: mpwData, resourceFork: mpwResources))
+            .write(to: dependencies.appendingPathComponent("mpw-gm.img.bin"))
         let snapshot = OnboardingAssetCatalog(
             roots: [assets], writableRoot: assets).snapshot()
 
@@ -105,19 +102,19 @@ final class ClassicSetupImageBuilderTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: mount
             .appendingPathComponent(
                 "Dependencies/CarbonLib_161.sit").path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: mount
-            .appendingPathComponent(
-                "Dependencies/Development Starter Pack.img").path))
-        // The manifest is host validation metadata and must not cross.
-        XCTAssertFalse(FileManager.default.fileExists(atPath: mount
-            .appendingPathComponent(
-                "Dependencies/Development Starter Pack.manifest.json").path))
+        // MPW rides the image as a real classic disk image, forks intact,
+        // so Disk Copy on the guest can open it.
+        let mpw = mount.appendingPathComponent("Dependencies/MPW-GM.img")
+        XCTAssertEqual(try Data(contentsOf: mpw), mpwData)
+        XCTAssertEqual(try resourceFork(at: mpw), mpwResources)
         let readMe = try String(
             data: Data(contentsOf:
                 mount.appendingPathComponent("Read Me First")),
             encoding: .macOSRoman)
+        XCTAssertTrue(try XCTUnwrap(readMe).contains("Register MPW Folder"))
         XCTAssertTrue(try XCTUnwrap(readMe)
-            .contains("Register MPW Folder"))
+            .contains("not the mounted image"),
+            "the Read Me must say to register the copy on the hard disk")
         let fileSystem = try FileManager.default.attributesOfFileSystem(
             forPath: mount.path)
         let free = try XCTUnwrap(
