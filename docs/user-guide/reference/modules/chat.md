@@ -128,6 +128,12 @@ handed a tool that can change the machine.
 The Workshop page selects a host-provided model reference, sends a prompt, and
 renders deltas, status, result, cancellation, and reset.
 
+Down its left side is the saved-chats list, which collapses with the
+button beside the mode popup to give the conversation the full width.
+Each row marks where that chat was typed — `*` for this machine, `-` for
+the modern Mac — and selecting one opens it, filling the page from the
+newest end as far back as you scroll.
+
 ![The PowerPC Chat page](../../../assets/screenshots/modules/chat/ppc.svg){ .now-placeholder }
 
 ## Common tasks
@@ -154,12 +160,11 @@ error retain separate status.
 Chat availability depends on a configured host harness. It is not an offline
 guarantee and has no 68K UI.
 
-The classic machine's own Chat page does not yet draw the sidebar: on that
-side, sessions, projects and modes are reachable from the Console
-(`chat --chats`, `--open`, `--history`, `--projects`, `--project`,
-`--mode`) while the page still shows one conversation. The page is the
-next slice, not a missing capability — both faces already reach the same
-verbs, which is what `CommandParityTests` enforces.
+The classic machine's Chat page draws the saved-chats list, the mode
+popup and the project popup, and the same capabilities are reachable
+from the Console (`chat --chats`, `--open`, `--history`, `--projects`,
+`--project`, `--mode`) — the parity `CommandParityTests` enforces. None
+of it is metal-verified.
 
 The workspace lane is experimental and **not metal-verified**: it has been
 exercised by the host suites only, and nobody has yet driven a build of the

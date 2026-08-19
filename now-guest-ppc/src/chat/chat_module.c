@@ -45,7 +45,12 @@
    report and the loser of which simply never appears. */
 enum {
     kChatModelsMenuID = 137,
-    kChatProvidersMenuID = 138
+    kChatProvidersMenuID = 138,
+    /* 139-142 are spoken for (Browser, View, two icon suites); these
+       two took the next free pair rather than sharing, for the reason
+       stated above. */
+    kChatModeMenuID = 143,
+    kChatProjectMenuID = 144
 };
 
 static WindowRef g_owner;
@@ -54,6 +59,9 @@ static ChatLayoutRects g_r;
 static int g_prompt_lines = 1;        /* TE line count, clamped, laid out */
 static ControlRef g_provider_popup;
 static ControlRef g_model_popup;
+static ControlRef g_mode_popup;
+static ControlRef g_project_popup;
+static ControlRef g_sidebar_toggle;
 static ControlRef g_new_btn;
 static ControlRef g_send_btn;
 static ControlRef g_scroll;
@@ -74,6 +82,27 @@ static int g_model_sel = -1;
 static char g_models_provider[25];    /* whose models are loading/loaded */
 static Boolean g_models_loading;
 static Boolean g_asked_catalog;
+
+/* The sessions half of the page. Rosters are PAGES the host mints refs
+   for, held only as long as the connection: a ref is a promise about
+   one link, and reconnecting mints new ones. */
+static ChatRosterRow g_chats[kChatMaxChats];
+static int g_chat_count;
+static int g_chat_sel = -1;           /* index into g_chats, or -1 */
+static int g_chat_top;                /* first visible sidebar row */
+static Boolean g_chats_loading;
+static ChatProjectRow g_projects[kChatMaxProjects];
+static int g_project_count;
+static Boolean g_sidebar_shown = true;
+/* What this turn may do. Build is NOT the default: the safe tier is the
+   one that changes nothing, and the host reads an absent mode the same
+   way — one rule, agreed on both sides rather than defaulted twice. */
+static const char *const kChatModes[] = { "chat", "plan", "build" };
+static int g_mode_sel;                /* index into kChatModes */
+/* History paging: how many rows of the open chat have been taken from
+   its newest end, and whether older ones remain. */
+static int g_history_taken;
+static Boolean g_history_more;
 
 static TEHandle g_te;                 /* the prompt; TE draws it */
 
@@ -99,6 +128,18 @@ static void inval(const Rect *r)
     if (g_owner != NULL) {
         InvalWindowRect(g_owner, r);
     }
+}
+
+/* The page's shape, in one place. Every caller of the layout reads this
+   rather than assembling its own spec — two spellings of "is the
+   sidebar open" is how a click lands on a row a draw never made. */
+static ChatLayoutSpec layout_spec(void)
+{
+    ChatLayoutSpec spec;
+
+    spec.sidebar_shown = g_sidebar_shown;
+    spec.prompt_lines = g_prompt_lines;
+    return spec;
 }
 
 static void draw_at(short x, short y, const char *s)
@@ -338,6 +379,93 @@ static void rebuild_model_popup(void)
     }
 }
 
+/* The project pop-up: "No project" first, always, then the host's
+   roster. Item 1 is the decline, so a person can always get out of a
+   project without finding one to switch to. */
+static void rebuild_project_popup(void)
+{
+    MenuRef menu = popup_menu(g_project_popup, kChatProjectMenuID);
+    int i;
+    int current = 0;
+
+    if (menu == NULL) {
+        return;
+    }
+    while (CountMenuItems(menu) > 0) {
+        DeleteMenuItem(menu, 1);
+    }
+    fill_menu_item(menu, 1, "No project", true);
+    for (i = 0; i < g_project_count; ++i) {
+        char text[64];
+
+        /* Where its code lives, on the row that chooses it. "here" is
+           this machine, because at this keyboard "guest" is a word
+           about somebody else's. */
+        if (strcmp(g_projects[i].home, "guest") == 0) {
+            snprintf(text, sizeof text, "%.40s (here)", g_projects[i].label);
+        } else if (strcmp(g_projects[i].home, "host") == 0) {
+            snprintf(text, sizeof text, "%.40s (Other Mac)",
+                     g_projects[i].label);
+        } else {
+            snprintf(text, sizeof text, "%.40s", g_projects[i].label);
+        }
+        fill_menu_item(menu, (short)(i + 2), text, true);
+        if (g_projects[i].current) {
+            current = i + 1;
+        }
+    }
+    if (g_project_popup != NULL) {
+        SetControlMaximum(g_project_popup, CountMenuItems(menu));
+        SetControlValue(g_project_popup, (short)(current + 1));
+        if (g_visible) {
+            Draw1Control(g_project_popup);
+        }
+    }
+}
+
+/* Ask for the saved chats, from the top. The roster is metadata, so
+   this is cheap enough to re-ask whenever the list could have moved -
+   after a send, a new chat, or a filing. */
+static void ask_chats(void)
+{
+    char err[96];
+
+    g_chat_count = 0;
+    g_chat_sel = -1;
+    g_chat_top = 0;
+    if (now_wire_chat_chats(0, err, sizeof err) != 0) {
+        snprintf(g_status, sizeof g_status, "%.120s", err);
+        inval(&g_r.status);
+        return;
+    }
+    g_chats_loading = true;
+}
+
+static void ask_projects(void)
+{
+    char err[96];
+
+    g_project_count = 0;
+    if (now_wire_chat_projects(0, err, sizeof err) != 0) {
+        return;                       /* the popup simply stays as it was */
+    }
+}
+
+/* One page of the open chat's history, oldest-first WITHIN the page, so
+   it can be appended to the transcript in reading order. Asked only
+   when a person opens a chat or scrolls past what has arrived: this is
+   the lazy half, and asking for it eagerly would put a whole
+   conversation on a slow wire nobody asked to read. */
+static void ask_history(void)
+{
+    char err[96];
+
+    if (now_wire_chat_history((long)g_history_taken, err, sizeof err) != 0) {
+        snprintf(g_status, sizeof g_status, "%.120s", err);
+        inval(&g_r.status);
+    }
+}
+
 /* Ask for the selected provider's models, from the top. Lazy by
    design: nothing is listed until somebody selects it. */
 static void ask_models(void)
@@ -464,6 +592,82 @@ static void chat_note(int kind, const char *reply)
         rebuild_model_popup();
         break;
     }
+    case kChatAnswerRoster: {
+        int more = 0;
+        int n = chat_parse_roster(reply, &g_chats[g_chat_count],
+                                  kChatMaxChats - g_chat_count, &more);
+        int i;
+
+        if (n < 0) {
+            g_chats_loading = false;
+            break;
+        }
+        for (i = 0; i < n; ++i) {
+            if (g_chats[g_chat_count + i].current) {
+                g_chat_sel = g_chat_count + i;
+            }
+        }
+        g_chat_count += n;
+        if (more && g_chat_count < kChatMaxChats) {
+            char err[96];
+
+            /* The pagination loop, invisible to the person - the models
+               loop's shape, for the same reason. */
+            if (now_wire_chat_chats((long)g_chat_count, err,
+                                    sizeof err) != 0) {
+                g_chats_loading = false;
+            }
+        } else {
+            g_chats_loading = false;
+        }
+        inval(&g_r.sidebar);
+        break;
+    }
+    case kChatAnswerProjects: {
+        int more = 0;
+        int n = chat_parse_projects(reply, &g_projects[g_project_count],
+                                    kChatMaxProjects - g_project_count,
+                                    &more);
+
+        if (n < 0) {
+            break;
+        }
+        g_project_count += n;
+        if (more && g_project_count < kChatMaxProjects) {
+            char err[96];
+
+            (void)now_wire_chat_projects((long)g_project_count, err,
+                                         sizeof err);
+        }
+        rebuild_project_popup();
+        break;
+    }
+    case kChatAnswerTranscript: {
+        ChatHistoryRow rows[kChatHistoryRows];
+        int more = 0;
+        int n = chat_parse_history(reply, rows, kChatHistoryRows, &more);
+        int i;
+
+        if (n < 0) {
+            break;
+        }
+        /* A page is the NEWEST rows not yet seen, so it appends to what
+           is already drawn. Older pages arrive only if somebody asks
+           for them, and this ring keeps the newest 300 lines whatever
+           order they came in. */
+        for (i = 0; i < n; ++i) {
+            chat_transcript_add(&g_transcript, rows[i].kind,
+                                rows[i].kind == kChatLinePerson ? "> "
+                                    : (rows[i].kind == kChatLineMarker
+                                       ? "* " : NULL),
+                                rows[i].text);
+        }
+        g_history_taken += n;
+        g_history_more = more != 0;
+        g_pinned = true;
+        inval(&g_r.transcript);
+        break;
+    }
     case kChatAnswerDelta: {
         char text[kNowMaxControl];
 
@@ -561,8 +765,12 @@ static void send_prompt(void)
         return;
     }
     prompt_text(prompt, sizeof prompt);
-    if (now_wire_chat_send(g_models[g_model_sel].ref, prompt,
-                           err, sizeof err) != 0) {
+    /* The mode rides every send. It is the popup's value and nothing
+       else — the host gates on it, so a page that sent one thing and
+       showed another would be lying about what the turn may do. */
+    if (now_wire_chat_send_mode(g_models[g_model_sel].ref, prompt,
+                                kChatModes[g_mode_sel],
+                                err, sizeof err) != 0) {
         snprintf(g_status, sizeof g_status, "%.120s", err);
         inval(&g_r.status);
         return;
@@ -614,8 +822,14 @@ static void new_chat(void)
     chat_transcript_reset(&g_transcript);
     g_top = 0;
     g_pinned = true;
+    g_history_taken = 0;
+    g_history_more = false;
     sync_scrollbar();
     inval(&g_r.transcript);
+    /* The chat just left is saved and listed, and this one is now the
+       current row — both facts come from the host, so re-ask rather
+       than guessing at the list. */
+    ask_chats();
     /* A fresh page deserves a fresh catalog: the host's providers may
        have changed since the last ask (metal, 2026-08-02: a runtime
        started after the first ask stayed invisible until relaunch). */
@@ -661,7 +875,11 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     g_owner = owner;
     g_body = *body;
     g_prompt_lines = 1;
-    chat_layout_compute(body, 1, &g_r);
+    {
+        ChatLayoutSpec spec = layout_spec();
+
+        chat_layout_compute(body, &spec, &g_r);
+    }
     if (g_font == 0) {
         Str255 geneva;
 
@@ -677,6 +895,17 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     g_model_popup = now_control_new(owner, &g_r.model_popup, text, false,
                                popupTitleLeftJust, kChatModelsMenuID, 0,
                                popupMenuProc, 0);
+    g_mode_popup = now_control_new(owner, &g_r.mode_popup, text, false,
+                              popupTitleLeftJust, kChatModeMenuID, 0,
+                              popupMenuProc, 0);
+    g_project_popup = now_control_new(owner, &g_r.project_popup, text, false,
+                                 popupTitleLeftJust, kChatProjectMenuID, 0,
+                                 popupMenuProc, 0);
+    /* The rail's own affordance, one page down: a bevel button whose
+       title says which way it goes. */
+    CopyCStringToPascal("<", text);
+    g_sidebar_toggle = now_control_new(owner, &g_r.sidebar_toggle, text,
+                                  false, 0, 0, 1, pushButProc, 0);
     CopyCStringToPascal("New Chat", text);
     g_new_btn = now_control_new(owner, &g_r.new_button, text, false, 0, 0, 1,
                            pushButProc, 0);
@@ -702,6 +931,8 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
         }
     }
     if (g_provider_popup == NULL || g_model_popup == NULL
+        || g_mode_popup == NULL || g_project_popup == NULL
+        || g_sidebar_toggle == NULL
         || g_new_btn == NULL || g_send_btn == NULL
         || g_scroll == NULL || g_te == NULL
         || g_scroll_action_upp == NULL) {
@@ -709,6 +940,8 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     }
     rebuild_provider_popup();
     rebuild_model_popup();
+    rebuild_project_popup();
+    SetControlValue(g_mode_popup, (short)(g_mode_sel + 1));
     conn_set_chat_note(chat_note);
     return noErr;
 }
@@ -728,6 +961,9 @@ static void chat_dispose(void)
     }
     g_provider_popup = NULL;
     g_model_popup = NULL;
+    g_mode_popup = NULL;
+    g_project_popup = NULL;
+    g_sidebar_toggle = NULL;
     g_new_btn = NULL;
     g_send_btn = NULL;
     g_scroll = NULL;
@@ -738,8 +974,20 @@ static void chat_show(Boolean visible)
 {
     g_visible = visible;
     if (visible) {
+        /* Asked on SHOW rather than on create: a page nobody has opened
+           has no business spending a slow wire on a listing, and the
+           roster can have moved since the last time it was open. */
+        if (!g_chats_loading) {
+            ask_chats();
+        }
+        if (g_project_count == 0) {
+            ask_projects();
+        }
         ShowControl(g_provider_popup);
         ShowControl(g_model_popup);
+        ShowControl(g_mode_popup);
+        ShowControl(g_project_popup);
+        ShowControl(g_sidebar_toggle);
         ShowControl(g_new_btn);
         ShowControl(g_send_btn);
         ShowControl(g_scroll);
@@ -760,6 +1008,9 @@ static void chat_show(Boolean visible)
         }
         HideControl(g_provider_popup);
         HideControl(g_model_popup);
+        HideControl(g_mode_popup);
+        HideControl(g_project_popup);
+        HideControl(g_sidebar_toggle);
         HideControl(g_new_btn);
         HideControl(g_send_btn);
         HideControl(g_scroll);
@@ -768,7 +1019,9 @@ static void chat_show(Boolean visible)
 
 static void apply_layout(void)
 {
-    chat_layout_compute(&g_body, g_prompt_lines, &g_r);
+    ChatLayoutSpec spec = layout_spec();
+
+    chat_layout_compute(&g_body, &spec, &g_r);
     MoveControl(g_provider_popup, g_r.provider_popup.left,
                 g_r.provider_popup.top);
     SizeControl(g_provider_popup,
@@ -778,6 +1031,20 @@ static void apply_layout(void)
     SizeControl(g_model_popup,
                 (short)(g_r.model_popup.right - g_r.model_popup.left),
                 (short)(g_r.model_popup.bottom - g_r.model_popup.top));
+    MoveControl(g_sidebar_toggle, g_r.sidebar_toggle.left,
+                g_r.sidebar_toggle.top);
+    SizeControl(g_sidebar_toggle,
+                (short)(g_r.sidebar_toggle.right - g_r.sidebar_toggle.left),
+                (short)(g_r.sidebar_toggle.bottom - g_r.sidebar_toggle.top));
+    MoveControl(g_mode_popup, g_r.mode_popup.left, g_r.mode_popup.top);
+    SizeControl(g_mode_popup,
+                (short)(g_r.mode_popup.right - g_r.mode_popup.left),
+                (short)(g_r.mode_popup.bottom - g_r.mode_popup.top));
+    MoveControl(g_project_popup, g_r.project_popup.left,
+                g_r.project_popup.top);
+    SizeControl(g_project_popup,
+                (short)(g_r.project_popup.right - g_r.project_popup.left),
+                (short)(g_r.project_popup.bottom - g_r.project_popup.top));
     MoveControl(g_new_btn, g_r.new_button.left, g_r.new_button.top);
     SizeControl(g_new_btn,
                 (short)(g_r.new_button.right - g_r.new_button.left),
@@ -986,9 +1253,62 @@ static void draw_input(void)
     }
 }
 
+/* The saved-chats panel: a framed white well of one-line rows, the
+   rail's own shape. Drawn from state alone on the update event, like
+   every other rectangle on this page — nothing here is drawn as a side
+   effect of a click. */
+static void draw_sidebar(void)
+{
+    RGBColor white = { 0xFFFF, 0xFFFF, 0xFFFF };
+    RGBColor saved_back;
+    int i;
+
+    if (!g_sidebar_shown || g_r.sidebar.right <= g_r.sidebar.left) {
+        return;
+    }
+    GetBackColor(&saved_back);
+    RGBBackColor(&white);
+    EraseRect(&g_r.sidebar);
+    RGBBackColor(&saved_back);
+    FrameRect(&g_r.sidebar);
+    TextFont(g_font);
+    TextSize(9);
+    for (i = 0; i < g_r.sidebar_visible; ++i) {
+        int index = g_chat_top + i;
+        const Rect *row = &g_r.sidebar_rows[i];
+        char line[64];
+
+        if (index >= g_chat_count) {
+            break;
+        }
+        if (index == g_chat_sel) {
+            /* The open one, inverted the way a list marks selection. */
+            InvertRect(row);
+        }
+        TextFace(index == g_chat_sel ? bold : normal);
+        /* One glyph for where it was typed. A chat a person wrote at
+           the other Mac is the one they need warning about before they
+           open it, and a whole word does not fit a 132-pixel row. */
+        snprintf(line, sizeof line, "%s %.28s",
+                 strcmp(g_chats[index].origin, "guest") == 0 ? "*" : "-",
+                 g_chats[index].label);
+        draw_at((short)(row->left + 3), (short)(row->bottom - 3), line);
+        if (index == g_chat_sel) {
+            InvertRect(row);
+        }
+    }
+    TextFace(normal);
+    if (g_chat_count == 0) {
+        draw_at((short)(g_r.sidebar.left + 4),
+                (short)(g_r.sidebar.top + 14),
+                g_chats_loading ? "(asking...)" : "(no saved chats)");
+    }
+}
+
 static void chat_draw(void)
 {
     emit_transcript(NULL);
+    draw_sidebar();
     draw_status_line();
     draw_input();
     g_shown_lines = chat_transcript_count(&g_transcript);
@@ -999,6 +1319,26 @@ static void chat_draw(void)
 static void chat_describe_scene(const WorkshopSceneWriter *writer)
 {
     emit_transcript(writer);
+    /* The saved-chats rows, so what a person can click something else
+       can see. A list drawn with QuickDraw and absent from the scene is
+       a control that exists for eyes only, which is the shape of gap
+       the act plane keeps finding. */
+    if (g_sidebar_shown) {
+        int i;
+
+        workshop_scene_add(writer, kWorkshopScenePanel, "Saved chats",
+                           &g_r.sidebar, true);
+        for (i = 0; i < g_r.sidebar_visible; ++i) {
+            int index = g_chat_top + i;
+
+            if (index >= g_chat_count) {
+                break;
+            }
+            workshop_scene_add(writer, kWorkshopSceneStaticText,
+                               g_chats[index].label,
+                               &g_r.sidebar_rows[i], true);
+        }
+    }
     if (g_status[0] != '\0') {
         workshop_scene_add(writer, kWorkshopSceneStaticText, g_status,
                            &g_r.status, true);
@@ -1029,10 +1369,58 @@ static long chat_copy_text(char *out, long cap)
     return workshop_scene_text_end(&sink);
 }
 
+/* Open the chat in sidebar slot `row`. The transcript is CLEARED and
+   refilled from the host a page at a time: what was on screen belonged
+   to the chat being left, and leaving it there would read as one
+   conversation with a seam in it. */
+static void open_chat(int row)
+{
+    char err[96];
+
+    if (row < 0 || row >= g_chat_count || g_streaming) {
+        if (g_streaming) {
+            strcpy(g_status, "Stop the answer first");
+            inval(&g_r.status);
+        }
+        return;
+    }
+    if (now_wire_chat_open(g_chats[row].ref, err, sizeof err) != 0) {
+        snprintf(g_status, sizeof g_status, "%.120s", err);
+        inval(&g_r.status);
+        return;
+    }
+    g_chat_sel = row;
+    chat_transcript_reset(&g_transcript);
+    g_history_taken = 0;
+    g_history_more = false;
+    g_top = 0;
+    g_pinned = true;
+    inval(&g_r.transcript);
+    inval(&g_r.sidebar);
+    ask_history();
+}
+
+static void toggle_sidebar(void)
+{
+    Str255 text;
+
+    g_sidebar_shown = !g_sidebar_shown;
+    CopyCStringToPascal(g_sidebar_shown ? "<" : ">", text);
+    SetControlTitle(g_sidebar_toggle, text);
+    apply_layout();
+    /* The whole body: the transcript changed width, so its wrapped
+       lines and the panel beside it are both stale. */
+    inval(&g_body);
+    if (g_sidebar_shown && g_chat_count == 0 && !g_chats_loading) {
+        ask_chats();
+    }
+}
+
 static Boolean chat_click(const EventRecord *event, Point local)
 {
     ControlRef control;
     ControlPartCode part;
+    int row;
 
     part = FindControl(local, g_owner, &control);
     if (control == g_provider_popup && part != 0) {
@@ -1060,6 +1448,50 @@ static Boolean chat_click(const EventRecord *event, Point local)
         }
         return true;
     }
+    if (control == g_mode_popup && part != 0) {
+        if (TrackControl(g_mode_popup, local, (ControlActionUPP)-1L) != 0) {
+            int picked = GetControlValue(g_mode_popup) - 1;
+
+            if (picked >= 0
+                && picked < (int)(sizeof kChatModes / sizeof kChatModes[0])) {
+                g_mode_sel = picked;
+            }
+        }
+        return true;
+    }
+    if (control == g_project_popup && part != 0) {
+        if (TrackControl(g_project_popup, local,
+                         (ControlActionUPP)-1L) != 0) {
+            int picked = GetControlValue(g_project_popup) - 1;
+            char err[96];
+            int ok;
+
+            /* Item 1 is always the decline, so the index into the
+               roster is one less than the item. */
+            if (picked == 0) {
+                ok = now_wire_chat_project("none", NULL, NULL, NULL,
+                                           err, sizeof err) == 0;
+            } else if (picked - 1 < g_project_count) {
+                ok = now_wire_chat_project("select",
+                                           g_projects[picked - 1].ref,
+                                           NULL, NULL, err,
+                                           sizeof err) == 0;
+            } else {
+                ok = 1;
+            }
+            if (!ok) {
+                snprintf(g_status, sizeof g_status, "%.120s", err);
+                inval(&g_r.status);
+            }
+        }
+        return true;
+    }
+    if (control == g_sidebar_toggle && part != 0) {
+        if (TrackControl(g_sidebar_toggle, local, now_pump_action()) != 0) {
+            toggle_sidebar();
+        }
+        return true;
+    }
     if (control == g_new_btn && part != 0) {
         if (TrackControl(g_new_btn, local, now_pump_action()) != 0) {
             new_chat();
@@ -1081,6 +1513,11 @@ static Boolean chat_click(const EventRecord *event, Point local)
         } else {
             TrackControl(g_scroll, local, g_scroll_action_upp);
         }
+        return true;
+    }
+    row = chat_layout_sidebar_row_at(&g_r, local.h, local.v);
+    if (row >= 0) {
+        open_chat(g_chat_top + row);
         return true;
     }
     if (PtInRect(local, &g_r.input)) {

@@ -513,6 +513,27 @@ resource 'MENU' (140) {
     }
 };
 
+/* The Chat page's mode pop-up. Item order is load-bearing: chat_module.c
+   maps items 1-3 to chat/plan/build, and the host reads an absent or
+   unrecognised mode as chat - the tier that changes nothing. */
+resource 'MENU' (143) {
+    143, textMenuProc, allEnabled, enabled, "Mode",
+    {
+        "Chat", noIcon, noKey, noMark, plain;
+        "Plan", noIcon, noKey, noMark, plain;
+        "Build", noIcon, noKey, noMark, plain
+    }
+};
+
+/* The Chat page's project pop-up, rewritten from the host's roster the
+   way the model pop-up is. Item 1 is always "No project". */
+resource 'MENU' (144) {
+    144, textMenuProc, allEnabled, enabled, "Project",
+    {
+        "No project", noIcon, noKey, noMark, plain
+    }
+};
+
 /* The Connection page's Retry pop-up. Item order is load-bearing:
    conn_fields.c maps items 1-4 to 0/2/5/10 seconds. */
 resource 'MENU' (133) {

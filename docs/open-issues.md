@@ -42,12 +42,15 @@ serving half, the guest's wire client and parsers, and the console verbs. A
 guest turn is saved, titled after the first thing said, listed to either face
 with where it was typed, and continued after a reconnect.
 
-**Not landed**: the Chat PAGE still draws one conversation with no sidebar.
-Every capability is reachable from the Console, and `CommandParityTests`
-passes because both faces reach the same verbs — which is exactly the
-situation that rule exists to make visible rather than to hide. Whoever
-takes the page next needs the collapsible sidebar, the mode popup and the
-project row; the model, the parsers and the wire are done and tested.
+**The page landed too** (2026-08-19): a collapsible saved-chats list down
+the left, a mode popup, a project popup, and rows that mark which machine
+each chat was typed at. The layout is arithmetic in `chat_layout.c` with
+its own native test — collapsed, every sidebar rect is EMPTY rather than
+off-screen, so a stale hit test lands nowhere instead of on an invisible
+row, and that is the mutation the test was watched failing against. The
+rows are in the scene description as well as on screen, because a list
+drawn with QuickDraw and absent from the scene is a control that exists
+for eyes only.
 
 **Two readings of silence, both chosen and both guarded.** A roster row with
 no `origin` reads as the OTHER machine, because the chat a person needs
