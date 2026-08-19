@@ -199,11 +199,26 @@ def create_dmg(bundle: Path, output: Path) -> None:
         # -volname becomes --volumeName, and the source folder and destination
         # are positional. Both spellings emit a UDZO/GUID/APFS image and
         # preserve symlinks, including the absolute /Applications alias above.
-        run([
+        arguments = [
             "/usr/sbin/diskutil", "image", "create", "from",
             "--format", "UDZO", "--volumeName", "New Old World",
             str(source), str(output),
-        ])
+        ]
+        try:
+            run(arguments, capture=True)
+        except ReleaseRefusal as exc:
+            # The absolute symlink has made diskutil fail with error code
+            # 153 on this desk (2026-08-18) under conditions never pinned
+            # (environmental; the same command passed an hour earlier).
+            # A DMG that installs by hand beats a refused release.
+            print(
+                "assemble-release: warning: diskutil refused the image with "
+                f"the /Applications symlink present ({exc}); retrying "
+                "without it - this DMG will NOT carry the drag-to-install "
+                "affordance", file=sys.stderr)
+            (source / "Applications").unlink()
+            output.unlink(missing_ok=True)
+            run(arguments, capture=True)
 
 
 def assemble(args: argparse.Namespace) -> None:
