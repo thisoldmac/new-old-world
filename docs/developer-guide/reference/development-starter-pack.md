@@ -79,6 +79,14 @@ For an already-connected guest, the guest-files upload lane
 (`now_guest_files_upload_begin` / `append` / `commit`) can carry the same
 MacBinary image directly instead of rebuilding setup media.
 
+**Copy the MPW folder to a writable disk before registering it.** Mounting
+the pack is not enough: a ToolServer launched from the read-only pack
+volume cannot run its own tools, and the build fails on its first action
+with status −1 and an empty transcript. The same tools copied to the hard
+disk build normally. This was measured four ways on one emulator guest and
+the matrix is in [open issues](../../open-issues.md); the setup image's
+Read Me carries the same instruction whenever a validated pack is present.
+
 ## Qualification is the guest's, and the manifest may not overclaim
 
 The manifest's `qualification.probe` must name a probe the product
