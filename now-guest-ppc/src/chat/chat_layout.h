@@ -29,6 +29,7 @@ enum {
     kChatToggleWidth = 20,            /* the collapse button */
     kChatModePopupWidth = 74,
     kChatProjectPopupWidth = 150,
+    kChatSkillsPopupWidth = 84,
     kChatTopRowHeight = 20,           /* the two popups + New Chat */
     kChatProviderPopupWidth = 120,
     kChatModelPopupWidth = 200,
@@ -62,6 +63,7 @@ typedef struct ChatLayoutRects {
     Rect sidebar_toggle;              /* collapse/expand, leftmost */
     Rect mode_popup;
     Rect project_popup;
+    Rect skills_popup;                /* inserts a /command into the prompt */
     /* EMPTY (all zero) when the sidebar is collapsed, so a stale draw
        lands nowhere rather than on top of the transcript. */
     Rect sidebar;                     /* framed white panel */

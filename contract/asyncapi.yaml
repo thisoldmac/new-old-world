@@ -382,6 +382,8 @@ channels:
       chatProjects: { $ref: "#/components/messages/chatProjects" }
       chatProjectRoster: { $ref: "#/components/messages/chatProjectRoster" }
       chatProject: { $ref: "#/components/messages/chatProject" }
+      chatSkills: { $ref: "#/components/messages/chatSkills" }
+      chatSkillRoster: { $ref: "#/components/messages/chatSkillRoster" }
       webRequest: { $ref: "#/components/messages/webRequest" }
       webResponseBegin: { $ref: "#/components/messages/webResponseBegin" }
       webResponseChunk: { $ref: "#/components/messages/webResponseChunk" }
@@ -1239,6 +1241,7 @@ operations:
       - $ref: "#/channels/control/messages/chatHistory"
       - $ref: "#/channels/control/messages/chatProjects"
       - $ref: "#/channels/control/messages/chatProject"
+      - $ref: "#/channels/control/messages/chatSkills"
     description: >
       The guest asks the HOST's language models. One direction by
       DEFINITION, the cloud rule: the family's subject is the modern
@@ -1327,6 +1330,7 @@ operations:
       - $ref: "#/channels/control/messages/chatRoster"
       - $ref: "#/channels/control/messages/chatTranscript"
       - $ref: "#/channels/control/messages/chatProjectRoster"
+      - $ref: "#/channels/control/messages/chatSkillRoster"
       - $ref: "#/channels/control/messages/chatDelta"
       - $ref: "#/channels/control/messages/chatStatus"
       - $ref: "#/channels/control/messages/chatResult"
@@ -1868,7 +1872,13 @@ components:
       name: chat.projectroster
     chatProject:
       name: chat.project
-      payload: { $ref: "#/components/schemas/ChatReset" }
+      payload: { $ref: "#/components/schemas/ChatProject" }
+    chatSkills:
+      name: chat.skills
+      payload: { $ref: "#/components/schemas/ChatSkills" }
+    chatSkillRoster:
+      name: chat.skillroster
+      payload: { $ref: "#/components/schemas/ChatSkillRoster" }
     webRequest:
       name: web.request
       payload: { $ref: "#/components/schemas/WebRequest" }
@@ -4083,6 +4093,58 @@ components:
         guest re-asks chat.projects for the ref it minted — a listing is
         the one place refs are minted, so there is never a second
         minter.
+    ChatSkills:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: chat.skills }
+        id: { type: integer }
+      description: >
+        List the skills a conversation can load - the same catalogue
+        the host already prints into every system prompt and serves
+        to /skills. Metadata only, and small by construction: the
+        shipped tree is a handful of rows, so one page carries it.
+
+    ChatSkillRoster:
+      type: object
+      required: [type, id, skills, more]
+      additionalProperties: false
+      properties:
+        type: { const: chat.skillroster }
+        id: { type: integer, description: Echoes the chat.skills id. }
+        skills:
+          type: array
+          maxItems: 12
+          description: >
+            One page; 12 rows is the FRAME bound and `more` continues
+            it. An empty page with more:false is an honest "no skills
+            shipped", not a refusal.
+          items:
+            type: object
+            required: [command]
+            additionalProperties: false
+            properties:
+              command:
+                type: string
+                maxLength: 40
+                description: >
+                  What a person types to load it, slash included -
+                  "/classic-mac-carbon-ui". The COMMAND rather than a
+                  minted ref, deliberately: loading a skill IS typing
+                  its command into chat.send, so the row hands the
+                  guest exactly the bytes it will send back, and no
+                  second loading path exists to drift.
+              detail:
+                type: string
+                description: >
+                  One converted display-only sentence of what it is
+                  for (MacRoman-expressible, truncated by the host).
+        more: { type: boolean }
+      description: >
+        Answered to chat.skills. The catalogue is host truth - the
+        guest never caches it across connections.
+
     ChatCancel:
       type: object
       required: [type, id]

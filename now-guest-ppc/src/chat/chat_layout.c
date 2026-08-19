@@ -79,6 +79,11 @@ void chat_layout_compute(const Rect *body, const ChatLayoutSpec *spec,
              (short)(out->mode_popup.right + kChatRowGap
                      + kChatProjectPopupWidth),
              (short)(y + kChatTopRowHeight));
+    set_rect(&out->skills_popup,
+             (short)(out->project_popup.right + kChatRowGap), y,
+             (short)(out->project_popup.right + kChatRowGap
+                     + kChatSkillsPopupWidth),
+             (short)(y + kChatTopRowHeight));
 
     y = (short)(out->sidebar_toggle.bottom + kChatRowGap);
     pane_left = left;

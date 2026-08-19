@@ -51,7 +51,8 @@ enum {
        two took the next free pair rather than sharing, for the reason
        stated above. */
     kChatModeMenuID = 143,
-    kChatProjectMenuID = 144
+    kChatProjectMenuID = 144,
+    kChatSkillsMenuID = 145
 };
 
 static WindowRef g_owner;
@@ -62,6 +63,7 @@ static ControlRef g_provider_popup;
 static ControlRef g_model_popup;
 static ControlRef g_mode_popup;
 static ControlRef g_project_popup;
+static ControlRef g_skills_popup;
 static ControlRef g_sidebar_toggle;
 static ControlRef g_new_btn;
 static ControlRef g_send_btn;
@@ -119,6 +121,14 @@ static int g_project_count;
 /* A create was sent; the next chat.result that lands is its answer,
    and an ok one means the roster moved. */
 static Boolean g_created_project;
+/* The loadable skills, listed once per connection: the catalogue is
+   part of the app bundle over there and does not move under a running
+   host. Choosing one TYPES its command into the prompt - visible,
+   editable, sent by the person - so the popup adds no second loading
+   path beside the slash the host already serves. */
+static ChatSkillRow g_skills[kChatMaxSkills];
+static int g_skill_count;
+static Boolean g_want_skills;
 static Boolean g_sidebar_shown = true;
 /* What this turn may do. Build is NOT the default: the safe tier is the
    one that changes nothing, and the host reads an absent mode the same
@@ -405,6 +415,35 @@ static void rebuild_model_popup(void)
     }
 }
 
+/* The skills pop-up: item 1 is the label the closed popup shows, the
+   rows are the commands. Dimmed until the roster arrives - an empty
+   menu that drops down to nothing reads as a broken control. */
+static void rebuild_skills_popup(void)
+{
+    MenuRef menu = popup_menu(g_skills_popup, kChatSkillsMenuID);
+    int i;
+
+    if (menu == NULL) {
+        return;
+    }
+    while (CountMenuItems(menu) > 0) {
+        DeleteMenuItem(menu, 1);
+    }
+    fill_menu_item(menu, 1, "Skills", true);
+    for (i = 0; i < g_skill_count; ++i) {
+        fill_menu_item(menu, (short)(i + 2), g_skills[i].command, true);
+    }
+    if (g_skills_popup != NULL) {
+        SetControlMaximum(g_skills_popup, CountMenuItems(menu));
+        SetControlValue(g_skills_popup, 1);
+        HiliteControl(g_skills_popup,
+                      (short)(g_skill_count > 0 ? 0 : 255));
+        if (g_visible) {
+            Draw1Control(g_skills_popup);
+        }
+    }
+}
+
 /* The project pop-up: "No project" first, always, then the host's
    roster. Item 1 is the decline, so a person can always get out of a
    project without finding one to switch to. */
@@ -509,6 +548,13 @@ static void ask_when_free(void)
         }
         g_want_lists = false;
         ask_chats();
+        return;
+    }
+    if (g_want_skills && conn_phase() == kConnConnected) {
+        char err[96];
+
+        g_want_skills = false;
+        (void)now_wire_chat_skills(err, sizeof err);
     }
 }
 
@@ -752,6 +798,17 @@ static void chat_note(int kind, const char *reply)
                                          sizeof err);
         }
         rebuild_project_popup();
+        break;
+    }
+    case kChatAnswerSkills: {
+        int more = 0;
+        int n = chat_parse_skills(reply, g_skills, kChatMaxSkills, &more);
+
+        if (n < 0) {
+            break;
+        }
+        g_skill_count = n;            /* one page carries the tree today */
+        rebuild_skills_popup();
         break;
     }
     case kChatAnswerTranscript: {
@@ -1034,6 +1091,9 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     g_project_popup = now_control_new(owner, &g_r.project_popup, text, false,
                                  popupTitleLeftJust, kChatProjectMenuID, 0,
                                  popupMenuProc, 0);
+    g_skills_popup = now_control_new(owner, &g_r.skills_popup, text, false,
+                                popupTitleLeftJust, kChatSkillsMenuID, 0,
+                                popupMenuProc, 0);
     /* The rail's own affordance, one page down: a bevel button whose
        title says which way it goes. */
     CopyCStringToPascal("<", text);
@@ -1065,6 +1125,7 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     }
     if (g_provider_popup == NULL || g_model_popup == NULL
         || g_mode_popup == NULL || g_project_popup == NULL
+        || g_skills_popup == NULL
         || g_sidebar_toggle == NULL
         || g_new_btn == NULL || g_send_btn == NULL
         || g_scroll == NULL || g_te == NULL
@@ -1074,6 +1135,7 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
     rebuild_provider_popup();
     rebuild_model_popup();
     rebuild_project_popup();
+    rebuild_skills_popup();
     SetControlValue(g_mode_popup, (short)(g_mode_sel + 1));
     sync_mode_popup();
     conn_set_chat_note(chat_note);
@@ -1129,6 +1191,10 @@ static void chat_show(Boolean visible)
         ShowControl(g_model_popup);
         ShowControl(g_mode_popup);
         ShowControl(g_project_popup);
+        ShowControl(g_skills_popup);
+        if (g_skill_count == 0) {
+            g_want_skills = true;
+        }
         ShowControl(g_sidebar_toggle);
         ShowControl(g_new_btn);
         ShowControl(g_send_btn);
@@ -1151,6 +1217,7 @@ static void chat_show(Boolean visible)
         HideControl(g_model_popup);
         HideControl(g_mode_popup);
         HideControl(g_project_popup);
+        HideControl(g_skills_popup);
         HideControl(g_sidebar_toggle);
         HideControl(g_new_btn);
         HideControl(g_send_btn);
@@ -1186,6 +1253,11 @@ static void apply_layout(void)
     SizeControl(g_project_popup,
                 (short)(g_r.project_popup.right - g_r.project_popup.left),
                 (short)(g_r.project_popup.bottom - g_r.project_popup.top));
+    MoveControl(g_skills_popup, g_r.skills_popup.left,
+                g_r.skills_popup.top);
+    SizeControl(g_skills_popup,
+                (short)(g_r.skills_popup.right - g_r.skills_popup.left),
+                (short)(g_r.skills_popup.bottom - g_r.skills_popup.top));
     MoveControl(g_new_btn, g_r.new_button.left, g_r.new_button.top);
     SizeControl(g_new_btn,
                 (short)(g_r.new_button.right - g_r.new_button.left),
@@ -1656,6 +1728,36 @@ static Boolean chat_click(const EventRecord *event, Point local)
             if (!ok) {
                 snprintf(g_status, sizeof g_status, "%.120s", err);
                 inval(&g_r.status);
+            }
+        }
+        return true;
+    }
+    if (control == g_skills_popup && part != 0) {
+        if (TrackControl(g_skills_popup, local,
+                         (ControlActionUPP)-1L) != 0) {
+            int picked = GetControlValue(g_skills_popup) - 2;
+
+            /* Item 1 is the label; rows follow. Choosing one TYPES the
+               command into the prompt - the person still sends it, so
+               the popup is a shortcut for the slash, not a new path. */
+            SetControlValue(g_skills_popup, 1);
+            Draw1Control(g_skills_popup);
+            if (picked >= 0 && picked < g_skill_count && g_te != NULL) {
+                char insert[48];
+                long len;
+
+                snprintf(insert, sizeof insert, "%s ",
+                         g_skills[picked].command);
+                len = (long)strlen(insert);
+                if (prompt_size() + len <= kChatPromptMax) {
+                    TextFont(g_font);
+                    TextSize(9);
+                    TEInsert(insert, len, g_te);
+                    prompt_grew_or_shrank();
+                } else {
+                    strcpy(g_status, "The prompt is full");
+                    inval(&g_r.status);
+                }
             }
         }
         return true;

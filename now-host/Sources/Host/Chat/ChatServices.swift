@@ -23,6 +23,7 @@ extension GuestListener {
         case history(ChatHistory)
         case projects(ChatProjects)
         case project(ChatProject)
+        case skillList(ChatSkills)
     }
 
     /// Like the cloud serves: answered for any connected guest, down
@@ -195,7 +196,25 @@ final class ChatWireService {
             serveProjects(request, on: asker)
         case .project(let request):
             serveProject(request, on: asker)
+        case .skillList(let request):
+            serveSkills(request, on: asker)
         }
+    }
+
+    /// The same catalogue the system prompt carries, as rows a guest
+    /// can draw. One page in practice — the shipped tree is a handful —
+    /// but paged in shape so a grown tree never breaks a frame bound.
+    private func serveSkills(_ request: ChatSkills, on asker: Session) {
+        let rows = skills.skills.prefix(12).map { skill in
+            ChatSkillRow(
+                command: String(skill.command.prefix(40)),
+                detail: skill.description.isEmpty
+                    ? nil : String(CloudText.displayable(
+                        skill.description).prefix(96)))
+        }
+        asker.send(.chatSkillRoster(ChatSkillRoster(
+            id: request.id, skills: Array(rows),
+            more: skills.skills.count > rows.count)))
     }
 
     private func serveModels(_ request: ChatModels, on asker: Session) {

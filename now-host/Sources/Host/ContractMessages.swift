@@ -89,6 +89,8 @@ enum ControlMessage: Equatable, Sendable {
     case chatProjects(ChatProjects)
     case chatProjectRoster(ChatProjectRoster)
     case chatProject(ChatProject)
+    case chatSkills(ChatSkills)
+    case chatSkillRoster(ChatSkillRoster)
     case chatSend(ChatSend)
     case chatDelta(ChatDelta)
     case chatStatus(ChatStatus)
@@ -886,6 +888,26 @@ struct ChatProject: Codable, Equatable, Sendable {
     /// With create: "host" or "guest". Absent is REFUSED, never
     /// defaulted — see the contract on ChatProject.home.
     var home: String? = nil
+}
+
+struct ChatSkills: Codable, Equatable, Sendable {
+    var id: Int
+}
+
+struct ChatSkillRow: Codable, Equatable, Sendable, Identifiable {
+    /// What a person types to load it, slash included. The command
+    /// rather than a minted ref: loading IS typing it into chat.send,
+    /// so the row hands the guest the exact bytes it will send back.
+    var command: String
+    var detail: String? = nil
+
+    var id: String { command }
+}
+
+struct ChatSkillRoster: Codable, Equatable, Sendable {
+    var id: Int
+    var skills: [ChatSkillRow]
+    var more: Bool
 }
 
 struct ChatDelta: Codable, Equatable, Sendable {
@@ -2182,6 +2204,12 @@ enum ControlMessageCodec {
         case "chat.project":
             return .chatProject(
                 try decoder.decode(ChatProject.self, from: data))
+        case "chat.skills":
+            return .chatSkills(
+                try decoder.decode(ChatSkills.self, from: data))
+        case "chat.skillroster":
+            return .chatSkillRoster(
+                try decoder.decode(ChatSkillRoster.self, from: data))
         case "web.request":
             return .webRequest(try decoder.decode(WebRequest.self, from: data))
         case "web.response.begin":
@@ -2396,6 +2424,9 @@ enum ControlMessageCodec {
         case .chatProjectRoster(let m):
             return try tagged("chat.projectroster", m)
         case .chatProject(let m): return try tagged("chat.project", m)
+        case .chatSkills(let m): return try tagged("chat.skills", m)
+        case .chatSkillRoster(let m):
+            return try tagged("chat.skillroster", m)
         case .webRequest(let m): return try tagged("web.request", m)
         case .webResponseBegin(let m):
             return try tagged("web.response.begin", m)

@@ -324,6 +324,27 @@ static void test_projects_carry_their_home(void)
     assert(strcmp(rows[1].home, "host") == 0);
 }
 
+static void test_skills_carry_command_and_detail(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.skillroster\",\"id\":4,\"skills\":["
+        "{\"command\":\"/classic-mac-carbon-ui\","
+        "\"detail\":\"Windows, controls, redraw\"},"
+        "{\"command\":\"/classic-mac-carbon-platform\"},"
+        "{\"detail\":\"a row with no command is skipped\"}"
+        "],\"more\":false}";
+    ChatSkillRow rows[kChatMaxSkills];
+    int more = 1;
+    int n = chat_parse_skills(reply, rows, kChatMaxSkills, &more);
+
+    assert(n == 2);
+    assert(more == 0);
+    assert(strcmp(rows[0].command, "/classic-mac-carbon-ui") == 0);
+    assert(strcmp(rows[0].detail, "Windows, controls, redraw") == 0);
+    assert(strcmp(rows[1].command, "/classic-mac-carbon-platform") == 0);
+    assert(rows[1].detail[0] == '\0');
+}
+
 static void test_history_keeps_who_said_it(void)
 {
     const char *reply =
@@ -393,6 +414,7 @@ int main(void)
     test_roster_rows_carry_origin_and_never_transcript_text();
     test_a_row_with_no_origin_is_not_claimed_as_local();
     test_projects_carry_their_home();
+    test_skills_carry_command_and_detail();
     test_history_keeps_who_said_it();
     test_a_malformed_page_reads_as_failure();
     test_provider_reach_defaults_to_full_when_absent();

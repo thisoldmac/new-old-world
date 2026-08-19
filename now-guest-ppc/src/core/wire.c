@@ -3659,6 +3659,16 @@ int now_wire_chat_projects(long cursor, char *err, long cap)
     return chat_ask_begin(json, kChatAnswerProjects, err, cap);
 }
 
+int now_wire_chat_skills(char *err, long cap)
+{
+    char json[64];
+
+    ++g.offer_seq;
+    snprintf(json, sizeof json,
+             "{\"type\":\"chat.skills\",\"id\":%ld}", g.offer_seq);
+    return chat_ask_begin(json, kChatAnswerSkills, err, cap);
+}
+
 int now_wire_chat_project(const char *op, const char *ref,
                           const char *name, const char *home,
                           char *err, long cap)
@@ -8277,6 +8287,10 @@ static int handle_frame(const char *reply)
     }
     if (now_json_type_is(reply, "chat.transcript")) {
         chat_paged_answer(reply, kChatAnswerTranscript);
+        return 1;
+    }
+    if (now_json_type_is(reply, "chat.skillroster")) {
+        chat_paged_answer(reply, kChatAnswerSkills);
         return 1;
     }
     if (now_json_type_is(reply, "chat.projectroster")) {

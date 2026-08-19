@@ -57,6 +57,8 @@ static void check_lines(const Rect *body, int prompt_lines)
     no_overlap(&r.provider_popup, &r.mode_popup);
     no_overlap(&r.sidebar_toggle, &r.mode_popup);
     no_overlap(&r.mode_popup, &r.project_popup);
+    inside(&r.skills_popup, body);
+    no_overlap(&r.project_popup, &r.skills_popup);
     /* The list and the text it sits beside, which is the whole point of
        giving the transcript a left edge that moves. */
     no_overlap(&r.sidebar, &r.transcript);

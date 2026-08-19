@@ -61,7 +61,8 @@ enum {
     kChatRosterRows = 12,             /* the roster answer's maxItems */
     kChatHistoryRows = 24,            /* one history page's maxItems */
     kChatMaxChats = 60,               /* accumulated across pages */
-    kChatMaxProjects = 24
+    kChatMaxProjects = 24,
+    kChatMaxSkills = 12               /* the skillroster's maxItems */
 };
 
 typedef struct {
@@ -79,6 +80,14 @@ typedef struct {
     char home[8];                     /* "host" | "guest" | empty */
     Boolean current;
 } ChatProjectRow;
+
+/* One loadable skill. The command IS the payload: choosing a row types
+   its command into the prompt, so there is no ref and no second
+   loading path to drift from the slash the host already serves. */
+typedef struct {
+    char command[41];                 /* "/name", the contract's cap */
+    char detail[64];                  /* display-only sentence, truncated */
+} ChatSkillRow;
 
 /* One transcript row as it arrives. `kind` is kChatLine* below: who
    said it is a DRAWING fact, and the page right-aligns a person's
@@ -103,6 +112,8 @@ int chat_parse_roster(const char *reply, ChatRosterRow *rows, int max,
                       int *more);
 int chat_parse_projects(const char *reply, ChatProjectRow *rows, int max,
                         int *more);
+int chat_parse_skills(const char *reply, ChatSkillRow *rows, int max,
+                      int *more);
 /* One history page, OLDEST FIRST within the page so it appends in
    reading order; *more means older rows remain further back. */
 int chat_parse_history(const char *reply, ChatHistoryRow *rows, int max,

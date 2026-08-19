@@ -491,7 +491,8 @@ typedef enum {
     kChatAnswerError,                 /* reply = a reason; turn is over */
     kChatAnswerRoster,                /* reply = one saved-chats page */
     kChatAnswerTranscript,            /* reply = one history page */
-    kChatAnswerProjects               /* reply = one projects page */
+    kChatAnswerProjects,              /* reply = one projects page */
+    kChatAnswerSkills                 /* reply = one skillroster page */
 } ChatAnswerKind;
 typedef void (*ConnChatNote)(int kind, const char *reply);
 ConnChatNote conn_set_chat_note(ConnChatNote fn);
@@ -526,6 +527,9 @@ int now_wire_chat_chats(long cursor, char *err, long cap);
 int now_wire_chat_open(const char *ref, char *err, long cap);
 int now_wire_chat_history(long cursor, char *err, long cap);
 int now_wire_chat_projects(long cursor, char *err, long cap);
+/* The loadable-skills catalogue; a row's command is what a person
+   types (or a popup inserts) into the prompt to load it. */
+int now_wire_chat_skills(char *err, long cap);
 /* op is "select", "none" or "create"; ref names a project for select,
    name and home describe one for create. home is "host" or "guest" and
    the host REFUSES a create without it - see the contract. */

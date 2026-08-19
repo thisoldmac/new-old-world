@@ -186,6 +186,42 @@ int chat_parse_projects(const char *reply, ChatProjectRow *rows, int max,
     return count;
 }
 
+int chat_parse_skills(const char *reply, ChatSkillRow *rows, int max,
+                      int *more)
+{
+    const char *p;
+    char object[512];
+    int count = 0;
+
+    if (more != NULL) {
+        *more = 0;
+    }
+    if (reply == NULL || rows == NULL || max <= 0) {
+        return -1;
+    }
+    p = now_json_array(reply, "skills");
+    if (p == NULL) {
+        return -1;
+    }
+    if (more != NULL) {
+        *more = now_json_find_bool(reply, "more", 0) == 1;
+    }
+    while (count < max
+           && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
+        ChatSkillRow *row = &rows[count];
+
+        memset(row, 0, sizeof *row);
+        if (!now_json_find_text(object, "command", row->command,
+                                sizeof row->command)) {
+            continue;
+        }
+        now_json_find_text(object, "detail", row->detail,
+                           sizeof row->detail);
+        ++count;
+    }
+    return count;
+}
+
 int chat_parse_history(const char *reply, ChatHistoryRow *rows, int max,
                        int *more)
 {

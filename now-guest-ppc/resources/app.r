@@ -556,6 +556,16 @@ resource 'MENU' (144) {
     }
 };
 
+/* The Chat page's skills pop-up, rewritten from the host's skill
+   roster. Item 1 is the label; choosing a row types its /command into
+   the prompt. */
+resource 'MENU' (145) {
+    145, textMenuProc, allEnabled, enabled, "Skills",
+    {
+        "Skills", noIcon, noKey, noMark, plain
+    }
+};
+
 /* The Connection page's Retry pop-up. Item order is load-bearing:
    conn_fields.c maps items 1-4 to 0/2/5/10 seconds. */
 resource 'MENU' (133) {
