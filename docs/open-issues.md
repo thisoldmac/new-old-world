@@ -2216,6 +2216,40 @@ anything needing a mid-gesture fact — live drop-target feedback on the host �
 will require, and it is a contract change plus attended metal. Late bind buys
 the single gesture without either.
 
+## THE HOST SUITE CAN WEDGE THE PERSON'S KEYBOARD, AND THE MECHANISM IS OURS (2026-08-19)
+
+Reported by Michelle while this branch was running gates: *"multiple
+concurrent xcode tests are what have been wedging my keyboard input."*
+Load average was 9.4 with two host suites running; it fell to 1.8 the
+moment they stopped.
+
+**Why a busy Mac stalls TYPING rather than merely feeling slow, and why
+that is this project's doing.** `ContinuityKeyboard` installs a
+`CGEvent.tapCreate` at `.cgSessionEventTap` / `.headInsertEventTap` with
+`options: .defaultTap` for `keyDown`, `keyUp` and `flagsChanged`. Head
+inserted and active — not `listenOnly` — means **every keystroke on the
+whole Mac is delivered to NOW's callback before it reaches the app the
+person is typing into**. Starve that process and the keystrokes wait.
+macOS eventually fires `tapDisabledByTimeout`, which the callback
+re-enables, so a loaded machine can wedge, recover, and wedge again.
+
+So the ingredients are: a running NOW app holding an active keyboard
+tap, plus anything that starves it — two Xcode test suites being an
+excellent example.
+
+**What has NOT been established.** That the tests themselves install a
+tap (no test constructs `ContinuityKeyboard`; they use fakes), and
+whether `.listenOnly` would serve continuity's needs. Forwarding
+keystrokes to a classic Mac only needs to OBSERVE them; capturing them
+away from this Mac is a different feature, and which one is intended is
+a product decision rather than something to change quietly under a
+person who is typing.
+
+**Working rules until it is settled.** Do not run `scripts/test-host` or
+`scripts/test-all` while somebody is using this Mac, and never two at
+once — check `ps` for another `xctest` first. If typing goes dead with
+NOW running, that is the tap, and quitting NOW releases it.
+
 ## CONFIRMED WITH A CULPRIT, 2026-08-19: concurrent host suites are what makes the gate red
 
 The entry below has said since 2026-08-16 that two host gates on this Mac
