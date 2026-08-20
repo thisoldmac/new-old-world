@@ -65,8 +65,8 @@ final class MCPRecordsModel: ObservableObject {
         self.recorder = recorder
         if recorder == nil {
             loadState = .unavailable(
-                "The MCP record could not be opened. Calls still serve "
-                    + "and still reach the log.")
+                "The MCP records database could not be opened. Calls "
+                    + "are still served and still reach the log.")
         }
     }
 
@@ -175,7 +175,7 @@ final class MCPRecordsModel: ObservableObject {
                 let counts = try await database.counts(targetID: id)
                 return MCPEntityDetail(
                     title: target.machineID,
-                    subtitle: "A machine agents have driven",
+                    subtitle: "Machine driven by agents",
                     symbol: "desktopcomputer",
                     facts: seenFacts(first: target.firstSeen,
                                      last: target.lastSeen)
@@ -241,7 +241,7 @@ final class MCPRecordsModel: ObservableObject {
     private func missing(_ noun: String) -> MCPEntityDetail {
         MCPEntityDetail(
             title: "No such \(noun)",
-            subtitle: "It may have been pruned from the record.")
+            subtitle: "May have been pruned from the record.")
     }
 
     private func seenFacts(first: Date, last: Date)

@@ -97,7 +97,7 @@ private struct MachineOverviewHeader: View {
                     .font(.largeTitle.weight(.semibold))
                 Text(status.menuLine)
                     .foregroundStyle(.secondary)
-                Text("A current look at this Mac, from the same data shown in the tabs above.")
+                Text("Current state, from the data in the tabs above.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -195,7 +195,8 @@ private struct MachineHardwareSummary: View {
                 MachineOverviewEmptyState(text: note)
             } else {
                 MachineOverviewEmptyState(
-                    text: "Connect this Mac for its hardware overview.")
+                    text: "Connect \(MachineNaming.simpleReference) for "
+                        + "its hardware overview.")
             }
         }
     }
@@ -250,7 +251,8 @@ private struct MachineApplicationsSummary: View {
             } else {
                 MachineOverviewEmptyState(text: isConnected
                     ? "No foreground applications reported."
-                    : "Connect this Mac for its running applications.")
+                    : "Connect \(MachineNaming.simpleReference) for its "
+                        + "running applications.")
             }
         }
     }

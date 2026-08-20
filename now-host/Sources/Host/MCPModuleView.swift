@@ -834,7 +834,7 @@ struct MCPModuleView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "person.crop.circle.badge.questionmark")
                         .foregroundStyle(.orange)
-                    Text("\(request.clientName) asks to use MCP.")
+                    Text("\(request.clientName) requests MCP access.")
                         .font(.callout)
                     Spacer(minLength: 12)
                     ControlGroup {
@@ -851,7 +851,7 @@ struct MCPModuleView: View {
                 oauthConsent.revokeEverything()
             }
             .controlSize(.small)
-            .help("Forgets every registered OAuth client and cancels the "
+            .help("Discards every registered OAuth client and revokes the "
                   + "tokens they were issued. Clients must register and be "
                   + "approved again.")
         }
