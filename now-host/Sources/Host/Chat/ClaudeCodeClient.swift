@@ -91,6 +91,14 @@ final class ClaudeCodeClient: @unchecked Sendable {
             }
         }
         let lane = lanes.state().lane
+        if lane?.attachesNOWTools == true {
+            /* Before the spawn, not after the first refusal: the
+               companion's very first ToolSearch can be the turn's first
+               action, and a bridge that comes up behind it has already
+               cost the turn. */
+            NotificationCenter.default.post(
+                name: ChatWorkspaceMCPConfig.bridgeWanted, object: nil)
+        }
         let request = ChatSubprocessRequest(
             executable: executable,
             arguments: Self.arguments(

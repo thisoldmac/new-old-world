@@ -95,6 +95,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let preferences = MCPTransportPreferences(defaults: defaults)
         if preferences.stdioStartsAutomatically { startMCPStdio() }
         if preferences.httpStartsAutomatically { startMCPHTTP() }
+        /* A lane turn about to spawn its companion asks for the bridge,
+           whatever the launch toggle said — see the notification's own
+           comment for the desk that paid for this. startMCPStdio is
+           idempotent, so a bridge already up costs nothing. */
+        NotificationCenter.default.addObserver(
+            forName: ChatWorkspaceMCPConfig.bridgeWanted, object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.startMCPStdio() }
+        }
         // Web's own model owns its UserDefaults key, unlike MCP's separate
         // preferences struct — reading the key directly here (rather than
         // forcing the "web" runtime into existence just to ask it) keeps the

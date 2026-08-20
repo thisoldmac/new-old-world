@@ -149,6 +149,34 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertEqual(request.arguments.value(after: "--tools"), "default")
     }
 
+    /// A lane turn that will spawn a companion asks for the agent
+    /// bridge FIRST — the launch toggle is not a prohibition, and a
+    /// desk with it off had every companion answer notSent (2026-08-19).
+    func testALaneSpawnAsksForTheAgentBridge() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-lane-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
+        defaults.set(root.path, forKey: ChatWorkspaceLaneStore.rootKey)
+        let asked = expectation(
+            forNotification: ChatWorkspaceMCPConfig.bridgeWanted,
+            object: nil)
+        let runner = ScriptedChatProcessRunner([[
+            "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false}",
+        ]])
+        let client = ClaudeCodeClient(
+            runner: runner, executable: executable, environment: [:],
+            lanes: ChatWorkspaceLaneStore(defaults: defaults))
+
+        for try await _ in client.stream(ChatCompletionRequest(
+            model: "sonnet", system: "", turns: [.user("hi")], tools: [],
+            maxTokens: 100)) {}
+
+        await fulfillment(of: [asked], timeout: 2)
+    }
+
     func testAMissingWorkspaceFolderIsUnusableAndNamesItself() {
         let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
         let store = ChatWorkspaceLaneStore(defaults: defaults)

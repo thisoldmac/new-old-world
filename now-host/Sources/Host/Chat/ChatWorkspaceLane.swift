@@ -316,6 +316,19 @@ final class ChatWorkspaceLaneStore: @unchecked Sendable {
 enum ChatWorkspaceMCPConfig {
     static let serverName = "now"
 
+    /// Posted when a lane turn is about to spawn a companion that will
+    /// dial the agent socket, so the app can ensure the stdio bridge is
+    /// actually up. The bridge's "starts automatically" toggle is a
+    /// LAUNCH policy — on one desk it had been switched off during MCP
+    /// debugging (2026-08-19), and from then on every lane turn's
+    /// companion answered notSent with nothing anywhere saying why.
+    /// A lane with "give it NOW's own tools" checked IS the standing
+    /// grant that the bridge be reachable; the launch toggle is not a
+    /// prohibition, and the person who wants the bridge gone unchecks
+    /// the lane's own toggle.
+    static let bridgeWanted =
+        Notification.Name("dev.newoldworld.now.agent-bridge-wanted")
+
     /// Nil when the executable cannot be found — the lane then runs
     /// without New Old World's tools rather than with a broken server
     /// the runtime would spend its turn retrying.
