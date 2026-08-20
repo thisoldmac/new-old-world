@@ -129,12 +129,13 @@ enum MCPStaleCompanionResponse {
 /// input and reaches the already-running NOW app through its same-UID local
 /// endpoint. Tool ownership, consent, audit and guest state remain in NOW.
 enum MCPStdioTransport {
-    static func run() async {
+    static func run(workspaceRoot: URL? = nil) async {
         let identity = NOWMCPClientIdentity()
         let server = NOWMCPServer(
             client: SocketAgentIntegrationClient(),
             audit: LocalMCPAuditSink(identity: identity),
-            identity: identity)
+            identity: identity,
+            workspaceGrant: workspaceRoot.map(HostWorkspaceGrant.init))
         let output = MCPStandardOutput()
         let executableGeneration = MCPExecutableGeneration()
         var framer = BoundedMCPLineFramer()

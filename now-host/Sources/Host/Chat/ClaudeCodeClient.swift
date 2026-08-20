@@ -107,6 +107,7 @@ final class ClaudeCodeClient: @unchecked Sendable {
             }
         }
         let lane = lanes.state().lane
+        var mcpConfig: String?
         if lane?.attachesNOWTools == true {
             /* Before the spawn, not after the first refusal: the
                runtime's very first ToolSearch can be the turn's first
@@ -115,17 +116,19 @@ final class ClaudeCodeClient: @unchecked Sendable {
                and pinning the lane root for local reads. */
             NotificationCenter.default.post(
                 name: ChatWorkspaceMCPConfig.bridgeWanted, object: nil)
+            if let lane, let endpoint = httpEndpoint(),
+               let grant = MCPHTTPWorkspaceGrantAuthority.shared.issue(
+                    workspaceRoot: lane.root) {
+                mcpConfig = ChatWorkspaceMCPConfig.httpJSON(
+                    port: endpoint.port, token: endpoint.token,
+                    workspaceGrant: grant)
+            }
         }
         let request = ChatSubprocessRequest(
             executable: executable,
             arguments: Self.arguments(
                 model: completion.model, lane: lane,
-                mcpConfig: lane?.attachesNOWTools == true
-                    ? httpEndpoint().flatMap {
-                        ChatWorkspaceMCPConfig.httpJSON(
-                            port: $0.port, token: $0.token)
-                    }
-                    : nil),
+                mcpConfig: mcpConfig),
             standardInput: Data(Self.prompt(completion, lane: lane).utf8),
             timeout: lane?.timeout ?? 180,
             environment: environment,

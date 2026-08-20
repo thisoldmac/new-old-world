@@ -185,11 +185,59 @@ struct MCPHTTPResponse: Equatable {
     }
 }
 
+/// One-use handoff from the embedded Chat lane to one HTTP session. Holding
+/// the listener's bearer/OAuth credential cannot mint or redeem another
+/// workspace; only an exact, live opaque token can.
+final class MCPHTTPWorkspaceGrantAuthority: @unchecked Sendable {
+    static let headerName = "x-now-workspace-grant"
+    static let shared = MCPHTTPWorkspaceGrantAuthority()
+
+    private struct Pending {
+        let grant: HostWorkspaceGrant
+        let expiresAt: Date
+    }
+
+    private let lock = NSLock()
+    private let maximumOutstanding: Int
+    private let lifetime: TimeInterval
+    private var pending: [String: Pending] = [:]
+
+    init(maximumOutstanding: Int = 8, lifetime: TimeInterval = 30) {
+        self.maximumOutstanding = max(1, maximumOutstanding)
+        self.lifetime = max(1, lifetime)
+    }
+
+    func issue(workspaceRoot: URL, now: Date = Date()) -> String? {
+        lock.withLock {
+            pending = pending.filter { $0.value.expiresAt > now }
+            guard pending.count < maximumOutstanding else { return nil }
+            let token = (UUID().uuidString + UUID().uuidString)
+                .replacingOccurrences(of: "-", with: "").lowercased()
+            pending[token] = .init(
+                grant: HostWorkspaceGrant(workspaceRoot: workspaceRoot),
+                expiresAt: now.addingTimeInterval(lifetime))
+            return token
+        }
+    }
+
+    func redeem(_ token: String, now: Date) -> HostWorkspaceGrant? {
+        lock.withLock {
+            pending = pending.filter { $0.value.expiresAt > now }
+            guard token.utf8.count == 64,
+                  let entry = pending.removeValue(forKey: token),
+                  entry.expiresAt > now else { return nil }
+            return entry.grant
+        }
+    }
+}
+
 actor MCPHTTPService {
     /// One server AND its identity box per session: the server fills the
     /// box at initialize, the service adds the session id it mints, and the
     /// audit sink the factory built beside them reads it at record time.
     typealias ServerFactory = @Sendable ()
+        -> (server: NOWMCPServer, identity: NOWMCPClientIdentity)
+    typealias SessionServerFactory = @Sendable (HostWorkspaceGrant?)
         -> (server: NOWMCPServer, identity: NOWMCPClientIdentity)
     typealias ActivityObserver = @Sendable (_ began: Bool, _ at: Date) -> Void
 
@@ -200,7 +248,8 @@ actor MCPHTTPService {
     }
 
     private let configuration: MCPHTTPConfiguration
-    private let serverFactory: ServerFactory
+    private let serverFactory: SessionServerFactory
+    private let workspaceGrants: MCPHTTPWorkspaceGrantAuthority
     private let activityObserver: ActivityObserver?
     private let oauth: MCPOAuthAuthority?
     private var sessions: [String: Session] = [:]
@@ -210,7 +259,20 @@ actor MCPHTTPService {
          activityObserver: ActivityObserver? = nil,
          oauth: MCPOAuthAuthority? = nil) {
         self.configuration = configuration
-        self.serverFactory = serverFactory
+        self.serverFactory = { _ in serverFactory() }
+        self.workspaceGrants = .shared
+        self.activityObserver = activityObserver
+        self.oauth = oauth
+    }
+
+    init(configuration: MCPHTTPConfiguration,
+         sessionServerFactory: @escaping SessionServerFactory,
+         workspaceGrants: MCPHTTPWorkspaceGrantAuthority,
+         activityObserver: ActivityObserver? = nil,
+         oauth: MCPOAuthAuthority? = nil) {
+        self.configuration = configuration
+        self.serverFactory = sessionServerFactory
+        self.workspaceGrants = workspaceGrants
         self.activityObserver = activityObserver
         self.oauth = oauth
     }
@@ -291,7 +353,7 @@ actor MCPHTTPService {
                 as? [String: Any],
               let method = object["method"] as? String else {
             return jsonResponse(
-                await serverFactory().server.handle(request.body))
+                await serverFactory(nil).server.handle(request.body))
         }
         let observesAgentCall = method == "tools/call"
         if observesAgentCall { activityObserver?(true, now) }
@@ -306,7 +368,16 @@ actor MCPHTTPService {
             guard sessions.count < configuration.maximumSessions else {
                 return response(429, headers: ["Retry-After": "30"])
             }
-            let (server, identity) = serverFactory()
+            let workspaceGrant: HostWorkspaceGrant?
+            if let token =
+                request.headers[MCPHTTPWorkspaceGrantAuthority.headerName] {
+                guard let redeemed = workspaceGrants.redeem(token, now: now)
+                else { return response(403) }
+                workspaceGrant = redeemed
+            } else {
+                workspaceGrant = nil
+            }
+            let (server, identity) = serverFactory(workspaceGrant)
             guard let reply = await server.handle(request.body) else {
                 return response(202)
             }
@@ -522,6 +593,22 @@ final class MCPHTTPListener: @unchecked Sendable {
                                  serverFactory: serverFactory,
                                  activityObserver: activityObserver,
                                  oauth: oauth)
+    }
+
+    init(configuration: MCPHTTPConfiguration,
+         sessionServerFactory: @escaping MCPHTTPService.SessionServerFactory,
+         workspaceGrants: MCPHTTPWorkspaceGrantAuthority,
+         activityObserver: MCPHTTPService.ActivityObserver? = nil,
+         failureObserver: FailureObserver? = nil,
+         oauth: MCPOAuthAuthority? = nil) throws {
+        self.configuration = configuration
+        self.failureObserver = failureObserver
+        service = MCPHTTPService(
+            configuration: configuration,
+            sessionServerFactory: sessionServerFactory,
+            workspaceGrants: workspaceGrants,
+            activityObserver: activityObserver,
+            oauth: oauth)
     }
 
     /// Start the in-process listener and return when the port is bound.

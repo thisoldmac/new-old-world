@@ -99,17 +99,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            whatever the launch toggle said — see the notification's own
            comment for the desk that paid for this (and for stdio's
            sunset). startMCPHTTP is idempotent, so a server already up
-           costs nothing. The lane root is pinned here too: the HTTP
-           server runs IN this process, so now_guest_files_upload_file's
-           allowed directory is the host's own Settings answer, taken
-           fresh per spawn. */
+           costs nothing. Workspace authority travels separately as a
+           one-use HTTP-session grant in the lane's private MCP config. */
         NotificationCenter.default.addObserver(
             forName: ChatWorkspaceMCPConfig.bridgeWanted, object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                HostProjectionLocalRead.configure(
-                    workspaceRoot: ChatWorkspaceLaneStore().state().lane?.root)
                 self?.startMCPHTTP()
             }
         }
@@ -1190,9 +1186,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let listener = try MCPHTTPListener(
                 configuration: .init(port: port, authMode: authMode,
                                      bearerToken: token),
-                serverFactory: { [adapter = state.agentIntegration,
+                sessionServerFactory: { [adapter = state.agentIntegration,
                                   activity = state.agentActivity,
-                                  records = state.mcpRecords] in
+                                  records = state.mcpRecords] workspaceGrant in
                     /* Per session, so the sink reads THIS session's
                        identity: the server fills the box at initialize and
                        the service adds the id it mints. */
@@ -1201,9 +1197,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         adapter: adapter, activity: activity,
                         identity: identity, records: records)
                     return (NOWMCPServer(client: client, audit: audit,
-                                         identity: identity),
+                                         identity: identity,
+                                         workspaceGrant: workspaceGrant),
                             identity)
                 },
+                workspaceGrants: .shared,
                 activityObserver: { [activity = state.agentActivity]
                     began, moment in
                     Task { @MainActor in
@@ -1295,9 +1293,8 @@ enum HostMain {
             ? URL(fileURLWithPath: arguments[2], isDirectory: true)
             : nil
         if arguments == ["--mcp-stdio"] || workspaceRoot != nil {
-            HostProjectionLocalRead.configure(workspaceRoot: workspaceRoot)
             Task {
-                await MCPStdioTransport.run()
+                await MCPStdioTransport.run(workspaceRoot: workspaceRoot)
                 Foundation.exit(0)
             }
             dispatchMain()

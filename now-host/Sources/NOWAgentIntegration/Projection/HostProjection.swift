@@ -338,6 +338,9 @@ extension HostProjection {
 public struct HostProjectionArguments: @unchecked Sendable {
     /// Exactly what arrived as `params.arguments`, less `guest`.
     public let raw: Any?
+    /// Immutable authority attached by the invoking server session. It is
+    /// envelope context, never a caller-controlled tool argument.
+    public let workspaceGrant: HostWorkspaceGrant?
 
     /// **The envelope's own members: addressing, not arguments.**
     ///
@@ -353,7 +356,8 @@ public struct HostProjectionArguments: @unchecked Sendable {
     /// the strictness is.
     public static let envelopeMembers: Set<String> = ["guest"]
 
-    public init(raw: Any?) {
+    public init(raw: Any?, workspaceGrant: HostWorkspaceGrant? = nil) {
+        self.workspaceGrant = workspaceGrant
         guard let object = raw as? [String: Any],
               object.keys.contains(where: Self.envelopeMembers.contains)
         else {

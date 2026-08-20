@@ -337,16 +337,13 @@ final class ChatWorkspaceLaneStore: @unchecked Sendable {
     }
 }
 
-/// The MCP configuration handed to a lane runtime: this same executable,
-/// in the `--mcp-stdio` mode it already has, so the runtime reaches the
-/// running app's capabilities through the face that already owns
-/// consent and audit. No second server, no second copy of the registry.
+/// The private HTTP MCP configuration handed to one lane runtime.
 enum ChatWorkspaceMCPConfig {
     static let serverName = "now"
 
-    /// Posted when a lane turn is about to spawn a companion that will
-    /// dial the agent socket, so the app can ensure the stdio bridge is
-    /// actually up. The bridge's "starts automatically" toggle is a
+    /// Posted when a lane turn is about to spawn a runtime that will dial
+    /// the HTTP listener, so the app can ensure it is actually up. The
+    /// listener's "starts automatically" toggle is a
     /// LAUNCH policy — on one desk it had been switched off during MCP
     /// debugging (2026-08-19), and from then on every lane turn's
     /// companion answered notSent with nothing anywhere saying why.
@@ -361,11 +358,9 @@ enum ChatWorkspaceMCPConfig {
     /// without New Old World's tools rather than with a broken server
     /// the runtime would spend its turn retrying.
     ///
-    /// `workspaceRoot` is the lane's granted folder, pinned onto the
-    /// companion's command line so `now_guest_files_upload_file` can read
-    /// files out of it. Spawn-time and explicit on purpose: the companion
-    /// must never discover a readable root ambiently, and nil keeps the
-    /// bare single-argument mode for a lane with no folder to grant.
+    /// The workspace grant is an opaque, one-use header separate from the
+    /// listener credential. The HTTP service redeems it only while creating
+    /// this runtime's session; repeated headers carry no authority.
     /// The lane runtime reaches NOW over the HTTP MCP — the transport
     /// the product is converging on. The stdio companion this replaces
     /// was a second copy of the app dialling a shared unix socket, and
@@ -375,13 +370,18 @@ enum ChatWorkspaceMCPConfig {
     /// one server, in the running host, Bearer-gated by a same-user
     /// 0600 token file — and when it is down the failure is a connect
     /// refusal with a port number in it, not a healthy-looking silence.
-    static func httpJSON(port: UInt16, token: String) -> String? {
+    static func httpJSON(port: UInt16, token: String,
+                         workspaceGrant: String) -> String? {
         let object: [String: Any] = [
             "mcpServers": [
                 serverName: [
                     "type": "http",
                     "url": "http://127.0.0.1:\(port)/mcp",
-                    "headers": ["Authorization": "Bearer \(token)"],
+                    "headers": [
+                        "Authorization": "Bearer \(token)",
+                        MCPHTTPWorkspaceGrantAuthority.headerName:
+                            workspaceGrant,
+                    ],
                 ],
             ],
         ]

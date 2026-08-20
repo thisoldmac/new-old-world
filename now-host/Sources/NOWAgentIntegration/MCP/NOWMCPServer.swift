@@ -74,16 +74,19 @@ public actor NOWMCPServer {
     /// answer; validated-then-discarded was the behaviour before anything
     /// recorded who called.
     private let identity: NOWMCPClientIdentity?
+    private let workspaceGrant: HostWorkspaceGrant?
     private var initializeResponded = false
     private var initialized = false
 
     public init(client: AgentIntegrationClient,
                 registry: HostProjectionRegistry = .hostFaces,
                 audit: any HostProjectionAuditSink,
-                identity: NOWMCPClientIdentity? = nil) {
+                identity: NOWMCPClientIdentity? = nil,
+                workspaceGrant: HostWorkspaceGrant? = nil) {
         self.client = client
         self.registry = registry
         self.identity = identity
+        self.workspaceGrant = workspaceGrant
         dispatch = HostProjectionDispatch(
             face: .mcp, registry: registry, audit: audit)
     }
@@ -401,7 +404,8 @@ public actor NOWMCPServer {
         let client = self.client.addressing(selector)
         let outcome = await dispatch.invoke(
             name,
-            arguments: .init(raw: params["arguments"]),
+            arguments: .init(raw: params["arguments"],
+                             workspaceGrant: workspaceGrant),
             guest: selector,
             through: client)
         switch outcome {

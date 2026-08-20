@@ -154,6 +154,8 @@ final class ClaudeCodeClientTests: XCTestCase {
         let config = request.arguments.value(after: "--mcp-config") ?? ""
         XCTAssertTrue(config.contains("http://127.0.0.1:5254/mcp"), config)
         XCTAssertTrue(config.contains("Bearer feedface"), config)
+        XCTAssertTrue(config.contains(
+            MCPHTTPWorkspaceGrantAuthority.headerName), config)
         XCTAssertFalse(config.contains("--mcp-stdio"), config)
     }
 
