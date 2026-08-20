@@ -790,7 +790,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         event,
                         drivenGuest:
                             agentIntegration.activeReference()?.id,
-                        stream: activity)
+                        stream: activity,
+                        transport: .stdio)
                     return .recorded
                 case .bringToFront:
                     /* The first of P1a's eleven to be wired (plan 005,
@@ -1123,7 +1124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let reason = "\(error)"
             HostLog.shared.write(
                 .warn, "agent",
-                "local agent integration unavailable: \(reason)")
+                "local agent integration unavailable: \(reason)",
+                transport: .stdio)
             /* The Agent page is told, because otherwise it would report
                the honest "nothing has ever attached" beside a socket path
                naming a file that is not there — and send somebody
@@ -1145,7 +1147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         server.stop()
         mcpStdioBridgeServer = nil
         HostLog.shared.write(.info, "agent",
-                             "stdio MCP endpoint stopped from the MCP pane")
+                             "stdio MCP endpoint stopped from the MCP pane",
+                             transport: .stdio)
         state.agentActivity.stdioStopped()
     }
 
@@ -1206,7 +1209,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         self.state.mcpOAuthConsent.detach()
                         self.state.agentActivity.httpUnavailable("\(error)")
                         HostLog.shared.write(
-                            .warn, "mcp", "HTTP MCP failed: \(error)")
+                            .warn, "mcp", "HTTP MCP failed: \(error)",
+                            transport: .http)
                     }
                 },
                 oauth: oauth)
@@ -1223,7 +1227,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                             at: endpoint,
                             bearerToken: authMode == .bearer ? token : nil)
                         HostLog.shared.write(
-                            .info, "mcp", "HTTP MCP listening at \(endpoint)")
+                            .info, "mcp",
+                            "HTTP MCP listening at \(endpoint)",
+                            transport: .http)
                     }
                 } catch {
                     await MainActor.run {
@@ -1233,7 +1239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         self.mcpHTTPRunID = nil
                         self.state.agentActivity.httpUnavailable("\(error)")
                         HostLog.shared.write(
-                            .warn, "mcp", "HTTP MCP unavailable: \(error)")
+                            .warn, "mcp",
+                            "HTTP MCP unavailable: \(error)",
+                            transport: .http)
                     }
                 }
             }
@@ -1241,7 +1249,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             mcpHTTPRunID = nil
             state.agentActivity.httpUnavailable("\(error)")
             HostLog.shared.write(.warn, "mcp",
-                                 "HTTP MCP unavailable: \(error)")
+                                 "HTTP MCP unavailable: \(error)",
+                                 transport: .http)
         }
     }
 
@@ -1251,7 +1260,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         mcpHTTPListener = nil
         state.mcpOAuthConsent.detach()
         HostLog.shared.write(.info, "mcp",
-                             "HTTP MCP stopped from the MCP pane")
+                             "HTTP MCP stopped from the MCP pane",
+                             transport: .http)
         state.agentActivity.httpStopped()
     }
 }

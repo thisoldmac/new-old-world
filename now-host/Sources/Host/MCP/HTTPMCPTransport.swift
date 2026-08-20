@@ -617,7 +617,8 @@ private final class MCPHTTPConnection: @unchecked Sendable {
                 self.keepAlive = nil
                 let detail = "HTTP connection failed: \(error)"
                 Task { @MainActor in
-                    HostLog.shared.write(.warn, "mcp", detail)
+                    HostLog.shared.write(.warn, "mcp", detail,
+                                         transport: .http)
                 }
                 return
             }

@@ -64,6 +64,13 @@ The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
 machine grant.
 
+The page is two columns of cards — recent agent activity on the right by
+default, everything else on the left. Every card collapses from its header
+chevron, the handle at its top-left drags it anywhere in either column (a
+context menu offers the same moves for the keyboard), and the arrangement
+persists across launches. Each transport card also discloses a **Session
+log**: the host log's lines for that transport from this run of the app.
+
 ## On the classic Mac
 
 The PowerPC MCP page sets the machine's ceiling. It cannot supply host-local

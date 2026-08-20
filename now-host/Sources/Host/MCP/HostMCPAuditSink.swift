@@ -16,7 +16,8 @@ struct HostMCPAuditSink: HostProjectionAuditSink {
             AgentIntegrationAuditLog.record(
                 event,
                 drivenGuest: adapter.activeReference()?.id,
-                stream: activity)
+                stream: activity,
+                transport: .http)
         }
     }
 }
