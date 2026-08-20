@@ -153,8 +153,7 @@ final class MirrorHostModuleRuntime: HostModuleRuntime {
         guard wasRunning || context.currentConnection().canCapture else {
             return .refused(
                 code: "unavailable",
-                reason: "No Mac is connected, so there is nothing to "
-                    + "mirror yet.")
+                reason: "No Mac connected. Nothing to mirror.")
         }
         run.start()
         if detached {
@@ -185,8 +184,8 @@ enum MirrorHostModule {
             id: "mirror",
             title: "Mirror",
             symbol: "macwindow.on.rectangle",
-            summary: "See and drive \(MachineNaming.simpleReference), "
-                + "here or in its own window",
+            summary: "Live view and control of "
+                + "\(MachineNaming.simpleReference)",
             tier: .experimental),
         makeRuntime: { try MirrorHostModuleRuntime(context: $0) },
         makeView: { _, runtime in

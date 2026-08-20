@@ -126,8 +126,8 @@ final class ContinuityOfferService {
         }
         guard offer.generation == generation else {
             return .refuse(code: "stale-selection",
-                           reason: "What this Mac is carrying changed "
-                               + "before the file could be copied.")
+                           reason: "The staged file changed before it "
+                               + "could be copied.")
         }
         if let endedAt = offer.endedAt,
            clock().timeIntervalSince(endedAt) > Self.offerLifetimeSeconds {

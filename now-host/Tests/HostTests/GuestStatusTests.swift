@@ -88,7 +88,7 @@ final class GuestStatusTests: XCTestCase {
         XCTAssertTrue(status.isConnected, "quiet is not gone")
         XCTAssertTrue(status.isQuiet)
         XCTAssertEqual(status.glyph, "◐")
-        XCTAssertEqual(status.menuLine, "Quadra 950 — quiet for 34s")
+        XCTAssertEqual(status.menuLine, "Quadra 950 — idle for 34s")
     }
 
     func testQuietThresholdSitsWellBeforeTheIdleTimeout() {

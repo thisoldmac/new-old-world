@@ -21,8 +21,8 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-if [ "$#" -ne 1 ]; then
-    echo "usage: $0 [--adhoc|--unsigned-release] [--profile canonical|continuity] /absolute/output/directory" >&2
+if [ "$#" -gt 1 ]; then
+    echo "usage: $0 [--adhoc|--unsigned-release] [--profile canonical|continuity] [output directory]" >&2
     exit 64
 fi
 
@@ -35,43 +35,28 @@ if [ "${NOW_HOST_BUNDLE_IDENTIFIER+x}" = x ] \
     exit 64
 fi
 
-case "$1" in
-    /*) output_root=$1 ;;
-    *) echo "output directory must be absolute" >&2; exit 64 ;;
-esac
-
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(dirname "$script_dir")
-case "$output_root/" in
-    "$repo_root"/*)
-        echo "output directory must live outside the source repository" >&2
-        exit 64
-        ;;
-esac
+
+# Default into the checkout's own build tree, the way scripts/build-bundle
+# and the Makefile do. `build/` is gitignored and per-worktree, which is what
+# it is for; an out-of-tree path stays available for a run that wants a
+# stable bundle path (per-binary Local Network and Accessibility grants
+# follow the path, so a lane that keeps its grants passes one).
+output_root=${1:-$repo_root/build/host-app}
 
 if [ "$output_root" = / ]; then
     echo "output directory must not be the filesystem root" >&2
     exit 64
 fi
 
-if [ -d "$output_root" ]; then
-    output_root=$(CDPATH= cd -- "$output_root" && pwd -P)
-else
-    output_parent=$(dirname -- "$output_root")
-    if [ ! -d "$output_parent" ]; then
-        echo "output directory's parent must already exist" >&2
-        exit 64
-    fi
-    output_parent=$(CDPATH= cd -- "$output_parent" && pwd -P)
-    output_root="$output_parent/$(basename -- "$output_root")"
-fi
-case "$output_root/" in
-    "$repo_root"/*)
-        echo "output directory must live outside the source repository" >&2
-        exit 64
-        ;;
-esac
 mkdir -p "$output_root"
+output_root=$(CDPATH= cd -- "$output_root" && pwd -P)
+
+if [ "$output_root" = "$repo_root" ]; then
+    echo "output directory must not be the repository root" >&2
+    exit 64
+fi
 
 if [ "$signing" = developer ] && [ "$profile" = continuity ]; then
     "$repo_root/tools/host-handoff-path" "$output_root"

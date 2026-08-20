@@ -27,8 +27,8 @@ enum NetworkingHostModule {
             id: "networking",
             title: "Networking",
             symbol: "network",
-            summary: "What \(MachineNaming.simpleReference) says about "
-                + "its link, address and network hardware",
+            summary: "Link, address and network hardware on "
+                + "\(MachineNaming.simpleReference)",
             tier: .core),
         makeRuntime: { NetworkingHostModuleRuntime(context: $0) },
         makeView: { _, runtime in

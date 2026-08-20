@@ -776,7 +776,7 @@ final class HostFinderSession {
             guard let self else { return }
             guard result.ok else {
                 self.status = "Guest window geometry refused: "
-                    + (result.error?.message ?? "unknown error")
+                    + (result.error?.message ?? "no reason given")
                 self.dispatchedGeometry[id] = nil
                 self.onChange()
                 return
@@ -796,7 +796,7 @@ final class HostFinderSession {
             workClass: .humanInteractive) { [weak self] result in
             guard !result.ok else { return }
             self?.status = "Guest window \(action) refused: "
-                + (result.error?.message ?? "unknown error")
+                + (result.error?.message ?? "no reason given")
             self?.onChange()
         }
     }
@@ -878,7 +878,7 @@ final class HostFinderSession {
             [weak self] result in
             let failure: String?
             if !result.ok {
-                failure = result.error?.message ?? "unknown error"
+                failure = result.error?.message ?? "no reason given"
             } else if let osa = Self.osaFailure(in: result) {
                 failure = "AppleScript error \(osa)"
             } else {
@@ -1024,7 +1024,7 @@ final class HostFinderSession {
             purpose: .interaction("open Finder item"),
             workClass: .humanInteractive) { [weak self] result in
             guard let self else { return }
-            self.status = result.ok ? "Opened \(path)" : "Open failed: \(result.error?.message ?? "unknown error")"
+            self.status = result.ok ? "Opened \(path)" : "Open failed: \(result.error?.message ?? "no reason given")"
             self.onChange()
         }
     }

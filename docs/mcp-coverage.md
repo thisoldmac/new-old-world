@@ -985,7 +985,26 @@ three-verdict table would have hidden:
 | `served` | the tool answered with its own success |
 | `refused` | this host, the guest or the machine said no, **and said why** |
 | `failed` | no answer, an unreadable one, or an answer a healthy host contradicts |
+| `expected-unavailable` | the tool answered correctly that a precondition this surface cannot mint is absent |
 | `uncovered` | advertised, and this surface can construct no legal argument for it |
+
+`expected-unavailable` exists because `refused` overstated one row.
+`now_guest_files_upload_file` reads bytes out of the chat workspace lane,
+whose root is pinned on the companion's command line at spawn
+(`--workspace-root`) or in-process before an HTTP lane turn; a conformance
+companion is spawned without one. Scoring its no-lane answer `refused`
+said the surface had been asked and had said no on the merits, when what
+it had done was report an absent precondition — the same authority
+boundary `human-gated` draws, one layer down: not a person's approval, a
+host's configuration.
+
+**The verdict inverts when the run pins a root.** That sentence from a
+configured host is false, and fails, exactly as `now-host-unavailable`
+fails while a host is running. Both halves are watched by mutation in
+`MCPWorkspacePreconditionVerdictTests`, along with the rule keying on the
+code rather than the outcome name — every family spells `unavailable` the
+same way, and folding all of them into the new verdict would hide real
+refusals behind it.
 
 A second column says whether the argument was `real` — built from this
 run's own earlier answers — or `synthetic`, a syntactically valid
@@ -1457,4 +1476,5 @@ rederived: 2026-08-19T18:25:38-0400 4b072fe0 unchanged
 rederived: 2026-08-19T21:35:42-0400 485e4ee1 unchanged
 rederived: 2026-08-19T21:40:49-0400 ae09a391 unchanged
 rederived: 2026-08-19T22:18:12-0400 110215ff unchanged
+rederived: 2026-08-20T11:43:42-0400 ae5aa666 unchanged
 -->

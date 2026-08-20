@@ -222,12 +222,10 @@ struct AgentPresenceReading: Equatable {
                lives. */
             headline = "No agent has attached"
             detail = "Nothing has connected to this Mac's agent endpoint "
-                + "since New Old World started. Nothing is driving this "
-                + "Mac but you.\n\nThere is nothing to switch on here. If "
-                + "you ever point an agent at New Old World, this page is "
-                + "where its work appears — every call it makes, which "
-                + "Mac it made it about, and whether it was answered or "
-                + "refused."
+                + "since New Old World started.\n\nNo setup is required. "
+                + "Once an agent connects, its work appears here — every "
+                + "call, which Mac it was made about, and whether it was "
+                + "answered or refused."
             symbol = "person.slash"
             tone = .resting
             showsCounters = false
@@ -316,12 +314,11 @@ struct AgentConsentReading: Equatable {
         switch access {
         case nil:
             title = "Has not said"
-            detail = "\(opens) has a build that predates the question, so "
-                + "it has neither agreed nor refused. Silence is not "
-                + "consent: it "
-                + "is a build that was never asked. Agent calls still "
-                + "reach it for now, and that is a decision made on "
-                + "\(MachineNaming.thisMac), not an answer from \(plain)."
+            detail = "\(opens) runs a build that predates the question, "
+                + "so it has neither agreed nor refused. Silence is not "
+                + "consent. Agent calls still reach it, by a decision made "
+                + "on \(MachineNaming.thisMac), not an answer from "
+                + "\(plain)."
             symbol = "questionmark.circle"
             isConsent = false
         case .disabled:
@@ -347,11 +344,9 @@ struct AgentConsentReading: Equatable {
             isConsent = true
         case .unrecognized(let raw):
             title = "Answered “\(raw)”"
-            detail = "\(opens) named a limit this copy of New Old World "
-                + "has never heard of, so it is a newer build rather than "
-                + "a broken one. A ceiling that cannot be named cannot be "
-                + "claimed to be under, so it does not read as consent "
-                + "here."
+            detail = "\(opens) named a limit unknown to this copy of "
+                + "New Old World — a newer build, not a broken one. An "
+                + "unrecognised ceiling does not read as consent here."
             symbol = "exclamationmark.triangle"
             isConsent = false
         }

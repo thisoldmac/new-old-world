@@ -146,12 +146,10 @@ struct MCPModuleView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("MCP")
                     .font(.headline)
-                Text("The server an agent connects to in order to drive "
-                        + "\(MachineNaming.thisMac) and the "
-                        + "\(MachineNaming.properNounPlural) paired with it, "
-                        + "and what has come in "
-                        + "through it. Everything here also reaches the log; "
-                        + "this is the same record, in front of you.")
+                Text("Agent access to \(MachineNaming.thisMac) and its "
+                        + "paired \(MachineNaming.properNounPlural), with "
+                        + "the traffic through it. Also written to the "
+                        + "log.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -227,7 +225,7 @@ struct MCPModuleView: View {
                    another user reached for the endpoint and was turned
                    away. Nothing identifies it — the gate exists to not
                    look. */
-                counterRow("Turned away by the user check",
+                counterRow("Rejected by the user check",
                            "\(activity.refusedPeers)")
             }
         }
@@ -279,7 +277,7 @@ struct MCPModuleView: View {
                         /* The stream is of the machine being driven, not
                            of this one — this line used to say "this Mac's
                            screen", which named the wrong machine. */
-                        Text("An agent is streaming "
+                        Text("Agent streaming "
                              + "\(MachineNaming.possessive(nil)) screen")
                             .font(.title3.weight(.semibold))
                         Text(heldLaneDetail)
@@ -294,7 +292,7 @@ struct MCPModuleView: View {
     }
 
     private var heldLaneDetail: String {
-        var sentence = "The screen is being captured continuously"
+        var sentence = "Capturing continuously"
         if let interval = listener.streamMinIntervalMs, interval > 0 {
             /* Written as an interval rather than converted to a frame rate.
                It is a CEILING on the machine's work — the guest may be
@@ -303,9 +301,9 @@ struct MCPModuleView: View {
             sentence += ", at most one frame every "
                 + "\(interval) ms"
         }
-        sentence += ". The Screenshots page shows it and its Stop Streaming "
-            + "button ends it, whoever started it. New Old World also ends "
-            + "it by itself if the agent that opened it goes away or stops "
+        sentence += ". Shown on the Screenshots page; Stop Streaming ends "
+            + "it regardless of origin, as does the agent disconnecting or "
+            + "no longer "
             + "reading."
         return sentence
     }
@@ -325,17 +323,15 @@ struct MCPModuleView: View {
     private var consent: some View {
         collapsibleCard(
             .consent,
-            title: "What each \(MachineNaming.properNoun) has agreed to") {
+            title: "Consent") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Each machine answers this for itself, and can "
-                        + "change its answer while connected. It is "
-                        + "changed on that machine, not here.")
+                Text("Set per machine, and changeable while connected. "
+                        + "Changed on that machine, not here.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if listener.guests.isEmpty {
-                    Text("No \(MachineNaming.commonNoun) is connected, "
-                         + "so none has answered.")
+                    Text("No \(MachineNaming.commonNoun) connected.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {
@@ -375,7 +371,7 @@ struct MCPModuleView: View {
     // MARK: the stream
 
     private var activity: some View {
-        collapsibleCard(.activity, title: "What an agent has done") {
+        collapsibleCard(.activity, title: "Activity") {
             VStack(alignment: .leading, spacing: 8) {
                 switch records.loadState {
                 case .loading:
@@ -485,7 +481,7 @@ struct MCPModuleView: View {
                     }
                     .buttonStyle(.plain)
                     if isDestructive {
-                        Text("changes the Mac")
+                        Text("modifies the Mac")
                             .font(.caption2)
                             .foregroundStyle(.orange)
                     }
@@ -561,10 +557,9 @@ struct MCPModuleView: View {
     /// side records — and says so.
     private var emptyStreamSentence: String {
         model.combinedActivity(companions.activity).hasEverAttached
-            ? "An agent has connected but no call has been reported "
-                + "yet. Every capability an agent invokes is reported here "
-                + "as it happens."
-            : "Nothing yet — no agent has invoked anything."
+            ? "Agent connected, no calls. Every capability an agent "
+                + "invokes appears here."
+            : "No agent calls."
     }
 
     private func tint(_ tone: AgentPresenceReading.Tone) -> Color {
@@ -598,9 +593,9 @@ struct MCPModuleView: View {
         transportCard(
             id: .transportStdio,
             title: "Standard Input",
-            summary: "For MCP clients that launch a command. The same "
-                + "New Old World executable runs in a narrow stdio mode "
-                + "and reaches this app through its same-user socket.",
+            summary: "For MCP clients that launch a command. The New "
+                + "Old World executable runs in stdio mode and reaches "
+                + "this app over its same-user socket.",
             state: model.stdio,
             start: startStdio,
             stop: stopStdio,
@@ -617,10 +612,9 @@ struct MCPModuleView: View {
         transportCard(
             id: .transportHTTP,
             title: "HTTP",
-            summary: "For clients that connect to a URL. HTTP runs "
-                + "inside New Old World, binds only to loopback, and "
-                + "authenticates clients the way its access setting "
-                + "says to.",
+            summary: "For clients that connect to a URL. Runs inside "
+                + "New Old World, binds to loopback only, and "
+                + "authenticates as the access setting specifies.",
             state: model.http,
             start: startHTTP,
             stop: stopHTTP,
@@ -679,11 +673,10 @@ struct MCPModuleView: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 case .unopened:
-                    Text("This transport has not been started.")
+                    Text("Not started.")
                         .font(.callout).foregroundStyle(.secondary)
                 case .stopped:
-                    Text("This transport is stopped. Existing audit history "
-                            + "is unchanged.")
+                    Text("Stopped. Audit history is unchanged.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 logTailDisclosure(id, kind: tail)
@@ -763,9 +756,9 @@ struct MCPModuleView: View {
             Text("Client command")
                 .font(.caption.weight(.medium))
             copyRow(label: "Command", value: stdioCommand)
-            Text("Each client launches this command when it needs stdio. "
-                    + "Starting this transport opens the same-user bridge "
-                    + "that those client processes use to reach this app.")
+            Text("Launched by each client on demand. Starting this "
+                    + "transport opens the same-user bridge those client "
+                    + "processes use.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -795,7 +788,7 @@ struct MCPModuleView: View {
             copyRow(label: "URL", value: plannedHTTPEndpoint)
             Text(isRunning
                     ? "Stop HTTP before changing its port or access mode."
-                    : "HTTP is reachable only from this Mac at 127.0.0.1.")
+                    : "Reachable only from this Mac at 127.0.0.1.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if settings.httpAuthMode == .unauthenticated {
@@ -811,9 +804,9 @@ struct MCPModuleView: View {
     private func stdioDetails(_ socket: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             copyRow(label: "Private socket", value: socket)
-            Text("The socket accepts only processes running as your macOS "
-                    + "user. The client launches no separately installed "
-                    + "companion application.")
+            Text("Accepts only processes running as the current macOS "
+                    + "user. No separately installed companion is "
+                    + "launched.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -823,8 +816,8 @@ struct MCPModuleView: View {
             if let token = model.httpBearerToken {
                 Button("Copy Bearer Token") { copy(token) }
                     .controlSize(.small)
-                    .help("Copies the private token. New Old World does not "
-                          + "show it or write it to the log.")
+                    .help("Copy the private token. Never displayed or "
+                          + "written to the log.")
             }
             if settings.httpAuthMode == .oauth {
                 oauthRows
@@ -841,7 +834,7 @@ struct MCPModuleView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "person.crop.circle.badge.questionmark")
                         .foregroundStyle(.orange)
-                    Text("\(request.clientName) asks to use MCP.")
+                    Text("\(request.clientName) requests MCP access.")
                         .font(.callout)
                     Spacer(minLength: 12)
                     ControlGroup {
@@ -858,7 +851,7 @@ struct MCPModuleView: View {
                 oauthConsent.revokeEverything()
             }
             .controlSize(.small)
-            .help("Forgets every registered OAuth client and cancels the "
+            .help("Discards every registered OAuth client and revokes the "
                   + "tokens they were issued. Clients must register and be "
                   + "approved again.")
         }

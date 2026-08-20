@@ -48,8 +48,8 @@ struct ContinuityDisplayLayoutView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Arrange Displays")
                         .font(.title2.weight(.semibold))
-                    Text("The host displays are fixed. Drag the blue guest "
-                         + "display to the edge where the pointer should pass.")
+                    Text("Host displays are fixed. Drag the blue guest "
+                         + "display to the crossing edge.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -130,9 +130,9 @@ struct ContinuityDisplayLayoutView: View {
                             get: { previews.enabled },
                             set: { previews.setEnabled($0) }))
                             .toggleStyle(.switch)
-                            .help("Show live stills of each screen in the "
-                                  + "arrangement. The host side needs Screen "
-                                  + "Recording permission to capture its own "
+                            .help("Live stills of each screen in the "
+                                  + "arrangement. Requires Screen "
+                                  + "Recording permission for this Mac's own "
                                   + "displays.")
                             .lineLimit(1)
                             .fixedSize()
@@ -147,11 +147,11 @@ struct ContinuityDisplayLayoutView: View {
                             : "rectangle.connected.to.line.below")
                         .font(.callout.weight(.medium))
                     Text(continuityRunning ? edge.status
-                         : "Turn on Continuity before crossing into the "
+                         : "Continuity must be on to cross into the "
                            + "guest display.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    Text("Cursor traversal is copy-free in this version. "
+                    Text("Cursor traversal only in this version. "
                          + "Files and held drags do not cross the display "
                          + "edge.")
                         .font(.caption)
@@ -182,8 +182,8 @@ struct ContinuityDisplayLayoutView: View {
                 .font(.system(size: 40))
                 .foregroundStyle(.secondary)
             Text("No guest has ever connected").font(.title3.weight(.semibold))
-            Text("Connect \(MachineNaming.simpleReference) to arrange its "
-                 + "display beside this Mac's.")
+            Text("Connect \(MachineNaming.simpleReference) to arrange "
+                 + "its display beside this Mac's.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
@@ -230,7 +230,7 @@ struct ContinuityDisplayLayoutView: View {
 
     private var layoutLine: String {
         guard let shared = layout.sharedEdge else {
-            return "The guest display is not attached to a host edge"
+            return "Guest display not attached to a host edge"
         }
         return "Guest attached to \(shared.host.name)'s "
             + hostSide(shared.guestSide) + " edge"

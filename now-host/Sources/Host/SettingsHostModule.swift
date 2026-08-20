@@ -48,8 +48,8 @@ enum SettingsHostModule {
             id: "settings",
             title: "Connections",
             symbol: "network",
-            summary: "The port \(MachineNaming.thisMac) listens on, and "
-                + "which \(MachineNaming.properNounPlural) are on it",
+            summary: "Listening port and connected "
+                + "\(MachineNaming.properNounPlural)",
             placement: .footer,
             showsLinkStatus: true),
         makeRuntime: { try SettingsHostModuleRuntime(context: $0) },

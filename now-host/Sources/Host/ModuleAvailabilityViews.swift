@@ -63,8 +63,8 @@ private struct DisconnectedModuleView: View {
                 .foregroundStyle(.secondary)
             Text("Connect a Mac for \(moduleTitle)")
                 .font(.title2.weight(.semibold))
-            Text("This page asks the selected Mac directly, so it has no "
-                 + "offline information to show.")
+            Text("This page reads the selected Mac directly. Nothing "
+                 + "to show while disconnected.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)

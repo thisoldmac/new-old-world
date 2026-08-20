@@ -16,7 +16,7 @@ final class ClaudeCodeChatProvider: ChatProvider, @unchecked Sendable {
             return .none(reason: reason)
         case .off:
             return .none(
-                reason: "Text only - building was turned off in "
+                reason: "Text only — building was turned off in "
                     + "Settings > Chat on the modern Mac")
         }
     }
@@ -52,7 +52,7 @@ final class ClaudeCodeChatProvider: ChatProvider, @unchecked Sendable {
             }
             return ChatProviderEntry(
                 id: id, label: label, state: "serving",
-                detail: "\(reach) - \(plan) runtime")
+                detail: "\(reach) — \(plan) runtime")
         case .success(let status) where status.loggedIn:
             return ChatProviderEntry(
                 id: id, label: label, state: "unavailable",

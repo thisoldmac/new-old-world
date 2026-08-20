@@ -149,11 +149,11 @@ struct ChatModelButton: View {
     private var nothing: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(models.isEmpty
-                 ? "No provider is serving models yet."
+                 ? "No provider is serving models."
                  : "No model matches \"\(query)\".")
                 .foregroundStyle(.secondary)
             if models.isEmpty {
-                Button("Set Up a Provider...") {
+                Button("Set Up a Provider…") {
                     listShown = false
                     configure()
                 }

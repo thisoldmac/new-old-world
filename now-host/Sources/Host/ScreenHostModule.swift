@@ -37,8 +37,7 @@ enum ScreenHostModule {
             id: "screen",
             title: "Screen",
             symbol: "camera.viewfinder",
-            summary: "Capture, stream and save "
-                + "\(MachineNaming.possessive(nil)) screen"),
+            summary: "Screen capture, streaming and recording"),
         makeRuntime: { ScreenHostModuleRuntime(context: $0) },
         makeView: { _, runtime in
             guard let runtime = runtime as? ScreenHostModuleRuntime else {

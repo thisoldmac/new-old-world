@@ -23,7 +23,7 @@ struct ConsoleModuleView: View {
                 Text("Console")
                     .font(.largeTitle.weight(.semibold))
                 Text("A command line on \(MachineNaming.sentence(machineName)). "
-                     + "Lines go across as typed; \"help\" asks it what it "
+                     + "Lines are sent as typed; \"help\" lists what it "
                      + "serves.")
                     .foregroundStyle(.secondary)
             }

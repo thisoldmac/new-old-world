@@ -117,8 +117,7 @@ struct NetworkingModuleView: View {
                the one machine on this page that "this Mac" cannot mean. */
             resting("\(MachineNaming.title(model.connection)) does not "
                     + "answer `net`.",
-                    detail: "The PowerPC build serves it. Nothing is wrong "
-                          + "with that machine.")
+                    detail: "Served by the PowerPC build only.")
         } else if let refusal = model.refusal {
             /* The machine's own words, not ours. */
             resting("\(MachineNaming.title(model.connection)) declined.",
@@ -209,12 +208,11 @@ struct NetworkingModuleView: View {
         VStack(alignment: .leading, spacing: 4) {
             if let at = model.fetchedAt {
                 Text("Read at \(at.formatted(date: .omitted, time: .standard))"
-                     + " — this page does not watch, it asks. Refresh for a "
-                     + "newer answer.")
+                     + ". Refresh to re-read.")
             }
-            Text("Nothing here can be changed yet: `net` only reads. When the "
-                 + "contract grows a verb that sets an address or brings a "
-                 + "port up, its control appears inside the group it changes.")
+            Text("Read-only: `net` reports, it does not set. Controls "
+                 + "appear in the group they change once the contract "
+                 + "carries a verb for it.")
         }
         .font(.caption)
         .foregroundStyle(.secondary)

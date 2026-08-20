@@ -34,7 +34,7 @@ struct CensusModuleView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Hardware")
                         .font(.headline)
-                    Text("A passive census of "
+                    Text("Passive hardware census of "
                          + "\(MachineNaming.sentence(model.connection)).")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -175,8 +175,8 @@ struct CensusModuleView: View {
                 detailBody(state)
             }
         } else {
-            emptyState(symbol: "sidebar.left", title: "Select a probe",
-                       message: "Pick a probe on the left to see its rows.")
+            emptyState(symbol: "sidebar.left", title: "No probe selected",
+                       message: "Select a probe for its rows.")
         }
     }
 
@@ -265,10 +265,9 @@ struct CensusModuleView: View {
         emptyState(
             symbol: "cable.connector.slash",
             title: "No \(MachineNaming.properNoun) Connected",
-            message: "The \(MachineNaming.commonNoun) dials "
-                + "\(MachineNaming.thisMac); this side only listens. Once "
-                + "it connects, its hardware census can be run and read "
-                + "here.")
+            message: "The \(MachineNaming.commonNoun) connects to "
+                + "\(MachineNaming.thisMac); this side only listens. The "
+                + "census can be run once connected.")
     }
 }
 

@@ -206,7 +206,7 @@ struct ChatSidebar: View {
             ProjectLocationPicker(
                 toolchain: $newProjectToolchain,
                 guestToolchainQualified: newProjectGuestQualified)
-            Text("Chats filed under the project sit beside its code, which lives in New Old World's application-owned Projects directory.")
+            Text("Chats filed under the project are stored beside its code, in New Old World's application-owned Projects directory.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()

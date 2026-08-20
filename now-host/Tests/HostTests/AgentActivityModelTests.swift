@@ -24,10 +24,9 @@ final class AgentActivityModelTests: XCTestCase {
         XCTAssertFalse(reading.detail.contains("0"),
                        "No count belongs in the never-attached sentence.")
         // It says what is true and what would appear, rather than nothing.
-        XCTAssertTrue(reading.detail.contains("Nothing is driving this Mac"),
+        XCTAssertTrue(reading.detail.contains("Nothing has connected"),
                       reading.detail)
-        XCTAssertTrue(reading.detail.contains("this page is where its work "
-                                              + "appears"),
+        XCTAssertTrue(reading.detail.contains("its work appears here"),
                       reading.detail)
     }
 

@@ -35,7 +35,7 @@ enum WebHostModule {
             id: "web",
             title: "Web Proxy",
             symbol: "globe",
-            summary: "Translate modern pages for a browser on "
+            summary: "Page translation for a browser on "
                 + "\(MachineNaming.simpleReference)",
             tier: .experimental),
         makeRuntime: { WebHostModuleRuntime(context: $0) },

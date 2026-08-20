@@ -38,7 +38,7 @@ enum LogsHostModule {
             id: "logs",
             title: "Logs",
             symbol: "text.alignleft",
-            summary: "What \(MachineNaming.thisMac) has recorded happening",
+            summary: "Event log for \(MachineNaming.thisMac)",
             placement: .footer,
             tier: .debug),
         makeRuntime: { try LogsHostModuleRuntime(context: $0) },

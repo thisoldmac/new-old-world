@@ -437,7 +437,7 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
                 guard case .toolResult(let id, let text, let image, _) = content
                 else { return nil }
                 let suffix = image == nil
-                    ? "" : "\n[image result omitted - this provider cannot show images]"
+                    ? "" : "\n[image result omitted — this provider cannot show images]"
                 return [
                     "role": "tool",
                     "tool_call_id": id,
