@@ -38,7 +38,7 @@ or lab material, not user prerequisites.
 
 <!-- derived-doc v1
 sources: docs/naming.md now-guest-ppc/CMakeLists.txt now-guest-68k/CMakeLists.txt scripts/docs-source-group tools/docs-gate
-sources-sha1: 220a8c30796d5871ad4e64d2414d36cdfecc1af1
+sources-sha1: 57549b3fc73921c818b0267f17c5138f4489b0ec
 derive setup-targets sha256=7abfcb8135501ce74d37a77c83677d830f97650a2919791c6fa7c71706c54c99 lines=5
     scripts/docs-source-group setup
 rederived: pending
@@ -222,6 +222,33 @@ rederived: 2026-08-17T23:36:27-0400 5aa1092c unchanged
 rederived: 2026-08-17T23:52:46-0400 91fe237e unchanged
 rederived: 2026-08-18T15:09:51-0400 c33eb6ee unchanged
 rederived: 2026-08-18T17:19:01-0400 ffc561f4 unchanged
+rederived: 2026-08-18T21:43:39-0400 eae627f6 unchanged
 rederived: 2026-08-18T23:04:15-0400 fc295bcc unchanged
+rederived: 2026-08-18T23:13:33-0400 ce4dc746 unchanged
+rederived: 2026-08-18T23:19:31-0400 3341acb1 sources
 rederived: 2026-08-18T23:25:23-0400 353a37be unchanged
+rederived: 2026-08-18T23:33:04-0400 2c64a5c4 unchanged
+rederived: 2026-08-18T23:44:45-0400 6692e45b unchanged
+rederived: 2026-08-18T23:57:03-0400 d10402f4 unchanged
+rederived: 2026-08-19T00:06:06-0400 b3b2ee57 unchanged
+rederived: 2026-08-19T01:21:59-0400 0e46a4ac unchanged
+rederived: 2026-08-19T01:34:47-0400 7ec2d6d1 unchanged
+rederived: 2026-08-19T01:41:13-0400 399d4c78 unchanged
+rederived: 2026-08-19T01:53:16-0400 db827bac unchanged
+rederived: 2026-08-19T02:32:04-0400 a9efa24f unchanged
+rederived: 2026-08-19T03:00:30-0400 26f5c9fc unchanged
+rederived: 2026-08-19T03:14:02-0400 afcf45e6 unchanged
+rederived: 2026-08-19T03:33:52-0400 648ab89c unchanged
+rederived: 2026-08-19T03:53:11-0400 f9d1bd67 unchanged
+rederived: 2026-08-19T03:59:56-0400 14486719 unchanged
+rederived: 2026-08-19T04:47:57-0400 ba4e78ae unchanged
+rederived: 2026-08-19T05:41:22-0400 a8ee7d50 unchanged
+rederived: 2026-08-19T14:24:11-0400 d6583bbd unchanged
+rederived: 2026-08-19T14:49:25-0400 75da2302 sources
+rederived: 2026-08-19T15:06:39-0400 c9462eb5 unchanged
+rederived: 2026-08-19T18:20:14-0400 4b072fe0 sources
+rederived: 2026-08-19T18:25:39-0400 4b072fe0 unchanged
+rederived: 2026-08-19T21:35:43-0400 485e4ee1 unchanged
+rederived: 2026-08-19T21:40:50-0400 ae09a391 unchanged
+rederived: 2026-08-19T22:18:13-0400 110215ff unchanged
 -->

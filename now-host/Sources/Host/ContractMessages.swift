@@ -81,6 +81,16 @@ enum ControlMessage: Equatable, Sendable {
     case cloudRefuse(CloudRefuse)
     case chatModels(ChatModels)
     case chatCatalog(ChatCatalog)
+    case chatChats(ChatChats)
+    case chatRoster(ChatRoster)
+    case chatOpen(ChatOpen)
+    case chatHistory(ChatHistory)
+    case chatTranscript(ChatTranscript)
+    case chatProjects(ChatProjects)
+    case chatProjectRoster(ChatProjectRoster)
+    case chatProject(ChatProject)
+    case chatSkills(ChatSkills)
+    case chatSkillRoster(ChatSkillRoster)
     case chatSend(ChatSend)
     case chatDelta(ChatDelta)
     case chatStatus(ChatStatus)
@@ -730,6 +740,10 @@ struct ChatCatalogProvider: Codable, Equatable, Sendable, Identifiable {
     /// WHY a thing is missing.
     var state: String
     var detail: String?
+    /// "full" | "workspace" | "none" — how far a turn with this
+    /// provider reaches. Absent reads as full on the guest; see the
+    /// contract on ChatCatalog.providers.tools.
+    var tools: String?
 
     var id: String { provider }
 }
@@ -760,9 +774,140 @@ struct ChatSend: Codable, Equatable, Sendable {
     var id: Int
     /// A host-minted ref from this connection's catalog pages.
     var ref: String
+    /// What this turn may do. Absent means chat — the safest reading
+    /// of silence, and what a guest predating modes sends.
+    var mode: String? = nil
     /// One turn, as typed; the contract's 512-byte cap is the SENDER's
     /// to honour and this side answers too-long rather than truncating.
     var prompt: String
+}
+
+/// What a turn may reach. The contract's `mode`, given a type here so
+/// the gate is a switch the compiler checks rather than a string
+/// compared in three places.
+enum ChatMode: String, Codable, Equatable, Sendable, CaseIterable {
+    /// Look at anything, change nothing.
+    case chat
+    /// The same reach, asked for a written plan.
+    case plan
+    /// The whole catalog.
+    case build
+
+    /// Absent or unrecognised reads as `chat`. An older guest sends no
+    /// mode, and a newer one could send a word this build has never
+    /// heard of; both must land on the tier that changes nothing rather
+    /// than on the one that changes everything.
+    init(wire: String?) {
+        self = ChatMode(rawValue: wire ?? "") ?? .chat
+    }
+
+    /// True when the turn may be handed rows that change the machine.
+    var mayAct: Bool { self == .build }
+}
+
+struct ChatChats: Codable, Equatable, Sendable {
+    var id: Int
+    var cursor: Int? = nil
+}
+
+struct ChatRosterRow: Codable, Equatable, Sendable, Identifiable {
+    /// HOST-MINTED, opaque, connection-scoped — the model-ref rule: a
+    /// chat's title is a person's sentence and outgrows any classic
+    /// buffer.
+    var ref: String
+    /// Converted, <= 31 bytes.
+    var label: String
+    /// "guest" | "host" — where it was TYPED. Carried rather than
+    /// inferred, because both faces now list both.
+    var origin: String
+    var project: String? = nil
+    var detail: String? = nil
+    var current: Bool? = nil
+
+    var id: String { ref }
+}
+
+struct ChatRoster: Codable, Equatable, Sendable {
+    var id: Int
+    var chats: [ChatRosterRow]
+    var more: Bool
+}
+
+struct ChatOpen: Codable, Equatable, Sendable {
+    var id: Int
+    var ref: String
+}
+
+struct ChatHistory: Codable, Equatable, Sendable {
+    var id: Int
+    /// Rows already received, counted from the END of the transcript.
+    var cursor: Int? = nil
+}
+
+struct ChatTranscriptRow: Codable, Equatable, Sendable {
+    /// person | model | tool | note — who said it, which is a drawing
+    /// fact rather than decoration.
+    var kind: String
+    var text: String
+}
+
+struct ChatTranscript: Codable, Equatable, Sendable {
+    var id: Int
+    var rows: [ChatTranscriptRow]
+    var more: Bool
+}
+
+struct ChatProjects: Codable, Equatable, Sendable {
+    var id: Int
+    var cursor: Int? = nil
+}
+
+struct ChatProjectRow: Codable, Equatable, Sendable, Identifiable {
+    var ref: String
+    var label: String
+    /// "host" | "guest" — where the authoritative copy lives. Absent
+    /// for a project that files chats and owns no code.
+    var home: String? = nil
+    var current: Bool? = nil
+
+    var id: String { ref }
+}
+
+struct ChatProjectRoster: Codable, Equatable, Sendable {
+    var id: Int
+    var projects: [ChatProjectRow]
+    var more: Bool
+}
+
+struct ChatProject: Codable, Equatable, Sendable {
+    var id: Int
+    /// select | none | create
+    var op: String
+    var ref: String? = nil
+    var name: String? = nil
+    /// With create: "host" or "guest". Absent is REFUSED, never
+    /// defaulted — see the contract on ChatProject.home.
+    var home: String? = nil
+}
+
+struct ChatSkills: Codable, Equatable, Sendable {
+    var id: Int
+}
+
+struct ChatSkillRow: Codable, Equatable, Sendable, Identifiable {
+    /// What a person types to load it, slash included. The command
+    /// rather than a minted ref: loading IS typing it into chat.send,
+    /// so the row hands the guest the exact bytes it will send back.
+    var command: String
+    var detail: String? = nil
+
+    var id: String { command }
+}
+
+struct ChatSkillRoster: Codable, Equatable, Sendable {
+    var id: Int
+    var skills: [ChatSkillRow]
+    var more: Bool
 }
 
 struct ChatDelta: Codable, Equatable, Sendable {
@@ -2038,6 +2183,33 @@ enum ControlMessageCodec {
                 try decoder.decode(ChatCancel.self, from: data))
         case "chat.reset":
             return .chatReset(try decoder.decode(ChatReset.self, from: data))
+        case "chat.chats":
+            return .chatChats(try decoder.decode(ChatChats.self, from: data))
+        case "chat.roster":
+            return .chatRoster(try decoder.decode(ChatRoster.self, from: data))
+        case "chat.open":
+            return .chatOpen(try decoder.decode(ChatOpen.self, from: data))
+        case "chat.history":
+            return .chatHistory(
+                try decoder.decode(ChatHistory.self, from: data))
+        case "chat.transcript":
+            return .chatTranscript(
+                try decoder.decode(ChatTranscript.self, from: data))
+        case "chat.projects":
+            return .chatProjects(
+                try decoder.decode(ChatProjects.self, from: data))
+        case "chat.projectroster":
+            return .chatProjectRoster(
+                try decoder.decode(ChatProjectRoster.self, from: data))
+        case "chat.project":
+            return .chatProject(
+                try decoder.decode(ChatProject.self, from: data))
+        case "chat.skills":
+            return .chatSkills(
+                try decoder.decode(ChatSkills.self, from: data))
+        case "chat.skillroster":
+            return .chatSkillRoster(
+                try decoder.decode(ChatSkillRoster.self, from: data))
         case "web.request":
             return .webRequest(try decoder.decode(WebRequest.self, from: data))
         case "web.response.begin":
@@ -2243,6 +2415,18 @@ enum ControlMessageCodec {
         case .chatResult(let m): return try tagged("chat.result", m)
         case .chatCancel(let m): return try tagged("chat.cancel", m)
         case .chatReset(let m): return try tagged("chat.reset", m)
+        case .chatChats(let m): return try tagged("chat.chats", m)
+        case .chatRoster(let m): return try tagged("chat.roster", m)
+        case .chatOpen(let m): return try tagged("chat.open", m)
+        case .chatHistory(let m): return try tagged("chat.history", m)
+        case .chatTranscript(let m): return try tagged("chat.transcript", m)
+        case .chatProjects(let m): return try tagged("chat.projects", m)
+        case .chatProjectRoster(let m):
+            return try tagged("chat.projectroster", m)
+        case .chatProject(let m): return try tagged("chat.project", m)
+        case .chatSkills(let m): return try tagged("chat.skills", m)
+        case .chatSkillRoster(let m):
+            return try tagged("chat.skillroster", m)
         case .webRequest(let m): return try tagged("web.request", m)
         case .webResponseBegin(let m):
             return try tagged("web.response.begin", m)

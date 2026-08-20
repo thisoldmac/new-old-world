@@ -168,6 +168,7 @@ nav:
           - Source authority: developer-guide/reference/source-authority.md
           - Repository map: developer-guide/reference/repository-map.md
           - Distribution and bundle standard: developer-guide/reference/distribution-standard.md
+          - MPW and the development starter pack: developer-guide/reference/development-starter-pack.md
           - Documentation standard: developer-guide/reference/documentation-standard.md
           - Generated AsyncAPI reference: generated/asyncapi.md
   - Engineering records:

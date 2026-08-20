@@ -1,6 +1,13 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
+    /// Version 14 lets a project create say its GROUND: `home` and
+    /// `toolchain` on the create operation. The version moves because a
+    /// v13 host would decode the new request minus those two fields and
+    /// silently mint a host-home, unpinned project against an explicit
+    /// "guest"/"guest-mpw" ask — exactly the silent wrong default this
+    /// slice exists to remove.
+    ///
     /// Version 12 adds a typed settlement read by semantic operation ID and
     /// makes a version mismatch observable as compatibility, not malformed
     /// data. A v12 companion can therefore name an older host once, before a
@@ -49,7 +56,7 @@ public enum AgentIntegrationLocalProtocol {
     /// edges, the host log's shape — rather than the row report. A v12
     /// companion would read the new result as a malformed row report, so
     /// the version moves.
-    public static let version = 13
+    public static let version = 14
     public static let maximumMessageBytes = 64 * 1024
 }
 
@@ -232,6 +239,10 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         // the UI now (034 G-2); this wire operation string stays
         // "development" on purpose — MCP tool names are a separate rename.
         case development = "development"
+        /// The person's saved conversations on this host — the loop's
+        /// other half. Independent of guest consent, like `projects`,
+        /// because the store is the modern Mac's own.
+        case chats = "chats"
     }
 
     public let version: Int
@@ -397,6 +408,7 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public var observeProcess: AgentIntegrationProcessSerial? = nil
     public var projectRequest: AgentIntegrationProjectRequest? = nil
     public var developmentRequest: AgentIntegrationDevelopmentRequest? = nil
+    public var chatRequest: AgentIntegrationChatRequest? = nil
 
     private init(requestID: UUID,
                  operation: Operation,
@@ -992,6 +1004,15 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         return request
     }
 
+    public static func chats(
+        _ chat: AgentIntegrationChatRequest,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = projected(.chats, requestID: requestID)
+        request.chatRequest = chat
+        return request
+    }
+
     public static func development(
         _ development: AgentIntegrationDevelopmentRequest,
         requestID: UUID = UUID()
@@ -1076,6 +1097,7 @@ public enum AgentIntegrationLocalResult: Equatable, Sendable {
     /// destroy the containment that makes a reference mean anything.
     case observeElements(AgentIntegrationElementObservationResult)
     case projects(AgentIntegrationProjectResult)
+    case chats(AgentIntegrationChatResult)
     case development(AgentIntegrationGuestRowReportResult)
 
     /// The operation is carried by this protocol and NOTHING SERVES IT YET.
@@ -1180,6 +1202,7 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     public var observeElementsResult:
         AgentIntegrationElementObservationResult? = nil
     public var projectResult: AgentIntegrationProjectResult? = nil
+    public var chatResult: AgentIntegrationChatResult? = nil
     public var developmentResult: AgentIntegrationGuestRowReportResult? = nil
     /// The operation exists here and no capability serves it yet. Set
     /// INSTEAD of any result, and counted with them: a response carrying
@@ -1627,6 +1650,12 @@ public struct AgentIntegrationLocalResponse: Codable, Equatable, Sendable {
     }
 
     public init(requestID: UUID,
+                chatResult: AgentIntegrationChatResult) {
+        self.init(empty: requestID)
+        self.chatResult = chatResult
+    }
+
+    public init(requestID: UUID,
                 developmentResult: AgentIntegrationGuestRowReportResult) {
         self.init(empty: requestID)
         self.developmentResult = developmentResult
@@ -1673,6 +1702,7 @@ public enum AgentIntegrationLocalCodec {
         // The walk that mints what those five address.
         "observeElementsResult",
         "projectResult",
+        "chatResult",
         "developmentResult",
         // Set INSTEAD of any of them, so it is counted with them.
         "notImplemented",
@@ -1790,6 +1820,7 @@ public enum AgentIntegrationLocalCodec {
             "observeProcess",
             "projectRequest",
             "developmentRequest",
+            "chatRequest",
             // Orthogonal to every operation, so it clears BOTH gates:
             // this allowlist, and the per-operation key set below.
             "guestSelector",
@@ -2453,6 +2484,14 @@ public enum AgentIntegrationLocalCodec {
                   project.isWellFormed else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Projects request does not match the schema")
+            }
+        case .chats:
+            expectedKeys = [
+                "version", "requestID", "operation", "chatRequest",
+            ]
+            guard let chat = request.chatRequest, chat.isWellFormed else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "Chats request does not match the schema")
             }
         case .development:
             expectedKeys = [

@@ -488,7 +488,11 @@ typedef enum {
     kChatAnswerStatus,                /* reply = the chat.status frame */
     kChatAnswerResult,                /* reply = the chat.result frame */
     kChatAnswerGap,                   /* reply = a reason; turn continues */
-    kChatAnswerError                  /* reply = a reason; turn is over */
+    kChatAnswerError,                 /* reply = a reason; turn is over */
+    kChatAnswerRoster,                /* reply = one saved-chats page */
+    kChatAnswerTranscript,            /* reply = one history page */
+    kChatAnswerProjects,              /* reply = one projects page */
+    kChatAnswerSkills                 /* reply = one skillroster page */
 } ChatAnswerKind;
 typedef void (*ConnChatNote)(int kind, const char *reply);
 ConnChatNote conn_set_chat_note(ConnChatNote fn);
@@ -506,11 +510,39 @@ ConnChatNote conn_set_chat_note(ConnChatNote fn);
 int now_wire_chat_providers(char *err, long cap);
 int now_wire_chat_model_page(const char *provider, long cursor,
                              char *err, long cap);
+/* mode is "chat", "plan" or "build"; NULL or empty sends none, which
+   the host reads as chat - the safe reading of silence. */
+int now_wire_chat_send_mode(const char *ref, const char *prompt,
+                            const char *mode, char *err, long cap);
 int now_wire_chat_send(const char *ref, const char *prompt,
                        char *err, long cap);
 int now_wire_chat_cancel(char *err, long cap);
 int now_wire_chat_reset(char *err, long cap);
+/* The sessions half. Each answers exactly one frame, the models-page
+   discipline: an ask carries its own cursor and the caller loops until
+   the answer says there is no more. Nothing here transfers a
+   transcript except now_wire_chat_history, and that one page at a
+   time from the END. */
+int now_wire_chat_chats(long cursor, char *err, long cap);
+int now_wire_chat_open(const char *ref, char *err, long cap);
+int now_wire_chat_history(long cursor, char *err, long cap);
+int now_wire_chat_projects(long cursor, char *err, long cap);
+/* The loadable-skills catalogue; a row's command is what a person
+   types (or a popup inserts) into the prompt to load it. */
+int now_wire_chat_skills(char *err, long cap);
+/* op is "select", "none" or "create"; ref names a project for select,
+   name and home describe one for create. home is "host" or "guest" and
+   the host REFUSES a create without it - see the contract. */
+int now_wire_chat_project(const char *op, const char *ref,
+                          const char *name, const char *home,
+                          char *err, long cap);
 Boolean now_wire_chat_turn_active(void);
+/* True while an ASK (catalog, models page, roster, history, projects,
+   open, project) is waiting for its answer. This family has ONE pending
+   slot, so a caller that issues a second ask orphans the first: its
+   answer reads as stale and its deadline goes with it. Ask this before
+   adding one that nobody is waiting on. */
+Boolean now_wire_chat_ask_pending(void);
 
 /* --- asking the HOST to show one of its own windows ---------------------
    One direction by definition, the cloud and chat rule: the subject is

@@ -39,6 +39,16 @@ final class AgentIntegrationHostAdapter {
     private let mirrorEngines: MirrorStateEngineRegistry?
     private let hostIssues: () -> [AgentIntegrationHostIssue]
     private let projectStore: ProjectStore?
+    /// Injected for the tests' sake only: a project create resolving a
+    /// guest-mpw pin must read what the GUEST measured, and a stub of
+    /// that read is the only honest way to test the resolution without
+    /// a live machine. nil means the real development-environment lane.
+    private let developmentEnvironmentOverride:
+        (() async -> AgentIntegrationGuestRowReportResult)?
+    /// The SAME store the Chat page and the guest wire read. One store,
+    /// three faces: what an agent lists here is what the person sees in
+    /// the sidebar and what the classic machine can open.
+    private let chatStore: ChatStore?
     private lazy var processControl = AgentIntegrationProcessControl(
         listener: listener,
         currentSessionID: { [unowned self] in connectedSessionID() },
@@ -209,7 +219,10 @@ final class AgentIntegrationHostAdapter {
         artifactApprovals: AgentIntegrationArtifactApprovalStore? = nil,
         mirrorEngines: MirrorStateEngineRegistry? = nil,
         hostIssues: @escaping () -> [AgentIntegrationHostIssue] = { [] },
-        projectStore: ProjectStore? = try? ProjectStore()
+        projectStore: ProjectStore? = try? ProjectStore(),
+        chatStore: ChatStore? = try? ChatStore(),
+        developmentEnvironmentOverride:
+            (() async -> AgentIntegrationGuestRowReportResult)? = nil
     ) {
         /* Compatibility hashes the running executable. Do that while the
            adapter is being constructed, before a local server can expose it:
@@ -226,9 +239,154 @@ final class AgentIntegrationHostAdapter {
         self.mirrorEngines = mirrorEngines
         self.hostIssues = hostIssues
         self.projectStore = projectStore
+        self.chatStore = chatStore
+        self.developmentEnvironmentOverride = developmentEnvironmentOverride
     }
 
-    func projects(_ request: AgentIntegrationProjectRequest)
+    /// The read a project create resolves its guest-mpw pin from — the
+    /// stub in tests, the live lane everywhere else.
+    private func readDevelopmentEnvironment() async
+        -> AgentIntegrationGuestRowReportResult {
+        if let developmentEnvironmentOverride {
+            return await developmentEnvironmentOverride()
+        }
+        return await developmentEnvironment()
+    }
+
+    /// The person's saved conversations, for an agent.
+    ///
+    /// Bounded exactly the way the wire is: a listing is a page, a
+    /// transcript is a page counted FROM THE END, and neither carries the
+    /// other's content. The guest pages that way because a 68030 cannot
+    /// hold a long chat; an agent pages that way because a context window
+    /// cannot either, and because one rule read by both faces is one rule
+    /// to get wrong.
+    func chats(_ request: AgentIntegrationChatRequest)
+        -> AgentIntegrationChatResult {
+        guard request.isWellFormed else {
+            return .unavailable(.init(
+                code: "now-chats-invalid-request",
+                message: "The chats request does not match its operation."))
+        }
+        guard let chatStore else {
+            return .unavailable(.init(
+                code: "now-chats-unavailable",
+                message: "Saved chats are unavailable on this Mac."))
+        }
+        /* An identifier a caller sent is a CLAIM. ChatID and
+           ChatProjectID validate their own shape, so a malformed one is
+           refused here by name rather than force-unwrapped into a crash
+           or looked up and missed. */
+        var chatID: ChatID?
+        if let raw = request.chatID {
+            guard let parsed = ChatID(rawValue: raw) else {
+                return .unavailable(.init(
+                    code: "now-chats-unknown-chat",
+                    message: "That is not a chat identifier."))
+            }
+            chatID = parsed
+        }
+        var projectID: ChatProjectID?
+        if let raw = request.projectID {
+            guard let parsed = ChatProjectID(rawValue: raw) else {
+                return .unavailable(.init(
+                    code: "now-chats-unknown-project",
+                    message: "That is not a chat-project identifier."))
+            }
+            projectID = parsed
+        }
+        do {
+            switch request.operation {
+            case .list:
+                let all = try chatStore.list()
+                let page = Self.page(all, cursor: request.cursor,
+                                     rows: Self.chatRows)
+                return .init(chats: page.items.map(Self.summary),
+                             more: page.more)
+            case .projects:
+                let all = try chatStore.listProjects()
+                let page = Self.page(all, cursor: request.cursor,
+                                     rows: Self.chatRows)
+                return .init(
+                    projects: page.items.map {
+                        AgentIntegrationChatProject(
+                            id: $0.id.rawValue, name: $0.name,
+                            home: $0.intendedHome?.rawValue)
+                    },
+                    more: page.more)
+            case .read:
+                let transcript = try chatStore.loadTranscript(chatID!)
+                /* From the END: the newest page first, older by asking
+                   again. The same arithmetic ChatWireService uses, and
+                   the reason is the same on both sides — what was just
+                   said is what a reader needs. */
+                let rows = transcript.rows
+                let taken = min(max(0, request.cursor ?? 0), rows.count)
+                let end = rows.count - taken
+                let start = max(0, end - Self.transcriptRows)
+                return .init(
+                    rows: rows[start..<end].map {
+                        AgentIntegrationChatRow(
+                            kind: $0.kind.rawValue, text: $0.text)
+                    },
+                    more: start > 0)
+            case .create:
+                let made = try chatStore.createChat(
+                    title: request.title ?? ChatStore.untitled,
+                    in: projectID,
+                    /* An agent's chat is filed as the HOST's, because the
+                       origin field answers "which machine was this typed
+                       at" and the answer is this one. It is not a claim
+                       about who typed it. */
+                    origin: .host)
+                return .init(chat: Self.summary(made))
+            case .file:
+                return .init(chat: Self.summary(
+                    try chatStore.move(chatID!, to: projectID)))
+            case .append:
+                var transcript = try chatStore.loadTranscript(chatID!)
+                /* Appended as a NOTE, not as the model. A note is what
+                   the page draws for something neither the person nor
+                   the model said, and an agent's message is exactly
+                   that: dressing it as the model's would put words in
+                   the mouth of the thing the person was talking to. It
+                   is also deliberately NOT added to `turns`, so the next
+                   model turn is not re-sent an agent's aside as if the
+                   assistant had said it. */
+                transcript.rows.append(StoredChatRow(
+                    kind: .note, text: request.text!,
+                    toolName: nil, toolOK: nil))
+                return .init(chat: Self.summary(
+                    try chatStore.saveTranscript(transcript, for: chatID!)))
+            }
+        } catch {
+            return .unavailable(.init(
+                code: "now-chats-failed",
+                message: "The saved chats could not be read or written."))
+        }
+    }
+
+    /// One page's worth of rows, and whether more remain.
+    private static func page<T>(_ all: [T], cursor: Int?, rows: Int)
+        -> (items: ArraySlice<T>, more: Bool) {
+        let start = min(max(0, cursor ?? 0), all.count)
+        let end = min(start + rows, all.count)
+        return (all[start..<end], end < all.count)
+    }
+
+    private static let chatRows = 25
+    private static let transcriptRows = 40
+
+    private static func summary(_ summary: ChatSummary)
+        -> AgentIntegrationChatSummary {
+        AgentIntegrationChatSummary(
+            id: summary.id.rawValue, title: summary.title,
+            origin: summary.whereTyped.rawValue,
+            projectID: summary.projectID?.rawValue,
+            turnCount: summary.turnCount, updatedAt: summary.updatedAt)
+    }
+
+    func projects(_ request: AgentIntegrationProjectRequest) async
         -> AgentIntegrationProjectResult {
         guard request.isWellFormed, let projectStore else {
             return request.isWellFormed ? .hostUnavailable : .init(
@@ -240,6 +398,27 @@ final class AgentIntegrationHostAdapter {
             case .list:
                 return .init(projects: try projectStore.list().map(projectSummary))
             case .create:
+                /* The GROUND first: a "guest" home is refused with the
+                   import path rather than silently minted host-home —
+                   ProjectStore.create's digest guard is the authority
+                   story, not an obstacle — and the toolchain choice
+                   resolves to a pin the guest's own build gate can
+                   pass. Both rules live in ProjectGround. */
+                if request.home == "guest" {
+                    let refusal = ProjectGround.Refusal.guestHome
+                    return .init(failure: .init(code: refusal.code,
+                                                message: refusal.message))
+                }
+                let pin: String
+                switch await ProjectGround.resolvePin(
+                    toolchain: request.toolchain,
+                    environment: { await self.readDevelopmentEnvironment() }) {
+                case .failure(let refusal):
+                    return .init(failure: .init(code: refusal.code,
+                                                message: refusal.message))
+                case .success(let resolved):
+                    pin = resolved
+                }
                 let name = request.name!
                 let changes = try request.changes!.map(projectChange)
                 let dataChanges = changes.filter {
@@ -258,19 +437,27 @@ final class AgentIntegrationHostAdapter {
                     throw ProjectStoreError.invalidProject(
                         "Every created project file requires type, creator and Finder flags.")
                 }
+                /* A short fixed product name, NOT the display name: a
+                   debug link output must leave room for PPCLink's
+                   .xcoff sidecar inside HFS's 31-byte component, and a
+                   64-character display name would fail that parse. */
+                let buildLines = ProjectGround.buildActionLines(
+                    dataWritePaths: paths, product: "Build/Product")
+                    .joined(separator: "\n")
                 let document = Data("""
                     CKPROJECT 1
                     id=\(identity)
                     name=\(name)
                     target=application
                     configuration=debug
-                    toolchain=unselected@0
+                    toolchain=\(pin)
                     product=Build/Product
                     type=APPL
                     creator=????
                     architecture=powerpc
                     \(fileLines)
                     \(infoLines)
+                    \(buildLines)
                     """.utf8)
                 let receipt = try projectStore.create(
                     name: name, home: .host, projectDocument: document,
@@ -328,6 +515,60 @@ final class AgentIntegrationHostAdapter {
         } catch {
             return .init(failure: .init(code: projectErrorCode(error),
                                        message: error.localizedDescription))
+        }
+    }
+
+    /// Mints the ProjectStore half of a chat-created project: a
+    /// host-home starter the guest's own MPW can build, grounded by the
+    /// same rules as an agent create. The chat wire carries no
+    /// toolchain and passes nil, so its pin comes from `ProjectGround`'s
+    /// one defaulting rule; the host sidebar's sheet passes the person's
+    /// explicit choice. A guest home is the same typed refusal story,
+    /// and either way the CHAT folder already exists — this is the code
+    /// half, not the folder.
+    func mintChatLinkedProject(name: String, home: ProjectHome,
+                               toolchain: String? = nil) async
+        -> Result<ProjectID, ProjectGround.Refusal> {
+        guard projectStore != nil else { return .failure(.storeUnavailable) }
+        if home == .guest { return .failure(.guestHome) }
+        let pin: String
+        switch await ProjectGround.resolvePin(
+            toolchain: toolchain,
+            environment: { await self.readDevelopmentEnvironment() }) {
+        case .failure(let refusal): return .failure(refusal)
+        case .success(let resolved): pin = resolved
+        }
+        let source = "Sources/Main.c"
+        let document = Data("""
+            CKPROJECT 1
+            id=\(String(repeating: "0", count: 32))
+            name=\(name)
+            target=application
+            configuration=debug
+            toolchain=\(pin)
+            product=Build/Product
+            type=APPL
+            creator=????
+            architecture=powerpc
+            file=\(source)
+            file-info=TEXT|MPS |0000|\(source)
+            \(ProjectGround.buildActionLines(
+                dataWritePaths: [source], product: "Build/Product")
+                .joined(separator: "\n"))
+            """.utf8)
+        do {
+            let receipt = try projectStore!.create(
+                name: name, home: .host, projectDocument: document,
+                files: [ProjectFileChange(
+                    path: source,
+                    fork: .data, type: "TEXT", creator: "MPS ",
+                    finderFlags: 0,
+                    contents: Data(
+                        "/* \(name) */\nint main(void) { return 0; }\n"
+                            .utf8))])
+            return .success(receipt.projectID)
+        } catch {
+            return .failure(.storeRefused(error.localizedDescription))
         }
     }
 

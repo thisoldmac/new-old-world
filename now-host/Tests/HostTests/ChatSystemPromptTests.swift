@@ -138,44 +138,133 @@ final class ChatSystemPromptTests: XCTestCase {
 
     func testProjectAuthorityNamesBothHomesAndDoesNotConflateWorkspaceTruth() {
         let result = health(guest: machine("pb1400c"))
-        let ordinary = ChatSystemPrompt.compose(
+        let whole = ChatSystemPrompt.compose(
             health: result, origin: .hostPane)
-        let development = ChatSystemPrompt.compose(
-            health: result, origin: .hostPane, development: true)
-        XCTAssertTrue(ordinary.contains(
-            "No project or Development tools are supplied"), ordinary)
-        XCTAssertTrue(development.contains("host-home project is authoritative"),
-                      development)
-        XCTAssertTrue(development.contains("guest-home project is authoritative"),
-                      development)
-        XCTAssertTrue(development.contains(
+
+        XCTAssertTrue(whole.contains("host-home project is authoritative"),
+                      whole)
+        XCTAssertTrue(whole.contains("guest-home project is authoritative"),
+                      whole)
+        XCTAssertTrue(whole.contains(
             "Never describe that workspace or its history mirror as current guest truth"),
-            development)
+            whole)
     }
 
-    func testDevelopmentToolsAreFilteredFromOrdinaryTurnsAndBoundedWhenRelevant() {
-        XCTAssertFalse(ChatDevelopmentContext.isRelevant([.user("how much RAM?")]))
-        XCTAssertTrue(ChatDevelopmentContext.isRelevant(
-            [.user("build me a memory monitor applet")]))
+    /* The keyword sniffer that used to hide these three is gone: it made
+       "build me a memory monitor applet" a project turn and "make a thing
+       that beeps" a machine-only one, and the model then correctly told
+       the person it had no project tools. */
+    func testEveryRegistryRowIsSuppliedIncludingTheProjectLane() {
+        let names = Set(ChatToolRendering.descriptors().map(\.name))
 
-        let ordinary = ChatToolRendering.descriptors(
-            include: ChatDevelopmentContext.capabilityFilter(development: false))
-        let development = ChatToolRendering.descriptors(
-            include: ChatDevelopmentContext.capabilityFilter(development: true))
-        let ordinaryNames = Set(ordinary.map(\.name))
-        XCTAssertFalse(ordinaryNames.contains("now_projects"))
-        XCTAssertFalse(ordinaryNames.contains("now_development_environment"))
-        XCTAssertFalse(ordinaryNames.contains("now_development"))
-        XCTAssertEqual(development.count - ordinary.count, 3)
+        XCTAssertTrue(names.contains("now_projects"))
+        XCTAssertTrue(names.contains("now_development_environment"))
+        XCTAssertTrue(names.contains("now_development"))
+        XCTAssertEqual(names.count,
+                       HostProjectionRegistry.hostFaces.projections.count)
+    }
 
-        let addedBytes = development.reduce(0) {
-            $0 + $1.name.utf8.count + $1.description.utf8.count
-                + $1.inputSchemaJSON.count
-        } - ordinary.reduce(0) {
+    /* Plan 029's R26 — "Development capability must not impose a large
+       prompt tax on ordinary machine-only Chat turns" — was carried by a
+       test that measured the DIFFERENCE the three project rows made,
+       which only existed because they were conditional. They are not any
+       more, so the requirement is measured where it now lives: the whole
+       catalog every turn pays for. The ceiling is a budget with room, not
+       a snapshot of today's bytes; if a new row breaks it, the question
+       R26 asks is whether that row's schema is too chatty. */
+    func testTheWholeCatalogStaysInsideItsPromptBudget() {
+        let tools = ChatToolRendering.descriptors()
+        let bytes = tools.reduce(0) {
             $0 + $1.name.utf8.count + $1.description.utf8.count
                 + $1.inputSchemaJSON.count
         }
-        XCTAssertLessThan(addedBytes, 6_000,
-                          "Development context must stay a compact opt-in lane")
+
+        XCTAssertLessThan(bytes, 90_000,
+                          "the tool catalog is \(bytes) bytes of every turn")
+    }
+
+    func testAToollessTurnIsToldSoAndKeepsTheProjectRulesOut() {
+        let result = health(guest: machine("pb1400c"))
+        let toolless = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane,
+            reach: .none(reason: "Codex answers from knowledge"))
+
+        XCTAssertTrue(toolless.contains("YOU HAVE NO TOOLS THIS TURN"),
+                      toolless)
+        XCTAssertTrue(toolless.contains("Codex answers from knowledge"),
+                      toolless)
+        // Nothing about using tools well, and no project authority: both
+        // are instructions for hands this turn does not have.
+        XCTAssertFalse(toolless.contains("Observe before acting"), toolless)
+        XCTAssertFalse(toolless.contains("host-home project"), toolless)
+    }
+
+    func testAWorkspaceTurnIsToldItHasTwoPlacesToTouch() {
+        let result = health(guest: machine("pb1400c"))
+        let workspace = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane,
+            reach: .workspace(summary: "Full access to now"))
+
+        XCTAssertTrue(workspace.contains("Full access to now"), workspace)
+        XCTAssertTrue(workspace.contains("now_"), workspace)
+        // The machine half survives: a workspace turn still drives a Mac.
+        XCTAssertTrue(workspace.contains("host-home project"), workspace)
+    }
+
+    /// The person's Settings instructions ride every turn, fenced and
+    /// subordinate to the touch rules — and an empty setting leaves no
+    /// fence behind, because an empty quoted block reads as a defect.
+    func testThePersonsInstructionsAreFencedAndAbsentWhenEmpty() {
+        let result = health(guest: machine("pb1400c"))
+        let with = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane,
+            instructions: "Answer tersely, and prefer HFS paths.")
+
+        XCTAssertTrue(with.contains("THE PERSON'S OWN INSTRUCTIONS"), with)
+        XCTAssertTrue(with.contains("prefer HFS paths"), with)
+        XCTAssertTrue(with.contains("the rules above win"), with)
+
+        let without = ChatSystemPrompt.compose(
+            health: result, origin: .hostPane)
+        XCTAssertFalse(without.contains("THE PERSON'S OWN INSTRUCTIONS"),
+                       without)
+    }
+
+    /// The conversation's project binds its build lane: a fresh run on
+    /// 2026-08-19 cross-compiled a guest-home project on the modern Mac
+    /// and shipped the wrong machine's binary, and scavenged another
+    /// project's sources from the shared workspace.
+    func testAProjectsGroundBindsTheBuildLane() {
+        let result = health(guest: machine("pb1400c"))
+        let guestHome = ChatSystemPrompt.compose(
+            health: result, origin: .guestWire,
+            project: ChatProjectContext(
+                name: "test 3", home: "guest", toolchainPin: nil))
+        XCTAssertTrue(guestHome.contains("\"test 3\""), guestHome)
+        XCTAssertTrue(guestHome.contains("BUILT THERE"), guestHome)
+        XCTAssertTrue(guestHome.contains("Do NOT cross-compile"), guestHome)
+        XCTAssertTrue(guestHome.contains("never reuse"), guestHome)
+
+        let hostUnknownPin = ChatSystemPrompt.compose(
+            health: result, origin: .guestWire,
+            project: ChatProjectContext(
+                name: "shelf", home: "host", toolchainPin: nil))
+        XCTAssertTrue(hostUnknownPin.contains("read Project.ckp"),
+                      hostUnknownPin)
+
+        let none = ChatSystemPrompt.compose(
+            health: result, origin: .guestWire)
+        XCTAssertFalse(none.contains("THIS CONVERSATION'S PROJECT"), none)
+    }
+
+    /// The naming rule binds the model's words, not the person's: a turn
+    /// must be told not to open by correcting what somebody calls their
+    /// own machine (measured 2026-08-19 — a model spent two turns
+    /// correcting "powerbook").
+    func testTheNamingRuleForbidsCorrectingThePerson() {
+        let result = health(guest: machine("pb1400c"))
+        let prompt = ChatSystemPrompt.compose(
+            health: result, origin: .guestWire)
+        XCTAssertTrue(prompt.contains("do not correct them"), prompt)
     }
 }

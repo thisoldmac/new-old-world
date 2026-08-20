@@ -40,6 +40,12 @@ typedef struct {
     char label[32];                   /* MacRoman, drawn in the popup */
     char state[16];                   /* serving | off | no-access | ... */
     char detail[96];                  /* MacRoman, display only */
+    /* full | workspace | none - how far a turn with this provider
+       reaches. ABSENT reads as "full": an older host that never heard
+       of the field serves providers that all have tools, and greying
+       the mode popup out on silence would take away something that
+       works. */
+    char tools[12];
 } ChatProviderRow;
 
 typedef struct {
@@ -47,6 +53,49 @@ typedef struct {
     char label[32];                   /* the model's name for humans */
     char detail[96];
 } ChatModelRow;
+
+/* The sessions half. A roster row is metadata ONLY - the contract
+   forbids transcript text here, and a buffer that could hold some
+   would be an invitation to send it. */
+enum {
+    kChatRosterRows = 12,             /* the roster answer's maxItems */
+    kChatHistoryRows = 24,            /* one history page's maxItems */
+    kChatMaxChats = 60,               /* accumulated across pages */
+    kChatMaxProjects = 24,
+    kChatMaxSkills = 12               /* the skillroster's maxItems */
+};
+
+typedef struct {
+    char ref[kChatRefMax + 1];        /* host-minted; never displayed */
+    char label[32];                   /* the chat's title, MacRoman */
+    char origin[8];                   /* "guest" | "host" - where typed */
+    char project[kChatRefMax + 1];    /* empty when the chat is loose */
+    char detail[48];                  /* "3 turns - 18 Aug", display only */
+    Boolean current;                  /* the conversation this link is on */
+} ChatRosterRow;
+
+typedef struct {
+    char ref[kChatRefMax + 1];
+    char label[32];
+    char home[8];                     /* "host" | "guest" | empty */
+    Boolean current;
+} ChatProjectRow;
+
+/* One loadable skill. The command IS the payload: choosing a row types
+   its command into the prompt, so there is no ref and no second
+   loading path to drift from the slash the host already serves. */
+typedef struct {
+    char command[41];                 /* "/name", the contract's cap */
+    char detail[64];                  /* display-only sentence, truncated */
+} ChatSkillRow;
+
+/* One transcript row as it arrives. `kind` is kChatLine* below: who
+   said it is a DRAWING fact, and the page right-aligns a person's
+   lines whether they were typed a second or a year ago. */
+typedef struct {
+    int kind;
+    char text[kChatCols];
+} ChatHistoryRow;
 
 /* Parsers. A malformed frame reads as failure (-1 / 0), never a crash;
    the wire has already matched type, id and which shape was asked. */
@@ -57,6 +106,19 @@ int chat_parse_providers(const char *reply, ChatProviderRow *rows,
    the person switched popups reads as stale, not as content. */
 int chat_parse_models(const char *reply, ChatModelRow *rows, int max,
                       int *more, char *provider_out, long provider_cap);
+/* One roster page: returns the row count and sets *more when another
+   page follows, the models-page shape exactly. */
+int chat_parse_roster(const char *reply, ChatRosterRow *rows, int max,
+                      int *more);
+int chat_parse_projects(const char *reply, ChatProjectRow *rows, int max,
+                        int *more);
+int chat_parse_skills(const char *reply, ChatSkillRow *rows, int max,
+                      int *more);
+/* One history page, OLDEST FIRST within the page so it appends in
+   reading order; *more means older rows remain further back. */
+int chat_parse_history(const char *reply, ChatHistoryRow *rows, int max,
+                       int *more);
+
 int chat_parse_delta(const char *reply, char *out, long cap, long *seq);
 int chat_parse_status(const char *reply, char *out, long cap);
 int chat_parse_result(const char *reply, int *ok,
@@ -105,6 +167,13 @@ typedef struct {
     int count;
     ChatLineFeed feed;
     Boolean answering;
+    /* The row selection lives HERE, with the rows it names, because a
+       line index is only meaningful against a particular ring state.
+       Held beside the page it highlights, it survived the ring rolling
+       under it: the band drew over whatever text had moved into those
+       slots and Copy returned it. */
+    int sel_anchor;                   /* -1 when nothing is selected */
+    int sel_extent;
 } ChatTranscript;
 
 void chat_transcript_reset(ChatTranscript *t);
@@ -120,5 +189,19 @@ void chat_transcript_add(ChatTranscript *t, int kind, const char *prefix,
 void chat_transcript_begin_answer(ChatTranscript *t);
 void chat_transcript_feed(ChatTranscript *t, const char *chunk);
 void chat_transcript_end_answer(ChatTranscript *t);
+
+/* --- the row selection ---------------------------------------------------
+   A selection is a claim about ROWS, so it moves with them. Every line
+   the ring drops takes the selection down one; the row that falls off
+   the top leaves it; a selection whose every row has gone is cleared.
+   Indices left standing still while the rows moved under them is the
+   defect this exists to make impossible - the band highlighted
+   unrelated text and Copy returned it. */
+void chat_transcript_select(ChatTranscript *t, int anchor, int extent);
+void chat_transcript_clear_selection(ChatTranscript *t);
+/* Both -1 when nothing is selected. Anchor is where the drag began;
+   extent is where it is now, and either may be the smaller. */
+int chat_transcript_sel_anchor(const ChatTranscript *t);
+int chat_transcript_sel_extent(const ChatTranscript *t);
 
 #endif /* NOW_CHAT_MODEL_H */

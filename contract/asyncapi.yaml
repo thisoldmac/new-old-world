@@ -374,6 +374,16 @@ channels:
       chatResult: { $ref: "#/components/messages/chatResult" }
       chatCancel: { $ref: "#/components/messages/chatCancel" }
       chatReset: { $ref: "#/components/messages/chatReset" }
+      chatChats: { $ref: "#/components/messages/chatChats" }
+      chatRoster: { $ref: "#/components/messages/chatRoster" }
+      chatOpen: { $ref: "#/components/messages/chatOpen" }
+      chatHistory: { $ref: "#/components/messages/chatHistory" }
+      chatTranscript: { $ref: "#/components/messages/chatTranscript" }
+      chatProjects: { $ref: "#/components/messages/chatProjects" }
+      chatProjectRoster: { $ref: "#/components/messages/chatProjectRoster" }
+      chatProject: { $ref: "#/components/messages/chatProject" }
+      chatSkills: { $ref: "#/components/messages/chatSkills" }
+      chatSkillRoster: { $ref: "#/components/messages/chatSkillRoster" }
       webRequest: { $ref: "#/components/messages/webRequest" }
       webResponseBegin: { $ref: "#/components/messages/webResponseBegin" }
       webResponseChunk: { $ref: "#/components/messages/webResponseChunk" }
@@ -1226,6 +1236,12 @@ operations:
       - $ref: "#/channels/control/messages/chatSend"
       - $ref: "#/channels/control/messages/chatCancel"
       - $ref: "#/channels/control/messages/chatReset"
+      - $ref: "#/channels/control/messages/chatChats"
+      - $ref: "#/channels/control/messages/chatOpen"
+      - $ref: "#/channels/control/messages/chatHistory"
+      - $ref: "#/channels/control/messages/chatProjects"
+      - $ref: "#/channels/control/messages/chatProject"
+      - $ref: "#/channels/control/messages/chatSkills"
     description: >
       The guest asks the HOST's language models. One direction by
       DEFINITION, the cloud rule: the family's subject is the modern
@@ -1260,6 +1276,45 @@ operations:
       chat.result ok:false busy — the answer sink is one transcript,
       the exec-busy rule.
 
+      MANY CONVERSATIONS, AND THEY OUTLIVE THE LINK. chat.chats lists
+      the host's saved chats one bounded page at a time; chat.open
+      makes one of them this connection's current conversation, and
+      chat.reset starts a fresh one. A chat typed at the classic
+      machine and a chat typed at the modern one are the same kind of
+      thing in the same store, and the roster says which by carrying
+      `origin` — a person at either screen can reach either, which is a
+      DELIBERATE widening of what the guest may see (2026-08-18) and
+      the reason `origin` exists rather than being inferred.
+
+      NOTHING OF A CHAT CROSSES UNTIL IT IS ASKED FOR. A roster row is
+      metadata — label, when, how many turns, its project, where it was
+      typed — and never transcript text. chat.open transfers no content
+      by itself; the guest then asks chat.history for one bounded page
+      at a time, newest LAST so a page reads in reading order, and the
+      guest stops when it has filled the ring it can draw. A long chat
+      opened on a 68030 over a slow wire therefore costs the lines a
+      person actually scrolls to, not the whole transcript — the
+      cloud.list discipline applied to content rather than to catalogs.
+
+      A PROJECT IS CHOSEN, MADE, OR DECLINED. chat.projects lists them
+      by host-minted ref, and chat.project either files the current
+      conversation under one, files it under none, or CREATES one. A
+      creation carries `home`, and that field is the one question this
+      product has that no other chat application does: whether the
+      project's authoritative copy lives on the classic Mac or on the
+      modern one. It is the Projects module's own ProjectHome, offered
+      from the machine the person is sitting at rather than only from
+      the other one.
+
+      A MODE IS A GATE, NOT A LABEL. chat.send carries `mode`, and the
+      host supplies the turn a DIFFERENT set of tools for each: chat
+      and plan get only the rows that change nothing, build gets the
+      whole catalog. The host decides that from what each capability
+      already declares about itself, so a mode cannot drift away from
+      what is actually safe as rows are added. An absent mode means
+      chat — the safest reading of silence, and what an older guest
+      that never heard of modes gets.
+
       chat.cancel asks the host to stop the streaming turn and is
       ALWAYS answered — chat.result ok:false "cancelled" if stopped,
       "not-running" if the host no longer has it. The unanswered-cancel
@@ -1272,6 +1327,10 @@ operations:
     channel: { $ref: "#/channels/control" }
     messages:
       - $ref: "#/channels/control/messages/chatCatalog"
+      - $ref: "#/channels/control/messages/chatRoster"
+      - $ref: "#/channels/control/messages/chatTranscript"
+      - $ref: "#/channels/control/messages/chatProjectRoster"
+      - $ref: "#/channels/control/messages/chatSkillRoster"
       - $ref: "#/channels/control/messages/chatDelta"
       - $ref: "#/channels/control/messages/chatStatus"
       - $ref: "#/channels/control/messages/chatResult"
@@ -1797,7 +1856,29 @@ components:
       payload: { $ref: "#/components/schemas/ChatCancel" }
     chatReset:
       name: chat.reset
-      payload: { $ref: "#/components/schemas/ChatReset" }
+    chatChats:
+      name: chat.chats
+    chatRoster:
+      name: chat.roster
+    chatOpen:
+      name: chat.open
+    chatHistory:
+      name: chat.history
+    chatTranscript:
+      name: chat.transcript
+    chatProjects:
+      name: chat.projects
+    chatProjectRoster:
+      name: chat.projectroster
+    chatProject:
+      name: chat.project
+      payload: { $ref: "#/components/schemas/ChatProject" }
+    chatSkills:
+      name: chat.skills
+      payload: { $ref: "#/components/schemas/ChatSkills" }
+    chatSkillRoster:
+      name: chat.skillroster
+      payload: { $ref: "#/components/schemas/ChatSkillRoster" }
     webRequest:
       name: web.request
       payload: { $ref: "#/components/schemas/WebRequest" }
@@ -3604,6 +3685,25 @@ components:
                   One converted sentence of state ("Signed in",
                   "Nothing answering at localhost:11434"). Display
                   only.
+              tools:
+                enum: [full, workspace, none]
+                description: >
+                  HOW FAR A TURN WITH THIS PROVIDER REACHES, so a guest
+                  can stop offering what it cannot deliver. full is the
+                  whole capability catalog through the host's harness;
+                  workspace is a runtime with its own file and command
+                  tools that reaches the same capabilities another way;
+                  none is a text-only relay that cannot look at the
+                  machine at all.
+
+                  Absent means unknown, and a guest reads that as full
+                  rather than none — an older host that never heard of
+                  this field serves the four API providers, all of which
+                  have tools, and a page that greyed out its mode popup
+                  on silence would take away something that works. The
+                  cost of being wrong the other way is a mode popup that
+                  offers Build to a model with no hands, which is the
+                  defect this field exists to end (metal, 2026-08-19).
         provider:
           type: string
           maxLength: 24
@@ -3670,6 +3770,16 @@ components:
             pages. Unknown or stale refs are answered chat.result
             ok:false unknown-model — a well-formed refusal, never a
             protocol error, which is what keeps the catalog additive.
+        mode:
+          enum: [chat, plan, build]
+          description: >
+            WHAT THIS TURN MAY DO, and a gate rather than a label: the
+            host supplies chat and plan only the capabilities that
+            change nothing, and build the whole catalog. plan differs
+            from chat in what the model is ASKED for — a written plan —
+            not in what it can reach. Absent means chat, which is both
+            the safest reading of silence and what an older guest that
+            never heard of modes gets.
         prompt:
           type: string
           maxLength: 512
@@ -3756,6 +3866,285 @@ components:
         shot (the exec.result rule, borrowed with its reason). Exactly
         one per chat.send, and the answer shape for chat.cancel and
         chat.reset too.
+    ChatChats:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: chat.chats }
+        id: { type: integer }
+        cursor:
+          type: integer
+          description: >
+            Continue the listing from this row index (the cloud.list
+            shape). Absent means the start, which is the most recently
+            touched chat.
+      description: >
+        List the host's saved chats, newest first. Metadata only — a
+        roster never carries transcript text, which is what makes it
+        affordable to draw a sidebar on a machine that cannot hold the
+        chats it is listing.
+    ChatRoster:
+      type: object
+      required: [type, id, chats, more]
+      additionalProperties: false
+      properties:
+        type: { const: chat.roster }
+        id: { type: integer, description: Echoes the chat.chats id. }
+        chats:
+          type: array
+          maxItems: 12
+          description: >
+            One page. 12 rows is the FRAME bound, not the store's;
+            `more` continues it. An empty page with more:false is an
+            honest "no saved chats", not a refusal.
+          items:
+            type: object
+            required: [ref, label, origin]
+            additionalProperties: false
+            properties:
+              ref:
+                type: string
+                maxLength: 8
+                description: >
+                  HOST-MINTED reference chat.open takes back. Opaque,
+                  connection-scoped, never shown to a person — the
+                  model-ref rule, for the same reason: a chat's title is
+                  a person's sentence and outgrows any classic buffer.
+              label:
+                type: string
+                description: >
+                  The chat's title FOR HUMANS, converted by the host
+                  (MacRoman-expressible, <= 31 bytes).
+              origin:
+                enum: [guest, host]
+                description: >
+                  WHERE THIS CHAT WAS TYPED. guest means at a classic
+                  machine, host means at the modern Mac. Carried rather
+                  than inferred because both are listed to both faces
+                  (2026-08-18) and a person is entitled to know they are
+                  about to open something they wrote somewhere else.
+              project:
+                type: string
+                maxLength: 8
+                description: >
+                  The chat.projects ref of the project this chat is
+                  filed under. Absent means a loose chat.
+              detail:
+                type: string
+                description: >
+                  One converted display-only sentence — when it was last
+                  touched, how many turns. Never transcript text.
+              current:
+                type: boolean
+                description: >
+                  True for the conversation this connection is on right
+                  now, so a sidebar can mark it without keeping its own
+                  idea of which that is.
+        more:
+          type: boolean
+          description: >
+            Another page follows at cursor + the rows received so far.
+    ChatOpen:
+      type: object
+      required: [type, id, ref]
+      additionalProperties: false
+      properties:
+        type: { const: chat.open }
+        id: { type: integer }
+        ref:
+          type: string
+          maxLength: 8
+          description: >
+            A roster ref. Unknown or stale refs are answered chat.result
+            ok:false unknown-model — the catalog rule, one refusal
+            vocabulary for every stale ref in this family.
+      description: >
+        Make a saved chat this connection's current conversation. The
+        answer is a chat.result and NOTHING ELSE: no transcript is
+        pushed, because the guest decides how much of it it can draw.
+        Refused busy while a turn streams (cancel first) — the
+        chat.reset rule, for the same race.
+    ChatHistory:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: chat.history }
+        id: { type: integer }
+        cursor:
+          type: integer
+          description: >
+            How many rows from the END of the transcript have already
+            been received. Absent means the newest page. Counting from
+            the end rather than the start is what makes an open cheap:
+            a person sees the last thing said first, and pays for older
+            lines only by scrolling to them.
+      description: >
+        One page of the CURRENT conversation's transcript.
+    ChatTranscript:
+      type: object
+      required: [type, id, rows, more]
+      additionalProperties: false
+      properties:
+        type: { const: chat.transcript }
+        id: { type: integer, description: Echoes the chat.history id. }
+        rows:
+          type: array
+          maxItems: 24
+          description: >
+            One page, oldest first WITHIN the page so it draws in
+            reading order, bounded by MEASURED encoded bytes against
+            the 4 KB control cap — the chat.delta rule, because a
+            person's turn and a model's answer are both unbounded text.
+          items:
+            type: object
+            required: [kind, text]
+            additionalProperties: false
+            properties:
+              kind:
+                enum: [person, model, tool, note]
+                description: >
+                  Who said it, which is a DRAWING fact: the page
+                  right-aligns a person's lines and marks the rest.
+              text:
+                type: string
+                description: Converted by the host, as every string is.
+        more:
+          type: boolean
+          description: >
+            Older rows remain; ask again with cursor + the rows
+            received so far.
+    ChatProjects:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: chat.projects }
+        id: { type: integer }
+        cursor: { type: integer }
+      description: List the projects a chat may be filed under.
+    ChatProjectRoster:
+      type: object
+      required: [type, id, projects, more]
+      additionalProperties: false
+      properties:
+        type: { const: chat.projectroster }
+        id: { type: integer }
+        projects:
+          type: array
+          maxItems: 12
+          items:
+            type: object
+            required: [ref, label]
+            additionalProperties: false
+            properties:
+              ref: { type: string, maxLength: 8 }
+              label:
+                type: string
+                description: Converted, <= 31 bytes.
+              home:
+                enum: [host, guest]
+                description: >
+                  Where the project's AUTHORITATIVE copy lives. Absent
+                  for a project that files chats and owns no code.
+              current:
+                type: boolean
+                description: >
+                  True for the project this connection's conversation is
+                  filed under.
+        more: { type: boolean }
+    ChatProject:
+      type: object
+      required: [type, id, op]
+      additionalProperties: false
+      properties:
+        type: { const: chat.project }
+        id: { type: integer }
+        op:
+          enum: [select, none, create]
+          description: >
+            select files the current conversation under `ref`; none
+            makes it loose; create makes a project and files it there.
+        ref:
+          type: string
+          maxLength: 8
+          description: With select — a chat.projects ref.
+        name:
+          type: string
+          maxLength: 63
+          description: >
+            With create — the project's name as typed at the classic
+            machine. MacRoman by construction; the host is the side
+            that can spell both alphabets.
+        home:
+          enum: [host, guest]
+          description: >
+            With create — WHERE THE PROJECT LIVES. guest means the
+            classic machine holds the authoritative copy and agent
+            edits happen in a recoverable host workspace until a
+            separately authorised promotion; host means New Old World's
+            own Projects storage on the modern Mac holds it. Absent is
+            refused rather than defaulted: this is the question the
+            product exists to ask, and guessing it wrong puts somebody's
+            source on the wrong machine.
+      description: >
+        Answered by a chat.result. A create is answered ok and the
+        guest re-asks chat.projects for the ref it minted — a listing is
+        the one place refs are minted, so there is never a second
+        minter.
+    ChatSkills:
+      type: object
+      required: [type, id]
+      additionalProperties: false
+      properties:
+        type: { const: chat.skills }
+        id: { type: integer }
+      description: >
+        List the skills a conversation can load - the same catalogue
+        the host already prints into every system prompt and serves
+        to /skills. Metadata only, and small by construction: the
+        shipped tree is a handful of rows, so one page carries it.
+
+    ChatSkillRoster:
+      type: object
+      required: [type, id, skills, more]
+      additionalProperties: false
+      properties:
+        type: { const: chat.skillroster }
+        id: { type: integer, description: Echoes the chat.skills id. }
+        skills:
+          type: array
+          maxItems: 12
+          description: >
+            One page; 12 rows is the FRAME bound and `more` continues
+            it. An empty page with more:false is an honest "no skills
+            shipped", not a refusal.
+          items:
+            type: object
+            required: [command]
+            additionalProperties: false
+            properties:
+              command:
+                type: string
+                maxLength: 40
+                description: >
+                  What a person types to load it, slash included -
+                  "/classic-mac-carbon-ui". The COMMAND rather than a
+                  minted ref, deliberately: loading a skill IS typing
+                  its command into chat.send, so the row hands the
+                  guest exactly the bytes it will send back, and no
+                  second loading path exists to drift.
+              detail:
+                type: string
+                description: >
+                  One converted display-only sentence of what it is
+                  for (MacRoman-expressible, truncated by the host).
+        more: { type: boolean }
+      description: >
+        Answered to chat.skills. The catalogue is host truth - the
+        guest never caches it across connections.
+
     ChatCancel:
       type: object
       required: [type, id]

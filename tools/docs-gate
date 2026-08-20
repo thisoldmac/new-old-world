@@ -680,11 +680,15 @@ def check_distribution_profile(root: Path, feature_catalog: dict,
         )
 
     excluded_inputs = profile.get("excluded_inputs", {})
+    required_exclusions = {"codekitten", "mpw_starter_pack"}
     if (not isinstance(excluded_inputs, dict)
-            or set(excluded_inputs) != {"codekitten"}
-            or not str(excluded_inputs.get("codekitten", {}).get("reason") or "").strip()):
+            or set(excluded_inputs) != required_exclusions
+            or any(not str(excluded_inputs.get(key, {}).get("reason")
+                           or "").strip()
+                   for key in required_exclusions)):
         errors.append(
-            "docs/distribution-profile.yaml: CodeKitten must remain an explicit excluded input"
+            "docs/distribution-profile.yaml: CodeKitten and the MPW starter pack "
+            "must remain explicit excluded inputs"
         )
 
     output_component_refs: dict[str, set[str]] = {key: set() for key in components}

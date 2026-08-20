@@ -20,6 +20,7 @@ final class OpenAICompatibleChatProvider: ChatProvider, @unchecked Sendable {
 
     let id: String
     let label: String
+    let toolReach = ChatToolReach.harness
     private let base: URL
     private let auth: Auth
     /// Local runtimes get probed; remote services with keys do not

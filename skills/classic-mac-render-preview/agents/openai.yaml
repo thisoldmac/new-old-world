@@ -1,0 +1,4 @@
+interface:
+  display_name: "Classic Mac Render Preview"
+  short_description: "Render capability-gated Classic Mac UI previews"
+  default_prompt: "Use $classic-mac-render-preview to validate and render this UI against a specific classic Mac target. Default to that target's native-era chrome and control primitives unless I explicitly request a cross-era style override. Declare whether the named application state is verified, an evidence-backed prototype, or a design concept; do not infer product behavior from platform capability."

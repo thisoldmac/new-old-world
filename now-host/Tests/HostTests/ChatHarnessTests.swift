@@ -11,6 +11,9 @@ import XCTest
 private final class ScriptedChatProvider: ChatProvider, @unchecked Sendable {
     let id = "fake"
     let label = "Fake"
+    /// Overridable: the harness asks the provider what it can reach, so
+    /// a reach is a thing this double must be able to lie about.
+    var toolReach = ChatToolReach.harness
     private let lock = NSLock()
     private var script: [[ChatStreamEvent]]
     private(set) var requests: [ChatCompletionRequest] = []
@@ -169,6 +172,14 @@ private final class EventLog: @unchecked Sendable {
         for case .finished(let outcome) in events { return outcome }
         return nil
     }
+
+    func skillLoads() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        var names: [String] = []
+        for case .skillLoaded(let name) in events { names.append(name) }
+        return names
+    }
 }
 
 private func toolCallEvents(_ name: String, arguments: String = "{}")
@@ -230,6 +241,51 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertEqual(recorded[0].face, .chat)
         XCTAssertEqual(recorded[0].capability, "now_list_processes")
         XCTAssertEqual(recorded[0].outcome, .answered)
+    }
+
+    /// Skills are self-service: the model calls chat_load_skill, the
+    /// body comes back as the TOOL RESULT (loading is reading), and the
+    /// caller hears skillLoaded so later turns carry it in the prompt.
+    /// A wrong name is an error the model reads, never a crash.
+    func testTheModelLoadsASkillItselfAndTheBodyIsTheResult() async {
+        let provider = ScriptedChatProvider([
+            toolCallEvents(ChatHarness.loadSkillToolName,
+                           arguments: #"{"name": "carbon-craft"}"#),
+            [.textDelta("Applying it."), .finished(.endTurn)],
+        ])
+        let registry = ChatProviderRegistry()
+        registry.register(provider)
+        let harness = ChatHarness(
+            registry: registry,
+            makeClient: { _ in StubMachineClient(access: .fullAccess) },
+            audit: AuditSpy(),
+            skills: ChatSkillLibrary(skills: [ChatSkill(
+                name: "carbon-craft", description: "Carbon craft rules",
+                body: "A UPP is never a cast on this runtime.")]))
+        let log = EventLog()
+        await harness.run(
+            conversation: "s", wireModelID: "fake/m",
+            transcript: [.user("build me a window")],
+            addressing: nil, origin: .hostPane, events: log.sink)
+        _ = log.wait(self)
+
+        XCTAssertEqual(log.outcome()?.ok, true)
+        XCTAssertTrue(log.skillLoads().contains("carbon-craft"),
+                      "the caller must hear the load to keep it")
+        // The tool result the model read IS the skill body.
+        let toolTurn = log.outcome()?.appended.first { $0.role == .tool }
+        guard case .toolResult(_, let text, _, let isError)?
+            = toolTurn?.content.first else {
+            return XCTFail("the load answers as a tool result")
+        }
+        XCTAssertFalse(isError)
+        XCTAssertTrue(text.contains("A UPP is never a cast"), text)
+        // The prompt told the model to load skills itself, not to ask.
+        XCTAssertTrue(provider.requests[0].system
+            .contains(ChatHarness.loadSkillToolName),
+            provider.requests[0].system)
+        XCTAssertTrue(provider.requests[0].tools
+            .contains { $0.name == ChatHarness.loadSkillToolName })
     }
 
     func testConsentDenialBecomesAToolErrorAndTheChatContinues() async {
@@ -364,6 +420,168 @@ final class ChatHarnessTests: XCTestCase {
         XCTAssertTrue(provider.requests[0].system.contains("Plain text only"))
         XCTAssertTrue(
             provider.requests[0].system.contains("sitting AT the classic"))
+    }
+
+    /* The declaration is the whole point of the reach work, so it is
+       asserted rather than assumed: a provider that says it has no
+       hands must be SENT none and TOLD so. Without this, the harness
+       can go back to rendering the registry for a runtime spawned with
+       `--tools ""` and every test still passes — which is how the
+       original defect read as working code. */
+    func testAToollessProviderIsSentNoToolsAndToldWhy() async {
+        let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+        provider.toolReach = .none(reason: "Codex answers from knowledge")
+        let harness = makeHarness(provider: provider)
+        let log = EventLog()
+
+        await harness.run(
+            conversation: "t", wireModelID: "fake/m",
+            transcript: [.user("what is in the process table?")],
+            addressing: nil, origin: .hostPane, events: log.sink)
+        _ = log.wait(self)
+
+        XCTAssertTrue(provider.requests[0].tools.isEmpty,
+                      "a provider that cannot use tools was sent some")
+        XCTAssertTrue(
+            provider.requests[0].system.contains("YOU HAVE NO TOOLS"),
+            provider.requests[0].system)
+        XCTAssertTrue(
+            provider.requests[0].system.contains(
+                "Codex answers from knowledge"),
+            provider.requests[0].system)
+    }
+
+    /// A workspace provider reaches the same capabilities by another
+    /// road (MCP), so a second copy in the request would be two names
+    /// for one act — and the turn must still be told where it is.
+    func testAWorkspaceProviderIsSentNoDescriptorsButKeepsItsFrame() async {
+        let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+        provider.toolReach = .workspace(summary: "Full access to now")
+        let harness = makeHarness(provider: provider)
+        let log = EventLog()
+
+        await harness.run(
+            conversation: "t", wireModelID: "fake/m",
+            transcript: [.user("build the guest")],
+            addressing: nil, origin: .hostPane, events: log.sink)
+        _ = log.wait(self)
+
+        XCTAssertTrue(provider.requests[0].tools.isEmpty)
+        XCTAssertTrue(
+            provider.requests[0].system.contains("Full access to now"),
+            provider.requests[0].system)
+    }
+
+    /// The harness's own loop is unchanged for the four providers that
+    /// use it — and it is sent the WHOLE registry, project rows and all.
+    func testAHarnessProviderIsSentEveryRegistryRow() async {
+        let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+        let harness = makeHarness(provider: provider)
+        let log = EventLog()
+
+        await harness.run(
+            conversation: "t", wireModelID: "fake/m",
+            transcript: [.user("hello")],
+            addressing: nil, origin: .hostPane, events: log.sink)
+        _ = log.wait(self)
+
+        let names = Set(provider.requests[0].tools.map(\.name))
+        // Every registry row, plus the harness's own skill loader
+        // (self-service skills, 2026-08-19).
+        XCTAssertEqual(names.count,
+                       HostProjectionRegistry.hostFaces.projections.count + 1)
+        XCTAssertTrue(names.contains("now_development"))
+        XCTAssertTrue(names.contains(ChatHarness.loadSkillToolName))
+    }
+
+    // MARK: - Modes are gates
+
+    /* The claim the contract makes in capitals: "A MODE IS A GATE, NOT
+       A LABEL". If this only checked the prompt text, a mode that
+       supplied the whole catalog would pass while telling the model to
+       behave — which is the shape of failure this repository has
+       already paid for elsewhere. So it checks the CATALOG. */
+    func testChatAndPlanAreHandedNoRowThatCanChangeTheMachine() async {
+        for mode in [ChatMode.chat, .plan] {
+            let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+            let harness = makeHarness(provider: provider)
+            let log = EventLog()
+
+            await harness.run(
+                conversation: "t", wireModelID: "fake/m",
+                transcript: [.user("have a look")],
+                addressing: nil, origin: .hostPane, mode: mode,
+                events: log.sink)
+            _ = log.wait(self)
+
+            let names = Set(provider.requests[0].tools.map(\.name))
+            XCTAssertFalse(names.isEmpty, "\(mode) was given nothing at all")
+            XCTAssertFalse(names.contains("now_guest_files_mutate"), "\(mode)")
+            XCTAssertFalse(names.contains("now_launch_software"), "\(mode)")
+            XCTAssertFalse(names.contains("now_control_act"), "\(mode)")
+            XCTAssertTrue(names.contains("now_list_processes"), "\(mode)")
+            // Every row it DID get says of itself that it changes
+            // nothing — asserted against the registry, not a list here.
+            // The one non-registry row is the skill loader, which is in
+            // every mode because loading a skill changes nothing on the
+            // machine.
+            for name in names {
+                if name == ChatHarness.loadSkillToolName { continue }
+                let projection = try? XCTUnwrap(
+                    HostProjectionRegistry.hostFaces.projection(named: name))
+                XCTAssertTrue(
+                    ChatToolRendering.isReadOnly(projection!),
+                    "\(mode) was handed \(name), which does not claim to be "
+                        + "read-only")
+            }
+        }
+    }
+
+    func testBuildGetsTheWholeCatalog() async {
+        let provider = ScriptedChatProvider([[.finished(.endTurn)]])
+        let harness = makeHarness(provider: provider)
+        let log = EventLog()
+
+        await harness.run(
+            conversation: "t", wireModelID: "fake/m",
+            transcript: [.user("change it")],
+            addressing: nil, origin: .hostPane, mode: .build,
+            events: log.sink)
+        _ = log.wait(self)
+
+        // The whole registry, plus the one harness-owned row: the
+        // skill loader (self-service skills, 2026-08-19).
+        XCTAssertEqual(
+            provider.requests[0].tools.count,
+            HostProjectionRegistry.hostFaces.projections.count + 1)
+        XCTAssertTrue(provider.requests[0].tools
+            .contains { $0.name == ChatHarness.loadSkillToolName })
+    }
+
+    /// Absent and unrecognised both land on the tier that changes
+    /// nothing. An older guest sends no mode; a newer one could send a
+    /// word this build has never heard of.
+    func testAnUnknownModeReadsAsTheSafeOne() {
+        XCTAssertEqual(ChatMode(wire: nil), .chat)
+        XCTAssertEqual(ChatMode(wire: ""), .chat)
+        XCTAssertEqual(ChatMode(wire: "BUILD"), .chat)
+        XCTAssertEqual(ChatMode(wire: "supervisor"), .chat)
+        XCTAssertEqual(ChatMode(wire: "build"), .build)
+    }
+
+    /// Silence reads as UNSAFE. Untestable through the registry — every
+    /// row there declares the hint — so it is asserted over the reading
+    /// itself, which is the only place the default lives.
+    func testARowThatDoesNotSaySoIsNotTreatedAsReadOnly() {
+        XCTAssertTrue(ChatToolRendering.isReadOnly(
+            descriptor: ["annotations": ["readOnlyHint": true]]))
+        XCTAssertFalse(ChatToolRendering.isReadOnly(
+            descriptor: ["annotations": ["readOnlyHint": false]]))
+        XCTAssertFalse(ChatToolRendering.isReadOnly(
+            descriptor: ["annotations": [:] as [String: Any]]),
+            "a row that forgot to declare was treated as safe")
+        XCTAssertFalse(ChatToolRendering.isReadOnly(descriptor: [:]),
+                       "a row with no annotations was treated as safe")
     }
 
     func testToolSchemasCarryNoTopLevelCombinators() throws {

@@ -262,6 +262,214 @@ static void test_transcript_streams_and_rolls(void)
     }
 }
 
+/* The sessions half. Frames are written the way the host writes them,
+   which is the one thing a parser test must not invent - these are the
+   shapes ChatServingTests asserts on the other side. */
+
+static void test_roster_rows_carry_origin_and_never_transcript_text(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.roster\",\"id\":7,\"chats\":["
+        "{\"ref\":\"c1\",\"label\":\"hello from the classic Mac\","
+        "\"origin\":\"guest\",\"detail\":\"3 turns - 18 Aug\","
+        "\"current\":true},"
+        "{\"ref\":\"c2\",\"label\":\"typed upstairs\","
+        "\"origin\":\"host\",\"project\":\"p3\"}"
+        "],\"more\":true}";
+    ChatRosterRow rows[kChatRosterRows];
+    int more = 0;
+    int n = chat_parse_roster(reply, rows, kChatRosterRows, &more);
+
+    assert(n == 2);
+    assert(more == 1);
+    assert(strcmp(rows[0].ref, "c1") == 0);
+    assert(strcmp(rows[0].origin, "guest") == 0);
+    assert(rows[0].current);
+    assert(rows[0].project[0] == '\0');
+    assert(strcmp(rows[1].origin, "host") == 0);
+    assert(strcmp(rows[1].project, "p3") == 0);
+    assert(!rows[1].current);
+}
+
+/* Silence about origin must not claim this machine typed it: the chat
+   a person needs warning about is the one they wrote somewhere else. */
+static void test_a_row_with_no_origin_is_not_claimed_as_local(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.roster\",\"id\":1,\"chats\":["
+        "{\"ref\":\"c1\",\"label\":\"older than the field\"}"
+        "],\"more\":false}";
+    ChatRosterRow rows[2];
+
+    assert(chat_parse_roster(reply, rows, 2, NULL) == 1);
+    assert(strcmp(rows[0].origin, "host") == 0);
+}
+
+static void test_projects_carry_their_home(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.projectroster\",\"id\":9,\"projects\":["
+        "{\"ref\":\"p1\",\"label\":\"Beeper\",\"home\":\"guest\","
+        "\"current\":true},"
+        "{\"ref\":\"p2\",\"label\":\"Notes\",\"home\":\"host\"}"
+        "],\"more\":false}";
+    ChatProjectRow rows[kChatMaxProjects];
+    int more = 1;
+    int n = chat_parse_projects(reply, rows, kChatMaxProjects, &more);
+
+    assert(n == 2);
+    assert(more == 0);
+    assert(strcmp(rows[0].home, "guest") == 0);
+    assert(rows[0].current);
+    assert(strcmp(rows[1].home, "host") == 0);
+}
+
+static void test_skills_carry_command_and_detail(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.skillroster\",\"id\":4,\"skills\":["
+        "{\"command\":\"/classic-mac-carbon-ui\","
+        "\"detail\":\"Windows, controls, redraw\"},"
+        "{\"command\":\"/classic-mac-carbon-platform\"},"
+        "{\"detail\":\"a row with no command is skipped\"}"
+        "],\"more\":false}";
+    ChatSkillRow rows[kChatMaxSkills];
+    int more = 1;
+    int n = chat_parse_skills(reply, rows, kChatMaxSkills, &more);
+
+    assert(n == 2);
+    assert(more == 0);
+    assert(strcmp(rows[0].command, "/classic-mac-carbon-ui") == 0);
+    assert(strcmp(rows[0].detail, "Windows, controls, redraw") == 0);
+    assert(strcmp(rows[1].command, "/classic-mac-carbon-platform") == 0);
+    assert(rows[1].detail[0] == '\0');
+}
+
+static void test_history_keeps_who_said_it(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.transcript\",\"id\":3,\"rows\":["
+        "{\"kind\":\"person\",\"text\":\"what is running?\"},"
+        "{\"kind\":\"tool\",\"text\":\"now_list_processes\"},"
+        "{\"kind\":\"model\",\"text\":\"Finder and NOW.\"},"
+        "{\"kind\":\"seance\",\"text\":\"from a later build\"}"
+        "],\"more\":true}";
+    ChatHistoryRow rows[kChatHistoryRows];
+    int more = 0;
+    int n = chat_parse_history(reply, rows, kChatHistoryRows, &more);
+
+    assert(n == 4);
+    assert(more == 1);
+    assert(rows[0].kind == kChatLinePerson);
+    assert(strcmp(rows[0].text, "what is running?") == 0);
+    assert(rows[1].kind == kChatLineMarker);
+    assert(rows[2].kind == kChatLineModel);
+    /* A kind from a later build is CONTENT: dropping it holes the
+       transcript, and drawing it as the person's puts words in their
+       mouth. */
+    assert(rows[3].kind == kChatLineModel);
+}
+
+static void test_a_malformed_page_reads_as_failure(void)
+{
+    ChatRosterRow rows[2];
+    ChatHistoryRow history[2];
+
+    assert(chat_parse_roster("{\"type\":\"chat.roster\"}", rows, 2, NULL)
+           == -1);
+    assert(chat_parse_history("{}", history, 2, NULL) == -1);
+    assert(chat_parse_roster(NULL, rows, 2, NULL) == -1);
+}
+
+/* The reach a provider reports, and what SILENCE about it means. An
+   older host sends no `tools`, and every provider such a host serves
+   has them — so absent must read as full, or the page would grey out a
+   mode popup that works. */
+static void test_provider_reach_defaults_to_full_when_absent(void)
+{
+    const char *reply =
+        "{\"type\":\"chat.catalog\",\"id\":1,\"providers\":["
+        "{\"provider\":\"claude\",\"label\":\"Claude\","
+        "\"state\":\"serving\",\"tools\":\"none\"},"
+        "{\"provider\":\"anthropic\",\"label\":\"Anthropic\","
+        "\"state\":\"serving\"}"
+        "]}";
+    ChatProviderRow rows[kChatMaxProviders];
+    int n = chat_parse_providers(reply, rows, kChatMaxProviders);
+
+    assert(n == 2);
+    assert(strcmp(rows[0].tools, "none") == 0);
+    assert(strcmp(rows[1].tools, "full") == 0);
+}
+
+/* A selection is a claim about ROWS, and the ring moves rows. Held as
+   bare line indices beside the transcript rather than inside it, the
+   band kept naming slots after the lines under them had shifted: it
+   highlighted unrelated text and Copy handed back the wrong lines. */
+static void test_a_selection_moves_with_the_rows_it_named(void)
+{
+    static ChatTranscript t;
+    int i;
+
+    chat_transcript_reset(&t);
+    assert(chat_transcript_sel_anchor(&t) == -1);
+    assert(chat_transcript_sel_extent(&t) == -1);
+
+    for (i = 0; i < kChatMaxLines; ++i) {
+        char line[32];
+
+        snprintf(line, sizeof line, "line %d", i);
+        chat_transcript_add(&t, kChatLineModel, "", line);
+    }
+    assert(chat_transcript_count(&t) == kChatMaxLines);
+
+    /* Select three rows in the middle, then push one line in: the ring
+       is full, so every row moves down one and so must the band. */
+    chat_transcript_select(&t, 100, 102);
+    assert(strcmp(chat_transcript_line(&t, 100), "line 100") == 0);
+    chat_transcript_add(&t, kChatLineModel, "", "one more");
+    assert(chat_transcript_sel_anchor(&t) == 99);
+    assert(chat_transcript_sel_extent(&t) == 101);
+    assert(strcmp(chat_transcript_line(&t, 99), "line 100") == 0);
+
+    /* A selection at the very top loses the row that fell off and
+       keeps the ones that survived, rather than sliding onto a
+       stranger. */
+    chat_transcript_select(&t, 0, 1);
+    chat_transcript_add(&t, kChatLineModel, "", "another");
+    assert(chat_transcript_sel_anchor(&t) == 0);
+    assert(chat_transcript_sel_extent(&t) == 0);
+
+    /* Nothing it named survives: cleared, so no band is drawn and Copy
+       falls back to the whole page. */
+    chat_transcript_select(&t, 0, 0);
+    chat_transcript_add(&t, kChatLineModel, "", "and another");
+    assert(chat_transcript_sel_anchor(&t) == -1);
+    assert(chat_transcript_sel_extent(&t) == -1);
+
+    /* A STREAM rolls the ring the same way a whole entry does - the
+       path the transcript actually spends its life on. */
+    chat_transcript_select(&t, 10, 12);
+    chat_transcript_begin_answer(&t);
+    chat_transcript_feed(&t, "a streamed line\nand a second one\n");
+    chat_transcript_end_answer(&t);
+    assert(chat_transcript_sel_anchor(&t) == 8);
+    assert(chat_transcript_sel_extent(&t) == 10);
+
+    /* Opening another chat resets the rows, so it resets the claim. */
+    chat_transcript_reset(&t);
+    assert(chat_transcript_sel_anchor(&t) == -1);
+
+    /* An index past the last row cannot be selected: the hit test
+       clamps, and so does this, rather than storing a promise about a
+       row that is not there. */
+    chat_transcript_add(&t, kChatLineModel, "", "only line");
+    chat_transcript_select(&t, 0, 40);
+    assert(chat_transcript_sel_extent(&t) == 0);
+    chat_transcript_select(&t, -1, 0);
+    assert(chat_transcript_sel_anchor(&t) == -1);
+}
+
 int main(void)
 {
     test_providers_fill_rows_whatever_their_state();
@@ -271,6 +479,14 @@ int main(void)
     test_feed_is_chunk_safe_across_word_boundaries();
     test_feed_wraps_at_spaces_and_hard_breaks_long_words();
     test_transcript_streams_and_rolls();
+    test_roster_rows_carry_origin_and_never_transcript_text();
+    test_a_row_with_no_origin_is_not_claimed_as_local();
+    test_projects_carry_their_home();
+    test_skills_carry_command_and_detail();
+    test_history_keeps_who_said_it();
+    test_a_malformed_page_reads_as_failure();
+    test_provider_reach_defaults_to_full_when_absent();
+    test_a_selection_moves_with_the_rows_it_named();
     puts("chat_model_test: all passed");
     return 0;
 }

@@ -35,6 +35,10 @@ int chat_parse_providers(const char *reply, ChatProviderRow *rows,
                                 sizeof row->label)) {
             strncpy(row->label, row->provider, sizeof row->label - 1);
         }
+        if (!now_json_find_string(object, "tools", row->tools,
+                                  sizeof row->tools)) {
+            strcpy(row->tools, "full");
+        }
         if (!now_json_find_string(object, "state", row->state,
                                   sizeof row->state)) {
             strcpy(row->state, "serving");
@@ -87,6 +91,179 @@ int chat_parse_models(const char *reply, ChatModelRow *rows, int max,
         }
         now_json_find_text(object, "detail", row->detail,
                            sizeof row->detail);
+        ++count;
+    }
+    return count;
+}
+
+int chat_parse_roster(const char *reply, ChatRosterRow *rows, int max,
+                      int *more)
+{
+    const char *p;
+    char object[512];
+    int count = 0;
+
+    if (more != NULL) {
+        *more = 0;
+    }
+    if (reply == NULL || rows == NULL || max <= 0) {
+        return -1;
+    }
+    p = now_json_array(reply, "chats");
+    if (p == NULL) {
+        return -1;
+    }
+    if (more != NULL) {
+        *more = now_json_find_bool(reply, "more", 0) == 1;
+    }
+    while (count < max
+           && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
+        ChatRosterRow *row = &rows[count];
+
+        memset(row, 0, sizeof *row);
+        if (!now_json_find_string(object, "ref", row->ref,
+                                  sizeof row->ref)) {
+            continue;                 /* a row without its ref is no row */
+        }
+        if (!now_json_find_text(object, "label", row->label,
+                                sizeof row->label)) {
+            strncpy(row->label, row->ref, sizeof row->label - 1);
+        }
+        /* Absent origin reads as the OTHER machine, never as this one:
+           a chat this guest did not type is the one a person needs
+           warning about, so silence must not claim local authorship. */
+        if (!now_json_find_string(object, "origin", row->origin,
+                                  sizeof row->origin)) {
+            strcpy(row->origin, "host");
+        }
+        now_json_find_string(object, "project", row->project,
+                             sizeof row->project);
+        now_json_find_text(object, "detail", row->detail,
+                           sizeof row->detail);
+        row->current = now_json_find_bool(object, "current", 0) == 1;
+        ++count;
+    }
+    return count;
+}
+
+int chat_parse_projects(const char *reply, ChatProjectRow *rows, int max,
+                        int *more)
+{
+    const char *p;
+    char object[512];
+    int count = 0;
+
+    if (more != NULL) {
+        *more = 0;
+    }
+    if (reply == NULL || rows == NULL || max <= 0) {
+        return -1;
+    }
+    p = now_json_array(reply, "projects");
+    if (p == NULL) {
+        return -1;
+    }
+    if (more != NULL) {
+        *more = now_json_find_bool(reply, "more", 0) == 1;
+    }
+    while (count < max
+           && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
+        ChatProjectRow *row = &rows[count];
+
+        memset(row, 0, sizeof *row);
+        if (!now_json_find_string(object, "ref", row->ref,
+                                  sizeof row->ref)) {
+            continue;
+        }
+        if (!now_json_find_text(object, "label", row->label,
+                                sizeof row->label)) {
+            strncpy(row->label, row->ref, sizeof row->label - 1);
+        }
+        now_json_find_string(object, "home", row->home, sizeof row->home);
+        row->current = now_json_find_bool(object, "current", 0) == 1;
+        ++count;
+    }
+    return count;
+}
+
+int chat_parse_skills(const char *reply, ChatSkillRow *rows, int max,
+                      int *more)
+{
+    const char *p;
+    char object[512];
+    int count = 0;
+
+    if (more != NULL) {
+        *more = 0;
+    }
+    if (reply == NULL || rows == NULL || max <= 0) {
+        return -1;
+    }
+    p = now_json_array(reply, "skills");
+    if (p == NULL) {
+        return -1;
+    }
+    if (more != NULL) {
+        *more = now_json_find_bool(reply, "more", 0) == 1;
+    }
+    while (count < max
+           && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
+        ChatSkillRow *row = &rows[count];
+
+        memset(row, 0, sizeof *row);
+        if (!now_json_find_text(object, "command", row->command,
+                                sizeof row->command)) {
+            continue;
+        }
+        now_json_find_text(object, "detail", row->detail,
+                           sizeof row->detail);
+        ++count;
+    }
+    return count;
+}
+
+int chat_parse_history(const char *reply, ChatHistoryRow *rows, int max,
+                       int *more)
+{
+    const char *p;
+    char object[kChatCols + 128];
+    char kind[12];
+    int count = 0;
+
+    if (more != NULL) {
+        *more = 0;
+    }
+    if (reply == NULL || rows == NULL || max <= 0) {
+        return -1;
+    }
+    p = now_json_array(reply, "rows");
+    if (p == NULL) {
+        return -1;
+    }
+    if (more != NULL) {
+        *more = now_json_find_bool(reply, "more", 0) == 1;
+    }
+    while (count < max
+           && (p = now_json_next_object(p, object, sizeof object)) != NULL) {
+        ChatHistoryRow *row = &rows[count];
+
+        memset(row, 0, sizeof *row);
+        if (!now_json_find_text(object, "text", row->text,
+                                sizeof row->text)) {
+            continue;
+        }
+        /* Anything but "person" draws as the model said it. A row whose
+           kind this build has never heard of is still CONTENT - dropping
+           it would put a hole in a transcript, and drawing it as the
+           person's would put words in their mouth. */
+        if (now_json_find_string(object, "kind", kind, sizeof kind)
+            && strcmp(kind, "person") == 0) {
+            row->kind = kChatLinePerson;
+        } else if (strcmp(kind, "tool") == 0 || strcmp(kind, "note") == 0) {
+            row->kind = kChatLineMarker;
+        } else {
+            row->kind = kChatLineModel;
+        }
         ++count;
     }
     return count;
@@ -219,6 +396,28 @@ void chat_feed_flush(ChatLineFeed *feed)
 
 /* --- the transcript ----------------------------------------------------- */
 
+/* One line has just left the top of the ring, so every surviving row
+   answers to an index one lower. The selection follows them down. */
+static void selection_rolled(ChatTranscript *t)
+{
+    if (t->sel_anchor < 0) {
+        return;
+    }
+    --t->sel_anchor;
+    --t->sel_extent;
+    if (t->sel_anchor < 0 && t->sel_extent < 0) {
+        t->sel_anchor = -1;           /* every row it named is gone */
+        t->sel_extent = -1;
+        return;
+    }
+    if (t->sel_anchor < 0) {
+        t->sel_anchor = 0;            /* the top row fell off; the rest hold */
+    }
+    if (t->sel_extent < 0) {
+        t->sel_extent = 0;
+    }
+}
+
 static void transcript_take_line(void *ctx, const char *line)
 {
     ChatTranscript *t = (ChatTranscript *)ctx;
@@ -228,6 +427,7 @@ static void transcript_take_line(void *ctx, const char *line)
                 (size_t)(kChatMaxLines - 1) * kChatCols);
         memmove(t->kind, t->kind + 1, (size_t)(kChatMaxLines - 1));
         --t->count;
+        selection_rolled(t);
     }
     strncpy(t->lines[t->count], line, kChatCols - 1);
     t->lines[t->count][kChatCols - 1] = '\0';
@@ -240,7 +440,43 @@ void chat_transcript_reset(ChatTranscript *t)
     t->count = 0;
     t->answering = 0;
     t->adding_kind = kChatLineModel;
+    t->sel_anchor = -1;
+    t->sel_extent = -1;
     chat_feed_reset(&t->feed, transcript_take_line, t);
+}
+
+void chat_transcript_select(ChatTranscript *t, int anchor, int extent)
+{
+    int last = chat_transcript_count(t) - 1;
+
+    if (anchor < 0 || extent < 0 || last < 0) {
+        chat_transcript_clear_selection(t);
+        return;
+    }
+    if (anchor > last) {
+        anchor = last;
+    }
+    if (extent > last) {
+        extent = last;
+    }
+    t->sel_anchor = anchor;
+    t->sel_extent = extent;
+}
+
+void chat_transcript_clear_selection(ChatTranscript *t)
+{
+    t->sel_anchor = -1;
+    t->sel_extent = -1;
+}
+
+int chat_transcript_sel_anchor(const ChatTranscript *t)
+{
+    return t->sel_anchor;
+}
+
+int chat_transcript_sel_extent(const ChatTranscript *t)
+{
+    return t->sel_extent;
 }
 
 int chat_transcript_count(const ChatTranscript *t)

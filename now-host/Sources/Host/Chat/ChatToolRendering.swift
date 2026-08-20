@@ -11,12 +11,22 @@ import NOWAgentIntegration
 
 enum ChatToolRendering {
     /// One descriptor per registry row, in registry order.
+    ///
+    /// `mode` is the gate: a turn that may not act is handed only the
+    /// rows that declare themselves read-only. The declaration comes
+    /// from each projection's OWN `readOnlyHint` — the one every face
+    /// already publishes — rather than from a list kept here, because a
+    /// second table of what is safe is a second place to be wrong and
+    /// the first row added without a line in it would be silently
+    /// writable.
     static func descriptors(
         registry: HostProjectionRegistry = .hostFaces,
+        mode: ChatMode = .build,
         include: (String) -> Bool = { _ in true }
     ) -> [ChatToolDescriptor] {
         registry.projections.compactMap { projection in
             guard include(projection.capability.rawValue) else { return nil }
+            guard mode.mayAct || isReadOnly(projection) else { return nil }
             let descriptor = projection.mcpDescriptor
             let schema = apiSafeSchema(
                 (descriptor["inputSchema"] as? [String: Any])
@@ -28,6 +38,24 @@ enum ChatToolRendering {
                 description: descriptor["description"] as? String ?? "",
                 inputSchemaJSON: schemaJSON)
         }
+    }
+
+    /// A row's own claim about itself. ABSENT reads as "not read-only":
+    /// a row that forgot to say must not be handed to a turn that may
+    /// not act, because the safe reading of silence is the restrictive
+    /// one — the same rule the mode field itself follows on the wire.
+    static func isReadOnly(_ projection: any HostProjection.Type) -> Bool {
+        isReadOnly(descriptor: projection.mcpDescriptor)
+    }
+
+    /// The reading, over a descriptor rather than a type, so the rule
+    /// about SILENCE can be tested. Every row in the registry declares
+    /// the hint today, which means a permissive default would sit there
+    /// looking correct until the first row that forgot — and that row
+    /// would be handed to a turn that may not act, once, quietly.
+    static func isReadOnly(descriptor: [String: Any]) -> Bool {
+        let annotations = descriptor["annotations"] as? [String: Any]
+        return annotations?["readOnlyHint"] as? Bool == true
     }
 
     /// What a provider's tool validator accepts. MCP tolerates a

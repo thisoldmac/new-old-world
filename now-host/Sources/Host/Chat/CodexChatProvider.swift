@@ -3,6 +3,14 @@ import Foundation
 final class CodexChatProvider: ChatProvider, @unchecked Sendable {
     let id = "codex"
     let label = "Codex (ChatGPT)"
+    /* Text-only, and said out loud. The app-server client disables every
+       tool and sandbox affordance it has (CodexAppServerClient's
+       `shell_tool: false`), so this provider answers from knowledge and
+       cannot look at the classic machine. It is not a lane yet: giving
+       Codex hands is a second authority argument, not a flag. */
+    let toolReach = ChatToolReach.none(
+        reason: "Codex answers from knowledge; it cannot use New Old "
+            + "World's tools")
     let client: CodexAppServerClient
 
     init(client: CodexAppServerClient = CodexAppServerClient()) {

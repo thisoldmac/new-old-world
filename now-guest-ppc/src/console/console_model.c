@@ -336,6 +336,17 @@ static int g_chat_listed_count;
 static char g_chat_listed_provider[25];
 static ChatLineFeed g_chat_verb_feed;
 static Boolean g_chat_verb_done;
+/* The console's own last listings, so `chat --open 2` means the second
+   row a person just READ. Numbers here, refs on the wire - the same
+   split `chat --model <n>` already uses, for the same reason. */
+static ChatRosterRow g_chat_roster[kChatMaxChats];
+static int g_chat_roster_count;
+static ChatProjectRow g_chat_projects[kChatMaxProjects];
+static int g_chat_projects_count;
+/* What a turn typed here may do. The page has its own; both send the
+   same field, and neither reads the other's - a mode is a property of
+   the turn, not of the machine. */
+static char g_chat_mode[8] = "build";
 
 static void chat_verb_emit_line(void *ctx, const char *text)
 {
@@ -351,6 +362,85 @@ static void chat_verb_note(int kind, const char *reply)
     char line[kMaxCols];
 
     switch (kind) {
+    case kChatAnswerRoster: {
+        int more = 0;
+        int n = chat_parse_roster(reply, g_chat_roster, kChatMaxChats,
+                                  &more);
+        int i;
+
+        g_chat_roster_count = n > 0 ? n : 0;
+        if (n < 0) {
+            console_model_append("  chat: unreadable chat list");
+        } else if (n == 0) {
+            console_model_append("  no saved chats");
+        }
+        for (i = 0; i < n; ++i) {
+            /* Where it was TYPED, on every row. Both machines' chats
+               are in one list now, and a person is entitled to know
+               they are about to open something they wrote elsewhere. */
+            snprintf(line, sizeof line, "  %s%2d %-31.31s %-5.5s %.24s",
+                     g_chat_roster[i].current ? "*" : " ", i + 1,
+                     g_chat_roster[i].label, g_chat_roster[i].origin,
+                     g_chat_roster[i].detail);
+            console_model_append(line);
+        }
+        if (more) {
+            console_model_append("  (more - chat --chats <cursor>)");
+        }
+        g_chat_verb_done = true;
+        return;
+    }
+    case kChatAnswerProjects: {
+        int more = 0;
+        int n = chat_parse_projects(reply, g_chat_projects,
+                                    kChatMaxProjects, &more);
+        int i;
+
+        g_chat_projects_count = n > 0 ? n : 0;
+        if (n < 0) {
+            console_model_append("  chat: unreadable project list");
+        } else if (n == 0) {
+            console_model_append(
+                "  no projects - chat --project new <name> here|there");
+        }
+        for (i = 0; i < n; ++i) {
+            snprintf(line, sizeof line, "  %s%2d %-31.31s %.8s",
+                     g_chat_projects[i].current ? "*" : " ", i + 1,
+                     g_chat_projects[i].label,
+                     g_chat_projects[i].home[0] != '\0'
+                         ? g_chat_projects[i].home : "");
+            console_model_append(line);
+        }
+        if (more) {
+            console_model_append("  (more - chat --projects <cursor>)");
+        }
+        g_chat_verb_done = true;
+        return;
+    }
+    case kChatAnswerTranscript: {
+        ChatHistoryRow rows[kChatHistoryRows];
+        int more = 0;
+        int n = chat_parse_history(reply, rows, kChatHistoryRows, &more);
+        int i;
+
+        if (n < 0) {
+            console_model_append("  chat: unreadable history");
+        } else if (n == 0) {
+            console_model_append("  nothing said yet");
+        }
+        for (i = 0; i < n; ++i) {
+            snprintf(line, sizeof line, "  %s%.76s",
+                     rows[i].kind == kChatLinePerson ? "> "
+                         : (rows[i].kind == kChatLineMarker ? "* " : ""),
+                     rows[i].text);
+            console_model_append(line);
+        }
+        if (more) {
+            console_model_append("  (older - chat --history <cursor>)");
+        }
+        g_chat_verb_done = true;
+        return;
+    }
     case kChatAnswerProviders: {
         ChatProviderRow rows[kChatMaxProviders];
         int n = chat_parse_providers(reply, rows, kChatMaxProviders);
@@ -637,6 +727,183 @@ static void run_chat_verb(const char *raw_args)
                  g_chat_model_label);
         console_model_append(line);
         return;
+    } else if (strncmp(raw_args, "--chats", 7) == 0
+               && (raw_args[7] == ' ' || raw_args[7] == '\0')) {
+        long cursor;
+
+        rest = next_token(raw_args + 7, tok, sizeof tok);
+        (void)rest;
+        cursor = tok[0] != '\0' ? strtol(tok, NULL, 10) : 0;
+        previous = conn_set_chat_note(chat_verb_note);
+        g_chat_verb_done = false;
+        if (now_wire_chat_chats(cursor, err, sizeof err) != 0) {
+            snprintf(line, sizeof line, "chat: %.80s", err);
+            console_model_append(line);
+        } else {
+            chat_verb_wait();
+        }
+        conn_set_chat_note(previous);
+        return;
+    } else if (strncmp(raw_args, "--open", 6) == 0
+               && (raw_args[6] == ' ' || raw_args[6] == '\0')) {
+        long n;
+
+        rest = next_token(raw_args + 6, tok, sizeof tok);
+        (void)rest;
+        n = strtol(tok, NULL, 10);
+        if (n < 1 || n > g_chat_roster_count) {
+            console_model_append(
+                "chat: pick from a listing - chat --chats, "
+                "then chat --open <n>");
+            return;
+        }
+        previous = conn_set_chat_note(chat_verb_note);
+        g_chat_verb_done = false;
+        if (now_wire_chat_open(g_chat_roster[n - 1].ref,
+                               err, sizeof err) != 0) {
+            snprintf(line, sizeof line, "chat: %.80s", err);
+            console_model_append(line);
+        } else {
+            chat_verb_wait();
+            snprintf(line, sizeof line, "  opened %.31s",
+                     g_chat_roster[n - 1].label);
+            console_model_append(line);
+            console_model_append("  chat --history shows what was said");
+        }
+        conn_set_chat_note(previous);
+        return;
+    } else if (strncmp(raw_args, "--history", 9) == 0
+               && (raw_args[9] == ' ' || raw_args[9] == '\0')) {
+        long cursor;
+
+        rest = next_token(raw_args + 9, tok, sizeof tok);
+        (void)rest;
+        cursor = tok[0] != '\0' ? strtol(tok, NULL, 10) : 0;
+        previous = conn_set_chat_note(chat_verb_note);
+        g_chat_verb_done = false;
+        if (now_wire_chat_history(cursor, err, sizeof err) != 0) {
+            snprintf(line, sizeof line, "chat: %.80s", err);
+            console_model_append(line);
+        } else {
+            chat_verb_wait();
+        }
+        conn_set_chat_note(previous);
+        return;
+    } else if (strncmp(raw_args, "--projects", 10) == 0
+               && (raw_args[10] == ' ' || raw_args[10] == '\0')) {
+        long cursor;
+
+        rest = next_token(raw_args + 10, tok, sizeof tok);
+        (void)rest;
+        cursor = tok[0] != '\0' ? strtol(tok, NULL, 10) : 0;
+        previous = conn_set_chat_note(chat_verb_note);
+        g_chat_verb_done = false;
+        if (now_wire_chat_projects(cursor, err, sizeof err) != 0) {
+            snprintf(line, sizeof line, "chat: %.80s", err);
+            console_model_append(line);
+        } else {
+            chat_verb_wait();
+        }
+        conn_set_chat_note(previous);
+        return;
+    } else if (strncmp(raw_args, "--project", 9) == 0
+               && (raw_args[9] == ' ' || raw_args[9] == '\0')) {
+        rest = next_token(raw_args + 9, tok, sizeof tok);
+        if (strcmp(tok, "none") == 0) {
+            previous = conn_set_chat_note(chat_verb_note);
+            g_chat_verb_done = false;
+            if (now_wire_chat_project("none", NULL, NULL, NULL,
+                                      err, sizeof err) != 0) {
+                snprintf(line, sizeof line, "chat: %.80s", err);
+                console_model_append(line);
+            } else {
+                chat_verb_wait();
+                console_model_append("  working in no project");
+            }
+            conn_set_chat_note(previous);
+            return;
+        }
+        if (strcmp(tok, "new") == 0) {
+            char name[64];
+            char where[16];
+
+            rest = next_token(rest, name, sizeof name);
+            rest = next_token(rest, where, sizeof where);
+            (void)rest;
+            /* "here" is the machine the person is typing at - this one.
+               Spelled that way rather than as host/guest because at
+               this keyboard "guest" is a word about somebody else's
+               machine; the wire carries the contract's own spelling. */
+            if (name[0] == '\0'
+                || (strcmp(where, "here") != 0
+                    && strcmp(where, "there") != 0)) {
+                console_model_append(
+                    "chat: chat --project new <name> here|there - here "
+                    "keeps the code on this Mac, there on the modern one");
+                return;
+            }
+            previous = conn_set_chat_note(chat_verb_note);
+            g_chat_verb_done = false;
+            if (now_wire_chat_project(
+                    "create", NULL, name,
+                    strcmp(where, "here") == 0 ? "guest" : "host",
+                    err, sizeof err) != 0) {
+                snprintf(line, sizeof line, "chat: %.80s", err);
+                console_model_append(line);
+            } else {
+                chat_verb_wait();
+            }
+            conn_set_chat_note(previous);
+            return;
+        }
+        if (tok[0] != '\0') {
+            long n = strtol(tok, NULL, 10);
+
+            if (n < 1 || n > g_chat_projects_count) {
+                console_model_append(
+                    "chat: pick from a listing - chat --projects, "
+                    "then chat --project <n>");
+                return;
+            }
+            previous = conn_set_chat_note(chat_verb_note);
+            g_chat_verb_done = false;
+            if (now_wire_chat_project("select", g_chat_projects[n - 1].ref,
+                                      NULL, NULL, err, sizeof err) != 0) {
+                snprintf(line, sizeof line, "chat: %.80s", err);
+                console_model_append(line);
+            } else {
+                chat_verb_wait();
+                snprintf(line, sizeof line, "  working in %.31s",
+                         g_chat_projects[n - 1].label);
+                console_model_append(line);
+            }
+            conn_set_chat_note(previous);
+            return;
+        }
+        console_model_append(
+            "chat: chat --project <n>|none|new <name> here|there");
+        return;
+    } else if (strncmp(raw_args, "--mode", 6) == 0
+               && (raw_args[6] == ' ' || raw_args[6] == '\0')) {
+        rest = next_token(raw_args + 6, tok, sizeof tok);
+        (void)rest;
+        if (tok[0] == '\0') {
+            snprintf(line, sizeof line, "chat: mode is %.8s", g_chat_mode);
+            console_model_append(line);
+            console_model_append(
+                "  chat looks, plan writes a plan, build may change things");
+            return;
+        }
+        if (strcmp(tok, "chat") != 0 && strcmp(tok, "plan") != 0
+            && strcmp(tok, "build") != 0) {
+            console_model_append("chat: mode is chat, plan or build");
+            return;
+        }
+        strncpy(g_chat_mode, tok, sizeof g_chat_mode - 1);
+        g_chat_mode[sizeof g_chat_mode - 1] = '\0';
+        snprintf(line, sizeof line, "chat: mode is %.8s", g_chat_mode);
+        console_model_append(line);
+        return;
     } else if (strcmp(raw_args, "--new") == 0) {
         previous = conn_set_chat_note(chat_verb_note);
         g_chat_verb_done = false;
@@ -673,8 +940,8 @@ static void run_chat_verb(const char *raw_args)
     previous = conn_set_chat_note(chat_verb_note);
     g_chat_verb_done = false;
     chat_feed_reset(&g_chat_verb_feed, chat_verb_emit_line, NULL);
-    if (now_wire_chat_send(g_chat_model_ref, raw_args,
-                           err, sizeof err) != 0) {
+    if (now_wire_chat_send_mode(g_chat_model_ref, raw_args, g_chat_mode,
+                                err, sizeof err) != 0) {
         snprintf(line, sizeof line, "chat: %.80s", err);
         console_model_append(line);
     } else {

@@ -24,6 +24,19 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         return copy
     }
 
+    func chats(_ request: AgentIntegrationChatRequest) async
+        -> AgentIntegrationChatResult {
+        guard let client else { return .unavailable(.host) }
+        do {
+            if let refusal = await compatibilityRefusal(client) {
+                return .unavailable(refusal)
+            }
+            return try await client.chats(request)
+        } catch {
+            return .unavailable(unavailable(for: error))
+        }
+    }
+
     func sessionHealth() async -> AgentIntegrationSessionHealthResult {
         guard let client else {
             return .unavailable(unavailable(for: startupError))

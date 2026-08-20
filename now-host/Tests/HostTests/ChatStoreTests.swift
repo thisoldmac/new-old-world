@@ -196,4 +196,26 @@ final class ChatStoreTests: XCTestCase {
         XCTAssertTrue(title.hasSuffix("\u{2026}"))
         XCTAssertEqual(ChatStore.title(fromPrompt: "   "), ChatStore.untitled)
     }
+
+    /* A lane host launched with NOW_PREFS_SUFFIX believed itself
+       isolated and listed the human's real conversations, because this
+       path was fixed while the preferences and the agent socket moved.
+       Found doing emulator QA of the feature that made those chats
+       reachable by an agent. */
+    func testTheStoreMovesWithThePreferencesSuffix() throws {
+        let isolated = try ChatStore.applicationSupportRoot(
+            environment: ["NOW_PREFS_SUFFIX": "qachat"])
+        let shipped = try ChatStore.applicationSupportRoot(environment: [:])
+
+        XCTAssertNotEqual(isolated, shipped)
+        XCTAssertEqual(isolated.lastPathComponent, "Chats-qachat")
+        // A shipped launch sets no suffix, and its path must not move:
+        // somebody's saved chats are on the other end of it.
+        XCTAssertEqual(shipped.lastPathComponent, "Chats")
+        XCTAssertEqual(shipped.deletingLastPathComponent().lastPathComponent,
+                       "New Old World")
+        XCTAssertEqual(
+            try ChatStore.applicationSupportRoot(
+                environment: ["NOW_PREFS_SUFFIX": ""]), shipped)
+    }
 }

@@ -383,6 +383,28 @@ resource 'DITL' (302) {
     }
 };
 
+/* The Chat page's New Project editor: a name and where the project is
+   authoritative. Same Dialog Manager idiom as 301/302 - the modal loop
+   pumps the wire. */
+resource 'DLOG' (303) {
+    {140, 150, 316, 470}, movableDBoxProc, invisible, noGoAway,
+    0, 303, "New Project", centerMainScreen
+};
+
+resource 'DITL' (303) {
+    {
+        /* 1 Create */ {140, 234, 160, 304}, Button { enabled, "Create" };
+        /* 2 Cancel */ {140, 150, 160, 220}, Button { enabled, "Cancel" };
+        /* 3 name   */ {20, 76, 36, 304}, EditText { enabled, "" };
+        /* 4 here   */ {48, 16, 64, 304},
+            RadioButton { enabled, "On this Mac, built here with MPW" };
+        /* 5 there  */ {70, 16, 86, 304},
+            RadioButton { enabled, "On the other Mac, built there and sent here" };
+        /* 6 status */ {94, 16, 132, 304}, StaticText { disabled, "" };
+        /* 7 label  */ {20, 16, 36, 70}, StaticText { disabled, "Name:" };
+    }
+};
+
 
 
 /* The Apple menu. Item 1 is the About box; item 2 is a separator, below
@@ -510,6 +532,37 @@ resource 'MENU' (140) {
         "Compatible Page", noIcon, noKey, noMark, plain;
         "Reader", noIcon, noKey, noMark, plain;
         "AI Layout", noIcon, noKey, noMark, plain
+    }
+};
+
+/* The Chat page's mode pop-up. Item order is load-bearing: chat_module.c
+   maps items 1-3 to chat/plan/build, and the host reads an absent or
+   unrecognised mode as chat - the tier that changes nothing. */
+resource 'MENU' (143) {
+    143, textMenuProc, allEnabled, enabled, "Mode",
+    {
+        "Chat", noIcon, noKey, noMark, plain;
+        "Plan", noIcon, noKey, noMark, plain;
+        "Build", noIcon, noKey, noMark, plain
+    }
+};
+
+/* The Chat page's project pop-up, rewritten from the host's roster the
+   way the model pop-up is. Item 1 is always "No project". */
+resource 'MENU' (144) {
+    144, textMenuProc, allEnabled, enabled, "Project",
+    {
+        "No project", noIcon, noKey, noMark, plain
+    }
+};
+
+/* The Chat page's skills pop-up, rewritten from the host's skill
+   roster. Item 1 is the label; choosing a row types its /command into
+   the prompt. */
+resource 'MENU' (145) {
+    145, textMenuProc, allEnabled, enabled, "Skills",
+    {
+        "Skills", noIcon, noKey, noMark, plain
     }
 };
 

@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Re-extract the vendored classic Mac skill tree, out loud.
+
+The copy in `skills/` is the one that ships and the one the chat harness
+reads; the source lives outside this repository and has no remote. A sync
+is therefore a deliberate act with a blast radius — it can overwrite a
+fix somebody made HERE, which is the failure vendoring invites — so this
+prints every difference and asks before writing.
+
+    tools/sync-classic-skills            # report only
+    tools/sync-classic-skills --apply    # copy, then rewrite PROVENANCE
+"""
+
+from __future__ import annotations
+
+import argparse
+import filecmp
+import hashlib
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+VENDORED = REPO / "skills"
+
+# Where the unvendored source tree lives is a fact about ONE DESK, so it is
+# named by the desk (`.env.lab` / the environment) rather than written into
+# the repository - the deploy-68k rule, and for its reason: a stale default
+# path is a sync that quietly reads the wrong tree, and the vendored copy is
+# the one that ships. Unset, this refuses and names the key.
+SOURCE_KEY = "NOW_CLASSIC_SKILLS_SOURCE"
+SOURCE: pathlib.Path | None = None
+
+
+def configured_source() -> pathlib.Path | None:
+    """The desk's answer, from the environment or `.env.lab`."""
+    value = os.environ.get(SOURCE_KEY)
+    if not value:
+        env_lab = REPO / ".env.lab"
+        if env_lab.is_file():
+            for line in env_lab.read_text().splitlines():
+                name, _, raw = line.partition("=")
+                if name.strip() == SOURCE_KEY:
+                    value = raw.strip().strip('"').strip("'")
+                    break
+    return pathlib.Path(value).expanduser() if value else None
+
+
+SKILLS = [
+    "classic-mac-development",
+    "classic-mac-carbon-ui",
+    "classic-mac-carbon-platform",
+    "classic-mac-toolbox-ui",
+    "classic-mac-toolbox-platform",
+    "classic-mac-init-platform",
+    "classic-mac-emulator-harness",
+    "classic-mac-render-preview",
+]
+
+
+def files(root: pathlib.Path) -> set[pathlib.Path]:
+    return {
+        p.relative_to(root)
+        for p in root.rglob("*")
+        if p.is_file() and p.name != ".DS_Store"
+    }
+
+
+def digest(root: pathlib.Path) -> str:
+    outer = hashlib.sha256()
+    for relative in sorted(files(root)):
+        inner = hashlib.sha256((root / relative).read_bytes()).hexdigest()
+        outer.update(f"{inner}  {relative}\n".encode())
+    return outer.hexdigest()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--apply", action="store_true")
+    arguments = parser.parse_args()
+
+    source_root = configured_source()
+    if source_root is None:
+        print(f"[sync-classic-skills] {SOURCE_KEY} is not set.")
+        print("  Where the unvendored skill tree lives describes one desk,")
+        print(f"  so set {SOURCE_KEY} in .env.lab or the environment.")
+        print("  The vendored copy stands on its own; see skills/PROVENANCE.md.")
+        return 1
+    global SOURCE
+    SOURCE = source_root
+    if not SOURCE.is_dir():
+        print(f"[sync-classic-skills] source is not here: {SOURCE}")
+        print(f"  ({SOURCE_KEY} names it; fix the value or the tree.)")
+        print("  Nothing to sync from. The vendored copy stands on its own;")
+        print("  see skills/PROVENANCE.md.")
+        return 1
+
+    changed, added, removed = [], [], []
+    for skill in SKILLS:
+        source, vendored = SOURCE / skill, VENDORED / skill
+        if not source.is_dir():
+            print(f"[sync-classic-skills] source lacks {skill}")
+            continue
+        source_files, vendored_files = files(source), files(vendored)
+        added += [f"{skill}/{p}" for p in sorted(source_files - vendored_files)]
+        removed += [f"{skill}/{p}" for p in sorted(vendored_files - source_files)]
+        for relative in sorted(source_files & vendored_files):
+            if not filecmp.cmp(source / relative, vendored / relative, shallow=False):
+                changed.append(f"{skill}/{relative}")
+
+    if not (changed or added or removed):
+        print("[sync-classic-skills] the vendored copy matches the source")
+        return 0
+
+    for label, rows in (("changed", changed), ("only in source", added),
+                        ("only here", removed)):
+        for row in rows:
+            print(f"  {label:<14} {row}")
+    print(f"[sync-classic-skills] {len(changed)} changed, {len(added)} added, "
+          f"{len(removed)} only here")
+
+    if not arguments.apply:
+        print("  Report only. Re-run with --apply to overwrite the vendored")
+        print("  copy — and read 'only here' first: those are edits this")
+        print("  repository has and the source does not.")
+        return 1
+
+    for skill in SKILLS:
+        if (SOURCE / skill).is_dir():
+            shutil.rmtree(VENDORED / skill, ignore_errors=True)
+            shutil.copytree(SOURCE / skill, VENDORED / skill,
+                            ignore=shutil.ignore_patterns(".DS_Store"))
+    head = subprocess.run(["git", "-C", str(SOURCE.parent), "rev-parse", "HEAD"],
+                          capture_output=True, text=True).stdout.strip()
+    print(f"[sync-classic-skills] copied at source commit {head or 'unknown'}")
+    print(f"[sync-classic-skills] new content digest {digest(VENDORED)}")
+    print("  Update skills/PROVENANCE.md with both, in the same commit.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

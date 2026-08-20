@@ -633,6 +633,18 @@ final class Session {
             onServeChat(.cancel(request))
         case .chatReset(let request):
             onServeChat(.reset(request))
+        case .chatChats(let request):
+            onServeChat(.chats(request))
+        case .chatOpen(let request):
+            onServeChat(.open(request))
+        case .chatHistory(let request):
+            onServeChat(.history(request))
+        case .chatProjects(let request):
+            onServeChat(.projects(request))
+        case .chatProject(let request):
+            onServeChat(.project(request))
+        case .chatSkills(let request):
+            onServeChat(.skillList(request))
         case .webRequest(let request):
             onServeWeb(.request(request))
         case .webCancel(let request):

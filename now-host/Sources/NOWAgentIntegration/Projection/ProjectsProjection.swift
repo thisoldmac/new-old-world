@@ -11,6 +11,7 @@ public enum ProjectsProjection: HostProjection {
     public static let acceptsGuestAddressing = false
     public static let acceptedArguments: Set<String> = [
         "operation", "projectID", "workspaceID", "name",
+        "home", "toolchain",
         "expectedRevision", "expectedCommit", "path", "fork", "maximumBytes",
         "message", "changes",
         "attemptID",
@@ -111,6 +112,9 @@ public enum ProjectsProjection: HostProjection {
             "projectID": projectID,
             "workspaceID": workspaceID,
             "name": ["type": "string", "minLength": 1, "maxLength": 64],
+            "home": ["type": "string", "enum": ["host", "guest"]],
+            "toolchain": ["type": "string",
+                          "enum": ["guest-mpw", "host-retro68"]],
             "expectedRevision": ["type": "integer", "minimum": 0],
             "expectedCommit": ["type": "string", "pattern": "^[0-9a-f]{40}$"],
             "path": relativePath,
@@ -128,6 +132,16 @@ public enum ProjectsProjection: HostProjection {
             branch(.create, properties: [
                 "name": ["type": "string", "minLength": 1,
                          "maxLength": 64],
+                "home": [
+                    "type": "string", "enum": ["host", "guest"],
+                    "description":
+                        "Which machine holds the authoritative copy. Defaults to host; guest is answered with the import path rather than minted here.",
+                ],
+                "toolchain": [
+                    "type": "string", "enum": ["guest-mpw", "host-retro68"],
+                    "description":
+                        "Which toolchain builds this project. guest-mpw pins the connected guest's own qualified MPW measurement; host-retro68 marks a project the host workspace lane builds. Absent defaults to guest-mpw when the guest reports a qualified toolchain, else host-retro68.",
+                ],
                 "changes": changes,
                 "attemptID": attemptID,
             ], required: ["name", "changes", "attemptID"]),

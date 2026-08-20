@@ -68,6 +68,16 @@ public final class AgentIntegrationLocalServer: @unchecked Sendable {
         label: "dev.newoldworld.agent-integration.companions")
     private let lock = NSLock()
     private var listeningDescriptor: Int32 = -1
+    /// The dev/inode of the socket FILE this server created at bind, so
+    /// its exit can tell its own path from a successor's.
+    ///
+    /// Recorded from the path rather than asked of the descriptor: on
+    /// Darwin `fstat` of a bound `AF_UNIX` socket reports the socket's
+    /// own identity (dev -1), never the directory entry's, so a
+    /// descriptor-side comparison can only ever answer "no" — which is
+    /// how the first version of this guard came to be a no-op that
+    /// unlinked nothing and still passed its test.
+    private var boundSocketIdentity: (dev: dev_t, ino: ino_t)?
     private let attemptLock = NSLock()
     private var inFlightAttempts: Set<UUID> = []
 
@@ -152,11 +162,18 @@ public final class AgentIntegrationLocalServer: @unchecked Sendable {
                 throw AgentIntegrationUnixSocket.ioError("listen")
             }
         } catch {
+            /* Same identity rule as stop(): remove the file only while
+               it is still the one this bind created. */
+            if Self.pathStillHas(identity: Self.identity(
+                    ofPathAt: endpoint.socketURL.path),
+                at: endpoint.socketURL.path) {
+                unlink(endpoint.socketURL.path)
+            }
             close(descriptor)
-            unlink(endpoint.socketURL.path)
             throw error
         }
 
+        boundSocketIdentity = Self.identity(ofPathAt: endpoint.socketURL.path)
         listeningDescriptor = descriptor
         acceptQueue.async { [weak self] in
             self?.acceptConnections(on: descriptor)
@@ -167,11 +184,43 @@ public final class AgentIntegrationLocalServer: @unchecked Sendable {
         lock.lock()
         let descriptor = listeningDescriptor
         listeningDescriptor = -1
+        let mine = boundSocketIdentity
+        boundSocketIdentity = nil
         lock.unlock()
         guard descriptor >= 0 else { return }
         _ = shutdown(descriptor, SHUT_RDWR)
         close(descriptor)
-        unlink(endpoint.socketURL.path)
+        /* The file goes only while it is still the one this server's
+           bind created. A successor that replaced it owns it now.
+           The blind unlink this replaces stomped a live host: two app
+           copies share one default path, the newer one had honestly
+           replaced a dead file (removeStaleSocket probes first), and the
+           OLDER copy's quit then deleted the newer copy's socket on the
+           way out. Every companion after that answered "notSent" while
+           both hosts had looked healthy (measured on the desk,
+           2026-08-19: mount new build, launch, quit the old one). */
+        if Self.pathStillHas(identity: mine, at: endpoint.socketURL.path) {
+            unlink(endpoint.socketURL.path)
+        }
+    }
+
+    /// The dev/inode of the directory entry at `path`, or nil when
+    /// there is none. The FILE's identity, which is the only side of
+    /// this question a bound socket descriptor cannot answer.
+    static func identity(ofPathAt path: String) -> (dev: dev_t, ino: ino_t)? {
+        var named = stat()
+        guard lstat(path, &named) == 0 else { return nil }
+        return (named.st_dev, named.st_ino)
+    }
+
+    /// Whether the entry at `path` is still the exact file `identity`
+    /// named. An absent path, or a different file, both answer false.
+    static func pathStillHas(identity mine: (dev: dev_t, ino: ino_t)?,
+                             at path: String) -> Bool {
+        guard let mine, let now = identity(ofPathAt: path) else {
+            return false
+        }
+        return now.dev == mine.dev && now.ino == mine.ino
     }
 
     private func acceptConnections(on listener: Int32) {
@@ -409,6 +458,9 @@ public final class AgentIntegrationLocalServer: @unchecked Sendable {
             case .projects(let result):
                 response = .init(requestID: request.requestID,
                                  projectResult: result)
+            case .chats(let result):
+                response = .init(requestID: request.requestID,
+                                 chatResult: result)
             case .development(let result):
                 response = .init(requestID: request.requestID,
                                  developmentResult: result)

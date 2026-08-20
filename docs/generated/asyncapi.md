@@ -47,8 +47,8 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `guestAnswersDrive` | `send` | `control` | `processResult` |
 | `guestAsksCloud` | `send` | `control` | `cloudServices`, `cloudList`, `cloudDetail`, `cloudGet`, `cloudPreview` |
 | `hostServesCloud` | `receive` | `control` | `cloudReport`, `cloudListing`, `cloudCard`, `cloudRefuse`, `previewBegin`, `previewEnd` |
-| `guestAsksChat` | `send` | `control` | `chatModels`, `chatSend`, `chatCancel`, `chatReset` |
-| `hostServesChat` | `receive` | `control` | `chatCatalog`, `chatDelta`, `chatStatus`, `chatResult` |
+| `guestAsksChat` | `send` | `control` | `chatModels`, `chatSend`, `chatCancel`, `chatReset`, `chatChats`, `chatOpen`, `chatHistory`, `chatProjects`, `chatProject`, `chatSkills` |
+| `hostServesChat` | `receive` | `control` | `chatCatalog`, `chatRoster`, `chatTranscript`, `chatProjectRoster`, `chatSkillRoster`, `chatDelta`, `chatStatus`, `chatResult` |
 | `guestAsksWeb` | `send` | `control` | `webRequest`, `webCancel` |
 | `hostServesWeb` | `receive` | `control` | `webResponseBegin`, `webResponseChunk`, `webResponseEnd` |
 | `guestAsksHostSurface` | `send` | `control` | `hostShow` |
@@ -147,7 +147,17 @@ This reference is projected from [`contract/asyncapi.yaml`](../developer-guide/a
 | `chatStatus` | `chat.status` | `ChatStatus` |
 | `chatResult` | `chat.result` | `ChatResult` |
 | `chatCancel` | `chat.cancel` | `ChatCancel` |
-| `chatReset` | `chat.reset` | `ChatReset` |
+| `chatReset` | `chat.reset` | `—` |
+| `chatChats` | `chat.chats` | `—` |
+| `chatRoster` | `chat.roster` | `—` |
+| `chatOpen` | `chat.open` | `—` |
+| `chatHistory` | `chat.history` | `—` |
+| `chatTranscript` | `chat.transcript` | `—` |
+| `chatProjects` | `chat.projects` | `—` |
+| `chatProjectRoster` | `chat.projectroster` | `—` |
+| `chatProject` | `chat.project` | `ChatProject` |
+| `chatSkills` | `chat.skills` | `ChatSkills` |
+| `chatSkillRoster` | `chat.skillroster` | `ChatSkillRoster` |
 | `webRequest` | `web.request` | `WebRequest` |
 | `webResponseBegin` | `web.response.begin` | `WebResponseBegin` |
 | `webResponseChunk` | `web.response.chunk` | `WebResponseChunk` |

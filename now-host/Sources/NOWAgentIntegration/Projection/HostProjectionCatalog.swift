@@ -18,6 +18,13 @@ public enum HostProjectionCatalog {
 
     private static func makeProjections() -> [any HostProjection.Type] { [
         ProjectsProjection.self,
+        /* Immediately after the projects it files chats under, and before
+           the development lane: the three read as one subject — what the
+           person is working on, what they have said about it, and what
+           gets built. It is the row that lets an agent see the
+           conversation happening at the classic machine instead of
+           leaving the person to relay it. */
+        ChatsProjection.self,
         DevelopmentEnvironmentProjection.self,
         DevelopmentProjection.self,
         SessionHealthProjection.self,
@@ -156,5 +163,10 @@ public enum HostProjectionCatalog {
         GuestFilesUploadBeginProjection.self,
         GuestFilesUploadAppendProjection.self,
         GuestFilesUploadCommitProjection.self,
+        /* Last, beside the trio it composes: the same stage-and-commit
+           lane entered from a file the host may read itself — the chat
+           workspace lane's folder — instead of from caller-carried
+           chunks. */
+        GuestFilesUploadFileProjection.self,
     ] }
 }

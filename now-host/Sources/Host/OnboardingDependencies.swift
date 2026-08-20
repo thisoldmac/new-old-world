@@ -38,21 +38,54 @@ struct OnboardingDependency: Identifiable, Equatable {
 }
 
 enum OnboardingDependencyCatalog {
+    /// Apple's OFFICIAL installer - a self-mounting image whose mounted
+    /// volume carries Apple's license alongside the installer - not the
+    /// bare extension the 1.6.1 .sit repack offered. The license material
+    /// is the point: NOW may stage this file but never substitutes for
+    /// Apple's own terms. (No archived 1.6.1 SMI is known; 1.6 is the
+    /// guest's floor and this is its licensed form.) The artifact is
+    /// already MacBinary, so delivery stores it unchanged.
     static let carbonLib = OnboardingDependency(
-        id: "carbonlib-1.6.1",
-        displayName: "CarbonLib 1.6.1",
-        detail: "Required by New Old World on classic Mac OS",
-        downloadFileName: "CarbonLib_161.sit.bin",
+        id: "carbonlib-1.6-smi",
+        displayName: "CarbonLib 1.6 Installer",
+        detail: "Apple's installer with its license; required by "
+            + "New Old World on classic Mac OS",
+        downloadFileName: "CarbonLib_1.6.smi.bin",
         acceptedNameFragments: ["carbonlib"],
         downloadURL: URL(
-            string: "https://old.mac.gdn/apps/CarbonLib_161.sit")!,
+            string: "https://old.mac.gdn/apps/CarbonLib_1.6.smi__0.bin")!,
         sourcePageURL: URL(
             string: "http://macintoshgarden.org/apps/carbonlib")!,
-        expectedSHA1: "8a80248cb9acd2b26a3c7cf7af5dbde56b96fa3e",
-        delivery: .macBinary(classicName: "CarbonLib_161.sit",
-                             type: "SIT5", creator: "SIT!"))
+        expectedSHA1: "ff4fae765abb663570fe72b66a0ecead08e78b1e",
+        delivery: .unchanged)
 
-    static let all = [carbonLib]
+    /// The classic build toolchain the Projects module drives. Optional, and
+    /// fetched the same way CarbonLib is: from the pinned mirror, checksum
+    /// verified, kept outside Git. The download is already a MacBinary NDIF
+    /// image, so it is delivered unchanged and Disk Copy mounts it on the
+    /// classic Mac.
+    static let mpw = OnboardingDependency(
+        id: "mpw-gm",
+        displayName: "MPW (GM)",
+        detail: "Optional: the toolchain Projects builds with on the classic Mac",
+        downloadFileName: "mpw-gm.img.bin",
+        acceptedNameFragments: ["mpw-gm", "mpw_gm"],
+        downloadURL: URL(
+            string: "https://old.mac.gdn/apps/mpw-gm.img__0.bin")!,
+        sourcePageURL: URL(
+            string: "https://macintoshgarden.org/apps/macintosh-programmers-workshop")!,
+        expectedSHA1: "2a57aa9364a165ea0ddfa0611003ee1f13984715",
+        delivery: .unchanged)
+
+    static let all = [carbonLib, mpw]
+
+    /// Artifacts a PREVIOUS catalog pin downloaded, since superseded: the
+    /// 1.6.1 .sit repack held only the extension, no installer and no
+    /// license. The file is left on disk - it is not ours to delete -
+    /// but it is no longer offered as installed, matched, or staged, so
+    /// a desk that downloaded it before the pin changed heals itself:
+    /// the entry reads not-installed and Get fetches the official SMI.
+    static let retiredFileNames: Set<String> = ["carbonlib_161.sit.bin"]
 
     static func additionalAssets(in snapshot: OnboardingAssetSnapshot)
         -> [OnboardingAsset] {
@@ -61,10 +94,16 @@ enum OnboardingDependencyCatalog {
         }
     }
 
+    /// The guest-bound dependency set. The starter-pack manifest is host
+    /// validation metadata, not a classic payload, so it never crosses.
     static func setupAssets(in snapshot: OnboardingAssetSnapshot)
         -> [OnboardingAsset] {
-        all.compactMap { $0.installedAsset(in: snapshot) }
-            + additionalAssets(in: snapshot)
+        (all.compactMap { $0.installedAsset(in: snapshot) }
+            + additionalAssets(in: snapshot))
+            .filter {
+                !DevelopmentStarterPackManifest.isManifestFileName(
+                    $0.fileName)
+            }
     }
 }
 

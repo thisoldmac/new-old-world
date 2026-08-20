@@ -65,6 +65,7 @@
 				A1000030 /* Frameworks */,
 				A1000080 /* Resources */,
 				A1000088 /* Bundle NOW Web Bridge */,
+				A1000089 /* Bundle Classic Mac Skills */,
 			);
 			buildRules = (
 			);
@@ -153,6 +154,23 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -eu\nsource_dir=\"$SRCROOT/../web-bridge\"\ntarget_dir=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/WebBridge\"\n/bin/rm -rf \"$target_dir\"\n/bin/mkdir -p \"$(/usr/bin/dirname \"$target_dir\")\"\n/usr/bin/ditto --norsrc --noqtn \"$source_dir\" \"$target_dir\"\n";
+		};
+		A1000089 /* Bundle Classic Mac Skills */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../skills",
+			);
+			name = "Bundle Classic Mac Skills";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/skills/classic-mac-carbon-ui/SKILL.md",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\nsource_dir=\"$SRCROOT/../skills\"\ntarget_dir=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/skills\"\n/bin/rm -rf \"$target_dir\"\n/bin/mkdir -p \"$(/usr/bin/dirname \"$target_dir\")\"\n/usr/bin/ditto --norsrc --noqtn \"$source_dir\" \"$target_dir\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

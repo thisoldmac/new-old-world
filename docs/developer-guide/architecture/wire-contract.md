@@ -94,8 +94,8 @@ state, and publishes only when the generation set is coherent and current.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-host/Sources/Host/FrameCodec.swift now-host/Sources/Host/ContractMessages.swift now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c scripts/docs-source-group tools/docs-gate
-sources-sha1: a12b99b55ff897ea8b832da516689b9f98adbda3
-derive contract-summary sha256=fded2ddbb00e3c3dbf97eeb2ba1b3857d07c05e602b4e0165a9d1a7ed60a4333 lines=6
+sources-sha1: 0e05d5461563c92e427637629171687ed17194a6
+derive contract-summary sha256=4ef44787b46aa8673d0025c3ef792db28b97296f3b4e27511e1825b31997666b lines=6
     scripts/docs-source-group contract
 rederived: pending
 rederived: 2026-08-09T16:22:14-0400 9034e3eb sources, contract-summary 6->6
@@ -277,6 +277,33 @@ rederived: 2026-08-17T23:36:26-0400 5aa1092c sources
 rederived: 2026-08-17T23:52:45-0400 91fe237e unchanged
 rederived: 2026-08-18T15:09:50-0400 c33eb6ee unchanged
 rederived: 2026-08-18T17:19:00-0400 ffc561f4 sources
+rederived: 2026-08-18T21:43:38-0400 eae627f6 sources
 rederived: 2026-08-18T23:04:14-0400 fc295bcc unchanged
+rederived: 2026-08-18T23:13:33-0400 ce4dc746 sources, contract-summary 6->6
+rederived: 2026-08-18T23:19:31-0400 3341acb1 sources
 rederived: 2026-08-18T23:25:22-0400 353a37be unchanged
+rederived: 2026-08-18T23:33:03-0400 2c64a5c4 sources
+rederived: 2026-08-18T23:44:44-0400 6692e45b unchanged
+rederived: 2026-08-18T23:57:03-0400 d10402f4 unchanged
+rederived: 2026-08-19T00:06:05-0400 b3b2ee57 unchanged
+rederived: 2026-08-19T01:21:58-0400 0e46a4ac sources
+rederived: 2026-08-19T01:34:46-0400 7ec2d6d1 unchanged
+rederived: 2026-08-19T01:41:12-0400 399d4c78 unchanged
+rederived: 2026-08-19T01:53:16-0400 db827bac unchanged
+rederived: 2026-08-19T02:32:03-0400 a9efa24f sources
+rederived: 2026-08-19T03:00:29-0400 26f5c9fc unchanged
+rederived: 2026-08-19T03:14:01-0400 afcf45e6 sources
+rederived: 2026-08-19T03:33:52-0400 648ab89c unchanged
+rederived: 2026-08-19T03:53:10-0400 f9d1bd67 unchanged
+rederived: 2026-08-19T03:59:55-0400 14486719 unchanged
+rederived: 2026-08-19T04:47:57-0400 ba4e78ae sources
+rederived: 2026-08-19T05:41:21-0400 a8ee7d50 unchanged
+rederived: 2026-08-19T14:24:10-0400 d6583bbd sources
+rederived: 2026-08-19T14:49:25-0400 75da2302 sources, contract-summary 6->6
+rederived: 2026-08-19T15:06:38-0400 c9462eb5 unchanged
+rederived: 2026-08-19T18:20:13-0400 4b072fe0 unchanged
+rederived: 2026-08-19T18:25:38-0400 4b072fe0 unchanged
+rederived: 2026-08-19T21:35:42-0400 485e4ee1 unchanged
+rederived: 2026-08-19T21:40:49-0400 ae09a391 unchanged
+rederived: 2026-08-19T22:18:12-0400 110215ff unchanged
 -->

@@ -7,6 +7,432 @@ search:
 
 # Open issues
 
+## EMULATOR QA SWEEP OF PR #54, AND THE THREE SURFACES IT COULD NOT REACH (2026-08-20, `feat/agentic-loop`)
+
+The sweep ran on head `a4fa5382`, mac99 / OS 9.1 (68K guest and `ext/`
+untouched by the diff, so no 68K rig), rig at `/private/tmp/nowvm-emuqa`
+(anchor 13016, wire 13017), host from this head under
+`NOW_PREFS_SUFFIX=emuqa` with `chat.workspace.*` deliberately UNSET so
+the shipping zero-click default is what was tested.
+
+**Passed, each with a native-resolution capture or the tool's own
+answer**: the chat page and all five popups; the sidebar's selected row
+as a legible inverted band; New Chat with no `(asking…)` wedge; the
+Skills popup enabled once the roster arrived; transcript selection;
+console parity (`chat --mode build`) against a build stamp matching the
+host's connect line; a Build-mode lane turn that started the HTTP MCP on
+demand through `bridgeWanted` with the auto-start toggle off and called
+`now_list_machines`; the workspace file it was asked to write; both
+`ProjectGround` refusals live (`now-projects-toolchain-unqualified`,
+`now-projects-guest-home-create-refused`); `now_guest_files_upload_*`
+landing 25 bytes as TEXT/`MPS `; and the whole guest-MPW lane —
+toolchain registered and **qualified** (`mpw-ffff-00001461@structural-1`,
+ToolServer and MrC found), a guest-authored project built through
+ToolServer **2 of 2 actions** into an APPL of 1384 data / 394 resource
+bytes, and `run` answering *"accepted and process identity matched"*.
+
+**Self-loading skills passed on its own evidence.** Asked *"Name the one
+rule about UPPs on this runtime. Load the skill you need."* the model
+called `chat_load_skill` itself and answered citing
+`powerpc-cfm-abi.md` in `classic-mac-carbon-platform` — the tool
+returned the skill body, and nothing asked the person to type a slash
+command.
+
+**Three surfaces this rig cannot reach, named rather than implied:**
+
+1. *Tracked-menu interactions* — opening the New Project dialog, mapping
+   a project popup item, inserting a skill. The anchor worker's click is
+   a click-release and a Toolbox popup needs a tracked press, so these
+   rest on the source-level guard
+   `now-guest-ppc/tests/chat_page_wire_source_test.py` and on nothing
+   observed.
+2. *The mouse-drag selection loop.* Same reason; the band was proven by
+   a keyboard-driven selection, not by a drag.
+3. *The onboarding portal.* It starts only from a person's click in the
+   host UI, which this rig has no way to drive. The one commit touching
+   it after the onboarding merge (`5afc5fdf`) replaces a deprecated
+   `String(cString:)` in the per-connection local-address read; four
+   `OnboardingPortalTests` cases connect over a real socket through that
+   path, so it is suite-covered — but it is **not** emulator-swept on
+   this head and the sweep does not claim it.
+
+**Two small findings, carried:**
+
+- *The Projects page list does not rescan while it is open.* A project
+  that appears on disk — which is exactly how an agent creates one — is
+  invisible in the list until you leave the page and come back. The page
+  read "No projects under the chosen folder" for fifteen minutes while
+  `now_development` catalog listed it and the Build Jobs pane below said
+  `QAHello — succeeded, 2 of 2 actions`.
+- *Skill loading is invisible in the host log.* `chat_load_skill` emits
+  a `.skillLoaded` event to the UI and no log line, so the one question
+  a support pass would ask — did the model load the skill, or answer from
+  memory — is answerable only from the transcript.
+
+## THE REVIEW THAT CAUGHT A NO-OP GUARD, AND WHAT IT LEFT OPEN (2026-08-19, `feat/agentic-loop`)
+
+A review pass before opening the pull request found 21 defects in the
+day's own work. The one worth reading twice:
+
+**A guard shipped as a no-op and its mutation test passed anyway.**
+`AgentIntegrationLocalServer` was taught to unlink the agent socket only
+while the path still named its own file, asking `fstat` of the bound
+descriptor. On Darwin `fstat` of a bound `AF_UNIX` socket reports the
+SOCKET's identity — `dev -1` — never the directory entry's, so the
+comparison answered "not mine" always: nothing was ever unlinked, and
+every quit left a stale socket for `removeStaleSocket` to probe away.
+Measured directly (`fstat dev=-1 ino=22093` against `lstat
+dev=16777229 ino=175772553`). The mutation test written beside it forced
+the OTHER direction — blind unlink — and duly failed, which is how a
+one-sided mutation certifies a guard that does nothing. The fix records
+the file's dev/inode at bind and compares that; both mutations now fail,
+each named by its own test, and the missing half ("a server removes its
+OWN socket") is now a test.
+
+**The rule this pays for again**: a guard needs the mutation it claims to
+catch AND the mutation that would make it vacuous. AGENTS.md already said
+the first half.
+
+Fixed in the same pass: unit tests provisioned a real workspace under the
+developer's Application Support and copied the skill tree into it (the
+lane store now reads the model's own defaults suite, and the suites say
+`grant = false` out loud); `ProjectStore.create` accepted line breaks in
+a display name, so a guest-supplied project name could inject a second
+`CKPROJECT` directive (the agent surface always refused these — the limit
+now lives once, in the store); and a chosen workspace folder was told by
+the prompt that skills were staged when only the self-provisioned one
+ever staged them (now staged non-destructively — a folder that already
+has `.claude/skills` keeps its own, because that folder is the person's).
+
+**Carried, not fixed** — each real, none blocking, all from the same
+review:
+
+- `bridgeWanted` cannot win its race: the post is delivered on the main
+  queue while the spawn proceeds immediately, so the first lane turn
+  after launch can still meet a server that is not up. Its test asserts
+  only that the notification eventually fires.
+- The per-project workspace fence is cwd-only. `now_guest_files_upload_file`
+  is still pinned to the lane ROOT, so `../OtherProject/binary` is
+  readable; and the sanitiser maps `a/b` and `a-b` onto one folder.
+- Nothing proves `ChatProjectContext` reaches a turn: nil it at either
+  face and the suite stays green while the guest-wire regresses to the
+  defect the frame exists to prevent.
+- `chat.skills` has no cursor, so a tree past 12 skills is unreachable
+  though `more` says otherwise; and `detail`'s length is stated three
+  ways (contract silent, host 96, guest 64).
+- `ChatWorkspaceDefault.stageSkills` races itself and copies on the main
+  actor; opening Settings provisions the workspace before a person can
+  decline it; restaging on a version bump is untested.
+- `HFSStandardVolumeTests` checks the Disk Copy 4.2 checksum against the
+  same function that wrote it — a tautology pinning only the offset.
+- Dead or lying after the day's transitions: `ClaudeCodeClient.hostExecutable`,
+  `ChatWorkspaceLaneStore.granted()` (false on a fresh install, where
+  absent means granted), `ChatProjectContext.toolchainPin` (never
+  populated, so two thirds of `projectFrame` are unreachable), and a
+  scatter of comments still describing the stdio bridge and the
+  off-by-default grant.
+- `docs/contract-coverage.md`'s prose still says the chat family is four
+  inbound types; the derivation moved to eight and the sentence did not —
+  the file's own documented failure mode, caught by the gate that
+  re-derives and not by a reader.
+
+## GUEST-SIDE MPW: BOTH LANES RE-VERIFIED ON THIS BRANCH, AND WHAT THE RIG TAUGHT (2026-08-19, `feat/agentic-loop`)
+
+The same mac99/OS 9.1 rig that closed the Retro68 lane re-verified the
+guest-toolchain lane end to end, on this branch's build, through the
+MCP surface alone (a scripted stdio companion — no model in the loop,
+every receipt quoted from the tools' own answers):
+
+- **Delivery, scripted where it was a human act**: the operator MPW GM
+  image pushed to the guest over the anchor (25 MB in 25 s), Disk Copy
+  licensed and mounted (checksum VALID), the pack copied fork-true to
+  the hard disk, Register MPW Folder driven through the real Nav
+  dialog. `now_development_environment` answered
+  `mpw-ffff-00001461@structural-1`, qualified.
+- **The ground decision works live**: `now_projects create` with
+  `toolchain=guest-mpw` wrote the guest's own measured pin into
+  Project.ckp; the guest's pin gate accepted it; MrC/PPCLink built
+  2 of 2; `run` answered "accepted and process identity matched",
+  repeatedly.
+- **Guest-home, the whole story**: a guest-authored project imported
+  as a verified snapshot, edited in the host workspace, staged, built
+  2 of 2, and PROMOTED — publication reached the guest byte-exactly
+  (the re-import measured exactly the edited digest, revision 2), and
+  the divergence guard refused correctly both times it should have.
+
+Five findings, three of them product wounds:
+
+1. **A lone MPW folder qualifies and cannot compile.** structural-1
+   checks ToolServer and MrC, never headers; MPW's Startup resolves
+   Interfaces&Libraries as the registered folder's SIBLING (`{MPW}::`).
+   Copy only "MPW" and every build dies with "unable to open input
+   file 'MacTypes.h'". The Read Me and both docs pages now name both
+   folders; the qualification probe still cannot see the gap.
+2. **A promote against a busy guest times out AND publishes.** The
+   product's run loop held the machine; promote's answer leg died at
+   the deadline while publication completed. The idempotent replay
+   honestly returned the original terminal answer ("did not answer in
+   time") — which is the WRONG fact, since the guest tree measured the
+   published digest. A receipt that outlives the answer leg is owed.
+3. **The recovery from (2) strands the workspace.** After the designed
+   re-import (new verified base), the still-open workspace can neither
+   promote (stale base — refused `guest-diverged`, correctly) nor be
+   discarded (unpromoted commits — refused, correctly). Two correct
+   refusals compose into a dead end; the store needs a rebase or an
+   explicit abandon-with-confirmation.
+4. **Import demands canonical serialization.** A hand-authored
+   Project.ckp with identical semantics was refused ("imported bytes
+   do not match the coherent guest snapshot") because the host
+   normalizes file-info lines before re-digesting; the working recipe
+   is to reuse the store's own serialization byte-for-byte. Fine for
+   agents, hostile to a person authoring on the guest — CodeKitten or
+   the import needs to say so.
+5. **The anchor worker's `list` truncates at 128 with no paging**, and
+   this rig's first copy silently lost 269 headers to it — the
+   instrument, not the product. Recorded because the failure it
+   produced was indistinguishable from (1) until the worksheet's own
+   `Files | Count` said 128.
+
+Not covered: metal, the 68K guest (no MPW lane by design), CodeKitten.
+
+## THE AGENTIC LOOP CLOSED IN THE EMULATOR — and what it took (2026-08-19, `feat/agentic-loop`)
+
+A Build-mode `chat.send` over the wire had the Claude workspace lane
+cross-compile a Carbon app with Retro68 in its workspace and drive
+`now_*` tools at the emulated G4 — the loop was never missing, only
+gated and then starved. What the first live runs taught, each fixed on
+this branch:
+
+- **"I have no tools this turn" is a Settings state, not a defect**:
+  the Claude provider is text-only until `chat.workspace.root` is set.
+  The popup already said so; nothing else did, loudly enough.
+- **The skills catalogue taught the model to stall**: told it could not
+  load skills itself, it answered a build request with "type /x and I
+  will proceed" and did nothing. The catalogue now says to act with
+  what it has. Companion fix: the naming rule binds the model's words
+  only — a live session spent two openings correcting the person's
+  "powerbook".
+- **Model-carried upload bytes cannot converge**: 8 KB per append at
+  30-160 s of model output each, against a ~5 min staging expiry and a
+  900 s lane turn — two runs died mid-upload, upload restarts included.
+  `now_guest_files_upload_file` reads the file from the lane's own
+  workspace (root pinned on the companion's command line at spawn,
+  containment mutation-tested) and drives the staging internally.
+- **A wire peer that only listens is dropped at 75 s** — the host never
+  pings and counts guest silence. Real guests ping; the rig peer now
+  pings on a wall clock. Instrument fact, recorded because it read
+  exactly like a chat defect twice.
+
+**Emulator-verified** (native captures, this checkout's staged build):
+the sidebar's selected row draws as an inverted band (the double-invert
+white-on-white is gone); New Chat re-lists the roster with no
+"(asking...)" wedge (asks queue as wants on the wire's one slot, and
+the wire itself now refuses rather than orphans); the Skills popup
+arrives enabled from the new `chat.skills`/`chat.skillroster` pair;
+transcript rows select as inverted bands.
+
+**Unverified**: choosing a skill from the popup (posted clicks cannot
+select from a tracked menu — the standing act-plane limit), the New
+Project dialog end-to-end (same limit; the dialog is the 301/302 idiom
+and cross-compiles), Copy honouring the selection (needs clipboard
+readback), the person's Instructions setting reaching a live turn
+(prompt composition is unit-tested), and everything here on metal.
+
+## THE CHAT KNOWS THE PLATFORM NOW — the classic Mac skill tree ships, with slash commands (2026-08-19, `feat/chat-agentic-lane`)
+
+Chat could reach the machine and, with the workspace lane, its own source
+— and it was told nothing about the platform that source is FOR. A model
+in Build mode will write a UPP as a cast and skip pumping the wire inside
+a nested Toolbox loop: the exact lessons this project already paid for
+and wrote down.
+
+**Where that knowledge was.** In eight `classic-mac-*` skills under
+`~/Lab/Skills`, reachable by a turn only BY ACCIDENT — the workspace
+lane's spawned runtime discovers whatever skill tree the machine's owner
+happens to have installed. Accidental capability is what this branch has
+spent its time ending, so the tree is now vendored into `skills/`, shipped
+in the application bundle, and read by the harness itself.
+
+**What ships and what does not.** The chat reads `SKILL.md` — front
+matter for the listing, body when a person loads it. The `references/`
+and `scripts/` directories ship for a person and for a workspace-lane
+runtime with file tools; a model talking through the harness cannot open
+them, and the provenance file says so rather than implying the whole tree
+reaches the model.
+
+**A skill is text, deliberately.** No execution, no tool, no second
+registry. It is fenced in the prompt by name and told that the machine
+and consent rules stated above it win — a skill that could quietly widen
+what a turn may touch would be an authority nobody granted.
+
+**The vendoring cost, written down where it will be read.** There are now
+two copies of a versioned thing, and the source has its own git history
+and no remote. `skills/PROVENANCE.md` records the source commit, that the
+source tree was DIRTY at extraction (so this copy matches no commit of
+it), and the content digest; `tools/sync-classic-skills` reports every
+difference and refuses to overwrite without `--apply`, because a sync
+that quietly replaced a fix made here is how the second copy becomes the
+wrong one.
+
+**Unverified**: nothing has loaded a skill on metal, and no model has yet
+been watched writing better Carbon code because of one. The guards prove
+the plumbing — that a slash never reaches the model, that an unloaded
+skill's body never enters the prompt, and that the tree this repository
+ships is readable and complete.
+
+## CORRECTED SAME DAY — `testTrustedButStillFailingTapNamesRelaunchNotPermission` is INTERMITTENT, not a standing red (2026-08-19)
+
+Written up hours earlier as "red on `origin/main`", and that was an
+overstatement worth correcting in place rather than quietly deleting.
+
+**What was actually seen.** It failed twice: once inside a full
+`scripts/test-all`, and once in a throwaway worktree checked out at
+`origin/main` with nothing applied — which is what made "it is main's,
+not the branch's" look settled. It then passed in the next full
+`test-all` and three times running in isolation.
+
+**So the true reading is FLAKY, and the earlier one confused "not
+mine" with "always red".** Both halves mattered and only one held: the
+attribution is still right (nothing in the chat work touches Continuity),
+the standing-failure claim is not.
+
+The test drives an `AccessibilityFake`, so this is not the machine's real
+Accessibility state leaking in. That points at the same suspect as
+the entry below titled "UNVERIFIED, ENVIRONMENTAL: two host gates on
+this Mac make each other red":
+shared process state between concurrently running suites. Not diagnosed.
+
+**The lesson is about evidence, not about this test.** Two failures in a
+row from two different trees is a strong-looking sample and still not a
+distribution. A red seen twice earns "intermittent"; it earns "always"
+only from a run that was tried and failed to make it pass.
+
+## THE GUEST'S CHAT NOW REMEMBERS — sessions, lazy history, projects and modes, PAGE STILL TO COME (2026-08-18, `feat/chat-agentic-lane`)
+
+Nothing had regressed: saved chats and project filing were always host-only,
+and the guest's single conversation lived in a dictionary that
+`ChatWireService.sessionClosed` emptied. It now lives in the store both faces
+share.
+
+**Landed and green**: the contract family (`chat.chats`/`chat.roster`,
+`chat.open`, `chat.history`/`chat.transcript`, `chat.projects`/
+`chat.projectroster`, `chat.project`, and `mode` on `chat.send`), the host
+serving half, the guest's wire client and parsers, and the console verbs. A
+guest turn is saved, titled after the first thing said, listed to either face
+with where it was typed, and continued after a reconnect.
+
+**The page landed too** (2026-08-19): a collapsible saved-chats list down
+the left, a mode popup, a project popup, and rows that mark which machine
+each chat was typed at. The layout is arithmetic in `chat_layout.c` with
+its own native test — collapsed, every sidebar rect is EMPTY rather than
+off-screen, so a stale hit test lands nowhere instead of on an invisible
+row, and that is the mutation the test was watched failing against. The
+rows are in the scene description as well as on screen, because a list
+drawn with QuickDraw and absent from the scene is a control that exists
+for eyes only.
+
+**Two readings of silence, both chosen and both guarded.** A roster row with
+no `origin` reads as the OTHER machine, because the chat a person needs
+warning about is the one they wrote somewhere else. A `mode` that is absent
+or unrecognised reads as `chat`, the tier that changes nothing — an older
+guest sends none, and a newer one may send a word this build has never heard
+of.
+
+**A guest-home project is recorded as INTENT, not minted.** `ProjectStore.
+create` requires a verified guest digest because the classic Mac holds the
+authoritative copy, so answering "here" files the chat and says the code half
+arrives by the staged-and-promoted path. The alternative — quietly making a
+host project and calling it a guest one — is the kind of half-truth this
+ledger exists to catch, so it is written here as a known limit rather than
+left to be discovered.
+
+**A privacy promise was deliberately reversed**, on Michelle's decision:
+`docs/user-guide/reference/modules/chat.md` said saved chats were never served
+to the classic guest, and now they are listed and openable there. The page
+says so in the same words rather than quietly dropping the old sentence.
+
+**Unverified**: nothing has run on metal, and nothing has opened a
+host-typed chat from a PowerBook. The lazy-loading claim is proven by a
+serving test that asserts an open pushes no transcript and that history pages
+from the end — not by watching a slow wire.
+
+## BUILT, SUITE-TESTED ONLY: Chat declares its tool reach, supplies the whole registry, and can be given a workspace (2026-08-18, `feat/chat-agentic-lane`)
+
+Chat has run an agentic loop over the whole host projection registry since it
+shipped, and on 2026-08-18 it read to its own author as a chatbot that could
+not see the machine it was sitting on. Three separate causes:
+
+- **Two of the six providers cannot use tools and looked exactly like the four
+  that can.** `Claude (Experimental)` was spawned with `--tools ""` and a
+  literal "Do not use tools."; Codex with every tool disabled. The model popup
+  was therefore a silent choice between an agent and a chatbot, and the person
+  found out from the model's own apology a turn later. A provider now declares
+  `toolReach`, the harness asks rather than assumes, the reason rides the
+  provider entry's `detail` to BOTH popups, and the system prompt tells a
+  tool-less model plainly that it has no hands.
+- **`now_projects`, `now_development` and `now_development_environment` were
+  behind a keyword sniffer** over the person's own words — thirteen hardcoded
+  terms. "Build me an applet" got project tools; "make a thing that beeps" got
+  an honest apology. Deleted; every row is supplied every turn.
+- **Nothing in the registry reaches New Old World's own source**, by design of
+  every authority domain in the catalog. The workspace lane is the answer, and
+  it is deliberately NOT another projection: pointed at a folder, the Claude
+  runtime is spawned with its own file and command tools, that folder as its
+  working directory, and this app's `--mcp-stdio` face attached under
+  `--strict-mcp-config`.
+
+**Measured, 2026-08-18 (rig, not product).** The argument vector
+`arguments(model:lane:mcpConfig:)` builds was driven against a real `claude`
+with a STUB MCP server standing in for this app, in a scratch folder. The
+runtime reported `mcp_servers: [{name: now, status: connected}]`, listed
+`Bash`, `Edit`, `Read` and `mcp__now__now_list_processes` together, called the
+MCP tool, and edited a file in the folder — so the spawn shape, the MCP attach
+and the mixed file/machine turn are real rather than hoped for. Two facts came
+back that this side had not predicted, and both are now recorded lines in
+`ClaudeCodeClientTests` rather than guesses: a capability arrives mangled as
+`mcp__now__now_list_processes`, and MCP tools are handed over DEFERRED, so the
+first thing a person sees on the guest's one status line is a `ToolSearch`.
+**This proves the lane's plumbing, not the product**: the stub is not New Old
+World, no guest was touched, and nothing ran from a Chat page.
+
+**A defect the lane INTRODUCED, found by reading the contract rather than by
+running anything.** `hostServesChat` obliges the host to keep a delta or a
+status flowing while a turn is open, and entitles the guest to declare a turn
+dead after sixty seconds of total silence and cancel it. Every tool the harness
+runs answers in seconds, so nothing had ever come close and no test covered it.
+A workspace lane's single `Bash` call is a cross-compile: minutes inside one
+tool, with the runtime saying nothing until it returns — so a guest that asked
+for a build would have correctly killed it at sixty seconds, and the person
+would have watched a build die for looking dead. `ChatWireService` now beats
+every 20 s while a turn is open, REPEATING what the turn was last seen doing
+rather than inventing a line, because the status field is display-only and a
+made-up line is a claim about the machine. Watched failing against both the
+missing beat and an invented one.
+
+**What is not verified.** Everything above passes the host suites and both
+guests compile. Nobody has driven a lane turn end to end — not from the host
+pane, not from the classic machine's own Chat page — so the lane is `Builds`
+plus unit evidence, and nothing here may be described as working. The specific
+unknowns, in the order they will bite:
+
+1. Whether a spawned `claude` reaches the running app through `--mcp-stdio`
+   when the app's own local endpoint is off. The lane does not check, and the
+   likely symptom is a turn whose `now_` tools all fail while its file tools
+   work — which reads like a broken guest.
+2. Whether `--permission-mode acceptEdits` declines a command silently enough
+   that a build looks like a hang to somebody on a 68030 watching one status
+   line.
+3. Whether the 900-second lane deadline is anywhere near a real
+   `scripts/build-guests`, which nothing has timed from inside a chat turn.
+4. Whether 20 s of heartbeat is the right cadence over a slow wire to a
+   68030, which only a metal run can answer — the number is chosen well
+   under the contract's sixty, not measured against one.
+
+**The honesty half, which is the durable part.** A face that cannot do a thing
+must say so where the person CHOOSES, not in a paragraph after they have asked.
+A tool-less provider rendered identically to an agentic one is the chat-shaped
+version of the rule this repository already pays for elsewhere: a gate that
+reads green having never reached a machine.
 ## THE WIRE PORT WAS APP-SCOPED, SO TWO EMULATED MACS WERE TOLD APART BY DIAL ORDER — FIXED, TESTED, EMULATOR AND METAL PENDING (2026-08-18, `feat/per-profile-listen-port`)
 
 One `NWListener` on one settings value. Every Mac dialled the same socket,
@@ -120,6 +546,51 @@ Also unverified: nothing yet reads a profile except `deploy-68k` and
 directory — deliberate, but it means a suite run without
 `eval "$(tools/lab-machine env <id>)"` and without `deploy-68k --test` is
 exactly as unguarded as it was before.
+## 68K ONBOARDING OVER HTTP: SERVED, ORACLE-VERIFIED, PARKED BEFORE THE 180c COULD ANSWER (2026-08-18, `feat/68k-onboarding`)
+
+The Set Up a New Mac sheet grew a 68K/PPC flavor pill, and the 68K
+flavor now serves a Disk Copy 4.2 container on an HFS Standard volume
+written by our own code (`HFSStandardVolume`, `DiskCopy42Image`) - built
+entirely in memory, no disk tools. DC 4.2 is data-fork-only by design,
+so a browser with no MacBinary decoder (MacWeb saves transfers raw
+under a `/tmp/`-prefixed name; that is its behavior, verified) still
+delivers a byte-perfect image, and stock System 7's own Disk Copy is
+the intended opener. hfsutils mounts the volume and round-trips forks
+byte-identical; catalog order is asserted against machfs's sort and was
+watched failing against a reversed-comparator mutation (the hfsutils
+oracle alone is order-blind - that mutation survived it).
+
+Along the way, two transport defects fixed and one platform finding:
+the portal was rewritten from Network.framework onto BSD sockets after
+a packet capture showed every first transmission of every segment
+vanishing with only the ~250 ms retransmission ACKed (4-5 KB/s
+lockstep) while python's socket server did 300-400 KB/s on the same
+wire - something on this Mac interferes with framework flows
+per-process; and the socket rewrite's missing `SO_NOSIGPIPE` let an
+aborted download kill the app silently (watched failing: signal 13).
+After both, the G3 measured 200 KB/s. The portal logs every route, UA,
+and per-transfer KB/s under log area `onboarding`.
+
+**Open, parked with the 180c (machine put away 2026-08-18):**
+
+- Nobody has watched Disk Copy 4.2 on a real System 7.1 machine mount
+  the served image. That is the acceptance step for the whole 68K
+  flavor, and the q800 emulator is the cheaper first rig for it.
+- The 180c-side MacWeb save was never re-run against the raw DC 4.2
+  route; the save dialog is now the success path, not the failure.
+- The advertised onboarding address comes from
+  `HostAddressDetector.primaryIPv4()`, which on this desk picked an
+  address belonging to a VIRTUAL interface (locally-administered MAC)
+  and not reachable from the LAN, rather than the real one a machine
+  three doors down would dial. The page worked only because a human
+  typed the right host by hand. Interface selection belongs with the
+  per-profile port-scoping work. (The two addresses are deliberately
+  not written here: they describe one desk, and the tree's public
+  hygiene gate refuses them - which is how this line was found.)
+- The 180c's network flapped all evening (half its pings lost at
+  hundreds of ms, then fine); never attributed. Note that in-sandbox
+  probes from agent sessions lie about LAN reachability - measure from
+  iTerm.
 
 ## CORRECTED, 2026-08-18: `hostDragOfferEpoch` was prose, then a constant, then retired
 
@@ -2020,6 +2491,137 @@ the identity crosses DURING the drag rather than after it. That is what
 anything needing a mid-gesture fact — live drop-target feedback on the host —
 will require, and it is a contract change plus attended metal. Late bind buys
 the single gesture without either.
+
+## EMULATOR QA OF THE CHAT SLICE: one real defect, one false diagnosis, one flake (2026-08-19, `feat/chat-agentic-lane`)
+
+Driven overnight on a PowerPC clone (`scripts/spin-up-ppc`, lane block
+812) against an isolated host, with the guest's page reached by
+`now_menu_act` on NOW's own View menu. What it proved and what it cost:
+
+**PROVEN, end to end.** An agent created a chat over MCP
+(`now_chats create`), the host saved it, and the classic Mac's Chat page
+LISTED it — `- QA: agent made this`, the `-` marking a chat typed at the
+modern Mac. That is the loop this branch exists to close, seen on a
+screen rather than in a test. The page also drew the collapsible
+sidebar, the mode popup and the project popup, and `now_chats`
+list/read/create/append/projects all answered against a live OS 9.1
+guest.
+
+**THE DEFECT, and it was mine.** The sidebar sat on "(asking...)"
+forever. The chat wire keeps ONE pending-ask slot (`wire.c ::
+g_chatask`), and the page issued two asks back to back — so the second
+ORPHANED the first: its answer arrived carrying a kind the pending no
+longer named and was discarded as stale, and the deadline that would
+have reported the silence went with it. Fixed twice, because the first
+fix was too narrow: chaining projects behind the roster still left the
+CATALOG ask stomping it. The page now records that it wants its listings
+and asks only when `now_wire_chat_ask_pending()` says the wire is free.
+
+**A FALSE DIAGNOSIS, recorded because it cost real time.** Before
+finding that, the host was suspected: module runtimes are lazy, and
+`chat`'s runtime is what assigns `listener.chatService`, so a host that
+had never rendered its Chat page would answer silence. A fix was written
+and a test with it — and the test passed with the fix REMOVED, which
+means it proved nothing. The fix then turned out to break the app's
+launch. Both were reverted. The invariant kept a test; the claim did
+not.
+
+**THE HOST GATE ENDED THE NIGHT RED, AND IT IS NOT THIS BRANCH.** Three
+`ResidentLivenessTests` — `testAResidentWillNotVouchWhenTwoMachinesShare
+ItsName`, `testAStarvedGuestSurvivesWhileItsMachineKeepsAnswering`,
+`testTheSessionDiesOnceTheResidentChannelGoesToo` — fail in the full
+suite and pass in isolation, the same three in every run. Attributed
+rather than assumed, by the cheapest experiment that could have
+falsified it: re-running the whole host suite with EVERY chat test class
+skipped (thirteen of them, including all the new ones). The same three
+still failed, plus a `MultiGuestListenerTests` timeout. So the trigger is
+the suite under load, not this branch's tests. `mediaanalysisd` was
+taking 113% of a core throughout, which is the starvation these
+listener-binding tests are known to lose to (see the entry below).
+
+**A FLAKE THAT LOOKED LIKE A CAUSE.** The isolated host sometimes failed
+to bind port 18497 right after `spin-up-ppc` released it, launching but
+never listening. One A/B "confirmed" the reverted fix on the strength of
+a single run each way; the next run contradicted it. Waiting for the
+port to actually be free made it reliable. Two runs are not a
+distribution — the same lesson this ledger recorded about a flaky test
+hours earlier, learned again from the other side.
+
+**NOT verified on the emulator**: opening a chat from the sidebar and
+paging its history. The rows are custom-drawn, so the act plane cannot
+click them and no route drives them without a person. Metal is where
+that gets answered.
+
+## THE HOST SUITE CAN WEDGE THE PERSON'S KEYBOARD, AND THE MECHANISM IS OURS (2026-08-19)
+
+Reported by Michelle while this branch was running gates: *"multiple
+concurrent xcode tests are what have been wedging my keyboard input."*
+Load average was 9.4 with two host suites running; it fell to 1.8 the
+moment they stopped.
+
+**Why a busy Mac stalls TYPING rather than merely feeling slow, and why
+that is this project's doing.** `ContinuityKeyboard` installs a
+`CGEvent.tapCreate` at `.cgSessionEventTap` / `.headInsertEventTap` with
+`options: .defaultTap` for `keyDown`, `keyUp` and `flagsChanged`. Head
+inserted and active — not `listenOnly` — means **every keystroke on the
+whole Mac is delivered to NOW's callback before it reaches the app the
+person is typing into**. Starve that process and the keystrokes wait.
+macOS eventually fires `tapDisabledByTimeout`, which the callback
+re-enables, so a loaded machine can wedge, recover, and wedge again.
+
+So the ingredients are: a running NOW app holding an active keyboard
+tap, plus anything that starves it — two Xcode test suites being an
+excellent example.
+
+**What has NOT been established.** That the tests themselves install a
+tap (no test constructs `ContinuityKeyboard`; they use fakes), and
+whether `.listenOnly` would serve continuity's needs. Forwarding
+keystrokes to a classic Mac only needs to OBSERVE them; capturing them
+away from this Mac is a different feature, and which one is intended is
+a product decision rather than something to change quietly under a
+person who is typing.
+
+**Working rules until it is settled.** Do not run `scripts/test-host` or
+`scripts/test-all` while somebody is using this Mac, and never two at
+once — check `ps` for another `xctest` first. If typing goes dead with
+NOW running, that is the tap, and quitting NOW releases it.
+
+## CONFIRMED WITH A CULPRIT, 2026-08-19: concurrent host suites are what makes the gate red
+
+The entry below has said since 2026-08-16 that two host gates on this Mac
+make each other red, and called itself unverified. Here is the
+observation it was missing.
+
+Three consecutive `scripts/test-all` runs on `feat/chat-agentic-lane`
+failed at the host gate, each in a DIFFERENT suite and every failure a
+timeout: `ContinuityEdgeControllerTests`, then
+`MirrorContinuityControllerTests` ("timed out waiting for UDP listener"),
+then `ResidentLivenessTests`. Each passed on its own immediately
+afterwards — the second and third two runs out of two.
+
+While the third gate ran, `ps` showed an `xctest` at 207% CPU **from
+another checkout**: `/private/tmp/base-chat`, a detached HEAD sitting on
+this branch's own newest commit, created minutes earlier by a session
+that is not this one. Load average was 8.4 on a Mac whose owner had
+already said it was misbehaving, with `diagnosticd` and `log` taking
+another 240% between them.
+
+**So the shape is: these suites bind real listeners, and a second host
+suite running at the same time starves them.** Nothing was killed to
+prove it — that process belongs to another session, and the rule about
+not touching another lane's work outranks a tidy green here.
+
+**What this means for reading a red host gate.** Look at `ps` before
+diagnosing. A timeout in a suite your change never touched, in a
+different suite each run, with another `xctest` alive, is contention and
+not a defect. The corollary is the uncomfortable one: **a green host gate
+taken while another suite was running is also not evidence**, and neither
+is a red one — which is why this belongs in the ledger rather than in a
+commit message.
+
+Not fixed: the suites still bind fixed listeners rather than
+per-run ones, and until they do, "run the gate on a quiet machine"
+is the whole mitigation.
 
 ## UNVERIFIED, ENVIRONMENTAL: two host gates on this Mac make each other red (2026-08-16, `chore/recover-034-orphans`)
 
@@ -6719,6 +7321,13 @@ The refused `stage` result also omits the minted candidate ID, so MCP cannot
 address `stage-status` or `stage-discard`; the host's finalize-refusal path
 does not automatically discard the guest candidate. The two attempts may
 therefore have left inactive residue with no agent-visible recovery handle.
+(**Closed 2026-08-19**, plan 039 slice E: a guest `candidate-unavailable`
+refusal now carries the addressed candidate as a `development-stage` output
+row beside the error (`development_stage_reply.c`, mutation-checked native
+test), and every host stage refusal that retains a candidate — unrecorded
+transfer, digest mismatch, unrecorded verification, and the paired-guest-
+changed guards — names the candidate ID and the `stage-status` /
+`stage-discard` recovery in its message. Tested, not metal-verified.)
 
 **Updated 2026-08-10:** the candidate was accepting. The host encoded
 `expectedFiles` as the JSON string `"3"`, while the contract and guest parser
@@ -6922,10 +7531,82 @@ The remaining open boundaries are narrower and separately owned:
   dispatch and foregrounding rather than a returned handler receipt. Shared
   fixtures and any neutral receipt vocabulary must be completed in the sibling
   CodeKitten repository; NOW must not absorb the IDE or executor.
-- **Starter payload:** the relocatable, versioned Development starter-pack
-  manifest and onboarding input are implemented and tested, including license
-  and provenance fields. No redistributable MPW bytes are committed. A combined
-  NOW + CodeKitten + MPW image cannot be accepted until payload licensing and
+## EMULATOR-VERIFIED: operator-supplied MPW starter pack, delivered and qualified (2026-08-19, `feat/mpw-starter-pack`)
+
+A mac99/OS 9.1 session guest running build `36e9a906b9363aeb` (resident
+`83cdac8f0317`, base `now-mirror-stage.qcow2` sha256 `ec174395b4ec4a38`,
+receipt-accounted and volume-clean) carried one operator-supplied Apple MPW
+GM image end to end. NOW committed no MPW bytes and downloaded nothing: the
+25,109,760-byte MacBinary and its completed manifest sat in the operator's
+Application Support drop, and the guest received `MPW-GM.img` at exactly
+25,105,337 data and 4,131 resource bytes, `rohd`/`ddsk`. Disk Copy — not
+NOW — mounted it after a person accepted Apple's license, then quit itself.
+The Finder's own copy moved the 2,189-item folder to the hard disk with its
+own progress window. Registration and qualification stayed the human act
+they already were.
+
+`now_development_environment` reported both states honestly: with nothing
+registered, `not registered` / `unavailable` / `not found`; after
+registration, `mpw-ffff-00001486`, `structural-1`, `qualified`, ToolServer
+and MrC `found`. The agentic loop then ran entirely over authenticated
+loopback HTTP MCP — project authored, `Project.ckp` applied at revision 2,
+candidate `candidate-314dea840f904543` sealed at digest `d6c9458ddf3279b7`,
+MrC/PPCLink/Rez completing 3 of 3, product `APPL/PQAA` at 1,952 data and 441
+resource bytes, and `ckproject.test-receipt/1` returning **exact process
+identity matched**.
+
+**A mounted starter pack is not a usable toolchain, and the copy step is
+load-bearing.** Four builds of the same source on one rig separate the
+cause:
+
+| ToolServer's folder | ToolServer state | Result |
+|---|---|---|
+| hard-disk copy (`mpw-ffff-00001486`) | cold launch | succeeded 3 of 3 |
+| mounted pack (`mpw-fffe-000005f8`) | already resident from the hard disk | succeeded 3 of 3 |
+| mounted pack | cold launch | **failed at action 1 of 3, status −1** |
+| hard-disk copy | cold launch, after that failure | succeeded 3 of 3 |
+
+So a ToolServer launched from the read-only pack volume cannot run its own
+tools, while the same pack's tools copied to a writable disk build fine.
+The read-only property is visible in the OS itself — Navigation Services
+disables New Folder on that volume. The failing build writes only the
+`[[NOW:…:STAGE:0:-1]]` marker into its transcript and no tool output at
+all, which is what a Shell-level "command not found" looks like from
+inside the redirect. This is why the Read Me the setup image now writes,
+and the starter-pack reference page, both say to copy the MPW folder to
+the hard disk before registering it. It was first read as a transport or
+licensing defect on 2026-08-18 and is neither.
+
+Two narrower findings from the same run:
+
+- **The toolchain pin records the registration, not the tools that ran.**
+  The middle row above is the proof: a build pinned to the mounted volume
+  succeeded because an unrelated ToolServer was already resident and served
+  it. Nothing in the build receipt distinguishes the two, so a pin is not
+  evidence of which installation executed. A receipt that named the running
+  ToolServer's own folder would close this.
+- **Upload commit has a retry race.** `now_guest_files_upload_commit`
+  refuses `now-files-busy` while the wire drains, but a client that retries
+  then collides with its own first commit and gets
+  `now-files-upload-conflict`; the transfer completes regardless. The two
+  codes need to say plainly which one means "wait" and which means "you
+  already asked".
+
+Not covered by this row: metal, promotion, CodeKitten handoff, and the
+68K guest, which has no starter-pack lane because MPW does not fit its
+floppy-sized media.
+
+- **Starter payload (updated 2026-08-18, `feat/mpw-starter-pack`):** the
+  operator-supplied lane is now the resolution, on the CarbonLib pattern —
+  NOW never redistributes or downloads MPW; the operator drops their own
+  MacBinary image plus a completed manifest into the Onboarding
+  `Dependencies` folder, and NOW pins the digest, delivers the artifact
+  through the NDIF setup image (manifest stays host-side), and the guest
+  qualifies the registered folder. The manifest may only promise the
+  implemented `structural-1` probe (ToolServer + `Tools:MrC`); an
+  unimplemented probe name or overclaimed item list refuses the build.
+  No redistributable MPW bytes are committed and a shipped combined
+  NOW + CodeKitten + MPW image stays blocked until payload licensing and
   provenance are settled.
 - **Metal:** the earlier PowerBook result remains the fork-aware host-home
   build/run/dialog proof. Typed test, retry/restart recovery, guest-home

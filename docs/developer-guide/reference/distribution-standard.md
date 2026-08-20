@@ -87,6 +87,13 @@ material intact. The installer remains a separate user-run package; NOW does
 not extract CarbonLib into its own application or silently install it. A person
 accepts Apple's installer license on the classic Mac.
 
+MPW is an optional external input on the same terms, and is a host-side
+onboarding dependency rather than a release input. No release output carries
+it: the host fetches the checksum-pinned image on request into Application
+Support, and only a personalized setup image built on that Mac can carry it.
+The download is already a MacBinary disk image, so it is delivered
+byte-for-byte and Disk Copy opens it on the classic Mac.
+
 CarbonLib 1.6 is the supported and tested runtime floor. That product support
 statement must not be rewritten as a claim that every current binary import
 requires 1.6 merely to load; lower-runtime behavior remains experimental until

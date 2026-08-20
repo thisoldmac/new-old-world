@@ -93,8 +93,8 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: dd6505637ca1d0171f6b58c1018ab7e6176aedd7
-derive mcp-catalog sha256=0c7b3a689c736e59a9fe6059037cacbfff4a291af2aa21f10e2dfa0bbde9714e lines=3
+sources-sha1: dcd8f3d14156221b3831c73e38fd734879033f28
+derive mcp-catalog sha256=0ba13827bca56a75d20d341f2455f7a8a90118af7b0e962864459ae1221bf6cb lines=3
     scripts/docs-source-group mcp
 rederived: pending
 rederived: 2026-08-09T16:22:15-0400 9034e3eb sources, mcp-catalog 3->3
@@ -269,6 +269,33 @@ rederived: 2026-08-17T23:36:26-0400 5aa1092c sources
 rederived: 2026-08-17T23:52:46-0400 91fe237e sources
 rederived: 2026-08-18T15:09:51-0400 c33eb6ee sources
 rederived: 2026-08-18T17:19:00-0400 ffc561f4 sources
+rederived: 2026-08-18T21:43:39-0400 eae627f6 sources
 rederived: 2026-08-18T23:04:15-0400 fc295bcc sources
+rederived: 2026-08-18T23:13:33-0400 ce4dc746 sources
+rederived: 2026-08-18T23:19:31-0400 3341acb1 sources
 rederived: 2026-08-18T23:25:22-0400 353a37be sources
+rederived: 2026-08-18T23:33:03-0400 2c64a5c4 sources
+rederived: 2026-08-18T23:44:45-0400 6692e45b sources
+rederived: 2026-08-18T23:57:03-0400 d10402f4 sources
+rederived: 2026-08-19T00:06:06-0400 b3b2ee57 sources, mcp-catalog 3->3
+rederived: 2026-08-19T01:21:59-0400 0e46a4ac sources
+rederived: 2026-08-19T01:34:47-0400 7ec2d6d1 sources
+rederived: 2026-08-19T01:41:13-0400 399d4c78 sources
+rederived: 2026-08-19T01:53:16-0400 db827bac sources
+rederived: 2026-08-19T02:32:04-0400 a9efa24f sources
+rederived: 2026-08-19T03:00:30-0400 26f5c9fc sources
+rederived: 2026-08-19T03:14:02-0400 afcf45e6 sources
+rederived: 2026-08-19T03:33:52-0400 648ab89c sources
+rederived: 2026-08-19T03:53:11-0400 f9d1bd67 sources
+rederived: 2026-08-19T03:59:56-0400 14486719 sources
+rederived: 2026-08-19T04:47:57-0400 ba4e78ae sources
+rederived: 2026-08-19T05:41:22-0400 a8ee7d50 sources
+rederived: 2026-08-19T14:24:11-0400 d6583bbd sources
+rederived: 2026-08-19T14:49:25-0400 75da2302 sources
+rederived: 2026-08-19T15:06:39-0400 c9462eb5 sources, mcp-catalog 3->3
+rederived: 2026-08-19T18:20:14-0400 4b072fe0 sources
+rederived: 2026-08-19T18:25:39-0400 4b072fe0 sources
+rederived: 2026-08-19T21:35:43-0400 485e4ee1 sources
+rederived: 2026-08-19T21:40:50-0400 ae09a391 sources
+rederived: 2026-08-19T22:18:12-0400 110215ff sources
 -->

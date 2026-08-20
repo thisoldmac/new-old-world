@@ -1,0 +1,4 @@
+interface:
+  display_name: "Classic Mac Toolbox UI"
+  short_description: "Design native non-Carbon classic Mac interfaces"
+  default_prompt: "Use $classic-mac-toolbox-ui to design or review this non-Carbon classic Mac application interface."

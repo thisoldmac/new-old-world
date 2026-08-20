@@ -95,6 +95,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let preferences = MCPTransportPreferences(defaults: defaults)
         if preferences.stdioStartsAutomatically { startMCPStdio() }
         if preferences.httpStartsAutomatically { startMCPHTTP() }
+        /* A lane turn about to spawn its runtime asks for the HTTP MCP,
+           whatever the launch toggle said — see the notification's own
+           comment for the desk that paid for this (and for stdio's
+           sunset). startMCPHTTP is idempotent, so a server already up
+           costs nothing. The lane root is pinned here too: the HTTP
+           server runs IN this process, so now_guest_files_upload_file's
+           allowed directory is the host's own Settings answer, taken
+           fresh per spawn. */
+        NotificationCenter.default.addObserver(
+            forName: ChatWorkspaceMCPConfig.bridgeWanted, object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                HostProjectionLocalRead.configure(
+                    workspaceRoot: ChatWorkspaceLaneStore().state().lane?.root)
+                self?.startMCPHTTP()
+            }
+        }
         // Web's own model owns its UserDefaults key, unlike MCP's separate
         // preferences struct — reading the key directly here (rather than
         // forcing the "web" runtime into existence just to ask it) keeps the
@@ -596,6 +614,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 if request.operation != .sessionHealth,
                    request.operation != .audit,
                    request.operation != .projects,
+                   /* Like projects: the store is this Mac's own and a
+                      chat exists whether or not anything is connected,
+                      so an unaddressed caller must not be refused for
+                      naming no guest. */
+                   request.operation != .chats,
                    request.operation != .hostLogTail,
                    let refusal = agentIntegration.addressingRefusal(
                        request.guestSelector) {
@@ -608,7 +631,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                             code: "now-projects-invalid-request",
                             message: "The Projects request is missing.")))
                     }
-                    return .projects(agentIntegration.projects(project))
+                    return .projects(await agentIntegration.projects(project))
+                case .chats:
+                    guard let chat = request.chatRequest else {
+                        return .chats(.unavailable(.init(
+                            code: "now-chats-invalid-request",
+                            message: "The chats request is missing.")))
+                    }
+                    return .chats(agentIntegration.chats(chat))
                 case .development:
                     guard let development = request.developmentRequest else {
                         return .development(.refused(.init(
@@ -1214,7 +1244,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 @main
 enum HostMain {
     static func main() {
-        if Array(CommandLine.arguments.dropFirst()) == ["--mcp-stdio"] {
+        /* Two accepted companion spellings, both exact: bare, and with the
+           chat workspace lane's granted folder pinned on. Anything else
+           still launches the app, unchanged — an argument vector this
+           entry point does not recognise must not half-become a server. */
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        let workspaceRoot: URL? =
+            arguments.count == 3 && arguments[0] == "--mcp-stdio"
+                && arguments[1] == "--workspace-root" && !arguments[2].isEmpty
+            ? URL(fileURLWithPath: arguments[2], isDirectory: true)
+            : nil
+        if arguments == ["--mcp-stdio"] || workspaceRoot != nil {
+            HostProjectionLocalRead.configure(workspaceRoot: workspaceRoot)
             Task {
                 await MCPStdioTransport.run()
                 Foundation.exit(0)

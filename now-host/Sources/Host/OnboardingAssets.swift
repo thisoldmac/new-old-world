@@ -1,9 +1,37 @@
 import CryptoKit
 import Foundation
 
+/// Which classic Mac the onboarding surface is serving. The PPC flavor is
+/// the Carbon application with its CarbonLib dependency and companions; the
+/// 68K flavor is NOW-68K alone plus the extension, which is 68K by nature.
+/// CodeKitten and CarbonLib are Carbon and have no 68K meaning, and NOW-68K
+/// ships no preferences as a product property (n68_devsettings.h), so the
+/// 68K flavor offers no settings download either.
+enum OnboardingGuestFlavor: String, CaseIterable, Identifiable {
+    case powerpc
+    case m68k
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .powerpc: return "PowerPC"
+        case .m68k: return "68K"
+        }
+    }
+
+    var applicationDisplayName: String {
+        switch self {
+        case .powerpc: return "New Old World"
+        case .m68k: return "NOW-68K"
+        }
+    }
+}
+
 struct OnboardingAsset: Identifiable, Equatable {
     enum Kind: Equatable {
         case application
+        case application68K
         case codeKitten
         case extensionComponent
         case dependency
@@ -19,13 +47,33 @@ struct OnboardingAsset: Identifiable, Equatable {
 
 struct OnboardingAssetSnapshot: Equatable {
     let application: OnboardingAsset?
+    let application68K: OnboardingAsset?
     let codeKitten: OnboardingAsset?
     let extensionComponent: OnboardingAsset?
     let dependencies: [OnboardingAsset]
 
+    init(application: OnboardingAsset?,
+         application68K: OnboardingAsset? = nil,
+         codeKitten: OnboardingAsset?,
+         extensionComponent: OnboardingAsset?,
+         dependencies: [OnboardingAsset]) {
+        self.application = application
+        self.application68K = application68K
+        self.codeKitten = codeKitten
+        self.extensionComponent = extensionComponent
+        self.dependencies = dependencies
+    }
+
     static let empty = OnboardingAssetSnapshot(
-        application: nil, codeKitten: nil, extensionComponent: nil,
-        dependencies: [])
+        application: nil, application68K: nil, codeKitten: nil,
+        extensionComponent: nil, dependencies: [])
+
+    func application(for flavor: OnboardingGuestFlavor) -> OnboardingAsset? {
+        switch flavor {
+        case .powerpc: return application
+        case .m68k: return application68K
+        }
+    }
 
     var hasCarbonLib: Bool {
         OnboardingDependencyCatalog.carbonLib.installedAsset(in: self) != nil
@@ -82,6 +130,14 @@ struct OnboardingAssetCatalog {
             application: firstAsset(
                 named: ["New Old World.bin", "now-guest-ppc.bin"],
                 kind: .application),
+            // deploy-68k stamps versioned names ("NOW-68K 0.6.bin"), so the
+            // 68K application also matches by prefix where the PPC one is
+            // exact - the build-tree name stays accepted beside it.
+            application68K: firstAsset(
+                named: ["NOW-68K.bin", "now-guest-68k.bin"],
+                kind: .application68K)
+                ?? prefixedAsset(prefix: "NOW-68K ", suffix: ".bin",
+                                 kind: .application68K),
             codeKitten: firstAsset(
                 named: ["CodeKitten.bin", "codekitten.bin"],
                 kind: .codeKitten),
@@ -123,6 +179,31 @@ struct OnboardingAssetCatalog {
         return nil
     }
 
+    private func prefixedAsset(prefix: String, suffix: String,
+                               kind: OnboardingAsset.Kind)
+        -> OnboardingAsset? {
+        for root in roots {
+            let urls = (try? fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey,
+                                             .fileSizeKey],
+                options: [.skipsHiddenFiles])) ?? []
+            let match = urls.filter {
+                $0.lastPathComponent.hasPrefix(prefix)
+                    && $0.lastPathComponent.hasSuffix(suffix)
+            }.sorted {
+                // Highest version first, so a folder holding several
+                // deploys offers the newest.
+                $0.lastPathComponent.localizedStandardCompare(
+                    $1.lastPathComponent) == .orderedDescending
+            }.first
+            if let match, let asset = asset(at: match, kind: kind) {
+                return asset
+            }
+        }
+        return nil
+    }
+
     private func dependencyAssets() -> [OnboardingAsset] {
         var seen = Set<String>()
         var result: [OnboardingAsset] = []
@@ -140,6 +221,8 @@ struct OnboardingAssetCatalog {
             }) {
                 let key = url.lastPathComponent.lowercased()
                 guard !seen.contains(key),
+                      !OnboardingDependencyCatalog.retiredFileNames
+                          .contains(key),
                       let asset = asset(at: url, kind: .dependency)
                 else { continue }
                 seen.insert(key)
@@ -160,6 +243,23 @@ struct OnboardingAssetCatalog {
 }
 
 struct DevelopmentStarterPackManifest: Codable, Equatable {
+    /// The closed set of qualification probes the product implements, each
+    /// with the exact items its guest-side measurement checks. `structural-1`
+    /// is the PPC guest's whole probe: a `ToolServer` file and a `Tools`
+    /// folder holding `MrC`, both immediate children of the registered
+    /// folder. A manifest naming any other probe, or claiming items the
+    /// named probe never measures, is refused so the pack cannot promise a
+    /// qualification the guest does not perform.
+    static let implementedProbes: [String: Set<String>] = [
+        "structural-1": ["ToolServer", "Tools:MrC"],
+    ]
+
+    static func isManifestFileName(_ fileName: String) -> Bool {
+        let name = fileName.lowercased()
+        return name.hasSuffix("starter-pack.manifest.json")
+            || name.hasSuffix("starter pack.manifest.json")
+    }
+
     struct Platform: Codable, Equatable {
         let operatingSystem: String
         let minimumVersion: String
@@ -194,17 +294,17 @@ struct DevelopmentStarterPackManifest: Codable, Equatable {
     let platforms: [Platform]
     let components: [Component]
 
-    static func validate(in snapshot: OnboardingAssetSnapshot) throws {
+    @discardableResult
+    static func validated(in snapshot: OnboardingAssetSnapshot) throws
+        -> Self? {
         let manifests = snapshot.dependencies.filter {
-            let name = $0.fileName.lowercased()
-            return name.hasSuffix("starter-pack.manifest.json")
-                || name.hasSuffix("starter pack.manifest.json")
+            isManifestFileName($0.fileName)
         }
         guard manifests.count <= 1 else {
             throw ClassicSetupImageBuilder.BuildError.invalidStarterPack(
                 "More than one starter-pack manifest is installed.")
         }
-        guard let asset = manifests.first else { return }
+        guard let asset = manifests.first else { return nil }
         let manifest = try JSONDecoder().decode(
             Self.self, from: Data(contentsOf: asset.fileURL))
         guard manifest.schema == "now.development-starter-pack/1",
@@ -223,8 +323,8 @@ struct DevelopmentStarterPackManifest: Codable, Equatable {
                     && ["allowed", "forbidden", "unknown"]
                         .contains($0.license.redistribution)
                     && URL(string: $0.license.provenanceURL)?.scheme != nil
-                    && !$0.qualification.requiredItems.isEmpty
-                    && !$0.qualification.probe.isEmpty
+                    && Set($0.qualification.requiredItems)
+                        == implementedProbes[$0.qualification.probe]
               }),
               let payload = snapshot.dependencies.first(where: {
                   $0.fileName == manifest.artifact
@@ -242,5 +342,6 @@ struct DevelopmentStarterPackManifest: Codable, Equatable {
             throw ClassicSetupImageBuilder.BuildError.invalidStarterPack(
                 "The starter-pack artifact does not match its manifest.")
         }
+        return manifest
     }
 }

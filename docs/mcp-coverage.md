@@ -142,6 +142,7 @@ The test compares both against the code literally.
 | MCP tool | Requires | Exposes | Guest plane |
 |---|---|---|---|
 | `now_projects` | — | — | none; bounded host-owned project storage and recoverable history, independent of guest consent |
+| `now_chats` | — | — | none; the host-owned chats store, independent of guest consent — a saved conversation exists whether or not a Macintosh is connected. Reads page (a transcript from its newest end); `append` writes a NOTE and runs no model turn |
 | `now_development_environment` | `development` | `development` | command; path-free PPC guest qualification facts |
 | `now_development` | `development-project`, `development-stage`, `development-build`, `development-run`, `development-test` | `development-project`, `development-stage`, `development-build`, `development-run`, `development-test` | command; one closed semantic family for verified guest snapshots, inactive candidates, declarative ToolServer jobs, exact-product test receipts and exact-product launch; optional CodeKitten handoff remains a human-only app action |
 | `now_list_machines` | — | — | none; host listener state |
@@ -188,6 +189,7 @@ The test compares both against the code literally.
 | `now_guest_files_upload_begin` | — | — | none; host staging only |
 | `now_guest_files_upload_append` | — | — | none; host staging only |
 | `now_guest_files_upload_commit` | `file.put` | `file.put` | message family |
+| `now_guest_files_upload_file` | `file.put` | `file.put` | message family; the file is read from the chat workspace folder pinned at companion spawn, then staged and committed through the same lane as the trio above — no bytes cross the caller |
 
 **The distinct capabilities those rows require is a shorter list than the row
 count, and the ones they expose is shorter still.** Most of the rows above are
@@ -634,7 +636,11 @@ to exist:
 | `chat.catalog` | message | ppc | deliberate | The host's answer to a guest-initiated `chat.models` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The chat family runs guest-to-host by definition — its subject is the host's own model harness, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for; the MCP is a client of guests, not of the host's own services ([command-parity.md](command-parity.md), and the `guestAsksChat` / `hostServesChat` operations in the contract). The agent-facing reading of the same harness is the chat face itself, not a projection. |
 | `chat.delta` | message | ppc | deliberate | The streamed half of the host's answer to `chat.send` — same definitional direction as `chat.catalog`, same citation ([command-parity.md](command-parity.md)). |
 | `chat.result` | message | ppc | deliberate | The terminal half of the same turn, same reason ([command-parity.md](command-parity.md)). |
+| `chat.projectroster` | message | ppc | deliberate | Reached by `now_chats` (`projects`) since 2026-08-19. The argument, and the correction that produced it, are in the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) (W6). |
+| `chat.roster` | message | ppc | deliberate | Reached by `now_chats` (`list`) since 2026-08-19. Written up as a deliberate gap for one afternoon on the argument that a person's saved conversations are not an agent capability, and corrected the same day (Michelle): an agent that can drive the classic machine but cannot see the conversation happening AT it leaves the human as the only wire between the halves. The wire message itself stays guest-to-host — the guest asks the host for its own store — and the agent-facing reading of the same store is the projection, not this message. The argument, and the correction that produced it, are in the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) (W6). |
+| `chat.transcript` | message | ppc | deliberate | Reached by `now_chats` (`read`) since 2026-08-19, paged from the newest end the way the wire pages it — one rule, read by both faces. The argument, and the correction that produced it, are in the [guest chat sessions plan](plans/2026-08-18-038-feat-guest-chat-sessions-plan.md) (W6). |
 | `chat.status` | message | ppc | deliberate | The transient liveness line of the same family, same reason ([command-parity.md](command-parity.md)). |
+| `chat.skillroster` | message | ppc | deliberate | The host's answer to a guest-initiated `chat.skills` — same definitional direction as `chat.catalog`, same citation ([command-parity.md](command-parity.md)): the subject is the host's own skill catalogue, which no classic Mac has, so no guest will ever serve one and there is nothing here for a projection to ask a guest for. |
 | `cloud.card` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.detail` — the PPC guest's dispatch RECEIVES it as the asker, which is what the Served column's derivation sees; no guest serves one. The cloud family runs guest-to-host by definition — its subject is the host's own iCloud, which no classic Mac has — so no guest will ever serve one and there is nothing here for a projection to ask a guest for; the MCP is a client of guests, not of the host's own services ([command-parity.md](command-parity.md), and the `guestAsksCloud` / `hostServesCloud` operations in the contract). |
 | `cloud.listing` | message | ppc | deliberate | The host's answer to a guest-initiated `cloud.list` — same definitional direction as `cloud.card`, same citation ([command-parity.md](command-parity.md)). |
 | `cloud.refuse` | message | ppc | deliberate | The refusal half of the same family, same reason ([command-parity.md](command-parity.md)). |
@@ -1198,14 +1204,14 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: f95921dfc47932866496f43b17102b04a01172db
-derive ppc-inbound-types sha256=5c659300160d136813e618972ee666eff5313dfd50488d136938776328ffefb0 lines=58 published
+sources-sha1: c724d1b953c68d0d44c5178198a9857ac52e1085
+derive ppc-inbound-types sha256=deaa05a18ffaec3e8f5f3223631b9b3ceb4a0cbe0ca4ec088bd54957b0a9ee56 lines=62 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
 derive 68k-inbound-types sha256=53d664d7837eb250945e6c2d46f0aaeedd8a8c65aca5154477236991be70825b lines=25 published
     grep -o 'strcmp(type, "[a-z.]*")' now-guest-68k/src/core/wire68.c \
       | sed 's/.*"\(.*\)".*/\1/' | sort -u
-derive disposition-census sha256=e1fd0d92d72112c446182fdeb1d74c27d57ada04e127f238d560e84b4dc4a2b4 lines=3
+derive disposition-census sha256=47a68e37656997c84a5b1394eb1248dba698434bbd02320c66487fcd3f6dad48 lines=3
     awk -F'|' '/^\| *`[a-z0-9._]+` *\|/ {s=$5; gsub(/ /,"",s); \
         if (s ~ /^(deliberate|planned|unnoticed)$/) print s}' \
         docs/mcp-coverage.md | sort | uniq -c | awk '{print $1, $2}'
@@ -1422,6 +1428,33 @@ rederived: 2026-08-17T23:36:26-0400 5aa1092c sources
 rederived: 2026-08-17T23:52:46-0400 91fe237e unchanged
 rederived: 2026-08-18T15:09:50-0400 c33eb6ee unchanged
 rederived: 2026-08-18T17:19:00-0400 ffc561f4 sources
+rederived: 2026-08-18T21:43:39-0400 eae627f6 sources
 rederived: 2026-08-18T23:04:15-0400 fc295bcc unchanged
+rederived: 2026-08-18T23:13:33-0400 ce4dc746 sources
+rederived: 2026-08-18T23:19:31-0400 3341acb1 unchanged
 rederived: 2026-08-18T23:25:22-0400 353a37be unchanged
+rederived: 2026-08-18T23:33:03-0400 2c64a5c4 sources, ppc-inbound-types 58->61
+rederived: 2026-08-18T23:44:44-0400 6692e45b disposition-census 3->3
+rederived: 2026-08-18T23:57:03-0400 d10402f4 disposition-census 3->3
+rederived: 2026-08-19T00:06:05-0400 b3b2ee57 sources, disposition-census 3->3
+rederived: 2026-08-19T01:21:59-0400 0e46a4ac sources
+rederived: 2026-08-19T01:34:47-0400 7ec2d6d1 unchanged
+rederived: 2026-08-19T01:41:13-0400 399d4c78 unchanged
+rederived: 2026-08-19T01:53:16-0400 db827bac unchanged
+rederived: 2026-08-19T02:32:03-0400 a9efa24f sources
+rederived: 2026-08-19T03:00:30-0400 26f5c9fc unchanged
+rederived: 2026-08-19T03:14:02-0400 afcf45e6 unchanged
+rederived: 2026-08-19T03:33:52-0400 648ab89c unchanged
+rederived: 2026-08-19T03:53:11-0400 f9d1bd67 unchanged
+rederived: 2026-08-19T03:59:55-0400 14486719 unchanged
+rederived: 2026-08-19T04:47:57-0400 ba4e78ae sources
+rederived: 2026-08-19T05:41:21-0400 a8ee7d50 unchanged
+rederived: 2026-08-19T14:24:10-0400 d6583bbd sources
+rederived: 2026-08-19T14:49:25-0400 75da2302 sources, ppc-inbound-types 61->62
+rederived: 2026-08-19T15:06:38-0400 c9462eb5 sources, disposition-census 3->3
+rederived: 2026-08-19T18:20:13-0400 4b072fe0 unchanged
+rederived: 2026-08-19T18:25:38-0400 4b072fe0 unchanged
+rederived: 2026-08-19T21:35:42-0400 485e4ee1 unchanged
+rederived: 2026-08-19T21:40:49-0400 ae09a391 unchanged
+rederived: 2026-08-19T22:18:12-0400 110215ff unchanged
 -->

@@ -38,7 +38,26 @@ def tracked_markdown(root: Path) -> list[Path]:
                 + result.stderr.strip()
             )
         rels = result.stdout.splitlines()
-    return [root / rel for rel in sorted(filter(None, rels))]
+    return [
+        root / rel
+        for rel in sorted(filter(None, rels))
+        if not is_vendored(rel)
+    ]
+
+
+def is_vendored(rel: str) -> bool:
+    """Markdown this repository carries but did not write.
+
+    `skills/` is a vendored copy of a skill tree with its own history
+    (skills/PROVENANCE.md). Stamping a marker into those files would
+    edit them, and the whole point of the copy is that it stays
+    byte-identical to its source so `tools/sync-classic-skills` can say
+    what actually differs. One file at the root of the directory carries
+    the provenance for all of them, which is what a vendored tree can
+    honestly say — a per-file marker would claim this project authored
+    or reviewed each one.
+    """
+    return rel.split("/", 1)[0] == "skills" and rel != "skills/PROVENANCE.md"
 
 
 def requires_generated(path: Path, text: str, root: Path) -> bool:

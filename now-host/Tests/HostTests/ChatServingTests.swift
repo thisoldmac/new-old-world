@@ -28,14 +28,34 @@ final class ChatServingTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        if let storeRoot { try? FileManager.default.removeItem(at: storeRoot) }
+        store = nil
+        storeRoot = nil
         listener.stop()
         listener = nil
         chatService = nil
         provider = nil
     }
 
+    /// A store in a throwaway directory, so a serving test never writes
+    /// into the real Application Support — and nil where a test wants
+    /// the store-less behaviour on purpose.
+    private var store: ChatStore?
+    private var storeRoot: URL?
+
+    private func makeStore() -> ChatStore {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-chats-\(UUID().uuidString)")
+        storeRoot = root
+        // swiftlint:disable:next force_try
+        let store = try! ChatStore(root: root)
+        self.store = store
+        return store
+    }
+
     private func installChat(
         script: [[ChatStreamEvent]], hangsWhenDry: Bool = false,
+        heartbeatInterval: TimeInterval = ChatWireService.heartbeat,
         providers: [ChatCatalogProvider] = [
             ChatCatalogProvider(
                 provider: "fake", label: "Fake", state: "serving",
@@ -44,8 +64,11 @@ final class ChatServingTests: XCTestCase {
         models: [String: [ChatModel]] = [
             "fake": [ChatModel(providerID: "fake", modelID: "m",
                                displayName: "m")]
-        ]
+        ],
+        mintLinkedProject: ((String, ProjectHome, String?) async
+            -> Result<ProjectID, ProjectGround.Refusal>)? = nil
     ) {
+        _ = makeStore()
         let scripted = WireScriptedProvider(script)
         scripted.hangsWhenDry = hangsWhenDry
         provider = scripted
@@ -58,8 +81,53 @@ final class ChatServingTests: XCTestCase {
         chatService = ChatWireService(
             harness: harness,
             providers: { providers },
-            models: { models[$0] })
+            models: { models[$0] },
+            store: store,
+            heartbeatInterval: heartbeatInterval,
+            mintLinkedProject: mintLinkedProject)
         listener.chatService = chatService
+    }
+
+    private func roster(on guest: FakeGuest, id: Int) async throws
+        -> ChatRoster {
+        try await waitUntil("roster \(id)") {
+            guest.received.contains {
+                if case .chatRoster(let r) = $0 { return r.id == id }
+                return false
+            }
+        }
+        for frame in guest.received.reversed() {
+            if case .chatRoster(let r) = frame, r.id == id { return r }
+        }
+        throw WaitTimeout(what: "roster \(id)")
+    }
+
+    private func transcriptPage(on guest: FakeGuest, id: Int) async throws
+        -> ChatTranscript {
+        try await waitUntil("transcript \(id)") {
+            guest.received.contains {
+                if case .chatTranscript(let t) = $0 { return t.id == id }
+                return false
+            }
+        }
+        for frame in guest.received.reversed() {
+            if case .chatTranscript(let t) = frame, t.id == id { return t }
+        }
+        throw WaitTimeout(what: "transcript \(id)")
+    }
+
+    private func projectRoster(on guest: FakeGuest, id: Int) async throws
+        -> ChatProjectRoster {
+        try await waitUntil("projects \(id)") {
+            guest.received.contains {
+                if case .chatProjectRoster(let r) = $0 { return r.id == id }
+                return false
+            }
+        }
+        for frame in guest.received.reversed() {
+            if case .chatProjectRoster(let r) = frame, r.id == id { return r }
+        }
+        throw WaitTimeout(what: "projects \(id)")
     }
 
     private struct WaitTimeout: Error { let what: String }
@@ -207,6 +275,322 @@ final class ChatServingTests: XCTestCase {
                 String(decoding: encoded, as: UTF8.self)
                     .contains("Heretic-v2-MLX-mixed-6bit-variant-0"))
         }
+    }
+
+    /* The contract obliges the HOST to keep deltas or status flowing
+       while a turn is open, and entitles the guest to kill a silent
+       turn at sixty seconds. Every tool the harness runs answers in
+       seconds, so nothing ever tested it. A workspace lane's single
+       `Bash` call is a cross-compile: minutes inside one tool, with the
+       runtime saying nothing until it returns — a build dying at sixty
+       seconds for looking dead. */
+    func testASilentTurnStillSpeaksBeforeTheGuestsDeadline() async throws {
+        /* The turn is held open the way a real one is: the provider
+           says what it is doing, asks for a tool, and the next round
+           never answers — a runtime inside a long `Bash`. */
+        installChat(
+            script: [[
+                .activity("Bash scripts/build-guests"),
+                .finished(.toolUse([ChatToolCall(
+                    id: "c1", name: "now_machine_facts",
+                    argumentsJSON: "{}")])),
+            ]],
+            hangsWhenDry: true, heartbeatInterval: 0.15)
+        let guest = try await connectedGuest()
+        let ref = try await mintedRef(on: guest)
+
+        try guest.send(.chatSend(ChatSend(id: 40, ref: ref, prompt: "build")))
+        try await waitUntil("a repeat of the last thing seen") {
+            guest.received.filter {
+                if case .chatStatus(let s) = $0 {
+                    return s.id == 40 && s.text.hasPrefix("Still:")
+                }
+                return false
+            }.count >= 2
+        }
+
+        let lines = guest.received.compactMap { frame -> String? in
+            if case .chatStatus(let s) = frame { return s.text }
+            return nil
+        }
+        // The first line is what it is doing; the repeats say the same
+        // thing rather than inventing a new claim about the machine.
+        XCTAssertEqual(lines.first, "Bash scripts/build-guests")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("Still: ") }, "\(lines)")
+        // A repeat, never a new claim about the machine.
+        for line in lines where line.hasPrefix("Still: ") {
+            XCTAssertTrue(
+                lines.contains(String(line.dropFirst("Still: ".count))),
+                "the heartbeat invented \(line)")
+        }
+        _ = try? guest.send(.chatCancel(ChatCancel(id: 40)))
+    }
+
+    // MARK: - Sessions, lazily
+
+    /// The regression this slice answers: a guest conversation used to
+    /// live in a dictionary and die with the link.
+    func testAGuestTurnIsSavedAndListedWithItsOrigin() async throws {
+        installChat(script: [[.textDelta("hello back"), .finished(.endTurn)]])
+        let guest = try await connectedGuest()
+        let ref = try await mintedRef(on: guest)
+
+        try guest.send(.chatSend(ChatSend(
+            id: 50, ref: ref, prompt: "hello from the classic Mac")))
+        _ = try await result(on: guest, id: 50)
+
+        try guest.send(.chatChats(ChatChats(id: 51)))
+        let roster = try await roster(on: guest, id: 51)
+        XCTAssertEqual(roster.chats.count, 1)
+        let row = try XCTUnwrap(roster.chats.first)
+        XCTAssertEqual(row.origin, "guest")
+        XCTAssertEqual(row.current, true)
+        XCTAssertEqual(row.label, "hello from the classic Mac")
+        // Metadata only: not one byte of what was said.
+        let encoded = try ControlMessageCodec.encode(.chatRoster(roster))
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self)
+            .contains("hello back"))
+    }
+
+    /// A chat typed at the modern Mac is listed to the guest — the
+    /// widening decided 2026-08-18 — and it is marked as such.
+    func testAHostChatIsListedToTheGuestAndSaysWhereItWasTyped() async throws {
+        installChat(script: [])
+        let store = try XCTUnwrap(store)
+        _ = try store.createChat(title: "typed upstairs", origin: .host)
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatChats(ChatChats(id: 60)))
+        let roster = try await roster(on: guest, id: 60)
+
+        XCTAssertEqual(roster.chats.map(\.origin), ["host"])
+        XCTAssertEqual(roster.chats.first?.label, "typed upstairs")
+    }
+
+    /// Opening pushes NOTHING; history pages from the end.
+    func testOpeningAChatSendsNoTranscriptAndHistoryPagesFromTheEnd()
+        async throws {
+        installChat(script: [])
+        let store = try XCTUnwrap(store)
+        let saved = try store.createChat(title: "long one", origin: .host)
+        var transcript = StoredChatTranscript()
+        for index in 0..<60 {
+            transcript.rows.append(StoredChatRow(
+                kind: index.isMultiple(of: 2) ? .person : .model,
+                text: "line \(index)", toolName: nil, toolOK: nil))
+        }
+        _ = try store.saveTranscript(transcript, for: saved.id)
+        let guest = try await connectedGuest()
+        try guest.send(.chatChats(ChatChats(id: 70)))
+        let roster = try await roster(on: guest, id: 70)
+        let ref = try XCTUnwrap(roster.chats.first?.ref)
+
+        try guest.send(.chatOpen(ChatOpen(id: 71, ref: ref)))
+        let opened = try await result(on: guest, id: 71)
+        XCTAssertTrue(opened.ok)
+        XCTAssertFalse(
+            guest.received.contains { if case .chatTranscript = $0 {
+                return true } else { return false } },
+            "an open pushed a transcript nobody asked for")
+
+        try guest.send(.chatHistory(ChatHistory(id: 72)))
+        let first = try await transcriptPage(on: guest, id: 72)
+        XCTAssertEqual(first.rows.count, ChatWireService.historyRows)
+        XCTAssertEqual(first.rows.last?.text, "line 59",
+                       "the newest page comes first")
+        XCTAssertTrue(first.more)
+
+        try guest.send(.chatHistory(ChatHistory(
+            id: 73, cursor: first.rows.count)))
+        let second = try await transcriptPage(on: guest, id: 73)
+        XCTAssertEqual(second.rows.last?.text, "line 35")
+    }
+
+    /// The question this product exists to ask must not be answered by
+    /// a default.
+    func testCreatingAProjectWithoutSayingWhereItLivesIsRefused()
+        async throws {
+        installChat(script: [])
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 80, op: "create", name: "Beeper")))
+        let refused = try await result(on: guest, id: 80)
+
+        XCTAssertFalse(refused.ok)
+        XCTAssertTrue(refused.message?.contains("modern") == true,
+                      refused.message ?? "no message")
+        XCTAssertEqual(try store?.listProjects().count, 0,
+                       "a refused create still made a project")
+    }
+
+    /// The once-dead seam, wired: a host-home chat create also mints a
+    /// real ProjectStore project and associates the chat folder with it.
+    func testCreatingAHostProjectMintsAndAssociatesTheStoreProject()
+        async throws {
+        let minted = ProjectID.mint()
+        var asked: [(String, ProjectHome, String?)] = []
+        installChat(script: [], mintLinkedProject: { name, home, toolchain in
+            asked.append((name, home, toolchain))
+            return .success(minted)
+        })
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 85, op: "create", name: "Beeper", home: "host")))
+        let made = try await result(on: guest, id: 85)
+
+        XCTAssertTrue(made.ok)
+        XCTAssertTrue(made.message?.contains("minted") == true,
+                      made.message ?? "no message")
+        XCTAssertEqual(asked.map(\.0), ["Beeper"])
+        XCTAssertEqual(asked.map(\.1), [.host])
+        XCTAssertEqual(asked.map(\.2), [nil],
+                       "the wire carries home only; the toolchain "
+                           + "defaults in ProjectGround")
+        let record = try XCTUnwrap(try store?.listProjects().first)
+        XCTAssertEqual(record.linkedProjectID, minted,
+                       "the chat folder was not associated with the "
+                           + "minted project")
+    }
+
+    /// A refused mint still files the chat folder — it is not worthless
+    /// without a store project — and the answer says why the code half
+    /// was refused.
+    func testARefusedMintStillCreatesTheChatFolderAndSaysWhy()
+        async throws {
+        installChat(script: [], mintLinkedProject: { _, _, _ in
+            .failure(.storeRefused("the disk said no"))
+        })
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 86, op: "create", name: "Beeper", home: "host")))
+        let made = try await result(on: guest, id: 86)
+
+        XCTAssertTrue(made.ok, "the chat folder half still succeeded")
+        XCTAssertTrue(made.message?.contains("the disk said no") == true,
+                      made.message ?? "no message")
+        let record = try XCTUnwrap(try store?.listProjects().first)
+        XCTAssertNil(record.linkedProjectID)
+        XCTAssertEqual(record.name, "Beeper")
+    }
+
+    /// A guest home reaches the same minting authority and comes back
+    /// as the import-path story, with the folder still filed.
+    func testAGuestHomeCreateCarriesTheImportPathStory() async throws {
+        installChat(script: [], mintLinkedProject: { _, home, _ in
+            home == .guest
+                ? .failure(.guestHome)
+                : .failure(.storeRefused("unexpected home"))
+        })
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 87, op: "create", name: "Beeper", home: "guest")))
+        let made = try await result(on: guest, id: 87)
+
+        XCTAssertTrue(made.ok)
+        XCTAssertTrue(made.message?.contains("import") == true,
+                      made.message ?? "no message")
+        let record = try XCTUnwrap(try store?.listProjects().first)
+        XCTAssertNil(record.linkedProjectID)
+        XCTAssertEqual(record.intendedHome, .guest)
+    }
+
+    func testCreatingAProjectFilesTheChatAndRemembersItsHome() async throws {
+        installChat(script: [])
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatProject(ChatProject(
+            id: 81, op: "create", name: "Beeper", home: "guest")))
+        let made = try await result(on: guest, id: 81)
+        XCTAssertTrue(made.ok)
+
+        try guest.send(.chatProjects(ChatProjects(id: 82)))
+        let projects = try await projectRoster(on: guest, id: 82)
+        XCTAssertEqual(projects.projects.map(\.label), ["Beeper"])
+        XCTAssertEqual(projects.projects.first?.home, "guest")
+        XCTAssertEqual(projects.projects.first?.current, true)
+    }
+
+    /* The guest's mode popup is a promise, and it can only be honest if
+       the reach crosses. Before this, a text-only provider looked
+       identical on the wire to one with the whole catalog, and the page
+       offered Build for both (metal, 2026-08-19). */
+    func testTheProviderCatalogCarriesEachProvidersReach() async throws {
+        installChat(script: [], providers: [
+            ChatCatalogProvider(
+                provider: "fake", label: "Fake", state: "serving",
+                detail: nil, tools: "none"),
+        ])
+        let guest = try await connectedGuest()
+
+        try guest.send(.chatModels(ChatModels(id: 90)))
+        try await waitUntil("providers catalog") {
+            guest.received.contains {
+                if case .chatCatalog(let c) = $0 { return c.id == 90 }
+                return false
+            }
+        }
+        guard case .chatCatalog(let catalog)? = guest.received.last(where: {
+            if case .chatCatalog(let c) = $0 { return c.id == 90 }
+            return false
+        }) else { return XCTFail("no catalog") }
+
+        XCTAssertEqual(catalog.providers?.first?.tools, "none")
+    }
+
+    /// The spelling the contract uses, from the type the harness reads.
+    func testEveryReachHasOneWireSpelling() {
+        XCTAssertEqual(ChatModuleModel.wireReach(.harness), "full")
+        XCTAssertEqual(
+            ChatModuleModel.wireReach(.workspace(summary: "anything")),
+            "workspace")
+        XCTAssertEqual(ChatModuleModel.wireReach(.none(reason: "why")), "none")
+    }
+
+    /* The whole point of the skill lane, from the far end: a person at
+       the classic machine types a slash and the model's NEXT turn is
+       told the platform rules. Asserted through the real wire because
+       the parts each passing proves nothing about the seam. */
+    func testASlashLoadsASkillAndNeverBecomesAModelTurn() async throws {
+        installChat(script: [[.textDelta("ok"), .finished(.endTurn)]])
+        let guest = try await connectedGuest()
+        let ref = try await mintedRef(on: guest)
+        let name = try XCTUnwrap(chatService.installedSkillNames.first)
+
+        try guest.send(.chatSend(ChatSend(
+            id: 100, ref: ref, prompt: "/\(name)")))
+        let loaded = try await result(on: guest, id: 100)
+        XCTAssertTrue(loaded.ok)
+        XCTAssertTrue(provider.requests.isEmpty,
+                      "a slash command was sent to the model")
+
+        try guest.send(.chatSend(ChatSend(
+            id: 101, ref: ref, prompt: "how do I draw a tab?")))
+        _ = try await result(on: guest, id: 101)
+
+        let system = try XCTUnwrap(provider.requests.first?.system)
+        XCTAssertTrue(system.contains("SKILL: \(name)"), system)
+    }
+
+    func testAnUnknownSlashAnswersAndDoesNotReachTheModel() async throws {
+        installChat(script: [[.textDelta("ok"), .finished(.endTurn)]])
+        let guest = try await connectedGuest()
+        let ref = try await mintedRef(on: guest)
+
+        try guest.send(.chatSend(ChatSend(
+            id: 110, ref: ref, prompt: "/carbn")))
+        let answered = try await result(on: guest, id: 110)
+
+        XCTAssertTrue(answered.ok)
+        XCTAssertTrue(provider.requests.isEmpty)
+        let text = guest.received.compactMap { frame -> String? in
+            if case .chatDelta(let d) = frame, d.id == 110 { return d.text }
+            return nil
+        }.joined()
+        XCTAssertTrue(text.contains("No skill called /carbn"), text)
     }
 
     func testARefRidesBackToTheRealModelID() async throws {
@@ -384,9 +768,45 @@ final class ChatDeltaChunkingTests: XCTestCase {
 
 // MARK: - Test doubles
 
+/* The wiring, not the serving: does a host answer a guest's chat asks
+   at all without somebody opening a page on this Mac? */
+@MainActor
+final class ChatServiceWiringTests: XCTestCase {
+    func testAHostServesChatWithoutAnybodyOpeningItsPage() {
+        let suite = "now.chat-wiring.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // Not listening: this is about the SERVICE being wired, and a
+        // test has no business binding a port to find that out.
+        defaults.set(false, forKey: "listenAtLaunch")
+
+        let state = HostAppState(registry: .standard, defaults: defaults)
+
+        /* The invariant, not a fix for anything: module runtimes are
+           built lazily, and `chat`'s runtime is also what assigns
+           `listener.chatService`. If that ever stops happening during
+           construction, every chat.models and chat.chats a classic Mac
+           sends is answered with SILENCE — which the contract reserves
+           for a host that predates the family, so the guest would be
+           told a lie rather than shown an error.
+
+           Written while chasing a guest stuck on "(asking...)" and
+           WRONGLY suspected of being this. It was not: the wiring was
+           always there, the defect was in the guest (one pending ask
+           slot, two asks). Kept because the invariant is real and
+           nothing else asserted it — but it is not evidence about that
+           bug, and the mutation it survives says so. */
+        XCTAssertNotNil(state.listener.chatService,
+                        "a guest's chat asks would be answered with "
+                            + "silence until somebody opened the Chat page "
+                            + "on this Mac")
+    }
+}
+
 private final class WireScriptedProvider: ChatProvider, @unchecked Sendable {
     let id = "fake"
     let label = "Fake"
+    var toolReach = ChatToolReach.harness
     private let lock = NSLock()
     private var script: [[ChatStreamEvent]]
     private(set) var requests: [ChatCompletionRequest] = []

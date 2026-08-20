@@ -1,0 +1,13 @@
+{
+  "target": "platinum-toolbox",
+  "screen": {"width": 800, "height": 600, "depth": 8},
+  "application": "Transfer",
+  "window": {"x": 110, "y": 75, "width": 580, "height": 410, "title": "Transfer Queue", "active": true},
+  "components": [
+    {"id": "queue", "type": "list", "x": 24, "y": 34, "width": 530, "height": 220, "items": ["System Folder", "Documents", "Read Me"], "selected": 0},
+    {"id": "progress", "type": "progress", "x": 24, "y": 280, "width": 410, "height": 16, "value": 62},
+    {"id": "stop", "type": "button", "x": 462, "y": 276, "width": 92, "height": 24, "text": "Stop"},
+    {"id": "close", "type": "button", "x": 462, "y": 336, "width": 92, "height": 24, "text": "Close", "default": true}
+  ],
+  "assets": []
+}

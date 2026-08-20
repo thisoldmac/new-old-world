@@ -1,0 +1,8 @@
+{
+  "target": "system7-classic",
+  "window": {"x": 70, "y": 52, "width": 500, "height": 340, "title": "Invalid", "active": true},
+  "components": [
+    {"id": "browser", "type": "databrowser", "x": 20, "y": 20, "width": 440, "height": 220, "items": ["Must fail"]}
+  ],
+  "assets": []
+}

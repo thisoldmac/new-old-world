@@ -59,6 +59,7 @@ pre-Carbon NOW-68K ─ retained in source; excluded from alpha
 | Screenshots and streaming | included with stated limitations | not required | excluded from release |
 | [Web compatibility bridge](docs/user-guide/reference/modules/web.md): guest-loopback proxy over NOW's wire, host-side TLS/JS handling, classic HTML profiles, Reader and optional local AI layout | included; tested, not classic-browser verified | not required | unavailable |
 | [Projects and Development](docs/user-guide/reference/modules/development.md): host-owned project history, guest-native MPW builds, verified candidates, and exact-product launch | included; host-home loop metal-verified, varied autonomous loops emulator-verified | not required | unavailable |
+| [Chat](docs/user-guide/reference/modules/chat.md): saved conversations, projects and modes on both faces, the classic-Mac skill tree, and an optional coding-agent workspace on the modern Mac | experimental; emulator-verified, not metal-verified | not required | unavailable |
 | Deeper Mirror observation and interaction | experimental | provides the required classic-process access | unavailable |
 | In-context interaction, transitions, modal-safe liveness, drag, and cursor following | experimental | provides resident vehicles | unavailable |
 | [Guided PowerPC setup portal](docs/user-guide/how-to/set-up-new-mac.md) and fork-preserving HFS install image | included; tested, not metal-verified | bundled optional package selection | unavailable |
@@ -82,7 +83,15 @@ The short table is navigation, not a claim of parity. The [module reference](doc
   emulator or physical Mac. Its parser, wire codec, host routing and both
   builds are tested; the Open Transport listener remains runtime-unverified.
   Optional model weights are not distributed.
-- Development is PowerPC-only. The host-owned MPW build/run loop is metal-verified; guest-home promotion, typed tests, positive CodeKitten handoff receipts, semantic settlement, and authenticated HTTP MCP loops are tested or emulator-verified but have not been repeated together on metal. A redistributable MPW starter payload remains blocked on license/provenance.
+- Development is PowerPC-only. The host-owned MPW build/run loop is metal-verified; guest-home promotion, typed tests, positive CodeKitten handoff receipts, semantic settlement, and authenticated HTTP MCP loops are tested or emulator-verified but have not been repeated together on metal. MPW is an optional onboarding dependency on CarbonLib's terms — one checksum-pinned download the host fetches and builds into a personalized setup image, never into a release output; the guest qualifies whatever a person registers, and it must be the copy on the hard disk rather than the mounted image.
+- Chat's workspace lane is a coding agent on the MODERN Mac, and it is the one
+  power this app does not audit. With it on — the default, reversible in
+  Settings > Chat — a turn typed at the classic machine's Chat page runs a
+  Claude runtime with its own file and command tools inside New Old World's own
+  workspace folder here, governed by that folder's policy rather than by this
+  app's per-capability consent. The New Old World half of such a turn is
+  audited exactly as before; the file-and-shell half is not. Emulator-verified,
+  never metal-verified.
 - Pre-Carbon/NOW-68K support is excluded from the alpha; its source and contributor documentation remain for later feature-flagged work.
 - Mirror is experimental. Drawing-content tracing remains off by default and has caused Finder instability on a PowerBook 1400c.
 - The documentation currently contains clearly labeled screenshot placeholders; captures must be privacy-reviewed and replace them at the declared dimensions.

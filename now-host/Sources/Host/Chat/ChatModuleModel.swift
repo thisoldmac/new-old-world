@@ -160,6 +160,17 @@ final class ChatModuleModel: ObservableObject {
        should still WORK — it degrades to the old in-memory behaviour
        with the reason on screen, rather than refusing to talk. */
     private let chatStore: ChatStore?
+    /// The adapter's project-minting authority, carried into the wire
+    /// service so a chat-created project also becomes a real
+    /// ProjectStore project (the associate seam, wired 2026-08-19).
+    private let mintLinkedProject:
+        (String, ProjectHome, String?) async
+            -> Result<ProjectID, ProjectGround.Refusal>
+    /// The guest's development-environment read, for the New Project
+    /// sheet's MPW option — the same rows ProjectGround resolves a
+    /// guest-mpw pin from.
+    private let readDevelopmentEnvironment:
+        () async -> AgentIntegrationGuestRowReportResult
     @Published private(set) var chats: [ChatSummary] = []
     @Published private(set) var chatProjects: [ChatProjectRecord] = []
     @Published private(set) var selectedChatID: ChatID?
@@ -193,12 +204,30 @@ final class ChatModuleModel: ObservableObject {
         self.transport = transport
         self.defaults = defaults
         self.chatStore = chatStore
+        self.mintLinkedProject = { name, home, toolchain in
+            await agentIntegration.mintChatLinkedProject(
+                name: name, home: home, toolchain: toolchain)
+        }
+        self.readDevelopmentEnvironment = {
+            await agentIntegration.developmentEnvironment()
+        }
         selectedWireModelID = defaults.string(forKey: Self.modelKey) ?? ""
 
         let codexClient = CodexAppServerClient()
         self.codexClient = codexClient
+        /* The lane store reads THIS model's defaults, not the process
+           default suite. Two reasons, and the second is why it is a
+           bug rather than tidiness: a suffixed run (NOW_PREFS_SUFFIX)
+           must not read the desk's real lane, and a unit test that
+           injects its own suite must not — since absent-grant came to
+           mean granted — provision a real workspace under the
+           developer's Application Support and copy the skill tree into
+           it, which is what `swift test` was doing. */
+        let laneStore = ChatWorkspaceLaneStore(defaults: defaults)
         let runtimeProviders: [ChatProvider] = [
-            ClaudeCodeChatProvider(), CodexChatProvider(client: codexClient),
+            ClaudeCodeChatProvider(
+                client: ClaudeCodeClient(lanes: laneStore)),
+            CodexChatProvider(client: codexClient),
         ]
         self.runtimeProviders = runtimeProviders
         let registry = makeChatProviderRegistry(
@@ -213,7 +242,11 @@ final class ChatModuleModel: ObservableObject {
             },
             audit: ChatAuditSink(
                 adapter: agentIntegration, activity: agentActivity),
-            guestScreen: guestScreen)
+            guestScreen: guestScreen,
+            /* Same suite, same reason: a test injecting its own
+               defaults must not compose prompts from the desk's real
+               standing instructions. */
+            instructions: { laneStore.instructions() })
         /* NO Keychain read here, deliberately. This init runs on the
            main actor inside HostAppState — including in every test that
            builds one — and a Keychain item created by a differently-
@@ -321,6 +354,44 @@ final class ChatModuleModel: ObservableObject {
     /// a guest reaches is exactly what the test pane proved. The
     /// service pages and mints refs; this page only answers what the
     /// registry knows, when asked.
+    /// A slash command at this screen: answered as a note, never as a
+    /// turn, and never added to the conversation the model is re-sent.
+    func runSlash(_ command: ChatSlashCommand) {
+        switch command {
+        case .list:
+            let skills = skillLibrary.skills
+            guard !skills.isEmpty else {
+                transcript.append(ChatDisplayRow(
+                    kind: .note, text: "No skills are installed."))
+                return
+            }
+            var lines = ["Skills you can load:"]
+            for skill in skills {
+                lines.append("\(skill.command) — \(skill.description)")
+            }
+            if !loadedSkills.isEmpty {
+                lines.append("Loaded now: "
+                    + loadedSkills.map { "/" + $0 }.joined(separator: " "))
+            }
+            transcript.append(ChatDisplayRow(
+                kind: .note, text: lines.joined(separator: "\n")))
+        case .unknown(let name):
+            transcript.append(ChatDisplayRow(
+                kind: .note,
+                text: "No skill called /\(name). Type /skills for the list."))
+        case .load(let name, let rest):
+            if !loadedSkills.contains(name) {
+                loadedSkills.append(name)
+            }
+            transcript.append(ChatDisplayRow(
+                kind: .note,
+                text: "Loaded /\(name). It applies from your next message."))
+            if !rest.isEmpty {
+                send(rest)
+            }
+        }
+    }
+
     private(set) lazy var wireService = ChatWireService(
         harness: harness,
         providers: { [weak self] in
@@ -328,19 +399,39 @@ final class ChatModuleModel: ObservableObject {
         },
         models: { [weak self] providerID in
             await self?.wireModels(provider: providerID)
-        })
+        },
+        /* THE SAME store this page reads. One store, both faces: a chat
+           typed at the classic machine appears in this sidebar, and one
+           typed here is listed over the wire — the widening decided
+           2026-08-18, and the reason a roster row carries its origin. */
+        store: chatStore,
+        mintLinkedProject: mintLinkedProject)
 
     /// Every provider, whatever its state — the cloud.report rule: one
     /// that cannot serve is still a row saying WHY. Labels leave
     /// converted and bounded (<= 31 bytes, the cloud rule).
-    private func wireProviders() async -> [ChatCatalogProvider] {
-        let entries = await providerEntries()
-        return entries.map { entry in
+    func wireProviders() async -> [ChatCatalogProvider] {
+        /* The reach travels beside the state, because the guest's mode
+           popup is a promise: offering Build for a text-only relay says
+           the turn may change the machine when nothing can (metal,
+           2026-08-19). Asked of the provider itself rather than
+           inferred from its detail sentence — prose is not an API. */
+        return await providerReports().map { report in
             ChatCatalogProvider(
-                provider: entry.id,
-                label: ChatWireText.label(entry.label),
-                state: entry.state,
-                detail: CloudText.displayable(entry.detail))
+                provider: report.entry.id,
+                label: ChatWireText.label(report.entry.label),
+                state: report.entry.state,
+                detail: CloudText.displayable(report.entry.detail),
+                tools: ChatModuleModel.wireReach(report.reach))
+        }
+    }
+
+    /// The contract's spelling of a reach.
+    static func wireReach(_ reach: ChatToolReach) -> String {
+        switch reach {
+        case .harness: return "full"
+        case .workspace: return "workspace"
+        case .none: return "none"
         }
     }
 
@@ -363,6 +454,17 @@ final class ChatModuleModel: ObservableObject {
     }
 
     func providerEntries() async -> [ChatProviderEntry] {
+        await providerReports().map(\.entry)
+    }
+
+    /// Each provider's report AND its reach, from the same walk.
+    ///
+    /// One walk rather than two: the reach is asked of the provider
+    /// object, so a second pass would build a second registry and could
+    /// answer for a differently-configured one — the workspace lane can
+    /// be pointed somewhere else between two calls.
+    func providerReports() async
+        -> [(entry: ChatProviderEntry, reach: ChatToolReach)] {
         let store = store
         let transport = transport
         let runtimeProviders = runtimeProviders
@@ -370,11 +472,11 @@ final class ChatModuleModel: ObservableObject {
             let passive = makePassiveChatProviderRegistry(
                 store: store, transport: transport,
                 runtimeProviders: runtimeProviders)
-            var entries: [ChatProviderEntry] = []
+            var reports: [(entry: ChatProviderEntry, reach: ChatToolReach)] = []
             for provider in passive.registry.all() {
-                entries.append(await provider.entry())
+                reports.append((await provider.entry(), provider.toolReach))
             }
-            return entries
+            return reports
         }.value
     }
 
@@ -472,9 +574,21 @@ final class ChatModuleModel: ObservableObject {
 
     // MARK: - The test chat pane
 
+    /// Skills this pane has loaded, in the order asked for.
+    private(set) var loadedSkills: [String] = []
+
+    var skillLibrary: ChatSkillLibrary { harness.skills }
+
     func send(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
+        /* The same slash vocabulary the wire serves, so a person who
+           learned it at one screen has not learned a local dialect. */
+        if let command = ChatSlashCommand.parse(
+            trimmed, known: skillLibrary.names) {
+            runSlash(command)
+            return
+        }
         guard !selectedWireModelID.isEmpty else {
             transcript.append(ChatDisplayRow(
                 kind: .note, text: "Pick a model first"))
@@ -488,6 +602,19 @@ final class ChatModuleModel: ObservableObject {
         isStreaming = true
         let turns = conversation
         let model = selectedWireModelID
+        let skills = loadedSkills
+        /* The chat's project rides into the prompt as ground, same as
+           the wire's turns — see ChatSystemPrompt.projectFrame. */
+        var project: ChatProjectContext?
+        if let chatStore, let id = selectedChatID,
+           let projectID = try? chatStore.summary(id).projectID,
+           let record = try? chatStore.project(projectID) {
+            project = ChatProjectContext(
+                name: record.name,
+                home: record.intendedHome?.rawValue,
+                toolchainPin: nil)
+        }
+        let projectContext = project
         Task { [weak self] in
             guard let self else { return }
             let started = await self.harness.run(
@@ -495,7 +622,9 @@ final class ChatModuleModel: ObservableObject {
                 wireModelID: model,
                 transcript: turns,
                 addressing: nil,
-                origin: .hostPane
+                origin: .hostPane,
+                loadedSkills: skills,
+                project: projectContext
             ) { [weak self] event in
                 Task { @MainActor [weak self] in
                     self?.handle(event)
@@ -659,6 +788,40 @@ final class ChatModuleModel: ObservableObject {
         }
     }
 
+    /// What the guest's development-environment read says about MPW —
+    /// whether a guest-mpw pin could honestly be written right now.
+    /// The New Project sheet's MPW option enables on this.
+    func guestToolchainQualified() async -> Bool {
+        ProjectGround.qualifiedToolchain(
+            in: await readDevelopmentEnvironment()) != nil
+    }
+
+    /// The sidebar's New Project: the SAME create the wire serves
+    /// (`ChatWireService.serveProject "create"`) — a chat folder plus a
+    /// real ProjectStore starter through the mint/associate seam, with
+    /// the person's explicit toolchain choice. A mint refusal still
+    /// files the folder, with the refusal's own story on the notice —
+    /// the folder is not worthless without a store project.
+    func createChatProject(name: String, toolchain: String) async {
+        guard let chatStore else { return }
+        let record: ChatProjectRecord
+        do {
+            record = try chatStore.createProject(
+                name: name, intendedHome: .host)
+        } catch {
+            note(error)
+            return
+        }
+        reloadChatCatalog()
+        switch await mintLinkedProject(name, .host, toolchain) {
+        case .success(let projectID):
+            _ = try? chatStore.associate(record.id, with: projectID)
+            reloadChatCatalog()
+        case .failure(let refusal):
+            storageNotice = "Filed as a chat folder. " + refusal.message
+        }
+    }
+
     func renameChatProject(_ id: ChatProjectID, to name: String) {
         guard let chatStore else { return }
         do {
@@ -743,6 +906,13 @@ final class ChatModuleModel: ObservableObject {
             } else {
                 transcript.append(ChatDisplayRow(kind: .model, text: part))
             }
+        case .activity(let line):
+            /* A workspace provider's own tool, shown the same way a
+               registry tool is — but with no ok/failed half, because
+               this side did not run it and the provider does not report
+               one. `ok: true` would be a claim; nil is the truth. */
+            transcript.append(ChatDisplayRow(
+                kind: .tool(name: line, ok: nil), text: line))
         case .toolStarted(let name):
             transcript.append(ChatDisplayRow(
                 kind: .tool(name: name, ok: nil), text: name))
@@ -753,6 +923,12 @@ final class ChatModuleModel: ObservableObject {
             }) {
                 transcript[index].kind = .tool(name: name, ok: ok)
             }
+        case .skillLoaded(let name):
+            if !loadedSkills.contains(name) {
+                loadedSkills.append(name)
+            }
+            transcript.append(ChatDisplayRow(
+                kind: .note, text: "Loaded /\(name) (the model's own ask)."))
         case .finished(let outcome):
             isStreaming = false
             conversation.append(contentsOf: outcome.appended)

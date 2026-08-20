@@ -12,8 +12,18 @@ import NOWAgentIntegration
 
 enum ChatHarnessEvent: Sendable {
     case delta(String)
+    /// A workspace provider's own tool use, already converted to one
+    /// readable line. It travels the same road `toolStarted` does and
+    /// carries no ok/failed half, because this harness did not run it
+    /// and will not pretend to know how it went.
+    case activity(String)
     case toolStarted(name: String)
     case toolFinished(name: String, ok: Bool)
+    /// The model loaded a skill itself (`chat_load_skill`). The caller
+    /// records it so later turns of the same conversation carry the
+    /// body in their system prompt; THIS turn already read it as the
+    /// tool's own result.
+    case skillLoaded(name: String)
     case finished(ChatChatOutcome)
 }
 
@@ -38,6 +48,11 @@ actor ChatHarness {
     private let guestScreen: @Sendable () async -> ChatSystemPrompt.Screen?
     private let maxToolTurns: Int
     private let maxTokens: Int
+    /// The skills on disk. Read once at construction: a tree that
+    /// changed under a running app is a support question nobody wants,
+    /// and the shipped one cannot change at all.
+    let skills: ChatSkillLibrary
+    private let instructions: @Sendable () -> String
     private var running: [String: Task<Void, Never>] = [:]
 
     init(
@@ -53,8 +68,15 @@ actor ChatHarness {
            round is bounded by the tools themselves; the ceiling is a
            runaway stop, not a budget. */
         maxToolTurns: Int = 40,
-        maxTokens: Int = 4096
+        maxTokens: Int = 4096,
+        skills: ChatSkillLibrary = ChatSkillLibrary(),
+        /* Read fresh each turn, like the lane: the person can edit
+           their instructions in Settings mid-conversation. */
+        instructions: @escaping @Sendable () -> String
+            = { ChatWorkspaceLaneStore().instructions() }
     ) {
+        self.skills = skills
+        self.instructions = instructions
         self.registry = registry
         self.projections = projections
         self.makeClient = makeClient
@@ -74,13 +96,18 @@ actor ChatHarness {
         transcript: [ChatTurn],
         addressing selector: String?,
         origin: ChatSystemPrompt.Origin,
+        mode: ChatMode = .build,
+        loadedSkills: [String] = [],
+        project: ChatProjectContext? = nil,
         events: @escaping @Sendable (ChatHarnessEvent) -> Void
     ) -> Bool {
         guard running[conversation] == nil else { return false }
         let task = Task {
             await self.turn(
                 wireModelID: wireModelID, transcript: transcript,
-                selector: selector, origin: origin, events: events)
+                selector: selector, origin: origin, mode: mode,
+                loadedSkills: loadedSkills, project: project,
+                events: events)
             self.finished(conversation)
         }
         running[conversation] = task
@@ -120,6 +147,9 @@ actor ChatHarness {
         transcript: [ChatTurn],
         selector: String?,
         origin: ChatSystemPrompt.Origin,
+        mode: ChatMode,
+        loadedSkills: [String],
+        project: ChatProjectContext?,
         events: @escaping @Sendable (ChatHarnessEvent) -> Void
     ) async {
         guard let (provider, modelID) = registry.resolve(wireID: wireModelID)
@@ -133,14 +163,33 @@ actor ChatHarness {
         log(.info, "turn begins: \(wireModelID), "
             + "\(transcript.count) turn(s) of history")
         let client = makeClient(selector)
-        let developmentIntent = ChatDevelopmentContext.isRelevant(transcript)
+        /* Asked of the provider, not assumed of the model. A text-only
+           runtime told nothing about its own hands spends the turn
+           offering to go and look at a machine it cannot see. */
+        let reach = provider.toolReach
         let system = ChatSystemPrompt.compose(
             health: await client.sessionHealth(), origin: origin,
-            screen: await guestScreen(), development: developmentIntent)
-        let tools = ChatToolRendering.descriptors(
-            registry: projections,
-            include: ChatDevelopmentContext.capabilityFilter(
-                development: developmentIntent))
+            screen: await guestScreen(), reach: reach, mode: mode,
+            skills: skills,
+            loaded: loadedSkills.compactMap { skills[$0] },
+            instructions: instructions(),
+            project: project)
+        /* Every row, every turn. They used to be filtered by a sniffer
+           over the person's own words, so asking for "a thing that
+           beeps" got a model with no project tools and an honest
+           apology. The catalog is the surface; a keyword is not a
+           capability check. */
+        var tools = reach.suppliesDescriptors
+            ? ChatToolRendering.descriptors(registry: projections, mode: mode)
+            : []
+        /* Skills are self-service on every turn that has hands at all:
+           the loaded ones already ride the system prompt, so the tool
+           offers only what is not yet loaded. */
+        if reach.suppliesDescriptors,
+           let loader = Self.loadSkillDescriptor(
+               names: skills.names.filter { !loadedSkills.contains($0) }) {
+            tools.append(loader)
+        }
         let dispatch = HostProjectionDispatch(
             face: .chat, registry: projections, audit: audit)
 
@@ -153,12 +202,17 @@ actor ChatHarness {
             do {
                 let stream = provider.stream(ChatCompletionRequest(
                     model: modelID, system: system, turns: working,
-                    tools: tools, maxTokens: maxTokens))
+                    tools: tools, maxTokens: maxTokens,
+                    workspaceSubdirectory: project.map {
+                        Self.workspaceSubdirectory(for: $0.name)
+                    }))
                 for try await event in stream {
                     switch event {
                     case .textDelta(let part):
                         text += part
                         events(.delta(part))
+                    case .activity(let line):
+                        events(.activity(line))
                     case .finished(let f):
                         finish = f
                     }
@@ -207,6 +261,16 @@ actor ChatHarness {
                         return
                     }
                     events(.toolStarted(name: call.name))
+                    if call.name == Self.loadSkillToolName {
+                        let (result, loaded) = loadSkill(call)
+                        if let loaded {
+                            events(.skillLoaded(name: loaded))
+                        }
+                        events(.toolFinished(name: call.name,
+                                             ok: loaded != nil))
+                        results.append(result)
+                        continue
+                    }
                     let result = await invoke(
                         call, dispatch: dispatch, selector: selector,
                         through: client)
@@ -247,6 +311,82 @@ actor ChatHarness {
             appended: appended)))
     }
 
+    /// A project's workspace subfolder name: the project's own name,
+    /// reduced to what every filesystem in this product tolerates.
+    /// Deterministic, so the same project lands in the same folder
+    /// every turn.
+    static func workspaceSubdirectory(for projectName: String) -> String {
+        let kept = projectName.unicodeScalars.map { scalar -> Character in
+            let c = Character(scalar)
+            return c.isLetter || c.isNumber || c == "-" || c == "_"
+                || c == " " ? c : "-"
+        }
+        let trimmed = String(kept).trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? "Project" : String(trimmed.prefix(64))
+    }
+
+    /* --- the one tool this harness serves itself ---------------------
+       Skills used to reach a turn only when a person typed a slash
+       command, and the first live Build turn answered a build request
+       with "type /x and I will proceed" (2026-08-19). A skill is text;
+       the model that wants it should fetch it. The body IS the tool
+       result — loading is reading — and the caller records the load so
+       later turns carry it in the system prompt too. */
+    static let loadSkillToolName = "chat_load_skill"
+
+    static func loadSkillDescriptor(
+        names: [String]
+    ) -> ChatToolDescriptor? {
+        guard !names.isEmpty else { return nil }
+        let schema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "name": [
+                    "type": "string",
+                    "enum": names,
+                    "description": "The skill to load, by its listed name.",
+                ],
+            ],
+            "required": ["name"],
+            "additionalProperties": false,
+        ]
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: schema) else { return nil }
+        return ChatToolDescriptor(
+            name: loadSkillToolName,
+            description: "Load one of the listed skills into this "
+                + "conversation. The result is the skill's full text; it "
+                + "applies immediately and stays loaded for later turns. "
+                + "Load whatever skill fits the work yourself - never ask "
+                + "the person to.",
+            inputSchemaJSON: data)
+    }
+
+    private func loadSkill(_ call: ChatToolCall)
+        -> (ChatContent, loaded: String?) {
+        let object = (try? JSONSerialization.jsonObject(
+            with: Data(call.argumentsJSON.utf8))) as? [String: Any]
+        guard let name = object?["name"] as? String,
+              let skill = skills[name] else {
+            return (.toolResult(
+                id: call.id,
+                text: "No skill by that name. The listed names: "
+                    + skills.names.joined(separator: ", "),
+                imagePNG: nil, isError: true), nil)
+        }
+        return (.toolResult(
+            id: call.id,
+            text: """
+                Skill "\(skill.name)" is now loaded, for this turn and \
+                the rest of the conversation. Follow it for craft \
+                decisions; where it disagrees with the machine and \
+                consent rules in your instructions, those rules win.
+
+                \(skill.body)
+                """,
+            imagePNG: nil, isError: false), skill.name)
+    }
+
     private func invoke(
         _ call: ChatToolCall,
         dispatch: HostProjectionDispatch,
@@ -273,41 +413,6 @@ actor ChatHarness {
             guest: selector,
             through: client)
         return ChatToolRendering.toolResult(id: call.id, outcome: outcome)
-    }
-}
-
-/// Development is a deliberately optional context lane. The dispatcher still
-/// owns one complete registry, but ordinary machine turns do not pay for three
-/// project/build schemas they have no reason to select.
-enum ChatDevelopmentContext {
-    private static let capabilities: Set<String> = [
-        "now_projects", "now_development_environment", "now_development",
-    ]
-    private static let terms = [
-        "project", "source code", "codekitten", "toolchain", "tool server",
-        "toolserver", "compile", "build", "applet", "program", "develop",
-        ".ckp", "ckproject", "mpw",
-    ]
-
-    static func isRelevant(_ transcript: [ChatTurn]) -> Bool {
-        for turn in transcript.reversed() {
-            for content in turn.content {
-                switch content {
-                case .text(let text):
-                    let lowered = text.lowercased()
-                    if terms.contains(where: lowered.contains) { return true }
-                case .toolCall(let call):
-                    if capabilities.contains(call.name) { return true }
-                case .toolResult:
-                    break
-                }
-            }
-        }
-        return false
-    }
-
-    static func capabilityFilter(development: Bool) -> (String) -> Bool {
-        { capability in development || !capabilities.contains(capability) }
     }
 }
 

@@ -1,0 +1,13 @@
+{
+  "target": "system7-classic",
+  "screen": {"width": 640, "height": 480, "depth": 4},
+  "application": "Notebook",
+  "window": {"x": 70, "y": 52, "width": 500, "height": 340, "title": "Notebook", "active": true},
+  "components": [
+    {"id": "tabs", "type": "tabs", "x": 20, "y": 22, "width": 458, "height": 250, "text": "General", "fallback": "group"},
+    {"id": "list", "type": "list", "x": 40, "y": 58, "width": 190, "height": 150, "items": ["Notes", "Projects", "Archive"], "selected": 1},
+    {"id": "field", "type": "field", "x": 250, "y": 58, "width": 200, "height": 20, "text": "Projects"},
+    {"id": "save", "type": "button", "x": 360, "y": 278, "width": 90, "height": 22, "text": "Save", "default": true}
+  ],
+  "assets": []
+}

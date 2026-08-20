@@ -46,7 +46,7 @@ deferral may permit a branch checkpoint but never the landing.
 
 <!-- derived-doc v1
 sources: contract/peek_table.h ext/src/now_ext.c now-guest-ppc/src/peek/peek.c docs/resident-components.md scripts/docs-source-group tools/docs-gate
-sources-sha1: ca6bcc5a824e3770580f23f8b7f02c3e8eda85d5
+sources-sha1: 4aa953c3fedd41a9b536e1bc4e2105a9b7c33e16
 derive resident-contract sha256=94aa1ceb2d2998a0973bc7f381405e008f6bcfcd416bac1a70e2b26d14ef97f8 lines=12
     scripts/docs-source-group resident
 rederived: pending
@@ -229,6 +229,33 @@ rederived: 2026-08-17T23:36:25-0400 5aa1092c sources
 rederived: 2026-08-17T23:52:45-0400 91fe237e unchanged
 rederived: 2026-08-18T15:09:50-0400 c33eb6ee unchanged
 rederived: 2026-08-18T17:19:00-0400 ffc561f4 unchanged
+rederived: 2026-08-18T21:43:38-0400 eae627f6 unchanged
 rederived: 2026-08-18T23:04:14-0400 fc295bcc unchanged
+rederived: 2026-08-18T23:13:32-0400 ce4dc746 unchanged
+rederived: 2026-08-18T23:19:30-0400 3341acb1 sources
 rederived: 2026-08-18T23:25:22-0400 353a37be unchanged
+rederived: 2026-08-18T23:33:03-0400 2c64a5c4 unchanged
+rederived: 2026-08-18T23:44:44-0400 6692e45b unchanged
+rederived: 2026-08-18T23:57:02-0400 d10402f4 unchanged
+rederived: 2026-08-19T00:06:05-0400 b3b2ee57 unchanged
+rederived: 2026-08-19T01:21:58-0400 0e46a4ac unchanged
+rederived: 2026-08-19T01:34:46-0400 7ec2d6d1 unchanged
+rederived: 2026-08-19T01:41:12-0400 399d4c78 unchanged
+rederived: 2026-08-19T01:53:15-0400 db827bac unchanged
+rederived: 2026-08-19T02:32:03-0400 a9efa24f unchanged
+rederived: 2026-08-19T03:00:29-0400 26f5c9fc unchanged
+rederived: 2026-08-19T03:14:01-0400 afcf45e6 unchanged
+rederived: 2026-08-19T03:33:51-0400 648ab89c unchanged
+rederived: 2026-08-19T03:53:10-0400 f9d1bd67 unchanged
+rederived: 2026-08-19T03:59:55-0400 14486719 unchanged
+rederived: 2026-08-19T04:47:56-0400 ba4e78ae unchanged
+rederived: 2026-08-19T05:41:21-0400 a8ee7d50 unchanged
+rederived: 2026-08-19T14:24:10-0400 d6583bbd unchanged
+rederived: 2026-08-19T14:49:24-0400 75da2302 unchanged
+rederived: 2026-08-19T15:06:38-0400 c9462eb5 unchanged
+rederived: 2026-08-19T18:20:13-0400 4b072fe0 unchanged
+rederived: 2026-08-19T18:25:38-0400 4b072fe0 unchanged
+rederived: 2026-08-19T21:35:41-0400 485e4ee1 unchanged
+rederived: 2026-08-19T21:40:49-0400 ae09a391 unchanged
+rederived: 2026-08-19T22:18:11-0400 110215ff unchanged
 -->

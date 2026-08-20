@@ -26,6 +26,19 @@ import NOWAgentIntegration
    and offers to "connect to" one, which this side cannot do at all: the
    guest dials this Mac and this Mac only listens. */
 
+/// The project this conversation is filed under, as the turn must know
+/// it: the GROUND decides where builds run, and a turn that was not
+/// told it cross-compiled a guest-home project on the modern Mac and
+/// shipped the wrong machine's binary (measured 2026-08-19).
+struct ChatProjectContext: Sendable, Equatable {
+    let name: String
+    /// "host" | "guest" — where the person said the code lives.
+    let home: String?
+    /// The project's toolchain pin when the caller could read it
+    /// cheaply; nil sends the model to Project.ckp for the answer.
+    let toolchainPin: String?
+}
+
 enum ChatSystemPrompt {
     enum Origin {
         /// The host app's own chat pane.
@@ -57,16 +70,229 @@ enum ChatSystemPrompt {
 
     static func compose(
         health: AgentIntegrationSessionHealthResult, origin: Origin,
-        screen: Screen? = nil, development: Bool = false
+        screen: Screen? = nil, reach: ChatToolReach = .harness,
+        mode: ChatMode = .build,
+        skills: ChatSkillLibrary = ChatSkillLibrary(skills: []),
+        loaded: [ChatSkill] = [],
+        instructions: String = "",
+        project: ChatProjectContext? = nil
     ) -> String {
         var sections = [preamble]
         sections.append(machineFrame(health: health, origin: origin))
-        sections.append(projectAuthority(development: development))
-        sections.append(toolGuidance)
+        sections.append(reachFrame(reach))
+        if case .none = reach {} else {
+            sections.append(modeFrame(mode))
+            sections.append(projectAuthority)
+            if let project {
+                sections.append(projectFrame(project))
+            }
+            sections.append(toolGuidance)
+        }
+        /* The catalogue rides EVERY turn, loaded skills or not — and
+           its FRAME follows the reach, because who loads a skill does:
+           a turn with hands loads them ITSELF (the chat_load_skill
+           tool, or the workspace's staged tree) and must never ask;
+           only the toolless turn is entitled to say "type /x". The
+           first live Build turn stalled on exactly that confusion
+           (2026-08-19). */
+        if !skills.skills.isEmpty {
+            switch reach {
+            case .harness:
+                sections.append("""
+                    Skills — deeper craft instructions for classic Mac \
+                    work. Load whichever fits the task YOURSELF with the \
+                    \(ChatHarness.loadSkillToolName) tool, the moment \
+                    the work calls for one (pass the name without the \
+                    leading slash); never ask the person to. A loaded \
+                    skill stays for the conversation.
+                    \(skills.catalogueRows)
+                    """)
+            case .workspace:
+                sections.append("""
+                    Skills — deeper craft instructions for classic Mac \
+                    work, staged in your workspace under .claude/skills. \
+                    Load whichever fits the task yourself; never ask the \
+                    person to.
+                    \(skills.catalogueRows)
+                    """)
+            case .none:
+                sections.append(skills.catalogue)
+            }
+        }
+        for skill in loaded {
+            sections.append(skillFrame(skill))
+        }
+        if !instructions.isEmpty {
+            sections.append(instructionsFrame(instructions))
+        }
         if case .guestWire = origin {
             sections.append(wireOutputRules(screen: screen))
         }
         return sections.joined(separator: "\n\n")
+    }
+
+    /// What this turn's hands are. Composed from the provider's own
+    /// declaration rather than written into the fixed body, because the
+    /// same prompt serves six providers and two of them cannot act at
+    /// all — and a model that has not been told so will promise to go
+    /// and look, which is the most misleading thing this app can say.
+    static func reachFrame(_ reach: ChatToolReach) -> String {
+        switch reach {
+        case .harness:
+            return """
+                You have New Old World's own tools this turn: they \
+                observe and act on the connected classic machine, and on \
+                this app's Projects storage.
+                """
+        case .workspace(let summary):
+            return """
+                You are also a coding agent in a workspace on the modern \
+                Mac (\(summary)), with your own file and command tools. \
+                New Old World's capabilities are supplied alongside them \
+                as tools whose names begin with "now_". Use the workspace \
+                for source, builds and tests; use the now_ tools to \
+                observe and act on the connected classic machine. Say \
+                which of the two you are about to touch before a change \
+                that is hard to undo.
+                """
+        case .none(let reason):
+            return """
+                YOU HAVE NO TOOLS THIS TURN. \(reason). You cannot look \
+                at the classic machine, read a file, or run anything. \
+                Answer from knowledge, and where an answer needs the \
+                machine, say plainly that this model cannot reach it and \
+                that a tool-capable model can. Never say you will go and \
+                check, and never describe a tool result you did not get.
+                """
+        }
+    }
+
+    /// What the mode MEANS to the model. The gate itself is the tool
+    /// catalog the turn was handed; this only tells it what it is being
+    /// asked for, which is the whole difference between chat and plan —
+    /// they reach exactly as far as each other.
+    static func modeFrame(_ mode: ChatMode) -> String {
+        switch mode {
+        case .chat:
+            return """
+                MODE: chat. You have been given only the tools that \
+                change nothing, so look freely and answer. If the person \
+                asks for a change, say which mode does it — Build — \
+                rather than attempting one and reporting a refusal.
+                """
+        case .plan:
+            return """
+                MODE: plan. You have been given only the tools that \
+                change nothing. Investigate as much as you need, then \
+                answer with a PLAN: the steps in order, what each one \
+                touches, and what could go wrong. Do not ask to switch \
+                to Build yourself; leave the person to.
+                """
+        case .build:
+            return """
+                MODE: build. You have the whole catalog, including the \
+                rows that change this machine and its files. Say what \
+                you are about to change before a step that is hard to \
+                undo, and prefer the smallest change that answers the \
+                question.
+                """
+        }
+    }
+
+    /// One loaded skill, marked as what it is. The body is somebody
+    /// else's instructions, quoted into this prompt — so it is fenced by
+    /// name rather than blended in, and the model is told plainly that
+    /// the machine rules above still bind. A skill that could quietly
+    /// override the consent frame would be an authority nobody granted.
+    static func skillFrame(_ skill: ChatSkill) -> String {
+        """
+        --- SKILL: \(skill.name) ---
+        The person loaded this skill for this conversation. Follow it for \
+        craft decisions, and where it disagrees with anything above about \
+        what you may TOUCH, the rules above win.
+
+        \(skill.body)
+        --- end of skill: \(skill.name) ---
+        """
+    }
+
+    /// The person's own standing instructions, from Settings. Fenced the
+    /// way a skill is and for the same reason: it is somebody else's text
+    /// quoted into this prompt, and it may steer tone, approach and
+    /// craft — but not what a turn may touch, which only the frames
+    /// above decide.
+    static func instructionsFrame(_ text: String) -> String {
+        """
+        --- THE PERSON'S OWN INSTRUCTIONS ---
+        Written by the person in Settings, for every conversation. \
+        Follow them for tone, approach and priorities; where they \
+        disagree with anything above about what you may TOUCH, the \
+        rules above win.
+
+        \(text)
+        --- end of the person's instructions ---
+        """
+    }
+
+    /// The conversation's own project, and the one rule that follows
+    /// from its ground: where its builds RUN. Written because the first
+    /// fresh-project run ignored the person's choice — a guest-home
+    /// project got a host-cross-compiled binary shipped at it — and
+    /// because a shared workspace let a turn scavenge another project's
+    /// artifacts and call the work done.
+    static func projectFrame(_ project: ChatProjectContext) -> String {
+        var lines = ["THIS CONVERSATION'S PROJECT is \"\(project.name)\"."]
+        switch project.home {
+        case "guest":
+            lines.append("""
+                Its code LIVES ON the classic machine (guest home) and \
+                is BUILT THERE, with the classic machine's own \
+                registered toolchain: read and edit through now_projects \
+                workspaces, stage a candidate with now_development, \
+                build it with build-start, run the exact product with \
+                run. Do NOT cross-compile this project on the modern \
+                Mac, and do not ship a workspace-built binary for it — \
+                a host-built product is not this project's product.
+                """)
+        case "host":
+            if let pin = project.toolchainPin,
+               pin.hasPrefix(ProjectGround.hostRetro68Token) {
+                lines.append("""
+                    Its code lives on this Mac and its toolchain pin is \
+                    \(pin): build it in your workspace with Retro68 and \
+                    deliver the binary with now_guest_files_upload_file.
+                    """)
+            } else if let pin = project.toolchainPin {
+                lines.append("""
+                    Its code lives on this Mac and its toolchain pin is \
+                    \(pin): the authoritative copy is here, and BUILDS \
+                    RUN ON the classic machine — stage a candidate with \
+                    now_development and build-start it there. Do not \
+                    cross-compile it in the workspace.
+                    """)
+            } else {
+                lines.append("""
+                    Its code lives on this Mac. Its toolchain pin \
+                    decides where builds run — read Project.ckp with \
+                    now_projects first and follow it: a guest MPW pin \
+                    builds ON the classic machine through \
+                    now_development; a host-retro68 pin builds in your \
+                    workspace and ships the binary over.
+                    """)
+            }
+        default:
+            lines.append("""
+                Where its code lives was not recorded; ask now_projects \
+                for its status before building anything.
+                """)
+        }
+        lines.append("""
+            Start this project's work FRESH in this project's own \
+            workspace subfolder. Other folders in the workspace belong \
+            to other projects and other conversations: never reuse \
+            their sources or artifacts as this project's.
+            """)
+        return lines.joined(separator: "\n")
     }
 
     private static let preamble = """
@@ -77,21 +303,20 @@ enum ChatSystemPrompt {
         application-owned Projects storage on the modern Mac.
         """
 
-    private static func projectAuthority(development: Bool) -> String {
-        guard development else {
-            return "No project or Development tools are supplied for this machine-only turn."
-        }
-        return """
-            Project and Development tools are supplied for this turn. Every \
-            project result names its home. A host-home project is authoritative \
-            in New Old World's bounded Projects storage. A guest-home project \
-            is authoritative on the connected classic machine; edits happen in \
-            a recoverable host workspace until a separately authorized, \
-            digest-guarded promotion. Never describe that workspace or its \
-            history mirror as current guest truth. Guest reads require Read \
-            Only access; publication, build, run and handoff require Full access.
-            """
-    }
+    /// Supplied whenever the turn has tools at all. It used to be
+    /// conditional on a keyword sniffer over the person's own words,
+    /// which meant the authority rules for project work arrived only
+    /// when somebody happened to say "project".
+    private static let projectAuthority = """
+        Project and Development tools are supplied. Every \
+        project result names its home. A host-home project is authoritative \
+        in New Old World's bounded Projects storage. A guest-home project \
+        is authoritative on the connected classic machine; edits happen in \
+        a recoverable host workspace until a separately authorized, \
+        digest-guarded promotion. Never describe that workspace or its \
+        history mirror as current guest truth. Guest reads require Read \
+        Only access; publication, build, run and handoff require Full access.
+        """
 
     /// The one part of the prompt that is not fixed: who is speaking,
     /// which machines are on the wire this second, and therefore what
@@ -140,7 +365,12 @@ enum ChatSystemPrompt {
             : "\"\(driven)\""
         lines.append("""
             Call the classic machine \(nameRule) - never \
-            "\(MachineNaming.thisMac)", "this machine", or "the host".
+            "\(MachineNaming.thisMac)", "this machine", or "the host". \
+            The rule binds YOUR words only: when the person calls their \
+            machine something else - a nickname, the wrong model - do \
+            not correct them, just answer. A turn that opens with a \
+            correction of the person's own name for their own Mac has \
+            already wasted its first sentence.
             """)
 
         /* The asymmetry, said whatever the state: it is the difference

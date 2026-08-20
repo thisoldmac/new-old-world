@@ -16,6 +16,7 @@ struct HostSettingsView: View {
     @ObservedObject var state: HostAppState
     let registry: ModuleRegistry
     @StateObject private var continuityDefaults: ContinuityConnectionDefaultsModel
+    @StateObject private var chatWorkspace = ChatWorkspaceSettingsModel()
 
     init(preferences: AppearancePreferences,
          navigation: HostSettingsNavigation,
@@ -55,6 +56,8 @@ struct HostSettingsView: View {
             AppearanceSettingsSection(preferences: preferences)
         case .sidebar:
             SidebarSettingsSection(sidebar: sidebar, registry: registry)
+        case .chat:
+            ChatWorkspaceSettingsSection(model: chatWorkspace)
         case .mcp:
             if let model = state.moduleRuntime(
                 for: MCPHostModule.definition.descriptor.id,
@@ -398,6 +401,127 @@ private struct NewConnectionDefaultsSection: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Chat
+
+/// The workspace lane's one control surface.
+///
+/// It reads as heavier than the tabs around it on purpose. Every other
+/// preference in this window changes how New Old World behaves; this one
+/// hands a model a folder on this Mac and, at the upper tier, the ability
+/// to run commands in it. The sentences are the grant, not decoration —
+/// somebody who turns this on should have read what it is.
+private struct ChatWorkspaceSettingsSection: View {
+    @ObservedObject var model: ChatWorkspaceSettingsModel
+
+    var body: some View {
+        Form {
+            Section("Chat Workspace") {
+                Text("Chat normally reaches only the connected classic "
+                     + "machine, through tools this app owns and logs. A "
+                     + "workspace goes further: the Claude runtime gets "
+                     + "its own file and command tools in ONE folder on "
+                     + "this Mac, so a chat can read source, build it and "
+                     + "test it — including New Old World's own. Those "
+                     + "tools are governed by the mode below and by "
+                     + "whatever policy that folder carries, not by this "
+                     + "app's per-tool consent.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !model.isOn {
+                    /* Visible only after an explicit Turn Off: building
+                       is on out of the box (the owner's 2026-08-19
+                       decision), so this row is the way back, not a
+                       setup step. */
+                    HStack {
+                        Text("Building is turned off. Turn it back on and "
+                             + "Claude builds software for the classic "
+                             + "machine in New Old World's own workspace "
+                             + "on this Mac.")
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
+                        Button("Turn On") { model.allowDefaultWorkspace() }
+                            .keyboardShortcut(.defaultAction)
+                    }
+                }
+                HStack {
+                    Text("Folder")
+                    Spacer()
+                    Text(folderLabel)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(model.isOn ? .primary : .secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    Button("Choose…") { choose() }
+                    if model.isOn {
+                        Button("Turn Off") { model.choose(nil) }
+                    }
+                }
+                if case .unusable(let reason) = model.state {
+                    Label(reason, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Picker("The chat may", selection: $model.permission) {
+                    ForEach(ChatWorkspaceLane.Permission.allCases,
+                            id: \.rawValue) { permission in
+                        Text(permission.label).tag(permission)
+                    }
+                }
+                .disabled(!model.isOn)
+                Toggle("Also give it New Old World's own tools",
+                       isOn: $model.attachesNOWTools)
+                    .disabled(!model.isOn)
+                    .help("The runtime reaches the connected machine "
+                          + "through this app's MCP face, so the same turn "
+                          + "can change source and drive the machine.")
+                Text("Running commands covers builds, tests and deploys, "
+                     + "and it is the tier where a mistake is no longer "
+                     + "just a diff. Models chosen from other providers "
+                     + "are unaffected by this setting.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Section("Instructions") {
+                Text("Your own standing instructions, added to every "
+                     + "conversation whichever model answers it — tone, "
+                     + "priorities, house rules. They cannot widen what "
+                     + "a turn may touch.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextEditor(text: $model.instructions)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 72, maxHeight: 160)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { model.reload() }
+    }
+
+    private var folderLabel: String {
+        switch model.state {
+        case .ready(let lane): return lane.root.path
+        case .unusable: return "unavailable"
+        case .off: return "none - chat is machine-only"
+        }
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        panel.message = "Choose the folder a chat may read, edit and build in."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        model.choose(url)
     }
 }
 
