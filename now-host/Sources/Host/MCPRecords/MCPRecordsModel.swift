@@ -269,6 +269,7 @@ final class MCPRecordsModel: ObservableObject {
     private static func kindSentence(_ kind: MCPAgentIdentity.Kind)
         -> String {
         switch kind {
+        case .api: return "An application using the NOW API"
         case .mcpHTTP: return "An MCP client over HTTP"
         case .mcpStdio: return "An MCP client over Standard Input"
         case .chat: return "The host's own chat harness"

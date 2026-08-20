@@ -44,12 +44,16 @@ struct MCPHTTPConfiguration: Equatable {
     }
 }
 
-struct MCPHTTPRequest: Equatable {
+struct BoundedHTTPRequest: Equatable {
     let method: String
     let target: String
     let headers: [String: String]
     let body: Data
 }
+
+/// Compatibility spelling for MCP callers while the socket now serves both
+/// the public API and MCP route adapters.
+typealias MCPHTTPRequest = BoundedHTTPRequest
 
 enum MCPHTTPRequestParseError: Error, Equatable {
     case malformed
@@ -61,7 +65,7 @@ enum MCPHTTPRequestParseError: Error, Equatable {
 /// One bounded HTTP/1.1 request. The listener closes every connection after
 /// its response, so pipelining and chunked bodies are deliberately not part of
 /// this local transport. Streamable HTTP does not require either one.
-struct BoundedMCPHTTPRequestParser {
+struct BoundedHTTPRequestParser {
     private var pending = Data()
     private var expectedBodyBytes: Int?
     private var parsedHead: (method: String, target: String,
@@ -150,6 +154,8 @@ struct BoundedMCPHTTPRequestParser {
     }
 }
 
+typealias BoundedMCPHTTPRequestParser = BoundedHTTPRequestParser
+
 struct MCPHTTPResponse: Equatable {
     let status: Int
     var headers: [String: String] = [:]
@@ -171,6 +177,7 @@ struct MCPHTTPResponse: Equatable {
         case 413: phrase = "Content Too Large"
         case 415: phrase = "Unsupported Media Type"
         case 429: phrase = "Too Many Requests"
+        case 503: phrase = "Service Unavailable"
         default: phrase = "Internal Server Error"
         }
         var fields = headers
@@ -203,20 +210,35 @@ actor MCPHTTPService {
     private let serverFactory: ServerFactory
     private let activityObserver: ActivityObserver?
     private let oauth: MCPOAuthAuthority?
+    private let apiRouter: NOWAPIHTTPRouter?
     private var sessions: [String: Session] = [:]
 
     init(configuration: MCPHTTPConfiguration,
          serverFactory: @escaping ServerFactory,
          activityObserver: ActivityObserver? = nil,
-         oauth: MCPOAuthAuthority? = nil) {
+         oauth: MCPOAuthAuthority? = nil,
+         apiRouter: NOWAPIHTTPRouter? = nil) {
         self.configuration = configuration
         self.serverFactory = serverFactory
         self.activityObserver = activityObserver
         self.oauth = oauth
+        self.apiRouter = apiRouter
     }
 
     func respond(to request: MCPHTTPRequest, now: Date = Date()) async
         -> MCPHTTPResponse {
+        if request.target == "/api/v1"
+            || request.target.hasPrefix("/api/v1/") {
+            guard let host = validatedHost(request.headers["host"]) else {
+                return response(400)
+            }
+            _ = host
+            if let origin = request.headers["origin"], !validOrigin(origin) {
+                return response(403)
+            }
+            guard let apiRouter else { return response(404) }
+            return await apiRouter.respond(to: request)
+        }
         /* /mcp is matched on the whole target: it never carries a query.
            Only the oauth routes split path from query. */
         if request.target != "/mcp" {
@@ -515,13 +537,15 @@ final class MCPHTTPListener: @unchecked Sendable {
          serverFactory: @escaping MCPHTTPService.ServerFactory,
          activityObserver: MCPHTTPService.ActivityObserver? = nil,
          failureObserver: FailureObserver? = nil,
-         oauth: MCPOAuthAuthority? = nil) throws {
+         oauth: MCPOAuthAuthority? = nil,
+         apiRouter: NOWAPIHTTPRouter? = nil) throws {
         self.configuration = configuration
         self.failureObserver = failureObserver
         service = MCPHTTPService(configuration: configuration,
                                  serverFactory: serverFactory,
                                  activityObserver: activityObserver,
-                                 oauth: oauth)
+                                 oauth: oauth,
+                                 apiRouter: apiRouter)
     }
 
     /// Start the in-process listener and return when the port is bound.
@@ -588,7 +612,7 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     private let connection: NWConnection
     private let service: MCPHTTPService
     private let queue: DispatchQueue
-    private var parser: BoundedMCPHTTPRequestParser
+    private var parser: BoundedHTTPRequestParser
     private var finished = false
     /// `NWListener` does not retain the object that installed the receive
     /// callback. Keep this exchange alive until its one response is sent;

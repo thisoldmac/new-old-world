@@ -8,6 +8,7 @@ import NOWAgentIntegration
 /// store is a separate answer to a separate question.
 struct MCPAgentIdentity: Equatable, Sendable {
     enum Kind: String, Sendable {
+        case api
         case mcpHTTP = "mcp-http"
         case mcpStdio = "mcp-stdio"
         case chat
@@ -47,6 +48,7 @@ struct MCPAgentRecord: Identifiable, Equatable, Sendable {
     var displayName: String {
         if clientName.isEmpty {
             switch kind {
+            case .api: return "NOW API client"
             case .mcpHTTP: return "Unknown HTTP client"
             case .mcpStdio: return "Unknown stdio client"
             case .chat: return "Chat"

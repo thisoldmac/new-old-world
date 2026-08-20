@@ -32,6 +32,7 @@ import Foundation
 /// app-UI grant regardless of which face asks.
 public enum HostInvokingFace: String, Codable, Sendable {
     case mcp
+    case api
     case appIntent = "intent"
     /// The host's own chat harness: a language model a person is talking to
     /// (from the host page or over the chat.* wire family) using projections

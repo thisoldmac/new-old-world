@@ -48,6 +48,7 @@ enum AgentIntegrationAuditLog {
         _ event: HostProjectionAuditEvent,
         _ transport: MCPTransportKind?) -> MCPAgentIdentity {
         switch event.face {
+        case .api: return MCPAgentIdentity(kind: .api)
         case .chat: return MCPAgentIdentity(kind: .chat)
         case .appIntent: return MCPAgentIdentity(kind: .appIntent)
         case .mcp:

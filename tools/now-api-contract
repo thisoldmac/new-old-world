@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -13,7 +14,7 @@ CONTRACT = ROOT / "contract" / "now-api.openapi.json"
 OUTPUT = ROOT / "now-host" / "Sources" / "NOWAgentIntegration" / "Projection" / "NOWAPIOperationIDs.generated.swift"
 
 
-def rendered(document: dict) -> str:
+def rendered(document: dict, digest: str) -> str:
     operations = document.get("x-now-operation-catalog")
     if not isinstance(operations, list) or not operations:
         raise ValueError("x-now-operation-catalog must be a non-empty array")
@@ -43,6 +44,7 @@ import Foundation
 public enum NOWAPIOperationIDs {{
     public static let apiMajor = 1
     public static let schemaRevision = 1
+    public static let contractDigest = "{digest}"
     public static let all: Set<String> = [
 {quoted},
     ]
@@ -55,7 +57,7 @@ def main() -> int:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     document = json.loads(CONTRACT.read_text())
-    expected = rendered(document)
+    expected = rendered(document, hashlib.sha256(CONTRACT.read_bytes()).hexdigest())
     if args.check:
         if not OUTPUT.exists() or OUTPUT.read_text() != expected:
             print(f"stale generated API identities: run {Path(__file__).relative_to(ROOT)}", file=sys.stderr)

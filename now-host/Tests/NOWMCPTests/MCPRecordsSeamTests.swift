@@ -90,4 +90,26 @@ final class MCPRecordsSeamTests: XCTestCase {
         XCTAssertEqual(row?.agentName, "Chat")
         XCTAssertEqual(row?.targetMachine, "pb1400c")
     }
+
+    /// API records reuse the bounded store without acquiring an arguments or
+    /// payload field: the bridge can carry only operation, target, and result.
+    @MainActor
+    func testAPIAuditReachesBoundedRecordsAsAnApplicationClient() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-api-seam-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try MCPRecordsDatabase(root: root)
+        let recorder = MCPRecordsRecorder(database: database)
+        var iterator = recorder.inserted.makeAsyncIterator()
+
+        await HostNOWAPIAuditSink(records: recorder).record(.init(
+            requestID: UUID(), operationID: "connections.disconnect",
+            target: "pb1400c-session", disposition: .completed))
+
+        let row = await iterator.next()
+        XCTAssertEqual(row?.agentName, "NOW API client")
+        XCTAssertEqual(row?.targetMachine, "pb1400c-session")
+        XCTAssertEqual(row?.action.face, .api)
+        XCTAssertEqual(row?.action.capability, "connections.disconnect")
+    }
 }

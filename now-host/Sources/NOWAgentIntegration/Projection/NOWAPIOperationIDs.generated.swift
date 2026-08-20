@@ -4,8 +4,12 @@ import Foundation
 public enum NOWAPIOperationIDs {
     public static let apiMajor = 1
     public static let schemaRevision = 1
+    public static let contractDigest = "a8bafc2bfd815aa3d7778974efad3a046ceb83185453b44e2f4924c82e7283be"
     public static let all: Set<String> = [
+        "api.identity",
         "catalog.search",
+        "connections.disconnect",
+        "connections.list",
         "diagnostics.capture",
         "diagnostics.framebuffer",
         "diagnostics.transfer",
@@ -20,12 +24,16 @@ public enum NOWAPIOperationIDs {
         "guests.census",
         "guests.facts",
         "guests.list",
+        "guests.status",
         "interface.control.act",
         "interface.menu.act",
         "interface.observe",
         "interface.text.get",
         "interface.text.set",
         "interface.window.act",
+        "listener.start",
+        "listener.status",
+        "listener.stop",
         "logs.guest.tail",
         "logs.host.tail",
         "mirror.act",
@@ -38,6 +46,7 @@ public enum NOWAPIOperationIDs {
         "mirror.status",
         "mirror.wait",
         "mirror.waitForSettlement",
+        "operations.list",
         "processes.activate",
         "processes.list",
         "processes.quit",

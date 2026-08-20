@@ -78,6 +78,7 @@ the quickest alarm that the review surface has changed.
 | D-024 | “Start a connection” is ambiguous and could promise an impossible outbound dial | Guests initiate their TCP connection; the host can start accepting, stop accepting/close all, or disconnect one session | Define start/stop as listener lifecycle and disconnect as exact-session lifecycle; explicitly state the host cannot dial a guest | resolved-in-plan |
 | D-025 | Sharing a service could still accidentally produce two sockets and two auth implementations | The existing host already owns a loopback HTTP listener and all three auth modes | Route `/api/v1` and `/mcp` on one listener with shared parsing/auth, separate protocol sessions, and one in-process service | resolved-in-plan |
 | D-026 | Treating the current MCP registry as the new API manifest would still make the API an agent-tool wrapper | Some rows encode MCP-only workspace grants, chat orchestration, or model-facing presentation rather than application-domain concepts | Adjudicate every row as public operation, MCP composition, or agent-only convenience; publish only deliberate product operations in OpenAPI | resolved-in-plan |
+| D-027 | The rewritten plan still said `/api/v1` would inherit MCP's none/bearer/OAuth modes and scope model | The owner selected one host-issued `X-API-Key` for API v1; `/mcp` must retain its independent none/bearer/OAuth behavior | Route both families through one bounded listener/parser, but authorize `/api/v1` only with `X-API-Key` and do not let either route's credential authorize the other | implemented in uncommitted S2 working tree; focused-tested |
 
 ## Owner decision register
 
@@ -100,6 +101,7 @@ the quickest alarm that the review surface has changed.
 | 2026-08-20 | plan rewrite / `3922d2ab` | 49 | none, bearer, OAuth | 14 | D-001–D-015 | Plan corrected; no implementation started |
 | 2026-08-20 | architecture rewrite / `3922d2ab` | 49 | none, bearer, OAuth | 14 | D-016–D-026 | MCP-centered plan superseded by one public API with HTTP/MCP adapters; no implementation started |
 | 2026-08-20 | S1 / `3b50e8b7` | 49 | API: `X-API-Key`; MCP: none, bearer, OAuth | 14 | API auth decision resolves D-002/D-003/A2/A5 | Neutral descriptor migration, 49-row adjudication, OpenAPI identity, checked generation, shared service seam, and MCP golden parity implemented and focused-tested in the same change |
+| 2026-08-20 | S2 / base `4d7dde7e` | 49 | API: `X-API-Key`; MCP: none, bearer, OAuth | 14 | D-027 records the final separate-auth boundary | One listener now routes ordinary `/api/v1` identity, operation, guest, listener, and exact-session connection resources independently of MCP sessions. Seven API tests, one host-adapter test, four record-seam tests, the independent Python fixture client, eight existing MCP HTTP tests, eleven OAuth tests, and HTTP listener liveness pass. Auth bypass, omitted guest-listener stop, stable-ID disconnect, and private-field leakage mutations each failed the intended test. |
 
 ## Prototype evidence retained
 

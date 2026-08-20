@@ -643,6 +643,24 @@ final class GuestListener: ObservableObject {
         healthByGuest[key]
     }
 
+    func familyObservations(for key: GuestKey)
+        -> [String: GuestFamilyObservation] {
+        familyObservationsByGuest[key] ?? [:]
+    }
+
+    /// Close one exact dial-in without deleting the remembered guest profile.
+    /// A stable guest id is intentionally insufficient: a reconnect can make
+    /// an old session handle stale while the same machine is live again.
+    @discardableResult
+    func disconnect(_ key: GuestKey) -> Bool {
+        guard let live = sessions[key] else { return false }
+        note("Disconnected (machineBySession[key]?.lastName ?? live.guestName)",
+             session: key)
+        live.close(sending: Bye(code: .shuttingDown,
+                                reason: "Disconnected by the host"))
+        return true
+    }
+
     private static let logLimit = 100
 
     /// A line for the window and the file. `area` is the subsystem the

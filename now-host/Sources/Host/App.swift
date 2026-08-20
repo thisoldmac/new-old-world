@@ -1187,6 +1187,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             } else {
                 state.mcpOAuthConsent.detach()
             }
+            let apiHost = NOWAPIHostAdapter(listener: state.listener,
+                                            settings: state.settings)
             let listener = try MCPHTTPListener(
                 configuration: .init(port: port, authMode: authMode,
                                      bearerToken: token),
@@ -1228,7 +1230,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                             transport: .http)
                     }
                 },
-                oauth: oauth)
+                oauth: oauth,
+                apiRouter: NOWAPIHTTPRouter(
+                    apiKey: token,
+                    contractDigest: NOWAPIOperationIDs.contractDigest,
+                    host: apiHost,
+                    audit: HostNOWAPIAuditSink(records: state.mcpRecords)))
             mcpHTTPListener = listener
             Task { [weak self, weak listener] in
                 guard let self, let listener else { return }

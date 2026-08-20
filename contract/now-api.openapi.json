@@ -10,8 +10,129 @@
     { "url": "http://127.0.0.1:{port}/api/v1", "variables": { "port": { "default": "19870" } } }
   ],
   "security": [{ "apiKey": [] }],
-  "paths": {},
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "api.identity",
+        "responses": {
+          "200": { "$ref": "#/components/responses/APIIdentity" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/operations": {
+      "get": {
+        "operationId": "operations.list",
+        "responses": {
+          "200": { "$ref": "#/components/responses/OperationCatalog" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/guests": {
+      "get": {
+        "operationId": "guests.list",
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestList" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/guests/{guestID}": {
+      "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
+      "get": {
+        "operationId": "guests.status",
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestDetail" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/listener": {
+      "get": {
+        "operationId": "listener.status",
+        "responses": { "200": { "$ref": "#/components/responses/ListenerStatus" } }
+      },
+      "put": {
+        "operationId": "listener.start",
+        "responses": { "200": { "$ref": "#/components/responses/ListenerStatus" } }
+      },
+      "delete": {
+        "operationId": "listener.stop",
+        "responses": { "200": { "$ref": "#/components/responses/ListenerStatus" } }
+      }
+    },
+    "/connections": {
+      "get": {
+        "operationId": "connections.list",
+        "responses": { "200": { "$ref": "#/components/responses/ConnectionList" } }
+      }
+    },
+    "/connections/{sessionID}": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionID" }],
+      "delete": {
+        "operationId": "connections.disconnect",
+        "responses": {
+          "200": { "$ref": "#/components/responses/OperationResult" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
   "components": {
+    "parameters": {
+      "GuestID": {
+        "name": "guestID", "in": "path", "required": true,
+        "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "SessionID": {
+        "name": "sessionID", "in": "path", "required": true,
+        "schema": { "type": "string", "minLength": 38, "maxLength": 180 }
+      }
+    },
+    "responses": {
+      "APIIdentity": {
+        "description": "API identity and contract digest",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/APIIdentity" } } }
+      },
+      "OperationCatalog": {
+        "description": "Runtime-bound client-neutral operation catalog",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationCatalog" } } }
+      },
+      "GuestList": {
+        "description": "Remembered guests with live session state",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestList" } } }
+      },
+      "GuestDetail": {
+        "description": "Guest identity, status, and observed capabilities",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestDetail" } } }
+      },
+      "ListenerStatus": {
+        "description": "Guest listener state",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ListenerStatus" } } }
+      },
+      "ConnectionList": {
+        "description": "Exact live guest sessions",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ConnectionList" } } }
+      },
+      "OperationResult": {
+        "description": "Typed operation result",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationResult" } } }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid X-API-Key",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "BadRequest": {
+        "description": "The request is malformed or unsafe",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "NotFound": {
+        "description": "The addressed API resource does not exist",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      }
+    },
     "securitySchemes": {
       "apiKey": {
         "type": "apiKey",
@@ -21,6 +142,89 @@
       }
     },
     "schemas": {
+      "APIIdentity": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "const": "New Old World API" },
+          "apiMajor": { "type": "integer", "const": 1 },
+          "schemaRevision": { "type": "integer", "minimum": 1 },
+          "contractDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "operations": { "type": "string", "const": "/api/v1/operations" },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "maximumHeaderBytes": { "type": "integer", "minimum": 1 },
+              "maximumRequestBodyBytes": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["maximumHeaderBytes", "maximumRequestBodyBytes"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "apiMajor", "schemaRevision", "contractDigest", "operations", "limits"],
+        "additionalProperties": false
+      },
+      "OperationCatalog": {
+        "type": "object",
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "operationId": { "type": "string", "minLength": 3, "maxLength": 128 },
+                "available": { "type": "boolean", "const": true }
+              },
+              "required": ["operationId", "available"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["operations"],
+        "additionalProperties": false
+      },
+      "GuestList": {
+        "type": "object",
+        "properties": {
+          "guests": { "type": "array", "items": { "$ref": "#/components/schemas/GuestSummary" } }
+        },
+        "required": ["guests"],
+        "additionalProperties": false
+      },
+      "GuestDetail": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "connected": { "type": "boolean" },
+          "connectedAt": { "type": "string", "format": "date-time" },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "build": { "type": "string" },
+          "operatingSystem": { "type": "string" },
+          "agentAccess": { "type": "string" },
+          "capabilities": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "displayName", "connected", "name", "capabilities"],
+        "additionalProperties": false
+      },
+      "ConnectionList": {
+        "type": "object",
+        "properties": {
+          "connections": { "type": "array", "items": { "$ref": "#/components/schemas/ConnectionSummary" } }
+        },
+        "required": ["connections"],
+        "additionalProperties": false
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "format": "uuid" },
+          "error": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["requestId", "error"],
+        "additionalProperties": false
+      },
       "APIVersion": {
         "type": "object",
         "properties": {
@@ -142,13 +346,13 @@
     "policy": "Additive optional fields and operations may ship within v1; required-field meaning and disposition semantics remain stable."
   },
   "x-now-operation-catalog": [
-    "catalog.search", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer",
+    "api.identity", "catalog.search", "connections.disconnect", "connections.list", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer",
     "files.capabilities", "files.get", "files.list", "files.mutate", "files.put", "files.reveal", "files.stat",
-    "guests.capabilities", "guests.census", "guests.facts", "guests.list",
+    "guests.capabilities", "guests.census", "guests.facts", "guests.list", "guests.status",
     "interface.control.act", "interface.menu.act", "interface.observe", "interface.text.get", "interface.text.set", "interface.window.act",
-    "logs.guest.tail", "logs.host.tail",
+    "listener.start", "listener.status", "listener.stop", "logs.guest.tail", "logs.host.tail",
     "mirror.act", "mirror.find", "mirror.journal", "mirror.lifecycle", "mirror.metrics", "mirror.snapshot", "mirror.start", "mirror.status", "mirror.wait", "mirror.waitForSettlement",
-    "processes.activate", "processes.list", "processes.quit",
+    "operations.list", "processes.activate", "processes.list", "processes.quit",
     "screen.capture", "screen.stream", "software.launch", "software.list", "transfers.cancel"
   ]
 }
