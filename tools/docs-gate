@@ -646,6 +646,40 @@ def check_distribution_profile(root: Path, feature_catalog: dict,
             f"(components={sorted(feature_components)}, catalog={sorted(feature_defs)})"
         )
 
+    bundled = profile.get("first_party_bundled_resources", {})
+    if not isinstance(bundled, dict):
+        errors.append(
+            "docs/distribution-profile.yaml: first_party_bundled_resources must be a mapping"
+        )
+        bundled = {}
+    if set(bundled) != {"classic_mac_skills", "now_cli"}:
+        errors.append(
+            "docs/distribution-profile.yaml: first-party bundled resources must be "
+            "exactly classic_mac_skills and now_cli"
+        )
+    cli_resource = bundled.get("now_cli", {})
+    expected_cli_paths = [
+        "New Old World.app/Contents/Resources/bin/now",
+        "New Old World.app/Contents/Resources/bin/install-now-cli",
+        "New Old World.app/Contents/Resources/bin/now_cli",
+        "New Old World.app/Contents/Resources/completions",
+    ]
+    if (not isinstance(cli_resource, dict)
+            or cli_resource.get("repository_path") != "now-cli"
+            or cli_resource.get("bundle_paths") != expected_cli_paths
+            or cli_resource.get("reaches") != "macos_dmg"
+            or not str(cli_resource.get("reason") or "").strip()):
+        errors.append(
+            "docs/distribution-profile.yaml: now_cli must declare the exact "
+            "repository, bundled command, installer, package, and completion paths"
+        )
+    elif any(not (root / path).exists() for path in (
+            "now-cli/now", "now-cli/install-now-cli", "now-cli/now_cli",
+            "now-cli/completion")):
+        errors.append(
+            "docs/distribution-profile.yaml: now_cli repository resources are incomplete"
+        )
+
     licensed_inputs = profile.get("licensed_inputs", {})
     if not isinstance(licensed_inputs, dict):
         errors.append("docs/distribution-profile.yaml: licensed_inputs must be a mapping")

@@ -25,9 +25,10 @@ EXIT_FAILED = 6
 
 
 class CLIError(Exception):
-    def __init__(self, message: str, code: int):
+    def __init__(self, message: str, code: int, response: Any = None):
         super().__init__(message)
         self.code = code
+        self.response = response
 
 
 def state_dir() -> Path:
@@ -108,6 +109,20 @@ class API:
             message = problem.get("message") or f"NOW API returned HTTP {status}"
             code = EXIT_UNAVAILABLE if status in {404, 409, 503} else EXIT_INVALID
             raise CLIError(message, code)
+        if isinstance(value, dict):
+            disposition = value.get("disposition")
+            exit_code = {
+                "refused": EXIT_INVALID,
+                "unavailable": EXIT_UNAVAILABLE,
+                "failed": EXIT_FAILED,
+            }.get(disposition)
+            if exit_code is not None:
+                problem = value.get("error")
+                message = (problem.get("message")
+                           if isinstance(problem, dict) else None)
+                raise CLIError(
+                    message or f"operation {disposition}",
+                    exit_code, response=value)
         return value
 
     def download(self, path: str, destination: Path, *, force: bool = False) -> int:
@@ -239,7 +254,7 @@ def parser() -> argparse.ArgumentParser:
     api_commands = api.add_subparsers(dest="verb", required=True)
     api_commands.add_parser("operations")
     call = api_commands.add_parser("call")
-    call.add_argument("operation", choices=sorted(OPERATION_IDS))
+    call.add_argument("operation", choices=sorted(OPERATION_METADATA))
     call.add_argument("--json-arguments", default="{}")
     call.add_argument("--session", help="exact guest session for mutations")
     return root
@@ -425,6 +440,7 @@ def run(args: argparse.Namespace, api: API, state: State) -> Any:
 
 
 def main(argv: list[str] | None = None) -> int:
+    args: argparse.Namespace | None = None
     try:
         args = parser().parse_args(argv)
         state = State()
@@ -436,7 +452,11 @@ def main(argv: list[str] | None = None) -> int:
     except json.JSONDecodeError as error:
         print(f"now: invalid JSON: {error}", file=sys.stderr); return EXIT_INVALID
     except CLIError as error:
-        print(f"now: {error}", file=sys.stderr); return error.code
+        if args is not None and args.as_json and error.response is not None:
+            emit(error.response, True)
+        else:
+            print(f"now: {error}", file=sys.stderr)
+        return error.code
     except (OSError, ValueError) as error:
         print(f"now: {error}", file=sys.stderr); return EXIT_FAILED
 

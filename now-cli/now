@@ -1,3 +1,11 @@
 #!/bin/sh
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+script_path=$0
+if [ -L "$script_path" ]; then
+    target=$(readlink "$script_path")
+    case "$target" in
+        /*) script_path=$target ;;
+        *) script_path=$(dirname -- "$script_path")/$target ;;
+    esac
+fi
+script_dir=$(CDPATH= cd -- "$(dirname -- "$script_path")" && pwd)
 PYTHONPATH="$script_dir${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m now_cli "$@"

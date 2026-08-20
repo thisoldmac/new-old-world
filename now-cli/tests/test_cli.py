@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import threading
 import unittest
@@ -82,6 +83,65 @@ class CLITests(unittest.TestCase):
             self.assertEqual([method for method, _, _ in server.requests], ["GET", "PUT"])
         finally: server.close()
 
+    def test_successful_http_dispositions_have_stable_exit_mapping(self):
+        api = object.__new__(cli.API)
+        for disposition, expected in [
+            ("completed", 0),
+            ("refused", 2),
+            ("unavailable", 3),
+            ("failed", 6),
+        ]:
+            payload = {"disposition": disposition, "value": {"kept": True}}
+            api.request = mock.Mock(return_value=(
+                200, {}, json.dumps(payload).encode()))
+            if expected == 0:
+                self.assertEqual(api.json("POST", "/operations/test"), payload)
+            else:
+                with self.assertRaises(cli.CLIError) as raised:
+                    api.json("POST", "/operations/test")
+                self.assertEqual(raised.exception.code, expected)
+                self.assertEqual(raised.exception.response, payload)
+
+        resource = {"guest": {"id": "pb1400c"}}
+        api.request = mock.Mock(return_value=(
+            200, {}, json.dumps(resource).encode()))
+        self.assertEqual(api.json("GET", "/guests/pb1400c"), resource)
+
+    def test_json_mode_preserves_refused_payload_and_nonzero_exit(self):
+        payload = {
+            "operationId": "processes.list",
+            "disposition": "refused",
+            "value": {"kept": True},
+            "error": {"message": "the guest declined"},
+        }
+        api = object.__new__(cli.API)
+        api.request = mock.Mock(return_value=(
+            200, {}, json.dumps(payload).encode()))
+        with tempfile.TemporaryDirectory() as home, \
+             mock.patch.object(cli, "API", return_value=api):
+            code, output, error = self.invoke(
+                ["--json", "api", "call", "processes.list"], home)
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output), payload)
+        self.assertEqual(error, "")
+
+    def test_human_mode_reports_semantic_failure_on_stderr(self):
+        payload = {
+            "operationId": "processes.list",
+            "disposition": "unavailable",
+            "error": {"message": "no guest is connected"},
+        }
+        api = object.__new__(cli.API)
+        api.request = mock.Mock(return_value=(
+            200, {}, json.dumps(payload).encode()))
+        with tempfile.TemporaryDirectory() as home, \
+             mock.patch.object(cli, "API", return_value=api):
+            code, output, error = self.invoke(
+                ["api", "call", "processes.list"], home)
+        self.assertEqual(code, 3)
+        self.assertEqual(output, "")
+        self.assertIn("no guest is connected", error)
+
     def test_cli_source_has_no_mcp_or_private_protocol_fallback(self):
         source = (ROOT / "now-cli" / "now_cli" / "main.py").read_text().lower()
         self.assertNotIn("/mcp", source)
@@ -94,6 +154,49 @@ class CLITests(unittest.TestCase):
         expected = {row["operationId"]: {key: row[key] for key in ("effect", "addressing", "rendering")}
                     for row in document["x-now-cli-operation-metadata"]}
         self.assertEqual(OPERATION_METADATA, expected)
+
+    def test_generated_shell_completion_covers_parser_grammar(self):
+        root = cli.parser()
+        domains = next(action for action in root._actions
+                       if isinstance(action, cli.argparse._SubParsersAction))
+        expected = {}
+        for domain, domain_parser in domains.choices.items():
+            subcommands = next((action for action in domain_parser._actions
+                                if isinstance(
+                                    action, cli.argparse._SubParsersAction)),
+                               None)
+            expected[domain] = tuple(subcommands.choices) if subcommands else ()
+
+        bash = (ROOT / "now-cli" / "completion" / "now.bash").read_text()
+        zsh = (ROOT / "now-cli" / "completion" / "_now").read_text()
+        bash_rows = {domain: tuple(words.split()) for domain, words in
+                     re.findall(r'^    (\w+)\) candidates="([^"]*)"',
+                                bash, re.MULTILINE)}
+        zsh_rows = {domain: tuple(words.split()) for domain, words in
+                    re.findall(r'^    (\w+)\) candidates=\(([^)]*)\)',
+                               zsh, re.MULTILINE)}
+        self.assertEqual(bash_rows, expected)
+        self.assertEqual(zsh_rows, expected)
+
+        generic_ids = tuple(sorted(OPERATION_METADATA))
+        bash_ids = re.search(
+            r'generic_operations="([^"]*)"', bash).group(1).split()
+        zsh_ids = re.search(
+            r'generic_operations=\(([^)]*)\)', zsh).group(1).split()
+        self.assertEqual(tuple(bash_ids), generic_ids)
+        self.assertEqual(tuple(zsh_ids), generic_ids)
+        self.assertIn('"data macbinary"', bash)
+        self.assertIn('candidates=(data macbinary)', zsh)
+
+        api_parser = domains.choices["api"]
+        api_commands = next(action for action in api_parser._actions
+                            if isinstance(
+                                action, cli.argparse._SubParsersAction))
+        call_parser = api_commands.choices["call"]
+        operation = next(action for action in call_parser._actions
+                         if action.dest == "operation")
+        self.assertEqual(tuple(operation.choices), generic_ids)
+        self.assertLess(len(operation.choices), len(OPERATION_IDS))
 
     def test_nonsecret_state_never_contains_api_key(self):
         with tempfile.TemporaryDirectory() as home:

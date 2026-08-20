@@ -105,7 +105,7 @@ def main() -> int:
         shutil.copy2(ROOT / "mkdocs.yml", test_root / "mkdocs.yml")
         for name in (
             "now-host", "now-guest-ppc", "now-guest-68k", "web-bridge",
-            "packaging", ".github", ".githooks",
+            "packaging", "now-cli", ".github", ".githooks",
         ):
             shutil.copytree(ROOT / name, test_root / name)
         for name in (
@@ -382,6 +382,13 @@ def main() -> int:
             test_root, "CarbonLib byte preservation", test_root / "docs/distribution-profile.yaml",
             "preserve_original_bytes: true", "preserve_original_bytes: false",
             "CarbonLib must remain an unchanged, external-only, user-licensed installer",
+        )
+        expect_mutation(
+            test_root, "bundled NOW CLI shape",
+            test_root / "docs/distribution-profile.yaml",
+            "New Old World.app/Contents/Resources/bin/install-now-cli",
+            "New Old World.app/Contents/Resources/bin/install-something-else",
+            "now_cli must declare the exact repository, bundled command, installer, package, and completion paths",
         )
         expect_mutation(
             test_root, "generic image personalization", test_root / "docs/distribution-profile.yaml",

@@ -2,8 +2,9 @@
 
 # 036 — NOW public API and power-user CLI: plan
 
-Status: **architecture review, not approved for implementation** (rewritten
-2026-08-20 against `origin/main` `3922d2ab`). This version supersedes both
+Status: **implemented through S7; full gate and product QA pending** (rewritten
+2026-08-20 against `origin/main` `3922d2ab`, reconciled against the S7 base
+`918f1e03`). This version supersedes both
 the option list in issue #33 and the MCP-centered draft previously committed
 on this branch. The prototype on `feat/now-cli-sketch` remains dated evidence;
 it is not product code and is not carried forward.
@@ -101,7 +102,7 @@ now files list --guest pb1400c 'Macintosh HD:Lab:'
 now files put --guest pb1400c ./DiskCopy.img 'Macintosh HD:Lab:DiskCopy.img'
 now files get --guest pb1400c 'Macintosh HD:Lab:Report' ./Report.bin
 now transfers list
-now transfers watch <transfer-id>
+now transfers status <transfer-id>
 now events watch --guest pb1400c
 ```
 
@@ -224,15 +225,19 @@ The current loopback HTTP service becomes one listener with two route families:
 - `/api/v1/...` — ordinary NOW developer API;
 - `/mcp` — MCP Streamable HTTP as today.
 
-They share socket ownership, authentication policy, connection parsing,
-request limits, and audit infrastructure. They do not share protocol sessions:
+They share socket ownership, bounded connection parsing, request limits, and
+audit infrastructure, but apply separate authentication policies. They do not
+share protocol sessions:
 an API caller never performs MCP `initialize`, `tools/list`, or `tools/call`.
 Stdio remains an MCP transport only.
 
 V1 remains loopback-only. Remote/LAN serving, TLS termination, a background
 daemon, and automatic app launching are later security/deployment decisions.
-Third-party local applications receive a URL and standard auth bootstrap from
-the NOW host UI rather than reading private preferences.
+The dedicated developer-facing key bootstrap promised by the earlier design is
+not implemented. The shared secret is currently copyable only through the MCP
+bearer-mode card, while the official CLI may read its private mode-0600
+application credential. D-040 keeps a proper application-facing copy/bootstrap
+control open; third-party clients must not parse the private file.
 
 ### Resource and action families
 
@@ -256,11 +261,16 @@ DELETE /api/v1/connections/{sessionID} disconnect one exact session
 POST   /api/v1/guests/{guestID}/commands
 
 GET    /api/v1/guests/{guestID}/files
-GET    /api/v1/guests/{guestID}/files/content
-POST   /api/v1/guests/{guestID}/transfers
+GET    /api/v1/guests/{guestID}/files/stat
+POST   /api/v1/guests/{guestID}/files/mutations
+POST   /api/v1/guests/{guestID}/transfers/uploads
+POST   /api/v1/guests/{guestID}/transfers/downloads
+GET    /api/v1/transfers
 GET    /api/v1/transfers/{transferID}
 DELETE /api/v1/transfers/{transferID}
+PUT    /api/v1/transfers/{transferID}/content
 GET    /api/v1/transfers/{transferID}/content
+POST   /api/v1/transfers/{transferID}/commit
 
 POST   /api/v1/operations/{operationID}
 GET    /api/v1/events
@@ -273,25 +283,16 @@ identity, lifecycle, commands, files, transfers, and events.
 
 ### Authentication and authority
 
-The API reuses the current host's unauthenticated, bearer, and OAuth modes and
-their implementation, but defines API scopes separately from MCP tool
-sessions. Recommended scopes are:
+API v1 accepts one host-issued `X-API-Key` and has no scopes or OAuth. It does
+not accept unauthenticated requests, an `Authorization: Bearer` header, or MCP
+OAuth access tokens. The sibling `/mcp` adapter retains its existing none,
+bearer, and OAuth modes unchanged; a credential valid for one route family
+cannot authorize the other. The API key is never returned in discovery
+documents or written into normal CLI JSON state.
 
-- `now.read` — guests, status, capabilities, listings, and events;
-- `now.control` — bounded guest commands and mutations;
-- `now.transfer` — file upload/download and transfer cancellation;
-- `now.admin` — listener stop/start and exact-session disconnect.
-
-Unauthenticated mode remains a deliberate host setting and conveys the same
-local authority the mode currently conveys. Bearer uses the existing
-same-user secret. OAuth uses authorization code + PKCE and human consent.
-Credentials are never returned in discovery documents or written into normal
-CLI JSON state.
-
-Every mutation is audited through the shared service. The audit record names
-the authenticated client, operation, addressed guest/session, disposition,
-and bounded timing; it does not persist command arguments, file bytes, private
-paths, or returned payloads.
+Every mutation is audited through the shared service. The audit record carries
+request ID, operation, addressed guest/session target, and disposition; it does
+not persist command arguments, file bytes, private paths, or returned payloads.
 
 ### Console commands
 
@@ -315,10 +316,12 @@ There is no host shell, arbitrary process execution, or command batching.
 
 The public API does not send bulk bytes as base64 MCP tool arguments.
 
-Uploads stream an HTTP request body into bounded private host staging, compute
-size and SHA-256 while receiving, then create a transfer resource that enters
-the guest's existing single transfer lane. Downloads create or identify a
-transfer and stream the completed host artifact as binary. Metadata states the
+Uploads first admit a bounded private stage, then append sequential raw chunks
+of at most 8 KiB through separate `PUT` requests. HTTP request-side
+`Transfer-Encoding: chunked` remains unsupported. Commit verifies the declared
+size and SHA-256 before the transfer enters the guest's existing single lane.
+Downloads create a transfer and stream the completed host artifact as binary.
+Metadata states the
 container (`data` or `macbinary`), classic type/creator when known, length,
 digest, guest path, and disposition.
 
@@ -399,37 +402,36 @@ protocol, or falls back to MCP. If the public API is unavailable, it fails with
 an actionable transport/authentication error instead of proving a different
 surface works.
 
-Modules follow real ownership:
+The first implementation remains one small standard-library package rather
+than pre-splitting transport and rendering abstractions:
 
 ```text
 now-cli/
+  now                         repository launcher
+  install-now-cli             guarded prefix installer
   now_cli/
-    api/             HTTP, auth, contract identity, SSE
-    model/           generated/public DTO bindings
-    commands/        guests, connections, console, files, transfers, events
-    render/          human tables/progress and JSON passthrough
-    state/           endpoint preference and non-secret caches
-    completion/      bounded schema/resource completion
+    main.py                     HTTP, commands, rendering, state
+    _generated.py               checked OpenAPI identities and operation metadata
+  completion/                   Bash and Zsh completion
   tests/
 ```
 
 ### Discovery and state
 
-The official CLI may discover the saved loopback URL and selected auth mode
-through one documented host bootstrap seam. That seam locates the API only; it
-does not answer guest status or capabilities. Third-party clients use the host
-UI's connection material or OAuth metadata.
+The CLI defaults to the published loopback endpoint, accepts an endpoint flag
+or environment variable, and reads the private same-user application key when
+no invocation-specific key is supplied. This private convenience is not the
+third-party bootstrap contract; D-040 records that missing host UI seam.
 
 CLI state is separated by meaning:
 
 | State | Key/lifetime | Rule |
 |---|---|---|
-| Endpoint preference | named host profile | URL and non-secret display name only |
-| Contract cache | endpoint + API major + contract digest | Offline help; never capability truth |
-| Preferred guest | endpoint + stable guest ID | Convenience; every response echoes resolved session |
-| Listing/completion hints | exact session + kind, short TTL | Hints only; mutations refetch |
-| OAuth public registration | endpoint | Reusable public metadata |
-| OAuth tokens | Keychain | Never ordinary CLI JSON |
+| Preferred guest | local JSON | Stable guest ID only; mutations refetch the exact session |
+| API key | private mode-0600 application credential, environment, or invocation flag | Never ordinary CLI JSON |
+
+The endpoint comes from an invocation flag, environment variable, or the
+compiled loopback default. The CLI has no command that persists it.
 
 ### Grammar, help, and completion
 
@@ -443,10 +445,11 @@ marked library-only with a reason. `now api operations` exposes the canonical
 inventory and `now api call <operation-id> --json-arguments ...` provides a
 developer/power-user escape hatch without bypassing validation.
 
-Help distinguishes the stable API surface from what the currently addressed
-guest actually supports. Completion uses contract enums and bounded live
-lookups with a short deadline; it never performs a mutation and never turns a
-stale hint into a target decision.
+Help and Bash/Zsh completion are generated from the static public grammar and
+operation IDs. They do not yet distinguish what the currently addressed guest
+supports or perform bounded live completion lookups; D-042 records that
+deferred convenience. Target validation still happens at request time and a
+completion hint is never authority for a mutation.
 
 ### Exit status
 
@@ -461,8 +464,9 @@ stale hint into a target decision.
 | `130` | locally interrupted; cancellation attempted when applicable |
 
 `--json` still uses these exits. Connection stop and other disruptive actions
-require an interactive confirmation unless `--yes` is supplied; the HTTP API
-itself remains non-interactive and relies on `now.admin` authorization.
+require an interactive confirmation unless `--yes` is supplied. The HTTP API
+itself remains non-interactive and applies its one API-key policy plus the
+operation's consent and exact-session checks.
 
 ## First-release scope
 
@@ -480,7 +484,7 @@ V1 includes:
   renderings for operations admitted to the public API and checked
   mappings/reasons for the rest;
 - MCP migration onto the neutral catalog without client regression;
-- the Python CLI, auth modes claimed by the release, completion,
+- the Python CLI, v1 API-key authentication, completion,
   distribution, and user/developer documentation.
 
 V1 does not include:
@@ -524,10 +528,10 @@ descriptor each fail the intended gate.
 
 ### S2 — HTTP foundation, identity, guests, and connections
 
-- refactor the current HTTP listener into shared parsing/auth plus route
-  adapters for `/mcp` and `/api/v1`;
+- refactor the current HTTP listener into shared bounded parsing plus
+  independently authenticated route adapters for `/mcp` and `/api/v1`;
 - add API identity, contract digest, operation catalog, standard errors,
-  request IDs, limits, and auth scopes;
+  request IDs, limits, and the v1 API-key boundary;
 - expose guests, status/capabilities, listener state/start/stop, live
   connections, and exact-session disconnect;
 - prove stopping the guest listener does not stop the developer API listener;
@@ -545,7 +549,8 @@ host field leaked into JSON each fail.
   table;
 - route typed arguments or raw argument line through
   `runScheduledCommand` with the existing watchdog;
-- enforce control scope, consent tier, output bounds, and argument-free audit;
+- enforce API-key authorization, consent tier, output bounds, and
+  argument-free audit;
 - add CLI `now console` behavior and completion from the guest command table.
 
 Mutation evidence: an unadvertised command, wrong guest, omitted watchdog,
@@ -573,7 +578,8 @@ violation, and cancel-settles-success each fail.
 - translate the allowed `HostEventBus` subset without internal enum strings or
   host paths;
 - specify reconnect/refetch behavior without claiming replay;
-- add `now events watch` and transfer watch behavior.
+- add `now events watch`; retain dedicated transfer-watch composition as an
+  explicit follow-up if status-plus-event refetch is insufficient.
 
 Mutation evidence: slow-consumer unbounded growth, leaked host URL/path,
 wrong-guest event identity, and false replay acceptance each fail.
@@ -583,15 +589,18 @@ wrong-guest event identity, and false replay acceptance each fail.
 - render every remaining public neutral operation through generic HTTP
   invocation;
 - finish the MCP exposure/reason matrix and agent-specific compositions;
-- finish generated CLI grammar, human rendering, JSON passthrough, help,
-  preferred guest, safe references, and Bash/Zsh completion;
+- finish generated CLI grammar and operation IDs, human rendering, JSON
+  passthrough, help, preferred guest, safe references, and static Bash/Zsh
+  completion; defer live guest-aware completion explicitly;
 - prove every operation's declared faces are real or carry a checked reason;
-- run live interop against every auth mode claimed by the release.
+- prove the API key cannot authorize MCP and MCP credentials cannot authorize
+  the API.
 
 ### S7 — distribution and documentation
 
 - settle bundle/repository installation and a stable `now` executable path;
-- document OpenAPI discovery, authentication, scopes, compatibility, errors,
+- document OpenAPI discovery, authentication, lack of v1 scopes,
+  compatibility, errors,
   events, transfer lifecycle, and local-only network posture;
 - publish CLI task-oriented guides for guests, connections, console, files,
   transfers, and scripting;
@@ -621,10 +630,10 @@ before attempting a mutation.
 | ID | Decision | Recommended default | Blocks |
 |---|---|---|---|
 | A1 | First-release network reach | Loopback only | S2 |
-| A2 | Full OAuth in the first CLI release | Yes; it proves third-party auth rather than same-user shortcuts | S2/S6 |
+| A2 | API v1 authentication | `X-API-Key` only; MCP modes unchanged | Decided and implemented in S2/S6 |
 | A3 | Distribution | Bundle plus repository development entry point | S7 |
 | A4 | Transfer staging ceiling and retention | Derive from existing 32 MiB single-file bound; short private retention with explicit cleanup | S4 |
-| A5 | Exact OAuth scopes and disruptive-operation split | Four scopes in this plan; `now.admin` for listener/disconnect | S2 |
+| A5 | API scopes | No scope model in v1; revisit with multi-principal auth | Superseded |
 
 Already decided by Michelle on 2026-08-20:
 
@@ -647,7 +656,7 @@ Already decided by Michelle on 2026-08-20:
 | Console reaches the shared guest face | Wire fixture plus `CommandParityTests`; no second command implementation |
 | Binary transfer is bounded | Streaming/backpressure, staging cleanup, digest, session, lane, and cancel tests |
 | Events are honest | Live-only reconnect test, bounded slow consumer, identity and privacy fixtures |
-| Auth claims are real | Live independent-client interop against every claimed mode and scope |
+| Auth claims are real | Independent-client `X-API-Key` interop and cross-route credential refusal |
 | Public compatibility is enforceable | Old-v1 fixture suite runs against the new host revision |
 | Product change is landable | `scripts/test-all`, applicable docs gates, current-head Emulator QA and Metal QA for product slices |
 
@@ -668,7 +677,7 @@ Stop and return to architecture review if:
   narrowing the guest's declared command semantics;
 - transfer streaming would bypass the existing guest lane, path policy,
   consent, or receipt authority;
-- OAuth credentials would be stored in ordinary JSON;
+- an API credential would be stored in ordinary CLI JSON;
 - remote exposure, a daemon, a new dependency, or a guest contract change is
   required without owner approval;
 - the implementation produces a second operation catalog that can drift from

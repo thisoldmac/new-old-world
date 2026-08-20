@@ -147,6 +147,7 @@ else
         -e "s/@DISPLAY_NAME@/$display_name/g" \
         -e "s/@BUNDLE_ID@/$bundle_identifier/g" \
         "$script_dir/HostInfo.plist.in" > "$bundle/Contents/Info.plist"
+    "$script_dir/stage-now-cli" "$bundle"
     codesign --force --sign - "$bundle"
 fi
 

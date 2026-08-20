@@ -44,6 +44,20 @@ first_party_bundled_resources:
       application's Resources, so a public DMG carries roughly a megabyte of
       text that no other line of this profile would have mentioned. Nothing
       enforces this row yet; see docs/open-issues.md.
+  now_cli:
+    repository_path: now-cli
+    bundle_paths:
+      - New Old World.app/Contents/Resources/bin/now
+      - New Old World.app/Contents/Resources/bin/install-now-cli
+      - New Old World.app/Contents/Resources/bin/now_cli
+      - New Old World.app/Contents/Resources/completions
+    reaches: macos_dmg
+    reason: >-
+      The official API-only power-user client, its guarded installer, Python
+      package, and Bash/Zsh completions are sealed first-party app resources.
+      They are not a tenth release output: the public DMG already carries the
+      finalized app, and scripts/stage-now-cli owns this exact internal shape
+      for both Xcode and manual host assembly.
 
 licensed_inputs:
   carbonlib_1_6_installer:

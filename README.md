@@ -19,6 +19,8 @@ Use a classic Macintosh from a modern Mac without turning either interface into 
 - [Review the alpha feature profile](docs/user-guide/reference/release-profile.md)
 - [Browse every module](docs/user-guide/reference/modules/index.md)
 - [Read the developer orientation](docs/developer-guide/orientation.md)
+- [Use the `now` command line](docs/user-guide/how-to/use-now-cli.md)
+- [Build an application with NOW API v1](docs/developer-guide/reference/now-api.md)
 - [See the generated protocol reference](docs/generated/asyncapi.md)
 
 The web documentation is built from `mkdocs.yml` at the `/docs/` base path. Run `scripts/docs-serve` for a local preview.
@@ -49,13 +51,16 @@ pre-Carbon NOW-68K ─ retained in source; excluded from alpha
   drag sessions, and visible cursor following; ordinary NOW features remain
   available without it.
 - NOW-68K implements an explicit subset of the same contract without shaping the PowerPC codebase, but is not an alpha release artifact.
-- Agent access is a bounded projection of host capabilities, not a second route to the guest socket.
+- NOW API v1 is the public loopback application contract; the official `now`
+  CLI is its first power-user client. MCP renders a bounded child surface for
+  agents through a sibling adapter, not a second set of product meanings.
 
 ## Capability summary
 
 | Area | PowerPC alpha | Bundled, optional NOW Extension | Pre-Carbon/NOW-68K |
 |---|---|---|---|
 | Connection, console, files, processes, software, hardware facts | included | not required | excluded from release |
+| Public loopback API v1 and bundled `now` CLI | tested; not emulator- or metal-verified | not required | host-side surface |
 | Screenshots and streaming | included with stated limitations | not required | excluded from release |
 | [Web compatibility bridge](docs/user-guide/reference/modules/web.md): guest-loopback proxy over NOW's wire, host-side TLS/JS handling, classic HTML profiles, Reader and optional local AI layout | included; tested, not classic-browser verified | not required | unavailable |
 | [Projects and Development](docs/user-guide/reference/modules/development.md): host-owned project history, guest-native MPW builds, verified candidates, and exact-product launch | included; host-home loop metal-verified, varied autonomous loops emulator-verified | not required | unavailable |
@@ -70,6 +75,10 @@ The short table is navigation, not a claim of parity. The [module reference](doc
 ## Important limitations
 
 - The listener is for a trusted local network; secure transport is not available yet.
+- The public developer API is loopback-only, uses one `X-API-Key`, and has no
+  OAuth or scopes in v1. The host does not yet have a dedicated developer-key
+  bootstrap control; the shared secret is currently copied through the MCP
+  HTTP bearer card, while the bundled CLI reads the private credential itself.
 - Each remembered machine can be given its own listening port, which is how
   the host tells two emulated Macs apart when they all reach it from the same
   loopback address. Assigning one opens the socket but does not repoint a
@@ -167,6 +176,7 @@ The docs gate validates structure, links, source dependencies, images, live modu
 |---|---|
 | `contract/` | Wire and resident-memory authorities |
 | `now-host/` | Native macOS application |
+| `now-cli/` | Official API-only power-user command and completions |
 | `now-guest-ppc/` | PowerPC CarbonLib guest |
 | `now-guest-68k/` | 68K Toolbox/MacTCP guest |
 | `ext/` | Optional resident extension |
