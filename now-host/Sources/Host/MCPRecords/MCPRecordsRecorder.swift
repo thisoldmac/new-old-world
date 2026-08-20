@@ -9,6 +9,8 @@ final class MCPRecordsRecorder: @unchecked Sendable {
     /// Readable so the history model queries the same store this writes.
     let database: MCPRecordsDatabase
     private let insertions: AsyncStream<MCPActionRow>.Continuation
+    private let lifecycleInsertions:
+        AsyncStream<MCPInitializationEvidence>.Continuation
     /* One warning per launch, not one per drop: a wedged disk during a busy
        agent run must not flood the log it is warning into. Lock-guarded —
        the flag is the only mutable state behind the @unchecked. */
@@ -17,12 +19,17 @@ final class MCPRecordsRecorder: @unchecked Sendable {
     /// Live UI updates: every recorded action, as the joined row the
     /// history card draws, in insertion order.
     let inserted: AsyncStream<MCPActionRow>
+    let initialized: AsyncStream<MCPInitializationEvidence>
 
     init(database: MCPRecordsDatabase) {
         self.database = database
         var continuation: AsyncStream<MCPActionRow>.Continuation!
         inserted = AsyncStream { continuation = $0 }
         insertions = continuation
+        var lifecycleContinuation:
+            AsyncStream<MCPInitializationEvidence>.Continuation!
+        initialized = AsyncStream { lifecycleContinuation = $0 }
+        lifecycleInsertions = lifecycleContinuation
     }
 
     func record(event: HostProjectionAuditEvent,
@@ -46,6 +53,24 @@ final class MCPRecordsRecorder: @unchecked Sendable {
                 await MainActor.run {
                     HostLog.shared.write(.warn, "agent", detail)
                 }
+            }
+        }
+    }
+
+    func recordInitialization(agent: MCPAgentIdentity,
+                              at moment: Date = Date()) async {
+        do {
+            try await database.recordInitialization(agent: agent, at: moment)
+            if let evidence = try await database.latestInitialization(
+                    kind: agent.kind) {
+                lifecycleInsertions.yield(evidence)
+            }
+        } catch {
+            guard shouldWarn() else { return }
+            let detail = "MCP initialization record dropped: \(error) — "
+                + "further drops this launch will not be reported"
+            await MainActor.run {
+                HostLog.shared.write(.warn, "agent", detail)
             }
         }
     }

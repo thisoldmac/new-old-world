@@ -131,10 +131,12 @@ enum MCPStaleCompanionResponse {
 enum MCPStdioTransport {
     static func run(workspaceRoot: URL? = nil) async {
         let identity = NOWMCPClientIdentity()
+        identity.setSessionKey("pid:\(getpid())")
         let server = NOWMCPServer(
             client: SocketAgentIntegrationClient(),
             audit: LocalMCPAuditSink(identity: identity),
             identity: identity,
+            lifecycle: LocalMCPInitializationSink(),
             workspaceGrant: workspaceRoot.map(HostWorkspaceGrant.init))
         let output = MCPStandardOutput()
         let executableGeneration = MCPExecutableGeneration()

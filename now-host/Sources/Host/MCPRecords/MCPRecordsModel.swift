@@ -53,12 +53,16 @@ final class MCPRecordsModel: ObservableObject {
     @Published private(set) var rows: [MCPActionRow] = []
     @Published private(set) var agents: [MCPAgentRecord] = []
     @Published private(set) var targets: [MCPTargetRecord] = []
+    @Published private(set) var lastStdioInitialization:
+        MCPInitializationEvidence?
+    @Published private(set) var lastStdioAction: MCPActionRow?
     @Published private(set) var loadState: LoadState = .loading
     @Published private(set) var canLoadMore = false
     @Published private(set) var filter = MCPActionQuery()
 
     private let recorder: MCPRecordsRecorder?
     private var liveTask: Task<Void, Never>?
+    private var lifecycleTask: Task<Void, Never>?
     private var started = false
 
     init(recorder: MCPRecordsRecorder?) {
@@ -72,6 +76,7 @@ final class MCPRecordsModel: ObservableObject {
 
     deinit {
         liveTask?.cancel()
+        lifecycleTask?.cancel()
     }
 
     func start() {
@@ -82,6 +87,15 @@ final class MCPRecordsModel: ObservableObject {
             for await row in recorder.inserted {
                 guard let self else { return }
                 self.absorb(row)
+            }
+        }
+        lifecycleTask = Task { [weak self] in
+            for await evidence in recorder.initialized {
+                guard let self else { return }
+                if evidence.kind == .mcpStdio {
+                    self.lastStdioInitialization = evidence
+                }
+                await self.refreshEntities()
             }
         }
     }
@@ -103,6 +117,9 @@ final class MCPRecordsModel: ObservableObject {
             canLoadMore = fresh.count >= query.limit
             agents = try await database.agents()
             targets = try await database.targets()
+            lastStdioInitialization = try await database
+                .latestInitialization(kind: .mcpStdio)
+            lastStdioAction = try await database.latestAction(kind: .mcpStdio)
             loadState = .ready
         } catch {
             loadState = .unavailable("The record could not be read: "
@@ -273,6 +290,7 @@ final class MCPRecordsModel: ObservableObject {
         case .mcpStdio: return "An MCP client over Standard Input"
         case .chat: return "The host's own chat harness"
         case .appIntent: return "An App Intent invocation"
+        case .unknown: return "An unknown historical client"
         }
     }
 

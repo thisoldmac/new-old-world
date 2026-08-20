@@ -609,6 +609,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                    addressed. */
                 if request.operation != .sessionHealth,
                    request.operation != .audit,
+                   request.operation != .mcpInitialize,
                    request.operation != .projects,
                    /* Like projects: the store is this Mac's own and a
                       chat exists whether or not anything is connected,
@@ -795,6 +796,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                                 request.auditClientVersion),
                             sessionKey: request.auditSessionKey),
                         records: records)
+                    return .recorded
+                case .mcpInitialize:
+                    await records?.recordInitialization(
+                        agent: MCPAgentIdentity(
+                            kind: .mcpStdio,
+                            clientName: MCPAgentIdentity.bounded(
+                                request.mcpClientName),
+                            clientVersion: MCPAgentIdentity.bounded(
+                                request.mcpClientVersion),
+                            sessionKey: request.mcpSessionKey))
                     return .recorded
                 case .bringToFront:
                     /* The first of P1a's eleven to be wired (plan 005,
@@ -1198,6 +1209,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         identity: identity, records: records)
                     return (NOWMCPServer(client: client, audit: audit,
                                          identity: identity,
+                                         lifecycle: HostMCPInitializationSink(
+                                            records: records),
                                          workspaceGrant: workspaceGrant),
                             identity)
                 },

@@ -3,12 +3,12 @@ import Foundation
 /// The records store's DDL, versioned through `PRAGMA user_version`.
 ///
 /// The schema stores exactly what `HostProjectionAuditEvent` carries plus
-/// identity: capability, face, resolved target, outcome, bounded reason.
+/// identity, and successful initialize timestamps on that identity's session.
 /// **There is no arguments or payload column, and one must never be
-/// added** — the audit event refuses arguments deliberately, and a store
+/// added** — both routes refuse arguments deliberately, and a store
 /// with a spare TEXT column is how they would come back.
 enum MCPRecordsSchema {
-    static let currentVersion: Int32 = 1
+    static let currentVersion: Int32 = 2
 
     static func migrate(_ connection: SQLiteConnection) throws {
         if connection.userVersion < 1 {
@@ -62,6 +62,17 @@ enum MCPRecordsSchema {
                 CREATE INDEX sessions_agent ON sessions(agent_id);
                 """)
             connection.userVersion = 1
+        }
+        if connection.userVersion < 2 {
+            try connection.execute("""
+                ALTER TABLE sessions
+                  ADD COLUMN first_initialized_at REAL;
+                ALTER TABLE sessions
+                  ADD COLUMN last_initialized_at REAL;
+                CREATE INDEX sessions_last_initialized
+                  ON sessions(last_initialized_at DESC);
+                """)
+            connection.userVersion = 2
         }
     }
 }

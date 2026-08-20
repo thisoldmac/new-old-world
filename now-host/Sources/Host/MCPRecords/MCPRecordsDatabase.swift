@@ -48,6 +48,34 @@ actor MCPRecordsDatabase {
 
     // MARK: Recording
 
+    /// A successful MCP initialize, with no request body or tool arguments.
+    /// MCP transports always supply a session key; refusing a missing one
+    /// here keeps separate anonymous connections from collapsing together.
+    func recordInitialization(agent identity: MCPAgentIdentity,
+                              at moment: Date) throws {
+        guard let key = identity.sessionKey, !key.isEmpty else { return }
+        try connection.execute("BEGIN IMMEDIATE")
+        do {
+            let agentID = try upsertAgent(identity, at: moment)
+            let sessionID = try upsertSession(
+                agentID: agentID, key: key, at: moment)
+            let touch = try connection.prepare("""
+                UPDATE sessions
+                SET first_initialized_at = COALESCE(first_initialized_at, ?),
+                    last_initialized_at = ?
+                WHERE id = ?
+                """)
+            try touch.bind(moment.timeIntervalSince1970, at: 1)
+            try touch.bind(moment.timeIntervalSince1970, at: 2)
+            try touch.bind(sessionID, at: 3)
+            try touch.step()
+            try connection.execute("COMMIT")
+        } catch {
+            try? connection.execute("ROLLBACK")
+            throw error
+        }
+    }
+
     /// One audited action, in one transaction: upsert the agent, its
     /// session and the target, insert the action, advance the `last_seen`s.
     func record(event: HostProjectionAuditEvent,
@@ -104,7 +132,7 @@ actor MCPRecordsDatabase {
             DO UPDATE SET last_seen = excluded.last_seen
             RETURNING id
             """)
-        try upsert.bind(identity.kind.rawValue, at: 1)
+        try upsert.bind(identity.kind.databaseValue, at: 1)
         try upsert.bind(identity.clientName, at: 2)
         try upsert.bind(identity.clientVersion, at: 3)
         try upsert.bind(moment.timeIntervalSince1970, at: 4)
@@ -207,7 +235,7 @@ actor MCPRecordsDatabase {
             let agent = MCPAgentRecord(
                 id: action.agentID,
                 kind: MCPAgentIdentity.Kind(
-                    rawValue: statement.string(at: 9) ?? "") ?? .mcpStdio,
+                    databaseValue: statement.string(at: 9) ?? ""),
                 clientName: statement.string(at: 10) ?? "",
                 clientVersion: statement.string(at: 11) ?? "",
                 firstSeen: Date(timeIntervalSince1970: 0),
@@ -231,6 +259,67 @@ actor MCPRecordsDatabase {
             records.append(Self.agent(from: statement))
         }
         return records
+    }
+
+    func latestInitialization(kind: MCPAgentIdentity.Kind) throws
+        -> MCPInitializationEvidence? {
+        let statement = try connection.prepare("""
+            SELECT g.kind, g.client_name, g.client_version, s.session_key,
+                   s.first_initialized_at, s.last_initialized_at
+            FROM sessions s
+            JOIN agents g ON g.id = s.agent_id
+            WHERE g.kind = ? AND s.last_initialized_at IS NOT NULL
+            ORDER BY s.last_initialized_at DESC, s.id DESC
+            LIMIT 1
+            """)
+        try statement.bind(kind.databaseValue, at: 1)
+        guard try statement.step(),
+              let sessionKey = statement.string(at: 3) else { return nil }
+        let agent = MCPAgentRecord(
+            id: 0,
+            kind: .init(databaseValue: statement.string(at: 0) ?? ""),
+            clientName: statement.string(at: 1) ?? "",
+            clientVersion: statement.string(at: 2) ?? "",
+            firstSeen: Date(timeIntervalSince1970: 0),
+            lastSeen: Date(timeIntervalSince1970: 0))
+        return MCPInitializationEvidence(
+            kind: agent.kind, agentName: agent.displayName,
+            clientName: agent.clientName,
+            clientVersion: agent.clientVersion,
+            sessionKey: sessionKey,
+            firstSeen: Date(timeIntervalSince1970: statement.double(at: 4)),
+            lastSeen: Date(timeIntervalSince1970: statement.double(at: 5)))
+    }
+
+    func latestAction(kind: MCPAgentIdentity.Kind) throws -> MCPActionRow? {
+        let agentIDs = try agents().filter { $0.kind == kind }.map(\.id)
+        guard !agentIDs.isEmpty else { return nil }
+        /* One kind may have several client identities. Querying them one at
+           a time would make recency depend on agent order, so select once. */
+        let placeholders = agentIDs.map { _ in "?" }.joined(separator: ",")
+        let statement = try connection.prepare("""
+            SELECT a.id, a.at, a.agent_id, a.session_id, a.target_id,
+                   a.capability, a.face, a.outcome, a.reason,
+                   g.kind, g.client_name, g.client_version, t.machine_id
+            FROM actions a
+            JOIN agents g ON g.id = a.agent_id
+            LEFT JOIN targets t ON t.id = a.target_id
+            WHERE a.agent_id IN (\(placeholders))
+            ORDER BY a.id DESC LIMIT 1
+            """)
+        for (offset, id) in agentIDs.enumerated() {
+            try statement.bind(id, at: Int32(offset + 1))
+        }
+        guard try statement.step(),
+              let action = Self.action(from: statement) else { return nil }
+        let agent = MCPAgentRecord(
+            id: action.agentID,
+            kind: .init(databaseValue: statement.string(at: 9) ?? ""),
+            clientName: statement.string(at: 10) ?? "",
+            clientVersion: statement.string(at: 11) ?? "",
+            firstSeen: .distantPast, lastSeen: .distantPast)
+        return MCPActionRow(action: action, agentName: agent.displayName,
+                            targetMachine: statement.string(at: 12))
     }
 
     func agent(_ id: Int64) throws -> MCPAgentRecord? {
@@ -268,7 +357,8 @@ actor MCPRecordsDatabase {
 
     func session(_ id: Int64) throws -> MCPSessionRecord? {
         let statement = try connection.prepare("""
-            SELECT id, agent_id, session_key, started_at, last_seen
+            SELECT id, agent_id, session_key, started_at, last_seen,
+                   first_initialized_at, last_initialized_at
             FROM sessions WHERE id = ?
             """)
         try statement.bind(id, at: 1)
@@ -280,12 +370,17 @@ actor MCPRecordsDatabase {
             startedAt: Date(
                 timeIntervalSince1970: statement.double(at: 3)),
             lastSeen: Date(
-                timeIntervalSince1970: statement.double(at: 4)))
+                timeIntervalSince1970: statement.double(at: 4)),
+            firstInitializedAt: statement.isNull(at: 5) ? nil : Date(
+                timeIntervalSince1970: statement.double(at: 5)),
+            lastInitializedAt: statement.isNull(at: 6) ? nil : Date(
+                timeIntervalSince1970: statement.double(at: 6)))
     }
 
     func sessions(ofAgent agentID: Int64) throws -> [MCPSessionRecord] {
         let statement = try connection.prepare("""
-            SELECT id, agent_id, session_key, started_at, last_seen
+            SELECT id, agent_id, session_key, started_at, last_seen,
+                   first_initialized_at, last_initialized_at
             FROM sessions WHERE agent_id = ? ORDER BY last_seen DESC
             """)
         try statement.bind(agentID, at: 1)
@@ -298,7 +393,11 @@ actor MCPRecordsDatabase {
                 startedAt: Date(
                     timeIntervalSince1970: statement.double(at: 3)),
                 lastSeen: Date(
-                    timeIntervalSince1970: statement.double(at: 4))))
+                    timeIntervalSince1970: statement.double(at: 4)),
+                firstInitializedAt: statement.isNull(at: 5) ? nil : Date(
+                    timeIntervalSince1970: statement.double(at: 5)),
+                lastInitializedAt: statement.isNull(at: 6) ? nil : Date(
+                    timeIntervalSince1970: statement.double(at: 6))))
         }
         return records
     }
@@ -383,7 +482,7 @@ actor MCPRecordsDatabase {
         MCPAgentRecord(
             id: statement.int64(at: 0),
             kind: MCPAgentIdentity.Kind(
-                rawValue: statement.string(at: 1) ?? "") ?? .mcpStdio,
+                databaseValue: statement.string(at: 1) ?? ""),
             clientName: statement.string(at: 2) ?? "",
             clientVersion: statement.string(at: 3) ?? "",
             firstSeen: Date(

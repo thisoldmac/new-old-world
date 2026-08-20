@@ -247,6 +247,18 @@ public struct AgentIntegrationLocalClient: Sendable {
         }
     }
 
+    public func recordMCPInitialization(
+        clientName: String?, clientVersion: String?, sessionKey: String
+    ) async throws {
+        let response = try await send(.mcpInitialize(
+            clientName: clientName, clientVersion: clientVersion,
+            sessionKey: sessionKey))
+        guard response.recorded == true else {
+            throw AgentIntegrationLocalTransportError.invalidMessage(
+                "Local response did not confirm the MCP initialization")
+        }
+    }
+
     func sendRaw(_ request: Data) async throws -> Data {
         try await Self.performSocketIO {
             try sendRaw(
@@ -263,6 +275,8 @@ public struct AgentIntegrationLocalClient: Sendable {
             return try await send(.processList())
         case .guestFilesCapabilities:
             return try await send(.guestFilesCapabilities())
+        case .mcpInitialize:
+            preconditionFailure("MCP initialization requires identity")
         case .sessionCapabilities:
             preconditionFailure(
                 "Session capabilities requires an explicit probe choice")
@@ -717,7 +731,7 @@ public struct AgentIntegrationLocalClient: Sendable {
             case .sessionHealth, .listProcesses,
                  .guestFilesCapabilities, .guestFilesList,
                  .guestFilesStat, .guestFilesUploadBegin,
-                 .guestFilesUploadAppend, .audit:
+                 .guestFilesUploadAppend, .audit, .mcpInitialize:
                 /* The audit report shares the read-only window: it writes
                    one line on the main actor and reaches no guest, so a
                    longer wait would only mean holding an MCP answer back

@@ -378,14 +378,18 @@ actor MCPHTTPService {
                 workspaceGrant = nil
             }
             let (server, identity) = serverFactory(workspaceGrant)
+            let id = UUID().uuidString.lowercased()
+            /* The lifecycle sink runs as part of a successful initialize,
+               so the transport-owned session identity must exist before
+               the server handles that message. Invalid initialize requests
+               are never stored and never receive this id. */
+            identity.setSessionKey(id)
             guard let reply = await server.handle(request.body) else {
                 return response(202)
             }
             guard let version = Self.protocolVersion(in: reply) else {
                 return jsonResponse(reply)
             }
-            let id = UUID().uuidString.lowercased()
-            identity.setSessionKey(id)
             sessions[id] = .init(server: server, protocolVersion: version,
                                  lastUsed: now)
             return jsonResponse(reply, headers: ["Mcp-Session-Id": id])
