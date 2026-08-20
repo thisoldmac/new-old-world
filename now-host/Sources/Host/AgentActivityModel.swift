@@ -162,7 +162,9 @@ final class AgentActivityModel: ObservableObject {
         stdio = .stopped
     }
 
-    func httpOpened(at endpoint: String, bearerToken: String) {
+    /// `bearerToken` is nil when the listener runs in a mode that has no
+    /// copyable secret (unauthenticated, oauth).
+    func httpOpened(at endpoint: String, bearerToken: String?) {
         http = .open(endpoint: endpoint)
         httpBearerToken = bearerToken
     }

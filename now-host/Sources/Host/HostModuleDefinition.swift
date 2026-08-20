@@ -16,6 +16,7 @@ struct HostModuleContext {
     let guestFiles: GuestFilesCommandService?
     let agentActivity: AgentActivityModel?
     let agentCompanions: AgentCompanionModel?
+    let mcpOAuthConsent: MCPOAuthConsentModel?
     let logs: LogsModel?
     let continuity: MirrorContinuityController?
     /// One host-side file lane, app-owned because the Continuity edge seam
@@ -47,6 +48,7 @@ struct HostModuleContext {
          guestFiles: GuestFilesCommandService? = nil,
          agentActivity: AgentActivityModel? = nil,
          agentCompanions: AgentCompanionModel? = nil,
+         mcpOAuthConsent: MCPOAuthConsentModel? = nil,
          logs: LogsModel? = nil,
          continuity: MirrorContinuityController? = nil,
          fileTransfer: MirrorFileTransferModel? = nil,
@@ -73,6 +75,7 @@ struct HostModuleContext {
         self.guestFiles = guestFiles
         self.agentActivity = agentActivity
         self.agentCompanions = agentCompanions
+        self.mcpOAuthConsent = mcpOAuthConsent
         self.logs = logs
         self.continuity = continuity
         self.fileTransfer = fileTransfer

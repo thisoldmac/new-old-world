@@ -46,6 +46,8 @@ struct MCPModuleView: View {
     @ObservedObject var companions: AgentCompanionModel
     @ObservedObject var listener: GuestListener
     @ObservedObject var settings: MCPTransportSettingsModel
+    /// Consents an OAuth client is waiting on; empty outside oauth mode.
+    @ObservedObject var oauthConsent: MCPOAuthConsentModel
     /// Nil in a preview or a test with no Settings window to open.
     var openSettings: (() -> Void)?
     /// Nil in a preview or a test that has no server to run. The buttons are
@@ -445,7 +447,8 @@ struct MCPModuleView: View {
                 title: "HTTP",
                 summary: "For clients that connect to a URL. HTTP runs "
                     + "inside New Old World, binds only to loopback, and "
-                    + "requires the private bearer token saved by this app.",
+                    + "authenticates clients the way its access setting "
+                    + "says to.",
                 state: model.http,
                 start: startHTTP,
                 stop: stopHTTP,
@@ -559,12 +562,30 @@ struct MCPModuleView: View {
                     .multilineTextAlignment(.trailing)
                     .disabled(isRunning)
             }
+            LabeledContent("Access") {
+                Picker("Access", selection: $settings.httpAuthMode) {
+                    Text("Bearer token").tag(MCPHTTPAuthMode.bearer)
+                    Text("OAuth").tag(MCPHTTPAuthMode.oauth)
+                    Text("No authentication")
+                        .tag(MCPHTTPAuthMode.unauthenticated)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .disabled(isRunning)
+            }
             copyRow(label: "URL", value: plannedHTTPEndpoint)
             Text(isRunning
-                    ? "Stop HTTP before changing its port."
+                    ? "Stop HTTP before changing its port or access mode."
                     : "HTTP is reachable only from this Mac at 127.0.0.1.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if settings.httpAuthMode == .unauthenticated {
+                Text("Without authentication, any process on this Mac can "
+                        + "drive New Old World over this port.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -586,6 +607,41 @@ struct MCPModuleView: View {
                     .help("Copies the private token. New Old World does not "
                           + "show it or write it to the log.")
             }
+            if settings.httpAuthMode == .oauth {
+                oauthRows
+            }
+        }
+    }
+
+    /// The consent queue and the one revocation control, shown only while
+    /// HTTP runs in oauth mode. Approving resolves the client's parked
+    /// /authorize request; nothing is remembered beyond the tokens it mints.
+    private var oauthRows: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(oauthConsent.pending) { request in
+                HStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                        .foregroundStyle(.orange)
+                    Text("\(request.clientName) asks to use MCP.")
+                        .font(.callout)
+                    Spacer(minLength: 12)
+                    ControlGroup {
+                        Button("Approve") {
+                            oauthConsent.approve(request.id)
+                        }
+                        Button("Deny") { oauthConsent.deny(request.id) }
+                    }
+                    .controlSize(.small)
+                    .fixedSize()
+                }
+            }
+            Button("Revoke OAuth Clients & Tokens") {
+                oauthConsent.revokeEverything()
+            }
+            .controlSize(.small)
+            .help("Forgets every registered OAuth client and cancels the "
+                  + "tokens they were issued. Clients must register and be "
+                  + "approved again.")
         }
     }
 

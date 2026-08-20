@@ -2,22 +2,45 @@ import Foundation
 import Network
 import NOWAgentIntegration
 
+/// How the HTTP transport decides whether a request may speak MCP. The
+/// loopback Host and Origin checks apply in every mode; this only selects
+/// what the Authorization header must carry. stdio is uid-authenticated by
+/// the kernel and has no mode.
+enum MCPHTTPAuthMode: String, CaseIterable, Sendable {
+    case unauthenticated = "none"
+    case bearer
+    case oauth
+}
+
 struct MCPHTTPConfiguration: Equatable {
     let port: UInt16
-    let bearerToken: String
+    let authMode: MCPHTTPAuthMode
+    let bearerToken: String?
     let maximumHeaderBytes: Int
     let maximumSessions: Int
     let sessionLifetime: TimeInterval
 
-    init(port: UInt16, bearerToken: String,
+    init(port: UInt16, authMode: MCPHTTPAuthMode, bearerToken: String?,
          maximumHeaderBytes: Int = 16 * 1024,
          maximumSessions: Int = 8,
          sessionLifetime: TimeInterval = 30 * 60) {
         self.port = port
+        self.authMode = authMode
         self.bearerToken = bearerToken
         self.maximumHeaderBytes = maximumHeaderBytes
         self.maximumSessions = maximumSessions
         self.sessionLifetime = sessionLifetime
+    }
+
+    /// Bearer-mode shorthand; existing call sites and tests predate modes.
+    init(port: UInt16, bearerToken: String,
+         maximumHeaderBytes: Int = 16 * 1024,
+         maximumSessions: Int = 8,
+         sessionLifetime: TimeInterval = 30 * 60) {
+        self.init(port: port, authMode: .bearer, bearerToken: bearerToken,
+                  maximumHeaderBytes: maximumHeaderBytes,
+                  maximumSessions: maximumSessions,
+                  sessionLifetime: sessionLifetime)
     }
 }
 
@@ -136,7 +159,9 @@ struct MCPHTTPResponse: Equatable {
         let phrase: String
         switch status {
         case 200: phrase = "OK"
+        case 201: phrase = "Created"
         case 202: phrase = "Accepted"
+        case 302: phrase = "Found"
         case 400: phrase = "Bad Request"
         case 401: phrase = "Unauthorized"
         case 403: phrase = "Forbidden"
@@ -173,25 +198,54 @@ actor MCPHTTPService {
     private let configuration: MCPHTTPConfiguration
     private let serverFactory: ServerFactory
     private let activityObserver: ActivityObserver?
+    private let oauth: MCPOAuthAuthority?
     private var sessions: [String: Session] = [:]
 
     init(configuration: MCPHTTPConfiguration,
          serverFactory: @escaping ServerFactory,
-         activityObserver: ActivityObserver? = nil) {
+         activityObserver: ActivityObserver? = nil,
+         oauth: MCPOAuthAuthority? = nil) {
         self.configuration = configuration
         self.serverFactory = serverFactory
         self.activityObserver = activityObserver
+        self.oauth = oauth
     }
 
     func respond(to request: MCPHTTPRequest, now: Date = Date()) async
         -> MCPHTTPResponse {
-        guard request.target == "/mcp" else { return response(404) }
-        guard validHost(request.headers["host"]) else { return response(400) }
+        /* /mcp is matched on the whole target: it never carries a query.
+           Only the oauth routes split path from query. */
+        if request.target != "/mcp" {
+            if configuration.authMode == .oauth, let oauth {
+                return await oauthRoute(request, authority: oauth, now: now)
+            }
+            return response(404)
+        }
+        guard let host = validatedHost(request.headers["host"]) else {
+            return response(400)
+        }
         if let origin = request.headers["origin"], !validOrigin(origin) {
             return response(403)
         }
-        guard validAuthorization(request.headers["authorization"]) else {
-            return response(401, headers: ["WWW-Authenticate": "Bearer"])
+        switch configuration.authMode {
+        case .unauthenticated:
+            break
+        case .bearer:
+            guard validAuthorization(request.headers["authorization"]) else {
+                return response(401,
+                                headers: ["WWW-Authenticate": "Bearer"])
+            }
+        case .oauth:
+            let challenge = "Bearer resource_metadata=\"http://\(host)"
+                + "/.well-known/oauth-protected-resource/mcp\""
+            guard let value = request.headers["authorization"],
+                  value.hasPrefix("Bearer "), let oauth,
+                  await oauth.validateAccessToken(
+                    String(value.dropFirst("Bearer ".count)), now: now)
+            else {
+                return response(401,
+                                headers: ["WWW-Authenticate": challenge])
+            }
         }
         expireSessions(at: now)
 
@@ -272,6 +326,97 @@ actor MCPHTTPService {
         return jsonResponse(reply)
     }
 
+    /// The authorization-server half of oauth mode: metadata, registration,
+    /// consent-gated authorization, and the token endpoint. All still behind
+    /// the loopback Host check; these routes exist only while the mode is
+    /// oauth.
+    private func oauthRoute(_ request: MCPHTTPRequest,
+                            authority: MCPOAuthAuthority,
+                            now: Date) async -> MCPHTTPResponse {
+        guard let host = validatedHost(request.headers["host"]) else {
+            return response(400)
+        }
+        if let origin = request.headers["origin"], !validOrigin(origin) {
+            return response(403)
+        }
+        let (path, query) = Self.splitTarget(request.target)
+        switch (request.method, path) {
+        case ("GET", "/.well-known/oauth-protected-resource"),
+             ("GET", "/.well-known/oauth-protected-resource/mcp"):
+            return jsonResponse(
+                MCPOAuthAuthority.protectedResourceMetadata(host: host))
+        case ("GET", "/.well-known/oauth-authorization-server"):
+            return jsonResponse(
+                MCPOAuthAuthority.authorizationServerMetadata(host: host))
+        case ("POST", "/oauth/register"):
+            guard jsonContentType(request) else { return response(415) }
+            return tokenOutcomeResponse(
+                await authority.register(body: request.body, now: now),
+                status: 201)
+        case ("GET", "/oauth/authorize"):
+            switch await authority.authorize(query: query, now: now) {
+            case .redirect(let location):
+                return .init(status: 302,
+                             headers: ["Location": location,
+                                       "Cache-Control": "no-store"])
+            case .invalidRequest(let sentence):
+                return response(400,
+                                headers: ["Content-Type":
+                                            "text/plain; charset=utf-8"],
+                                body: Data(sentence.utf8))
+            }
+        case ("POST", "/oauth/token"):
+            guard request.headers["content-type"]?.lowercased()
+                .split(separator: ";", maxSplits: 1).first
+                .map(String.init) == "application/x-www-form-urlencoded"
+            else { return response(415) }
+            return tokenOutcomeResponse(
+                await authority.token(
+                    form: MCPOAuthAuthority.parseForm(request.body),
+                    now: now),
+                status: 200)
+        default:
+            return response(404)
+        }
+    }
+
+    private func tokenOutcomeResponse(
+        _ outcome: MCPOAuthAuthority.TokenOutcome,
+        status: Int) -> MCPHTTPResponse {
+        switch outcome {
+        case .issued(let body):
+            return .init(status: status,
+                         headers: ["Content-Type": "application/json",
+                                   "Cache-Control": "no-store"],
+                         body: body)
+        case .rejected(let status, let error, let detail):
+            let body = (try? JSONSerialization.data(
+                withJSONObject: ["error": error,
+                                 "error_description": detail],
+                options: [.sortedKeys])) ?? Data()
+            return .init(status: status,
+                         headers: ["Content-Type": "application/json",
+                                   "Cache-Control": "no-store"],
+                         body: body)
+        }
+    }
+
+    private func jsonContentType(_ request: MCPHTTPRequest) -> Bool {
+        request.headers["content-type"]?.lowercased()
+            .split(separator: ";", maxSplits: 1).first
+            .map(String.init) == "application/json"
+    }
+
+    private static func splitTarget(_ target: String)
+        -> (path: String, query: [String: String]) {
+        guard let divider = target.firstIndex(of: "?") else {
+            return (target, [:])
+        }
+        let path = String(target[..<divider])
+        let raw = String(target[target.index(after: divider)...])
+        return (path, MCPOAuthAuthority.parseForm(Data(raw.utf8)))
+    }
+
     private static func protocolVersion(in data: Data) -> String? {
         let object = try? JSONSerialization.jsonObject(with: data)
             as? [String: Any]
@@ -286,10 +431,15 @@ actor MCPHTTPService {
         }
     }
 
-    private func validHost(_ host: String?) -> Bool {
-        guard let host = host?.lowercased() else { return false }
-        return host == "127.0.0.1:\(configuration.port)"
-            || host == "localhost:\(configuration.port)"
+    /// The lowercased Host header when it names this loopback listener, so
+    /// OAuth metadata can echo whichever spelling the client used.
+    private func validatedHost(_ host: String?) -> String? {
+        guard let host = host?.lowercased(),
+              host == "127.0.0.1:\(configuration.port)"
+                || host == "localhost:\(configuration.port)" else {
+            return nil
+        }
+        return host
     }
 
     private func validOrigin(_ origin: String) -> Bool {
@@ -305,10 +455,10 @@ actor MCPHTTPService {
     }
 
     private func validAuthorization(_ value: String?) -> Bool {
-        guard let value, value.hasPrefix("Bearer ") else { return false }
+        guard let value, value.hasPrefix("Bearer "),
+              let token = configuration.bearerToken else { return false }
         return Self.constantTimeEqual(
-            String(value.dropFirst("Bearer ".count)),
-            configuration.bearerToken)
+            String(value.dropFirst("Bearer ".count)), token)
     }
 
     private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
@@ -358,12 +508,14 @@ final class MCPHTTPListener: @unchecked Sendable {
     init(configuration: MCPHTTPConfiguration,
          serverFactory: @escaping MCPHTTPService.ServerFactory,
          activityObserver: MCPHTTPService.ActivityObserver? = nil,
-         failureObserver: FailureObserver? = nil) throws {
+         failureObserver: FailureObserver? = nil,
+         oauth: MCPOAuthAuthority? = nil) throws {
         self.configuration = configuration
         self.failureObserver = failureObserver
         service = MCPHTTPService(configuration: configuration,
                                  serverFactory: serverFactory,
-                                 activityObserver: activityObserver)
+                                 activityObserver: activityObserver,
+                                 oauth: oauth)
     }
 
     /// Start the in-process listener and return when the port is bound.
