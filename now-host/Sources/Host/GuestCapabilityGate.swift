@@ -179,8 +179,8 @@ enum GuestCapabilityGate {
         } else {
             sentence += ": it is absent from that machine's own command table"
         }
-        return sentence + ". NOW's two guests differ in completeness; "
-            + "this is one of those differences."
+        return sentence + ". Not a fault — NOW's two guests differ in "
+            + "completeness, and this is one of those differences."
     }
 }
 

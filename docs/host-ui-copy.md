@@ -59,10 +59,26 @@ source comment or in `docs/`, not under a control. `useless as a name`,
 here from Networking` all went; what the reader must do or expect
 stayed.
 
-**Never reassure.** `Nothing is wrong with the machine` was in three
-separate refusals. A tool states the condition and stops. `The PowerPC
-build serves it. Nothing is wrong with that machine.` → `Served by the
-PowerPC build only.`
+**Never reassure — but absence is not damage, and saying so is a fact.**
+`Nothing is wrong with the machine` was in three refusals and read as
+consolation. A tool states the condition and stops: `The PowerPC build
+serves it. Nothing is wrong with that machine.` → `Served by the PowerPC
+build only.`
+
+**Two of those three were load-bearing, and cutting them broke a gate.**
+`DiagnosticsModuleModelTests` and `GuestCapabilityGateTests` both assert
+that sentence, and both say why in their own words — *"it must not read
+as damage"*. A capability absent from one guest's command table is not a
+fault, and a dark control that does not say so reads as a broken app.
+The distinction survives; only the consolation goes:
+
+| Reassurance | The fact |
+| --- | --- |
+| `Nothing is wrong with the machine — the Carbon guest serves it` | `Not a fault — the Carbon guest serves it` |
+
+Before deleting a sentence that sounds like comfort, ask whether it is
+distinguishing *absent* from *broken*. If it is, keep the distinction
+and shorten the phrasing.
 
 **Do not hedge with `yet` or `still`** unless the temporal claim is
 load-bearing. `No scene has arrived yet.` → `No scene received.`

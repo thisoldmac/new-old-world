@@ -569,9 +569,10 @@ private struct LocalNetworkAccessSection: View {
                 }
                 Button("Open Settings…", action: openSettings)
             }
-            Text("Request Access repeats the macOS prompt and checks the "
-                 + "connected Mac when available. If access was denied "
-                 + "earlier, enable NOW Continuity in System Settings.")
+            Text("Request Access repeats the app-owned macOS request, then "
+                 + "checks the connected Mac directly when available. If "
+                 + "access was denied earlier, enable NOW Continuity in "
+                 + "System Settings.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
