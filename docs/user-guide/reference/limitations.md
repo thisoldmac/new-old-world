@@ -54,6 +54,12 @@ last_verified: 2026-08-13
   and a personalized setup image carries it. Registration on the classic Mac
   stays a human act, and it must name the copy on the hard disk — a
   toolchain registered on the mounted image cannot build.
+- **Chat's workspace lane is the one power this app does not audit.** On by
+  default and reversible in Settings > Chat, it lets a turn typed at the
+  classic machine spawn a Claude runtime with its own file and command tools
+  in New Old World's own folder on the modern Mac. That folder's own policy
+  governs those tools, not this app's per-capability consent; the New Old
+  World half of the same turn is audited as before. Emulator-verified only.
 - **Hardware evidence is specific.** A result on the PowerBook 1400c does not
   prove the PowerBook 180c path, and emulator evidence is not metal evidence.
 - **Classic platform recovery matters.** The optional extension must remain

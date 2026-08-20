@@ -28,6 +28,22 @@ components:
     source: repository-build
     output_ids: []
     omission_reason: Follow the active feature catalog; the alpha excludes this retained sibling.
+first_party_bundled_resources:
+  classic_mac_skills:
+    repository_path: skills
+    bundle_path: New Old World.app/Contents/Resources/skills
+    provenance: skills/PROVENANCE.md
+    reaches: macos_dmg
+    reason: >-
+      The eight classic-mac-* skill trees the chat harness reads and the
+      workspace lane stages. NOT a component: components map one product
+      feature each, and this is text rather than a feature. NOT a licensed
+      input: it is first-party material vendored from a source with no
+      remote, so this repository is its published home. It is declared here
+      because it SHIPS - an Xcode run-script phase copies the tree into the
+      application's Resources, so a public DMG carries roughly a megabyte of
+      text that no other line of this profile would have mentioned. Nothing
+      enforces this row yet; see docs/open-issues.md.
 
 licensed_inputs:
   carbonlib_1_6_installer:
