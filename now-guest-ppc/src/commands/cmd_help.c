@@ -7,7 +7,7 @@
    two surfaces, so wrapping for the narrow one serves both). */
 
 static const char *const d_help[] = {
-    "  Lists what THIS Mac serves, which is the point: the",
+    "  Lists what this Mac serves, which is the point: the",
     "  other side keeps no command list of its own, so a",
     "  machine that implements three commands says three.",
     NULL
@@ -51,15 +51,21 @@ static const char *const d_development_build[] = {
     NULL
 };
 static const char *const d_development_stage[] = {
-    "Prepares, observes or discards one inactive project candidate.",
-    "Candidate identities are single-use and files arrive through the",
-    "bounded transfer lane outside the generic Files root.", NULL
+    "  Prepares, observes or discards one inactive project",
+    "  candidate. Candidate identities are single-use. Files",
+    "  arrive through the bounded transfer lane, outside the",
+    "  generic Files root.",
+    NULL
 };
 static const char *const d_development_project[] = {
-    "catalog lists the active projects, eight to a page, as identity|name;",
-    "a project ID measures and pages that project's source manifest.",
-    "Staged candidates are not listed here - see development-stage.",
-    "The chosen Projects root and HFS path remain private.", NULL
+    "    catalog [cursor]  active projects, eight to a page,",
+    "                      as identity|name",
+    "    <projectID>       that project's source manifest,",
+    "                      measured and paged",
+    "  Staged candidates are not listed here; see",
+    "  development-stage. The Projects root and its HFS path",
+    "  stay on this Mac.",
+    NULL
 };
 
 static const char *const d_development_run[] = {
@@ -129,14 +135,14 @@ static const char *const d_desktop[] = {
     "  nothing about what is on the screen.",
     "  Reports the theme, the pattern's name and its",
     "  flattened bytes in hex, and - when a picture is set -",
-    "  its name and alignment. A picture is drawn OVER the",
+    "  its name and alignment. A picture is drawn over the",
     "  pattern, so both are reported and `source` says which",
     "  one a person is looking at.",
     NULL
 };
 
 static const char *const d_wirestat[] = {
-    "  How long this Mac takes to NOTICE a request, as two",
+    "  How long this Mac takes to notice a request, as two",
     "  histograms: the interval between wire service passes,",
     "  and the delay from Open Transport announcing data to",
     "  this loop reading it. A round trip cannot tell those",
@@ -201,12 +207,12 @@ static const char *const d_launch[] = {
 
 static const char *const d_quit[] = {
     "  The name is the whole rest of the line, so any",
-    "  flag comes FIRST. Names it by what \"ps\" shows.",
-    "  A 'quit' Apple Event is a REQUEST: an app with an",
+    "  flag comes first. Names it by what \"ps\" shows.",
+    "  A 'quit' Apple Event is a request: an app with an",
     "  unsaved document stops to ask and stays running.",
     "  So this waits (6 s, --wait N up to 20) and re-reads",
-    "  the process list, then says \"is gone\" or \"is STILL",
-    "  RUNNING\" - never the first when it means the second.",
+    "  the process list, then says \"is gone\" or \"is still",
+    "  running\" - never the first when it means the second.",
     "  Several processes of one name refuse unless --all.",
     "  --no-wait sends and reports it unconfirmed.",
     NULL
@@ -230,7 +236,7 @@ static const char *const d_elements[] = {
     "  a reference is short-lived, opaque, and only ever one this Mac",
     "  made for something it saw.",
     "  Defaults to the frontmost application; serialHi/serialLo name",
-    "  another. NOT TYPEABLE in any useful way - the output is",
+    "  another. Not typeable in any useful way - the output is",
     "  references no human has.",
     NULL
 };
@@ -239,7 +245,7 @@ static const char *const d_winact[] = {
     "  it would have done had a person dragged the window. No mouse is",
     "  simulated and no emulator is involved.",
     "  move and resize carry their own geometry; zoom and close carry",
-    "  none. close is DESTRUCTIVE and does not promise the window",
+    "  none. close is destructive and does not promise the window",
     "  closes - it promises the application was asked, exactly as a",
     "  user clicking the close box asks. An unsaved document answers",
     "  with a save dialog and the window stays open. That is correct.",
@@ -249,7 +255,7 @@ static const char *const d_cursoract[] = {
     "  Places the drawn cursor at one point inside an observed window.",
     "  It clicks nothing and changes no front order or selection.",
     "  The window reference binds the point to one process and A5 world.",
-    "  NOT TYPEABLE usefully - the reference comes from observation.",
+    "  Not typeable usefully - the reference comes from observation.",
     NULL
 };
 static const char *const d_textget[] = {
@@ -270,7 +276,7 @@ static const char *const d_ctlact[] = {
     "  you name, so the application runs its real mouse-down handler.",
     "  Button parts are 10 and 11; a scroll bar's are 20 up, 21 down,",
     "  22 page-up, 23 page-down, and 129 is the indicator.",
-    "  Part 0 answers NOTHING: the press is still posted and the",
+    "  Part 0 answers nothing: the press is still posted and the",
     "  application's own tracking decides, which is how a tab switches",
     "  and a list row selects.",
     "  h and v are global screen coordinates and must be inside the",
@@ -278,7 +284,7 @@ static const char *const d_ctlact[] = {
     NULL
 };
 static const char *const d_dragpress[] = {
-    "  Presses the mouse button on the element and LEAVES IT DOWN,",
+    "  Presses the mouse button on the element and leaves it down,",
     "  handing the gesture to the resident's drag vehicle. Returns a",
     "  session nonce that dragmove and dragrelease must name.",
     "  The resident carries its own deadline and will release the",
@@ -296,7 +302,7 @@ static const char *const d_dragmove[] = {
 };
 static const char *const d_dragrelease[] = {
     "  Asks the resident to release a held drag. It reports that it",
-    "  ASKED, never that it released: the resident performs it on its",
+    "  asked, never that it released: the resident performs it on its",
     "  next tick through the same path its deadline uses, and that",
     "  deadline may already have got there first. Read the ended row.",
     NULL
@@ -321,11 +327,11 @@ static const char *const d_menuact[] = {
 
 /* --- the machine's own state, folded in from timbottu/mirror ----------- */
 static const char *const d_activate[] = {
-    "  Not a second \"front\". front takes a NAME and refuses when",
+    "  Not a second \"front\". front takes a name and refuses when",
     "  several match; this takes the identity an observation minted,",
     "  which is what a driver has. Both reach the one SetFrontProcess",
     "  on this Mac.",
-    "  The reply says whether the switch is OBSERVABLE, never merely",
+    "  The reply says whether the switch is observable, never merely",
     "  that it was accepted: a cooperative switch lands when this",
     "  application yields, and the two readings keep separate words.",
     NULL
@@ -333,8 +339,8 @@ static const char *const d_activate[] = {
 static const char *const d_actselftest[] = {
     "  Proves the act plane's trap calling convention from inside this",
     "  machine, which no other instrument can: every other one reads",
-    "  OUR side of the call, and a patch whose result lands in the",
-    "  wrong slot does not crash - it LIES. Each counter reports",
+    "  our side of the call, and a patch whose result lands in the",
+    "  wrong slot does not crash - it lies. Each counter reports",
     "  success while the application reads a value we never wrote and",
     "  takes the other branch.",
     "  Side-effect free by construction: the point tested is outside",
@@ -350,7 +356,7 @@ static const char *const d_actselftest[] = {
    AppleScript, and one of four core Apple Events. See
    src/input/input_cmds.h. */
 static const char *const d_mouseloc[] = {
-    "  Where the pointer IS, which is not where anything asked it to",
+    "  Where the pointer is, which is not where anything asked it to",
     "  go: an emulator's relative mouse is acceleration-distorted, so",
     "  a driver positions by reading this and correcting.",
     "  A read, and it stays a read - there is deliberately no",
@@ -365,7 +371,7 @@ static const char *const d_key[] = {
     "  Name a key (return, escape, tab, space, delete, enter, help,",
     "  home, end, pageup, pagedown, fwddelete, left, right, up,",
     "  down), or give char, or give code, or both.",
-    "  NO MODIFIERS, and mods is REFUSED rather than dropped. An",
+    "  No modifiers, and mods is refused rather than dropped. An",
     "  event's modifiers live on the Event Manager's queue element;",
     "  the only call that hands that element back is PPostEvent,",
     "  which CarbonLib does not have, and this application is",
@@ -378,7 +384,7 @@ static const char *const d_script[] = {
     "  is at most 2048 bytes and the result at most 1024, because the",
     "  reply is assembled in a 3072-byte buffer and an answer that",
     "  did not fit would be cut silently.",
-    "  A whole-disk Finder search (\"entire contents\") is REFUSED:",
+    "  A whole-disk Finder search (\"entire contents\") is refused:",
     "  it wedged a real machine for twelve minutes, and there is no",
     "  error path that could report that after the fact.",
     "  timeoutMs is clamped to 500..60000; this Mac answers serially,",
@@ -386,7 +392,7 @@ static const char *const d_script[] = {
     NULL
 };
 static const char *const d_aesend[] = {
-    "  A CLOSED vocabulary of four - quit, oapp, odoc, pdoc - and not",
+    "  A closed vocabulary of four - quit, oapp, odoc, pdoc - and not",
     "  a class/id pipe. Each has an effect statable in one line,",
     "  which is the test a fifth would have to pass.",
     "  odoc and pdoc need a path; all four need a whole serial.",
@@ -398,14 +404,14 @@ static const char *const d_aesend[] = {
 
 /* --- the content plane's reader ---------------------------------------- */
 static const char *const d_qdtrace[] = {
-    "  What is DRAWING on this Mac, read from the ring the NOW",
+    "  What is drawing on this Mac, read from the ring the NOW",
     "  Extension's resident half fills at draw time.",
     "  op status (the default) counts without moving one record;",
-    "  start arms ONE A5 world for a bounded time in count, record",
+    "  start arms one A5 world for a bounded time in count, record",
     "  or probe mode (probe also chases a window blit back to the",
     "  offscreen GWorld that sourced it, and records what is drawn",
-    "  THERE); stop disarms; drain reads records from a cursor.",
-    "  A short drain always says WHY it is short - more, resync,",
+    "  there); stop disarms; drain reads records from a cursor.",
+    "  A short drain always says why it is short - more, resync,",
     "  torn or busy - because fewer records than expected quietly",
     "  covering an overrun is the whole failure this plane guards.",
     "  start answers requested, never armed: nothing is hooked until",
@@ -413,7 +419,7 @@ static const char *const d_qdtrace[] = {
     "  where that shows.",
     "  In probe mode the plane also patches the QDExtensions trap in",
     "  the target's own context, so a world created and disposed",
-    "  inside one event pass is hooked at BIRTH rather than chased",
+    "  inside one event pass is hooked at birth rather than chased",
     "  and missed; status's qdext object counts what that patch saw.",
     NULL
 };
@@ -422,19 +428,19 @@ static const char *const d_qdtrace[] = {
    Same shape as qdtrace above, and the claim it makes is the one thing
    worth reading twice: this is a SAMPLER. */
 static const char *const d_transitions[] = {
-    "  What CHANGED between two of this Mac's own event passes, read",
+    "  What changed between two of this Mac's own event passes, read",
     "  from the ring the NOW Extension's resident half fills inside",
     "  an armed process.",
     "  op status (the default) counts without moving one record;",
-    "  start arms ONE process for a bounded time; stop disarms;",
+    "  start arms one process for a bounded time; stop disarms;",
     "  drain reads records from a cursor and says more when short.",
-    "  \"transitions start\" arms the FRONT process - typed here, that",
+    "  \"transitions start\" arms the front process - typed here, that",
     "  is NOW itself. \"transitions start Finder\" names another one,",
     "  and a name is the only target a console line can carry: nothing",
     "  this guest prints carries a ProcessSerialNumber.",
-    "  IT SAMPLES, IT DOES NOT TAIL. It catches what a 2.2 s poll",
+    "  It samples, it does not tail. It catches what a 2.2 s poll",
     "  misses because the event loop runs at ~60 Hz; something raised",
-    "  and dismissed BETWEEN two passes is still missed.",
+    "  and dismissed between two passes is still missed.",
     "  start answers requested, never armed: nothing records until the",
     "  extension agrees inside the target, and status's passes count",
     "  is where that shows - a live request beside a still passes is",
@@ -448,21 +454,21 @@ static const char *const d_transitions[] = {
    one thing on this Mac that creates a reference, and these are doors
    onto it rather than second opinions about it. */
 static const char *const d_observe[] = {
-    "  Walks and MINTS a reference for every window and control seen.",
+    "  Walks and mints a reference for every window and control seen.",
     "  The only thing here that creates one - which is what makes",
     "  \"observation-minted\" a fact about the mechanism rather than a",
     "  wish. A token carries no identity: it is a key into a table only",
     "  a walk writes, hashed over a secret this session made and no",
     "  caller sees.",
     "  scope front (the default) or all.",
-    "  NOW itself is NOT observable: it is a Carbon application and its",
+    "  NOW itself is not observable: it is a Carbon application and its",
     "  own window records are not where a classic walk reads.",
     NULL
 };
 static const char *const d_handle[] = {
     "  One reference back to a live element, or a named refusal.",
     "  ok stays true for every verdict including the four that resolve",
-    "  to nothing: \"your reference is stale\" is an ANSWER, and an error",
+    "  to nothing: \"your reference is stale\" is an answer, and an error",
     "  would invite a retry of the same reference. What is never true",
     "  is resolved.",
     "  Staleness is refused, never repaired - a window that closed and",
@@ -477,7 +483,7 @@ static const char *const d_axtree[] = {
     NULL
 };
 static const char *const d_mirrorlog[] = {
-    "  The mirror log area's DEBUG TIER, on a session switch that is off",
+    "  The mirror log area's debug tier, on a session switch that is off",
     "  each launch. Off, the ring keeps the product's story: arm/disarm,",
     "  epoch begin, selection and grant lines, and every warning and",
     "  error. On, the per-epoch counter dumps and per-event traces",
@@ -509,11 +515,11 @@ static const char *const d_cycle[] = {
     "  armed, so it pumps its event loop once and the plane captures it.",
     "  The application that was front is restored afterwards.",
     "",
-    "  THIS DISTURBS THE MACHINE ON PURPOSE. Windows come forward and",
+    "  This disturbs the machine on purpose. Windows come forward and",
     "  flash past. It is never automatic; run it once on a fresh boot,",
     "  or when what the Mirror shows has gone stale.",
     "",
-    "  Why it is needed: the plane captures a process only while THAT",
+    "  Why it is needed: the plane captures a process only while that",
     "  process is executing GetNextEvent, and on a Mac nobody has driven",
     "  nothing else is ever scheduled inside an armed window. Processes",
     "  it can reach without fronting them are woken invisibly first.",
@@ -538,9 +544,9 @@ static const char *const d_front[] = {
     "  are no flags. Names it by what \"ps\" shows.",
     "  The switch is cooperative, so this yields for 2 s",
     "  and re-reads which process is frontmost - it says",
-    "  \"is frontmost\" or \"is NOT frontmost\", never the",
+    "  \"is frontmost\" or \"is not frontmost\", never the",
     "  first when it means the second.",
-    "  Nothing by that name is a FAILURE here, unlike",
+    "  Nothing by that name is a failure here, unlike",
     "  \"quit\": you cannot front what is not running.",
     "  NOW itself is a fair target - fronting it severs",
     "  nothing, where quitting it would cut the reply.",
@@ -551,11 +557,11 @@ static const char *const d_hide[] = {
     "  What the Application menu does, through the Process",
     "  Manager call that menu ends up in. The name is the",
     "  rest of the line; --show puts it back, --status only",
-    "  reads. Flags LEAD, because names have spaces.",
+    "  reads. Flags lead, because names have spaces.",
     "  It reads the flag back before answering, so it says",
     "  \"is now hidden\" only when it saw that - never",
     "  \"asked and assume\". Nothing by that name is a",
-    "  FAILURE, like \"front\" and unlike \"quit\".",
+    "  failure, like \"front\" and unlike \"quit\".",
     "  NOW itself is a fair target; a hidden application is",
     "  still scheduled, so the wire keeps being served.",
     "  Needs CarbonLib 1.5 or later and says so if not.",
@@ -573,7 +579,7 @@ static const char *const d_reveal[] = {
 
 static const char *const d_vers[] = {
     "  Reads that file's 'vers' resources. A bare name",
-    "  searches applications and shows EVERY match as",
+    "  searches applications and shows every match as",
     "  a numbered list, full paths and all - then",
     "  \"vers #2\" or \"launch #2\" picks one. A full",
     "  path reads any file, so extensions want their",
@@ -596,7 +602,7 @@ static const char *const d_cancel[] = {
     "  direction - a file arriving from Other Mac or",
     "  one this Mac asked for. It needs no name: the lane",
     "  is one transfer wide, so there is only ever one",
-    "  thing to stop. A file this Mac is SENDING cannot be",
+    "  thing to stop. A file this Mac is sending cannot be",
     "  stopped from here yet, and says so rather than",
     "  reporting a quiet machine.",
     NULL

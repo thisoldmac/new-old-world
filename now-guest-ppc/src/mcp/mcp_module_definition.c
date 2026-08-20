@@ -9,8 +9,8 @@ const WorkshopModuleDefinition *mcp_module_definition(void)
         "mcp",
         "MCP",
         "Whether an agent may drive this Mac, and how far. Other Mac "
-            "runs the server and enforces the answer.",
-        "MCP has not moved in yet.",
+            "runs the server and enforces it.",
+        "MCP is not in this window yet.",
         "Who may drive this Mac",
         137,
         kWorkshopModuleTierExperimental,

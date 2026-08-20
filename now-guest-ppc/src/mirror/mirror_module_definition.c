@@ -8,9 +8,9 @@ const WorkshopModuleDefinition *mirror_module_definition(void)
         kWorkshopMirror,
         "mirror",
         "Mirror",
-        "Mirror's own extensions and agent on this Mac. NOW reads them; it "
-            "installs nothing.",
-        "Mirror has not moved in yet.",
+        "Mirror's extensions and agent on this Mac. NOW reads them "
+            "and installs nothing.",
+        "Mirror is not in this window yet.",
         "Its extensions and agent",
         143,
         kWorkshopModuleTierExperimental,
