@@ -7,7 +7,7 @@ search:
 
 # Open issues
 
-## BUILT AND FOCUSED-TESTED, NOT FULL-GATED OR DRIVEN BY HAND: public API v1 and `now` CLI (2026-08-20, `docs/now-api-cli-plan-refresh`)
+## BUILT AND TESTED, NOT DRIVEN BY HAND: public API v1 and `now` CLI (2026-08-20, `docs/now-api-cli-plan-refresh`)
 
 NOW now has a client-neutral OpenAPI 3.1 contract, one typed operation service,
 an ordinary loopback `/api/v1` adapter, and an API-only power-user CLI. MCP is
@@ -15,7 +15,7 @@ a semantic child rendered through its own sibling adapter; existing MCP auth
 and protocol sessions remain separate. Public resources say **guest**, and API
 v1 uses `X-API-Key` without OAuth or scopes.
 
-Focused tests cover cross-route authentication, typed result dispositions,
+Tests cover cross-route authentication, typed result dispositions,
 exact-session mutations, advertised console commands, bounded transfers,
 live-only events, CLI grammar/exit behavior, clean-tree installation, and an
 independent OpenAPI-only fixture client. The app bundle carries the CLI and a
@@ -23,8 +23,9 @@ shared installer; the repository offers the same development entry point.
 
 What remains open:
 
-- `scripts/test-all`, current-head Emulator QA, and Metal QA have not run for
-  the integrated arc. Nothing here is metal-verified.
+- `scripts/test-all` passed stages 1–7 on the integrated branch. Its live-guest
+  stage skipped because no `NOW_GUEST_LIVE` was supplied, so current-head
+  Emulator QA and Metal QA remain undone. Nothing here is metal-verified.
 - The API and CLI have not been driven by a person against a live host and
   guest. The independent client proves ordinary HTTP contract use, not guest
   behavior.
