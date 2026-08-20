@@ -224,6 +224,37 @@ final class AgentIntegrationSocketTests: XCTestCase {
         XCTAssertThrowsError(try second.start())
     }
 
+    /// The succession stomp, measured on the desk 2026-08-19: two app
+    /// copies share one default path; the newer honestly replaced a
+    /// dead file, and the OLDER copy's quit deleted the newer's socket
+    /// on the way out — every companion after that answered notSent
+    /// while both hosts looked healthy. An exiting server may remove
+    /// the path only while it still names ITS socket.
+    func testAnOldHostsStopDoesNotUnlinkItsSuccessorsSocket() throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let old = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in .sessionHealth(.hostUnavailable) })
+        try old.start()
+        /* The path is removed out from under the old server — the
+           minimal stand-in for "the file it bound is no longer the
+           file at the path" (a crash-and-replace produces the same
+           state). A successor then binds a fresh file there. */
+        unlink(endpoint.socketURL.path)
+        let successor = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in .sessionHealth(.hostUnavailable) })
+        try successor.start()
+        defer { successor.stop() }
+
+        old.stop()
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: endpoint.socketURL.path),
+            "the old host's exit deleted the live successor's socket")
+    }
+
     func testMalformedLocalRequestGetsABoundedError() async throws {
         let (endpoint, root) = try temporaryEndpoint()
         defer { try? FileManager.default.removeItem(at: root) }

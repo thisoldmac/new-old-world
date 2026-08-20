@@ -152,8 +152,14 @@ public final class AgentIntegrationLocalServer: @unchecked Sendable {
                 throw AgentIntegrationUnixSocket.ioError("listen")
             }
         } catch {
+            /* Same identity rule as stop(): remove the file only if the
+               failed bind actually created it. */
+            let pathIsOurs = Self.pathNamesSocket(
+                descriptor, at: endpoint.socketURL.path)
             close(descriptor)
-            unlink(endpoint.socketURL.path)
+            if pathIsOurs {
+                unlink(endpoint.socketURL.path)
+            }
             throw error
         }
 
@@ -169,9 +175,34 @@ public final class AgentIntegrationLocalServer: @unchecked Sendable {
         listeningDescriptor = -1
         lock.unlock()
         guard descriptor >= 0 else { return }
+        /* Decided BEFORE the close, because the identity question needs
+           the descriptor alive to ask. */
+        let pathIsOurs = Self.pathNamesSocket(
+            descriptor, at: endpoint.socketURL.path)
         _ = shutdown(descriptor, SHUT_RDWR)
         close(descriptor)
-        unlink(endpoint.socketURL.path)
+        if pathIsOurs {
+            unlink(endpoint.socketURL.path)
+        }
+    }
+
+    /// Whether `path` still names THIS listener's socket — the same
+    /// dev/inode pair — and not a successor's.
+    ///
+    /// The blind unlink this replaces stomped a live host: two app
+    /// copies share one default path, the newer one had honestly
+    /// replaced a dead file (removeStaleSocket probes first), and the
+    /// OLDER copy's quit then deleted the newer copy's socket on the
+    /// way out. Every companion after that answered "notSent" while
+    /// both hosts had looked healthy (measured on the desk,
+    /// 2026-08-19: mount new build, launch, quit the old one).
+    static func pathNamesSocket(_ descriptor: Int32,
+                                at path: String) -> Bool {
+        var ours = stat()
+        var named = stat()
+        guard fstat(descriptor, &ours) == 0,
+              lstat(path, &named) == 0 else { return false }
+        return ours.st_dev == named.st_dev && ours.st_ino == named.st_ino
     }
 
     private func acceptConnections(on listener: Int32) {
