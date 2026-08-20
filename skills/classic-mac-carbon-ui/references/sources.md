@@ -50,16 +50,16 @@ Last updated: 2026-07-22
 
 ## Local Primary Interface Evidence
 
-- Retro68 Universal Interfaces: `/Users/michelle/Lab/Tools/Retro68-build/toolchain/universal/CIncludes`
-- Retro68 Rez interfaces: `/Users/michelle/Lab/Tools/Retro68-build/toolchain/universal/RIncludes`
-- Retro68 PowerPC libraries: `/Users/michelle/Lab/Tools/Retro68-build/toolchain/universal/libppc`
+- Retro68 Universal Interfaces: `toolchain/universal/CIncludes` in a Retro68 build tree
+- Retro68 Rez interfaces: `toolchain/universal/RIncludes` in the same tree
+- Retro68 PowerPC libraries: `toolchain/universal/libppc` in the same tree
 - Key headers inspected: `Appearance.h`, `CarbonEvents.h`, `MacWindows.h`, `Controls.h`, `ControlDefinitions.h`, `Gestalt.h`, `Icons.h`, `MacHelp.h`, `AppleHelp.h`, `Menus.h`, `Navigation.h`, and `MacTextEditor.h`.
 - Authority: Apple interface declarations as packaged in the local toolchain. Availability comments describe the header snapshot, not a complete runtime guarantee.
 
 ## Project Implementation Evidence
 
-- NOW guest source: `/Users/michelle/Lab/Code/timbottu/now/guest/src`
-- NOW architecture notes: `/Users/michelle/Lab/Code/timbottu/now/docs/architecture.md` and `/Users/michelle/Lab/Code/timbottu/now/docs/nested-loops.md`
+- NOW guest source: this repository's guest sources
+- NOW architecture notes: this repository's architecture and nested-loop notes
 - Key use: evidence for Retro68 build shapes, UPP ownership, standard windows, Appearance Manager, Data Browser, Navigation Services, and cooperative nested-loop pumping.
 - Authority limit: one application's implementation cannot establish general platform availability.
 

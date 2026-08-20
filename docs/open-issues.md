@@ -517,11 +517,14 @@ and per-transfer KB/s under log area `onboarding`.
 - The 180c-side MacWeb save was never re-run against the raw DC 4.2
   route; the save dialog is now the success path, not the failure.
 - The advertised onboarding address comes from
-  `HostAddressDetector.primaryIPv4()`, which on this desk picked
-  10.91.5.44 - an address that appears to belong to a virtual
-  interface (locally-administered MAC) and is not reachable from the
-  LAN. The page worked because a human typed .25. Interface selection
-  belongs with the per-profile port-scoping work.
+  `HostAddressDetector.primaryIPv4()`, which on this desk picked an
+  address belonging to a VIRTUAL interface (locally-administered MAC)
+  and not reachable from the LAN, rather than the real one a machine
+  three doors down would dial. The page worked only because a human
+  typed the right host by hand. Interface selection belongs with the
+  per-profile port-scoping work. (The two addresses are deliberately
+  not written here: they describe one desk, and the tree's public
+  hygiene gate refuses them - which is how this line was found.)
 - The 180c's network flapped all evening (half its pings lost at
   hundreds of ms, then fine); never attributed. Note that in-sandbox
   probes from agent sessions lie about LAN reachability - measure from

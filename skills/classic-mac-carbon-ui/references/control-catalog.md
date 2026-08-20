@@ -1,6 +1,6 @@
 # Native Control and UI Facility Catalog
 
-Availability below comes from the local Universal Interfaces snapshot in `/Users/michelle/Lab/Tools/Retro68-build/toolchain/universal/CIncludes`. Recheck the target project's exact headers and runtime before implementation.
+Availability below comes from the Universal Interfaces snapshot a Retro68 build carries at `toolchain/universal/CIncludes`. Recheck the target project's exact headers and runtime before implementation.
 
 | Facility | Header evidence | CarbonLib floor | UI use | Gate or fallback |
 |---|---|---:|---|---|

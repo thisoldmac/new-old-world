@@ -5,8 +5,11 @@
 The eight `classic-mac-*` trees here are a **vendored copy**, extracted
 from a skill repository that lives outside this project:
 
-- **Source**: `/Users/michelle/Lab/Skills/classic-mac-development`
-  (`skills/`), a git repository with its own history and **no remote**.
+- **Source**: a `classic-mac-development` skill repository outside this
+  tree, with its own history and **no remote**. The desk that holds one
+  names it with `NOW_CLASSIC_SKILLS_SOURCE`; the path is not written
+  down here, because one desk's absolute paths are exactly what a
+  public repository must not carry.
 - **Source commit at extraction**: `9a89b8ebb219646d835f77249c495dd71d817655`
 - **Working tree at extraction**: DIRTY — 9 paths modified or
   untracked, including three `SKILL.md` files. So this copy matches no
@@ -29,6 +32,17 @@ rule is that findings cross between children freely and code crosses only
 by audited extraction; this is such an extraction, and the audit is this
 file. The failure it invites is the ordinary one: somebody edits the
 other copy, both stay plausible, and neither knows about the other.
+
+**This copy also DIVERGES from the source on purpose, in six lines.**
+The unvendored trees cite their evidence by absolute path — one desk's
+`/Users/...` — and this repository is public, with a CI job whose whole
+job is refusing exactly that (`ci.yml`, "No lab configuration in the
+tree"). The citations here name the artifact relative to its root
+instead: `toolchain/universal/CIncludes` in a Retro68 build rather than
+the path on the machine that read it. The evidence is the same; the
+desk is gone. A re-extraction will bring the paths back, so
+`tools/sync-classic-skills` reporting those six lines as "changed" is
+the expected answer, not a fix to apply.
 
 Two things follow for whoever touches this next:
 
