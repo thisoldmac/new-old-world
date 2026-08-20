@@ -357,7 +357,7 @@ actor ChatHarness {
             description: "Load one of the listed skills into this "
                 + "conversation. The result is the skill's full text; it "
                 + "applies immediately and stays loaded for later turns. "
-                + "Load whatever skill fits the work yourself - never ask "
+                + "Load whatever skill fits the work yourself — never ask "
                 + "the person to.",
             inputSchemaJSON: data)
     }

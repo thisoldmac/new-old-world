@@ -119,8 +119,8 @@ enum GuestDiagnostics {
                 + "is right and the fault is downstream; different ones "
                 + "name the byte."
             },
-            cost: "It stages one real capture and throws it away, so it "
-                + "costs what a screenshot costs and wants a still screen. "
+            cost: "It stages one real capture and discards it: the cost "
+                + "of a screenshot, and it needs a still screen. "
                 + "No image is produced and nothing is transferred.",
             caveat: nil),
         GuestDiagnostic(
@@ -132,7 +132,7 @@ enum GuestDiagnostics {
                 + "the milliseconds inside FSWrite against the whole "
                 + "receive path, what a resume started from, and the "
                 + "receive backlog. Measured there because that is the only "
-                + "place the disk can be told apart from the wire."
+                + "place the disk can be told apart from the connection."
             },
             cost: "Free — it reads counters. It describes the LAST "
                 + "transfer, so a Mac that has received nothing since it "
@@ -154,7 +154,7 @@ enum GuestDiagnostics {
                 + "and the delay from Open Transport announcing that data "
                 + "arrived to its event loop reading it. Histograms, not "
                 + "medians — a cooperatively scheduled Mac has a tail that "
-                + "one number hides, and the tail is what a person feels."
+                + "one number hides, and the tail is what is felt."
             },
             /* The read-only sentence rides on the cost line rather than
                becoming a second caveat: exactly one diagnostic here carries
@@ -169,7 +169,7 @@ enum GuestDiagnostics {
                 + "Mac's idle sleep and turn its wake notifier off, and "
                 + "those knobs stay on its own console — they alter how it "
                 + "schedules every application it is running, including "
-                + "the one answering you.",
+                + "the one answering this page.",
             caveat: nil),
     ]
 }

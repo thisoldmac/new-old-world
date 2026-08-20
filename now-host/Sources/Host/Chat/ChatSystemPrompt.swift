@@ -410,7 +410,7 @@ enum ChatSystemPrompt {
             .filter { MachineNaming.sentence($0) != driven }
         if !others.isEmpty {
             facts += " Also connected: \(MachineNaming.several(others))"
-                + " - but your tools reach only \"\(guest.name)\"."
+                + " — but your tools reach only \"\(guest.name)\"."
         }
         if let access = guest.agentAccess {
             switch access {

@@ -358,7 +358,7 @@ final class MirrorAssetIngestion: ObservableObject {
         guard let decoded = try? MacBinaryFile.decode(bytes) else {
             return .failure(.init(
                 code: "now-assets-macbinary",
-                message: "\(file.path) did not arrive as MacBinary, so it "
+                message: "\(file.path) did not arrive as MacBinary; it "
                     + "carries no resource fork."))
         }
         guard !decoded.resourceFork.isEmpty else {
@@ -446,8 +446,8 @@ final class MirrorAssetIngestion: ObservableObject {
                 contentsOf: resources.appendingPathComponent("manifest.json")),
               let root = try? JSONSerialization.jsonObject(with: data)
                 as? [String: Any] else {
-            return ["NOW could not read the new pack's manifest, so it "
-                    + "cannot say what the pack contains."]
+            return ["NOW could not read the new pack's manifest; the "
+                    + "pack's contents are unknown."]
         }
         func count(_ key: String) -> Int {
             ((root[key] as? [String: Any])?["count"] as? Int) ?? 0

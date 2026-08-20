@@ -119,8 +119,8 @@ enum GuestCapabilityGate {
             return .noGuest(
                 "No \(MachineNaming.commonNoun) is connected. "
                 + "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
-                + "dials \(MachineNaming.thisMac); once it does, whether it "
-                + "serves this is its own answer.")
+                + "connects to \(MachineNaming.thisMac); once connected, "
+                + "whether it serves this is its own answer.")
         }
 
         var unsettled: [String] = []

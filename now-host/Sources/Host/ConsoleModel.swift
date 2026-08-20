@@ -238,9 +238,9 @@ final class ConsoleModel: ObservableObject {
                    + verb.summary)
         }
         append(.notice, "Everything else is sent to the connected Mac as "
-            + "typed — this console keeps no list of its commands, because "
-            + "the two guests do not serve the same ones. \"help\" asks it; "
-            + "Tab completes from that answer.")
+            + "typed. This console keeps no command list — the two guests "
+            + "do not serve the same ones. \"help\" lists them; Tab "
+            + "completes from that answer.")
     }
 
     /// Replaces `gestalt --save`, which only worked because the host used to

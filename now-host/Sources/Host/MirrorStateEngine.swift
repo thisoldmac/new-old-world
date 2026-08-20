@@ -160,7 +160,7 @@ final class MirrorStateEngine: ObservableObject {
             scope: "finder-items",
             status: complete ? .complete : .partial,
             reason: complete ? nil
-                : (reason ?? "the Finder roster for this layout has not "
+                : (reason ?? "the Finder listing for this layout has not "
                    + "arrived; folder windows may be drawn without items"))
         guard claim != finderItemsCoverage else { return }
         finderItemsCoverage = claim

@@ -365,7 +365,7 @@ final class ChatModuleModel: ObservableObject {
                     kind: .note, text: "No skills are installed."))
                 return
             }
-            var lines = ["Skills you can load:"]
+            var lines = ["Available skills:"]
             for skill in skills {
                 lines.append("\(skill.command) — \(skill.description)")
             }
@@ -385,7 +385,7 @@ final class ChatModuleModel: ObservableObject {
             }
             transcript.append(ChatDisplayRow(
                 kind: .note,
-                text: "Loaded /\(name). It applies from your next message."))
+                text: "Loaded /\(name). Applies from the next message."))
             if !rest.isEmpty {
                 send(rest)
             }

@@ -329,7 +329,7 @@ private struct MirrorAssetIngestCard: View {
                    usually is not. Saying so here is cheaper than the
                    refusal that used to arrive mid-transfer. */
                 .help("Build an asset pack from this Mac's System file, "
-                      + "theme and fonts, copied over the wire. Around "
+                      + "theme and fonts, copied over the connection. Around "
                       + "half a minute. Requires the classic Mac to share "
                       + "its whole disk, not one folder; NOW checks before "
                       + "copying. Untested on real hardware — the one "
