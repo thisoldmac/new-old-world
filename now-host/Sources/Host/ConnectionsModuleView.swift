@@ -128,7 +128,7 @@ struct ConnectionsModuleView: View {
                     }
                 }
                 if !model.snapshot.known.isEmpty {
-                    Section("Remembered") {
+                    Section("Saved") {
                         ForEach(model.snapshot.known) { row in
                             ConnectionListRow(row: row)
                                 .foregroundStyle(.secondary)
@@ -236,7 +236,7 @@ struct ConnectionsModuleView: View {
 
     private var detailHeadline: String {
         if adding {
-            return "Listen for a guest that is not attached yet"
+            return "Listen for an unattached guest"
         }
         guard let row = selectedRow else { return model.snapshot.headline }
         switch row.presence {
@@ -244,7 +244,7 @@ struct ConnectionsModuleView: View {
             return "\(row.displayName) — attached to all modules"
         case .connected: return "\(row.displayName) — connected"
         case .known:
-            return "\(row.displayName) — remembered, not connected"
+            return "\(row.displayName) — saved, not connected"
         }
     }
 
@@ -274,9 +274,9 @@ struct ConnectionsModuleView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Add a Guest")
                 .font(.title3.weight(.semibold))
-            Text("Choose a port, start listening, then open NOW on the old "
-                 + "machine and point it at \(MachineNaming.thisMac). It "
-                 + "will appear under Active when its handshake completes.")
+            Text("Set a port and start listening, then point NOW on the "
+                 + "old machine at \(MachineNaming.thisMac). Appears under "
+                 + "Active after the handshake.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -369,12 +369,12 @@ struct ConnectionsModuleView: View {
     private var removalMessage: String {
         guard let row = pendingRemoval else { return "" }
         if row.isConnected {
-            return "This disconnects \(row.name) and forgets its saved "
-                + "machine ID. If it reconnects, it will receive a new "
-                + "temporary ID. This cannot be undone."
+            return "Disconnects \(row.name) and discards its machine ID. "
+                + "Reconnecting issues a new temporary ID. "
+                + "Cannot be undone."
         }
-        return "This forgets \(row.name) and its saved machine ID. "
-            + "This cannot be undone."
+        return "Discards \(row.name) and its machine ID. "
+            + "Cannot be undone."
     }
 }
 
@@ -387,8 +387,8 @@ private struct GuestUpdateSection: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Software Updates")
                 .font(.title3.weight(.semibold))
-            Text("This host can replace only exact, validated artifacts "
-                 + "from its update catalog.")
+            Text("Installs validated artifacts from the update catalog. "
+                 + "Nothing else.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             GuestUpdateRow(row: row, component: .application,
@@ -428,12 +428,12 @@ private struct GuestUpdateSection: View {
 
     private var confirmationMessage: String {
         if confirmation == .extensionComponent {
-            return "The current Extension will move to the Trash. The new "
-                + "one becomes active only after you restart the guest Mac."
+            return "The current Extension moves to the Trash. The new one "
+                + "takes effect after the guest Mac restarts."
         }
-        return "The running guest app will move to the Trash and the new "
-            + "copy will take its place. Quit the guest app and launch it "
-            + "again after installation finishes."
+        return "The running guest app moves to the Trash and the new copy "
+            + "takes its place. Quit and relaunch it after installation "
+            + "finishes."
     }
 
     private func installConfirmed() {
@@ -530,8 +530,8 @@ private struct GuestUpdateRow: View {
             return "No validated artifact is installed on this host."
         case .unknown(let offer):
             return "Host has \(offer.version) build "
-                + "\(offer.build.prefix(12)); the guest did not report "
-                + "an identity this host can compare."
+                + "\(offer.build.prefix(12)); the guest reported no "
+                + "comparable identity."
         case .current(let offer):
             return "Matches host \(offer.version) build "
                 + String(offer.build.prefix(12)) + "."
@@ -637,31 +637,24 @@ private struct ConnectionCard: View {
                 }
                 if row.idIsAutoAssigned {
                     Badge(text: "Automatic ID", tint: .secondary,
-                          help: "The host assigned the stable machine id. "
-                              + "The editable display name is independent.")
+                          help: "Machine id assigned by the host. "
+                              + "Independent of the display name.")
                 }
                 if !row.idIsAnchored {
                     Badge(text: "Id is a guess", tint: .orange,
-                          help: "This machine reached the host from an "
-                              + "address that cannot tell two machines "
-                              + "apart "
-                              + "(loopback, so every emulated guest). The "
-                              + "id surviving a reconnection is a guess. "
-                              + "Use the session id when it must be exact.")
+                          help: "Connected from a shared address "
+                              + "(loopback). Machine id is not reliable "
+                              + "across reconnections; use the session id "
+                              + "for exact addressing.")
                 }
                 if model.isAwaitingRelaunch(for: row, component: .application)
                     || model.isAwaitingRelaunch(for: row,
                                                 component: .extensionComponent) {
                     Badge(text: "Needs relaunch", tint: .orange,
-                          help: "An update was installed and this Mac has "
-                              + "not seen this session report the new "
-                              + "build. The guest application only "
-                              + "replaces its code on disk when it is "
-                              + "installed — it keeps running the OLD "
-                              + "build until a person quits and launches "
-                              + "it again (an extension update needs the "
-                              + "guest Mac restarted instead). See "
-                              + "Software Updates below.")
+                          help: "Update installed; this session still "
+                              + "reports the old build. Requires a relaunch "
+                              + "of the guest app, or a restart of the "
+                              + "guest Mac for an extension update.")
                 }
                 Spacer(minLength: 8)
                 controls
@@ -696,9 +689,8 @@ private struct ConnectionCard: View {
             HStack(spacing: 8) {
                 if row.presence == .connected {
                     Button("Drive This One") { model.drive(row) }
-                        .help("Every command, module and capture request "
-                              + "goes to the machine chosen here. The "
-                              + "others stay connected.")
+                        .help("Routes all commands, modules and captures "
+                              + "to this machine. Others stay connected.")
                 }
             }
         }
@@ -714,33 +706,29 @@ private struct ConnectionCard: View {
                    machines, that phrase means the Mac the app is running
                    on, which is the one machine this label cannot mean. */
                 FieldLabel("Machine id", help:
-                    "Stable. What you type to reach this machine, and what "
-                    + "follows it across a reconnection.")
+                    "Persistent identifier. Stable across reconnections.")
                 Copyable(row.machineID)
             }
             if let session = row.liveSessionID {
                 GridRow {
                     FieldLabel("Session id", help:
-                        "This connection only. A caller holding it after "
-                        + "this machine reconnects is told the session ended, "
-                        + "rather than being answered by its successor.")
+                        "Scoped to this connection. Invalidated on "
+                        + "reconnect.")
                     Copyable(session)
                 }
             }
             GridRow {
                 FieldLabel("Address", help:
-                    "Where the host saw this machine. Authoritative for "
-                    + "which socket, useless as a name.")
+                    "Source address of this connection. Identifies the "
+                    + "socket, not the machine.")
                 Text(row.address).font(.callout.monospaced())
             }
             GridRow {
                 FieldLabel("Port", help:
-                    "The port this machine dials. Give it one of its own "
-                    + "when the host cannot otherwise tell it apart from "
-                    + "another — every emulated \(MachineNaming.commonNoun) "
-                    + "reaches this Mac from the same address. Changing it "
-                    + "here opens the socket; the machine itself keeps "
-                    + "dialling the old one until you repoint it.")
+                    "Inbound port for this machine. Assign a unique port "
+                    + "when emulated \(MachineNaming.commonNoun)s share one "
+                    + "address. Changes open the socket immediately; the "
+                    + "machine must be repointed to match.")
                 VStack(alignment: .leading, spacing: 3) {
                     PortField(row: row, model: model)
                     /* A port something else is holding and a Mac that is
@@ -929,7 +917,7 @@ private struct AddressingLine: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .help(addressing.message ?? "This host answers for this machine.")
+        .help(addressing.message ?? "Answered by this host.")
     }
 
     private var summary: String {

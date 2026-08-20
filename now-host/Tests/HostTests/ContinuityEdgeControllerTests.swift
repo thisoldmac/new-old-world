@@ -1308,8 +1308,12 @@ final class ContinuityEdgeControllerTests: XCTestCase {
         let accessibility = AccessibilityFake()
         accessibility.trusted = true
         var audits: [(HostLog.LogLevel, String)] = []
+        /* The keyboard seam is named because this test is about the
+           POINTER capture's message: an unnamed one is inert and reports its
+           own missing-permission status over the sentence under test. */
         let controller = ContinuityEdgeController(
             layout: layout, driver: driver, environment: environment,
+            keyboardEnvironment: KeyboardEnvironment(),
             accessibility: accessibility,
             audit: { audits.append(($0, $1)) })
         controller.start()
@@ -1909,7 +1913,10 @@ final class ContinuityEdgeControllerTests: XCTestCase {
     }
 }
 
-private extension ContinuityEdgeControllerTests {
+/* Not `private`: `ContinuityEventTapOwnershipTests` drives the shipped
+   controller with these same stubs, and a second copy of a pointer
+   environment is a second thing to keep true. */
+extension ContinuityEdgeControllerTests {
     final class AuditRecorder {
         var lines: [(HostLog.LogLevel, String)] = []
     }

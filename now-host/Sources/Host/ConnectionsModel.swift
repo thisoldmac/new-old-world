@@ -830,8 +830,7 @@ final class ConnectionsModel: ObservableObject {
             if let reported, reported == targetBuild {
                 pendingRelaunches.removeValue(forKey: key)
                 return component == .application
-                    ? "Relaunched — this Mac now sees the installed build "
-                        + "running."
+                    ? "Relaunched — the installed build is now running."
                     : "Restarted — this Mac now reports the installed "
                         + "NOW Extension."
             }

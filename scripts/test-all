@@ -168,11 +168,19 @@ echo "==> [6/8] guest cross-builds"
 
 echo
 echo "==> [7/8] host gate"
-"$script_dir/test-host" >/dev/null 2>&1 || {
-    # Re-run showing output: the host gate is verbose enough that hiding
-    # it on the happy path is worth the second run on the sad one.
-    "$script_dir/test-host" || fail "host gate"
-}
+# Logged rather than shown, and CAT on failure — the shape stage 5 already
+# uses. It used to re-run the whole gate to show its output, which on this
+# desk is eight more minutes spent reproducing a failure already on disk,
+# and a second run that can disagree with the first (a held port, another
+# session's VM) reports a state nobody observed.
+host_log=$(mktemp "${TMPDIR:-/tmp}/now-test-all-host.XXXXXX")
+if "$script_dir/test-host" > "$host_log" 2>&1; then
+    rm -f "$host_log"
+else
+    cat "$host_log"
+    rm -f "$host_log"
+    fail "host gate"
+fi
 echo "==> host gate passed"
 
 echo

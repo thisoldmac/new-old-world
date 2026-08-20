@@ -441,7 +441,7 @@ final class ChatServingTests: XCTestCase {
         let made = try await result(on: guest, id: 85)
 
         XCTAssertTrue(made.ok)
-        XCTAssertTrue(made.message?.contains("minted") == true,
+        XCTAssertTrue(made.message?.contains("created") == true,
                       made.message ?? "no message")
         XCTAssertEqual(asked.map(\.0), ["Beeper"])
         XCTAssertEqual(asked.map(\.1), [.host])

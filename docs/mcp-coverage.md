@@ -985,7 +985,26 @@ three-verdict table would have hidden:
 | `served` | the tool answered with its own success |
 | `refused` | this host, the guest or the machine said no, **and said why** |
 | `failed` | no answer, an unreadable one, or an answer a healthy host contradicts |
+| `expected-unavailable` | the tool answered correctly that a precondition this surface cannot mint is absent |
 | `uncovered` | advertised, and this surface can construct no legal argument for it |
+
+`expected-unavailable` exists because `refused` overstated one row.
+`now_guest_files_upload_file` reads bytes out of the chat workspace lane,
+whose root is pinned on the companion's command line at spawn
+(`--workspace-root`) or in-process before an HTTP lane turn; a conformance
+companion is spawned without one. Scoring its no-lane answer `refused`
+said the surface had been asked and had said no on the merits, when what
+it had done was report an absent precondition — the same authority
+boundary `human-gated` draws, one layer down: not a person's approval, a
+host's configuration.
+
+**The verdict inverts when the run pins a root.** That sentence from a
+configured host is false, and fails, exactly as `now-host-unavailable`
+fails while a host is running. Both halves are watched by mutation in
+`MCPWorkspacePreconditionVerdictTests`, along with the rule keying on the
+code rather than the outcome name — every family spells `unavailable` the
+same way, and folding all of them into the new verdict would hide real
+refusals behind it.
 
 A second column says whether the argument was `real` — built from this
 run's own earlier answers — or `synthetic`, a syntactically valid
@@ -1204,7 +1223,7 @@ first, and the gate names the difference.
 
 <!-- derived-doc v1
 sources: contract/asyncapi.yaml now-guest-ppc/src/core/wire.c now-guest-68k/src/core/wire68.c now-guest-ppc/src/commands/commands.c now-guest-68k/src/commands/commands68.c now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift
-sources-sha1: c724d1b953c68d0d44c5178198a9857ac52e1085
+sources-sha1: 64afb536e904972d7c07b3ac450bb22b0822c5a6
 derive ppc-inbound-types sha256=deaa05a18ffaec3e8f5f3223631b9b3ceb4a0cbe0ca4ec088bd54957b0a9ee56 lines=62 published
     grep -oE 'json_type_is\([a-z_]+, *"[a-z.]+"\)' now-guest-ppc/src/core/wire.c \
       | grep -oE '"[a-z.]+"' | tr -d '"' | sort -u
@@ -1457,6 +1476,11 @@ rederived: 2026-08-19T18:25:38-0400 4b072fe0 unchanged
 rederived: 2026-08-19T21:35:42-0400 485e4ee1 unchanged
 rederived: 2026-08-19T21:40:49-0400 ae09a391 unchanged
 rederived: 2026-08-19T22:18:12-0400 110215ff unchanged
+rederived: 2026-08-20T11:43:42-0400 ae5aa666 unchanged
+rederived: 2026-08-20T12:58:08-0400 d656ad93 unchanged
+rederived: 2026-08-20T12:58:33-0400 d656ad93 unchanged
+rederived: 2026-08-20T13:32:56-0400 30931464 sources
 rederived: 2026-08-20T15:12:29-0400 918f1e03 unchanged
 rederived: 2026-08-20T15:19:46-0400 918f1e03 unchanged
+rederived: 2026-08-20T16:23:41-0400 9dc8e356 unchanged
 -->

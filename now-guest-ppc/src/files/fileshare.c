@@ -936,7 +936,7 @@ int now_files_choose_downloads(char *why, long why_cap)
     long dir;
     int rc;
 
-    rc = now_files_choose_folder("Choose where files you get are put",
+    rc = now_files_choose_folder("Choose where received files are saved",
                                  &vref, &dir, why, why_cap);
     if (rc <= 0) {
         return rc;

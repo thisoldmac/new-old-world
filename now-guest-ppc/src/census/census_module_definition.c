@@ -8,7 +8,7 @@ const WorkshopModuleDefinition *census_module_definition(void)
         kWorkshopHardware,
         "census",
         "Hardware",
-        "A passive census of this Mac. Probes run on request, never at idle.",
+        "This Mac's hardware, probe by probe. Probes run on request, not at idle.",
         "Hardware census is not built into this window yet.",
         "Census and probes",
         134,

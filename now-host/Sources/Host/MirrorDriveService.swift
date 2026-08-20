@@ -177,7 +177,7 @@ struct MirrorDriveService {
                 return .refused(.init(
                     code: "now-mirror-drive-menu-unplaced",
                     message: "The published menu bar does not say where "
-                        + "menu \(request.menuID ?? 0)'s title sits, and "
+                        + "menu \(request.menuID ?? 0)'s title is, and "
                         + "that position is what tells this act's press "
                         + "from the person's at the machine. Read "
                         + "now_semantic_ui_snapshot again: a menu bar that "
@@ -298,7 +298,7 @@ struct MirrorDriveService {
                 return .refused(.init(
                     code: "now-mirror-drive-menu-unplaced",
                     message: "The published menu bar does not say where "
-                        + "the Apple menu's title sits, and that position "
+                        + "the Apple menu's title is, and that position "
                         + "is what tells this act's press from the "
                         + "person's at the machine."))
             }

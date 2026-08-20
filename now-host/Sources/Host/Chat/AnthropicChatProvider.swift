@@ -244,11 +244,11 @@ final class AnthropicChatProvider: ChatProvider, @unchecked Sendable {
         case 401, 403:
             throw ChatFault.refuse(
                 code: "auth-expired",
-                reason: said ?? "Anthropic rejected the credentials - sign in again")
+                reason: said ?? "Anthropic rejected the credentials — sign in again")
         case 429:
             throw ChatFault.refuse(
                 code: "rate-limited",
-                reason: said ?? "Anthropic is rate limiting - try later")
+                reason: said ?? "Anthropic is rate limiting — try later")
         default:
             throw ChatFault.refuse(
                 code: "provider-error",

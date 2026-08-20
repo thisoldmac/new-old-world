@@ -116,7 +116,7 @@ private struct ContinuityDiagnosticsView: View {
                         .help(option.detail)
                 }
                 Text("These settings re-arm an active continuity session. "
-                     + "Deep click logging can be high volume and remains "
+                     + "Deep click logging is high volume and stays "
                      + "off by default.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

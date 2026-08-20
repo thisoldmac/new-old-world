@@ -96,7 +96,7 @@ static void test_absent_card_has_no_control(void)
           "and gives a second line");
     /* Absence is a fact about which guest this is, never about the
        machine's health, and the sentence has to say that outright. */
-    check(strstr(line, "Nothing is wrong") != NULL,
+    check(strstr(line, "Not a fault") != NULL,
           "the absent card exonerates the machine");
     check(strstr(line, "68K") != NULL, "and names the sibling that serves it");
 

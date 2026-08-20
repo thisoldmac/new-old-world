@@ -51,7 +51,7 @@ enum CensusProbes {
         CensusProbe(
             id: "drives", title: "Drives",
             columns: ["Drive", "Raw", "Meaning"],
-            summary: "The drive queue - every block device the OS tracks."),
+            summary: "The drive queue — every block device the OS tracks."),
         CensusProbe(
             id: "drivers", title: "Drivers",
             columns: ["Driver", "Raw", "Meaning"],
@@ -63,7 +63,7 @@ enum CensusProbes {
         CensusProbe(
             id: "ata", title: "ATA",
             columns: ["Device", "Raw", "Meaning"],
-            summary: "IDENTIFY through the ATA Manager - the IDE boot disk "
+            summary: "IDENTIFY through the ATA Manager — the IDE boot disk "
                 + "SCSI cannot see."),
         CensusProbe(
             id: "pccard", title: "PC Card",
@@ -84,7 +84,7 @@ enum CensusProbes {
         CensusProbe(
             id: "scsi", title: "SCSI",
             columns: ["Target", "Raw", "Meaning"],
-            summary: "An INQUIRY bus scan - the one active-I/O probe."),
+            summary: "An INQUIRY bus scan — the one active-I/O probe."),
     ]
 
     static func probe(id: String) -> CensusProbe? {

@@ -119,8 +119,8 @@ enum GuestCapabilityGate {
             return .noGuest(
                 "No \(MachineNaming.commonNoun) is connected. "
                 + "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
-                + "dials \(MachineNaming.thisMac); once it does, whether it "
-                + "serves this is its own answer.")
+                + "connects to \(MachineNaming.thisMac); once connected, "
+                + "whether it serves this is its own answer.")
         }
 
         var unsettled: [String] = []
@@ -179,9 +179,8 @@ enum GuestCapabilityGate {
         } else {
             sentence += ": it is absent from that machine's own command table"
         }
-        return sentence + ". Nothing is wrong with the machine — NOW's two "
-            + "guests are of different completeness, and this is one of the "
-            + "differences."
+        return sentence + ". Not a fault — NOW's two guests differ in "
+            + "completeness, and this is one of those differences."
     }
 }
 

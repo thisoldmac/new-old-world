@@ -35,6 +35,16 @@ scripts/test-host
 
 Guest builds may skip when Retro68 is unavailable. State the skip. Metal suites are opt-in through their documented environment variables and fail, rather than skip, once opted in.
 
+`scripts/test-host --fast` is an inner-loop lane, not the gate. It omits the
+Release configuration and the no-asset-pack pass, and it says so instead of
+printing the gate's own passing line. Run `scripts/test-host` with no flag
+before committing; the pull-request path requires the full form.
+
+The no-asset-pack pass runs only where a pack resolved. Without one the
+preceding run already resolved no pack and already took every degradation
+path, so repeating it exercises an identical environment rather than a second
+one; the host and MirrorKit gates both skip it there and name the reason.
+
 The guest cross-build uses Retro68's import libraries; it does not require a
 CarbonLib binary in this checkout. Runtime installation does: the public
 instructions link to
@@ -75,7 +85,7 @@ Mutate the exact condition the guard claims to detect, prove the mutation built,
 
 <!-- derived-doc v1
 sources: scripts/test-all scripts/test-host scripts/test-native scripts/build-guests scripts/test-docs .github/workflows/ci.yml scripts/docs-source-group tools/docs-gate
-sources-sha1: 098426225d07193f996ae9d99fd5f3b41392e8b9
+sources-sha1: 32cbaf83b075835d916f1c9df49f2ea21cd63622
 derive test-stages sha256=f78dc22859b46a2e58f5cfceec0ceaf149bf5b1e89be24a1705af22181842aa5 lines=8
     scripts/docs-source-group build
 rederived: pending
@@ -295,6 +305,11 @@ rederived: 2026-08-19T18:25:38-0400 4b072fe0 unchanged
 rederived: 2026-08-19T21:35:42-0400 485e4ee1 unchanged
 rederived: 2026-08-19T21:40:49-0400 ae09a391 sources
 rederived: 2026-08-19T22:18:12-0400 110215ff unchanged
+rederived: 2026-08-20T11:43:42-0400 ae5aa666 unchanged
+rederived: 2026-08-20T12:58:08-0400 d656ad93 sources
+rederived: 2026-08-20T12:58:32-0400 d656ad93 unchanged
+rederived: 2026-08-20T13:32:56-0400 30931464 unchanged
 rederived: 2026-08-20T15:12:29-0400 918f1e03 sources
 rederived: 2026-08-20T15:19:46-0400 918f1e03 sources
+rederived: 2026-08-20T16:23:41-0400 9dc8e356 sources
 -->

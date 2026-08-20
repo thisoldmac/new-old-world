@@ -32,9 +32,9 @@ struct CloudModuleView: View {
                 Spacer()
                 Button("Refresh") { model.refresh() }
             }
-            Text("What of \(MachineNaming.thisMac)'s iCloud "
-                 + "\(MachineNaming.simpleReference) may browse. "
-                 + "Each service answers on the wire exactly as it reads "
+            Text("\(MachineNaming.thisMac)'s iCloud services shared with "
+                 + "\(MachineNaming.simpleReference). "
+                 + "Each service answers over the connection exactly as it reads "
                  + "here.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -129,11 +129,11 @@ struct CloudModuleView: View {
     }
 
     private var footnote: some View {
-        Text("Serving is per-service and answers any "
-             + "\(MachineNaming.commonNoun) connected. "
+        Text("Per-service, served to any connected "
+             + "\(MachineNaming.commonNoun). "
              + "Drive travels through the file share. Photo download size "
-             + "and destination belong to \(MachineNaming.simpleReference); "
-             + "this Mac only provides the connection and macOS access.")
+             + "and destination are set on \(MachineNaming.simpleReference); "
+             + "this Mac provides the connection and macOS access.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)

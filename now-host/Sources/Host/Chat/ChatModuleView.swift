@@ -59,8 +59,8 @@ struct ChatModuleView: View {
             ChatComposer(
                 draft: $draft, state: composerState,
                 placeholder: model.models.isEmpty
-                    ? "Set up a provider to start"
-                    : "Ask about the connected machine...",
+                    ? "No provider configured"
+                    : "Ask about the connected machine…",
                 send: submit, stop: model.cancel)
         }
     }
@@ -98,7 +98,7 @@ struct ChatModuleView: View {
             }
             .buttonStyle(.borderless)
             .disabled(model.isStreaming || model.transcript.isEmpty)
-            .help("Start a fresh conversation")
+            .help("New conversation")
 
             Button(action: openSettings) {
                 Image(systemName: "slider.horizontal.3")
@@ -217,7 +217,7 @@ struct ChatModuleView: View {
     private var waitingRow: some View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.small)
-            Text("Waiting for \(currentModelName)...")
+            Text("Waiting for \(currentModelName)…")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -243,17 +243,17 @@ struct ChatModuleView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("How can I help with "
-                 + "\(MachineNaming.simpleReference)?")
+            Text("Ask about "
+                 + "\(MachineNaming.simpleReference)")
                 .font(.system(size: 26, weight: .semibold))
                 .padding(.bottom, 6)
-            Text("I can look at "
+            Text("The model reads "
                  + "\(MachineNaming.possessive(String?.none)) screen, files "
-                 + "and processes - with the access its owner granted.")
+                 + "and processes, within the access its owner granted.")
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 18)
             if model.models.isEmpty {
-                Button("Set Up a Provider...", action: openSettings)
+                Button("Set Up a Provider…", action: openSettings)
                     .controlSize(.large)
             } else {
                 ForEach(Self.openers, id: \.self) { opener in
@@ -327,7 +327,7 @@ struct ChatProvidersSheet: View {
                     Spacer()
                     if model.canAuthorizeSavedCredentials {
                         Button(model.isAuthorizingCredentials
-                                   ? "Authorizing..." : "Authorize") {
+                                   ? "Authorizing…" : "Authorize") {
                             model.authorizeSavedCredentials()
                         }
                         .disabled(model.isAuthorizingCredentials)
@@ -356,9 +356,9 @@ struct ChatProvidersSheet: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
                 cardHeader("Claude (Experimental)", entry("claude"))
-                Text("Uses an independently installed Claude Code runtime. "
-                     + "Anthropic has not approved this as a third-party "
-                     + "subscription integration, and programmatic use may "
+                Text("Uses an independently installed Claude Code "
+                     + "runtime. Not an Anthropic-approved third-party "
+                     + "subscription integration; programmatic use may "
                      + "draw from separate Agent SDK credit.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -448,7 +448,7 @@ struct ChatProvidersSheet: View {
                 cardHeader("Codex (ChatGPT)", entry("codex"))
                 Text("ChatGPT subscription access through the installed "
                      + "Codex runtime. Codex owns the browser callback and "
-                     + "credentials; NOW never receives the tokens.")
+                     + "credentials; tokens never reach NOW.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

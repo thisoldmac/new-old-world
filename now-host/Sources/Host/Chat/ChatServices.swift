@@ -476,7 +476,7 @@ final class ChatWireService {
             guard !skills.isEmpty else {
                 return answer("No skills are installed on the other Mac.")
             }
-            var lines = ["Skills you can load:"]
+            var lines = ["Available skills:"]
             for skill in skills {
                 lines.append("\(skill.command)")
                 lines.append("   \(skill.description)")
@@ -500,7 +500,7 @@ final class ChatWireService {
             if rest.isEmpty {
                 answer("Loaded /\(name). "
                     + (skill?.description ?? "")
-                    + " It applies from your next message.")
+                    + " Applies from the next message.")
             } else {
                 /* A command with a question after it does both, so
                    "/classic-mac-carbon-ui how do I draw a tab?" is one
@@ -687,8 +687,8 @@ final class ChatWireService {
             guard let home = request.home.flatMap(ProjectHome.init(rawValue:))
             else {
                 return answer(false, "provider-error",
-                              "Say whether the project lives on this Mac or "
-                                  + "the modern one")
+                              "Name the project's home: this Mac or the "
+                                  + "modern one")
             }
             guard let record = try? store.createProject(
                 name: name, intendedHome: home) else {
@@ -709,8 +709,8 @@ final class ChatWireService {
             guard let mintLinkedProject else {
                 return answer(true, nil, home == .guest
                     ? "Filed. Its code is staged here and promoted to "
-                        + "this machine when you build it."
-                    : "Filed. Its code lives on the modern Mac.")
+                        + "this machine on build."
+                    : "Filed. Its code is stored on the modern Mac.")
             }
             Task { @MainActor in
                 /* The wire carries home only; the toolchain follows
@@ -719,7 +719,7 @@ final class ChatWireService {
                 case .success(let projectID):
                     _ = try? store.associate(record.id, with: projectID)
                     answer(true, nil, "Filed. A starter project was "
-                        + "minted on the modern Mac and linked; build "
+                        + "created on the modern Mac and linked; build "
                         + "it to see it here.")
                 case .failure(let refusal):
                     answer(true, nil,

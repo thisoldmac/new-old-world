@@ -238,7 +238,7 @@ struct MirrorEventStreamView: View {
 
     private var empty: some View {
         VStack(spacing: 6) {
-            Text("Nothing has happened yet.").font(.callout)
+            Text("No events.").font(.callout)
             Text("Clicking on the Macintosh puts an act here.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

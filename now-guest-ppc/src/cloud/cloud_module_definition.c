@@ -8,9 +8,9 @@ const WorkshopModuleDefinition *cloud_module_definition(void)
         kWorkshopCloud,
         "icloud",
         "iCloud",
-        "Other Mac's iCloud: its Drive, Photos and Contacts, served "
-            "one page at a time.",
-        "iCloud has not moved in yet.",
+        "Other Mac's iCloud Drive, Photos and Contacts, one page "
+            "at a time.",
+        "iCloud is not in this window yet.",
         "Other Mac's cloud",
         140,
         kWorkshopModuleTierExperimental,

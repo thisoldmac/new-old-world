@@ -15,7 +15,7 @@ const WorkshopModuleDefinition *development_module_definition(void)
         "projects",
         "Projects",
         "Project roots, registered toolchains and headless build jobs on this Mac.",
-        "Projects has not moved in yet.",
+        "Projects is not in this window yet.",
         "Projects and toolchains",
         144,
         kWorkshopModuleTierExperimental,

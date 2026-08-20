@@ -65,15 +65,15 @@ struct OnboardingSheet: View {
             switch portal.state {
             case .stopped:
                 Text("Start onboarding, then connect \(MachineNaming.simpleReference) to "
-                     + "the LAN and open the address shown here.")
+                     + "the LAN and open the address below.")
                     .foregroundStyle(.secondary)
             case .starting:
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Finding this Mac's LAN address and a free port…")
+                    Text("Locating this Mac's LAN address and a free port…")
                 }
             case .running(let endpoint):
-                Text("Connect your \(MachineNaming.commonNoun) to the LAN, open a browser, "
+                Text("Connect the \(MachineNaming.commonNoun) to the LAN, open a browser, "
                      + "and navigate to:")
                     .foregroundStyle(.secondary)
                 HStack {
@@ -120,7 +120,7 @@ struct OnboardingSheet: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
-                .help("Which classic Mac this page and install image "
+                .help("Target machine for this page and install image "
                       + "are for.")
                 Button("Refresh") { portal.refreshAssets() }
                     .controlSize(.small)
@@ -158,11 +158,11 @@ struct OnboardingSheet: View {
                 in: portal.assets)) { asset in
                 packageLine(asset.fileName, asset: asset, required: false)
             }
-            Text("Release packages can be placed in the app's "
+            Text("Release packages go in the app's "
                  + "Contents/Resources/Onboarding folder before signing. "
-                 + "Local or licensed packages belong in the Application "
-                 + "Support folder opened below. Get downloads are checksum-"
-                 + "verified and saved directly in its Dependencies folder.")
+                 + "Local or licensed packages go in the Application "
+                 + "Support folder opened below. Get downloads are "
+                 + "checksum-verified into its Dependencies folder.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -245,7 +245,7 @@ struct OnboardingSheet: View {
                 .help(required
                       ? portal.guestFlavor.applicationDisplayName
                         + " is required in every install image."
-                      : "Include this item in the next install image.")
+                      : "Include in the next install image.")
         } else {
             Image(systemName: "circle")
                 .foregroundStyle(.secondary)
@@ -265,8 +265,8 @@ struct OnboardingSheet: View {
             }
             switch portal.setupImageState {
             case .notBuilt:
-                Text("Start onboarding to build the HFS install image served "
-                     + "at /now/setup.img.")
+                Text("Start onboarding to build the HFS install image "
+                     + "served at /now/setup.img.")
                     .foregroundStyle(.secondary)
             case .building:
                 HStack(spacing: 8) {

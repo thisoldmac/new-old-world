@@ -42,7 +42,7 @@ final class MirrorStateProjectionService {
             guard let metrics = metrics() else {
                 return unavailable(
                     "now-mirror-metrics-unavailable",
-                    "The Mirror is not running, so it has measured nothing")
+                    "The Mirror is not running. No measurements.")
             }
             return .init(value: .init(
                 intention: .metrics,
@@ -61,7 +61,7 @@ final class MirrorStateProjectionService {
             guard let facts = lifecycle() else {
                 return unavailable(
                     "now-mirror-lifecycle-unavailable",
-                    "No Mac is connected, so no resident has answered")
+                    "No Mac connected. No resident has answered.")
             }
             return .init(value: .init(
                 intention: .lifecycle,

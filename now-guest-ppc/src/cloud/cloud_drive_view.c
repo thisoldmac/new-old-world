@@ -246,7 +246,7 @@ static void choose_dest(void)
     long dl_dir;
     int rc;
 
-    rc = now_files_choose_folder("Choose where files you get land",
+    rc = now_files_choose_folder("Choose where received files are saved",
                                  &vref, &dir, why, sizeof why);
     if (rc == 0) {
         return;                       /* cancelled: nothing changes */

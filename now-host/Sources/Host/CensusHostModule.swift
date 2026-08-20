@@ -24,8 +24,8 @@ enum CensusHostModule {
             id: "census",
             title: "Hardware",
             symbol: "cpu",
-            summary: "\(MachineNaming.properNoun)’s own account of its "
-                + "hardware, probe by probe"),
+            summary: "\(MachineNaming.possessive(nil)) hardware "
+                + "inventory, probe by probe"),
         makeRuntime: { CensusHostModuleRuntime(context: $0) },
         makeView: { _, runtime in
             guard let runtime = runtime as? CensusHostModuleRuntime else {

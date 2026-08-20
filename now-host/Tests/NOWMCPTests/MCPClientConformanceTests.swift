@@ -35,6 +35,16 @@ final class MCPClientConformanceTests: XCTestCase {
         ProcessInfo.processInfo.environment["NOW_MCP_CONFORMANCE_LIVE"] == "1"
     }
 
+    /// Whether this run spawned its companion with a chat workspace root.
+    ///
+    /// False today: `hostExecutable()` is launched with `--mcp-stdio` and
+    /// nothing else, so the one row that reads local bytes answers that it
+    /// has no lane — correctly, and scored `expected-unavailable` rather
+    /// than `refused`. It is a flag rather than a constant because the
+    /// verdict must invert the day a run does pin one: the same sentence
+    /// from a configured host is a false answer, not an honest one.
+    private static var workspacePinned: Bool { false }
+
     /// Per-call bound. Generous: with no host every call is local and
     /// answers in milliseconds, and with one it may reach a 1400c.
     private static let callTimeout: TimeInterval = 45
@@ -280,7 +290,8 @@ final class MCPClientConformanceTests: XCTestCase {
                     continue
                 }
                 let (verdict, detail) = MCPConformance.classify(
-                    reply, live: Self.live)
+                    reply, live: Self.live,
+                    workspacePinned: Self.workspacePinned)
                 rows.append(.init(
                     tool: tool, verdict: verdict, argumentKind: kind,
                     detail: detail,
@@ -409,7 +420,7 @@ final class MCPClientConformanceTests: XCTestCase {
         var counts: [MCPConformance.Verdict: Int] = [:]
         for row in rows { counts[row.verdict, default: 0] += 1 }
         let summary = [MCPConformance.Verdict.served, .refused, .failed,
-                       .humanGated, .uncovered]
+                       .humanGated, .expectedUnavailable, .uncovered]
             .map { "\($0.rawValue) \(counts[$0] ?? 0)" }
             .joined(separator: ", ")
         out += "\n\(summary)\n"
@@ -464,5 +475,53 @@ final class MCPClientConformanceTests: XCTestCase {
             throw CocoaError(.fileNoSuchFile)
         }
         return candidate
+    }
+}
+
+/// The verdict for a precondition this surface cannot mint.
+///
+/// `now_guest_files_upload_file` reads bytes out of the chat workspace
+/// lane. A conformance companion is spawned without one, so its no-lane
+/// answer is CORRECT — and scoring it `refused` said the surface had been
+/// asked something and had said no on the merits, which overstated the
+/// run. It is the same authority boundary `humanGated` draws, one layer
+/// down: not a person's approval, a host's configuration.
+///
+/// The pair of cases is the point. The identical sentence from a run that
+/// DID pin a root is a false answer from a configured host, and fails —
+/// exactly as `now-host-unavailable` fails while a host is running.
+final class MCPWorkspacePreconditionVerdictTests: XCTestCase {
+
+    private func unavailable(_ code: String) -> [String: Any] {
+        ["outcome": "unavailable",
+         "unavailable": ["code": code, "message": "no lane"]]
+    }
+
+    func testNoLaneAnswerIsExpectedUnavailableWhenNoRootWasPinned() {
+        let (verdict, _) = MCPConformance.classify(
+            structured: unavailable(MCPConformance.workspacePreconditionCode),
+            live: true, workspacePinned: false)
+        XCTAssertEqual(verdict, .expectedUnavailable,
+                       "a companion spawned without --workspace-root is "
+                       + "answering correctly, not refusing on the merits")
+    }
+
+    func testTheSameAnswerFailsWhenARootWasPinned() {
+        let (verdict, _) = MCPConformance.classify(
+            structured: unavailable(MCPConformance.workspacePreconditionCode),
+            live: true, workspacePinned: true)
+        XCTAssertEqual(verdict, .failed,
+                       "a pinned root makes the no-lane sentence false, and "
+                       + "a false answer from a configured host is a defect")
+    }
+
+    /// The rule must key on the code, not on the outcome name: every
+    /// family spells `unavailable` the same way, and folding all of them
+    /// into the new verdict would hide real refusals behind it.
+    func testAnotherUnavailableCodeIsStillARefusal() {
+        let (verdict, _) = MCPConformance.classify(
+            structured: unavailable("now-files-share-unavailable"),
+            live: false, workspacePinned: false)
+        XCTAssertEqual(verdict, .refused)
     }
 }

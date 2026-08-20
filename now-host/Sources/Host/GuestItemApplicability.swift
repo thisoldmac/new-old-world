@@ -144,15 +144,15 @@ extension GuestCapabilityGate {
             return .inapplicable(
                 "\(quoted) is \(kind.description). Extensions and control "
                 + "panels are loaded by the system at startup rather than "
-                + "launched, so there is nothing here to open.")
+                + "launched. Nothing to open.")
         case (.launch, .backgroundOnly), (.bringToFront, .backgroundOnly):
             return .inapplicable(
-                "\(quoted) runs with no windows and no menu bar, so there is "
-                + "nothing to bring forward.")
+                "\(quoted) runs with no windows and no menu bar. "
+                + "Nothing to bring forward.")
         case (.bringToFront, .notAnApplication):
             return .inapplicable(
-                "\(quoted) is \(kind.description) and is not running as one, "
-                + "so there is nothing to bring forward.")
+                "\(quoted) is \(kind.description) and is not running as "
+                + "one. Nothing to bring forward.")
         default:
             return nil
         }

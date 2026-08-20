@@ -1322,7 +1322,7 @@ static short launch_bare_name(const char *name, char *detail, long cap)
 
     if (unusable) {
         set_detail(detail, cap, "launch: ", name,
-                   " not found in the startup volume's ROOT folder only "
+                   " not found in the startup volume's root folder "
                    "- PBCatSearch was unusable, so subfolders were not "
                    "searched");
         return paramErr;

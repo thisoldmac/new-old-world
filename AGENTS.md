@@ -108,7 +108,10 @@ first.
 
 **Host — Swift, SwiftUI with AppKit where SwiftUI cannot reach.** The
 browser is an `NSTableView` because SwiftUI's `Table` cannot be a file
-drag source. Prefer the native control over a reimplementation.
+drag source. Prefer the native control over a reimplementation. Its
+user-facing text is workshop chrome, not documentation prose:
+[docs/host-ui-copy.md](docs/host-ui-copy.md) is the register, the ten
+rules, what is protected from a copy pass, and the greps that audit it.
 
 Both: comments say **why**, not what. Match the surrounding density.
 

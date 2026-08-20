@@ -111,7 +111,7 @@ final class ConnectionsPaneTests: XCTestCase {
         XCTAssertTrue(source.contains("Trusted LAN only"))
         XCTAssertTrue(source.contains("plaintext"))
         XCTAssertTrue(source.contains("no peer authentication"))
-        XCTAssertTrue(source.contains("do not expose this port"))
+        XCTAssertTrue(source.contains("Do not expose this port"))
     }
 
     func testLocalNetworkPermissionHasRequestAndSystemSettingsDoors()

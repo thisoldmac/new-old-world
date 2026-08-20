@@ -268,7 +268,8 @@ final class DiagnosticsModuleModelTests: XCTestCase {
         XCTAssertTrue(reason.contains("Carbon guest"),
                       "it names the sibling that answers the verb, which is "
                           + "what stops this reading as a fault: \(reason)")
-        XCTAssertTrue(reason.contains("Nothing is wrong with the machine"))
+        XCTAssertTrue(reason.contains("Not a fault"),
+                      "absence must not read as damage: \(reason)")
     }
 
     /// **A 68K-shaped command table disables a different diagnostic from a

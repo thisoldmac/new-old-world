@@ -142,11 +142,23 @@ static void help_for(const char *name)
 static void help_list(void)
 {
     char line[kMaxCols];
-    int i;
+    int i, width = 0;
 
+    /* One column for every row, measured rather than guessed. A fixed
+       width was 11, and the six development-* verbs are 15 to 19
+       characters, so their summaries began in a different column from
+       the other 58 - ragged in exactly the place a person scans. The
+       widest name plus its two-space indent and separator is 22, which
+       leaves the longest summary inside the console's 80. */
+    for (i = 0; kNowCommandDocs[i].name != NULL; ++i) {
+        int len = (int)strlen(kNowCommandDocs[i].name);
+        if (len > width) {
+            width = len;
+        }
+    }
     console_model_append("Commands on this Mac:");
     for (i = 0; kNowCommandDocs[i].name != NULL; ++i) {
-        snprintf(line, sizeof line, "  %-11s %s",
+        snprintf(line, sizeof line, "  %-*s %s", width,
                  kNowCommandDocs[i].name, kNowCommandDocs[i].summary);
         console_model_append(line);
     }

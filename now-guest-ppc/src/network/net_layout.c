@@ -33,9 +33,9 @@ const char *now_net_section_blurb(NetSection section)
     case kNetSectionLink:
         return "The link to Other Mac. Measured here, not asked for.";
     case kNetSectionInet:
-        return "How This Mac is addressed on its network.";
+        return "How this Mac is addressed on its network.";
     case kNetSectionPorts:
-        return "The network hardware this Mac has, and where it sits.";
+        return "The network hardware this Mac has, and where it is.";
     case kNetSectionConnections:
         /* Shrunk to a placard line (see now_net_layout_compute): the
            card's body sits where this line would have gone, so a
@@ -284,7 +284,7 @@ void now_net_status_text(const NetFacts *facts, char *out, long cap)
     }
     if (facts->inet.state == kNetFactPresent) {
         char buf[96];
-        snprintf(buf, sizeof buf, "%s  ·  %d port%s",
+        snprintf(buf, sizeof buf, "%s  -  %d port%s",
                  facts->inet.address, (int)facts->port_count,
                  facts->port_count == 1 ? "" : "s");
         put(out, cap, buf);

@@ -130,9 +130,11 @@ final class QuickCaptureTests: XCTestCase {
             image: try CaptureDecoder.makeImage(blob: blob, format: format),
             format: format, transferMs: 1, wireBytes: blob.count)
 
-        NSPasteboard.general.clearContents()
+        let board = NSPasteboard(name: .init("now.test.copy.\(UUID())"))
+        screenshots.pasteboardForCopying = board
+        board.clearContents()
         screenshots.copyToPasteboard(record)
-        XCTAssertTrue(NSPasteboard.general.canReadObject(
+        XCTAssertTrue(board.canReadObject(
             forClasses: [NSImage.self], options: nil))
     }
 

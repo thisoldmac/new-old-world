@@ -104,12 +104,12 @@ struct FilesModuleView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .help(transfer.isAwaitingReceipt
-                      ? "Everything has been sent, but "
-                        + "\(MachineNaming.sentence(model.connection)) "
-                        + "reads far slower than this side writes. It "
+                      ? "All bytes sent. "
+                        + "\(MachineNaming.startingSentence(MachineNaming.sentence(model.connection))) "
+                        + "reads slower than this side writes; it "
                         + "confirms "
                         + "once the file is written and named."
-                      : "Bytes handed to the network so far.")
+                      : "Bytes written to the network.")
             Button("Cancel") { model.cancelTransfer() }
                 .controlSize(.small)
             if !model.queue.isEmpty {
@@ -152,7 +152,7 @@ struct FilesModuleView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.prompt = "Send"
-        panel.message = "Choose a file to send to "
+        panel.message = "File to send to "
             + model.connection.peerLabel + "."
         if panel.runModal() == .OK, let url = panel.url {
             model.send(url)
@@ -224,11 +224,11 @@ private struct NewFolderSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Name of the new folder").font(.headline)
+            Text("New Folder").font(.headline)
             TextField("untitled folder", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit { create(name) }
-            Text("Up to \(FileChangeNames.maxNameLength) characters, and no "
+            Text("Up to \(FileChangeNames.maxNameLength) characters, no "
                  + "colons.")
                 .font(.caption)
                 .foregroundStyle(.secondary)

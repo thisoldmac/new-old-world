@@ -29,9 +29,10 @@ What remains open:
   guest. The independent client proves ordinary HTTP contract use, not guest
   behavior.
 - The host has no dedicated developer-facing API-key copy/bootstrap control.
-  The secret is currently visible through the MCP bearer-mode card, and the
-  official CLI can read its private mode-0600 application credential. A
-  third-party application must not treat that file as public API.
+  The API credential is distinct from the token exposed through the MCP
+  bearer-mode card. The official CLI can read its private mode-0600
+  application credential, but a third-party application must not treat that
+  file as public API.
 - The CLI exposes transfer list/status/cancel and live event hints, but does
   not yet have the planned convenience spelling `transfers watch`; scripts
   must refetch transfer status after event hints.
@@ -41,6 +42,78 @@ What remains open:
 - V1 is loopback-only. Remote/LAN serving, TLS termination, daemon lifecycle,
   multi-principal authorization, OAuth, and scopes remain unimplemented
   security/deployment decisions.
+## FIXED: the host suite took the keyboard of whoever ran it — and that is why one Continuity test was "intermittent" (2026-08-20, `fix/host-test-keyboard-tap`)
+
+Reported as "something in the host test suite blocks my keyboard while it
+runs". It did, measurably, and the same suite was also spending the
+clipboard.
+
+**The tap.** `ContinuityEdgeController.init` defaulted `keyboardEnvironment`
+to `AppKitContinuityKeyboardEnvironment`, which builds a CONSUMING
+session-wide `CGEventTap` for keyDown, keyUp and flagsChanged. All ~39 of
+the suite's controller constructions named a POINTER stub; seven named a
+keyboard one. So any test that drove the pointer across the edge installed
+a real keyboard tap inside `xctest` — whose main runloop is inside a test
+and never services the tap's mach port, leaving the window server to wait
+out the timeout for every key the person pressed. Caught live with
+`CGGetEventTapList` during one of the human's own runs: mask `0x1c00`, 5.6
+SECONDS of average latency, twice in a row.
+
+The default is inert now; the running app names the real tap out loud, and
+`ContinuityEventTapOwnershipTests` asks the WINDOW SERVER what this process
+owns after driving the edge active — so a future default reaching either
+tap (the pointer environment builds a consuming one too) fails there
+instead of in somebody's typing.
+
+**This closes the entry below titled "`testTrustedButStillFailingTapNamesRelaunchNotPermission`
+is INTERMITTENT".** That test was passing BECAUSE of the defect. It asserts
+the POINTER capture's status sentence, and it left the keyboard seam
+unnamed — so a trusted `xctest` created a real tap, the keyboard seam wrote
+no status, and the sentence survived. When `tapCreate` failed instead
+(process not trusted, or another suite's tap already in the way) the
+keyboard seam wrote "keyboard capture needs Accessibility permission" over
+the sentence under test and the test went red. The entry guessed "shared
+process state between concurrently running suites" and was right about the
+shape: the shared state is the window server's tap list. It names a
+keyboard stub now and is deterministic.
+
+**The clipboard.** Three tests exercised the capture copy against
+`NSPasteboard.general` — the clipboard of whoever ran the suite — so every
+green run silently threw away what they had copied. The copy is one
+implementation with the board as a parameter now, and
+`NoSharedSystemStateInTests` scans the suite for the singleton.
+
+**And the weight, since the same session audited it.** The full gate was
+480s on this desk. The `NOW_MIRROR_ASSETS=none` pass costs 169s of that and
+is a second environment ONLY on a machine that has a pack: without one the
+first pass already resolved no pack and already took every degradation
+path, so on CI and on every fresh clone it re-ran 2,941 tests to re-prove
+the first run verbatim. It skips there now, naming why, and still runs on a
+pack desk. `scripts/test-all` separately re-ran the WHOLE host gate on
+failure just to show output it already had — eight minutes to reprint a
+log, and a rerun free to disagree with the first. `--fast` (218s) is the
+inner loop and says it is not the gate. `HostGateWiringTests` holds all
+three properties.
+
+**Still open, and deliberately not done here.**
+
+* An undeclared pack dependency is still caught only by the full no-pack
+  pass on a pack desk. It could be caught inside a single run — `AssetPack`
+  has exactly one byte-reading choke point, so an access hook plus per-test
+  attribution would name the test that read the pack without declaring it,
+  and the second pass could go entirely. Blocked on registering an
+  `XCTestObservation` before the first test in a SwiftPM bundle, which needs
+  an ObjC constructor target or a base class every test must inherit.
+  Neither is worth it while only one machine pays the 169s.
+* 24 tests take 75s of the suite's 150s. About 9s of that is real waiting on
+  injected timeouts in `MirrorContinuityControllerTests` (the values ARE
+  injectable; the tests pass production-sized ones), and ~34s is volume work
+  — a ten-thousand-row listing walk, a multi-megabyte transfer, and the
+  sweep-capture compose. Both are legitimate coverage in the wrong scope for
+  an inner loop; neither was moved, because scoping them out is a coverage
+  decision and not a cleanup.
+* The metal and live suites cost 6.5s to SKIP, in guard setup that runs
+  before they decide not to run.
 
 ## BUILT AND TESTED, NOT DRIVEN BY HAND: the MCP arc — auth modes, two-column card page, durable records DB (2026-08-20, `feat/mcp-http-auth-modes` → `feat/mcp-module-cards` → `feat/mcp-records-db`, PRs #55–#57)
 

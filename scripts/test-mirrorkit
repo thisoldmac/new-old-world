@@ -92,6 +92,7 @@ run_swift_step() {
 # the pack a skip would be a gate quietly declining to run, so this turns
 # them back into failures whenever one resolves. The pack's own resolver
 # prints where it looked; this only decides how hard absence bites.
+pack_present=unknown
 if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
     pack=${NOW_MIRROR_ASSETS:-}
     if [ -z "$pack" ]; then
@@ -102,8 +103,10 @@ if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
     if [ -n "$pack" ] && [ -f "$pack/manifest.json" ]; then
         NOW_REQUIRE_ASSET_PACK=1
         export NOW_REQUIRE_ASSET_PACK
+        pack_present=yes
         echo "==> asset pack found ($pack) — pack gates ENFORCED"
     else
+        pack_present=no
         echo "==> asset pack absent — pack gates will SKIP by name."
         echo "    tools/extract-assets-offline regenerates it; see"
         echo "    docs/asset-pack.md."
@@ -127,10 +130,20 @@ run_swift_step "$scratch_root/swift-test.log" \
 # happens to have the dependency is the silent-skip defect rebuilt: a
 # fresh clone has no pack, and "it works here" would be all anyone could
 # say. The build is already cached, so this costs the test run only.
-echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
-run_swift_step "$scratch_root/swift-test-no-assets.log" \
-    env NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
-    swift test --disable-swift-testing \
-    --package-path "$package" --scratch-path "$scratch_root/swift"
+#
+# Only where there are two environments to compare, though: with no pack
+# resolved the run above already WAS the no-pack run, and repeating it
+# under `NOW_MIRROR_ASSETS=none` re-proves an identical environment. See
+# the same passage in scripts/test-host.
+if [ "$pack_present" = no ]; then
+    echo "==> skipping the NOW_MIRROR_ASSETS=none pass — no pack resolved,"
+    echo "    so the run above WAS the no-pack run (identical environment)."
+else
+    echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
+    run_swift_step "$scratch_root/swift-test-no-assets.log" \
+        env NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
+        swift test --disable-swift-testing \
+        --package-path "$package" --scratch-path "$scratch_root/swift"
+fi
 
 echo "==> MirrorKit gate passed"

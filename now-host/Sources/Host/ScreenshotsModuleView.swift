@@ -42,7 +42,7 @@ struct ScreenshotsModuleView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Screen")
                         .font(.largeTitle.weight(.semibold))
-                    Text("Capture \(model.connection.peerLabel)'s screen over the wire.")
+                    Text("Screen capture from \(model.connection.peerLabel), over the connection.")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -69,12 +69,12 @@ struct ScreenshotsModuleView: View {
                 /* The screen being watched is the driven machine's, not
                    this one's. */
                 .help(model.streamGateTooltip
-                      ?? "Watch \(MachineNaming.possessive(model.connection)) "
+                      ?? "Stream \(MachineNaming.possessive(model.connection)) "
                          + "screen live")
 
                 if model.isStreaming {
                     Button("Refresh") { model.refreshStream() }
-                        .help("Ask for a whole frame")
+                        .help("Request a full frame")
                 }
 
                 if model.isCapturing {
@@ -164,7 +164,7 @@ struct ScreenshotsModuleView: View {
         } label: {
             Label("Settings", systemImage: "slider.horizontal.3")
         }
-        .help("How captures and streams cross the wire")
+        .help("Capture and transfer settings")
     }
 
     /// The wire plumbing, and nothing else.
@@ -191,9 +191,9 @@ struct ScreenshotsModuleView: View {
                 } header: {
                     Text("Transfer")
                 } footer: {
-                    Text("Smaller chunks and a pause between them leave "
+                    Text("Smaller chunks and a longer pause keep "
                          + "\(MachineNaming.sentence(model.connection)) "
-                         + "responsive while it sends; larger ones finish "
+                         + "responsive while sending; larger ones finish "
                          + "sooner.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -210,9 +210,9 @@ struct ScreenshotsModuleView: View {
                     Text("Stream")
                 } footer: {
                     /* A guard rail rather than a target — see maxFps. */
-                    Text("A ceiling, not a goal: this hardware captures "
-                         + "well below it. It exists to stop unchanged "
-                         + "frames flooding the wire.")
+                    Text("Upper bound, not a target. Limits repeated "
+                         + "frames on the connection; the hardware captures well "
+                         + "below it.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -224,9 +224,9 @@ struct ScreenshotsModuleView: View {
                 } header: {
                     Text("Encoding")
                 } footer: {
-                    Text("Sent with every request, so the side that asks "
+                    Text("Sent with every request; the requesting side "
                          + "decides. \(drivenMachinePossessive) own panel "
-                         + "governs only what it starts itself.")
+                         + "governs only captures it starts.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -341,8 +341,9 @@ struct ScreenshotsModuleView: View {
             .pickerStyle(.menu)
             .fixedSize()
             .disabled(model.isCapturing || model.isStreaming)
-            .help("How many colours \(MachineNaming.sentence(model.connection)) "
-                  + "sends. Fewer means less to carry.")
+            .help("Colour depth sent by "
+                  + "\(MachineNaming.sentence(model.connection)). "
+                  + "Fewer colours, less to carry.")
 
             Toggle("Save captures", isOn: $model.autoSave)
             Toggle("Copy to clipboard", isOn: $model.autoCopy)
@@ -412,7 +413,7 @@ struct ScreenshotsModuleView: View {
         panel.canCreateDirectories = true
         panel.directoryURL = model.saveDirectory
         panel.prompt = "Choose"
-        panel.message = "Choose where New Old World saves captures."
+        panel.message = "Destination for saved captures."
         if panel.runModal() == .OK, let url = panel.url {
             model.saveDirectory = url
         }
@@ -518,14 +519,15 @@ struct ScreenshotsModuleView: View {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 42))
                 .foregroundStyle(.secondary)
-            Text("Nothing Captured Yet")
+            Text("No Captures")
                 .font(.title2.weight(.semibold))
             Text(model.connection.canCapture
-                 ? "Press Capture to pull "
+                 ? "Press Capture to read "
                    + "\(MachineNaming.possessive(model.connection)) screen "
-                   + "across the wire."
-                 : "Connect \(MachineNaming.simpleReference) first — it "
-                   + "dials \(MachineNaming.thisMac).")
+                   + "over the connection."
+                 : "Not connected. "
+                   + "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
+                   + "connects to \(MachineNaming.thisMac).")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)

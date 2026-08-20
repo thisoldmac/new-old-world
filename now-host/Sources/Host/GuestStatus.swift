@@ -69,7 +69,7 @@ enum GuestStatus: Equatable {
                 + "\(MachineNaming.commonNoun) connected"
         case .connected(let name, let quiet):
             guard quiet > Self.quietAfter else { return "Connected: \(name)" }
-            return "\(name) — quiet for \(Int(quiet))s"
+            return "\(name) — idle for \(Int(quiet))s"
         case .failed(let reason):
             return reason
         }

@@ -307,3 +307,36 @@ final class AppKitContinuityKeyboardEnvironment:
         return value
     }
 }
+
+/// The environment a controller gets when nobody names one: it installs
+/// nothing at all.
+///
+/// **The default must never be the real tap.** The AppKit environment builds
+/// a CONSUMING session-wide `CGEventTap` for keyDown, keyUp and flagsChanged,
+/// so whichever process owns it stands in front of every keystroke on the
+/// Mac. That is right for the running app, whose main runloop services the
+/// tap's port in milliseconds, and catastrophic for anything else: an
+/// `xctest` process is inside a test on its main thread, the port is not
+/// serviced, and the window server waits out the tap's timeout for every key
+/// the person presses. That is not hypothetical — it shipped. Thirty-two of
+/// the thirty-nine `ContinuityEdgeController` constructions in the suite
+/// stubbed the POINTER environment and let the keyboard one default, so any
+/// test that drove the pointer across the edge froze the human's typing for
+/// as long as the suite ran (a live `CGGetEventTapList` caught the tap with
+/// 5.6 SECONDS of average latency).
+///
+/// So production names `AppKitContinuityKeyboardEnvironment` out loud
+/// (`MirrorContinuityController`, gated by
+/// `ContinuityEventTapOwnershipTests`), and forgetting to name an
+/// environment now costs a plane that does nothing rather than a Mac that
+/// cannot be typed on.
+@MainActor
+final class InertContinuityKeyboardEnvironment: ContinuityKeyboardEnvironment {
+    func start(
+        policy: ContinuityKeyboardCapturePolicy,
+        handler: @escaping @MainActor (HostKeySample) -> Void,
+        tapDisabled: @escaping @MainActor (String) -> Void
+    ) -> AnyObject? { nil }
+
+    func stop(_ token: AnyObject) {}
+}

@@ -47,7 +47,7 @@ const char *now_net_state_sentence(NetFactState state)
            card lost its separate blurb line, not this sentence its
            reassurance. */
         return "Open Transport publishes no way to list a Mac's "
-               "connections. Nothing is wrong with this Mac.";
+               "connections. Not a fault on this Mac.";
     }
     return "";
 }

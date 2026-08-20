@@ -78,7 +78,8 @@ final class GuestCapabilityGateTests: XCTestCase {
         XCTAssertTrue(reason.contains("unsupported message type"))
         XCTAssertTrue(reason.contains("not-implemented"))
         // And it must not read as damage.
-        XCTAssertTrue(reason.contains("Nothing is wrong with the machine"))
+        XCTAssertTrue(reason.contains("Not a fault"),
+                      "absence must not read as damage: \(reason)")
     }
 
     func testEveryRequirementServedIsPlainlyAllowed() {
