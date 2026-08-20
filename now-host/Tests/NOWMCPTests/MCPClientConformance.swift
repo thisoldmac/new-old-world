@@ -466,6 +466,11 @@ extension MCPConformance {
         case failed
         /// A person must mint the authority needed to call this row.
         case humanGated = "human-gated"
+        /// The tool answered correctly that a precondition this surface
+        /// cannot mint is absent. Not a refusal on the merits and not a
+        /// coverage gap: the capability is reachable, and the lane it
+        /// needs is one only a configured host has.
+        case expectedUnavailable = "expected-unavailable"
         /// No legal argument exists on this surface. Named, never skipped.
         case uncovered
     }
@@ -492,6 +497,20 @@ extension MCPConformance {
         let elapsed: TimeInterval
     }
 
+    /// Structural preconditions a headless conformance run cannot satisfy,
+    /// and the flag that says whether this run satisfied each anyway.
+    ///
+    /// The same shape as `live`: a code is the honest answer when its
+    /// precondition is absent and a FALSE one when it is present, so the
+    /// verdict turns on the run's own configuration rather than on the
+    /// sentence. `now_guest_files_upload_file` reads bytes out of the chat
+    /// workspace lane, whose root is pinned on the companion's command
+    /// line at spawn (`--workspace-root`) or in-process before an HTTP
+    /// lane turn. This driver spawns without one, so the row's no-lane
+    /// answer is correct and scoring it `refused` overstated what the
+    /// surface had been asked.
+    static let workspacePreconditionCode = "now-files-workspace-unavailable"
+
     /// Reads one `tools/call` reply and says which of the four it is.
     ///
     /// `live` is the one thing that changes the verdict rather than the
@@ -499,7 +518,8 @@ extension MCPConformance {
     /// from a healthy machine and is a failure. With no host it is the
     /// honest one.
     static func classify(_ reply: [String: Any],
-                         live: Bool) -> (Verdict, String) {
+                         live: Bool,
+                         workspacePinned: Bool) -> (Verdict, String) {
         if let error = reply["error"] as? [String: Any] {
             let code = (error["code"] as? NSNumber)?.intValue ?? 0
             let message = (error["message"] as? String) ?? ""
@@ -527,7 +547,8 @@ extension MCPConformance {
             result["structuredContent"] as? [String: Any] else {
             return (.failed, "a result with no structuredContent")
         }
-        return classify(structured: structured, live: live)
+        return classify(structured: structured, live: live,
+                        workspacePinned: workspacePinned)
     }
 
     /// The projected envelope, and the four families that do not use it.
@@ -536,7 +557,8 @@ extension MCPConformance {
     /// a new capability answering in an existing shape is classified
     /// correctly by a file that has never heard of it.
     static func classify(structured: [String: Any],
-                         live: Bool) -> (Verdict, String) {
+                         live: Bool,
+                         workspacePinned: Bool) -> (Verdict, String) {
         if let outcome = structured["outcome"] as? String {
             let payload = structured[outcome] as? [String: Any]
             /* `unavailable` is the one outcome name every family spells the
@@ -546,6 +568,15 @@ extension MCPConformance {
                 if live, code == "now-host-unavailable" {
                     return (.failed, "answered now-host-unavailable while "
                             + "a host was running")
+                }
+                if code == workspacePreconditionCode {
+                    if workspacePinned {
+                        return (.failed, "answered "
+                                + "\(workspacePreconditionCode) while a "
+                                + "workspace root was pinned")
+                    }
+                    let (_, detail) = refusal(payload, kind: "unavailable")
+                    return (.expectedUnavailable, detail)
                 }
                 return refusal(payload, kind: "unavailable")
             }

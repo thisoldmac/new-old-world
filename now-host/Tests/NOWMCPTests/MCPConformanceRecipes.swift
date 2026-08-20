@@ -411,9 +411,10 @@ enum MCPConformanceRecipes {
         "now_guest_files_upload_file": .fixed(
             "A workspace-relative name that cannot exist. This companion is "
                 + "spawned without --workspace-root, so the row's own "
-                + "no-lane refusal is the real answer — the containment and "
-                + "read paths are covered by its projection tests, which "
-                + "can pin a root; this surface cannot.",
+                + "no-lane answer is the correct one and scores "
+                + "expected-unavailable rather than refused — the "
+                + "containment and read paths are covered by its projection "
+                + "tests, which can pin a root; this surface cannot.",
             ["localPath": "conformance-never-written.bin",
              "destinationPath": "probe.bin",
              "container": "data"]),
