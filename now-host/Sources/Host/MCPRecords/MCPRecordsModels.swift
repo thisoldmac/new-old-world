@@ -103,7 +103,6 @@ struct MCPInitializationEvidence: Equatable, Sendable {
     let sessionKey: String
     let firstSeen: Date
     let lastSeen: Date
-    let isInstallationLocal = true
 }
 
 struct MCPTargetRecord: Identifiable, Equatable, Sendable {

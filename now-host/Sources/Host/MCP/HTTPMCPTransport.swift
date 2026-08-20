@@ -211,8 +211,7 @@ final class MCPHTTPWorkspaceGrantAuthority: @unchecked Sendable {
         lock.withLock {
             pending = pending.filter { $0.value.expiresAt > now }
             guard pending.count < maximumOutstanding else { return nil }
-            let token = (UUID().uuidString + UUID().uuidString)
-                .replacingOccurrences(of: "-", with: "").lowercased()
+            let token = MCPOAuthAuthority.randomHex(32)
             pending[token] = .init(
                 grant: HostWorkspaceGrant(workspaceRoot: workspaceRoot),
                 expiresAt: now.addingTimeInterval(lifetime))

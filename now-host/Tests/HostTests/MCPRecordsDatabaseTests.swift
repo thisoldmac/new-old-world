@@ -48,7 +48,6 @@ final class MCPRecordsDatabaseTests: XCTestCase {
         XCTAssertEqual(initialization?.sessionKey, "pid:42")
         XCTAssertEqual(initialization?.firstSeen, first)
         XCTAssertEqual(initialization?.lastSeen, lastInitialization)
-        XCTAssertTrue(initialization?.isInstallationLocal == true)
 
         let action = try await database.latestAction(kind: .mcpStdio)
         XCTAssertEqual(action?.action.at, actionAt)

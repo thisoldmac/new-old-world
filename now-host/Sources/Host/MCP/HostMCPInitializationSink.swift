@@ -10,9 +10,8 @@ struct HostMCPInitializationSink: MCPClientLifecycleSink {
         async {
         await records?.recordInitialization(agent: MCPAgentIdentity(
             kind: .mcpHTTP,
-            clientName: MCPAgentIdentity.bounded(initialization.clientName),
-            clientVersion: MCPAgentIdentity.bounded(
-                initialization.clientVersion),
+            clientName: initialization.clientName,
+            clientVersion: initialization.clientVersion,
             sessionKey: initialization.sessionKey))
     }
 }
