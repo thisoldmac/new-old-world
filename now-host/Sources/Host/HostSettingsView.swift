@@ -235,7 +235,7 @@ private struct SidebarSettingsSection: View {
 
 // MARK: - MCP
 
-/// Moved out of `MCPModuleView`'s two transport cards: launch-time policy,
+/// Moved out of `MCPModuleView`'s transport card: launch-time policy,
 /// checked rarely and never mid-session, so it does not need to live beside
 /// the running/stopped state it no longer controls. The port field and
 /// everything about what an agent has done stay in the module — this tab
@@ -248,10 +248,8 @@ private struct MCPSettingsSection: View {
             Section("MCP") {
                 Toggle("Start HTTP automatically",
                        isOn: $model.httpStartsAutomatically)
-                Toggle("Start Standard Input automatically (Deprecated)",
-                       isOn: $model.stdioStartsAutomatically)
                 Text("Applies at next launch. Current transport state, "
-                     + "socket and port are on the MCP page.")
+                     + "access mode and port are on the MCP page.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -76,11 +76,6 @@ The release mode refuses incomplete integration and generates `security.txt` and
   shared bake.
 - Do not close a screenshot gap for a placeholder. List all remaining placeholder IDs in the release notes.
 - Confirm no page describes tested or emulator evidence as metal-verified.
-- For the MCP Standard Input deprecation candidate, name the exact numbered
-  candidate in the GitHub release notes as the expected last release where
-  `--mcp-stdio` executes. Preserve the explicit extension condition from
-  `RELEASING.md`; a calendar date or elapsed cycle is not sufficient evidence
-  to advance to the tombstone.
 
 ## Perform the manual accessibility review
 

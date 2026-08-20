@@ -151,7 +151,6 @@ extension MCPHTTPAuthMode {
 /// undo. The page observes both.
 @MainActor
 final class AgentActivityModel: ObservableObject {
-    @Published private(set) var stdio: MCPTransportState = .unopened
     @Published private(set) var http: MCPTransportState = .unopened
     @Published private(set) var httpDiagnostic: MCPHTTPDiagnosticState =
         .notConfigured
@@ -162,23 +161,6 @@ final class AgentActivityModel: ObservableObject {
     @Published private(set) var httpInFlight = 0
     @Published private(set) var httpFirstSeen: Date?
     @Published private(set) var httpLastSeen: Date?
-
-    func stdioOpened(at endpoint: String) {
-        stdio = .open(endpoint: endpoint)
-    }
-
-    func stdioUnavailable(_ reason: String) {
-        stdio = .unavailable(reason)
-    }
-
-    /// The person switched the server off from the MCP pane.
-    ///
-    /// The events stay: what an agent did to this Mac is not undone by
-    /// closing the door it came through, and a record that vanished when the
-    /// server stopped would be the one that mattered most.
-    func stdioStopped() {
-        stdio = .stopped
-    }
 
     /// `bearerToken` is nil when the listener runs in a mode that has no
     /// copyable secret (unauthenticated, oauth).
@@ -250,19 +232,19 @@ final class AgentActivityModel: ObservableObject {
     }
 
     /// The presence card is about agents, not transport implementation.
-    /// Preserve the kernel-backed stdio companion rows while folding HTTP's
+    /// Preserve the kernel-backed local-agent rows while folding HTTP's
     /// bounded request clocks into the totals the person reads.
-    func combinedActivity(_ stdio: AgentCompanionActivity)
+    func combinedActivity(_ local: AgentCompanionActivity)
         -> AgentCompanionActivity {
         .init(
-            companions: stdio.companions,
-            totalRequests: stdio.totalRequests + httpRequests,
-            inFlight: stdio.inFlight + httpInFlight,
-            refusedPeers: stdio.refusedPeers,
-            lastRefusal: stdio.lastRefusal,
-            firstSeen: [stdio.firstSeen, httpFirstSeen]
+            companions: local.companions,
+            totalRequests: local.totalRequests + httpRequests,
+            inFlight: local.inFlight + httpInFlight,
+            refusedPeers: local.refusedPeers,
+            lastRefusal: local.lastRefusal,
+            firstSeen: [local.firstSeen, httpFirstSeen]
                 .compactMap { $0 }.min(),
-            lastSeen: [stdio.lastSeen, httpLastSeen]
+            lastSeen: [local.lastSeen, httpLastSeen]
                 .compactMap { $0 }.max())
     }
 }

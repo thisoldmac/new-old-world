@@ -3,10 +3,9 @@ import XCTest
 
 /// Architectural guards for the MCP boundary a person deploys.
 ///
-/// NOW owns one MCP surface and two transports. HTTP is part of the running
-/// app; stdio is a narrow mode of that same executable. A second executable
-/// target would turn a transport choice back into a separately deployed
-/// component, which is the regression these source-level checks name.
+/// NOW owns one live MCP surface: HTTP inside the running app. The same-user
+/// local agent socket remains a separate developer/control seam, but no
+/// standard-input MCP process may sit in front of it.
 final class MCPTransportOwnershipTests: XCTestCase {
     func testPackageShipsNoSeparateMCPCompanionProduct() throws {
         let package = try GateSource.raw("now-host/Package.swift")
@@ -18,53 +17,46 @@ final class MCPTransportOwnershipTests: XCTestCase {
         XCTAssertTrue(package.contains(".executable(name: \"Host\""))
     }
 
-    func testBothTransportsUseNOWsOneMCPServer() throws {
-        let stdio = try GateSource.hostSwift(
-            "now-host/Sources/Host/MCP/StdioMCPTransport.swift")
+    func testHTTPIsTheOnlyLiveMCPTransport() throws {
         let http = try GateSource.hostSwift(
             "now-host/Sources/Host/MCP/HTTPMCPTransport.swift")
         let app = try GateSource.hostSwift("now-host/Sources/Host/App.swift")
+        let view = try GateSource.hostSwift(
+            "now-host/Sources/Host/MCPModuleView.swift")
+        let settings = try GateSource.hostSwift(
+            "now-host/Sources/Host/HostSettingsView.swift")
 
-        XCTAssertTrue(stdio.contains("NOWMCPServer("))
         XCTAssertTrue(http.contains("NOWMCPServer"),
                       "HTTP must remain typed around the shared MCP core.")
         XCTAssertTrue(app.contains("MCPHTTPListener("),
                       "The normal NOW app must own the HTTP listener.")
-        XCTAssertTrue(app.contains("[\"--mcp-stdio\"]"),
-                      "The same NOW executable must own stdio mode.")
+        for source in [app, view, settings] {
+            XCTAssertFalse(source.contains("startMCPStdio"))
+            XCTAssertFalse(source.contains("startStdio"))
+            XCTAssertFalse(source.contains("stdioStartsAutomatically"))
+            XCTAssertFalse(source.contains("Standard Input (Deprecated)"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath:
+            GateSource.repoRoot.appendingPathComponent(
+                "now-host/Sources/Host/MCP/StdioMCPTransport.swift").path))
     }
 
-    func testMCPPageOwnsIndependentControlsForBothTransports() throws {
+    func testMCPPageOwnsHTTPControlsAndNoStdioCard() throws {
         let view = try GateSource.hostSwift(
             "now-host/Sources/Host/MCPModuleView.swift")
-        let deprecation = try GateSource.hostSwift(
-            "now-host/Sources/Host/MCP/MCPStdioDeprecation.swift")
 
         for required in [
-            "title: \"Standard Input (Deprecated)\"",
-            "state: model.stdio",
-            "start: startStdio",
-            "stop: stopStdio",
             "title: \"HTTP (Recommended)\"",
             "state: model.http",
             "start: startHTTP",
             "stop: stopHTTP",
         ] {
-            XCTAssertTrue((view + deprecation).contains(required),
-                          "MCP page lost independent transport control: "
+            XCTAssertTrue(view.contains(required),
+                          "MCP page lost HTTP transport control: "
                               + required)
         }
-
-        for required in [
-            "lastStdioInitialization",
-            "lastStdioAction",
-            "This evidence is from this installation only.",
-            "Migrate to Streamable HTTP",
-        ] {
-            XCTAssertTrue((view + deprecation).contains(required),
-                          "MCP page lost deprecation evidence or migration copy: "
-                              + required)
-        }
+        XCTAssertFalse(view.contains("transportStdio"))
+        XCTAssertFalse(view.contains("stdioConfiguration"))
 
         for required in [
             "TextField(\"Port\", value: $settings.httpPort",
@@ -76,9 +68,7 @@ final class MCPTransportOwnershipTests: XCTestCase {
         }
     }
 
-    /// Start-automatically for both transports lives in Settings now (G-5 /
-    /// H17), not on the transport card — it is launch-time policy, checked
-    /// once a launch, unlike the port field and lifecycle buttons above.
+    /// HTTP start policy lives in Settings, not on its runtime card.
     func testStartAutomaticallyMovedToSettingsNotTheMCPPage() throws {
         let view = try GateSource.hostSwift(
             "now-host/Sources/Host/MCPModuleView.swift")
@@ -88,25 +78,15 @@ final class MCPTransportOwnershipTests: XCTestCase {
         XCTAssertFalse(view.contains("Toggle(\"Start"),
                        "the MCP page must not carry its own copy of "
                            + "start-automatically once Settings owns it")
-        for required in [
-            "$model.stdioStartsAutomatically",
-            "$model.httpStartsAutomatically",
-        ] {
-            XCTAssertTrue(settings.contains(required),
-                          "Settings lost MCP's start-automatically control: "
-                              + required)
-        }
+        XCTAssertTrue(settings.contains("$model.httpStartsAutomatically"))
+        XCTAssertFalse(settings.contains("stdioStartsAutomatically"))
     }
 
     func testRuntimeControlsDoNotRewriteAutomaticStartPolicy() throws {
         let app = try GateSource.hostSwift("now-host/Sources/Host/App.swift")
 
-        XCTAssertFalse(app.contains(".stdioStartsAutomatically ="),
-                       "Starting or stopping stdio must not rewrite launch policy.")
         XCTAssertFalse(app.contains(".httpStartsAutomatically ="),
                        "Starting or stopping HTTP must not rewrite launch policy.")
-        XCTAssertTrue(app.contains(
-            "if preferences.stdioStartsAutomatically { startMCPStdio() }"))
         XCTAssertTrue(app.contains(
             "if preferences.httpStartsAutomatically { startMCPHTTP() }"))
     }

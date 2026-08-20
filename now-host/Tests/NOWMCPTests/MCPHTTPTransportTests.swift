@@ -12,29 +12,17 @@ final class MCPHTTPTransportTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         let preferences = MCPTransportPreferences(defaults: defaults)
 
-        XCTAssertFalse(preferences.stdioStartsAutomatically)
-        XCTAssertNil(defaults.object(
-            forKey: MCPTransportPreferences.Keys.stdioEnabled),
-            "reading the clean-install default must not manufacture a preference")
         XCTAssertFalse(preferences.httpStartsAutomatically)
         XCTAssertEqual(preferences.httpPort, 5254)
         XCTAssertEqual(preferences.httpAuthMode, .bearer)
-        preferences.stdioStartsAutomatically = true
         preferences.httpStartsAutomatically = true
         preferences.httpPort = 6254
         preferences.httpAuthMode = .oauth
 
         let restored = MCPTransportPreferences(defaults: defaults)
-        XCTAssertTrue(restored.stdioStartsAutomatically,
-                      "an explicit pre-upgrade opt-in must survive")
         XCTAssertTrue(restored.httpStartsAutomatically)
         XCTAssertEqual(restored.httpPort, 6254)
         XCTAssertEqual(restored.httpAuthMode, .oauth)
-
-        restored.stdioStartsAutomatically = false
-        XCTAssertFalse(MCPTransportPreferences(defaults: defaults)
-            .stdioStartsAutomatically,
-            "an explicit opt-out must survive")
 
         /* A value written by a build this one has never heard of falls back
            to bearer, the mode every install had before modes existed. */
@@ -50,13 +38,11 @@ final class MCPHTTPTransportTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         let settings = MCPTransportSettingsModel(defaults: defaults)
 
-        settings.stdioStartsAutomatically = false
         settings.httpStartsAutomatically = true
         settings.httpPort = 6354
         settings.httpPort = 0
 
         let restored = MCPTransportPreferences(defaults: defaults)
-        XCTAssertFalse(restored.stdioStartsAutomatically)
         XCTAssertTrue(restored.httpStartsAutomatically)
         XCTAssertEqual(restored.httpPort, 6354)
         XCTAssertEqual(settings.httpPort, 6354)
@@ -221,7 +207,7 @@ final class MCPHTTPTransportTests: XCTestCase {
         XCTAssertEqual(afterDelete.status, 404)
     }
 
-    func testHTTPAndStdioUseTheSameMCPDispatcher() async throws {
+    func testHTTPUsesTheSharedMCPDispatcher() async throws {
         let direct = NOWMCPServer(client: SocketAgentIntegrationClient(),
                                   audit: LocalMCPAuditSink())
         let service = service()

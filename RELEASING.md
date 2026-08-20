@@ -119,12 +119,6 @@ For every candidate:
 7. Publish the `-rc.N` GitHub release as a prerelease. Final publication reuses
    the accepted revision and marks the final product tag as the release.
 
-For the first numbered pre-alpha candidate that omits MCP Standard Input, the
-GitHub release notes must name the breaking removal and point stale
-`--mcp-stdio` configurations to Streamable HTTP. There is no required
-deprecation release cycle. Do not fill in a version before the
-`release/vX.Y.Z` branch and immutable `-rc.N` tag exist.
-
 The planned alpha profile is for a trusted local network. Its classic wire is
 plaintext, unauthenticated, and intentionally reachable beyond loopback; do
 not describe a candidate as safe for an untrusted LAN or the internet. See

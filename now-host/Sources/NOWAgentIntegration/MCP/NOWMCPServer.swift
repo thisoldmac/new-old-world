@@ -188,7 +188,7 @@ public actor NOWMCPServer {
         identity?.setClient(name: clientInfo["name"] as? String,
                             version: clientInfo["version"] as? String)
         if let lifecycle {
-            await lifecycle.recordInitialization(.init(
+            lifecycle.recordInitialization(.init(
                 clientName: clientInfo["name"] as? String,
                 clientVersion: clientInfo["version"] as? String,
                 sessionKey: identity?.sessionKey))

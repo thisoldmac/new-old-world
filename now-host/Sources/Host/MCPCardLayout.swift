@@ -11,7 +11,6 @@ enum MCPCardColumn: String, Codable, Sendable {
 /// mentions it.
 enum MCPCardID: String, Codable, CaseIterable, Sendable {
     case transportHTTP = "transport.http"
-    case transportStdio = "transport.stdio"
     case presence
     case heldLane = "held-lane"
     case consent
@@ -25,7 +24,7 @@ enum MCPCardID: String, Codable, CaseIterable, Sendable {
 
     /// Only transport cards carry a session log tail.
     var hasLogTail: Bool {
-        self == .transportStdio || self == .transportHTTP
+        self == .transportHTTP
     }
 }
 
@@ -36,7 +35,7 @@ enum MCPCardID: String, Codable, CaseIterable, Sendable {
 /// newer build with a card this one has never heard of still decodes; the
 /// unknown id is dropped by `sanitised` instead of failing the whole blob.
 struct MCPCardLayout: Codable, Equatable {
-    static let currentVersion = 2
+    static let currentVersion = 3
 
     var version: Int
     var left: [String]
@@ -58,22 +57,11 @@ struct MCPCardLayout: Codable, Equatable {
             openLogTails: [])
     }
 
-    /// Version 1 persisted the then-default stdio-first pair even when the
-    /// person had never reordered a card. Promote only that exact prefix;
-    /// any other arrangement is an intentional layout and remains theirs.
+    /// The version advances when a card leaves the product. `sanitised`
+    /// removes that retired raw id while preserving every surviving card's
+    /// relative order and state.
     func migratedToCurrent() -> MCPCardLayout {
         var migrated = self
-        if version < 2,
-           left == [MCPCardID.transportStdio.rawValue,
-                    MCPCardID.transportHTTP.rawValue,
-                    MCPCardID.presence.rawValue,
-                    MCPCardID.heldLane.rawValue,
-                    MCPCardID.consent.rawValue],
-           right == [MCPCardID.activity.rawValue],
-           collapsed.isEmpty,
-           openLogTails.isEmpty {
-            migrated.left.swapAt(0, 1)
-        }
         migrated.version = Self.currentVersion
         return migrated
     }

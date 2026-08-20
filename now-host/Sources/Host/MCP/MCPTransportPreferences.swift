@@ -2,24 +2,17 @@ import Combine
 import Foundation
 import Security
 
-/// The two agent entry points are product settings owned by NOW, not command
-/// line environment belonging to a helper process.
+/// The HTTP MCP endpoint's product settings.
 struct MCPTransportPreferences {
     static let defaultHTTPPort: UInt16 = 5254
 
     enum Keys {
-        static let stdioEnabled = "mcp.stdio.enabled"
         static let httpEnabled = "mcp.http.enabled"
         static let httpPort = "mcp.http.port"
         static let httpAuthMode = "mcp.http.authMode"
     }
 
     let defaults: UserDefaults
-
-    var stdioStartsAutomatically: Bool {
-        get { defaults.bool(forKey: Keys.stdioEnabled) }
-        nonmutating set { defaults.set(newValue, forKey: Keys.stdioEnabled) }
-    }
 
     var httpStartsAutomatically: Bool {
         get { defaults.bool(forKey: Keys.httpEnabled) }
@@ -56,11 +49,6 @@ struct MCPTransportPreferences {
 /// Stop from silently changing launch policy.
 @MainActor
 final class MCPTransportSettingsModel: ObservableObject {
-    @Published var stdioStartsAutomatically: Bool {
-        didSet {
-            preferences.stdioStartsAutomatically = stdioStartsAutomatically
-        }
-    }
     @Published var httpStartsAutomatically: Bool {
         didSet {
             preferences.httpStartsAutomatically = httpStartsAutomatically
@@ -84,7 +72,6 @@ final class MCPTransportSettingsModel: ObservableObject {
     init(defaults: UserDefaults) {
         let preferences = MCPTransportPreferences(defaults: defaults)
         self.preferences = preferences
-        stdioStartsAutomatically = preferences.stdioStartsAutomatically
         httpStartsAutomatically = preferences.httpStartsAutomatically
         httpPort = preferences.httpPort
         httpAuthMode = preferences.httpAuthMode

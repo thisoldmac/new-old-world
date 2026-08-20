@@ -297,17 +297,14 @@ final class HostSettingsRestructureTests: XCTestCase {
         let model = try XCTUnwrap(state.moduleRuntime(
             for: "mcp", as: MCPHostModuleRuntime.self)?.transportSettings)
 
-        XCTAssertFalse(model.stdioStartsAutomatically, "off by default")
         XCTAssertFalse(model.httpStartsAutomatically, "off by default")
 
-        model.stdioStartsAutomatically = true
         model.httpStartsAutomatically = true
 
         // What App.swift's launch hook actually reads: a fresh read of the
         // raw preferences struct, not the model instance — proving the
         // write went to UserDefaults and not just to this object's memory.
         let launchTimeRead = MCPTransportPreferences(defaults: defaults)
-        XCTAssertTrue(launchTimeRead.stdioStartsAutomatically)
         XCTAssertTrue(launchTimeRead.httpStartsAutomatically)
     }
 

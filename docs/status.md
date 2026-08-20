@@ -2,7 +2,7 @@
 
 # Status: what works and what does not
 
-## 2026-08-20 — HTTP is the recommended MCP transport; Standard Input is deprecated
+## 2026-08-20 — HTTP is NOW's only MCP transport
 
 Streamable HTTP now stands on its own conformance, listener, authentication,
 session, lifecycle-record, and session-scoped workspace tests. The MCP module
@@ -10,19 +10,19 @@ puts HTTP first and supplies loopback recipes for bearer and OAuth; explicit
 warned no-auth loopback remains supported. An HTTP identity alone receives no
 modern-Mac workspace root.
 
-Standard Input remains functional while the pre-alpha removal work is in
-flight but is off by default when no preference exists. Existing explicit on
-and off preferences remain unchanged. Every `--mcp-stdio` process writes one
-bounded migration warning to stderr while stdout remains MCP framing. The
-module separately shows the last local stdio initialization and audited action
-and labels their installation-local scope.
+The live Standard Input implementation, settings, card, automatic-start
+preference, conformance harness, and parity tests are removed. A stale
+`--mcp-stdio` launch exits unsuccessfully after one bounded stderr diagnostic
+and writes no protocol output. Historical Standard Input rows remain readable
+in the private activity database. NOW's same-user local automation socket also
+remains: emulator and host tooling use it directly, but it is not an MCP
+transport.
 
-This is an in-tree **deprecation candidate**, not a compatibility-release
-promise. Because NOW is pre-alpha, the tombstone and implementation deletion
-may follow in the same development line as soon as consumer disposition, HTTP
-replacement defects, emulator QA, and physical-machine QA are complete. No
-released deprecation cycle or observed zero-use window is required. This
-revision itself does not yet include the tombstone or implementation deletion.
+Emulator QA passed on mac99 / Mac OS 9.1 with the branch guest and extension
+staged into a private clone. The shipping host connected to that guest and its
+HTTP listener completed initialize, listed all 49 tools, probed live guest
+capabilities, and returned the guest process list in the explicitly configured
+no-auth mode. This is emulator evidence, not physical-machine verification.
 
 ## 2026-08-14 — Hardware, MCP, Files appearance, and shelf navigation are tested; runtime follow-up remains
 

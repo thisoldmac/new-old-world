@@ -106,9 +106,10 @@ client holding stdio open and sending one small line at a time was answered
 by **nothing at all**, on every one of the tools in this file. It survived
 because every driver this surface has ever had wrote its whole script and
 closed stdin, which is a batch rather than a client.
-[`StdioTransportLivenessTests`](../now-host/Tests/NOWMCPTests/StdioTransportLivenessTests.swift)
-spawns the real executable, writes one small line and holds stdin open — the
-one condition every previous driver removed.
+The now-retired `StdioTransportLivenessTests` spawned the real executable,
+wrote one small line, and held stdin open — the one condition every previous
+driver removed. It was deleted with the transport on 2026-08-20; this dated
+account remains as historical evidence.
 
 Both are the same lesson in different places: **a table of what a surface
 declares is not evidence that the surface answers.** Neither gate changes a
@@ -966,15 +967,16 @@ catalog, and a dead lane is a fact about the machine.*
 surface rather than reading it:
 
 ```
-# The gate. No host is reached: the companion is pointed at an endpoint
-# nothing binds, which is CI's shape.
+# The gate. It owns a real loopback listener with a deterministic no-host
+# adapter, which is CI's shape.
 swift test --filter MCPClientConformanceTests
 
-# The measurement. Needs a host and a guest, and asserts WHICH guest
-# before believing a row.
-NOW_AGENT_SOCKET_SUFFIX=<yours> NOW_MCP_CONFORMANCE_LIVE=1 \
-  NOW_MCP_CONFORMANCE_BUILD=<build prefix> \
-  swift test --filter MCPClientConformanceTests
+# The measurement. Launch an isolated host built from the candidate on the
+# lane-derived wire and HTTP ports, initialize its displayed HTTP endpoint,
+# assert the connected guest's build/session identity, then call the catalog
+# through that same MCP session. The 2026-08-20 stdio-removal QA used this
+# route for tools/list, now_list_machines, now_session_capabilities, and
+# now_list_processes against mac99 / Mac OS 9.1.
 ```
 
 Both print the table. Four verdicts, and the fourth is the one a
@@ -1480,4 +1482,6 @@ rederived: 2026-08-20T11:43:42-0400 ae5aa666 unchanged
 rederived: 2026-08-20T12:58:08-0400 d656ad93 unchanged
 rederived: 2026-08-20T12:58:33-0400 d656ad93 unchanged
 rederived: 2026-08-20T13:32:56-0400 30931464 sources
+rederived: 2026-08-20T15:33:40-0400 bff285cd unchanged
+rederived: 2026-08-20T15:45:16-0400 fab7b9aa unchanged
 -->

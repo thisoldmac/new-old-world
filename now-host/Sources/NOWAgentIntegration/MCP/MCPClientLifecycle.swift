@@ -31,5 +31,4 @@ public struct MCPClientInitialization: Equatable, Sendable {
 
 public protocol MCPClientLifecycleSink: Sendable {
     func recordInitialization(_ initialization: MCPClientInitialization)
-        async
 }

@@ -4,8 +4,7 @@ import NOWAgentIntegration
 
 /// How the HTTP transport decides whether a request may speak MCP. The
 /// loopback Host and Origin checks apply in every mode; this only selects
-/// what the Authorization header must carry. stdio is uid-authenticated by
-/// the kernel and has no mode.
+/// what the Authorization header must carry.
 enum MCPHTTPAuthMode: String, CaseIterable, Sendable {
     case unauthenticated = "none"
     case bearer
@@ -16,17 +15,20 @@ struct MCPHTTPConfiguration: Equatable {
     let port: UInt16
     let authMode: MCPHTTPAuthMode
     let bearerToken: String?
+    let embeddedAccessToken: String?
     let maximumHeaderBytes: Int
     let maximumSessions: Int
     let sessionLifetime: TimeInterval
 
     init(port: UInt16, authMode: MCPHTTPAuthMode, bearerToken: String?,
+         embeddedAccessToken: String? = nil,
          maximumHeaderBytes: Int = 16 * 1024,
          maximumSessions: Int = 8,
          sessionLifetime: TimeInterval = 30 * 60) {
         self.port = port
         self.authMode = authMode
         self.bearerToken = bearerToken
+        self.embeddedAccessToken = embeddedAccessToken
         self.maximumHeaderBytes = maximumHeaderBytes
         self.maximumSessions = maximumSessions
         self.sessionLifetime = sessionLifetime
@@ -41,6 +43,30 @@ struct MCPHTTPConfiguration: Equatable {
                   maximumHeaderBytes: maximumHeaderBytes,
                   maximumSessions: maximumSessions,
                   sessionLifetime: sessionLifetime)
+    }
+}
+
+/// One ephemeral credential shared only between the running HTTP listener
+/// and NOW's embedded Claude lane. It is neither a workspace grant nor an
+/// external OAuth identity, and it is never persisted or shown in the UI.
+final class MCPHTTPEmbeddedCredentialAuthority: @unchecked Sendable {
+    static let shared = MCPHTTPEmbeddedCredentialAuthority()
+
+    private let lock = NSLock()
+    private var oauthTokenByPort: [UInt16: String] = [:]
+
+    func token(port: UInt16, authMode: MCPHTTPAuthMode) -> String? {
+        guard authMode == .oauth else { return nil }
+        return lock.withLock {
+            if let existing = oauthTokenByPort[port] { return existing }
+            let token = MCPOAuthAuthority.randomHex(32)
+            oauthTokenByPort[port] = token
+            return token
+        }
+    }
+
+    func invalidateAll() {
+        lock.withLock { oauthTokenByPort.removeAll() }
     }
 }
 
@@ -310,10 +336,14 @@ actor MCPHTTPService {
             let challenge = "Bearer resource_metadata=\"http://\(host)"
                 + "/.well-known/oauth-protected-resource/mcp\""
             guard let value = request.headers["authorization"],
-                  value.hasPrefix("Bearer "), let oauth,
-                  await oauth.validateAccessToken(
-                    String(value.dropFirst("Bearer ".count)), now: now)
-            else {
+                  value.hasPrefix("Bearer "), let oauth else {
+                return response(401,
+                                headers: ["WWW-Authenticate": challenge])
+            }
+            let token = String(value.dropFirst("Bearer ".count))
+            let valid = token == configuration.embeddedAccessToken
+                ? true : await oauth.validateAccessToken(token, now: now)
+            guard valid else {
                 return response(401,
                                 headers: ["WWW-Authenticate": challenge])
             }

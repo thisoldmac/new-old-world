@@ -1,7 +1,7 @@
 ---
 page_id: mcp-module-reference
 title: MCP module
-description: Configure NOW's recommended HTTP MCP transport, migrate deprecated Standard Input clients, inspect the machine grant ceiling, and review recent agent activity without treating connection as consent.
+description: Configure NOW's HTTP MCP transport, inspect the machine grant ceiling, and review recent agent activity without treating connection as consent.
 doc_type: reference
 audience: operator
 lifecycle: experimental
@@ -18,22 +18,21 @@ last_verified: 2026-08-20
 
 ## What it does
 
-MCP presents NOW's recommended local Streamable HTTP endpoint and the
-temporarily retained, deprecated Standard Input compatibility transport. It
-also shows the selected classic Mac's explicit ceiling on what an agent may
-observe or change. Both transports use one catalog and dispatcher inside NOW;
-there is no separately installed MCP service.
+MCP presents NOW's local Streamable HTTP endpoint and the selected classic
+Mac's explicit ceiling on what an agent may observe or change. The catalog,
+dispatcher, and listener live inside NOW; there is no separately installed
+MCP service or Standard Input transport.
 
 ![The macOS MCP module showing transport and grant state](../../../assets/screenshots/modules/mcp/host.svg){ .now-placeholder }
 
 ## Availability
 
-The host app owns both transports and all projections. PowerPC provides the
+The host app owns the transport and all projections. PowerPC provides the
 machine consent page. NOW-68K does not expose this MCP consent surface.
 
 ## On the modern Mac
 
-The host exposes independent controls for:
+The host exposes controls for:
 
 - **HTTP (Recommended)**, a loopback listener running directly inside the
   normal NOW app.
@@ -52,12 +51,6 @@ The host exposes independent controls for:
     - **No authentication**: any process on this Mac can drive NOW over the
       port. The card says so in warning copy; the loopback Host and Origin
       checks still apply.
-- **Standard Input (Deprecated)**, a narrow `New Old World --mcp-stdio`
-  process launched by an MCP client. It remains functional while removal work
-  is in flight and writes one migration warning to stderr at each process
-  start. MCP replies on stdout remain newline-delimited JSON-RPC only. Its card
-  retains Start, Stop, and the copyable command for migration testing.
-
 ## Migrate a client to HTTP
 
 1. Open **MCP > HTTP (Recommended)** in New Old World.
@@ -67,21 +60,21 @@ The host exposes independent controls for:
 3. Start HTTP and copy the displayed `http://127.0.0.1:<port>/mcp` URL.
 4. For bearer or OAuth, use the matching copyable client recipe on the HTTP
    card. Do not copy credentials into logs or documentation.
-5. Initialize the client over HTTP, then remove its `--mcp-stdio` command only
-   after its normal tool workflow succeeds.
+5. Initialize the client over HTTP and exercise its normal tool workflow.
+
+`New Old World --mcp-stdio` has been removed. A stale configuration receives
+one diagnostic on stderr and no MCP protocol output; update it to the URL and
+access mode shown here.
 
 An HTTP credential identifies and authenticates a transport session; it does
 not grant a modern-Mac workspace. Ordinary external HTTP sessions start with
 no host-readable root. The embedded Chat lane can redeem one bounded,
 session-scoped workspace grant without retargeting another session.
 
-Each card has independent **Start** and **Stop** controls, which affect the
-current app session. The persisted launch policy is not here: **Start HTTP
-automatically** and **Start Standard Input automatically (Deprecated)** live
-in the Settings window's MCP tab, because they are read once at launch and
-never mid-session. A clean installation leaves Standard Input off. An existing
-explicit Standard Input on or off choice is preserved without rewriting the
-stored preference. They apply the next time NOW opens.
+The HTTP card has **Start** and **Stop** controls, which affect the current app
+session. The persisted **Start HTTP automatically** policy lives in the
+Settings window's MCP tab because it is read once at launch and never
+mid-session. It applies the next time NOW opens.
 
 The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
@@ -104,21 +97,10 @@ already said — capability, face, machine, outcome, bounded refusal reason,
 plus the client name an MCP client stated about itself — and never
 arguments or payloads.
 
-The deprecated Standard Input card separately reports its most recent
-successful initialization and most recent audited action, with bounded client
-identity and time. “None recorded” means only that this installation's local
-database has no matching evidence; it is not telemetry and is not proof that
-another installation or private client configuration is unused. Paths,
-arguments, payloads, file bytes, and credentials are not displayed.
-
-## Pre-alpha removal
-
-Standard Input is deprecated while the replacement work remains in the tree.
-NOW is pre-alpha, so this does not promise a separately shipped compatibility
-release. Once HTTP readiness, consumer disposition, emulator QA, and
-applicable physical-machine QA are complete, the live transport may be removed
-in the same development line. The first numbered candidate that omits it will
-call out the breaking removal and the Streamable HTTP migration path.
+Historical Standard Input initialization and action rows remain readable in
+the installation-local activity database. They are migration evidence, not a
+live transport or telemetry. Paths, arguments, payloads, file bytes, and
+credentials are not displayed.
 
 ## On the classic Mac
 
@@ -130,8 +112,7 @@ credentials or prove that an MCP client can reach the host.
 ## Common tasks
 
 - Confirm the selected machine and requested capability before granting.
-- Start HTTP for supported clients. Keep Standard Input running only while
-  migrating or testing rollback compatibility.
+- Start HTTP for supported clients.
 - Copy connection details from the HTTP card rather than
   locating a helper executable.
 - Read the recent call record after an agent action.
@@ -160,7 +141,7 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 16a42a888fc8216bdcc95843700122bfe589edf6
+sources-sha1: 39a485d5510a6e0c24e36cf8c23d5b4dd241c76b
 derive mcp-catalog sha256=0ba13827bca56a75d20d341f2455f7a8a90118af7b0e962864459ae1221bf6cb lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -369,4 +350,6 @@ rederived: 2026-08-20T11:43:42-0400 ae5aa666 sources
 rederived: 2026-08-20T12:58:08-0400 d656ad93 sources
 rederived: 2026-08-20T12:58:33-0400 d656ad93 sources
 rederived: 2026-08-20T13:32:56-0400 30931464 sources
+rederived: 2026-08-20T15:33:40-0400 bff285cd sources
+rederived: 2026-08-20T15:45:16-0400 fab7b9aa sources
 -->

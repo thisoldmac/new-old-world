@@ -1,9 +1,8 @@
 import Foundation
 import NOWAgentIntegration
 
-/// The stdio MCP face's audit sink: one bounded local report per invocation, to
-/// the running host, over the same per-uid private socket every other call
-/// uses.
+/// A local-socket test adapter that forwards one bounded audit report per
+/// invocation to the running host.
 ///
 /// It goes to the host rather than to a file of its own because the log a
 /// person reads is the host app's — its Logs page and its per-launch file in

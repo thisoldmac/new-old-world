@@ -7,25 +7,20 @@ search:
 
 # Open issues
 
-## DEPRECATION CANDIDATE, NOT SUNSET: Standard Input MCP remains executable (2026-08-20, `docs/stdio-mcp-sunset-plan`)
+## FIXED AND EMULATOR-TESTED: Standard Input MCP is removed (2026-08-20, `docs/stdio-mcp-sunset-plan`)
 
-HTTP is now the recommended MCP transport and clean installations leave
-Standard Input off. This pre-alpha branch currently retains `--mcp-stdio`, its
-manual Start/Stop controls, and transport parity only while the replacement
-gates are being closed. No released compatibility cycle is required.
-Advancing directly to the diagnostic tombstone and removal remains blocked on:
-
-* every known consumer being migrated, retired, or explicitly accepted as
-  broken, including an explicit disposition for Agentis;
-* a live HTTP qualification path through the shipping host adapter rather than
-  the deterministic no-host conformance stand-in;
-* no unresolved severity-1 or severity-2 HTTP replacement defects;
-* current-head Emulator QA and applicable physical-machine QA;
-* release notes for the first pre-alpha candidate that omits stdio.
-
-Phases 3 and 4 may land together when those items are complete. Time elapsed,
-installation-local absence of use, and a separately shipped deprecation build
-are not gates.
+Streamable HTTP is NOW's only live MCP transport. The Standard Input
+implementation and product controls are gone; `--mcp-stdio` is a diagnostic
+tombstone with no protocol output. Known HTTP consumers are migrated where NOW
+owns their configuration. Agentis remains explicitly accepted as broken until
+it supports the configured HTTP route. The focused HTTP, authentication,
+workspace-authority, lifecycle, catalog, and removal suites pass. Emulator QA
+then staged the branch guest and extension on mac99 / Mac OS 9.1, connected the
+shipping host on the lane-derived wire port, and initialized the live HTTP
+listener in explicit no-auth mode. The listener advertised 49 tools;
+`now_session_capabilities` probed the guest and `now_list_processes` returned
+its live process table. Physical-machine QA is separate and is not claimed by
+this host-transport change.
 
 ## FIXED: the host suite took the keyboard of whoever ran it — and that is why one Continuity test was "intermittent" (2026-08-20, `fix/host-test-keyboard-tap`)
 

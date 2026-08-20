@@ -514,14 +514,11 @@ final class HostAppState: ObservableObject {
     /// The sockets remain application services; the module owns the controls
     /// that expose them and clears those controls when its runtime shuts down.
     func configureMCPTransports(
-        startStdio: @escaping () -> Void,
-        stopStdio: @escaping () -> Void,
         startHTTP: @escaping () -> Void,
         stopHTTP: @escaping () -> Void
     ) {
         moduleRuntime(for: "mcp", as: MCPHostModuleRuntime.self)?
             .configureTransports(
-                startStdio: startStdio, stopStdio: stopStdio,
                 startHTTP: startHTTP, stopHTTP: stopHTTP)
     }
 

@@ -42,7 +42,7 @@ final class MCPRecordsSeamTests: XCTestCase {
         XCTAssertEqual(identity.clientVersion, "2.1")
         XCTAssertEqual(identity.sessionKey,
                        reply.headers["Mcp-Session-Id"])
-        let recorded = await lifecycle.last
+        let recorded = lifecycle.last
         XCTAssertEqual(recorded?.clientName, "Claude Code")
         XCTAssertEqual(recorded?.clientVersion, "2.1")
         XCTAssertEqual(recorded?.sessionKey,
@@ -117,10 +117,17 @@ final class MCPRecordsSeamTests: XCTestCase {
     }
 }
 
-private actor MCPInitializationSpy: MCPClientLifecycleSink {
-    private(set) var last: MCPClientInitialization?
+private final class MCPInitializationSpy: MCPClientLifecycleSink,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var recorded: MCPClientInitialization?
+
+    var last: MCPClientInitialization? {
+        lock.withLock { recorded }
+    }
 
     func recordInitialization(_ initialization: MCPClientInitialization) {
-        last = initialization
+        lock.withLock { recorded = initialization }
     }
 }

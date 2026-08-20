@@ -256,7 +256,7 @@ final class MCPRecordsDatabaseTests: XCTestCase {
         let identity = MCPAgentIdentity(
             kind: .mcpStdio, clientName: "client", sessionKey: "pid:7")
 
-        await recorder.recordInitialization(agent: identity)
+        recorder.recordInitialization(agent: identity)
 
         var iterator = recorder.initialized.makeAsyncIterator()
         let evidence = await iterator.next()

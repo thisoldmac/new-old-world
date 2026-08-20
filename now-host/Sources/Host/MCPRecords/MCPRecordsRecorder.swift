@@ -58,19 +58,24 @@ final class MCPRecordsRecorder: @unchecked Sendable {
     }
 
     func recordInitialization(agent: MCPAgentIdentity,
-                              at moment: Date = Date()) async {
-        do {
-            try await database.recordInitialization(agent: agent, at: moment)
-            if let evidence = try await database.latestInitialization(
-                    kind: agent.kind) {
-                lifecycleInsertions.yield(evidence)
-            }
-        } catch {
-            guard shouldWarn() else { return }
-            let detail = "MCP initialization record dropped: \(error) — "
-                + "further drops this launch will not be reported"
-            await MainActor.run {
-                HostLog.shared.write(.warn, "agent", detail)
+                              at moment: Date = Date()) {
+        let database = database
+        let lifecycleInsertions = lifecycleInsertions
+        Task {
+            do {
+                try await database.recordInitialization(
+                    agent: agent, at: moment)
+                if let evidence = try await database.latestInitialization(
+                        kind: agent.kind) {
+                    lifecycleInsertions.yield(evidence)
+                }
+            } catch {
+                guard self.shouldWarn() else { return }
+                let detail = "MCP initialization record dropped: \(error) — "
+                    + "further drops this launch will not be reported"
+                await MainActor.run {
+                    HostLog.shared.write(.warn, "agent", detail)
+                }
             }
         }
     }

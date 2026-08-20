@@ -9,8 +9,8 @@ final class MCPCardLayoutTests: XCTestCase {
     func testStandardLayoutPutsHistoryAloneOnTheRightAllOpen() {
         let layout = MCPCardLayout.standard
         XCTAssertEqual(layout.right, ["activity"])
-        XCTAssertEqual(layout.left, ["transport.http", "transport.stdio",
-                                     "presence", "held-lane", "consent"])
+        XCTAssertEqual(layout.left, ["transport.http", "presence",
+                                     "held-lane", "consent"])
         XCTAssertTrue(layout.collapsed.isEmpty)
         XCTAssertTrue(layout.openLogTails.isEmpty)
     }
@@ -24,8 +24,7 @@ final class MCPCardLayoutTests: XCTestCase {
             openLogTails: ["transport.http", "consent", "gone"])
         let clean = messy.sanitised()
 
-        XCTAssertEqual(clean.left, ["presence", "activity",
-                                    "transport.stdio", "held-lane",
+        XCTAssertEqual(clean.left, ["presence", "activity", "held-lane",
                                     "consent"])
         XCTAssertEqual(clean.right, ["transport.http"])
         XCTAssertEqual(clean.collapsed, ["consent"])
@@ -49,7 +48,7 @@ final class MCPCardLayoutTests: XCTestCase {
         XCTAssertEqual(store.load(), .standard)
     }
 
-    func testVersionOneDefaultLayoutPromotesHTTPWithoutMovingCustomLayouts()
+    func testOldLayoutsDropRetiredStdioWithoutMovingSurvivingCards()
         throws {
         let (defaults, name) = try suite()
         defer { defaults.removePersistentDomain(forName: name) }
@@ -63,7 +62,7 @@ final class MCPCardLayoutTests: XCTestCase {
                      forKey: MCPCardLayoutStore.layoutKey)
 
         XCTAssertEqual(MCPCardLayoutStore(defaults: defaults).load().left,
-                       ["transport.http", "transport.stdio", "presence",
+                       ["transport.http", "presence",
                         "held-lane", "consent"])
 
         var custom = oldDefault
@@ -72,7 +71,7 @@ final class MCPCardLayoutTests: XCTestCase {
         defaults.set(try encoder.encode(custom),
                      forKey: MCPCardLayoutStore.layoutKey)
         XCTAssertEqual(MCPCardLayoutStore(defaults: defaults).load().left,
-                       custom.left,
+                       ["presence", "transport.http", "held-lane", "consent"],
                        "an intentional custom arrangement must survive")
 
         custom = oldDefault
@@ -80,7 +79,8 @@ final class MCPCardLayoutTests: XCTestCase {
         defaults.set(try encoder.encode(custom),
                      forKey: MCPCardLayoutStore.layoutKey)
         let loaded = MCPCardLayoutStore(defaults: defaults).load()
-        XCTAssertEqual(loaded.left, custom.left,
+        XCTAssertEqual(loaded.left,
+                       ["transport.http", "presence", "held-lane", "consent"],
                        "custom card state must prevent default migration")
         XCTAssertEqual(loaded.collapsed, custom.collapsed)
     }
@@ -126,12 +126,11 @@ final class MCPCardLayoutTests: XCTestCase {
         model.toggleLogTail(.transportHTTP)
         model.toggleLogTail(.consent)
         model.move(.activity, to: .left, before: .presence)
-        model.move(.transportStdio, to: .right)
 
         XCTAssertTrue(model.layout.isCollapsed(.presence))
         XCTAssertTrue(model.layout.isLogTailOpen(.transportHTTP))
         XCTAssertFalse(model.layout.isLogTailOpen(.consent))
-        XCTAssertEqual(model.layout.cards(in: .right), [.transportStdio])
+        XCTAssertEqual(model.layout.cards(in: .right), [])
         XCTAssertEqual(model.layout.left.firstIndex(of: "activity"),
                        model.layout.left.firstIndex(of: "presence")! - 1)
 
@@ -147,7 +146,7 @@ final class MCPCardLayoutTests: XCTestCase {
 
         model.nudge(.transportHTTP, forward: true)
         XCTAssertEqual(model.layout.left.prefix(2),
-                       ["transport.stdio", "transport.http"])
+                       ["presence", "transport.http"])
         model.nudge(.transportHTTP, forward: false)
         XCTAssertEqual(model.layout.left.first, "transport.http")
         model.nudge(.activity, forward: true)

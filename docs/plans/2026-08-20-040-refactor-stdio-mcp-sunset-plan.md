@@ -2,13 +2,34 @@
 title: Retire the stdio MCP transport after HTTP-only readiness is proved
 type: refactor
 date: 2026-08-20
-artifact_readiness: due-diligence-gated
+artifact_readiness: implemented-emulator-qa-passed
 execution: code
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
 
 # Retire the stdio MCP transport
+
+## Execution status — 2026-08-20
+
+Phases 0 through 4 are implemented on this branch. Because NOW is pre-alpha,
+the owner waived a released deprecation cycle: the temporary deprecated state
+was used only as an in-tree migration checkpoint, then the tombstone and
+implementation deletion proceeded in the same line. Streamable HTTP is the
+only live MCP transport. `--mcp-stdio` now writes one bounded stderr diagnostic,
+no protocol output, and exits unsuccessfully.
+
+Implementation traced one important ownership correction to this plan: the
+same-user Unix socket is not stdio-owned. NOW's local automation and emulator
+tools also use it, so the socket server/client remain under that ownership and
+start independently of MCP. The stdio framing process, lifecycle adapter,
+settings, UI, preference, conformance, and parity surface are removed.
+
+Focused HTTP/removal verification is tested. Emulator QA on the implementation
+commit passed through a staged OS 9.1 guest and the shipping host's real HTTP
+listener: initialize, all 49 descriptors, live capability probing, and the
+guest process list all answered. Physical-machine verification is not implied
+by that result.
 
 ## Goal capsule
 
@@ -86,8 +107,8 @@ No removal decision may cite that last observation as proof of zero use.
 
 In scope:
 
-- live stdio entry point, bridge server, Unix-socket client, settings, UI,
-  logging, records identity, tests, and current-state documentation;
+- live stdio entry point, framing bridge, settings, UI, logging, records
+  identity, tests, and current-state documentation;
 - HTTP readiness needed to replace every supported stdio workflow;
 - migration diagnostics and a bounded tombstone test; and
 - emulator and metal evidence required by repository policy.
@@ -322,7 +343,7 @@ Once the tombstone behavior is proved, Phase 4 may land immediately in the
 same pre-alpha change:
 
 - delete `MCPStdioTransport` and its line framer/output-only implementation;
-- delete the stdio-only socket bridge, local client, audit sink, launch
+- delete the stdio-only framing bridge, lifecycle adapter, launch
   notification, activity state, transport card/layout identifier, settings,
   preference reads, and current-run log routing where no other owner remains;
 - delete stdio liveness, subprocess, parity, preference, UI, and ownership
@@ -340,6 +361,10 @@ same pre-alpha change:
 Add a source guard that permits `mcp-stdio` only in the historical records
 compatibility seam and explicitly historical documents. Watch it fail once by
 reintroducing a live entry point or current-state instruction.
+
+The shared Unix-socket server/client are intentionally outside that guard:
+they are the local automation boundary used by repo tooling and emulator QA,
+not an MCP transport.
 
 ## Verification matrix
 

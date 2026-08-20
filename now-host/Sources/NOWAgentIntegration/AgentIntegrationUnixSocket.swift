@@ -15,7 +15,7 @@ public struct AgentIntegrationEndpoint: Equatable, Sendable {
     /// The endpoint is per-uid, which is right for the product — one
     /// person, one host, one agent surface. It is wrong for this desk,
     /// where several sessions run at once: the first host to bind owns
-    /// `host.sock`, so every MCP client on the machine reaches THAT
+    /// `host.sock`, so every local automation client reaches THAT
     /// host and whatever guest it happens to be driving. Not a theory —
     /// on 2026-08-07 a conformance run could not be taken at all because
     /// another session's host had held the socket for an hour, and the
@@ -23,24 +23,17 @@ public struct AgentIntegrationEndpoint: Equatable, Sendable {
     /// without either session knowing.
     ///
     /// `NOW_AGENT_SOCKET_SUFFIX` gives a run its own endpoint. Read HERE
-    /// rather than at each caller, so a host and the companion that talks
-    /// to it cannot disagree about where the socket is — the two are
-    /// separate processes and a second spelling of this rule is a second
-    /// place for them to drift apart.
+    /// rather than at each caller, so a host and its local tools cannot
+    /// disagree about where the socket is.
     ///
     /// Bounded and sanitised: it becomes a directory name, and a suffix
     /// carrying a separator would name a path outside the temporary
     /// directory. Unset — the product's case — nothing changes.
     /// The environment key, spelled ONCE in the product.
     ///
-    /// Public because a second process has to agree with it and could
-    /// not until this existed: the chat workspace lane spawns
-    /// `New Old World --mcp-stdio` under a runtime whose environment is
-    /// a deliberate whitelist, and a companion that does not inherit
-    /// this reaches the DEFAULT socket — another session's host, and
-    /// whatever Macintosh it is driving, with both sides looking
-    /// healthy. That caller carries the variable; it does not read it,
-    /// and `AgentEndpointIsolationTests` still finds one reader here.
+    /// Public because NOW-owned local tools are separate processes and must
+    /// agree with the host. `AgentEndpointIsolationTests` still finds one
+    /// reader here.
     public static let suffixEnvironmentKey = "NOW_AGENT_SOCKET_SUFFIX"
 
     public static func currentUser(uid: uid_t = geteuid()) throws

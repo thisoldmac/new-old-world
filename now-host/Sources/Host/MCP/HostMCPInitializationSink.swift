@@ -2,13 +2,12 @@ import Foundation
 import NOWAgentIntegration
 
 /// HTTP initializes in the records-owning host process, so lifecycle evidence
-/// lands directly rather than crossing the stdio companion's local socket.
+/// lands directly in the owning process.
 struct HostMCPInitializationSink: MCPClientLifecycleSink {
     let records: MCPRecordsRecorder?
 
-    func recordInitialization(_ initialization: MCPClientInitialization)
-        async {
-        await records?.recordInitialization(agent: MCPAgentIdentity(
+    func recordInitialization(_ initialization: MCPClientInitialization) {
+        records?.recordInitialization(agent: MCPAgentIdentity(
             kind: .mcpHTTP,
             clientName: initialization.clientName,
             clientVersion: initialization.clientVersion,

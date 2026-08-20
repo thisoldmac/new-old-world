@@ -30,8 +30,6 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
     /// page's "Settings…" button for the start-automatically toggles that
     /// moved out of it.
     let openSettings: () -> Void
-    private(set) var startStdio: (() -> Void)?
-    private(set) var stopStdio: (() -> Void)?
     private(set) var startHTTP: (() -> Void)?
     private(set) var stopHTTP: (() -> Void)?
 
@@ -52,20 +50,14 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
     }
 
     func configureTransports(
-        startStdio: @escaping () -> Void,
-        stopStdio: @escaping () -> Void,
         startHTTP: @escaping () -> Void,
         stopHTTP: @escaping () -> Void
     ) {
-        self.startStdio = startStdio
-        self.stopStdio = stopStdio
         self.startHTTP = startHTTP
         self.stopHTTP = stopHTTP
     }
 
     func shutDown() {
-        startStdio = nil
-        stopStdio = nil
         startHTTP = nil
         stopHTTP = nil
     }
@@ -95,8 +87,6 @@ enum MCPHostModule {
                 settings: runtime.transportSettings,
                 oauthConsent: runtime.oauthConsent,
                 openSettings: runtime.openSettings,
-                startStdio: runtime.startStdio,
-                stopStdio: runtime.stopStdio,
                 startHTTP: runtime.startHTTP,
                 stopHTTP: runtime.stopHTTP,
                 layoutModel: runtime.cardLayout,
