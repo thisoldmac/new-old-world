@@ -37,10 +37,22 @@ The host exposes independent controls for:
 - **Standard Input**, a narrow `New Old World --mcp-stdio` process launched by
   an MCP client. Its card copies the executable command and shows the private
   same-user socket it uses to reach the already-running app.
-- **HTTP**, an authenticated loopback listener running directly inside the
-  normal NOW app. Its card exposes an editable loopback port while stopped,
-  shows and copies the derived URL, and copies the bearer token without
-  rendering the secret in the module or logs.
+- **HTTP**, a loopback listener running directly inside the normal NOW app.
+  Its card exposes an editable loopback port and an **Access** mode while
+  stopped, and shows and copies the derived URL. Access has three settings,
+  applied the next time HTTP starts:
+    - **Bearer token** (the default): requests must carry NOW's private
+      token. The card copies it without rendering the secret in the module
+      or logs.
+    - **OAuth**: NOW acts as the authorization server for standard MCP
+      clients — discovery metadata, dynamic client registration, and a
+      PKCE authorization-code flow. A client's first sign-in parks on the
+      card as an **Approve / Deny** consent row; nothing is issued until a
+      person answers, and **Revoke OAuth Clients & Tokens** forgets every
+      registration and cancels outstanding tokens.
+    - **No authentication**: any process on this Mac can drive NOW over the
+      port. The card says so in warning copy; the loopback Host and Origin
+      checks still apply.
 
 Each card has independent **Start** and **Stop** controls, which affect the
 current app session. The persisted launch policy is not here: **Start
