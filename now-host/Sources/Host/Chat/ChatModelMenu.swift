@@ -153,7 +153,7 @@ struct ChatModelButton: View {
                  : "No model matches \"\(query)\".")
                 .foregroundStyle(.secondary)
             if models.isEmpty {
-                Button("Set Up a Provider...") {
+                Button("Set Up a Provider…") {
                     listShown = false
                     configure()
                 }

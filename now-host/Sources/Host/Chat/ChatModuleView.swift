@@ -60,7 +60,7 @@ struct ChatModuleView: View {
                 draft: $draft, state: composerState,
                 placeholder: model.models.isEmpty
                     ? "Set up a provider to start"
-                    : "Ask about the connected machine...",
+                    : "Ask about the connected machine…",
                 send: submit, stop: model.cancel)
         }
     }
@@ -217,7 +217,7 @@ struct ChatModuleView: View {
     private var waitingRow: some View {
         HStack(spacing: 6) {
             ProgressView().controlSize(.small)
-            Text("Waiting for \(currentModelName)...")
+            Text("Waiting for \(currentModelName)…")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -243,17 +243,17 @@ struct ChatModuleView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("How can I help with "
-                 + "\(MachineNaming.simpleReference)?")
+            Text("Ask about "
+                 + "\(MachineNaming.simpleReference)")
                 .font(.system(size: 26, weight: .semibold))
                 .padding(.bottom, 6)
-            Text("I can look at "
+            Text("The model reads "
                  + "\(MachineNaming.possessive(String?.none)) screen, files "
-                 + "and processes - with the access its owner granted.")
+                 + "and processes, within the access its owner granted.")
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 18)
             if model.models.isEmpty {
-                Button("Set Up a Provider...", action: openSettings)
+                Button("Set Up a Provider…", action: openSettings)
                     .controlSize(.large)
             } else {
                 ForEach(Self.openers, id: \.self) { opener in
@@ -327,7 +327,7 @@ struct ChatProvidersSheet: View {
                     Spacer()
                     if model.canAuthorizeSavedCredentials {
                         Button(model.isAuthorizingCredentials
-                                   ? "Authorizing..." : "Authorize") {
+                                   ? "Authorizing…" : "Authorize") {
                             model.authorizeSavedCredentials()
                         }
                         .disabled(model.isAuthorizingCredentials)

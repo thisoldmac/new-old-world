@@ -132,7 +132,7 @@ final class DriveCloudProvider: CloudProvider {
             service: service, label: "iCloud Drive",
             state: sharingIt ? "serving" : "off",
             detail: sharingIt
-                ? "Shared - browse it in Files"
+                ? "Shared — browse it in Files"
                 : "Point Sharing at iCloud Drive on the host")
     }
 
@@ -140,19 +140,19 @@ final class DriveCloudProvider: CloudProvider {
         -> (entries: [CloudEntry], more: Bool, next: Int) {
         throw CloudFault.refuse(
             code: "not-listable",
-            reason: "Drive is the file share - browse it in Files")
+            reason: "Drive is the file share — browse it in Files")
     }
 
     func card(item: String) throws -> [[String]] {
         throw CloudFault.refuse(
             code: "not-listable",
-            reason: "Drive is the file share - browse it in Files")
+            reason: "Drive is the file share — browse it in Files")
     }
 
     func get(item: String, size: String?) throws -> OutboundFile.Plan {
         throw CloudFault.refuse(
             code: "not-listable",
-            reason: "Drive is the file share - fetch from Files")
+            reason: "Drive is the file share — fetch from Files")
     }
 }
 

@@ -509,7 +509,7 @@ private struct ChatWorkspaceSettingsSection: View {
         switch model.state {
         case .ready(let lane): return lane.root.path
         case .unusable: return "unavailable"
-        case .off: return "none - chat is machine-only"
+        case .off: return "none — chat is machine-only"
         }
     }
 
