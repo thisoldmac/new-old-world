@@ -101,6 +101,16 @@ public enum NOWOperationInventory {
             exposures: exposures)
     }
 
+    /// Public operations whose domain seam is the host API itself rather than
+    /// a pre-existing MCP projection. They still belong to the same checked
+    /// contract; this set prevents an HTTP route from becoming an unchecked
+    /// second catalog merely because it has no agent tool analogue.
+    public static let apiNativeOperationIDs: Set<String> = [
+        "api.identity", "commands.execute", "connections.disconnect",
+        "connections.list", "guests.status", "listener.start",
+        "listener.status", "listener.stop", "operations.list",
+    ]
+
     public static let publicOperationIDs: Set<String> = Set(
         adjudications.values.flatMap { adjudication -> [String] in
             switch adjudication {
@@ -108,7 +118,7 @@ public enum NOWOperationInventory {
             case .composition(let operationIDs, _): return operationIDs
             case .agentOnly: return []
             }
-        })
+        }).union(apiNativeOperationIDs)
 
     private static let workspaceReason =
         "This tool resolves chat-workspace authority; applications supply "

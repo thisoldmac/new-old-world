@@ -7,7 +7,7 @@ import NOWAgentIntegration
 final class NOWAPIHTTPRouter: @unchecked Sendable {
     static let maximumBodyBytes = 64 * 1024
     private static let renderedOperationIDs: Set<String> = [
-        "api.identity", "connections.disconnect", "connections.list",
+        "api.identity", "commands.execute", "connections.disconnect", "connections.list",
         "guests.list", "guests.status", "listener.start",
         "listener.status", "listener.stop", "operations.list",
     ]
@@ -71,6 +71,47 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             }
             response = json(200, requestID: requestID,
                             object: Self.guestDetailJSON(guest))
+        case ("POST", let value)
+            where value.hasPrefix("/api/v1/guests/")
+                && value.hasSuffix("/commands"):
+            let prefix = "/api/v1/guests/"
+            let id = String(value.dropFirst(prefix.count)
+                .dropLast("/commands".count))
+            guard !id.isEmpty, let guest = await host.apiGuest(id: id) else {
+                await record(requestID, "commands.execute", id, .refused)
+                return error(404, requestID: requestID,
+                             code: "guest_not_found",
+                             message: "No guest has that stable ID.",
+                             reach: "guest")
+            }
+            let command: NOWAPIConsoleCommandRequest
+            switch NOWAPIConsoleCommandHTTPCodec.parse(request.body) {
+            case .success(let parsed): command = parsed
+            case .failure(let problem):
+                await record(requestID, "commands.execute", id, .refused)
+                let outcome = NOWAPIConsoleCommandOutcome(
+                    guestID: id, sessionID: guest.summary.sessionID,
+                    disposition: .invalid, output: nil,
+                    outputObjects: nil,
+                    error: .init(code: problem.code,
+                                 message: problem.message,
+                                 reach: "request"))
+                return json(400, requestID: requestID,
+                            object: NOWAPIConsoleCommandHTTPCodec.render(
+                                requestID, outcome))
+            }
+            let outcome = await executeCommand(guestID: id, request: command)
+            response = json(200, requestID: requestID,
+                            object: NOWAPIConsoleCommandHTTPCodec.render(
+                                requestID, outcome))
+            let auditDisposition: NOWAPIAuditEvent.Disposition
+            switch outcome.disposition {
+            case .completed: auditDisposition = .completed
+            case .invalid, .unadvertised, .refused: auditDisposition = .refused
+            case .timedOut, .disconnected, .failed: auditDisposition = .failed
+            }
+            await record(requestID, "commands.execute", id,
+                         auditDisposition)
         case ("GET", "/api/v1/listener"):
             response = json(200, requestID: requestID,
                             object: Self.listenerJSON(await host.apiListener()))
@@ -122,6 +163,18 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                              reach: "request")
         }
         return response
+    }
+
+    private func executeCommand(
+        guestID: String, request: NOWAPIConsoleCommandRequest
+    ) async -> NOWAPIConsoleCommandOutcome {
+        await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                host.apiExecuteCommand(guestID: guestID, request: request) {
+                    continuation.resume(returning: $0)
+                }
+            }
+        }
     }
 
     private func record(_ requestID: UUID, _ operationID: String,

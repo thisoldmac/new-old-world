@@ -82,9 +82,83 @@ final class NOWAPIHTTPTests: XCTestCase {
             as? [[String: Any]])
         let identifiers = Set(rows.compactMap { $0["operationId"] as? String })
         XCTAssertTrue(identifiers.contains("connections.disconnect"))
+        XCTAssertTrue(identifiers.contains("commands.execute"))
         XCTAssertFalse(identifiers.contains("now_list_machines"))
         XCTAssertFalse(identifiers.contains("files.put"),
                        "S4 operations are not runtime-bound in S2")
+    }
+
+    func testConsoleCommandRouteReturnsTheGuestResult() async throws {
+        let fixture = FixtureHost()
+        let service = makeHTTPService(host: fixture)
+        let response = await service.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/commands",
+            body: Data(#"{"command":"help","argumentLine":""}"#.utf8)))
+
+        XCTAssertEqual(response.status, 200)
+        let body = try object(response.body)
+        XCTAssertEqual(body["operationId"] as? String, "commands.execute")
+        XCTAssertEqual(body["disposition"] as? String, "completed")
+        XCTAssertEqual(fixture.commands.first?.guestID, "pb1400c")
+        XCTAssertEqual(fixture.commands.first?.request.command, "help")
+        XCTAssertEqual(fixture.commands.first?.request.argumentLine, "")
+        XCTAssertNil(fixture.commands.first?.request.arguments)
+    }
+
+    func testConsoleCommandAcceptsTypedArgumentsWithoutCoercion() async throws {
+        let fixture = FixtureHost()
+        let service = makeHTTPService(host: fixture)
+        let response = await service.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/commands",
+            body: Data(#"{"command":"winact","arguments":{"part":21,"wait":true,"title":"General"}}"#.utf8)))
+
+        XCTAssertEqual(response.status, 200)
+        let arguments = try XCTUnwrap(fixture.commands.first?.request.arguments)
+        XCTAssertEqual(arguments["part"], .number(21))
+        XCTAssertEqual(arguments["wait"], .flag(true))
+        XCTAssertEqual(arguments["title"], .text("General"))
+        XCTAssertNil(fixture.commands.first?.request.argumentLine)
+    }
+
+    func testConsoleCommandRejectsAmbiguousAndOversizedInputBeforeDispatch() async throws {
+        let fixture = FixtureHost()
+        let service = makeHTTPService(host: fixture)
+        let ambiguous = await service.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/commands",
+            body: Data(#"{"command":"help","arguments":{},"argumentLine":""}"#.utf8)))
+        XCTAssertEqual(ambiguous.status, 400)
+        XCTAssertEqual(try errorCode(ambiguous), "ambiguous_command_arguments")
+        XCTAssertEqual(try object(ambiguous.body)["disposition"] as? String,
+                       "invalid")
+
+        let longLine = String(repeating: "x", count:
+            NOWAPIConsoleCommandService.maximumArgumentLineBytes + 1)
+        let body = try JSONSerialization.data(withJSONObject: [
+            "command": "help", "argumentLine": longLine,
+        ])
+        let oversized = await service.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/commands", body: body))
+        XCTAssertEqual(oversized.status, 400)
+        XCTAssertEqual(try errorCode(oversized), "invalid_argument_line")
+        XCTAssertTrue(fixture.commands.isEmpty)
+    }
+
+    func testConsoleCommandAuditsOnlyOperationTargetAndDisposition() async throws {
+        let audit = NOWAPIAuditSpy()
+        let fixture = FixtureHost()
+        let service = makeHTTPService(host: fixture, audit: audit)
+        let secret = "payload-must-not-enter-audit"
+        let response = await service.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/commands",
+            body: Data("{\"command\":\"help\",\"argumentLine\":\"\(secret)\"}".utf8)))
+
+        XCTAssertEqual(response.status, 200)
+        let events = await audit.recorded()
+        let event = try XCTUnwrap(events.first)
+        XCTAssertEqual(event.operationID, "commands.execute")
+        XCTAssertEqual(event.target, "pb1400c")
+        XCTAssertEqual(event.disposition, .completed)
+        XCTAssertFalse(String(describing: event).contains(secret))
     }
 
     func testMutationsAuditOperationAndTargetWithoutBody() async throws {
@@ -172,6 +246,12 @@ final class NOWAPIHTTPTests: XCTestCase {
         try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    private func errorCode(_ response: MCPHTTPResponse) throws -> String? {
+        let error = try XCTUnwrap(try object(response.body)["error"]
+            as? [String: Any])
+        return error["code"] as? String
+    }
+
     private func availablePort() throws -> UInt16 {
         let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
         guard socket >= 0 else { throw POSIXError(.EIO) }
@@ -202,6 +282,8 @@ final class NOWAPIHTTPTests: XCTestCase {
 private final class FixtureHost: NOWAPIHostServing {
     var disconnected: [String] = []
     var stopCount = 0
+    var commands: [(guestID: String, request: NOWAPIConsoleCommandRequest)] = []
+    var commandOutcome: NOWAPIConsoleCommandOutcome?
 
     func apiGuests() -> [NOWAPIGuestSummary] {
         [.init(id: "pb1400c",
@@ -239,6 +321,19 @@ private final class FixtureHost: NOWAPIHostServing {
         guard sessionID == apiGuests()[0].sessionID else { return false }
         disconnected.append(sessionID)
         return true
+    }
+
+    func apiExecuteCommand(
+        guestID: String, request: NOWAPIConsoleCommandRequest,
+        completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void
+    ) {
+        commands.append((guestID, request))
+        completion(commandOutcome ?? .init(
+            guestID: guestID,
+            sessionID: "pb1400c-11111111-1111-1111-1111-111111111111",
+            disposition: .completed,
+            output: ["help": [["help", "list commands"]]],
+            outputObjects: nil, error: nil))
     }
 }
 

@@ -48,6 +48,26 @@
         }
       }
     },
+    "/guests/{guestID}/commands": {
+      "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
+      "post": {
+        "operationId": "commands.execute",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConsoleCommandRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/ConsoleCommandResult" },
+          "400": { "$ref": "#/components/responses/ConsoleCommandResult" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/listener": {
       "get": {
         "operationId": "listener.status",
@@ -115,6 +135,10 @@
       "ConnectionList": {
         "description": "Exact live guest sessions",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ConnectionList" } } }
+      },
+      "ConsoleCommandResult": {
+        "description": "Bounded result from the exact addressed guest session",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ConsoleCommandResult" } } }
       },
       "OperationResult": {
         "description": "Typed operation result",
@@ -313,15 +337,67 @@
       "ConsoleCommandRequest": {
         "type": "object",
         "properties": {
-          "command": { "type": "string", "minLength": 1, "maxLength": 96 },
-          "arguments": { "type": "object" },
-          "argumentLine": { "type": "string", "maxLength": 4096 }
+          "command": {
+            "type": "string", "minLength": 1, "maxLength": 96,
+            "pattern": "^[A-Za-z0-9._-]+$", "x-now-maximumUTF8Bytes": 96
+          },
+          "arguments": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "minLength": 1, "maxLength": 96,
+              "x-now-maximumUTF8Bytes": 96
+            },
+            "additionalProperties": {
+              "oneOf": [
+                { "type": "string", "maxLength": 4096, "x-now-maximumUTF8Bytes": 4096 },
+                { "type": "integer" },
+                { "type": "boolean" }
+              ]
+            }
+          },
+          "argumentLine": {
+            "type": "string", "maxLength": 4096,
+            "x-now-maximumUTF8Bytes": 4096
+          }
         },
         "required": ["command"],
         "oneOf": [
           { "required": ["arguments"], "not": { "required": ["argumentLine"] } },
           { "required": ["argumentLine"], "not": { "required": ["arguments"] } },
           { "not": { "anyOf": [{ "required": ["arguments"] }, { "required": ["argumentLine"] }] } }
+        ],
+        "additionalProperties": false
+      },
+      "ConsoleCommandDisposition": {
+        "type": "string",
+        "enum": ["completed", "invalid", "unadvertised", "timed-out", "disconnected", "refused", "failed"]
+      },
+      "ConsoleCommandResult": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "format": "uuid" },
+          "operationId": { "type": "string", "const": "commands.execute" },
+          "guest": { "$ref": "#/components/schemas/GuestAddress" },
+          "disposition": { "$ref": "#/components/schemas/ConsoleCommandDisposition" },
+          "value": {
+            "type": "object",
+            "properties": {
+              "output": { "type": "object" },
+              "outputObjects": { "type": "object" }
+            },
+            "additionalProperties": false,
+            "x-now-maximumEncodedBytes": 65536
+          },
+          "error": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["requestId", "operationId", "guest", "disposition"],
+        "allOf": [
+          {
+            "if": { "properties": { "disposition": { "const": "completed" } } },
+            "then": { "required": ["value"], "not": { "required": ["error"] } },
+            "else": { "required": ["error"], "not": { "required": ["value"] } }
+          }
         ],
         "additionalProperties": false
       },
@@ -342,11 +418,11 @@
   },
   "x-now-compatibility": {
     "apiMajor": 1,
-    "schemaRevision": 1,
+    "schemaRevision": 2,
     "policy": "Additive optional fields and operations may ship within v1; required-field meaning and disposition semantics remain stable."
   },
   "x-now-operation-catalog": [
-    "api.identity", "catalog.search", "connections.disconnect", "connections.list", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer",
+    "api.identity", "catalog.search", "commands.execute", "connections.disconnect", "connections.list", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer",
     "files.capabilities", "files.get", "files.list", "files.mutate", "files.put", "files.reveal", "files.stat",
     "guests.capabilities", "guests.census", "guests.facts", "guests.list", "guests.status",
     "interface.control.act", "interface.menu.act", "interface.observe", "interface.text.get", "interface.text.set", "interface.window.act",

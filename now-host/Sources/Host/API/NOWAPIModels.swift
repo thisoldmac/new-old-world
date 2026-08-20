@@ -40,6 +40,40 @@ protocol NOWAPIHostServing: AnyObject {
     func apiStopListener() -> NOWAPIListenerSummary
     func apiConnections() -> [NOWAPIConnectionSummary]
     func apiDisconnect(sessionID: String) -> Bool
+    func apiExecuteCommand(
+        guestID: String, request: NOWAPIConsoleCommandRequest,
+        completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void)
+}
+
+struct NOWAPIConsoleCommandRequest: Equatable, Sendable {
+    let command: String
+    let arguments: [String: CommandArg]?
+    let argumentLine: String?
+}
+
+struct NOWAPIConsoleCommandOutcome: Equatable, Sendable {
+    enum Disposition: String, Sendable {
+        case completed
+        case invalid
+        case unadvertised
+        case timedOut = "timed-out"
+        case disconnected
+        case refused
+        case failed
+    }
+
+    struct Failure: Equatable, Sendable {
+        let code: String
+        let message: String
+        let reach: String
+    }
+
+    let guestID: String
+    let sessionID: String?
+    let disposition: Disposition
+    let output: [String: [[String]]]?
+    let outputObjects: [String: JSONValue]?
+    let error: Failure?
 }
 
 struct NOWAPIAuditEvent: Equatable, Sendable {

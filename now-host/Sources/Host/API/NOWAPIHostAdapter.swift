@@ -7,10 +7,12 @@ import Foundation
 final class NOWAPIHostAdapter: NOWAPIHostServing {
     private let listener: GuestListener
     private let settings: SettingsModel
+    private let commands: NOWAPIConsoleCommandService
 
     init(listener: GuestListener, settings: SettingsModel) {
         self.listener = listener
         self.settings = settings
+        commands = NOWAPIConsoleCommandService(driver: listener)
     }
 
     func apiGuests() -> [NOWAPIGuestSummary] {
@@ -99,5 +101,13 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
     func apiDisconnect(sessionID: String) -> Bool {
         guard let key = GuestKey.parse(sessionID) else { return false }
         return listener.disconnect(key)
+    }
+
+    func apiExecuteCommand(
+        guestID: String, request: NOWAPIConsoleCommandRequest,
+        completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void
+    ) {
+        commands.execute(guestID: guestID, request: request,
+                         completion: completion)
     }
 }
