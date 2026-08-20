@@ -696,8 +696,7 @@ final class DiagnosticsModel: ObservableObject, GuestScopedModel {
             elsewhere = "The Carbon guest serves it; the 68K guest does not."
         }
         return "Not available on \(machine): \(diagnostic.verb) is not in "
-            + "its command table. Nothing is wrong with the machine — "
-            + elsewhere
+            + "its command table. " + elsewhere
     }
 
     /// The selected reading as plain text, for the Copy button.

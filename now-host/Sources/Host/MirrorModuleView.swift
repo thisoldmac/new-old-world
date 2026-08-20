@@ -124,7 +124,7 @@ struct MirrorModuleView: View {
                 Text("The Mirror is in its own window.")
                     .font(.title3.weight(.medium))
                 Text("Still running and still being driven. Detaching "
-                     + "changes only where it is displayed.")
+                     + "changes where it is displayed, nothing else.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

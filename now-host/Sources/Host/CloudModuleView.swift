@@ -129,11 +129,11 @@ struct CloudModuleView: View {
     }
 
     private var footnote: some View {
-        Text("Per-service, and served to any connected "
+        Text("Per-service, served to any connected "
              + "\(MachineNaming.commonNoun). "
              + "Drive travels through the file share. Photo download size "
              + "and destination are set on \(MachineNaming.simpleReference); "
-             + "this Mac provides only the connection and macOS access.")
+             + "this Mac provides the connection and macOS access.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)

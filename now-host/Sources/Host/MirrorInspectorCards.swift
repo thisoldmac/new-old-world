@@ -62,7 +62,7 @@ struct MirrorCyclesCard: View {
 
             let latest = MirrorCycleWalks.all.compactMap { cycles.latest(walk: $0) }
             if latest.isEmpty {
-                Text("No scene has arrived yet.")
+                Text("No scene received.")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(Array(latest.enumerated()), id: \.offset) { _, cycle in
@@ -190,7 +190,7 @@ struct MirrorPlanesCard: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if model.planeFacts.isEmpty {
-                Text("No Mac has reported its planes yet.")
+                Text("No planes reported.")
                     .font(.callout).foregroundStyle(.secondary)
             } else if !model.guestAllowsMirroring {
                 Text("That Mac is not allowing mirroring right now, so "
@@ -289,7 +289,7 @@ struct MirrorSceneFactsCard: View {
                     }
                 }
             } else {
-                Text("No scene has arrived yet.")
+                Text("No scene received.")
                     .font(.callout).foregroundStyle(.secondary)
             }
         }

@@ -249,7 +249,7 @@ private struct MachineApplicationsSummary: View {
                 MachineOverviewEmptyState(text: error)
             } else {
                 MachineOverviewEmptyState(text: isConnected
-                    ? "No foreground applications were reported."
+                    ? "No foreground applications reported."
                     : "Connect this Mac for its running applications.")
             }
         }

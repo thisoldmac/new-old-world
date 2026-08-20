@@ -258,7 +258,7 @@ final class ConsoleModel: ObservableObject {
                 .appendingPathComponent("Desktop").appendingPathComponent(path)
         }
         guard !lines.isEmpty else {
-            append(.failure, "Nothing to save: the scrollback is empty")
+            append(.failure, "Nothing to save — the scrollback is empty")
             return
         }
         let body = lines.map(\.text).joined(separator: "\n") + "\n"

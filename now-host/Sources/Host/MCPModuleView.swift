@@ -80,10 +80,10 @@ struct MCPModuleView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("MCP")
                     .font(.headline)
-                Text("Agent access to \(MachineNaming.thisMac) and the "
-                        + "\(MachineNaming.properNounPlural) paired with "
-                        + "it, and the traffic through it. Also written to "
-                        + "the log.")
+                Text("Agent access to \(MachineNaming.thisMac) and its "
+                        + "paired \(MachineNaming.properNounPlural), with "
+                        + "the traffic through it. Also written to the "
+                        + "log.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -232,8 +232,8 @@ struct MCPModuleView: View {
                 + "\(interval) ms"
         }
         sentence += ". Shown on the Screenshots page; Stop Streaming ends "
-            + "it regardless of origin. Also ended automatically when the "
-            + "agent disconnects or stops "
+            + "it regardless of origin, as does the agent disconnecting or "
+            + "no longer "
             + "reading."
         return sentence
     }
@@ -327,8 +327,8 @@ struct MCPModuleView: View {
     /// side records — and says so.
     private var emptyStreamSentence: String {
         model.combinedActivity(companions.activity).hasEverAttached
-            ? "Agent connected; no calls yet. Every capability an agent "
-                + "invokes is reported here."
+            ? "Agent connected, no calls. Every capability an agent "
+                + "invokes appears here."
             : "No agent calls."
     }
 

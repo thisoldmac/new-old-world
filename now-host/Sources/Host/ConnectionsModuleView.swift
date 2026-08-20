@@ -387,8 +387,8 @@ private struct GuestUpdateSection: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Software Updates")
                 .font(.title3.weight(.semibold))
-            Text("Replaces only validated artifacts from the update "
-                 + "catalog.")
+            Text("Installs validated artifacts from the update catalog. "
+                 + "Nothing else.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             GuestUpdateRow(row: row, component: .application,

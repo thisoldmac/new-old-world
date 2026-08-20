@@ -147,9 +147,8 @@ private struct ContinuityPointerCard: View {
     var body: some View {
         GroupBox("Pointer") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("The guest pointer is acquired at the shared edge "
-                     + "in the display layout. Guest mouse input returns "
-                     + "control here.")
+                Text("Acquired at the shared edge in the display "
+                     + "layout. Guest mouse input returns control here.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

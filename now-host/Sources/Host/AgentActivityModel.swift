@@ -347,12 +347,11 @@ struct AgentConsentReading: Equatable {
         switch access {
         case nil:
             title = "Has not said"
-            detail = "\(opens) has a build that predates the question, so "
-                + "it has neither agreed nor refused. Silence is not "
-                + "consent: it "
-                + "is a build that was never asked. Agent calls still "
-                + "reach it for now, and that is a decision made on "
-                + "\(MachineNaming.thisMac), not an answer from \(plain)."
+            detail = "\(opens) runs a build that predates the question, "
+                + "so it has neither agreed nor refused. Silence is not "
+                + "consent. Agent calls still reach it, by a decision made "
+                + "on \(MachineNaming.thisMac), not an answer from "
+                + "\(plain)."
             symbol = "questionmark.circle"
             isConsent = false
         case .disabled:
@@ -378,11 +377,9 @@ struct AgentConsentReading: Equatable {
             isConsent = true
         case .unrecognized(let raw):
             title = "Answered “\(raw)”"
-            detail = "\(opens) named a limit this copy of New Old World "
-                + "has never heard of, so it is a newer build rather than "
-                + "a broken one. A ceiling that cannot be named cannot be "
-                + "claimed to be under, so it does not read as consent "
-                + "here."
+            detail = "\(opens) named a limit unknown to this copy of "
+                + "New Old World — a newer build, not a broken one. An "
+                + "unrecognised ceiling does not read as consent here."
             symbol = "exclamationmark.triangle"
             isConsent = false
         }

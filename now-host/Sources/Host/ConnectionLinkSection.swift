@@ -37,9 +37,9 @@ struct ConnectionLinkSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHead(
-                "The link",
+                "Link",
                 caption: "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
-                    + "connects in; \(MachineNaming.thisMac) only listens.")
+                    + "connects in; \(MachineNaming.thisMac) listens.")
 
             /* The port and its switch on one line, not in a Form. A Form
                draws a labelled settings sheet, and this is no longer a
@@ -121,7 +121,7 @@ struct ConnectionLinkSection: View {
 
     private var trustedLANNotice: some View {
         Label {
-            Text("Trusted LAN only. Connections are plaintext and have no peer authentication; do not expose this port to the internet or an untrusted network.")
+            Text("Trusted LAN only. Connections are plaintext with no peer authentication. Do not expose this port to the internet or an untrusted network.")
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "exclamationmark.shield")
