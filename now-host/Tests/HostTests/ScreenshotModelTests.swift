@@ -71,9 +71,11 @@ final class ScreenshotModelTests: XCTestCase {
             image: try CaptureDecoder.makeImage(blob: blob, format: format),
             format: format, transferMs: 1, wireBytes: blob.count)
 
-        NSPasteboard.general.clearContents()
+        let board = NSPasteboard(name: .init("now.test.copy.\(UUID())"))
+        model.pasteboardForCopying = board
+        board.clearContents()
         model.copyToPasteboard(record)
-        XCTAssertTrue(NSPasteboard.general.canReadObject(
+        XCTAssertTrue(board.canReadObject(
             forClasses: [NSImage.self], options: nil))
     }
 
