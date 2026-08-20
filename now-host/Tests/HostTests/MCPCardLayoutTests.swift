@@ -9,7 +9,7 @@ final class MCPCardLayoutTests: XCTestCase {
     func testStandardLayoutPutsHistoryAloneOnTheRightAllOpen() {
         let layout = MCPCardLayout.standard
         XCTAssertEqual(layout.right, ["activity"])
-        XCTAssertEqual(layout.left, ["transport.stdio", "transport.http",
+        XCTAssertEqual(layout.left, ["transport.http", "transport.stdio",
                                      "presence", "held-lane", "consent"])
         XCTAssertTrue(layout.collapsed.isEmpty)
         XCTAssertTrue(layout.openLogTails.isEmpty)
@@ -47,6 +47,42 @@ final class MCPCardLayoutTests: XCTestCase {
         defaults.set(Data("not json".utf8),
                      forKey: MCPCardLayoutStore.layoutKey)
         XCTAssertEqual(store.load(), .standard)
+    }
+
+    func testVersionOneDefaultLayoutPromotesHTTPWithoutMovingCustomLayouts()
+        throws {
+        let (defaults, name) = try suite()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let encoder = JSONEncoder()
+        let oldDefault = MCPCardLayout(
+            version: 1,
+            left: ["transport.stdio", "transport.http", "presence",
+                   "held-lane", "consent"],
+            right: ["activity"], collapsed: [], openLogTails: [])
+        defaults.set(try encoder.encode(oldDefault),
+                     forKey: MCPCardLayoutStore.layoutKey)
+
+        XCTAssertEqual(MCPCardLayoutStore(defaults: defaults).load().left,
+                       ["transport.http", "transport.stdio", "presence",
+                        "held-lane", "consent"])
+
+        var custom = oldDefault
+        custom.left = ["presence", "transport.stdio", "transport.http",
+                       "held-lane", "consent"]
+        defaults.set(try encoder.encode(custom),
+                     forKey: MCPCardLayoutStore.layoutKey)
+        XCTAssertEqual(MCPCardLayoutStore(defaults: defaults).load().left,
+                       custom.left,
+                       "an intentional custom arrangement must survive")
+
+        custom = oldDefault
+        custom.collapsed = ["presence"]
+        defaults.set(try encoder.encode(custom),
+                     forKey: MCPCardLayoutStore.layoutKey)
+        let loaded = MCPCardLayoutStore(defaults: defaults).load()
+        XCTAssertEqual(loaded.left, custom.left,
+                       "custom card state must prevent default migration")
+        XCTAssertEqual(loaded.collapsed, custom.collapsed)
     }
 
     func testNewerVersionBlobIsUsedSafelyAndNeverOverwritten() throws {
@@ -109,9 +145,9 @@ final class MCPCardLayoutTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         let model = MCPCardLayoutModel(defaults: defaults)
 
-        model.nudge(.transportStdio, forward: true)
+        model.nudge(.transportHTTP, forward: true)
         XCTAssertEqual(model.layout.left.prefix(2),
-                       ["transport.http", "transport.stdio"])
+                       ["transport.stdio", "transport.http"])
         model.nudge(.transportHTTP, forward: false)
         XCTAssertEqual(model.layout.left.first, "transport.http")
         model.nudge(.activity, forward: true)

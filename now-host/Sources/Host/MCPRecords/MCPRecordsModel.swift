@@ -158,8 +158,17 @@ final class MCPRecordsModel: ObservableObject {
 
     private func refreshEntities() async {
         guard let database = recorder?.database else { return }
-        agents = (try? await database.agents()) ?? agents
-        targets = (try? await database.targets()) ?? targets
+        do {
+            agents = try await database.agents()
+            targets = try await database.targets()
+            lastStdioInitialization = try await database
+                .latestInitialization(kind: .mcpStdio)
+            lastStdioAction = try await database.latestAction(kind: .mcpStdio)
+        } catch {
+            /* A live refresh is best-effort like recording itself. The last
+               complete snapshot stays visible; the full refresh path owns
+               the unavailable state when the store cannot be read. */
+        }
     }
 
     // MARK: Entity detail

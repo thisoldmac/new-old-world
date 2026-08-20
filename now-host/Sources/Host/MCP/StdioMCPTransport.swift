@@ -130,6 +130,7 @@ enum MCPStaleCompanionResponse {
 /// endpoint. Tool ownership, consent, audit and guest state remain in NOW.
 enum MCPStdioTransport {
     static func run(workspaceRoot: URL? = nil) async {
+        MCPStdioDeprecation.writeWarning()
         let identity = NOWMCPClientIdentity()
         identity.setSessionKey("pid:\(getpid())")
         let server = NOWMCPServer(

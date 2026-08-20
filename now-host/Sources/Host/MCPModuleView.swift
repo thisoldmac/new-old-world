@@ -592,10 +592,10 @@ struct MCPModuleView: View {
     private var stdioTransport: some View {
         transportCard(
             id: .transportStdio,
-            title: "Standard Input",
-            summary: "For MCP clients that launch a command. The New "
-                + "Old World executable runs in stdio mode and reaches "
-                + "this app over its same-user socket.",
+            title: "Standard Input (Deprecated)",
+            summary: "Kept temporarily for MCP clients that still launch "
+                + "a command. Migrate them to the recommended HTTP "
+                + "transport before Standard Input is sunset.",
             state: model.stdio,
             start: startStdio,
             stop: stopStdio,
@@ -611,7 +611,7 @@ struct MCPModuleView: View {
     private var httpTransport: some View {
         transportCard(
             id: .transportHTTP,
-            title: "HTTP",
+            title: "HTTP (Recommended)",
             summary: "For clients that connect to a URL. Runs inside "
                 + "New Old World, binds to loopback only, and "
                 + "authenticates as the access setting specifies.",
@@ -753,16 +753,40 @@ struct MCPModuleView: View {
 
     private var stdioConfiguration: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Client command")
+            Text("Deprecated client command")
                 .font(.caption.weight(.medium))
             copyRow(label: "Command", value: stdioCommand)
-            Text("Launched by each client on demand. Starting this "
-                    + "transport opens the same-user bridge those client "
-                    + "processes use.")
+            Text("Migrate to Streamable HTTP at \(plannedHTTPEndpoint). "
+                    + "Choose Bearer token, OAuth, or the explicitly warned "
+                    + "No authentication loopback setting above, then copy "
+                    + "the matching client recipe.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            Link("Open migration guide",
+                 destination: URL(string: MCPStdioDeprecation.supportURL)!)
+                .font(.caption)
+            Divider()
+            stdioEvidence
         }
+    }
+
+    private var stdioEvidence: some View {
+        let evidence = MCPStdioEvidencePresentation(
+            initialization: records.lastStdioInitialization,
+            action: records.lastStdioAction,
+            stamp: Self.clock.string(from:))
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("Local Standard Input evidence")
+                .font(.caption.weight(.medium))
+            LabeledContent("Last initialization",
+                           value: evidence.lastInitialization)
+            LabeledContent("Last action", value: evidence.lastAction)
+            Text(evidence.scope)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .font(.caption)
     }
 
     private func httpConfiguration(isRunning: Bool) -> some View {

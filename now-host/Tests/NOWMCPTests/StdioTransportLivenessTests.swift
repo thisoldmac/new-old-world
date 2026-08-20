@@ -77,11 +77,20 @@ final class StdioTransportLivenessTests: XCTestCase {
         process.arguments = ["--mcp-stdio"]
         let input = Pipe()
         let output = Pipe()
+        let error = Pipe()
         process.standardInput = input
         process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
+        process.standardError = error
+        let warned = expectation(description: "deprecation warning arrives")
+        let warningCollected = Collected()
+        error.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            if warningCollected.append(data) { warned.fulfill() }
+        }
         try process.run()
         defer {
+            error.fileHandleForReading.readabilityHandler = nil
             if process.isRunning { process.terminate() }
         }
 
@@ -121,10 +130,27 @@ final class StdioTransportLivenessTests: XCTestCase {
                 the surface has always passed batches.
                 """)
         }
+        let warningOutcome = XCTWaiter().wait(for: [warned], timeout: 2)
+        if warningOutcome != .completed {
+            XCTFail("The stdio deprecation warning did not arrive on stderr.")
+        }
         let reply = collected.text()
         XCTAssertTrue(
             reply.contains("\"id\":1"),
             "The first line back was not a reply to the request: \(reply)")
+        let stdoutLines = reply.split(separator: "\n")
+        XCTAssertEqual(stdoutLines.count, 1,
+                       "stdout must contain only newline-delimited MCP frames")
+        XCTAssertNoThrow(try JSONSerialization.jsonObject(
+            with: Data(stdoutLines[0].utf8)))
+
+        let warning = warningCollected.text()
+        XCTAssertEqual(warning, MCPStdioDeprecation.warning + "\n",
+                       "each stdio process start emits exactly one warning")
+        XCTAssertTrue(warning.contains("Streamable HTTP"))
+        XCTAssertTrue(warning.contains(MCPStdioDeprecation.supportURL))
+        XCTAssertFalse(warning.contains(executable.path),
+                       "the warning must not expose a local path")
     }
 
     /// Accumulates until a whole line is in hand. `readabilityHandler` fires
@@ -132,13 +158,16 @@ final class StdioTransportLivenessTests: XCTestCase {
     private final class Collected: @unchecked Sendable {
         private let lock = NSLock()
         private var data = Data()
+        private var completedLine = false
 
         /// True once a newline has arrived — a whole reply, not a fragment.
         func append(_ chunk: Data) -> Bool {
             lock.lock()
             defer { lock.unlock() }
             data.append(chunk)
-            return data.contains(0x0A)
+            let nowComplete = data.contains(0x0A)
+            defer { completedLine = completedLine || nowComplete }
+            return nowComplete && !completedLine
         }
 
         func text() -> String {

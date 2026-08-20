@@ -246,10 +246,10 @@ private struct MCPSettingsSection: View {
     var body: some View {
         Form {
             Section("MCP") {
-                Toggle("Start Standard Input automatically",
-                       isOn: $model.stdioStartsAutomatically)
                 Toggle("Start HTTP automatically",
                        isOn: $model.httpStartsAutomatically)
+                Toggle("Start Standard Input automatically (Deprecated)",
+                       isOn: $model.stdioStartsAutomatically)
                 Text("Applies at next launch. Current transport state, "
                      + "socket and port are on the MCP page.")
                     .font(.caption)

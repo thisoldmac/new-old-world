@@ -2,6 +2,29 @@
 
 # Status: what works and what does not
 
+## 2026-08-20 — HTTP is the recommended MCP transport; Standard Input is deprecated
+
+Streamable HTTP now stands on its own conformance, listener, authentication,
+session, lifecycle-record, and session-scoped workspace tests. The MCP module
+puts HTTP first and supplies loopback recipes for bearer and OAuth; explicit
+warned no-auth loopback remains supported. An HTTP identity alone receives no
+modern-Mac workspace root.
+
+Standard Input remains functional for one compatibility release but is off by
+default when no preference exists. Existing explicit on and off preferences
+remain unchanged. Every `--mcp-stdio` process writes one bounded migration
+warning to stderr while stdout remains MCP framing. The module separately
+shows the last local stdio initialization and audited action and labels their
+installation-local scope.
+
+This is a **deprecation candidate**, not a sunset or release publication.
+Repository history has no numbered product release or GitHub release to name
+for it yet. The first numbered release containing this change is expected to
+be the last one in which stdio executes, but that window must be extended if
+consumer migration, observed-use, HTTP defects, emulator QA, physical-machine
+QA, or an owner-approved rollback build remains incomplete. No tombstone or
+implementation deletion is included here.
+
 ## 2026-08-14 — Hardware, MCP, Files appearance, and shelf navigation are tested; runtime follow-up remains
 
 PowerPC volume census now prefers the wide HFS volume API, avoiding the legacy

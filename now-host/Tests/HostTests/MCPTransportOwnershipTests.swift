@@ -37,19 +37,32 @@ final class MCPTransportOwnershipTests: XCTestCase {
     func testMCPPageOwnsIndependentControlsForBothTransports() throws {
         let view = try GateSource.hostSwift(
             "now-host/Sources/Host/MCPModuleView.swift")
+        let deprecation = try GateSource.hostSwift(
+            "now-host/Sources/Host/MCP/MCPStdioDeprecation.swift")
 
         for required in [
-            "title: \"Standard Input\"",
+            "title: \"Standard Input (Deprecated)\"",
             "state: model.stdio",
             "start: startStdio",
             "stop: stopStdio",
-            "title: \"HTTP\"",
+            "title: \"HTTP (Recommended)\"",
             "state: model.http",
             "start: startHTTP",
             "stop: stopHTTP",
         ] {
-            XCTAssertTrue(view.contains(required),
+            XCTAssertTrue((view + deprecation).contains(required),
                           "MCP page lost independent transport control: "
+                              + required)
+        }
+
+        for required in [
+            "lastStdioInitialization",
+            "lastStdioAction",
+            "This evidence is from this installation only.",
+            "Migrate to Streamable HTTP",
+        ] {
+            XCTAssertTrue((view + deprecation).contains(required),
+                          "MCP page lost deprecation evidence or migration copy: "
                               + required)
         }
 

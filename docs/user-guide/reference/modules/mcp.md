@@ -1,7 +1,7 @@
 ---
 page_id: mcp-module-reference
 title: MCP module
-description: Control NOW's stdio and HTTP MCP transports, inspect the machine grant ceiling, and review recent agent activity without treating connection as consent.
+description: Configure NOW's recommended HTTP MCP transport, migrate deprecated Standard Input clients, inspect the machine grant ceiling, and review recent agent activity without treating connection as consent.
 doc_type: reference
 audience: operator
 lifecycle: experimental
@@ -9,7 +9,7 @@ authority: [docs/agent-integration.md, docs/mcp-coverage.md]
 module_ids: [mcp]
 source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/Host/MCP, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
 media_ids: [mcp-host, mcp-ppc]
-last_verified: 2026-08-14
+last_verified: 2026-08-20
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -18,10 +18,11 @@ last_verified: 2026-08-14
 
 ## What it does
 
-MCP presents NOW's two local client transports and the selected classic Mac's
-explicit ceiling on what an agent may observe or change. Both transports use
-one catalog and dispatcher inside NOW; there is no separately installed MCP
-service.
+MCP presents NOW's recommended local Streamable HTTP endpoint and the
+temporarily retained, deprecated Standard Input compatibility transport. It
+also shows the selected classic Mac's explicit ceiling on what an agent may
+observe or change. Both transports use one catalog and dispatcher inside NOW;
+there is no separately installed MCP service.
 
 ![The macOS MCP module showing transport and grant state](../../../assets/screenshots/modules/mcp/host.svg){ .now-placeholder }
 
@@ -34,10 +35,8 @@ machine consent page. NOW-68K does not expose this MCP consent surface.
 
 The host exposes independent controls for:
 
-- **Standard Input**, a narrow `New Old World --mcp-stdio` process launched by
-  an MCP client. Its card copies the executable command and shows the private
-  same-user socket it uses to reach the already-running app.
-- **HTTP**, a loopback listener running directly inside the normal NOW app.
+- **HTTP (Recommended)**, a loopback listener running directly inside the
+  normal NOW app.
   Its card exposes an editable loopback port and an **Access** mode while
   stopped, and shows and copies the derived URL. Access has three settings,
   applied the next time HTTP starts:
@@ -53,12 +52,37 @@ The host exposes independent controls for:
     - **No authentication**: any process on this Mac can drive NOW over the
       port. The card says so in warning copy; the loopback Host and Origin
       checks still apply.
+- **Standard Input (Deprecated)**, a narrow `New Old World --mcp-stdio`
+  process launched by an MCP client. It remains functional during this
+  compatibility release and writes one migration warning to stderr at each
+  process start. MCP replies on stdout remain newline-delimited JSON-RPC only.
+  Its card retains Start, Stop, and the copyable command for rollback and
+  migration testing.
+
+## Migrate a client to HTTP
+
+1. Open **MCP > HTTP (Recommended)** in New Old World.
+2. Select **Bearer token**, **OAuth**, or the explicitly warned **No
+   authentication** loopback mode. Bearer is the default, not a migration
+   requirement.
+3. Start HTTP and copy the displayed `http://127.0.0.1:<port>/mcp` URL.
+4. For bearer or OAuth, use the matching copyable client recipe on the HTTP
+   card. Do not copy credentials into logs or documentation.
+5. Initialize the client over HTTP, then remove its `--mcp-stdio` command only
+   after its normal tool workflow succeeds.
+
+An HTTP credential identifies and authenticates a transport session; it does
+not grant a modern-Mac workspace. Ordinary external HTTP sessions start with
+no host-readable root. The embedded Chat lane can redeem one bounded,
+session-scoped workspace grant without retargeting another session.
 
 Each card has independent **Start** and **Stop** controls, which affect the
-current app session. The persisted launch policy is not here: **Start
-Standard Input automatically** and **Start HTTP automatically** live in the
-Settings window's MCP tab, because they are read once at launch and never
-mid-session. They apply the next time NOW opens.
+current app session. The persisted launch policy is not here: **Start HTTP
+automatically** and **Start Standard Input automatically (Deprecated)** live
+in the Settings window's MCP tab, because they are read once at launch and
+never mid-session. A clean installation leaves Standard Input off. An existing
+explicit Standard Input on or off choice is preserved without rewriting the
+stored preference. They apply the next time NOW opens.
 
 The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
@@ -81,6 +105,24 @@ already said — capability, face, machine, outcome, bounded refusal reason,
 plus the client name an MCP client stated about itself — and never
 arguments or payloads.
 
+The deprecated Standard Input card separately reports its most recent
+successful initialization and most recent audited action, with bounded client
+identity and time. “None recorded” means only that this installation's local
+database has no matching evidence; it is not telemetry and is not proof that
+another installation or private client configuration is unused. Paths,
+arguments, payloads, file bytes, and credentials are not displayed.
+
+## Deprecation release
+
+This source change is the Standard Input deprecation release candidate. NOW's
+release procedure assigns a public name only when a `release/vX.Y.Z` branch
+and immutable numbered candidate tag are cut; no such version has been chosen
+for this change yet. The first numbered release containing this change is
+expected to be the last release in which Standard Input executes. Release
+qualification must extend that window instead of advancing to the diagnostic
+tombstone if HTTP readiness, consumer migration, local-use evidence, emulator
+QA, or applicable physical-machine QA is incomplete.
+
 ## On the classic Mac
 
 The PowerPC MCP page sets the machine's ceiling. It cannot supply host-local
@@ -91,10 +133,9 @@ credentials or prove that an MCP client can reach the host.
 ## Common tasks
 
 - Confirm the selected machine and requested capability before granting.
-- Start only the transport required by the client, or set its automatic-start
-  switch in Settings for a transport that should be restored whenever NOW
-  opens.
-- Copy connection details from the relevant transport card rather than
+- Start HTTP for supported clients. Keep Standard Input running only while
+  migrating or testing rollback compatibility.
+- Copy connection details from the HTTP card rather than
   locating a helper executable.
 - Read the recent call record after an agent action.
 

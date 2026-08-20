@@ -12,20 +12,29 @@ final class MCPHTTPTransportTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: name) }
         let preferences = MCPTransportPreferences(defaults: defaults)
 
-        XCTAssertTrue(preferences.stdioStartsAutomatically)
+        XCTAssertFalse(preferences.stdioStartsAutomatically)
+        XCTAssertNil(defaults.object(
+            forKey: MCPTransportPreferences.Keys.stdioEnabled),
+            "reading the clean-install default must not manufacture a preference")
         XCTAssertFalse(preferences.httpStartsAutomatically)
         XCTAssertEqual(preferences.httpPort, 5254)
         XCTAssertEqual(preferences.httpAuthMode, .bearer)
-        preferences.stdioStartsAutomatically = false
+        preferences.stdioStartsAutomatically = true
         preferences.httpStartsAutomatically = true
         preferences.httpPort = 6254
         preferences.httpAuthMode = .oauth
 
         let restored = MCPTransportPreferences(defaults: defaults)
-        XCTAssertFalse(restored.stdioStartsAutomatically)
+        XCTAssertTrue(restored.stdioStartsAutomatically,
+                      "an explicit pre-upgrade opt-in must survive")
         XCTAssertTrue(restored.httpStartsAutomatically)
         XCTAssertEqual(restored.httpPort, 6254)
         XCTAssertEqual(restored.httpAuthMode, .oauth)
+
+        restored.stdioStartsAutomatically = false
+        XCTAssertFalse(MCPTransportPreferences(defaults: defaults)
+            .stdioStartsAutomatically,
+            "an explicit opt-out must survive")
 
         /* A value written by a build this one has never heard of falls back
            to bearer, the mode every install had before modes existed. */

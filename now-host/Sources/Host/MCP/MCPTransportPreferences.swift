@@ -17,10 +17,7 @@ struct MCPTransportPreferences {
     let defaults: UserDefaults
 
     var stdioStartsAutomatically: Bool {
-        get {
-            defaults.object(forKey: Keys.stdioEnabled) == nil
-                ? true : defaults.bool(forKey: Keys.stdioEnabled)
-        }
+        get { defaults.bool(forKey: Keys.stdioEnabled) }
         nonmutating set { defaults.set(newValue, forKey: Keys.stdioEnabled) }
     }
 

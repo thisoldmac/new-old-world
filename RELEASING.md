@@ -119,6 +119,15 @@ For every candidate:
 7. Publish the `-rc.N` GitHub release as a prerelease. Final publication reuses
    the accepted revision and marks the final product tag as the release.
 
+For the first numbered candidate containing the MCP Standard Input deprecation,
+the GitHub release notes must name the exact candidate tag as the deprecation
+release and the expected last release in which `--mcp-stdio` executes. They
+must also say that the compatibility window will be extended if consumer
+migration, installation-local initialization/action evidence, severity-1 or
+severity-2 HTTP replacement defects, emulator QA, applicable physical-machine
+QA, or the owner-approved rollback build is incomplete. Do not fill in a
+version before the `release/vX.Y.Z` branch and immutable `-rc.N` tag exist.
+
 The planned alpha profile is for a trusted local network. Its classic wire is
 plaintext, unauthenticated, and intentionally reachable beyond loopback; do
 not describe a candidate as safe for an untrusted LAN or the internet. See
