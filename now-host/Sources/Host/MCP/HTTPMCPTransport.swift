@@ -186,7 +186,11 @@ struct MCPHTTPResponse: Equatable {
 }
 
 actor MCPHTTPService {
-    typealias ServerFactory = @Sendable () -> NOWMCPServer
+    /// One server AND its identity box per session: the server fills the
+    /// box at initialize, the service adds the session id it mints, and the
+    /// audit sink the factory built beside them reads it at record time.
+    typealias ServerFactory = @Sendable ()
+        -> (server: NOWMCPServer, identity: NOWMCPClientIdentity)
     typealias ActivityObserver = @Sendable (_ began: Bool, _ at: Date) -> Void
 
     private struct Session {
@@ -286,7 +290,8 @@ actor MCPHTTPService {
         guard let object = try? JSONSerialization.jsonObject(with: request.body)
                 as? [String: Any],
               let method = object["method"] as? String else {
-            return jsonResponse(await serverFactory().handle(request.body))
+            return jsonResponse(
+                await serverFactory().server.handle(request.body))
         }
         let observesAgentCall = method == "tools/call"
         if observesAgentCall { activityObserver?(true, now) }
@@ -301,7 +306,7 @@ actor MCPHTTPService {
             guard sessions.count < configuration.maximumSessions else {
                 return response(429, headers: ["Retry-After": "30"])
             }
-            let server = serverFactory()
+            let (server, identity) = serverFactory()
             guard let reply = await server.handle(request.body) else {
                 return response(202)
             }
@@ -309,6 +314,7 @@ actor MCPHTTPService {
                 return jsonResponse(reply)
             }
             let id = UUID().uuidString.lowercased()
+            identity.setSessionKey(id)
             sessions[id] = .init(server: server, protocolVersion: version,
                                  lastUsed: now)
             return jsonResponse(reply, headers: ["Mcp-Session-Id": id])

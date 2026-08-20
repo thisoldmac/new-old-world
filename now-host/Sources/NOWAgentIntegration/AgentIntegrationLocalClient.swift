@@ -234,8 +234,13 @@ public struct AgentIntegrationLocalClient: Sendable {
     /// beyond the transport's own errors: the value of the call is the line
     /// in the person's log, and there is nothing to hand back to the face
     /// that already knows what it did.
-    public func recordAudit(_ event: HostProjectionAuditEvent) async throws {
-        let response = try await send(.audit(event))
+    public func recordAudit(_ event: HostProjectionAuditEvent,
+                            clientName: String? = nil,
+                            clientVersion: String? = nil,
+                            sessionKey: String? = nil) async throws {
+        let response = try await send(.audit(
+            event, clientName: clientName, clientVersion: clientVersion,
+            sessionKey: sessionKey))
         guard response.recorded == true else {
             throw AgentIntegrationLocalTransportError.invalidMessage(
                 "Local response did not confirm the audit event")

@@ -9,6 +9,49 @@ import Foundation
 /// no dispatch here has to learn its name. What used to be a tool enum, a
 /// dozen schema builders and a switch over all of them is now the loop in
 /// `Self.tools` and the lookup in `callTool`.
+/// Who this MCP server is talking to, as the client stated it at
+/// `initialize` — filled by the server, read by whichever audit sink the
+/// transport built beside it. A box rather than fields on the server so a
+/// sink constructed BEFORE the handshake still sees the answer, and so the
+/// transport can add what only it knows (the HTTP session id).
+///
+/// The name and version are a client's own claim, useful for a person's
+/// record and worthless as authority; nothing gates on them.
+public final class NOWMCPClientIdentity: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedName: String?
+    private var storedVersion: String?
+    private var storedSessionKey: String?
+
+    public init() {}
+
+    public var clientName: String? {
+        lock.lock(); defer { lock.unlock() }
+        return storedName
+    }
+
+    public var clientVersion: String? {
+        lock.lock(); defer { lock.unlock() }
+        return storedVersion
+    }
+
+    public var sessionKey: String? {
+        lock.lock(); defer { lock.unlock() }
+        return storedSessionKey
+    }
+
+    public func setClient(name: String?, version: String?) {
+        lock.lock(); defer { lock.unlock() }
+        storedName = name
+        storedVersion = version
+    }
+
+    public func setSessionKey(_ key: String?) {
+        lock.lock(); defer { lock.unlock() }
+        storedSessionKey = key
+    }
+}
+
 public actor NOWMCPServer {
     public static let maximumMessageBytes = 64 * 1024
     public static let firstContactResourceURI = "now://agent/first-contact"
@@ -27,14 +70,20 @@ public actor NOWMCPServer {
     /// argument rather than a default, so a face cannot be assembled without
     /// saying where its audit events go.
     private let dispatch: HostProjectionDispatch
+    /// Filled from `initialize`'s clientInfo when the transport wants the
+    /// answer; validated-then-discarded was the behaviour before anything
+    /// recorded who called.
+    private let identity: NOWMCPClientIdentity?
     private var initializeResponded = false
     private var initialized = false
 
     public init(client: AgentIntegrationClient,
                 registry: HostProjectionRegistry = .hostFaces,
-                audit: any HostProjectionAuditSink) {
+                audit: any HostProjectionAuditSink,
+                identity: NOWMCPClientIdentity? = nil) {
         self.client = client
         self.registry = registry
+        self.identity = identity
         dispatch = HostProjectionDispatch(
             face: .mcp, registry: registry, audit: audit)
     }
@@ -125,11 +174,13 @@ public actor NOWMCPServer {
               let params = request["params"] as? [String: Any],
               let requested = params["protocolVersion"] as? String,
               params["capabilities"] is [String: Any],
-              params["clientInfo"] is [String: Any] else {
+              let clientInfo = params["clientInfo"] as? [String: Any] else {
             return errorResponse(id: id, code: -32602,
                                  message: "Invalid initialize parameters")
         }
         initializeResponded = true
+        identity?.setClient(name: clientInfo["name"] as? String,
+                            version: clientInfo["version"] as? String)
         let version = Self.supportedVersions.contains(requested)
             ? requested : Self.supportedVersions[0]
         return successResponse(id: id, result: [

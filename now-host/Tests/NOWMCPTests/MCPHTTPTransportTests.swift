@@ -227,8 +227,9 @@ final class MCPHTTPTransportTests: XCTestCase {
     }
 
     private static let serverFactory: MCPHTTPService.ServerFactory = {
-        NOWMCPServer(client: SocketAgentIntegrationClient(),
-                     audit: LocalMCPAuditSink())
+        (NOWMCPServer(client: SocketAgentIntegrationClient(),
+                      audit: LocalMCPAuditSink()),
+         NOWMCPClientIdentity())
     }
 
     private static var baseHeaders: [String: String] {[

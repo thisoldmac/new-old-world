@@ -130,9 +130,11 @@ enum MCPStaleCompanionResponse {
 /// endpoint. Tool ownership, consent, audit and guest state remain in NOW.
 enum MCPStdioTransport {
     static func run() async {
+        let identity = NOWMCPClientIdentity()
         let server = NOWMCPServer(
             client: SocketAgentIntegrationClient(),
-            audit: LocalMCPAuditSink())
+            audit: LocalMCPAuditSink(identity: identity),
+            identity: identity)
         let output = MCPStandardOutput()
         let executableGeneration = MCPExecutableGeneration()
         var framer = BoundedMCPLineFramer()

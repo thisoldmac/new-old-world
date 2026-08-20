@@ -262,6 +262,14 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// One completed invocation, reported for the log. Present only on the
     /// `audit` operation, and never a request for anything.
     public var auditEvent: HostProjectionAuditEvent? = nil
+    /// Who invoked it, as the MCP client stated at initialize, riding
+    /// BESIDE the event so the event's own shape never grows identity.
+    /// All three optional: an older companion sends none, and an older
+    /// host refuses a request carrying them — one lost record on a mixed
+    /// install, on an already best-effort path. Bounded like the reason.
+    public var auditClientName: String? = nil
+    public var auditClientVersion: String? = nil
+    public var auditSessionKey: String? = nil
     /// Bits per pixel to ask the guest's screen capture for. Present only
     /// when the `capture` operation is TAKING one.
     public var captureDepth: Int? = nil
@@ -597,6 +605,9 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     /// making real calls, and this operation must not let it invent lines
     /// about capabilities that do not exist.
     public static func audit(_ event: HostProjectionAuditEvent,
+                             clientName: String? = nil,
+                             clientVersion: String? = nil,
+                             sessionKey: String? = nil,
                              requestID: UUID = UUID()) -> Self {
         var request = Self(
             requestID: requestID,
@@ -607,6 +618,9 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
             guestFilePath: nil,
             guestFileCursor: nil)
         request.auditEvent = event
+        request.auditClientName = clientName
+        request.auditClientVersion = clientVersion
+        request.auditSessionKey = sessionKey
         return request
     }
 
@@ -1798,7 +1812,8 @@ public enum AgentIntegrationLocalCodec {
             "processReference", "approvalReceipt", "guestFilePath",
             "guestFileCursor", "guestFileUpload", "guestFileUploadID",
             "guestFileUploadOffset", "guestFileUploadChunk", "probeCostly",
-            "auditEvent", "captureDepth", "captureID", "captureOffset",
+            "auditEvent", "auditClientName", "auditClientVersion",
+            "auditSessionKey", "captureDepth", "captureID", "captureOffset",
             "captureAbandon",
             // P1a's fields. This list is one of the two gates every field
             // has to clear, and a field declared here and forgotten there
@@ -2027,9 +2042,26 @@ public enum AgentIntegrationLocalCodec {
                this operation can put in that file. Note there is no guest
                SELECTOR here — the machine the call concerned travels inside
                the event, because nothing is being asked of any guest. */
-            expectedKeys = [
+            /* The identity fields ride only when the reporter has them, the
+               same present-only shape `guestSelector` takes below — a v8
+               reporter that sends none must keep matching exactly. They are
+               the client's own claim about itself, bounded so a same-uid
+               process cannot use the record as a place to park arbitrary
+               text. */
+            var auditKeys: Set<String> = [
                 "version", "requestID", "operation", "auditEvent",
             ]
+            if request.auditClientName != nil {
+                auditKeys.insert("auditClientName")
+            }
+            if request.auditClientVersion != nil {
+                auditKeys.insert("auditClientVersion")
+            }
+            if request.auditSessionKey != nil {
+                auditKeys.insert("auditSessionKey")
+            }
+            expectedKeys = auditKeys
+            let identityBound = 200
             guard let event = request.auditEvent,
                   request.launchSelection == nil,
                   request.processReference == nil,
@@ -2040,7 +2072,13 @@ public enum AgentIntegrationLocalCodec {
                   HostProjectionRegistry.hostFaces.projection(
                       named: event.capability) != nil,
                   (event.reason?.unicodeScalars.count ?? 0)
-                      <= HostProjectionAuditEvent.maximumReasonScalars else {
+                      <= HostProjectionAuditEvent.maximumReasonScalars,
+                  (request.auditClientName?.unicodeScalars.count ?? 0)
+                      <= identityBound,
+                  (request.auditClientVersion?.unicodeScalars.count ?? 0)
+                      <= identityBound,
+                  (request.auditSessionKey?.unicodeScalars.count ?? 0)
+                      <= identityBound else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Audit event does not match the schema")
             }

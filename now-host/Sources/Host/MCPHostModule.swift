@@ -23,6 +23,8 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
     /// The page's card arrangement, owned here so it persists through the
     /// same defaults every other module preference travels in.
     let cardLayout: MCPCardLayoutModel
+    /// The durable history the activity card reads.
+    let records: MCPRecordsModel
     /// `{ context.showSettings(.mcp) }`, captured once at construction the
     /// same way `MirrorHostModule` captures `context.selectModule` — the
     /// page's "Settings…" button for the start-automatically toggles that
@@ -42,6 +44,7 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
         self.companions = companions
         oauthConsent = context.mcpOAuthConsent ?? MCPOAuthConsentModel()
         cardLayout = MCPCardLayoutModel(defaults: context.defaults)
+        records = MCPRecordsModel(recorder: context.mcpRecords)
         listener = context.listener
         transportSettings = MCPTransportSettingsModel(
             defaults: context.defaults)
@@ -96,6 +99,7 @@ enum MCPHostModule {
                 stopStdio: runtime.stopStdio,
                 startHTTP: runtime.startHTTP,
                 stopHTTP: runtime.stopHTTP,
-                layoutModel: runtime.cardLayout))
+                layoutModel: runtime.cardLayout,
+                records: runtime.records))
         })
 }

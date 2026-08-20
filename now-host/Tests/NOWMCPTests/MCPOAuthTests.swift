@@ -370,8 +370,9 @@ final class MCPOAuthTests: XCTestCase {
             configuration: .init(port: port, authMode: mode,
                                  bearerToken: bearerToken),
             serverFactory: {
-                NOWMCPServer(client: SocketAgentIntegrationClient(),
-                             audit: LocalMCPAuditSink())
+                (NOWMCPServer(client: SocketAgentIntegrationClient(),
+                              audit: LocalMCPAuditSink()),
+                 NOWMCPClientIdentity())
             },
             oauth: oauth)
     }

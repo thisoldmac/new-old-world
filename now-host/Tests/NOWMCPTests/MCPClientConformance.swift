@@ -265,9 +265,10 @@ final class MCPHTTPClient: MCPConformanceClient, @unchecked Sendable {
         listener = try MCPHTTPListener(
             configuration: .init(port: port, bearerToken: token),
             serverFactory: {
-                NOWMCPServer(
+                (NOWMCPServer(
                     client: SocketAgentIntegrationClient(endpoint: socket),
-                    audit: LocalMCPAuditSink(endpoint: socket))
+                    audit: LocalMCPAuditSink(endpoint: socket)),
+                 NOWMCPClientIdentity())
             })
         let ready = DispatchSemaphore(value: 0)
         let startError = StartErrorBox()

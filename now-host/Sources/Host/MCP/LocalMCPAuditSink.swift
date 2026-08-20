@@ -20,15 +20,24 @@ import NOWAgentIntegration
 /// person's logging rather than about their machine.
 struct LocalMCPAuditSink: HostProjectionAuditSink {
     private let client: AgentIntegrationLocalClient?
+    /// Filled by the server at initialize; nil on a sink built without one
+    /// (tests, older assemblies), which reports the way v8 always did.
+    private let identity: NOWMCPClientIdentity?
 
     /// Deliberately NOT the addressed client the projections use: an audit
     /// report asks nothing of any guest, so it carries no selector. The
     /// machine the invocation concerned travels inside the event.
-    init(endpoint: AgentIntegrationEndpoint? = nil) {
+    init(endpoint: AgentIntegrationEndpoint? = nil,
+         identity: NOWMCPClientIdentity? = nil) {
         client = try? AgentIntegrationLocalClient(endpoint: endpoint)
+        self.identity = identity
     }
 
     func record(_ event: HostProjectionAuditEvent) async {
-        try? await client?.recordAudit(event)
+        try? await client?.recordAudit(
+            event,
+            clientName: identity?.clientName,
+            clientVersion: identity?.clientVersion,
+            sessionKey: identity.map { _ in "pid:\(getpid())" })
     }
 }

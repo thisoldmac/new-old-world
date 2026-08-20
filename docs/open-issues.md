@@ -7,6 +7,35 @@ search:
 
 # Open issues
 
+## BUILT AND TESTED, NOT DRIVEN BY HAND: the MCP arc — auth modes, two-column card page, durable records DB (2026-08-20, `feat/mcp-http-auth-modes` → `feat/mcp-module-cards` → `feat/mcp-records-db`, PRs #55–#57)
+
+Three stacked PRs. HTTP MCP gains a persisted access mode — bearer (the
+default, unchanged), a built-in OAuth authorization server (metadata, DCR,
+PKCE, consent parked on a human Approve/Deny on the MCP page), and
+unauthenticated with warning copy. The MCP page becomes two columns of
+collapsible, draggable cards with per-transport session-log tails
+(write-time transport tag beside the log line; the text cannot say which
+transport, so only the writer can). Audited calls now land in a SQLite
+records store (agents / sessions / targets / actions, no arguments column
+by design) read by the history card and its entity detail sheets; the
+200-event in-memory ring is retired.
+
+**Tested, not verified beyond that**: every suite is green (`test-host`
+Debug+Release, docs gate) and the load-bearing guards were watched failing
+by mutation (PKCE comparison, token expiry, loopback Host, layout version
+guard, agent dedup). What nobody has done:
+
+- Driven the page by hand — drag between columns, collapse persistence
+  across relaunch, log tails, the entity sheet's pivots.
+- Interop against a real MCP client in each auth mode (`claude mcp add
+  --transport http`); the OAuth flow has passed only its own end-to-end
+  test, never a real client's.
+- Emulator QA and Metal QA statuses (`tools/code-qa`) — required before
+  merge, not yet recorded, and the metal half is Michelle's call.
+- The stdio identity fields on a REAL companion process (the socket seam
+  is codec-tested only).
+
+
 ## EMULATOR QA SWEEP OF PR #54, AND THE THREE SURFACES IT COULD NOT REACH (2026-08-20, `feat/agentic-loop`)
 
 The sweep ran on head `a4fa5382`, mac99 / OS 9.1 (68K guest and `ext/`
