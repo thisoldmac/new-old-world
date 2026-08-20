@@ -103,12 +103,15 @@ final class NOWAPISSEStream: MCPHTTPStreamingBody, @unchecked Sendable {
     private var cancelled = false
     private var subscription: HostEventSubscription?
     private var heartbeat: DispatchSourceTimer?
+    private var onCancel: (@Sendable () -> Void)?
 
     @MainActor
     init(bus: HostEventBus,
          maximumBufferedFrames: Int = defaultMaximumBufferedFrames,
-         startsHeartbeat: Bool = true) {
+         startsHeartbeat: Bool = true,
+         onCancel: @escaping @Sendable () -> Void = {}) {
         self.maximumBufferedFrames = max(1, maximumBufferedFrames)
+        self.onCancel = onCancel
         enqueue(Self.frame(.init(
             type: "stream.ready", liveOnly: true, replay: false,
             refetch: ["/api/v1/guests", "/api/v1/connections",
@@ -141,6 +144,7 @@ final class NOWAPISSEStream: MCPHTTPStreamingBody, @unchecked Sendable {
     func cancel() {
         let pending: (@Sendable (Data?) -> Void)?
         let activeSubscription: HostEventSubscription?
+        let release: (@Sendable () -> Void)?
         lock.lock()
         guard !cancelled else { lock.unlock(); return }
         cancelled = true
@@ -151,9 +155,12 @@ final class NOWAPISSEStream: MCPHTTPStreamingBody, @unchecked Sendable {
         subscription = nil
         let timer = heartbeat
         heartbeat = nil
+        release = onCancel
+        onCancel = nil
         lock.unlock()
         timer?.cancel()
         pending?(nil)
+        release?()
         if let activeSubscription {
             Task { @MainActor in activeSubscription.unsubscribe() }
         }
@@ -219,6 +226,49 @@ final class NOWAPISSEStream: MCPHTTPStreamingBody, @unchecked Sendable {
         let payload = (try? JSONEncoder.sorted.encode(event)) ?? Data("{}".utf8)
         return Data("event: \(event.type)\ndata: ".utf8)
             + payload + Data("\n\n".utf8)
+    }
+}
+
+/// Caps the timers, subscriptions, and encoding work a local client can hold
+/// open at once. Each host owns one pool; cancelling a stream returns its
+/// lease synchronously, including peer-close cancellation.
+final class NOWAPIEventStreamPool: @unchecked Sendable {
+    static let defaultMaximumStreams = 8
+
+    private let bus: HostEventBus
+    private let maximumStreams: Int
+    private let lock = NSLock()
+    private var activeStreams = 0
+
+    init(bus: HostEventBus,
+         maximumStreams: Int = defaultMaximumStreams) {
+        self.bus = bus
+        self.maximumStreams = max(1, maximumStreams)
+    }
+
+    @MainActor
+    func open(startsHeartbeat: Bool = true) -> NOWAPISSEStream? {
+        lock.lock()
+        guard activeStreams < maximumStreams else {
+            lock.unlock()
+            return nil
+        }
+        activeStreams += 1
+        lock.unlock()
+        return NOWAPISSEStream(
+            bus: bus, startsHeartbeat: startsHeartbeat,
+            onCancel: { [weak self] in self?.release() })
+    }
+
+    var activeStreamCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return activeStreams
+    }
+
+    private func release() {
+        lock.lock()
+        activeStreams = max(0, activeStreams - 1)
+        lock.unlock()
     }
 }
 

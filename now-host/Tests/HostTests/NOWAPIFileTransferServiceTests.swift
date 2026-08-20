@@ -114,6 +114,27 @@ final class NOWAPIFileTransferServiceTests: XCTestCase {
         _ = try await running.value
     }
 
+    func testUnchangedProgressPollDoesNotRewriteUpdatedAt() async throws {
+        let clock = FileClock(Date(timeIntervalSince1970: 100))
+        let driver = FileDriverFixture()
+        driver.blockCommits = true
+        let service = NOWAPIFileTransferService(driver: driver) { clock.now }
+        let transfer = try await service.beginUpload(
+            guestID: "pb1400c", request: upload(bytes: 0))
+        let running = Task {
+            try await service.commitUpload(transferID: transfer.id)
+        }
+        while driver.commitContinuation == nil { await Task.yield() }
+        driver.progress = (received: 3, expected: 8)
+        let first = await service.transfer(id: transfer.id)
+        clock.now = Date(timeIntervalSince1970: 200)
+        let unchanged = await service.transfer(id: transfer.id)
+
+        XCTAssertEqual(unchanged?.updatedAt, first?.updatedAt)
+        driver.finishBlockedCommit()
+        _ = try await running.value
+    }
+
     func testCancelRemainsCancelledWhenWireOperationSettlesSuccess() async throws {
         let driver = FileDriverFixture()
         driver.blockCommits = true

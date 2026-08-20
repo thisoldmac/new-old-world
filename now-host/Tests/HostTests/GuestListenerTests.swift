@@ -543,6 +543,32 @@ final class GuestListenerTests: XCTestCase {
         if case .connected = listener.state { XCTFail("must not connect") }
     }
 
+    func testAPIStartKeepsAnAlreadyConnectedGuestAlive() async throws {
+        let guest = FakeGuest(port: listener.boundPort ?? 0)
+        defer { guest.connection.cancel() }
+        guest.start()
+        try guest.send(guestHello())
+        try await waitUntil("connected") {
+            if case .connected = self.listener.state { return true }
+            return false
+        }
+        let suite = "now-api-listener-start-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsModel(defaults: defaults)
+        settings.listenPort = try XCTUnwrap(listener.boundPort)
+        let adapter = NOWAPIHostAdapter(listener: listener,
+                                        settings: settings)
+
+        _ = adapter.apiStartListener()
+        try guest.send(.ping(id: 700))
+        try await waitUntil("connected guest answers after repeated start") {
+            guest.received.contains(.pong(id: 700))
+        }
+        XCTAssertEqual(listener.guests.count, 1)
+        XCTAssertFalse(guest.wasClosed)
+    }
+
     /// The refusal that DID NOT survive: two machines calling themselves
     /// the same thing.
     ///

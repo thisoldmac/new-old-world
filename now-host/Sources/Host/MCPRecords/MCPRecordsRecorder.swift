@@ -29,23 +29,32 @@ final class MCPRecordsRecorder: @unchecked Sendable {
                 agent: MCPAgentIdentity,
                 drivenGuest: String?,
                 at moment: Date = Date()) {
-        let database = database
-        let insertions = insertions
         Task {
-            do {
-                try await database.record(event: event, agent: agent,
-                                          drivenGuest: drivenGuest,
-                                          at: moment)
-                let row = try await database.actions(
-                    matching: MCPActionQuery(limit: 1)).first
-                if let row { insertions.yield(row) }
-            } catch {
-                guard self.shouldWarn() else { return }
-                let detail = "MCP record dropped: \(error) — further "
-                    + "drops this launch will not be reported"
-                await MainActor.run {
-                    HostLog.shared.write(.warn, "agent", detail)
-                }
+            await recordAndWait(event: event, agent: agent,
+                                drivenGuest: drivenGuest, at: moment)
+        }
+    }
+
+    /// Persists one record before returning. The public API uses this form so
+    /// a bounded request stream cannot create an unbounded tail of detached
+    /// database tasks; existing MCP callers retain fire-and-forget behavior.
+    func recordAndWait(event: HostProjectionAuditEvent,
+                       agent: MCPAgentIdentity,
+                       drivenGuest: String?,
+                       at moment: Date = Date()) async {
+        do {
+            try await database.record(event: event, agent: agent,
+                                      drivenGuest: drivenGuest,
+                                      at: moment)
+            let row = try await database.actions(
+                matching: MCPActionQuery(limit: 1)).first
+            if let row { insertions.yield(row) }
+        } catch {
+            guard shouldWarn() else { return }
+            let detail = "MCP record dropped: \(error) — further "
+                + "drops this launch will not be reported"
+            await MainActor.run {
+                HostLog.shared.write(.warn, "agent", detail)
             }
         }
     }

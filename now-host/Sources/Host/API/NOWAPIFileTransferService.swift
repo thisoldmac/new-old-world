@@ -376,6 +376,8 @@ final class NOWAPIFileTransferService {
               var transfer = transfers[id],
               transfer.state == .running,
               let progress = driver.apiTransferProgress() else { return }
+        guard transfer.transferredBytes != progress.received
+                || transfer.expectedBytes != progress.expected else { return }
         transfer.transferredBytes = progress.received
         transfer.expectedBytes = progress.expected
         transfer.updatedAt = clock()

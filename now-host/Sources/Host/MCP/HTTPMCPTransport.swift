@@ -164,7 +164,7 @@ protocol MCPHTTPStreamingBody: AnyObject, Sendable {
     func cancel()
 }
 
-struct MCPHTTPResponse: Equatable {
+struct MCPHTTPResponse {
     let status: Int
     var headers: [String: String] = [:]
     var body = Data()
@@ -173,13 +173,6 @@ struct MCPHTTPResponse: Equatable {
     var bodyFileURL: URL? = nil
     var bodyFileLength: Int? = nil
     var streamingBody: (any MCPHTTPStreamingBody)? = nil
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.status == rhs.status && lhs.headers == rhs.headers
-            && lhs.body == rhs.body && lhs.bodyFileURL == rhs.bodyFileURL
-            && lhs.bodyFileLength == rhs.bodyFileLength
-            && (lhs.streamingBody != nil) == (rhs.streamingBody != nil)
-    }
 
     var wireHeadData: Data {
         let phrase: String
@@ -516,19 +509,8 @@ actor MCPHTTPService {
     private func validAuthorization(_ value: String?) -> Bool {
         guard let value, value.hasPrefix("Bearer "),
               let token = configuration.bearerToken else { return false }
-        return Self.constantTimeEqual(
+        return constantTimeSecretEqual(
             String(value.dropFirst("Bearer ".count)), token)
-    }
-
-    private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
-        let left = Array(lhs.utf8), right = Array(rhs.utf8)
-        var difference = UInt8(truncatingIfNeeded: left.count ^ right.count)
-        for index in 0..<max(left.count, right.count) {
-            let l = index < left.count ? left[index] : 0
-            let r = index < right.count ? right[index] : 0
-            difference |= l ^ r
-        }
-        return difference == 0
     }
 
     private func jsonResponse(_ body: Data?,

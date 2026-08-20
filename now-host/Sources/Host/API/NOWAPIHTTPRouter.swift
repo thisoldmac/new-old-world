@@ -28,7 +28,8 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
 
     func respond(to request: MCPHTTPRequest) async -> MCPHTTPResponse {
         let requestID = Self.requestID(request.headers["x-request-id"])
-        guard Self.constantTimeEqual(request.headers["x-api-key"] ?? "", apiKey)
+        guard constantTimeSecretEqual(
+            request.headers["x-api-key"] ?? "", apiKey)
         else {
             return error(401, requestID: requestID, code: "unauthorized",
                          message: "A valid X-API-Key header is required.",
@@ -154,12 +155,19 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                              message: "Accept: text/event-stream is required.",
                              reach: "request")
             }
+            guard let stream = await host.apiEventStream() else {
+                return error(
+                    429, requestID: requestID,
+                    code: "event_stream_limit_reached",
+                    message: "Too many event streams are already open.",
+                    reach: "host")
+            }
             response = .init(
                 status: 200,
                 headers: ["Content-Type": "text/event-stream; charset=utf-8",
                           "Cache-Control": "no-store",
                           "X-Accel-Buffering": "no"],
-                streamingBody: await host.apiEventStream())
+                streamingBody: stream)
         case ("GET", "/api/v1/guests"):
             let guests = await host.apiGuests().map(Self.guestJSON)
             response = json(200, requestID: requestID,
@@ -829,13 +837,4 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
          "connectedAt": dateString(connection.connectedAt)]
     }
 
-    static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
-        let left = Array(lhs.utf8), right = Array(rhs.utf8)
-        var difference = UInt8(truncatingIfNeeded: left.count ^ right.count)
-        for index in 0..<max(left.count, right.count) {
-            difference |= (index < left.count ? left[index] : 0)
-                ^ (index < right.count ? right[index] : 0)
-        }
-        return difference == 0
-    }
 }

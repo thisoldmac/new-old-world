@@ -578,7 +578,7 @@ private final class FixtureHost: NOWAPIHostServing {
         return true
     }
 
-    func apiEventStream() -> NOWAPISSEStream {
+    func apiEventStream() -> NOWAPISSEStream? {
         NOWAPISSEStream(bus: eventBus, startsHeartbeat: false)
     }
 

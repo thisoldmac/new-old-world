@@ -96,6 +96,26 @@ final class NOWAPIEventStreamTests: XCTestCase {
         XCTAssertEqual(bus.subscriberCount, 0)
     }
 
+    func testRouteCapsConcurrentStreamsAndCancelReturnsTheLease() async {
+        let host = EventFixtureHost(maximumStreams: 1)
+        let router = NOWAPIHTTPRouter(
+            apiKey: "key", contractDigest: String(repeating: "d", count: 64),
+            host: host)
+        let headers = ["x-api-key": "key", "accept": "text/event-stream"]
+
+        let first = await router.respond(to: request(headers: headers))
+        let refused = await router.respond(to: request(headers: headers))
+        XCTAssertEqual(first.status, 200)
+        XCTAssertEqual(refused.status, 429)
+        XCTAssertTrue(String(data: refused.body, encoding: .utf8)?
+            .contains("event_stream_limit_reached") == true)
+
+        first.streamingBody?.cancel()
+        let replacement = await router.respond(to: request(headers: headers))
+        XCTAssertEqual(replacement.status, 200)
+        replacement.streamingBody?.cancel()
+    }
+
     func testListenerKeepsSSEOpenAndClientCloseCancelsSubscription() async throws {
         let port = UInt16.random(in: 40_000...60_000)
         let host = EventFixtureHost()
@@ -190,6 +210,12 @@ final class NOWAPIEventStreamTests: XCTestCase {
 @MainActor
 private final class EventFixtureHost: NOWAPIHostServing {
     let bus = HostEventBus()
+    private let streams: NOWAPIEventStreamPool
+
+    init(maximumStreams: Int = NOWAPIEventStreamPool.defaultMaximumStreams) {
+        streams = NOWAPIEventStreamPool(
+            bus: bus, maximumStreams: maximumStreams)
+    }
     func apiGuests() -> [NOWAPIGuestSummary] { [] }
     func apiGuest(id: String) -> NOWAPIGuestDetail? { nil }
     func apiListener() -> NOWAPIListenerSummary {
@@ -199,8 +225,8 @@ private final class EventFixtureHost: NOWAPIHostServing {
     func apiStopListener() -> NOWAPIListenerSummary { apiListener() }
     func apiConnections() -> [NOWAPIConnectionSummary] { [] }
     func apiDisconnect(sessionID: String) -> Bool { false }
-    func apiEventStream() -> NOWAPISSEStream {
-        NOWAPISSEStream(bus: bus, startsHeartbeat: false)
+    func apiEventStream() -> NOWAPISSEStream? {
+        streams.open(startsHeartbeat: false)
     }
     func apiExecuteCommand(
         guestID: String, expectedSessionID: String,

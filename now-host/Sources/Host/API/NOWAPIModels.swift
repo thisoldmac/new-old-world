@@ -40,7 +40,7 @@ protocol NOWAPIHostServing: AnyObject {
     func apiStopListener() -> NOWAPIListenerSummary
     func apiConnections() -> [NOWAPIConnectionSummary]
     func apiDisconnect(sessionID: String) -> Bool
-    func apiEventStream() -> NOWAPISSEStream
+    func apiEventStream() -> NOWAPISSEStream?
     func apiExecuteCommand(
         guestID: String, expectedSessionID: String,
         request: NOWAPIConsoleCommandRequest,

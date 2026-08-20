@@ -12,12 +12,14 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
     private let files: NOWAPIFileTransferService?
     private let operationService: NOWService?
     private let operationClient: AgentIntegrationClient?
+    private let eventStreams: NOWAPIEventStreamPool
 
     init(listener: GuestListener, settings: SettingsModel,
          guestFiles: GuestFilesCommandService? = nil,
          agentIntegration: AgentIntegrationHostAdapter? = nil) {
         self.listener = listener
         self.settings = settings
+        eventStreams = NOWAPIEventStreamPool(bus: listener.events)
         commands = NOWAPIConsoleCommandService(driver: listener)
         if let guestFiles, let agentIntegration {
             files = NOWAPIFileTransferService(driver: NOWAPIHostFileDriver(
@@ -100,8 +102,13 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
     }
 
     func apiStartListener() -> NOWAPIListenerSummary {
-        listener.start(
-            ports: listener.registry.portsToBind(base: settings.listenPort))
+        let ports = listener.registry.portsToBind(base: settings.listenPort)
+        switch listener.state {
+        case .idle, .failed:
+            listener.start(ports: ports)
+        case .listening, .connected:
+            listener.ensure(ports: ports)
+        }
         return apiListener()
     }
 
@@ -122,8 +129,8 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
         return listener.disconnect(key)
     }
 
-    func apiEventStream() -> NOWAPISSEStream {
-        NOWAPISSEStream(bus: listener.events)
+    func apiEventStream() -> NOWAPISSEStream? {
+        eventStreams.open()
     }
 
     func apiExecuteCommand(
