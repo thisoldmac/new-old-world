@@ -577,8 +577,13 @@ final class ContinuityEdgeController: ObservableObject {
         self.driver = driver
         self.environment = environment
             ?? AppKitContinuityPointerEnvironment()
+        /* Inert, NOT the AppKit tap — see
+           `InertContinuityKeyboardEnvironment`. A consuming session-wide key
+           tap in a process that is not the running app takes every keystroke
+           on the Mac hostage, and defaulting to the real one put exactly that
+           inside `xctest`. Production names its environment out loud. */
         self.keyboardEnvironment = keyboardEnvironment
-            ?? AppKitContinuityKeyboardEnvironment()
+            ?? InertContinuityKeyboardEnvironment()
         self.accessibility = accessibility ?? SystemAccessibilityAuthorization()
         self.runningCopy = runningCopy
         self.audit = audit ?? { HostLog.shared.write($0, "continuity", $1) }

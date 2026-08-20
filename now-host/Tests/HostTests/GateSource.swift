@@ -54,6 +54,19 @@ enum GateSource {
                    encoding: .utf8)
     }
 
+    /// A shell script with its WHOLE-LINE `#` comments removed.
+    ///
+    /// Whole-line only, and conservatively so for the same reason the Swift
+    /// reader leaves trailing `//` alone: `[ "$#" -gt 1 ]` is not a comment,
+    /// and telling a comment from a parameter expansion needs a lexer. The
+    /// hazard these gates actually have is prose — a script's own commentary
+    /// explaining why a flag must NOT appear satisfies a scan for that flag.
+    static func shellScript(_ path: String) throws -> String {
+        try raw(path).components(separatedBy: .newlines)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }
+            .joined(separator: "\n")
+    }
+
     /// A guest C source with its comments removed — what a gate scanning
     /// for an identifier should read.
     static func guestC(_ path: String) throws -> String {

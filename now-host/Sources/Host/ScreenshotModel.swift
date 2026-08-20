@@ -99,6 +99,11 @@ struct ScreenshotRecord: Identifiable, Equatable {
 
 @MainActor
 final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
+    /// Where `copyPreview`/`copyToPasteboard` writes. `.general` is the
+    /// person's own clipboard, which is why a test must name its own board
+    /// rather than take theirs (`CapturePasteboard`).
+    var pasteboardForCopying: NSPasteboard = .general
+
     /// One machine's captures, parked while another is driven.
     ///
     /// The history is CACHED, and the reasoning here ran the other way to
@@ -733,11 +738,7 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
 
     /// Replaces the pasteboard with the capture as a TIFF-backed image.
     func copyToPasteboard(_ record: ScreenshotRecord) {
-        let rep = NSBitmapImageRep(cgImage: record.image)
-        let image = NSImage(size: rep.size)
-        image.addRepresentation(rep)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([image])
+        CapturePasteboard.copy(record, to: pasteboardForCopying)
     }
 
     /// Save-panel defaults, in the contemporary style.
@@ -759,5 +760,29 @@ final class ScreenshotModuleModel: ObservableObject, GuestScopedModel {
         if history.count > Self.historyLimit {
             history.removeLast(history.count - Self.historyLimit)
         }
+    }
+}
+
+
+/// The one place a capture is written to a pasteboard.
+///
+/// It was two — `ScreenshotModuleModel.copyToPasteboard` and
+/// `ProcessesModel.copyPreview` — with a comment on the second saying so
+/// and naming this as the fix.
+///
+/// **The board is a parameter because `.general` is the person's own
+/// clipboard.** Three tests exercised the copy against `NSPasteboard.general`
+/// itself, so every `scripts/test-host` run threw away whatever the human
+/// had copied — the same shape of defect as the suite's consuming keyboard
+/// tap (`InertContinuityKeyboardEnvironment`): a test reaching into the
+/// live session it happens to be running in. `NoSharedSystemStateInTests`
+/// keeps it that way.
+enum CapturePasteboard {
+    static func copy(_ record: ScreenshotRecord, to board: NSPasteboard) {
+        let rep = NSBitmapImageRep(cgImage: record.image)
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        board.clearContents()
+        board.writeObjects([image])
     }
 }

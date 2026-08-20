@@ -398,8 +398,14 @@ final class MirrorContinuityController: ObservableObject,
     var maintainsOptInAfterGuestExit = false
 
     private(set) lazy var edge: ContinuityEdgeController = {
+        /* The real event tap is named HERE and nowhere else. The
+           controller's own default is inert by design, so this line is the
+           whole of the running app's claim on the keyboard;
+           `ContinuityEventTapOwnershipTests` fails if it goes missing. */
         let edge = ContinuityEdgeController(
-            layout: layout, driver: self, accessibility: accessibility,
+            layout: layout, driver: self,
+            keyboardEnvironment: AppKitContinuityKeyboardEnvironment(),
+            accessibility: accessibility,
             runningCopy: runningCopy, audit: audit)
         onPhaseChanged = { [weak edge] phase in
             edge?.transportPhaseChanged(phase)
