@@ -230,6 +230,33 @@ final class ChatSystemPromptTests: XCTestCase {
                        without)
     }
 
+    /// The conversation's project binds its build lane: a fresh run on
+    /// 2026-08-19 cross-compiled a guest-home project on the modern Mac
+    /// and shipped the wrong machine's binary, and scavenged another
+    /// project's sources from the shared workspace.
+    func testAProjectsGroundBindsTheBuildLane() {
+        let result = health(guest: machine("pb1400c"))
+        let guestHome = ChatSystemPrompt.compose(
+            health: result, origin: .guestWire,
+            project: ChatProjectContext(
+                name: "test 3", home: "guest", toolchainPin: nil))
+        XCTAssertTrue(guestHome.contains("\"test 3\""), guestHome)
+        XCTAssertTrue(guestHome.contains("BUILT THERE"), guestHome)
+        XCTAssertTrue(guestHome.contains("Do NOT cross-compile"), guestHome)
+        XCTAssertTrue(guestHome.contains("never reuse"), guestHome)
+
+        let hostUnknownPin = ChatSystemPrompt.compose(
+            health: result, origin: .guestWire,
+            project: ChatProjectContext(
+                name: "shelf", home: "host", toolchainPin: nil))
+        XCTAssertTrue(hostUnknownPin.contains("read Project.ckp"),
+                      hostUnknownPin)
+
+        let none = ChatSystemPrompt.compose(
+            health: result, origin: .guestWire)
+        XCTAssertFalse(none.contains("THIS CONVERSATION'S PROJECT"), none)
+    }
+
     /// The naming rule binds the model's words, not the person's: a turn
     /// must be told not to open by correcting what somebody calls their
     /// own machine (measured 2026-08-19 — a model spent two turns

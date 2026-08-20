@@ -98,6 +98,7 @@ actor ChatHarness {
         origin: ChatSystemPrompt.Origin,
         mode: ChatMode = .build,
         loadedSkills: [String] = [],
+        project: ChatProjectContext? = nil,
         events: @escaping @Sendable (ChatHarnessEvent) -> Void
     ) -> Bool {
         guard running[conversation] == nil else { return false }
@@ -105,7 +106,8 @@ actor ChatHarness {
             await self.turn(
                 wireModelID: wireModelID, transcript: transcript,
                 selector: selector, origin: origin, mode: mode,
-                loadedSkills: loadedSkills, events: events)
+                loadedSkills: loadedSkills, project: project,
+                events: events)
             self.finished(conversation)
         }
         running[conversation] = task
@@ -147,6 +149,7 @@ actor ChatHarness {
         origin: ChatSystemPrompt.Origin,
         mode: ChatMode,
         loadedSkills: [String],
+        project: ChatProjectContext?,
         events: @escaping @Sendable (ChatHarnessEvent) -> Void
     ) async {
         guard let (provider, modelID) = registry.resolve(wireID: wireModelID)
@@ -169,7 +172,8 @@ actor ChatHarness {
             screen: await guestScreen(), reach: reach, mode: mode,
             skills: skills,
             loaded: loadedSkills.compactMap { skills[$0] },
-            instructions: instructions())
+            instructions: instructions(),
+            project: project)
         /* Every row, every turn. They used to be filtered by a sniffer
            over the person's own words, so asking for "a thing that
            beeps" got a model with no project tools and an honest
@@ -198,7 +202,10 @@ actor ChatHarness {
             do {
                 let stream = provider.stream(ChatCompletionRequest(
                     model: modelID, system: system, turns: working,
-                    tools: tools, maxTokens: maxTokens))
+                    tools: tools, maxTokens: maxTokens,
+                    workspaceSubdirectory: project.map {
+                        Self.workspaceSubdirectory(for: $0.name)
+                    }))
                 for try await event in stream {
                     switch event {
                     case .textDelta(let part):
@@ -302,6 +309,20 @@ actor ChatHarness {
             ok: false, code: "turn-limit",
             message: "The model kept asking for tools past the ceiling",
             appended: appended)))
+    }
+
+    /// A project's workspace subfolder name: the project's own name,
+    /// reduced to what every filesystem in this product tolerates.
+    /// Deterministic, so the same project lands in the same folder
+    /// every turn.
+    static func workspaceSubdirectory(for projectName: String) -> String {
+        let kept = projectName.unicodeScalars.map { scalar -> Character in
+            let c = Character(scalar)
+            return c.isLetter || c.isNumber || c == "-" || c == "_"
+                || c == " " ? c : "-"
+        }
+        let trimmed = String(kept).trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? "Project" : String(trimmed.prefix(64))
     }
 
     /* --- the one tool this harness serves itself ---------------------

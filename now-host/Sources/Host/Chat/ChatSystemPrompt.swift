@@ -26,6 +26,19 @@ import NOWAgentIntegration
    and offers to "connect to" one, which this side cannot do at all: the
    guest dials this Mac and this Mac only listens. */
 
+/// The project this conversation is filed under, as the turn must know
+/// it: the GROUND decides where builds run, and a turn that was not
+/// told it cross-compiled a guest-home project on the modern Mac and
+/// shipped the wrong machine's binary (measured 2026-08-19).
+struct ChatProjectContext: Sendable, Equatable {
+    let name: String
+    /// "host" | "guest" — where the person said the code lives.
+    let home: String?
+    /// The project's toolchain pin when the caller could read it
+    /// cheaply; nil sends the model to Project.ckp for the answer.
+    let toolchainPin: String?
+}
+
 enum ChatSystemPrompt {
     enum Origin {
         /// The host app's own chat pane.
@@ -61,7 +74,8 @@ enum ChatSystemPrompt {
         mode: ChatMode = .build,
         skills: ChatSkillLibrary = ChatSkillLibrary(skills: []),
         loaded: [ChatSkill] = [],
-        instructions: String = ""
+        instructions: String = "",
+        project: ChatProjectContext? = nil
     ) -> String {
         var sections = [preamble]
         sections.append(machineFrame(health: health, origin: origin))
@@ -69,6 +83,9 @@ enum ChatSystemPrompt {
         if case .none = reach {} else {
             sections.append(modeFrame(mode))
             sections.append(projectAuthority)
+            if let project {
+                sections.append(projectFrame(project))
+            }
             sections.append(toolGuidance)
         }
         /* The catalogue rides EVERY turn, loaded skills or not — and
@@ -215,6 +232,67 @@ enum ChatSystemPrompt {
         \(text)
         --- end of the person's instructions ---
         """
+    }
+
+    /// The conversation's own project, and the one rule that follows
+    /// from its ground: where its builds RUN. Written because the first
+    /// fresh-project run ignored the person's choice — a guest-home
+    /// project got a host-cross-compiled binary shipped at it — and
+    /// because a shared workspace let a turn scavenge another project's
+    /// artifacts and call the work done.
+    static func projectFrame(_ project: ChatProjectContext) -> String {
+        var lines = ["THIS CONVERSATION'S PROJECT is \"\(project.name)\"."]
+        switch project.home {
+        case "guest":
+            lines.append("""
+                Its code LIVES ON the classic machine (guest home) and \
+                is BUILT THERE, with the classic machine's own \
+                registered toolchain: read and edit through now_projects \
+                workspaces, stage a candidate with now_development, \
+                build it with build-start, run the exact product with \
+                run. Do NOT cross-compile this project on the modern \
+                Mac, and do not ship a workspace-built binary for it — \
+                a host-built product is not this project's product.
+                """)
+        case "host":
+            if let pin = project.toolchainPin,
+               pin.hasPrefix(ProjectGround.hostRetro68Token) {
+                lines.append("""
+                    Its code lives on this Mac and its toolchain pin is \
+                    \(pin): build it in your workspace with Retro68 and \
+                    deliver the binary with now_guest_files_upload_file.
+                    """)
+            } else if let pin = project.toolchainPin {
+                lines.append("""
+                    Its code lives on this Mac and its toolchain pin is \
+                    \(pin): the authoritative copy is here, and BUILDS \
+                    RUN ON the classic machine — stage a candidate with \
+                    now_development and build-start it there. Do not \
+                    cross-compile it in the workspace.
+                    """)
+            } else {
+                lines.append("""
+                    Its code lives on this Mac. Its toolchain pin \
+                    decides where builds run — read Project.ckp with \
+                    now_projects first and follow it: a guest MPW pin \
+                    builds ON the classic machine through \
+                    now_development; a host-retro68 pin builds in your \
+                    workspace and ships the binary over.
+                    """)
+            }
+        default:
+            lines.append("""
+                Where its code lives was not recorded; ask now_projects \
+                for its status before building anything.
+                """)
+        }
+        lines.append("""
+            Start this project's work FRESH in this project's own \
+            workspace subfolder. Other folders in the workspace belong \
+            to other projects and other conversations: never reuse \
+            their sources or artifacts as this project's.
+            """)
+        return lines.joined(separator: "\n")
     }
 
     private static let preamble = """

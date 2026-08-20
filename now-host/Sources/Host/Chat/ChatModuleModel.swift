@@ -588,6 +588,18 @@ final class ChatModuleModel: ObservableObject {
         let turns = conversation
         let model = selectedWireModelID
         let skills = loadedSkills
+        /* The chat's project rides into the prompt as ground, same as
+           the wire's turns — see ChatSystemPrompt.projectFrame. */
+        var project: ChatProjectContext?
+        if let chatStore, let id = selectedChatID,
+           let projectID = try? chatStore.summary(id).projectID,
+           let record = try? chatStore.project(projectID) {
+            project = ChatProjectContext(
+                name: record.name,
+                home: record.intendedHome?.rawValue,
+                toolchainPin: nil)
+        }
+        let projectContext = project
         Task { [weak self] in
             guard let self else { return }
             let started = await self.harness.run(
@@ -596,7 +608,8 @@ final class ChatModuleModel: ObservableObject {
                 transcript: turns,
                 addressing: nil,
                 origin: .hostPane,
-                loadedSkills: skills
+                loadedSkills: skills,
+                project: projectContext
             ) { [weak self] event in
                 Task { @MainActor [weak self] in
                     self?.handle(event)

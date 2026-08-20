@@ -129,13 +129,17 @@ final class ClaudeCodeClient: @unchecked Sendable {
             standardInput: Data(Self.prompt(completion, lane: lane).utf8),
             timeout: lane?.timeout ?? 180,
             environment: environment,
-            /* The lane's directory IS the working directory, so the
-               runtime discovers whatever instructions live there the
-               same way a person running it in that folder would. Without
-               a lane it stays in a temporary directory with nothing in
-               it — a text-only turn has no business anywhere else. */
-            workingDirectory: lane?.root
-                ?? FileManager.default.temporaryDirectory)
+            /* The lane's directory IS the working directory — narrowed
+               to the conversation's project subfolder when it has one,
+               so one project's turn cannot scavenge another's artifacts
+               (measured 2026-08-19). The runtime discovers whatever
+               instructions live there the same way a person running it
+               in that folder would. Without a lane it stays in a
+               temporary directory with nothing in it. */
+            workingDirectory: lane.map {
+                Self.workingDirectory(
+                    lane: $0, sub: completion.workspaceSubdirectory)
+            } ?? FileManager.default.temporaryDirectory)
         let source = runner.stdoutLines(request)
         return AsyncThrowingStream { continuation in
             let task = Task {
@@ -164,6 +168,28 @@ final class ClaudeCodeClient: @unchecked Sendable {
             }
             continuation.onTermination = { _ in task.cancel() }
         }
+    }
+
+    /// The turn's working directory: the lane root, or the project's
+    /// own subfolder inside it. The subfolder is created on first use,
+    /// and the root's staged `.claude` (skills) is linked into it so
+    /// the runtime's native skill discovery still works one level down.
+    static func workingDirectory(lane: ChatWorkspaceLane,
+                                 sub: String?) -> URL {
+        guard let sub, !sub.isEmpty else { return lane.root }
+        let directory = lane.root.appendingPathComponent(
+            sub, isDirectory: true)
+        let manager = FileManager.default
+        try? manager.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        let dotClaude = directory.appendingPathComponent(".claude")
+        let rootDotClaude = lane.root.appendingPathComponent(".claude")
+        if !manager.fileExists(atPath: dotClaude.path),
+           manager.fileExists(atPath: rootDotClaude.path) {
+            try? manager.createSymbolicLink(
+                at: dotClaude, withDestinationURL: rootDotClaude)
+        }
+        return directory
     }
 
     /// Without a lane this is the locked-down relay it has always been:

@@ -352,6 +352,19 @@ final class ChatWireService {
         let mode = ChatMode(wire: request.mode)
         let loaded = skillsFor(key)
         let turns = conversation
+        /* The chat's project rides into the prompt as ground: a turn
+           that was not told its project's home cross-compiled a
+           guest-home project on the modern Mac (2026-08-19). */
+        var project: ChatProjectContext?
+        if let store, let chatID,
+           let projectID = try? store.summary(chatID).projectID,
+           let record = try? store.project(projectID) {
+            project = ChatProjectContext(
+                name: record.name,
+                home: record.intendedHome?.rawValue,
+                toolchainPin: nil)
+        }
+        let projectContext = project
         Task { [weak self, weak asker, harness] in
             let started = await harness.run(
                 conversation: key.text,
@@ -360,7 +373,8 @@ final class ChatWireService {
                 addressing: key.text,
                 origin: .guestWire,
                 mode: mode,
-                loadedSkills: loaded
+                loadedSkills: loaded,
+                project: projectContext
             ) { [weak self, weak asker] event in
                 Task { @MainActor [weak self, weak asker] in
                     guard let self, let asker else { return }

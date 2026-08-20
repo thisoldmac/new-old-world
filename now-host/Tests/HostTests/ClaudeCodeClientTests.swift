@@ -157,6 +157,36 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertFalse(config.contains("--mcp-stdio"), config)
     }
 
+    /// A filed conversation works in ITS project's subfolder — one
+    /// shared workspace let a turn reuse another project's artifacts
+    /// (2026-08-19) — and the root's staged skills stay discoverable
+    /// there through the linked .claude.
+    func testAProjectTurnWorksInItsOwnSubfolderWithSkillsLinked() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-lane-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(".claude/skills"),
+            withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let lane = ChatWorkspaceLane(
+            root: root, permission: .bypassPermissions,
+            attachesNOWTools: true, timeout: 900)
+
+        let cwd = ClaudeCodeClient.workingDirectory(
+            lane: lane, sub: "test 3")
+        XCTAssertEqual(cwd.lastPathComponent, "test 3")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cwd.path))
+        let linked = cwd.appendingPathComponent(".claude/skills")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: linked.path),
+                      "the staged skills must reach the subfolder")
+        // No subfolder means the root, unchanged.
+        XCTAssertEqual(
+            ClaudeCodeClient.workingDirectory(lane: lane, sub: nil), root)
+        // And the name is made filesystem-safe deterministically.
+        XCTAssertEqual(
+            ChatHarness.workspaceSubdirectory(for: "a/b:c\0d"), "a-b-c-d")
+    }
+
     /// A lane turn that will spawn a companion asks for the agent
     /// bridge FIRST — the launch toggle is not a prohibition, and a
     /// desk with it off had every companion answer notSent (2026-08-19).

@@ -151,6 +151,12 @@ struct ChatCompletionRequest: Sendable {
     let turns: [ChatTurn]
     let tools: [ChatToolDescriptor]
     let maxTokens: Int
+    /// The lane's per-project working subfolder, when the conversation
+    /// is filed under a project. One shared workspace let a turn find
+    /// another project's hello-world and reuse it (2026-08-19); a
+    /// subfolder per project is the cheap honest fence. API providers
+    /// ignore it — they have no working directory.
+    var workspaceSubdirectory: String? = nil
 }
 
 /// Wire-bound display text: converted, and inside the contract's
