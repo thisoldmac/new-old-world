@@ -32,8 +32,10 @@ final class HostFaceParityTests: XCTestCase {
     }
 
     private static let appUIRoot = "now-host/Sources/Host"
-    private static let mcpRenderer =
+    private static let mcpServer =
         "now-host/Sources/NOWAgentIntegration/MCP/NOWMCPServer.swift"
+    private static let mcpRenderer =
+        "now-host/Sources/NOWAgentIntegration/MCP/NOWMCPToolRenderer.swift"
 
     /// The app's own source **with its comment lines removed** — see
     /// `GateSource`.
@@ -202,14 +204,15 @@ final class HostFaceParityTests: XCTestCase {
     /// names is the day this test's premise stops holding.
     func testTheMCPFaceIsDerivedFromTheRenderersOwnLoop() throws {
         let renderer = try source(Self.mcpRenderer)
+        let server = try source(Self.mcpServer)
         XCTAssertTrue(
             renderer.contains("registry.projections.map"),
-            "NOWMCPServer no longer builds its tool list by mapping the "
+            "NOWMCPToolRenderer no longer builds its tool list by mapping the "
                 + "registry, so \"every registered row is on the MCP face\" "
                 + "is no longer structurally true. Whatever replaced it has "
                 + "to be checked per row here.")
         XCTAssertTrue(
-            renderer.contains("registry.projection(named: name)"),
+            server.contains("registry.projection(named: name)"),
             "NOWMCPServer no longer dispatches a call by looking the name "
                 + "up in the registry, so a tool could be listed and not "
                 + "callable.")
