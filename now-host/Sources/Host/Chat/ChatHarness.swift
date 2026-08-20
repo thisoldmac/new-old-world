@@ -422,13 +422,16 @@ actor ChatHarness {
 struct ChatAuditSink: HostProjectionAuditSink {
     let adapter: AgentIntegrationHostAdapter
     let activity: AgentActivityModel?
+    var records: MCPRecordsRecorder? = nil
 
     func record(_ event: HostProjectionAuditEvent) async {
         await MainActor.run {
             AgentIntegrationAuditLog.record(
                 event,
                 drivenGuest: adapter.activeReference()?.id,
-                stream: activity)
+                stream: activity,
+                agent: MCPAgentIdentity(kind: .chat),
+                records: records)
         }
     }
 }

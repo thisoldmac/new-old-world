@@ -10,8 +10,9 @@ final class HTTPTransportLivenessTests: XCTestCase {
         let listener = try MCPHTTPListener(
             configuration: .init(port: port, bearerToken: token),
             serverFactory: {
-                NOWMCPServer(client: SocketAgentIntegrationClient(),
-                             audit: LocalMCPAuditSink())
+                (NOWMCPServer(client: SocketAgentIntegrationClient(),
+                              audit: LocalMCPAuditSink()),
+                 NOWMCPClientIdentity())
             })
         try await listener.start()
         defer { listener.stop() }

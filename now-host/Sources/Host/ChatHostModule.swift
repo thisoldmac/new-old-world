@@ -23,6 +23,7 @@ final class ChatHostModuleRuntime: HostModuleRuntime {
             agentIntegration: agentIntegration,
             guestFiles: guestFiles,
             agentActivity: context.agentActivity,
+            mcpRecords: context.mcpRecords,
             guestScreen: context.guestScreen,
             defaults: context.defaults,
             chatStore: try? ChatStore())

@@ -596,7 +596,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             ) {
                 [agentIntegration = state.agentIntegration,
                  guestFiles = state.guestFiles,
-                 activity = state.agentActivity] request in
+                 activity = state.agentActivity,
+                 records = state.mcpRecords] request in
                 /* Addressing is checked once, before any operation, so
                    no tool can be reached with a guest selector nobody
                    honoured. Session health is exempt: it is the call a
@@ -791,7 +792,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         drivenGuest:
                             agentIntegration.activeReference()?.id,
                         stream: activity,
-                        transport: .stdio)
+                        transport: .stdio,
+                        agent: MCPAgentIdentity(
+                            kind: .mcpStdio,
+                            clientName: MCPAgentIdentity.bounded(
+                                request.auditClientName),
+                            clientVersion: MCPAgentIdentity.bounded(
+                                request.auditClientVersion),
+                            sessionKey: request.auditSessionKey),
+                        records: records)
                     return .recorded
                 case .bringToFront:
                     /* The first of P1a's eleven to be wired (plan 005,
@@ -1171,9 +1180,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             mcpHTTPRunID = runID
             let client = HostAgentIntegrationClient(
                 adapter: state.agentIntegration, guestFiles: state.guestFiles)
-            let audit = HostMCPAuditSink(
-                adapter: state.agentIntegration,
-                activity: state.agentActivity)
             var oauth: MCPOAuthAuthority?
             if authMode == .oauth {
                 let authority = MCPOAuthAuthority(
@@ -1186,8 +1192,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let listener = try MCPHTTPListener(
                 configuration: .init(port: port, authMode: authMode,
                                      bearerToken: token),
-                serverFactory: {
-                    NOWMCPServer(client: client, audit: audit)
+                serverFactory: { [adapter = state.agentIntegration,
+                                  activity = state.agentActivity,
+                                  records = state.mcpRecords] in
+                    /* Per session, so the sink reads THIS session's
+                       identity: the server fills the box at initialize and
+                       the service adds the id it mints. */
+                    let identity = NOWMCPClientIdentity()
+                    let audit = HostMCPAuditSink(
+                        adapter: adapter, activity: activity,
+                        identity: identity, records: records)
+                    return (NOWMCPServer(client: client, audit: audit,
+                                         identity: identity),
+                            identity)
                 },
                 activityObserver: { [activity = state.agentActivity]
                     began, moment in
