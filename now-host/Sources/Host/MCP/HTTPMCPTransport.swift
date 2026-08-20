@@ -197,6 +197,7 @@ struct MCPHTTPResponse: Equatable {
         case 409: phrase = "Conflict"
         case 413: phrase = "Content Too Large"
         case 415: phrase = "Unsupported Media Type"
+        case 428: phrase = "Precondition Required"
         case 429: phrase = "Too Many Requests"
         case 503: phrase = "Service Unavailable"
         default: phrase = "Internal Server Error"

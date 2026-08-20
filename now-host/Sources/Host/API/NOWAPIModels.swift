@@ -42,8 +42,33 @@ protocol NOWAPIHostServing: AnyObject {
     func apiDisconnect(sessionID: String) -> Bool
     func apiEventStream() -> NOWAPISSEStream
     func apiExecuteCommand(
-        guestID: String, request: NOWAPIConsoleCommandRequest,
+        guestID: String, expectedSessionID: String,
+        request: NOWAPIConsoleCommandRequest,
         completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void)
+    func apiInvokeOperation(
+        operationID: String, guest: String?, argumentsJSON: Data?
+    ) async -> NOWAPIOperationInvocationOutcome
+}
+
+struct NOWAPIOperationInvocationOutcome: Sendable {
+    enum Disposition: String, Sendable {
+        case completed, refused, unavailable, failed
+    }
+    let disposition: Disposition
+    let valueJSON: Data?
+    let attachmentJSON: Data?
+    let errorCode: String?
+    let errorMessage: String?
+}
+
+extension NOWAPIHostServing {
+    func apiInvokeOperation(
+        operationID: String, guest: String?, argumentsJSON: Data?
+    ) async -> NOWAPIOperationInvocationOutcome {
+        .init(disposition: .failed, valueJSON: nil, attachmentJSON: nil,
+              errorCode: "operation_service_unavailable",
+              errorMessage: "The neutral operation service is unavailable.")
+    }
 }
 
 struct NOWAPIConsoleCommandRequest: Equatable, Sendable {

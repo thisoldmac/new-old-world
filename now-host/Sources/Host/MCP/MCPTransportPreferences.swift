@@ -117,28 +117,48 @@ enum MCPHTTPTokenStoreError: Error, LocalizedError, Equatable {
 /// text or writes it to the log.
 struct MCPHTTPTokenStore {
     let url: URL
+    let legacyURL: URL?
 
-    init(url: URL? = nil, fileManager: FileManager = .default) throws {
+    init(url: URL? = nil, legacyURL: URL? = nil,
+         fileManager: FileManager = .default) throws {
         if let url {
             self.url = url
+            self.legacyURL = legacyURL
             return
         }
         guard let support = fileManager.urls(
             for: .applicationSupportDirectory, in: .userDomainMask).first
         else { throw MCPHTTPTokenStoreError.noApplicationSupport }
-        self.url = support
+        let directory = support
             .appendingPathComponent(ProductIdentity.displayName,
                                     isDirectory: true)
-            .appendingPathComponent("mcp-http-token", isDirectory: false)
+        self.url = directory.appendingPathComponent(
+            "now-api-key", isDirectory: false)
+        self.legacyURL = directory.appendingPathComponent(
+            "mcp-http-token", isDirectory: false)
     }
 
     func loadOrCreate(fileManager: FileManager = .default) throws -> String {
         if fileManager.fileExists(atPath: url.path) {
-            let token = try String(contentsOf: url, encoding: .utf8)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard (32...512).contains(token.utf8.count) else {
-                throw MCPHTTPTokenStoreError.invalidStoredToken
+            return try load(url)
+        }
+        if let legacyURL,
+           fileManager.fileExists(atPath: legacyURL.path) {
+            let token = try load(legacyURL)
+            try fileManager.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+            do {
+                try fileManager.moveItem(at: legacyURL, to: url)
+            } catch {
+                // A same-directory rename is atomic. If the filesystem
+                // refuses it, publish an atomic copy before leaving the old
+                // private item in place; never rotate a live client secret.
+                try Data((token + "\n").utf8).write(to: url, options: .atomic)
             }
+            try fileManager.setAttributes([.posixPermissions: 0o600],
+                                          ofItemAtPath: url.path)
             return token
         }
 
@@ -155,6 +175,15 @@ struct MCPHTTPTokenStore {
         try Data(token.utf8).write(to: url, options: .atomic)
         try fileManager.setAttributes([.posixPermissions: 0o600],
                                       ofItemAtPath: url.path)
+        return token
+    }
+
+    private func load(_ source: URL) throws -> String {
+        let token = try String(contentsOf: source, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (32...512).contains(token.utf8.count) else {
+            throw MCPHTTPTokenStoreError.invalidStoredToken
+        }
         return token
     }
 }

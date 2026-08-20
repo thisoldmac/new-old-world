@@ -203,7 +203,8 @@ private final class EventFixtureHost: NOWAPIHostServing {
         NOWAPISSEStream(bus: bus, startsHeartbeat: false)
     }
     func apiExecuteCommand(
-        guestID: String, request: NOWAPIConsoleCommandRequest,
+        guestID: String, expectedSessionID: String,
+        request: NOWAPIConsoleCommandRequest,
         completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void
     ) {}
 }

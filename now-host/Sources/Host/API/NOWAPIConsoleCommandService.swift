@@ -21,7 +21,8 @@ final class NOWAPIConsoleCommandService {
     }
 
     func execute(
-        guestID: String, request: NOWAPIConsoleCommandRequest,
+        guestID: String, expectedSessionID: String? = nil,
+        request: NOWAPIConsoleCommandRequest,
         completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void
     ) {
         guard let guest = driver.apiCommandGuest(id: guestID) else {
@@ -29,6 +30,14 @@ final class NOWAPIConsoleCommandService {
                 guestID: guestID, sessionID: nil, .disconnected,
                 code: "guest_disconnected",
                 message: "That guest is not connected.", reach: "guest"))
+            return
+        }
+        guard expectedSessionID == nil || guest.sessionID == expectedSessionID else {
+            completion(failure(
+                guestID: guestID, sessionID: guest.sessionID, .disconnected,
+                code: "session_changed",
+                message: "The addressed guest session changed before command dispatch.",
+                reach: "session"))
             return
         }
         guard guest.isActive else {

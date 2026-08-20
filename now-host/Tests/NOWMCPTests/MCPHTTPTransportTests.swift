@@ -70,6 +70,30 @@ final class MCPHTTPTransportTests: XCTestCase {
                        0o600)
     }
 
+    func testExistingPrivateMCPTokenMigratesWithoutRotation() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-api-key-migration-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root,
+                                                withIntermediateDirectories: true)
+        let legacy = root.appendingPathComponent("mcp-http-token")
+        let current = root.appendingPathComponent("now-api-key")
+        let expected = String(repeating: "b", count: 64)
+        try Data((expected + "\n").utf8).write(to: legacy)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: legacy.path)
+
+        let store = try MCPHTTPTokenStore(url: current, legacyURL: legacy)
+        XCTAssertEqual(try store.loadOrCreate(), expected)
+        XCTAssertEqual(try String(contentsOf: current, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines), expected)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: current.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue,
+                       0o600)
+    }
+
     func testParserAcceptsIncrementalBodyAndRejectsAmbiguousFraming() throws {
         let body = Data(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#.utf8)
         let head = Data(("POST /mcp HTTP/1.1\r\n"

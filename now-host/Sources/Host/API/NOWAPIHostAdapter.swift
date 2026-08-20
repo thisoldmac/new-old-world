@@ -1,4 +1,5 @@
 import Foundation
+import NOWAgentIntegration
 
 /// The thin API view over host-owned connection state. It exposes deliberate
 /// DTOs rather than serializing `GuestListener`, registry records, or socket
@@ -9,6 +10,8 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
     private let settings: SettingsModel
     private let commands: NOWAPIConsoleCommandService
     private let files: NOWAPIFileTransferService?
+    private let operationService: NOWService?
+    private let operationClient: AgentIntegrationClient?
 
     init(listener: GuestListener, settings: SettingsModel,
          guestFiles: GuestFilesCommandService? = nil,
@@ -20,8 +23,14 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
             files = NOWAPIFileTransferService(driver: NOWAPIHostFileDriver(
                 listener: listener, files: guestFiles,
                 adapter: agentIntegration))
+            operationService = NOWService(
+                face: .api, audit: NOWAPIProjectionAuditSink())
+            operationClient = HostAgentIntegrationClient(
+                adapter: agentIntegration, guestFiles: guestFiles)
         } else {
             files = nil
+            operationService = nil
+            operationClient = nil
         }
     }
 
@@ -118,12 +127,87 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
     }
 
     func apiExecuteCommand(
-        guestID: String, request: NOWAPIConsoleCommandRequest,
+        guestID: String, expectedSessionID: String,
+        request: NOWAPIConsoleCommandRequest,
         completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void
     ) {
-        commands.execute(guestID: guestID, request: request,
+        commands.execute(guestID: guestID, expectedSessionID: expectedSessionID,
+                         request: request,
                          completion: completion)
     }
 
     func apiFiles() -> NOWAPIFileTransferService? { files }
+
+    func apiInvokeOperation(
+        operationID: String, guest: String?, argumentsJSON: Data?
+    ) async -> NOWAPIOperationInvocationOutcome {
+        guard let capability = NOWOperationInventory.projectionCapability(
+                forPublicOperationID: operationID),
+              let operationService, let operationClient else {
+            return .init(disposition: .failed, valueJSON: nil,
+                         attachmentJSON: nil,
+                         errorCode: "operation_unavailable",
+                         errorMessage: "That public operation is unavailable on this host.")
+        }
+        let arguments = argumentsJSON.flatMap {
+            try? JSONSerialization.jsonObject(with: $0)
+        }
+        let client = operationClient.addressing(guest)
+        let outcome = await operationService.invokeProjection(
+            named: capability.rawValue,
+            arguments: .init(raw: arguments), guest: guest, through: client)
+        switch outcome {
+        case .value(let value):
+            do {
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                let data = try value.encoded(using: encoder)
+                var attachmentJSON: Data?
+                if case .image(let bytes, let mimeType)? = value.attachment {
+                    attachmentJSON = try JSONSerialization.data(
+                        withJSONObject: [
+                            "mediaType": mimeType,
+                            "base64": bytes.base64EncodedString(),
+                        ], options: [.sortedKeys])
+                }
+                let disposition: NOWAPIOperationInvocationOutcome.Disposition
+                switch value.disposition {
+                case .completed: disposition = .completed
+                case .refused: disposition = .refused
+                case .unavailable: disposition = .unavailable
+                case .failed: disposition = .failed
+                }
+                return .init(disposition: disposition, valueJSON: data,
+                             attachmentJSON: attachmentJSON,
+                             errorCode: nil, errorMessage: nil)
+            } catch {
+                return .init(disposition: .failed, valueJSON: nil,
+                             attachmentJSON: nil,
+                             errorCode: "response_encoding_failed",
+                             errorMessage: "The operation result could not be encoded.")
+            }
+        case .invalidArguments(let message):
+            return .init(disposition: .refused, valueJSON: nil,
+                         attachmentJSON: nil,
+                         errorCode: "invalid_arguments", errorMessage: message)
+        case .deniedByConsent(let denial):
+            return .init(disposition: .refused, valueJSON: nil,
+                         attachmentJSON: nil,
+                         errorCode: "guest_consent_refused",
+                         errorMessage: denial.message)
+        case nil:
+            return .init(disposition: .failed, valueJSON: nil,
+                         attachmentJSON: nil,
+                         errorCode: "operation_unavailable",
+                         errorMessage: "That public operation is unavailable on this host.")
+        }
+    }
+}
+
+private struct NOWAPIProjectionAuditSink: HostProjectionAuditSink {
+    func record(_ event: HostProjectionAuditEvent) async {
+        // The HTTP adapter records the public operation ID and disposition.
+        // Dispatch still requires an explicit sink so no face can bypass the
+        // audited service boundary by construction.
+    }
 }

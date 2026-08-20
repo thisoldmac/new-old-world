@@ -29,6 +29,29 @@
         }
       }
     },
+    "/operations/{operationID}": {
+      "parameters": [
+        { "name": "operationID", "in": "path", "required": true,
+          "schema": { "type": "string", "enum": [
+            "catalog.search", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer",
+            "files.capabilities", "files.reveal", "guests.capabilities", "guests.census", "guests.facts",
+            "interface.control.act", "interface.menu.act", "interface.observe", "interface.text.get", "interface.text.set", "interface.window.act",
+            "logs.guest.tail", "logs.host.tail", "mirror.act", "mirror.find", "mirror.journal", "mirror.lifecycle", "mirror.metrics", "mirror.snapshot", "mirror.start", "mirror.status", "mirror.wait", "mirror.waitForSettlement",
+            "processes.activate", "processes.list", "processes.quit", "screen.capture", "screen.stream", "software.launch", "software.list"
+          ] } }
+      ],
+      "post": {
+        "operationId": "operations.invoke",
+        "summary": "Invoke one projection-backed public operation",
+        "description": "The operation is admitted only when its neutral catalog adjudication is public. Agent-only conveniences and MCP compositions are never reachable here.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericOperationInvocation" } } } },
+        "responses": {
+          "200": { "description": "A typed neutral operation outcome", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericOperationResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/events": {
       "get": {
         "operationId": "events.watch",
@@ -68,6 +91,7 @@
       "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
       "post": {
         "operationId": "commands.execute",
+        "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -107,6 +131,7 @@
       "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
       "post": {
         "operationId": "files.mutate",
+        "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestFileMutation" } } } },
         "responses": { "200": { "description": "A typed guest file mutation receipt" } }
       }
@@ -115,6 +140,7 @@
       "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
       "post": {
         "operationId": "files.put",
+        "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
         "description": "Admits one private upload stage. Send sequential raw chunks with PUT /transfers/{transferID}/content; HTTP Transfer-Encoding chunked is not supported.",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UploadAdmission" } } } },
         "responses": { "201": { "description": "A staging transfer resource" }, "413": { "description": "The declared file exceeds 32 MiB" } }
@@ -124,6 +150,7 @@
       "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
       "post": {
         "operationId": "files.get",
+        "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "path": { "$ref": "#/components/schemas/GuestFilePath" } }, "required": ["path"], "additionalProperties": false } } } },
         "responses": { "200": { "description": "A settled download transfer resource" } }
       }
@@ -196,6 +223,11 @@
       "TransferID": {
         "name": "transferID", "in": "path", "required": true,
         "schema": { "type": "string", "format": "uuid" }
+      },
+      "ExpectedGuestSession": {
+        "name": "X-NOW-Guest-Session", "in": "header", "required": true,
+        "description": "Exact session observed immediately before an unsafe stable-guest operation. A replacement session returns 409 before dispatch.",
+        "schema": { "type": "string", "minLength": 38, "maxLength": 180 }
       }
     },
     "responses": {
@@ -294,7 +326,14 @@
               "type": "object",
               "properties": {
                 "operationId": { "type": "string", "minLength": 3, "maxLength": 128 },
-                "available": { "type": "boolean", "const": true }
+                "available": { "type": "boolean", "const": true },
+                "rendering": { "type": "string", "enum": ["resource", "generic"] },
+                "title": { "type": "string" },
+                "summary": { "type": "string" },
+                "inputSchema": { "type": "object" },
+                "effect": { "type": "string", "enum": ["read", "boundedMutation", "disruptiveMutation", "bulkTransfer"] },
+                "addressing": { "type": "string", "enum": ["hostWide", "stableOrSessionGuest", "exactGuestSession"] },
+                "capability": { "type": "string" }
               },
               "required": ["operationId", "available"],
               "additionalProperties": false
@@ -543,6 +582,32 @@
         "required": ["id", "guestID", "guestSessionID", "direction", "guestPath", "state", "transferredBytes", "contentAvailable", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
+      "GenericOperationInvocation": {
+        "type": "object",
+        "properties": {
+          "guest": { "type": "string", "minLength": 1, "maxLength": 128,
+                     "description": "A stable guest ID or exact guest session ID." },
+          "arguments": { "type": "object" }
+        },
+        "additionalProperties": false
+      },
+      "GenericOperationResult": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "format": "uuid" },
+          "operationId": { "type": "string" },
+          "guest": { "type": "string" },
+          "disposition": { "type": "string", "enum": ["completed", "refused", "unavailable", "failed"],
+                           "description": "Transport-neutral semantic disposition supplied by the typed projection producer; adapters do not infer it from encoded JSON fields." },
+          "value": {},
+          "attachment": { "type": "object", "properties": {
+            "mediaType": { "type": "string" }, "base64": { "type": "string", "contentEncoding": "base64" }
+          }, "required": ["mediaType", "base64"], "additionalProperties": false },
+          "error": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["requestId", "operationId", "disposition"],
+        "additionalProperties": false
+      },
       "GuestFilePath": {
         "type": "string", "maxLength": 223,
         "description": "Canonical root-relative HFS path. Each MacRoman segment is at most 31 bytes; absolute, empty-segment, dot, and dot-dot spellings are refused."
@@ -576,7 +641,7 @@
   },
   "x-now-compatibility": {
     "apiMajor": 1,
-    "schemaRevision": 4,
+    "schemaRevision": 6,
     "policy": "Additive optional fields and operations may ship within v1; required-field meaning and disposition semantics remain stable."
   },
   "x-now-operation-catalog": [
@@ -588,5 +653,47 @@
     "mirror.act", "mirror.find", "mirror.journal", "mirror.lifecycle", "mirror.metrics", "mirror.snapshot", "mirror.start", "mirror.status", "mirror.wait", "mirror.waitForSettlement",
     "operations.list", "processes.activate", "processes.list", "processes.quit",
     "screen.capture", "screen.stream", "software.launch", "software.list", "transfers.cancel", "transfers.commit", "transfers.content", "transfers.get", "transfers.list", "transfers.uploadChunk"
+  ],
+  "x-now-cli-operation-metadata": [
+    {"operationId":"catalog.search","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"diagnostics.capture","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"diagnostics.framebuffer","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"diagnostics.transfer","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"files.capabilities","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"files.get","effect":"bulkTransfer","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"files.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"files.mutate","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"files.reveal","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"files.stat","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"guests.capabilities","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"guests.census","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"guests.facts","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"guests.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.control.act","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.menu.act","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.observe","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.text.get","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.text.set","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.window.act","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"logs.guest.tail","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"logs.host.tail","effect":"read","addressing":"hostWide","rendering":"generic"},
+    {"operationId":"mirror.act","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.find","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.journal","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.lifecycle","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.metrics","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.snapshot","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.start","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.status","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.wait","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.waitForSettlement","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"processes.activate","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"processes.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"processes.quit","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"screen.capture","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"screen.stream","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"software.launch","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"software.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"transfers.cancel","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"}
   ]
 }

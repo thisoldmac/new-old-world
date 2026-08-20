@@ -86,6 +86,95 @@ final class NOWAPIHTTPTests: XCTestCase {
         XCTAssertFalse(identifiers.contains("now_list_machines"))
         XCTAssertTrue(identifiers.contains("files.put"))
         XCTAssertTrue(identifiers.contains("transfers.content"))
+        let generic = try XCTUnwrap(rows.first {
+            $0["operationId"] as? String == "processes.list"
+        })
+        XCTAssertEqual(generic["rendering"] as? String, "generic")
+        XCTAssertNotNil(generic["inputSchema"])
+    }
+
+    func testGenericInvocationAdmitsOnlyPublicAdjudicatedOperations() async throws {
+        let fixture = FixtureHost()
+        fixture.operationOutcome = .init(
+            disposition: .completed,
+            valueJSON: Data(#"{"processes":[]}"#.utf8),
+            attachmentJSON: nil, errorCode: nil, errorMessage: nil)
+        let service = makeHTTPService(host: fixture)
+        let response = await service.respond(to: apiRequest(
+            "POST", "/api/v1/operations/processes.list",
+            body: Data(#"{"guest":"pb1400c","arguments":{}}"#.utf8)))
+        XCTAssertEqual(response.status, 200)
+        XCTAssertEqual(try object(response.body)["operationId"] as? String,
+                       "processes.list")
+        XCTAssertEqual(try object(response.body)["disposition"] as? String,
+                       "completed")
+        XCTAssertEqual(fixture.operationInvocations.first?.operationID,
+                       "processes.list")
+
+        let agentOnly = await service.respond(to: apiRequest(
+            "POST", "/api/v1/operations/now_projects",
+            body: Data(#"{"arguments":{}}"#.utf8)))
+        XCTAssertEqual(agentOnly.status, 404)
+        XCTAssertEqual(fixture.operationInvocations.count, 1)
+    }
+
+    func testGenericMutationRequiresExactSessionBeforeDispatch() async throws {
+        let fixture = FixtureHost()
+        fixture.operationOutcome = .init(
+            disposition: .completed, valueJSON: Data(#"{"ok":true}"#.utf8),
+            attachmentJSON: nil, errorCode: nil, errorMessage: nil)
+        let service = makeHTTPService(host: fixture)
+
+        for body in [
+            Data(#"{"arguments":{}}"#.utf8),
+            Data(#"{"guest":"pb1400c","arguments":{}}"#.utf8),
+        ] {
+            let refused = await service.respond(to: apiRequest(
+                "POST", "/api/v1/operations/processes.quit", body: body))
+            XCTAssertEqual(refused.status, 428)
+            XCTAssertEqual(try errorCode(refused), "exact_session_required")
+        }
+        XCTAssertTrue(fixture.operationInvocations.isEmpty)
+
+        let exact = await service.respond(to: apiRequest(
+            "POST", "/api/v1/operations/processes.quit",
+            body: Data(#"{"guest":"pb1400c-11111111-1111-1111-1111-111111111111","arguments":{}}"#.utf8)))
+        XCTAssertEqual(exact.status, 200)
+        XCTAssertEqual(fixture.operationInvocations.count, 1)
+    }
+
+    func testUnsafeGuestRouteRejectsReplacedSessionBeforeDispatch() async throws {
+        let fixture = FixtureHost()
+        let service = makeHTTPService(host: fixture)
+        let stale = await service.respond(to: request(
+            "POST", "/api/v1/guests/pb1400c/commands",
+            headers: [
+                "x-api-key": Self.apiKey,
+                "x-now-guest-session": "pb1400c-22222222-2222-2222-2222-222222222222",
+            ], body: Data(#"{"command":"help"}"#.utf8)))
+        XCTAssertEqual(stale.status, 409)
+        XCTAssertEqual(try errorCode(stale), "guest_session_changed")
+        XCTAssertTrue(fixture.commands.isEmpty)
+
+        let missing = await service.respond(to: request(
+            "POST", "/api/v1/guests/pb1400c/commands",
+            headers: ["x-api-key": Self.apiKey],
+            body: Data(#"{"command":"help"}"#.utf8)))
+        XCTAssertEqual(missing.status, 428)
+        XCTAssertTrue(fixture.commands.isEmpty)
+    }
+
+    func testRouterSnapshotCannotMaskDriverOwnedReplacementSession() async throws {
+        let driver = HTTPFileDriver()
+        driver.sessionID = "pb1400c-22222222-2222-2222-2222-222222222222"
+        let router = makeFileRouter(files: NOWAPIFileTransferService(
+            driver: driver))
+        let response = await router.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/transfers/uploads",
+            body: uploadBody(path: "Drop Box:test.bin", bytes: 1)))
+        XCTAssertEqual(response.status, 409)
+        XCTAssertEqual(try errorCode(response), "session_changed")
+        XCTAssertEqual(driver.beginCount, 0)
     }
 
     func testUploadRouteAdmitsMetadataAndRawChunkWithoutMCPVocabulary() async throws {
@@ -391,7 +480,10 @@ final class NOWAPIHTTPTests: XCTestCase {
 
     private func apiRequest(_ method: String, _ target: String,
                             body: Data = Data()) -> MCPHTTPRequest {
-        request(method, target, headers: ["x-api-key": Self.apiKey], body: body)
+        request(method, target, headers: [
+            "x-api-key": Self.apiKey,
+            "x-now-guest-session": "pb1400c-11111111-1111-1111-1111-111111111111",
+        ], body: body)
     }
 
     private func request(_ method: String, _ target: String,
@@ -445,6 +537,8 @@ private final class FixtureHost: NOWAPIHostServing {
     var stopCount = 0
     var commands: [(guestID: String, request: NOWAPIConsoleCommandRequest)] = []
     var commandOutcome: NOWAPIConsoleCommandOutcome?
+    var operationOutcome: NOWAPIOperationInvocationOutcome?
+    var operationInvocations: [(operationID: String, guest: String?)] = []
 
     func apiGuests() -> [NOWAPIGuestSummary] {
         [.init(id: "pb1400c",
@@ -489,7 +583,8 @@ private final class FixtureHost: NOWAPIHostServing {
     }
 
     func apiExecuteCommand(
-        guestID: String, request: NOWAPIConsoleCommandRequest,
+        guestID: String, expectedSessionID: String,
+        request: NOWAPIConsoleCommandRequest,
         completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void
     ) {
         commands.append((guestID, request))
@@ -499,6 +594,15 @@ private final class FixtureHost: NOWAPIHostServing {
             disposition: .completed,
             output: ["help": [["help", "list commands"]]],
             outputObjects: nil, error: nil))
+    }
+
+    func apiInvokeOperation(
+        operationID: String, guest: String?, argumentsJSON: Data?
+    ) async -> NOWAPIOperationInvocationOutcome {
+        operationInvocations.append((operationID, guest))
+        return operationOutcome ?? .init(
+            disposition: .failed, valueJSON: nil, attachmentJSON: nil,
+            errorCode: "fixture", errorMessage: "not configured")
     }
 }
 
@@ -510,14 +614,19 @@ private actor NOWAPIAuditSpy: NOWAPIAuditSink {
 
 @MainActor
 private final class HTTPFileDriver: NOWAPIFileDriving {
+    var beginCount = 0
     var appendCount = 0
     var listCount = 0
     var statCount = 0
     var mutationResult: AgentIntegrationGuestFileMutationResult?
+    var sessionID = "pb1400c-11111111-1111-1111-1111-111111111111"
     private var stages: [UUID: Int] = [:]
     func apiFileGuest(id: String) -> NOWAPICommandGuest? {
         guard id == "pb1400c" else { return nil }
-        return .init(id: id, sessionID: "pb1400c-session", isActive: true,
+        return .init(
+            id: id,
+            sessionID: sessionID,
+            isActive: true,
                      agentAccess: .fullAccess)
     }
     func apiListFiles(path: String, cursor: Int?) async
@@ -541,6 +650,7 @@ private final class HTTPFileDriver: NOWAPIFileDriving {
         -> AgentIntegrationGuestFileDownloadResult { .hostUnavailable(.host) }
     func apiBeginUpload(_ request: AgentIntegrationGuestFileUploadBegin) async
         -> AgentIntegrationGuestFileUploadStageResult {
+        beginCount += 1
         let id = UUID(); stages[id] = 0
         return .completed(receipt: receipt(.success), value: .init(
             uploadID: id, destinationPath: request.destinationPath,

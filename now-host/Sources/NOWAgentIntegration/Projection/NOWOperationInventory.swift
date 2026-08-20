@@ -49,6 +49,52 @@ public struct NOWOperationCatalogEntry: @unchecked Sendable {
 /// public operation, composition, or agent-only convenience fails the
 /// catalog gate instead of silently enlarging the developer API.
 public enum NOWOperationInventory {
+    public static func projectionCapability(
+        forPublicOperationID operationID: String,
+        registry: HostProjectionRegistry = .hostFaces
+    ) -> HostCapabilityID? {
+        for projection in registry.projections {
+            guard let entry = entry(for: projection) else { continue }
+            if case .publicOperation(let candidate) = entry.adjudication,
+               candidate == operationID {
+                return projection.capability
+            }
+        }
+        return nil
+    }
+
+    public static func publicOperationEffect(
+        for operationID: String,
+        registry: HostProjectionRegistry = .hostFaces
+    ) -> NOWOperationEffect? {
+        guard let capability = projectionCapability(
+            forPublicOperationID: operationID, registry: registry),
+              let projection = registry[capability] else { return nil }
+        return entry(for: projection)?.effect
+    }
+
+    public static func publicOperationMetadata(
+        registry: HostProjectionRegistry = .hostFaces
+    ) -> [[String: Any]] {
+        registry.projections.compactMap { projection in
+            guard let entry = entry(for: projection),
+                  case .publicOperation(let operationID) = entry.adjudication
+            else { return nil }
+            return [
+                "operationId": operationID,
+                "title": entry.descriptor.title,
+                "summary": entry.descriptor.summary,
+                "inputSchema": entry.descriptor.inputSchema,
+                "effect": entry.effect.rawValue,
+                "addressing": entry.addressing.rawValue,
+                "capability": projection.capability.rawValue,
+            ]
+        }.sorted {
+            ($0["operationId"] as? String ?? "")
+                < ($1["operationId"] as? String ?? "")
+        }
+    }
+
     public static func entry(
         for projection: any HostProjection.Type
     ) -> NOWOperationCatalogEntry? {
@@ -72,8 +118,10 @@ public enum NOWOperationInventory {
         ]
         switch adjudication {
         case .publicOperation:
-            exposures[.http] = .planned(slice: "S2-S6")
-            exposures[.cli] = .planned(slice: "S3-S6")
+            exposures[.http] = .rendered(
+                evidence: "POST /api/v1/operations/{operationID}")
+            exposures[.cli] = .rendered(
+                evidence: "generated now api call grammar")
         case .composition(_, let reason), .agentOnly(let reason):
             exposures[.http] = .notRendered(reason: reason)
             exposures[.cli] = .notRendered(reason: reason)

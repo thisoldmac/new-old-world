@@ -5,6 +5,19 @@ import XCTest
 
 @MainActor
 final class NOWAPIFileTransferServiceTests: XCTestCase {
+    func testExpectedSessionIsRecheckedBeforePrivateStageAdmission() async {
+        let driver = FileDriverFixture()
+        let service = NOWAPIFileTransferService(driver: driver)
+        do {
+            _ = try await service.beginUpload(
+                guestID: "pb1400c", expectedSessionID: "pb1400c-OLD",
+                request: upload(bytes: 1))
+            XCTFail("replacement session admitted an old-session upload")
+        } catch {
+            XCTAssertEqual(error.code, "session_changed")
+        }
+        XCTAssertEqual(driver.beginCount, 0)
+    }
     func testRejectsFileAbovePublic32MiBCeilingBeforePrivateStaging() async {
         let driver = FileDriverFixture()
         let service = NOWAPIFileTransferService(driver: driver)

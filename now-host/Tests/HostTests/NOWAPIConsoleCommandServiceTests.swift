@@ -4,6 +4,21 @@ import XCTest
 
 @MainActor
 final class NOWAPIConsoleCommandServiceTests: XCTestCase {
+    func testExpectedSessionIsRecheckedAtDriverOwnedDispatchSeam() async {
+        let driver = CommandDriverFixture()
+        let service = NOWAPIConsoleCommandService(driver: driver)
+        let result = await withCheckedContinuation { continuation in
+            service.execute(
+                guestID: "pb1400c", expectedSessionID: "pb1400c-old-session",
+                request: .init(command: "help", arguments: nil,
+                               argumentLine: nil)) {
+                    continuation.resume(returning: $0)
+                }
+        }
+        XCTAssertEqual(result.disposition, .disconnected)
+        XCTAssertEqual(result.error?.code, "session_changed")
+        XCTAssertTrue(driver.calls.isEmpty)
+    }
     func testAdvertisedCommandUsesTypedArgumentsAndExistingScheduledLane() async {
         let driver = CommandDriverFixture()
         driver.responses = [

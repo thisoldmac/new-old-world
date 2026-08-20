@@ -6,15 +6,8 @@ import NOWAgentIntegration
 /// listener and parser beneath them.
 final class NOWAPIHTTPRouter: @unchecked Sendable {
     static let maximumBodyBytes = 64 * 1024
-    private static let renderedOperationIDs: Set<String> = [
-        "api.identity", "commands.execute", "connections.disconnect", "connections.list",
-        "events.watch",
-        "files.get", "files.list", "files.mutate", "files.put", "files.stat",
-        "guests.list", "guests.status", "listener.start",
-        "listener.status", "listener.stop", "operations.list",
-        "transfers.cancel", "transfers.commit", "transfers.content",
-        "transfers.get", "transfers.list", "transfers.uploadChunk",
-    ]
+    private static let renderedOperationIDs =
+        NOWOperationInventory.publicOperationIDs
 
     private let apiKey: String
     private let contractDigest: String
@@ -59,11 +52,89 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                 ],
             ])
         case ("GET", "/api/v1/operations"):
-            let rows = Self.renderedOperationIDs.sorted().map { id in
-                ["operationId": id, "available": true] as [String: Any]
+            let projectionRows = NOWOperationInventory.publicOperationMetadata()
+            let described = Set(projectionRows.compactMap {
+                $0["operationId"] as? String
+            })
+            let nativeRows = Self.renderedOperationIDs.subtracting(described)
+                .sorted().map { id in
+                    ["operationId": id, "available": true,
+                     "rendering": "resource"] as [String: Any]
+                }
+            let rows = (projectionRows.map { row -> [String: Any] in
+                var value = row
+                value["available"] = true
+                value["rendering"] = "generic"
+                return value
+            } + nativeRows).sorted {
+                ($0["operationId"] as? String ?? "")
+                    < ($1["operationId"] as? String ?? "")
             }
             response = json(200, requestID: requestID,
                             object: ["operations": rows])
+        case ("POST", let value)
+            where value.hasPrefix("/api/v1/operations/"):
+            let operationID = String(value.dropFirst(
+                "/api/v1/operations/".count))
+            guard !operationID.isEmpty,
+                  NOWOperationInventory.projectionCapability(
+                    forPublicOperationID: operationID) != nil else {
+                return error(404, requestID: requestID,
+                             code: "operation_not_found",
+                             message: "No generic public operation has that ID.",
+                             reach: "operation")
+            }
+            guard let invocation = Self.operationInvocation(request.body) else {
+                await record(requestID, operationID, nil, .refused)
+                return error(400, requestID: requestID,
+                             code: "operation_request_invalid",
+                             message: "The invocation accepts only guest and arguments.",
+                             reach: "request")
+            }
+            if NOWOperationInventory.publicOperationEffect(
+                    for: operationID) != .read {
+                guard let selector = invocation.guest,
+                      GuestKey.parse(selector) != nil else {
+                    await record(requestID, operationID,
+                                 invocation.guest, .refused)
+                    return error(
+                        428, requestID: requestID,
+                        code: "exact_session_required",
+                        message: "Mutating generic operations require an exact guest session selector.",
+                        reach: "session")
+                }
+            }
+            let addressedGuest = invocation.guest
+            let outcome = await host.apiInvokeOperation(
+                operationID: operationID, guest: addressedGuest,
+                argumentsJSON: invocation.argumentsJSON)
+            var object: [String: Any] = [
+                "requestId": requestID.uuidString.lowercased(),
+                "operationId": operationID,
+                "disposition": outcome.disposition.rawValue,
+            ]
+            object["guest"] = addressedGuest
+            if let data = outcome.valueJSON,
+               let value = try? JSONSerialization.jsonObject(with: data) {
+                object["value"] = value
+            }
+            if let data = outcome.attachmentJSON,
+               let attachment = try? JSONSerialization.jsonObject(with: data) {
+                object["attachment"] = attachment
+            }
+            if let code = outcome.errorCode,
+               let message = outcome.errorMessage {
+                object["error"] = ["code": code, "message": message,
+                                   "reach": "operation"]
+            }
+            response = json(200, requestID: requestID, object: object)
+            let disposition: NOWAPIAuditEvent.Disposition
+            switch outcome.disposition {
+            case .completed: disposition = .completed
+            case .refused: disposition = .refused
+            case .unavailable, .failed: disposition = .failed
+            }
+            await record(requestID, operationID, addressedGuest, disposition)
         case ("GET", "/api/v1/events"):
             guard request.headers["last-event-id"] == nil,
                   !request.target.contains("?") else {
@@ -137,6 +208,8 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                 await record(requestID, "files.mutate", id, .failed)
                 return unavailableFiles(requestID)
             }
+            if let problem = await exactSessionProblem(
+                request, guestID: id, requestID: requestID) { return problem }
             guard let requestValue = Self.mutation(request.body) else {
                 await record(requestID, "files.mutate", id, .refused)
                 return error(400, requestID: requestID,
@@ -146,7 +219,9 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             }
             do {
                 let result = try await files.mutateFile(
-                    guestID: id, request: requestValue)
+                    guestID: id,
+                    expectedSessionID: request.headers["x-now-guest-session"]!,
+                    request: requestValue)
                 response = codable(200, requestID: requestID, result)
                 await record(requestID, "files.mutate", id,
                              Self.auditDisposition(result))
@@ -163,6 +238,8 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                 await record(requestID, "files.put", id, .failed)
                 return unavailableFiles(requestID)
             }
+            if let problem = await exactSessionProblem(
+                request, guestID: id, requestID: requestID) { return problem }
             guard let upload = try? JSONDecoder().decode(
                 AgentIntegrationGuestFileUploadBegin.self,
                 from: request.body) else {
@@ -174,7 +251,9 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             }
             do {
                 let transfer = try await files.beginUpload(
-                    guestID: id, request: upload)
+                    guestID: id,
+                    expectedSessionID: request.headers["x-now-guest-session"]!,
+                    request: upload)
                 response = codable(201, requestID: requestID, transfer)
                 await record(requestID, "files.put", id,
                              Self.auditDisposition(transfer))
@@ -191,6 +270,8 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                 await record(requestID, "files.get", id, .failed)
                 return unavailableFiles(requestID)
             }
+            if let problem = await exactSessionProblem(
+                request, guestID: id, requestID: requestID) { return problem }
             guard let object = try? JSONSerialization.jsonObject(
                     with: request.body) as? [String: Any],
                   object.count == 1, let filePath = object["path"] as? String
@@ -203,7 +284,9 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             }
             do {
                 let transfer = try await files.download(
-                    guestID: id, path: filePath)
+                    guestID: id,
+                    expectedSessionID: request.headers["x-now-guest-session"]!,
+                    path: filePath)
                 response = codable(200, requestID: requestID, transfer)
                 await record(requestID, "files.get", id,
                              Self.auditDisposition(transfer))
@@ -366,6 +449,8 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                              message: "No guest has that stable ID.",
                              reach: "guest")
             }
+            if let problem = await exactSessionProblem(
+                request, guestID: id, requestID: requestID) { return problem }
             let command: NOWAPIConsoleCommandRequest
             switch NOWAPIConsoleCommandHTTPCodec.parse(request.body) {
             case .success(let parsed): command = parsed
@@ -382,7 +467,10 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                             object: NOWAPIConsoleCommandHTTPCodec.render(
                                 requestID, outcome))
             }
-            let outcome = await executeCommand(guestID: id, request: command)
+            let outcome = await executeCommand(
+                guestID: id,
+                expectedSessionID: request.headers["x-now-guest-session"]!,
+                request: command)
             response = json(200, requestID: requestID,
                             object: NOWAPIConsoleCommandHTTPCodec.render(
                                 requestID, outcome))
@@ -448,15 +536,38 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
     }
 
     private func executeCommand(
-        guestID: String, request: NOWAPIConsoleCommandRequest
+        guestID: String, expectedSessionID: String,
+        request: NOWAPIConsoleCommandRequest
     ) async -> NOWAPIConsoleCommandOutcome {
         await withCheckedContinuation { continuation in
             Task { @MainActor in
-                host.apiExecuteCommand(guestID: guestID, request: request) {
+                host.apiExecuteCommand(
+                    guestID: guestID, expectedSessionID: expectedSessionID,
+                    request: request) {
                     continuation.resume(returning: $0)
                 }
             }
         }
+    }
+
+    private func exactSessionProblem(
+        _ request: MCPHTTPRequest, guestID: String, requestID: UUID
+    ) async -> MCPHTTPResponse? {
+        guard let expected = request.headers["x-now-guest-session"],
+              GuestKey.parse(expected) != nil else {
+            return error(428, requestID: requestID,
+                         code: "guest_session_required",
+                         message: "Unsafe guest operations require an exact X-NOW-Guest-Session precondition.",
+                         reach: "session")
+        }
+        guard let guest = await host.apiGuest(id: guestID),
+              guest.summary.sessionID == expected else {
+            return error(409, requestID: requestID,
+                         code: "guest_session_changed",
+                         message: "The guest session changed; refetch before retrying.",
+                         reach: "session")
+        }
+        return nil
     }
 
     private func record(_ requestID: UUID, _ operationID: String,
@@ -636,6 +747,34 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             return .makeFolder(path: path)
         default: return nil
         }
+    }
+
+    private static func operationInvocation(_ body: Data)
+        -> (guest: String?, argumentsJSON: Data?)? {
+        guard body.count <= maximumBodyBytes,
+              let object = try? JSONSerialization.jsonObject(with: body)
+                as? [String: Any],
+              object.keys.allSatisfy({ ["guest", "arguments"].contains($0) })
+        else { return nil }
+        let guest: String?
+        if let raw = object["guest"] {
+            guard let value = raw as? String, !value.isEmpty,
+                  value.utf8.count <= 128 else { return nil }
+            guest = value
+        } else {
+            guest = nil
+        }
+        let argumentsJSON: Data?
+        if let arguments = object["arguments"] {
+            guard arguments is [String: Any],
+                  let encoded = try? JSONSerialization.data(
+                    withJSONObject: arguments, options: [.sortedKeys])
+            else { return nil }
+            argumentsJSON = encoded
+        } else {
+            argumentsJSON = nil
+        }
+        return (guest, argumentsJSON)
     }
 
     private static func requestID(_ raw: String?) -> UUID {

@@ -77,16 +77,19 @@ final class NOWAPIFileTransferService {
     }
 
     func mutateFile(
-        guestID: String, request: AgentIntegrationGuestFileMutationRequest
+        guestID: String, expectedSessionID: String? = nil,
+        request: AgentIntegrationGuestFileMutationRequest
     ) async throws(Problem) -> AgentIntegrationGuestFileMutationResult {
-        _ = try addressedGuest(guestID)
+        _ = try addressedGuest(guestID, expectedSessionID: expectedSessionID)
         return await driver.apiMutateFile(request)
     }
 
     func beginUpload(
-        guestID: String, request: AgentIntegrationGuestFileUploadBegin
+        guestID: String, expectedSessionID: String? = nil,
+        request: AgentIntegrationGuestFileUploadBegin
     ) async throws(Problem) -> Transfer {
-        let guest = try addressedGuest(guestID)
+        let guest = try addressedGuest(
+            guestID, expectedSessionID: expectedSessionID)
         guard request.bytes >= 0,
               request.bytes <= Self.maximumFileBytes else {
             throw Problem(
@@ -171,8 +174,10 @@ final class NOWAPIFileTransferService {
         return transfer
     }
 
-    func download(guestID: String, path: String) async throws(Problem) -> Transfer {
-        let guest = try addressedGuest(guestID)
+    func download(guestID: String, expectedSessionID: String? = nil,
+                  path: String) async throws(Problem) -> Transfer {
+        let guest = try addressedGuest(
+            guestID, expectedSessionID: expectedSessionID)
         try reserveTransferSlot()
         let id = UUID()
         try claimLane(id)
@@ -309,6 +314,18 @@ final class NOWAPIFileTransferService {
             throw Problem(status: 403, code: "guest_access_refused",
                           message: "The guest has not granted full control access.",
                           reach: "guest")
+        }
+        return guest
+    }
+
+    private func addressedGuest(
+        _ id: String, expectedSessionID: String?
+    ) throws(Problem) -> NOWAPICommandGuest {
+        let guest = try addressedGuest(id)
+        guard expectedSessionID == nil || guest.sessionID == expectedSessionID else {
+            throw Problem(status: 409, code: "session_changed",
+                          message: "The addressed guest session changed before dispatch.",
+                          reach: "session")
         }
         return guest
     }

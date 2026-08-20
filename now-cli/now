@@ -1,0 +1,3 @@
+#!/bin/sh
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PYTHONPATH="$script_dir${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m now_cli "$@"

@@ -314,7 +314,7 @@ private enum CarelessProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         await ran.note()
-        return .value(.init(["ok": true]))
+        return .value(.init(["ok": true], disposition: .completed))
     }
 }
 
