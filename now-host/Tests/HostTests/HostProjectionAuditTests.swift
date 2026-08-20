@@ -312,7 +312,8 @@ final class HostProjectionAuditTests: XCTestCase {
         let text = try GateSource.hostSwift(
             "now-host/Sources/Host/MCP/StdioMCPTransport.swift")
         XCTAssertTrue(
-            text.contains("audit: LocalMCPAuditSink()"), """
+            text.contains("audit: LocalMCPAuditSink(identity: identity)"),
+            """
             NOW's stdio entry point does not hand the MCP face the sink \
             that reports to the running host, so its invocations would \
             reach no log a person reads.
@@ -325,7 +326,8 @@ final class HostProjectionAuditTests: XCTestCase {
             NOW's in-process HTTP entry point does not construct the sink \
             that reports into NOW's log and MCP activity stream.
             """)
-        XCTAssertTrue(text.contains("NOWMCPServer(client: client, audit: audit)"), """
+        XCTAssertTrue(text.contains(
+            "NOWMCPServer(client: client, audit: audit,"), """
             NOW's in-process HTTP entry point does not hand the MCP face the \
             sink that reports into NOW's log and MCP activity stream.
             """)

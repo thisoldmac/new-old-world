@@ -596,7 +596,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             ) {
                 [agentIntegration = state.agentIntegration,
                  guestFiles = state.guestFiles,
-                 activity = state.agentActivity] request in
+                 records = state.mcpRecords] request in
                 /* Addressing is checked once, before any operation, so
                    no tool can be reached with a guest selector nobody
                    honoured. Session health is exempt: it is the call a
@@ -790,7 +790,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         event,
                         drivenGuest:
                             agentIntegration.activeReference()?.id,
-                        stream: activity)
+                        transport: .stdio,
+                        agent: MCPAgentIdentity(
+                            kind: .mcpStdio,
+                            clientName: MCPAgentIdentity.bounded(
+                                request.auditClientName),
+                            clientVersion: MCPAgentIdentity.bounded(
+                                request.auditClientVersion),
+                            sessionKey: request.auditSessionKey),
+                        records: records)
                     return .recorded
                 case .bringToFront:
                     /* The first of P1a's eleven to be wired (plan 005,
@@ -1123,7 +1131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let reason = "\(error)"
             HostLog.shared.write(
                 .warn, "agent",
-                "local agent integration unavailable: \(reason)")
+                "local agent integration unavailable: \(reason)",
+                transport: .stdio)
             /* The Agent page is told, because otherwise it would report
                the honest "nothing has ever attached" beside a socket path
                naming a file that is not there — and send somebody
@@ -1145,7 +1154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         server.stop()
         mcpStdioBridgeServer = nil
         HostLog.shared.write(.info, "agent",
-                             "stdio MCP endpoint stopped from the MCP pane")
+                             "stdio MCP endpoint stopped from the MCP pane",
+                             transport: .stdio)
         state.agentActivity.stdioStopped()
     }
 
@@ -1163,17 +1173,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         do {
             let token = try mcpTokenStore.loadOrCreate()
             let port = preferences.httpPort
+            let authMode = preferences.httpAuthMode
             let runID = UUID()
             mcpHTTPRunID = runID
             let client = HostAgentIntegrationClient(
                 adapter: state.agentIntegration, guestFiles: state.guestFiles)
-            let audit = HostMCPAuditSink(
-                adapter: state.agentIntegration,
-                activity: state.agentActivity)
+            var oauth: MCPOAuthAuthority?
+            if authMode == .oauth {
+                let authority = MCPOAuthAuthority(
+                    store: try MCPOAuthStateStore())
+                state.mcpOAuthConsent.attach(authority)
+                oauth = authority
+            } else {
+                state.mcpOAuthConsent.detach()
+            }
             let listener = try MCPHTTPListener(
-                configuration: .init(port: port, bearerToken: token),
-                serverFactory: {
-                    NOWMCPServer(client: client, audit: audit)
+                configuration: .init(port: port, authMode: authMode,
+                                     bearerToken: token),
+                serverFactory: { [adapter = state.agentIntegration,
+                                  activity = state.agentActivity,
+                                  records = state.mcpRecords] in
+                    /* Per session, so the sink reads THIS session's
+                       identity: the server fills the box at initialize and
+                       the service adds the id it mints. */
+                    let identity = NOWMCPClientIdentity()
+                    let audit = HostMCPAuditSink(
+                        adapter: adapter, activity: activity,
+                        identity: identity, records: records)
+                    return (NOWMCPServer(client: client, audit: audit,
+                                         identity: identity),
+                            identity)
                 },
                 activityObserver: { [activity = state.agentActivity]
                     began, moment in
@@ -1192,11 +1221,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         }
                         self.mcpHTTPListener = nil
                         self.mcpHTTPRunID = nil
+                        self.state.mcpOAuthConsent.detach()
                         self.state.agentActivity.httpUnavailable("\(error)")
                         HostLog.shared.write(
-                            .warn, "mcp", "HTTP MCP failed: \(error)")
+                            .warn, "mcp", "HTTP MCP failed: \(error)",
+                            transport: .http)
                     }
-                })
+                },
+                oauth: oauth)
             mcpHTTPListener = listener
             Task { [weak self, weak listener] in
                 guard let self, let listener else { return }
@@ -1207,9 +1239,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                               self.mcpHTTPRunID == runID else { return }
                         let endpoint = "http://127.0.0.1:\(port)/mcp"
                         self.state.agentActivity.httpOpened(
-                            at: endpoint, bearerToken: token)
+                            at: endpoint,
+                            bearerToken: authMode == .bearer ? token : nil)
                         HostLog.shared.write(
-                            .info, "mcp", "HTTP MCP listening at \(endpoint)")
+                            .info, "mcp",
+                            "HTTP MCP listening at \(endpoint)",
+                            transport: .http)
                     }
                 } catch {
                     await MainActor.run {
@@ -1219,7 +1254,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         self.mcpHTTPRunID = nil
                         self.state.agentActivity.httpUnavailable("\(error)")
                         HostLog.shared.write(
-                            .warn, "mcp", "HTTP MCP unavailable: \(error)")
+                            .warn, "mcp",
+                            "HTTP MCP unavailable: \(error)",
+                            transport: .http)
                     }
                 }
             }
@@ -1227,7 +1264,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             mcpHTTPRunID = nil
             state.agentActivity.httpUnavailable("\(error)")
             HostLog.shared.write(.warn, "mcp",
-                                 "HTTP MCP unavailable: \(error)")
+                                 "HTTP MCP unavailable: \(error)",
+                                 transport: .http)
         }
     }
 
@@ -1235,8 +1273,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         mcpHTTPRunID = nil
         mcpHTTPListener?.stop()
         mcpHTTPListener = nil
+        state.mcpOAuthConsent.detach()
         HostLog.shared.write(.info, "mcp",
-                             "HTTP MCP stopped from the MCP pane")
+                             "HTTP MCP stopped from the MCP pane",
+                             transport: .http)
         state.agentActivity.httpStopped()
     }
 }

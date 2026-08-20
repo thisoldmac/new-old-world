@@ -22,13 +22,38 @@ enum AgentIntegrationAuditLog {
     ///
     /// `stream` is optional because the log is not: a build with no window
     /// open, and every test that only cares about the line, still writes it.
+    /// `transport` is the route the report travelled, known only at the two
+    /// recording seams (the socket bridge is stdio; `HostMCPAuditSink` is
+    /// HTTP). It tags the log line so a transport card can tail its own
+    /// session; the composed text is unchanged.
+    /// `records` is the third fan-out — the durable store — and `agent` is
+    /// who did it, carried beside the event because the event itself stays
+    /// identity-free. With a recorder and no stated identity, the face
+    /// still names an honest kind.
     static func record(_ event: HostProjectionAuditEvent,
                        drivenGuest: String?,
                        log: HostLog = .shared,
-                       stream: AgentActivityModel? = nil) {
+                       transport: MCPTransportKind? = nil,
+                       agent: MCPAgentIdentity? = nil,
+                       records: MCPRecordsRecorder? = nil) {
         log.write(level(event), area,
-                  event.logMessage(drivenGuest: drivenGuest))
-        stream?.record(event, drivenGuest: drivenGuest)
+                  event.logMessage(drivenGuest: drivenGuest),
+                  transport: transport)
+        records?.record(event: event,
+                        agent: agent ?? fallbackIdentity(event, transport),
+                        drivenGuest: drivenGuest)
+    }
+
+    private static func fallbackIdentity(
+        _ event: HostProjectionAuditEvent,
+        _ transport: MCPTransportKind?) -> MCPAgentIdentity {
+        switch event.face {
+        case .chat: return MCPAgentIdentity(kind: .chat)
+        case .appIntent: return MCPAgentIdentity(kind: .appIntent)
+        case .mcp:
+            return MCPAgentIdentity(
+                kind: transport == .http ? .mcpHTTP : .mcpStdio)
+        }
     }
 
     /// A refusal is `warn`: it went wrong and continued, which is

@@ -138,6 +138,20 @@ final class HostAppState: ObservableObject {
     /// the presence ledger above on purpose: that one records who and when
     /// and refuses to record what, and this is the what.
     let agentActivity = AgentActivityModel()
+    /// OAuth consents waiting on a person while HTTP runs in oauth mode.
+    /// App-owned like the two ledgers above, because the listener that feeds
+    /// it outlives any one presentation of the MCP page.
+    let mcpOAuthConsent = MCPOAuthConsentModel()
+    /// The durable record behind the glance: agents, targets and actions in
+    /// SQLite. Nil when the store cannot open — serving and the log carry
+    /// on, and the history card says why it has no record.
+    let mcpRecords: MCPRecordsRecorder? = {
+        guard let root = try? MCPRecordsDatabase.applicationSupportRoot(),
+              let database = try? MCPRecordsDatabase(root: root) else {
+            return nil
+        }
+        return MCPRecordsRecorder(database: database)
+    }()
     let guestFiles: GuestFilesCommandService
     private let artifactApprovals: AgentIntegrationArtifactApprovalStore?
     /// The Connections page: which Macs are on the wire, which one the
@@ -251,6 +265,8 @@ final class HostAppState: ObservableObject {
             guestFiles: guestFiles,
             agentActivity: agentActivity,
             agentCompanions: agentCompanions,
+            mcpOAuthConsent: mcpOAuthConsent,
+            mcpRecords: mcpRecords,
             logs: logs,
             continuity: continuity,
             fileTransfer: fileTransfer,

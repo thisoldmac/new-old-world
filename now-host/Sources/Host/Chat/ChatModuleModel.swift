@@ -182,6 +182,7 @@ final class ChatModuleModel: ObservableObject {
         agentIntegration: AgentIntegrationHostAdapter,
         guestFiles: GuestFilesCommandService,
         agentActivity: AgentActivityModel?,
+        mcpRecords: MCPRecordsRecorder? = nil,
         /* The connected Mac's screen, or nil for "nobody has measured
            it". Injected rather than looked up, because the thing that
            knows is the live Mirror and this model must not construct
@@ -241,7 +242,8 @@ final class ChatModuleModel: ObservableObject {
                 ).addressing(selector)
             },
             audit: ChatAuditSink(
-                adapter: agentIntegration, activity: agentActivity),
+                adapter: agentIntegration, activity: agentActivity,
+                records: mcpRecords),
             guestScreen: guestScreen,
             /* Same suite, same reason: a test injecting its own
                defaults must not compose prompts from the desk's real

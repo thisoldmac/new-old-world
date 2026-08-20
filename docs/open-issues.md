@@ -7,6 +7,97 @@ search:
 
 # Open issues
 
+## BUILT AND TESTED, NOT DRIVEN BY HAND: the MCP arc — auth modes, two-column card page, durable records DB (2026-08-20, `feat/mcp-http-auth-modes` → `feat/mcp-module-cards` → `feat/mcp-records-db`, PRs #55–#57)
+
+Three stacked PRs. HTTP MCP gains a persisted access mode — bearer (the
+default, unchanged), a built-in OAuth authorization server (metadata, DCR,
+PKCE, consent parked on a human Approve/Deny on the MCP page), and
+unauthenticated with warning copy. The MCP page becomes two columns of
+collapsible, draggable cards with per-transport session-log tails
+(write-time transport tag beside the log line; the text cannot say which
+transport, so only the writer can). Audited calls now land in a SQLite
+records store (agents / sessions / targets / actions, no arguments column
+by design) read by the history card and its entity detail sheets; the
+200-event in-memory ring is retired.
+
+**Tested, not verified beyond that**: every suite is green (`test-host`
+Debug+Release, docs gate) and the load-bearing guards were watched failing
+by mutation (PKCE comparison, token expiry, loopback Host, layout version
+guard, agent dedup). What nobody has done:
+
+- Driven the page by hand — drag between columns, collapse persistence
+  across relaunch, log tails, the entity sheet's pivots.
+- Interop against a real MCP client in each auth mode (`claude mcp add
+  --transport http`); the OAuth flow has passed only its own end-to-end
+  test, never a real client's.
+- Emulator QA and Metal QA statuses (`tools/code-qa`) — required before
+  merge, not yet recorded, and the metal half is Michelle's call.
+- The stdio identity fields on a REAL companion process (the socket seam
+  is codec-tested only).
+
+
+## EMULATOR QA SWEEP OF PR #54, AND THE THREE SURFACES IT COULD NOT REACH (2026-08-20, `feat/agentic-loop`)
+
+The sweep ran on head `a4fa5382`, mac99 / OS 9.1 (68K guest and `ext/`
+untouched by the diff, so no 68K rig), rig at `/private/tmp/nowvm-emuqa`
+(anchor 13016, wire 13017), host from this head under
+`NOW_PREFS_SUFFIX=emuqa` with `chat.workspace.*` deliberately UNSET so
+the shipping zero-click default is what was tested.
+
+**Passed, each with a native-resolution capture or the tool's own
+answer**: the chat page and all five popups; the sidebar's selected row
+as a legible inverted band; New Chat with no `(asking…)` wedge; the
+Skills popup enabled once the roster arrived; transcript selection;
+console parity (`chat --mode build`) against a build stamp matching the
+host's connect line; a Build-mode lane turn that started the HTTP MCP on
+demand through `bridgeWanted` with the auto-start toggle off and called
+`now_list_machines`; the workspace file it was asked to write; both
+`ProjectGround` refusals live (`now-projects-toolchain-unqualified`,
+`now-projects-guest-home-create-refused`); `now_guest_files_upload_*`
+landing 25 bytes as TEXT/`MPS `; and the whole guest-MPW lane —
+toolchain registered and **qualified** (`mpw-ffff-00001461@structural-1`,
+ToolServer and MrC found), a guest-authored project built through
+ToolServer **2 of 2 actions** into an APPL of 1384 data / 394 resource
+bytes, and `run` answering *"accepted and process identity matched"*.
+
+**Self-loading skills passed on its own evidence.** Asked *"Name the one
+rule about UPPs on this runtime. Load the skill you need."* the model
+called `chat_load_skill` itself and answered citing
+`powerpc-cfm-abi.md` in `classic-mac-carbon-platform` — the tool
+returned the skill body, and nothing asked the person to type a slash
+command.
+
+**Three surfaces this rig cannot reach, named rather than implied:**
+
+1. *Tracked-menu interactions* — opening the New Project dialog, mapping
+   a project popup item, inserting a skill. The anchor worker's click is
+   a click-release and a Toolbox popup needs a tracked press, so these
+   rest on the source-level guard
+   `now-guest-ppc/tests/chat_page_wire_source_test.py` and on nothing
+   observed.
+2. *The mouse-drag selection loop.* Same reason; the band was proven by
+   a keyboard-driven selection, not by a drag.
+3. *The onboarding portal.* It starts only from a person's click in the
+   host UI, which this rig has no way to drive. The one commit touching
+   it after the onboarding merge (`5afc5fdf`) replaces a deprecated
+   `String(cString:)` in the per-connection local-address read; four
+   `OnboardingPortalTests` cases connect over a real socket through that
+   path, so it is suite-covered — but it is **not** emulator-swept on
+   this head and the sweep does not claim it.
+
+**Two small findings, carried:**
+
+- *The Projects page list does not rescan while it is open.* A project
+  that appears on disk — which is exactly how an agent creates one — is
+  invisible in the list until you leave the page and come back. The page
+  read "No projects under the chosen folder" for fifteen minutes while
+  `now_development` catalog listed it and the Build Jobs pane below said
+  `QAHello — succeeded, 2 of 2 actions`.
+- *Skill loading is invisible in the host log.* `chat_load_skill` emits
+  a `.skillLoaded` event to the UI and no log line, so the one question
+  a support pass would ask — did the model load the skill, or answer from
+  memory — is answerable only from the transcript.
+
 ## THE REVIEW THAT CAUGHT A NO-OP GUARD, AND WHAT IT LEFT OPEN (2026-08-19, `feat/agentic-loop`)
 
 A review pass before opening the pull request found 21 defects in the

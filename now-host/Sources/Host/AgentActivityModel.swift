@@ -102,16 +102,6 @@ enum MCPTransportState: Equatable {
 /// undo. The page observes both.
 @MainActor
 final class AgentActivityModel: ObservableObject {
-    /// How many invocations the page remembers.
-    ///
-    /// Small on purpose. This is the "what has an agent been doing" glance,
-    /// not the record — the record is the log, which keeps 2000 lines and
-    /// can be written to disk. A page that tried to be both would be a
-    /// worse log and a worse glance.
-    static let rememberedEvents = 200
-
-    /// Newest first, which is the order the question is asked in.
-    @Published private(set) var events: [AgentActivityEvent] = []
     @Published private(set) var stdio: MCPTransportState = .unopened
     @Published private(set) var http: MCPTransportState = .unopened
     /// Available only while HTTP is running. The view offers an explicit
@@ -121,29 +111,6 @@ final class AgentActivityModel: ObservableObject {
     @Published private(set) var httpInFlight = 0
     @Published private(set) var httpFirstSeen: Date?
     @Published private(set) var httpLastSeen: Date?
-    private var nextID = 0
-
-    func record(_ event: HostProjectionAuditEvent,
-                drivenGuest: String?,
-                at moment: Date = Date()) {
-        events.insert(
-            AgentActivityEvent(
-                id: nextID,
-                at: moment,
-                capability: event.capability,
-                face: event.face,
-                machine: event.guest ?? drivenGuest,
-                outcome: event.outcome,
-                reason: event.reason,
-                title: AgentActivityEvent.title(for: event.capability),
-                isDestructive:
-                    AgentActivityEvent.isDestructive(event.capability)),
-            at: 0)
-        nextID += 1
-        if events.count > Self.rememberedEvents {
-            events.removeLast(events.count - Self.rememberedEvents)
-        }
-    }
 
     func stdioOpened(at endpoint: String) {
         stdio = .open(endpoint: endpoint)
@@ -162,7 +129,9 @@ final class AgentActivityModel: ObservableObject {
         stdio = .stopped
     }
 
-    func httpOpened(at endpoint: String, bearerToken: String) {
+    /// `bearerToken` is nil when the listener runs in a mode that has no
+    /// copyable secret (unauthenticated, oauth).
+    func httpOpened(at endpoint: String, bearerToken: String?) {
         http = .open(endpoint: endpoint)
         httpBearerToken = bearerToken
     }

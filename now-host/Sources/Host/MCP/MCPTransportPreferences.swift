@@ -11,6 +11,7 @@ struct MCPTransportPreferences {
         static let stdioEnabled = "mcp.stdio.enabled"
         static let httpEnabled = "mcp.http.enabled"
         static let httpPort = "mcp.http.port"
+        static let httpAuthMode = "mcp.http.authMode"
     }
 
     let defaults: UserDefaults
@@ -35,6 +36,18 @@ struct MCPTransportPreferences {
                 ?? Self.defaultHTTPPort
         }
         nonmutating set { defaults.set(Int(newValue), forKey: Keys.httpPort) }
+    }
+
+    /// Missing or unrecognised stored values mean bearer: that is what every
+    /// install had before modes existed.
+    var httpAuthMode: MCPHTTPAuthMode {
+        get {
+            defaults.string(forKey: Keys.httpAuthMode)
+                .flatMap(MCPHTTPAuthMode.init(rawValue:)) ?? .bearer
+        }
+        nonmutating set {
+            defaults.set(newValue.rawValue, forKey: Keys.httpAuthMode)
+        }
     }
 }
 
@@ -65,6 +78,9 @@ final class MCPTransportSettingsModel: ObservableObject {
             preferences.httpPort = httpPort
         }
     }
+    @Published var httpAuthMode: MCPHTTPAuthMode {
+        didSet { preferences.httpAuthMode = httpAuthMode }
+    }
 
     private let preferences: MCPTransportPreferences
 
@@ -74,6 +90,7 @@ final class MCPTransportSettingsModel: ObservableObject {
         stdioStartsAutomatically = preferences.stdioStartsAutomatically
         httpStartsAutomatically = preferences.httpStartsAutomatically
         httpPort = preferences.httpPort
+        httpAuthMode = preferences.httpAuthMode
     }
 }
 

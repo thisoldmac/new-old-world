@@ -1,4 +1,5 @@
 import AppKit
+import NOWAgentIntegration
 import SwiftUI
 
 /// The MCP page: the server an agent reaches this Mac through — whether it
@@ -46,6 +47,8 @@ struct MCPModuleView: View {
     @ObservedObject var companions: AgentCompanionModel
     @ObservedObject var listener: GuestListener
     @ObservedObject var settings: MCPTransportSettingsModel
+    /// Consents an OAuth client is waiting on; empty outside oauth mode.
+    @ObservedObject var oauthConsent: MCPOAuthConsentModel
     /// Nil in a preview or a test with no Settings window to open.
     var openSettings: (() -> Void)?
     /// Nil in a preview or a test that has no server to run. The buttons are
@@ -55,21 +58,84 @@ struct MCPModuleView: View {
     var stopStdio: (() -> Void)?
     var startHTTP: (() -> Void)?
     var stopHTTP: (() -> Void)?
+    /// The page's card arrangement; every card draws through it.
+    @ObservedObject var layoutModel: MCPCardLayoutModel
+    /// Injected so previews and tests can feed a private ring; the app
+    /// passes the shared one.
+    @ObservedObject var hostLog: HostLog = .shared
+    /// The durable history behind the activity card, and the one source
+    /// the page reads for it.
+    @ObservedObject var records: MCPRecordsModel
+    /// The card a drag handle lifted; live-reorder follows it.
+    @State private var dragged: MCPCardID?
+    /// The record a person opened; the sheet pivots from it.
+    @State private var inspected: MCPInspectedEntity?
+
+    /// Below this, two columns cannot both hold a sentence, so the page
+    /// degrades to one stacked column (the detail pane's own minimum is
+    /// 480). VSplitView is not an option here — the render harness draws
+    /// it as nothing — and the narrow fallback is a plain stack.
+    private static let twoColumnMinimumWidth: CGFloat = 560
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScrollView {
-                VStack(spacing: 12) {
-                    transports
-                    presence
-                    heldLane
-                    consent
-                    activity
+            GeometryReader { geometry in
+                if geometry.size.width >= Self.twoColumnMinimumWidth {
+                    HSplitView {
+                        column(.left)
+                        column(.right)
+                    }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(layoutModel.layout.cards(in: .left)
+                                + layoutModel.layout.cards(in: .right),
+                                id: \.self) { id in
+                                cardBody(id)
+                            }
+                        }
+                        .padding(12)
+                    }
                 }
-                .padding(12)
             }
+        }
+    }
+
+    private func column(_ side: MCPCardColumn) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(layoutModel.layout.cards(in: side),
+                        id: \.self) { id in
+                    cardBody(id)
+                        .onDrop(of: [.plainText],
+                                delegate: MCPCardDropDelegate(
+                                    target: id, column: side,
+                                    layoutModel: layoutModel,
+                                    dragged: $dragged))
+                }
+            }
+            .padding(12)
+        }
+        .frame(minWidth: 220, maxWidth: .infinity, maxHeight: .infinity)
+        /* The column itself is the drop target a card needs to land in an
+           EMPTY column, or after the last card. */
+        .onDrop(of: [.plainText],
+                delegate: MCPCardDropDelegate(
+                    target: nil, column: side,
+                    layoutModel: layoutModel, dragged: $dragged))
+    }
+
+    @ViewBuilder
+    private func cardBody(_ id: MCPCardID) -> some View {
+        switch id {
+        case .transportStdio: stdioTransport
+        case .transportHTTP: httpTransport
+        case .presence: presence
+        case .heldLane: heldLane
+        case .consent: consent
+        case .activity: activity
         }
     }
 
@@ -109,11 +175,13 @@ struct MCPModuleView: View {
     /// reading on its own, and only while the page is actually on screen,
     /// which is a timer nobody has to remember to invalidate.
     private var presence: some View {
-        TimelineView(.periodic(from: Date(), by: 5)) { context in
-            let reading = AgentPresenceReading(
-                model.combinedActivity(companions.activity),
-                                               asOf: context.date)
-            card {
+        /* The TimelineView lives INSIDE the collapsible content, so a
+           collapsed presence card runs no five-second re-derivation. */
+        collapsibleCard(.presence, title: "Agent presence") {
+            TimelineView(.periodic(from: Date(), by: 5)) { context in
+                let reading = AgentPresenceReading(
+                    model.combinedActivity(companions.activity),
+                    asOf: context.date)
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: reading.symbol)
                         .font(.system(size: 22))
@@ -196,8 +264,10 @@ struct MCPModuleView: View {
     /// without having to know which page a stream lives on.
     @ViewBuilder
     private var heldLane: some View {
+        /* Its layout slot persists either way; only the rendering is
+           conditional, so the card comes back where the person left it. */
         if listener.streamOrigin == .agent {
-            card {
+            collapsibleCard(.heldLane, title: "Live screen stream") {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.system(size: 22))
@@ -251,10 +321,10 @@ struct MCPModuleView: View {
     /// went stale would be this pane vouching for a permission the person
     /// had already withdrawn.
     private var consent: some View {
-        card {
+        collapsibleCard(
+            .consent,
+            title: "Consent") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Consent")
-                    .font(.headline)
                 Text("Set per machine, and changeable while connected. "
                         + "Changed on that machine, not here.")
                     .font(.callout)
@@ -301,62 +371,143 @@ struct MCPModuleView: View {
     // MARK: the stream
 
     private var activity: some View {
-        card {
+        collapsibleCard(.activity, title: "Activity") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Activity")
-                    .font(.headline)
-                if model.events.isEmpty {
-                    Text(emptyStreamSentence)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                switch records.loadState {
+                case .loading:
+                    ProgressView().controlSize(.small)
+                case .unavailable(let reason):
+                    Text(reason)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.orange)
+                        .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    ForEach(model.events) { event in
-                        eventRow(event)
+                case .ready:
+                    historyFilterBar
+                    if records.rows.isEmpty {
+                        Text(emptyStreamSentence)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        ForEach(records.rows) { row in
+                            actionRow(row)
+                        }
+                        if records.canLoadMore {
+                            Button("Show Older") {
+                                Task { await records.loadMore() }
+                            }
+                            .controlSize(.small)
+                        }
                     }
                 }
             }
+            .onAppear { records.start() }
+        }
+        .sheet(item: $inspected) { entity in
+            MCPEntityDetailSheet(entity: entity, model: records)
         }
     }
 
-    /// Two different silences. A stream that is empty because nothing ever
-    /// attached is the resting state and is already explained above, so
-    /// repeating it would be the pane saying the same thing twice; a stream
-    /// that is empty while a companion HAS attached is a real and slightly
-    /// surprising fact — something connected and asked for nothing this
-    /// side records — and says so.
-    private var emptyStreamSentence: String {
-        model.combinedActivity(companions.activity).hasEverAttached
-            ? "Agent connected, no calls. Every capability an agent "
-                + "invokes appears here."
-            : "No agent calls."
+    private var historyFilterBar: some View {
+        HStack(spacing: 8) {
+            Picker("Outcome", selection: Binding(
+                get: { records.filter.outcome },
+                set: { outcome in
+                    var filter = records.filter
+                    filter.outcome = outcome
+                    records.setFilter(filter)
+                })) {
+                Text("All outcomes")
+                    .tag(HostProjectionAuditEvent.Outcome?.none)
+                Text("Answered")
+                    .tag(HostProjectionAuditEvent.Outcome?.some(.answered))
+                Text("Refused")
+                    .tag(HostProjectionAuditEvent.Outcome?.some(.refused))
+                Text("Denied")
+                    .tag(HostProjectionAuditEvent.Outcome?.some(.denied))
+            }
+            .labelsHidden()
+            .fixedSize()
+            Picker("Agent", selection: Binding(
+                get: { records.filter.agentID },
+                set: { id in
+                    var filter = records.filter
+                    filter.agentID = id
+                    records.setFilter(filter)
+                })) {
+                Text("Any agent").tag(Int64?.none)
+                ForEach(records.agents) { agent in
+                    Text(agent.displayName).tag(Int64?.some(agent.id))
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            Picker("Machine", selection: Binding(
+                get: { records.filter.targetID },
+                set: { id in
+                    var filter = records.filter
+                    filter.targetID = id
+                    records.setFilter(filter)
+                })) {
+                Text("Any machine").tag(Int64?.none)
+                ForEach(records.targets) { target in
+                    Text(target.machineID).tag(Int64?.some(target.id))
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
     }
 
-    private func eventRow(_ event: AgentActivityEvent) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: symbol(event))
-                .foregroundStyle(tint(event))
+    private func actionRow(_ row: MCPActionRow) -> some View {
+        let action = row.action
+        let isDestructive = AgentActivityEvent.isDestructive(
+            action.capability)
+        return HStack(alignment: .top, spacing: 8) {
+            Image(systemName: actionSymbol(action, isDestructive))
+                .foregroundStyle(actionTint(action, isDestructive))
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(event.title)
-                        .font(.callout.weight(.medium))
-                    if event.isDestructive {
+                    Button {
+                        inspected = .action(action.id)
+                    } label: {
+                        Text(AgentActivityEvent.title(
+                            for: action.capability))
+                            .font(.callout.weight(.medium))
+                    }
+                    .buttonStyle(.plain)
+                    if isDestructive {
                         Text("modifies the Mac")
                             .font(.caption2)
                             .foregroundStyle(.orange)
                     }
                     Spacer(minLength: 0)
-                    Text(Self.clock.string(from: event.at))
+                    Text(Self.clock.string(from: action.at))
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
-                Text(subtitle(event))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let reason = event.reason {
+                HStack(spacing: 6) {
+                    entityChip(row.agentName) {
+                        inspected = .agent(action.agentID)
+                    }
+                    if let machine = row.targetMachine,
+                       let targetID = action.targetID {
+                        entityChip(machine) {
+                            inspected = .target(targetID)
+                        }
+                    }
+                    Text("\(action.capability) · "
+                        + action.outcome.rawValue)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                if let reason = action.reason {
                     /* The projection's own refusal sentence, verbatim. It
                        is what the caller was told, and rewording it here
                        would leave the person and the agent reading two
@@ -371,26 +522,44 @@ struct MCPModuleView: View {
         .padding(.top, 4)
     }
 
-    /// The identifiers stay visible beside the phrase: the tool name is what
-    /// a person will find in the log and in whatever client made the call,
-    /// and the machine is the fact that says which Mac this happened to.
-    private func subtitle(_ event: AgentActivityEvent) -> String {
-        let face = event.face == .mcp ? "MCP" : "AppIntent"
-        let machine = event.machine ?? "no machine"
-        let outcome = event.outcome == .answered ? "answered" : "refused"
-        return "\(face) · \(event.capability) · \(machine) · \(outcome)"
+    private func entityChip(_ label: String,
+                            open: @escaping () -> Void) -> some View {
+        Button(action: open) {
+            Text(label)
+                .font(.caption)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(.quaternary.opacity(0.6),
+                            in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
-    private func symbol(_ event: AgentActivityEvent) -> String {
-        event.outcome == .refused
-            ? "hand.raised.circle"
-            : (event.isDestructive
+    private func actionSymbol(_ action: MCPActionRecord,
+                              _ isDestructive: Bool) -> String {
+        action.outcome == .answered
+            ? (isDestructive
                 ? "exclamationmark.circle" : "checkmark.circle")
+            : "hand.raised.circle"
     }
 
-    private func tint(_ event: AgentActivityEvent) -> Color {
-        if event.outcome == .refused { return .orange }
-        return event.isDestructive ? .orange : .secondary
+    private func actionTint(_ action: MCPActionRecord,
+                            _ isDestructive: Bool) -> Color {
+        action.outcome == .answered && !isDestructive
+            ? .secondary : .orange
+    }
+
+    /// Two different silences. A stream that is empty because nothing ever
+    /// attached is the resting state and is already explained above, so
+    /// repeating it would be the pane saying the same thing twice; a stream
+    /// that is empty while a companion HAS attached is a real and slightly
+    /// surprising fact — something connected and asked for nothing this
+    /// side records — and says so.
+    private var emptyStreamSentence: String {
+        model.combinedActivity(companions.activity).hasEverAttached
+            ? "Agent connected, no calls. Every capability an agent "
+                + "invokes appears here."
+            : "No agent calls."
     }
 
     private func tint(_ tone: AgentPresenceReading.Tone) -> Color {
@@ -420,55 +589,65 @@ struct MCPModuleView: View {
     /// Whether each transport starts automatically at launch is a Settings
     /// tab now, not a switch on this card — it is checked once a launch and
     /// never mid-session, unlike everything else here.
-    private var transports: some View {
-        VStack(spacing: 12) {
-            transportCard(
-                title: "Standard Input",
-                summary: "For MCP clients that launch a command. The New "
-                    + "Old World executable runs in stdio mode and reaches "
-                    + "this app over its same-user socket.",
-                state: model.stdio,
-                start: startStdio,
-                stop: stopStdio,
-                details: { endpoint in
-                    stdioDetails(endpoint)
-                },
-                configuration: {
-                    stdioConfiguration
-                })
-            transportCard(
-                title: "HTTP",
-                summary: "For clients that connect to a URL. Runs inside "
-                    + "New Old World, binds to loopback only, and requires "
-                    + "the private bearer token.",
-                state: model.http,
-                start: startHTTP,
-                stop: stopHTTP,
-                details: { _ in
-                    httpDetails
-                },
-                configuration: {
-                    httpConfiguration(isRunning: model.http.isRunning)
-                })
-        }
+    private var stdioTransport: some View {
+        transportCard(
+            id: .transportStdio,
+            title: "Standard Input",
+            summary: "For MCP clients that launch a command. The New "
+                + "Old World executable runs in stdio mode and reaches "
+                + "this app over its same-user socket.",
+            state: model.stdio,
+            start: startStdio,
+            stop: stopStdio,
+            tail: .stdio,
+            details: { endpoint in
+                stdioDetails(endpoint)
+            },
+            configuration: {
+                stdioConfiguration
+            })
+    }
+
+    private var httpTransport: some View {
+        transportCard(
+            id: .transportHTTP,
+            title: "HTTP",
+            summary: "For clients that connect to a URL. Runs inside "
+                + "New Old World, binds to loopback only, and "
+                + "authenticates as the access setting specifies.",
+            state: model.http,
+            start: startHTTP,
+            stop: stopHTTP,
+            tail: .http,
+            details: { _ in
+                httpDetails
+            },
+            configuration: {
+                httpConfiguration(isRunning: model.http.isRunning)
+            })
     }
 
     private func transportCard<Details: View, Configuration: View>(
+        id: MCPCardID,
         title: String,
         summary: String,
         state: MCPTransportState,
         start: (() -> Void)?,
         stop: (() -> Void)?,
-        @ViewBuilder details: (String) -> Details,
-        @ViewBuilder configuration: () -> Configuration
+        tail: MCPTransportKind,
+        @ViewBuilder details: @escaping (String) -> Details,
+        @ViewBuilder configuration: @escaping () -> Configuration
     ) -> some View {
-        card {
+        MCPCollapsibleCard(
+            id: id, title: title, layoutModel: layoutModel,
+            dragged: $dragged,
+            accessories: {
+                /* In the header, not the body: Stop stays reachable while
+                   the card is collapsed. */
+                lifecycleButton(state: state, start: start, stop: stop)
+            },
+            content: {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center) {
-                    Text(title).font(.headline)
-                    Spacer(minLength: 12)
-                    lifecycleButton(state: state, start: start, stop: stop)
-                }
                 HStack(spacing: 6) {
                     Image(systemName: state.isRunning
                             ? "circle.fill" : "circle")
@@ -500,8 +679,50 @@ struct MCPModuleView: View {
                     Text("Stopped. Audit history is unchanged.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
+                logTailDisclosure(id, kind: tail)
+            }
+        })
+    }
+
+    /// The tail's own little disclosure, persisted with the layout. Not a
+    /// drag surface, and built lazily: a shut tail filters nothing.
+    private func logTailDisclosure(_ id: MCPCardID,
+                                   kind: MCPTransportKind) -> some View {
+        let open = layoutModel.layout.isLogTailOpen(id)
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    layoutModel.toggleLogTail(id)
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: open
+                        ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                    Text("Session log")
+                        .font(.caption.weight(.medium))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(open ? "Hide session log"
+                                     : "Show session log")
+            if open {
+                MCPTransportLogTail(kind: kind, log: hostLog)
             }
         }
+    }
+
+    private func collapsibleCard<Content: View>(
+        _ id: MCPCardID, title: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        MCPCollapsibleCard(
+            id: id, title: title, layoutModel: layoutModel,
+            dragged: $dragged,
+            accessories: { EmptyView() },
+            content: content)
     }
 
     private func runningLine(_ state: MCPTransportState) -> String {
@@ -553,12 +774,30 @@ struct MCPModuleView: View {
                     .multilineTextAlignment(.trailing)
                     .disabled(isRunning)
             }
+            LabeledContent("Access") {
+                Picker("Access", selection: $settings.httpAuthMode) {
+                    Text("Bearer token").tag(MCPHTTPAuthMode.bearer)
+                    Text("OAuth").tag(MCPHTTPAuthMode.oauth)
+                    Text("No authentication")
+                        .tag(MCPHTTPAuthMode.unauthenticated)
+                }
+                .labelsHidden()
+                .fixedSize()
+                .disabled(isRunning)
+            }
             copyRow(label: "URL", value: plannedHTTPEndpoint)
             Text(isRunning
-                    ? "Stop HTTP before changing its port."
+                    ? "Stop HTTP before changing its port or access mode."
                     : "Reachable only from this Mac at 127.0.0.1.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if settings.httpAuthMode == .unauthenticated {
+                Text("Without authentication, any process on this Mac can "
+                        + "drive New Old World over this port.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -580,6 +819,41 @@ struct MCPModuleView: View {
                     .help("Copy the private token. Never displayed or "
                           + "written to the log.")
             }
+            if settings.httpAuthMode == .oauth {
+                oauthRows
+            }
+        }
+    }
+
+    /// The consent queue and the one revocation control, shown only while
+    /// HTTP runs in oauth mode. Approving resolves the client's parked
+    /// /authorize request; nothing is remembered beyond the tokens it mints.
+    private var oauthRows: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(oauthConsent.pending) { request in
+                HStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                        .foregroundStyle(.orange)
+                    Text("\(request.clientName) asks to use MCP.")
+                        .font(.callout)
+                    Spacer(minLength: 12)
+                    ControlGroup {
+                        Button("Approve") {
+                            oauthConsent.approve(request.id)
+                        }
+                        Button("Deny") { oauthConsent.deny(request.id) }
+                    }
+                    .controlSize(.small)
+                    .fixedSize()
+                }
+            }
+            Button("Revoke OAuth Clients & Tokens") {
+                oauthConsent.revokeEverything()
+            }
+            .controlSize(.small)
+            .help("Forgets every registered OAuth client and cancels the "
+                  + "tokens they were issued. Clients must register and be "
+                  + "approved again.")
         }
     }
 
@@ -607,18 +881,6 @@ struct MCPModuleView: View {
 
     private var plannedHTTPEndpoint: String {
         "http://127.0.0.1:\(settings.httpPort)/mcp"
-    }
-
-    // MARK: chrome
-
-    private func card<Content: View>(
-        @ViewBuilder _ content: () -> Content
-    ) -> some View {
-        content()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(.quaternary.opacity(0.35),
-                        in: RoundedRectangle(cornerRadius: 8))
     }
 
     private static let clock: DateFormatter = {

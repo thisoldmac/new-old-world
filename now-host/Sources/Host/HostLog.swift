@@ -25,6 +25,20 @@ final class HostLog: ObservableObject {
         /// the first the day the format moves. Padded and truncated exactly
         /// as the tag is, so what a caller filters on is what a reader sees.
         let area: String
+        /// Which MCP transport produced this line, when the writer knew —
+        /// the same beside-the-text argument as `area`, and NOT recoverable
+        /// from the text: audit lines open with the face, and the face is
+        /// `mcp` for both transports. Nil for everything else, including
+        /// every line written before the tag existed.
+        let transport: String?
+
+        init(id: Int, text: String, area: String,
+             transport: String? = nil) {
+            self.id = id
+            self.text = text
+            self.area = area
+            self.transport = transport
+        }
     }
 
     /// The scrollback the Logs page reads, oldest first, capped so a busy
@@ -69,14 +83,15 @@ final class HostLog: ObservableObject {
     /// so the two files can be read as one. It always reaches the ring;
     /// it reaches the file only when disk is on.
     func write(_ level: LogLevel = .info, _ area: String = "host",
-               _ text: String) {
+               _ text: String, transport: MCPTransportKind? = nil) {
         let mark = level == .error ? "! " : (level == .warn ? "? " : "")
         let tag = area.padding(
             toLength: AgentIntegrationHostLogPolicy.areaTagScalars,
             withPad: " ", startingAt: 0)
         let body = "\(Self.clock.string(from: Date())) \(tag) \(mark)\(text)"
 
-        lines.append(Line(id: nextID, text: body, area: tag))
+        lines.append(Line(id: nextID, text: body, area: tag,
+                          transport: transport?.rawValue))
         nextID += 1
         if lines.count > Self.ringCapacity {
             lines.removeFirst(lines.count - Self.ringCapacity)
@@ -137,4 +152,11 @@ final class HostLog: ObservableObject {
     enum LogLevel {
         case info, warn, error
     }
+}
+
+/// The two MCP transports, as a log-line tag. The writer states it because
+/// only the writer knows: the audit event's face is `mcp` either way.
+enum MCPTransportKind: String, Sendable {
+    case stdio
+    case http
 }

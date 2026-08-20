@@ -37,10 +37,22 @@ The host exposes independent controls for:
 - **Standard Input**, a narrow `New Old World --mcp-stdio` process launched by
   an MCP client. Its card copies the executable command and shows the private
   same-user socket it uses to reach the already-running app.
-- **HTTP**, an authenticated loopback listener running directly inside the
-  normal NOW app. Its card exposes an editable loopback port while stopped,
-  shows and copies the derived URL, and copies the bearer token without
-  rendering the secret in the module or logs.
+- **HTTP**, a loopback listener running directly inside the normal NOW app.
+  Its card exposes an editable loopback port and an **Access** mode while
+  stopped, and shows and copies the derived URL. Access has three settings,
+  applied the next time HTTP starts:
+    - **Bearer token** (the default): requests must carry NOW's private
+      token. The card copies it without rendering the secret in the module
+      or logs.
+    - **OAuth**: NOW acts as the authorization server for standard MCP
+      clients — discovery metadata, dynamic client registration, and a
+      PKCE authorization-code flow. A client's first sign-in parks on the
+      card as an **Approve / Deny** consent row; nothing is issued until a
+      person answers, and **Revoke OAuth Clients & Tokens** forgets every
+      registration and cancels outstanding tokens.
+    - **No authentication**: any process on this Mac can drive NOW over the
+      port. The card says so in warning copy; the loopback Host and Origin
+      checks still apply.
 
 Each card has independent **Start** and **Stop** controls, which affect the
 current app session. The persisted launch policy is not here: **Start
@@ -51,6 +63,23 @@ mid-session. They apply the next time NOW opens.
 The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
 machine grant.
+
+The page is two columns of cards — recent agent activity on the right by
+default, everything else on the left. Every card collapses from its header
+chevron, the handle at its top-left drags it anywhere in either column (a
+context menu offers the same moves for the keyboard), and the arrangement
+persists across launches. Each transport card also discloses a **Session
+log**: the host log's lines for that transport from this run of the app.
+
+The activity card reads a durable record, not a per-launch ring: every
+audited call lands in a private database beside NOW's other application
+data, kept 180 days. Rows filter by outcome, agent, and machine; the agent
+and machine chips on a row — and the row itself — open a detail sheet for
+that record, which pivots between an agent, its sessions, the machines it
+drove, and individual actions. The record stores what the audit line
+already said — capability, face, machine, outcome, bounded refusal reason,
+plus the client name an MCP client stated about itself — and never
+arguments or payloads.
 
 ## On the classic Mac
 
