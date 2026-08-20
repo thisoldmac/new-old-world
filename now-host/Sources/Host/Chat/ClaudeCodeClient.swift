@@ -16,23 +16,39 @@ final class ClaudeCodeClient: @unchecked Sendable {
     private let executable: URL?
     private let environment: [String: String]
     private let lanes: ChatWorkspaceLaneStore
-    /// This app's own binary, for the MCP server a lane runtime is
-    /// handed. Injected so a test can assert the configuration without
-    /// depending on where the test bundle happens to live.
+    /// This app's own binary — still handed to the sunset stdio config
+    /// shape for external callers; the lane itself rides HTTP.
     private let hostExecutable: URL?
+    /// Where the HTTP MCP answers, read fresh per spawn: the running
+    /// host's own port preference and the same 0600 Bearer token file
+    /// the MCP page copies from. nil — no Application Support, an
+    /// unreadable token — means the lane runs without NOW's tools
+    /// rather than with a server it cannot authenticate to.
+    private let httpEndpoint:
+        @Sendable () -> (port: UInt16, token: String)?
 
     init(
         runner: ChatSubprocessRunning = SystemChatSubprocessRunner(),
         executable: URL? = ChatRuntimeLocator.executable(named: "claude"),
         environment: [String: String] = ChatSubprocessEnvironment.minimal(),
         lanes: ChatWorkspaceLaneStore = ChatWorkspaceLaneStore(),
-        hostExecutable: URL? = Bundle.main.executableURL
+        hostExecutable: URL? = Bundle.main.executableURL,
+        httpEndpoint: @escaping @Sendable ()
+            -> (port: UInt16, token: String)? = {
+            guard let defaults = UserDefaults(
+                suiteName: ProductIdentity.preferencesSuite),
+                let token = try? MCPHTTPTokenStore().loadOrCreate()
+            else { return nil }
+            return (MCPTransportPreferences(defaults: defaults).httpPort,
+                    token)
+        }
     ) {
         self.runner = runner
         self.executable = executable
         self.environment = environment
         self.lanes = lanes
         self.hostExecutable = hostExecutable
+        self.httpEndpoint = httpEndpoint
     }
 
     /// The lane as it stands right now. Asked per turn and per popup
@@ -93,9 +109,10 @@ final class ClaudeCodeClient: @unchecked Sendable {
         let lane = lanes.state().lane
         if lane?.attachesNOWTools == true {
             /* Before the spawn, not after the first refusal: the
-               companion's very first ToolSearch can be the turn's first
-               action, and a bridge that comes up behind it has already
-               cost the turn. */
+               runtime's very first ToolSearch can be the turn's first
+               action, and a server that comes up behind it has already
+               cost the turn. The app answers by starting the HTTP MCP
+               and pinning the lane root for local reads. */
             NotificationCenter.default.post(
                 name: ChatWorkspaceMCPConfig.bridgeWanted, object: nil)
         }
@@ -104,9 +121,10 @@ final class ClaudeCodeClient: @unchecked Sendable {
             arguments: Self.arguments(
                 model: completion.model, lane: lane,
                 mcpConfig: lane?.attachesNOWTools == true
-                    ? ChatWorkspaceMCPConfig.json(
-                        executable: hostExecutable,
-                        workspaceRoot: lane?.root)
+                    ? httpEndpoint().flatMap {
+                        ChatWorkspaceMCPConfig.httpJSON(
+                            port: $0.port, token: $0.token)
+                    }
                     : nil),
             standardInput: Data(Self.prompt(completion, lane: lane).utf8),
             timeout: lane?.timeout ?? 180,

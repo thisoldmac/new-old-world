@@ -95,15 +95,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         let preferences = MCPTransportPreferences(defaults: defaults)
         if preferences.stdioStartsAutomatically { startMCPStdio() }
         if preferences.httpStartsAutomatically { startMCPHTTP() }
-        /* A lane turn about to spawn its companion asks for the bridge,
+        /* A lane turn about to spawn its runtime asks for the HTTP MCP,
            whatever the launch toggle said — see the notification's own
-           comment for the desk that paid for this. startMCPStdio is
-           idempotent, so a bridge already up costs nothing. */
+           comment for the desk that paid for this (and for stdio's
+           sunset). startMCPHTTP is idempotent, so a server already up
+           costs nothing. The lane root is pinned here too: the HTTP
+           server runs IN this process, so now_guest_files_upload_file's
+           allowed directory is the host's own Settings answer, taken
+           fresh per spawn. */
         NotificationCenter.default.addObserver(
             forName: ChatWorkspaceMCPConfig.bridgeWanted, object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.startMCPStdio() }
+            Task { @MainActor in
+                HostProjectionLocalRead.configure(
+                    workspaceRoot: ChatWorkspaceLaneStore().state().lane?.root)
+                self?.startMCPHTTP()
+            }
         }
         // Web's own model owns its UserDefaults key, unlike MCP's separate
         // preferences struct — reading the key directly here (rather than

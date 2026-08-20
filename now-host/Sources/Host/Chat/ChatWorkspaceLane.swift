@@ -338,6 +338,35 @@ enum ChatWorkspaceMCPConfig {
     /// files out of it. Spawn-time and explicit on purpose: the companion
     /// must never discover a readable root ambiently, and nil keeps the
     /// bare single-argument mode for a lane with no folder to grant.
+    /// The lane runtime reaches NOW over the HTTP MCP — the transport
+    /// the product is converging on. The stdio companion this replaces
+    /// was a second copy of the app dialling a shared unix socket, and
+    /// it failed three separate ways on one desk in one evening
+    /// (ungranted lane, a predecessor's exit unlinking the successor's
+    /// socket, and a launch toggle silently binding nothing). HTTP is
+    /// one server, in the running host, Bearer-gated by a same-user
+    /// 0600 token file — and when it is down the failure is a connect
+    /// refusal with a port number in it, not a healthy-looking silence.
+    static func httpJSON(port: UInt16, token: String) -> String? {
+        let object: [String: Any] = [
+            "mcpServers": [
+                serverName: [
+                    "type": "http",
+                    "url": "http://127.0.0.1:\(port)/mcp",
+                    "headers": ["Authorization": "Bearer \(token)"],
+                ],
+            ],
+        ]
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: object,
+            options: [.sortedKeys, .withoutEscapingSlashes])
+        else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// The sunset stdio shape, kept only for the `--mcp-stdio` entry
+    /// point's direct callers (external clients that spawn their own
+    /// companion). The lane no longer uses it.
     static func json(executable: URL?, workspaceRoot: URL?) -> String? {
         guard let executable else { return nil }
         var args = ["--mcp-stdio"]

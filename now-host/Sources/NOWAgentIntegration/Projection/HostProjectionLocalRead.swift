@@ -2,15 +2,17 @@ import Foundation
 import os
 
 /// The one modern-host directory a projection may read bytes out of, pinned
-/// by whoever started this process — never discovered from the environment.
+/// by the host's own Settings answer — never discovered from the
+/// environment.
 ///
-/// It exists for the chat workspace lane: the host spawns its own executable
-/// as an MCP companion (`--mcp-stdio`) and, when the lane has a granted
-/// folder, names it with `--workspace-root`. That argument is the person's
-/// Settings choice travelling one hop, so the authority is the host's, not
-/// this process's to widen. A companion launched any other way has no root,
-/// and `now_guest_files_upload_file` refuses rather than guessing one —
-/// an ambient default (cwd, $HOME, an env var) is exactly the stale-address
+/// It exists for the chat workspace lane. Two configurers, one authority:
+/// the host pins it in-process before each lane spawn (the HTTP MCP runs
+/// inside the host, the lane's mainline since stdio's sunset), and the
+/// sunset `--mcp-stdio` companion still receives it as `--workspace-root`
+/// on its command line. Either way the value is the person's Settings
+/// choice travelling one hop. A process with no root pinned has none, and
+/// `now_guest_files_upload_file` refuses rather than guessing one — an
+/// ambient default (cwd, $HOME, an env var) is exactly the stale-address
 /// class of failure the deploy scripts refuse to have.
 public enum HostProjectionLocalRead {
     private static let state = OSAllocatedUnfairLock<URL?>(initialState: nil)

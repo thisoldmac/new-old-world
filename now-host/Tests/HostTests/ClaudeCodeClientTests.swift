@@ -136,7 +136,8 @@ final class ClaudeCodeClientTests: XCTestCase {
         let client = ClaudeCodeClient(
             runner: runner, executable: executable, environment: [:],
             lanes: ChatWorkspaceLaneStore(defaults: defaults),
-            hostExecutable: URL(fileURLWithPath: "/Apps/New Old World"))
+            hostExecutable: URL(fileURLWithPath: "/Apps/New Old World"),
+            httpEndpoint: { (port: 5254, token: "feedface") })
 
         for try await _ in client.stream(ChatCompletionRequest(
             model: "sonnet", system: "", turns: [.user("hi")], tools: [],
@@ -147,6 +148,13 @@ final class ClaudeCodeClientTests: XCTestCase {
                        root.standardizedFileURL)
         XCTAssertEqual(request.timeout, ChatWorkspaceLaneStore.defaultTimeout)
         XCTAssertEqual(request.arguments.value(after: "--tools"), "default")
+        /* The lane rides the HTTP MCP — stdio is sunset. One server, in
+           the running host, Bearer-gated; no second app copy, no unix
+           socket to stomp. */
+        let config = request.arguments.value(after: "--mcp-config") ?? ""
+        XCTAssertTrue(config.contains("http://127.0.0.1:5254/mcp"), config)
+        XCTAssertTrue(config.contains("Bearer feedface"), config)
+        XCTAssertFalse(config.contains("--mcp-stdio"), config)
     }
 
     /// A lane turn that will spawn a companion asks for the agent
@@ -168,7 +176,8 @@ final class ClaudeCodeClientTests: XCTestCase {
         ]])
         let client = ClaudeCodeClient(
             runner: runner, executable: executable, environment: [:],
-            lanes: ChatWorkspaceLaneStore(defaults: defaults))
+            lanes: ChatWorkspaceLaneStore(defaults: defaults),
+            httpEndpoint: { (port: 5254, token: "feedface") })
 
         for try await _ in client.stream(ChatCompletionRequest(
             model: "sonnet", system: "", turns: [.user("hi")], tools: [],
