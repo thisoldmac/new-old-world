@@ -755,6 +755,11 @@ run_c now-guest-ppc files_capacity_test.c    ""  src/files/files_capacity.c
 run_c now-guest-ppc cloud_model_test.c      ""  src/cloud/cloud_model.c src/core/json.c
 run_c now-guest-ppc chat_model_test.c       ""  src/chat/chat_model.c src/core/json.c
 run_c now-guest-ppc chat_layout_test.c      ""  src/chat/chat_layout.c
+# The Chat page's Carbon half: the selection drag pumps the wire, a want
+# is never spent on a dropped link, the skills roster does not outlive
+# its connection, the project roster is replaced rather than pre-emptied,
+# and a modal that pumps the wire owns the port while it does.
+run_py now-guest-ppc chat_page_wire_source_test.py
 run_c now-guest-ppc cloud_layout_test.c     ""  src/cloud/cloud_layout.c
 # The live search's pure half: case-insensitive substring, folded once
 # per keystroke not once per row, generalized to the two row shapes

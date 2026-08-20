@@ -167,6 +167,13 @@ typedef struct {
     int count;
     ChatLineFeed feed;
     Boolean answering;
+    /* The row selection lives HERE, with the rows it names, because a
+       line index is only meaningful against a particular ring state.
+       Held beside the page it highlights, it survived the ring rolling
+       under it: the band drew over whatever text had moved into those
+       slots and Copy returned it. */
+    int sel_anchor;                   /* -1 when nothing is selected */
+    int sel_extent;
 } ChatTranscript;
 
 void chat_transcript_reset(ChatTranscript *t);
@@ -182,5 +189,19 @@ void chat_transcript_add(ChatTranscript *t, int kind, const char *prefix,
 void chat_transcript_begin_answer(ChatTranscript *t);
 void chat_transcript_feed(ChatTranscript *t, const char *chunk);
 void chat_transcript_end_answer(ChatTranscript *t);
+
+/* --- the row selection ---------------------------------------------------
+   A selection is a claim about ROWS, so it moves with them. Every line
+   the ring drops takes the selection down one; the row that falls off
+   the top leaves it; a selection whose every row has gone is cleared.
+   Indices left standing still while the rows moved under them is the
+   defect this exists to make impossible - the band highlighted
+   unrelated text and Copy returned it. */
+void chat_transcript_select(ChatTranscript *t, int anchor, int extent);
+void chat_transcript_clear_selection(ChatTranscript *t);
+/* Both -1 when nothing is selected. Anchor is where the drag began;
+   extent is where it is now, and either may be the smaller. */
+int chat_transcript_sel_anchor(const ChatTranscript *t);
+int chat_transcript_sel_extent(const ChatTranscript *t);
 
 #endif /* NOW_CHAT_MODEL_H */

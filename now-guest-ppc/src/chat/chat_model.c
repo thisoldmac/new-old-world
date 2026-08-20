@@ -396,6 +396,28 @@ void chat_feed_flush(ChatLineFeed *feed)
 
 /* --- the transcript ----------------------------------------------------- */
 
+/* One line has just left the top of the ring, so every surviving row
+   answers to an index one lower. The selection follows them down. */
+static void selection_rolled(ChatTranscript *t)
+{
+    if (t->sel_anchor < 0) {
+        return;
+    }
+    --t->sel_anchor;
+    --t->sel_extent;
+    if (t->sel_anchor < 0 && t->sel_extent < 0) {
+        t->sel_anchor = -1;           /* every row it named is gone */
+        t->sel_extent = -1;
+        return;
+    }
+    if (t->sel_anchor < 0) {
+        t->sel_anchor = 0;            /* the top row fell off; the rest hold */
+    }
+    if (t->sel_extent < 0) {
+        t->sel_extent = 0;
+    }
+}
+
 static void transcript_take_line(void *ctx, const char *line)
 {
     ChatTranscript *t = (ChatTranscript *)ctx;
@@ -405,6 +427,7 @@ static void transcript_take_line(void *ctx, const char *line)
                 (size_t)(kChatMaxLines - 1) * kChatCols);
         memmove(t->kind, t->kind + 1, (size_t)(kChatMaxLines - 1));
         --t->count;
+        selection_rolled(t);
     }
     strncpy(t->lines[t->count], line, kChatCols - 1);
     t->lines[t->count][kChatCols - 1] = '\0';
@@ -417,7 +440,43 @@ void chat_transcript_reset(ChatTranscript *t)
     t->count = 0;
     t->answering = 0;
     t->adding_kind = kChatLineModel;
+    t->sel_anchor = -1;
+    t->sel_extent = -1;
     chat_feed_reset(&t->feed, transcript_take_line, t);
+}
+
+void chat_transcript_select(ChatTranscript *t, int anchor, int extent)
+{
+    int last = chat_transcript_count(t) - 1;
+
+    if (anchor < 0 || extent < 0 || last < 0) {
+        chat_transcript_clear_selection(t);
+        return;
+    }
+    if (anchor > last) {
+        anchor = last;
+    }
+    if (extent > last) {
+        extent = last;
+    }
+    t->sel_anchor = anchor;
+    t->sel_extent = extent;
+}
+
+void chat_transcript_clear_selection(ChatTranscript *t)
+{
+    t->sel_anchor = -1;
+    t->sel_extent = -1;
+}
+
+int chat_transcript_sel_anchor(const ChatTranscript *t)
+{
+    return t->sel_anchor;
+}
+
+int chat_transcript_sel_extent(const ChatTranscript *t)
+{
+    return t->sel_extent;
 }
 
 int chat_transcript_count(const ChatTranscript *t)

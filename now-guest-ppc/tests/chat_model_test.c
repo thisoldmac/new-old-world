@@ -402,6 +402,74 @@ static void test_provider_reach_defaults_to_full_when_absent(void)
     assert(strcmp(rows[1].tools, "full") == 0);
 }
 
+/* A selection is a claim about ROWS, and the ring moves rows. Held as
+   bare line indices beside the transcript rather than inside it, the
+   band kept naming slots after the lines under them had shifted: it
+   highlighted unrelated text and Copy handed back the wrong lines. */
+static void test_a_selection_moves_with_the_rows_it_named(void)
+{
+    static ChatTranscript t;
+    int i;
+
+    chat_transcript_reset(&t);
+    assert(chat_transcript_sel_anchor(&t) == -1);
+    assert(chat_transcript_sel_extent(&t) == -1);
+
+    for (i = 0; i < kChatMaxLines; ++i) {
+        char line[32];
+
+        snprintf(line, sizeof line, "line %d", i);
+        chat_transcript_add(&t, kChatLineModel, "", line);
+    }
+    assert(chat_transcript_count(&t) == kChatMaxLines);
+
+    /* Select three rows in the middle, then push one line in: the ring
+       is full, so every row moves down one and so must the band. */
+    chat_transcript_select(&t, 100, 102);
+    assert(strcmp(chat_transcript_line(&t, 100), "line 100") == 0);
+    chat_transcript_add(&t, kChatLineModel, "", "one more");
+    assert(chat_transcript_sel_anchor(&t) == 99);
+    assert(chat_transcript_sel_extent(&t) == 101);
+    assert(strcmp(chat_transcript_line(&t, 99), "line 100") == 0);
+
+    /* A selection at the very top loses the row that fell off and
+       keeps the ones that survived, rather than sliding onto a
+       stranger. */
+    chat_transcript_select(&t, 0, 1);
+    chat_transcript_add(&t, kChatLineModel, "", "another");
+    assert(chat_transcript_sel_anchor(&t) == 0);
+    assert(chat_transcript_sel_extent(&t) == 0);
+
+    /* Nothing it named survives: cleared, so no band is drawn and Copy
+       falls back to the whole page. */
+    chat_transcript_select(&t, 0, 0);
+    chat_transcript_add(&t, kChatLineModel, "", "and another");
+    assert(chat_transcript_sel_anchor(&t) == -1);
+    assert(chat_transcript_sel_extent(&t) == -1);
+
+    /* A STREAM rolls the ring the same way a whole entry does - the
+       path the transcript actually spends its life on. */
+    chat_transcript_select(&t, 10, 12);
+    chat_transcript_begin_answer(&t);
+    chat_transcript_feed(&t, "a streamed line\nand a second one\n");
+    chat_transcript_end_answer(&t);
+    assert(chat_transcript_sel_anchor(&t) == 8);
+    assert(chat_transcript_sel_extent(&t) == 10);
+
+    /* Opening another chat resets the rows, so it resets the claim. */
+    chat_transcript_reset(&t);
+    assert(chat_transcript_sel_anchor(&t) == -1);
+
+    /* An index past the last row cannot be selected: the hit test
+       clamps, and so does this, rather than storing a promise about a
+       row that is not there. */
+    chat_transcript_add(&t, kChatLineModel, "", "only line");
+    chat_transcript_select(&t, 0, 40);
+    assert(chat_transcript_sel_extent(&t) == 0);
+    chat_transcript_select(&t, -1, 0);
+    assert(chat_transcript_sel_anchor(&t) == -1);
+}
+
 int main(void)
 {
     test_providers_fill_rows_whatever_their_state();
@@ -418,6 +486,7 @@ int main(void)
     test_history_keeps_who_said_it();
     test_a_malformed_page_reads_as_failure();
     test_provider_reach_defaults_to_full_when_absent();
+    test_a_selection_moves_with_the_rows_it_named();
     puts("chat_model_test: all passed");
     return 0;
 }

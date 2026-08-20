@@ -70,10 +70,15 @@ Boolean now_chat_project_new(char *name, long name_cap,
                              char *home, long home_cap)
 {
     DialogRef dialog;
+    GrafPtr saved_port;
     Boolean here = true;
     Boolean created = false;
     Boolean done = false;
 
+    /* DisposeDialog leaves the current port pointing at a port that no
+       longer exists, and the next thing to draw without setting one of
+       its own draws through it. The caller's port is restored below. */
+    GetPort(&saved_port);
     dialog = GetNewDialog(kDialogID, NULL, (WindowRef)-1);
     if (dialog == NULL) {
         return false;
@@ -124,5 +129,6 @@ Boolean now_chat_project_new(char *name, long name_cap,
         }
     }
     now_control_dispose_dialog(dialog);
+    SetPort(saved_port);
     return created;
 }

@@ -111,6 +111,7 @@ static int g_chats_state;
 static Boolean g_want_lists;
 static Boolean g_want_catalog;
 static Boolean g_want_history;
+static Boolean g_want_models;
 /* The next roster answer REPLACES the rows rather than appending: set
    by every fresh ask, consumed by the first page. The rows themselves
    stay drawn until then — clearing them at the ask put "(asking...)"
@@ -118,6 +119,9 @@ static Boolean g_want_history;
 static Boolean g_roster_restart;
 static ChatProjectRow g_projects[kChatMaxProjects];
 static int g_project_count;
+/* The roster's restart rule, applied to the projects: the next answer
+   REPLACES the rows, later pages of it append. */
+static Boolean g_project_restart;
 /* A create was sent; the next chat.result that lands is its answer,
    and an ok one means the roster moved. */
 static Boolean g_created_project;
@@ -129,6 +133,11 @@ static Boolean g_created_project;
 static ChatSkillRow g_skills[kChatMaxSkills];
 static int g_skill_count;
 static Boolean g_want_skills;
+/* Once per CONNECTION, and the contract says so in as many words: the
+   guest never caches this roster across connections. So the ask is
+   armed by the same shape as the catalog's — a flag set when the ask
+   goes out and cleared, with the rows, when the link drops. */
+static Boolean g_asked_skills;
 static Boolean g_sidebar_shown = true;
 /* What this turn may do. Build is NOT the default: the safe tier is the
    one that changes nothing, and the host reads an absent mode the same
@@ -145,6 +154,15 @@ static TEHandle g_te;                 /* the prompt; TE draws it */
 static char g_status[128];            /* the transient chat.status line */
 static Boolean g_streaming;
 static Boolean g_visible;
+/* A modal opened from this page PUMPS THE WIRE while it runs (pump.h),
+   so a roster answer can land mid-dialog and rebuild a popup. The
+   dialog owns the current port for its whole life and none of the
+   Control Manager calls a rebuild makes take a port: Draw1Control,
+   SetControlValue and HiliteControl would all paint our control into
+   the DIALOG. So a rebuild does not run at all while one is up - it is
+   owed, and the click that opened the dialog performs it on the way
+   out, once, from the same state. */
+static Boolean g_modal_up;
 
 /* Scroll state, the Console's discipline: pinned to the newest line
    unless the person scrolled away, surviving module switches. */
@@ -156,6 +174,11 @@ static Boolean g_pinned = true;
 static int g_shown_lines = -1;
 static int g_shown_open_len = -1;
 static char g_shown_status[128];
+/* The band's own cache. A stream that rolls the ring moves the
+   selection down with its rows, and that changes drawn pixels without
+   changing the line count the caches above watch. */
+static int g_shown_sel_lo = -1;
+static int g_shown_sel_hi = -1;
 
 /* --- small helpers ------------------------------------------------------ */
 
@@ -240,27 +263,56 @@ static void inval_rows(int from, int to)
    when nothing is selected. Rows rather than characters, because the
    ring stores pre-wrapped fixed-height lines and a row is the unit
    both the draw and the hit test already share. Copy emits the
-   selected rows; no selection keeps the whole-page scene copy. */
-static int g_sel_anchor = -1;
-static int g_sel_extent = -1;
+   selected rows; no selection keeps the whole-page scene copy.
+
+   The indices live in the TRANSCRIPT, not here, because they are only
+   meaningful against one ring state: a stream that rolls the ring
+   moves every surviving row down one, and a selection held out here
+   stayed where it was and highlighted whatever arrived in its place. */
+static int sel_anchor(void)
+{
+    return chat_transcript_sel_anchor(&g_transcript);
+}
+
+static int sel_extent(void)
+{
+    return chat_transcript_sel_extent(&g_transcript);
+}
+
+static Boolean has_selection(void)
+{
+    return sel_anchor() >= 0;
+}
 
 static int sel_lo(void)
 {
-    return g_sel_anchor < g_sel_extent ? g_sel_anchor : g_sel_extent;
+    return sel_anchor() < sel_extent() ? sel_anchor() : sel_extent();
 }
 
 static int sel_hi(void)
 {
-    return g_sel_anchor > g_sel_extent ? g_sel_anchor : g_sel_extent;
+    return sel_anchor() > sel_extent() ? sel_anchor() : sel_extent();
 }
+
+/* The band on screen now matches the state: either it was just drawn
+   by the live tracking, or the damage for it is already queued. Idle
+   compares against this, so recording it keeps a settled selection
+   from costing a whole-pane repaint it does not need. */
+static void note_selection_drawn(void);
 
 static void clear_selection(void)
 {
-    if (g_sel_anchor >= 0) {
+    if (has_selection()) {
         inval_rows(sel_lo(), sel_hi() + 1);
     }
-    g_sel_anchor = -1;
-    g_sel_extent = -1;
+    chat_transcript_clear_selection(&g_transcript);
+    note_selection_drawn();
+}
+
+static void note_selection_drawn(void)
+{
+    g_shown_sel_lo = sel_lo();
+    g_shown_sel_hi = sel_hi();
 }
 
 /* Which transcript line a local point lands on, or -1. Clamped to the
@@ -424,6 +476,9 @@ static void rebuild_provider_popup(void)
     MenuRef menu = popup_menu(g_provider_popup, kChatProvidersMenuID);
     int i;
 
+    if (g_modal_up) {
+        return;                       /* a dialog owns the port */
+    }
     if (menu == NULL) {
         strcpy(g_status, "A popup menu resource is missing (138)");
         return;
@@ -464,6 +519,9 @@ static void rebuild_model_popup(void)
     MenuRef menu = popup_menu(g_model_popup, kChatModelsMenuID);
     int i;
 
+    if (g_modal_up) {
+        return;                       /* a dialog owns the port */
+    }
     if (menu == NULL) {
         strcpy(g_status, "A popup menu resource is missing (137)");
         return;
@@ -504,6 +562,9 @@ static void rebuild_skills_popup(void)
     MenuRef menu = popup_menu(g_skills_popup, kChatSkillsMenuID);
     int i;
 
+    if (g_modal_up) {
+        return;                       /* a dialog owns the port */
+    }
     if (menu == NULL) {
         return;
     }
@@ -534,6 +595,9 @@ static void rebuild_project_popup(void)
     int i;
     int current = 0;
 
+    if (g_modal_up) {
+        return;                       /* a dialog owns the port */
+    }
     if (menu == NULL) {
         return;
     }
@@ -593,6 +657,7 @@ static void ask_chats(void)
 
 static void ask_catalog(void);
 static void ask_history(void);
+static void ask_models(void);
 
 /* Every listing this page wants is recorded as a WANT and issued here,
    one at a time, only when the wire's single ask slot is free. The
@@ -608,6 +673,15 @@ static void ask_when_free(void)
     if (now_wire_chat_ask_pending() || now_wire_chat_turn_active()) {
         return;
     }
+    /* A want is CONSUMED only by an ask that can be issued. Down here
+       is the one place that knows whether it can, so the connection
+       gate belongs here and applies to every want alike: three of them
+       used to clear the flag and then send into a dead link, which
+       spends the want on nothing and leaves the page with an empty
+       transcript and no listings and nothing left to re-arm them. */
+    if (conn_phase() != kConnConnected) {
+        return;                       /* every want survives the drop */
+    }
     if (g_want_history) {
         /* First: the person just opened a chat and is looking at an
            empty transcript. */
@@ -616,11 +690,13 @@ static void ask_when_free(void)
         return;
     }
     if (g_want_catalog) {
-        if (conn_phase() != kConnConnected) {
-            return;                   /* keep the want for the reconnect */
-        }
         g_want_catalog = false;
         ask_catalog();
+        return;
+    }
+    if (g_want_models) {
+        g_want_models = false;
+        ask_models();
         return;
     }
     if (g_want_lists) {
@@ -631,22 +707,31 @@ static void ask_when_free(void)
         ask_chats();
         return;
     }
-    if (g_want_skills && conn_phase() == kConnConnected) {
+    if (g_want_skills) {
         char err[96];
 
         g_want_skills = false;
-        (void)now_wire_chat_skills(err, sizeof err);
+        if (now_wire_chat_skills(err, sizeof err) == 0) {
+            g_asked_skills = true;
+        }
     }
 }
 
+/* Ask for the projects, from the top. The rows are REPLACED by the
+   first page of the answer, not emptied at the ask: an ask that is
+   refused - and with one slot for the whole family they often are -
+   would otherwise leave a count of zero under a menu still showing the
+   old rows, and a click then maps an existing project onto the item
+   number the New Project verb sits at. The roster's restart flag is
+   the pattern; this is the same one. */
 static void ask_projects(void)
 {
     char err[96];
 
-    g_project_count = 0;
     if (now_wire_chat_projects(0, err, sizeof err) != 0) {
         return;                       /* the popup simply stays as it was */
     }
+    g_project_restart = true;
 }
 
 /* One page of the open chat's history, oldest-first WITHIN the page, so
@@ -690,16 +775,22 @@ static void sync_mode_popup(void)
     }
 }
 
-/* Ask for the selected provider's models, from the top. Lazy by
-   design: nothing is listed until somebody selects it. */
-static void ask_models(void)
+/* Want the selected provider's models. Lazy by design: nothing is
+   listed until somebody selects it — and split in two like every other
+   listing on this page, because the ask is refused while any other one
+   is in flight. What is TRUE the moment a person picks a provider
+   happens here (the models on the menu are not this provider's); the
+   ask itself waits for the wire's single slot. Sending from here meant
+   picking a provider during any in-flight listing was refused, and the
+   popup stayed empty with nothing to retry it — a hole the skills ask,
+   now issued on every page show, walks straight into. */
+static void want_models(void)
 {
-    char err[96];
-
     g_model_count = 0;
     g_model_sel = -1;
     g_models_loading = false;
     g_models_provider[0] = '\0';
+    g_want_models = false;
     if (g_provider_sel < 0 || g_provider_sel >= g_provider_count
         || strcmp(g_providers[g_provider_sel].state, "serving") != 0) {
         rebuild_model_popup();
@@ -719,14 +810,28 @@ static void ask_models(void)
     strncpy(g_models_provider, g_providers[g_provider_sel].provider,
             sizeof g_models_provider - 1);
     g_models_provider[sizeof g_models_provider - 1] = '\0';
+    /* Loading from this moment: the ask is owed, and the status line
+       says so rather than reading as a provider with no models. */
+    g_models_loading = true;
+    g_want_models = true;
+    rebuild_model_popup();
+}
+
+/* The ask itself, issued by ask_when_free against the provider
+   want_models settled on. */
+static void ask_models(void)
+{
+    char err[96];
+
+    if (g_models_provider[0] == '\0') {
+        return;
+    }
     if (now_wire_chat_model_page(g_models_provider, 0,
                                  err, sizeof err) != 0) {
         snprintf(g_status, sizeof g_status, "%.120s", err);
         inval(&g_r.status);
-        return;
+        g_models_loading = false;
     }
-    g_models_loading = true;
-    rebuild_model_popup();
 }
 
 /* --- wire notes --------------------------------------------------------- */
@@ -780,7 +885,7 @@ static void chat_note(int kind, const char *reply)
             g_provider_sel = 0;
         }
         rebuild_provider_popup();
-        ask_models();                 /* lazy step two, for the selection */
+        want_models();                /* lazy step two, for the selection */
         g_status[0] = '\0';
         break;
     }
@@ -864,10 +969,17 @@ static void chat_note(int kind, const char *reply)
     }
     case kChatAnswerProjects: {
         int more = 0;
-        int n = chat_parse_projects(reply, &g_projects[g_project_count],
-                                    kChatMaxProjects - g_project_count,
-                                    &more);
+        int n;
 
+        if (g_project_restart) {
+            /* The first page of a fresh listing replaces what the menu
+               is showing; later pages of the same listing append. */
+            g_project_restart = false;
+            g_project_count = 0;
+        }
+        n = chat_parse_projects(reply, &g_projects[g_project_count],
+                                kChatMaxProjects - g_project_count,
+                                &more);
         if (n < 0) {
             break;
         }
@@ -967,8 +1079,7 @@ static void chat_note(int kind, const char *reply)
                moved on the host, so re-list rather than guessing. */
             g_created_project = false;
             if (ok) {
-                g_project_count = 0;
-                ask_projects();
+                ask_projects();       /* the answer replaces the rows */
             }
         }
         break;
@@ -1091,8 +1202,6 @@ static void new_chat(void)
         return;
     }
     chat_transcript_reset(&g_transcript);
-    g_sel_anchor = -1;
-    g_sel_extent = -1;
     g_top = 0;
     g_pinned = true;
     g_history_taken = 0;
@@ -1160,8 +1269,6 @@ static OSErr chat_create(WindowRef owner, const Rect *body)
         GetFNum(geneva, &g_font);
     }
     chat_transcript_reset(&g_transcript);
-    g_sel_anchor = -1;
-    g_sel_extent = -1;
 
     text[0] = 0;
     g_provider_popup = now_control_new(owner, &g_r.provider_popup, text, false,
@@ -1244,6 +1351,13 @@ static void chat_dispose(void)
     g_model_popup = NULL;
     g_mode_popup = NULL;
     g_project_popup = NULL;
+    g_skills_popup = NULL;
+    /* The roster went with the controls: it is per-connection state
+       held only for a popup that no longer exists, and a page recreated
+       later must ask again rather than draw what a previous link said. */
+    g_skill_count = 0;
+    g_want_skills = false;
+    g_asked_skills = false;
     g_sidebar_toggle = NULL;
     g_new_btn = NULL;
     g_send_btn = NULL;
@@ -1277,7 +1391,7 @@ static void chat_show(Boolean visible)
         ShowControl(g_mode_popup);
         ShowControl(g_project_popup);
         ShowControl(g_skills_popup);
-        if (g_skill_count == 0) {
+        if (!g_asked_skills) {
             g_want_skills = true;
         }
         ShowControl(g_sidebar_toggle);
@@ -1479,7 +1593,7 @@ static void emit_transcript(const WorkshopSceneWriter *writer)
             } else {
                 draw_at(x, y, text);
             }
-            if (writer == NULL && g_sel_anchor >= 0
+            if (writer == NULL && has_selection()
                 && line >= sel_lo() && line <= sel_hi()) {
                 /* The selection band, from state - the same rows the
                    live tracking inverted. After the text, so the
@@ -1628,6 +1742,7 @@ static void chat_draw(void)
     draw_input();
     g_shown_lines = chat_transcript_count(&g_transcript);
     g_shown_open_len = g_transcript.feed.open_len;
+    note_selection_drawn();
     strncpy(g_shown_status, g_status, sizeof g_shown_status - 1);
 }
 
@@ -1683,7 +1798,7 @@ static long chat_copy_text(char *out, long cap)
        the ring, not the screen, so a selection scrolled half out of
        view still copies whole. No selection keeps the whole-page
        scene copy this always was. */
-    if (g_sel_anchor >= 0 && g_sel_extent >= 0 && out != NULL && cap > 1) {
+    if (has_selection() && out != NULL && cap > 1) {
         int lines = chat_transcript_count(&g_transcript);
         int lo = sel_lo();
         int hi = sel_hi();
@@ -1734,8 +1849,6 @@ static void open_chat(int row)
     }
     g_chat_sel = row;
     chat_transcript_reset(&g_transcript);
-    g_sel_anchor = -1;
-    g_sel_extent = -1;
     g_history_taken = 0;
     g_history_more = false;
     g_top = 0;
@@ -1781,7 +1894,7 @@ static Boolean chat_click(const EventRecord *event, Point local)
                 && picked != g_provider_sel) {
                 g_provider_sel = picked;
                 sync_mode_popup();
-                ask_models();         /* lazy: listed on selection */
+                want_models();        /* lazy: listed on selection */
             }
         }
         return true;
@@ -1830,14 +1943,27 @@ static Boolean chat_click(const EventRecord *event, Point local)
             } else if (picked == g_project_count + 2) {
                 char name[48];
                 char home[8];
+                Boolean got;
 
                 /* The verb row. The popup must not sit on it while the
                    dialog runs - it is not a state a person can be in. */
                 SetControlValue(g_project_popup, before);
                 Draw1Control(g_project_popup);
                 ok = 1;
-                if (now_chat_project_new(name, sizeof name,
-                                         home, sizeof home)) {
+                /* The dialog owns the port until it is disposed, and it
+                   pumps the wire meanwhile: no popup of ours may draw
+                   until it is gone. */
+                g_modal_up = true;
+                got = now_chat_project_new(name, sizeof name,
+                                           home, sizeof home);
+                g_modal_up = false;
+                /* Once, on the way out: whatever landed while the
+                   dialog was up mutated the menus and drew nothing. */
+                rebuild_provider_popup();
+                rebuild_model_popup();
+                rebuild_project_popup();
+                rebuild_skills_popup();
+                if (got) {
                     ok = now_wire_chat_project("create", NULL, name, home,
                                                err, sizeof err) == 0;
                     if (ok) {
@@ -1932,31 +2058,49 @@ static Boolean chat_click(const EventRecord *event, Point local)
     if (PtInRect(local, &g_r.transcript)) {
         int line = transcript_line_at(local);
 
-        /* Row selection. Tracking holds the wire for as long as the
-           mouse is down - the TEClick stall above, the same brief
-           human-bounded pause. Feedback is drawn live (the delta rows
-           invert as the mouse moves); the state redraws identically
-           on the next update event. */
+        /* Row selection. This tracking loop is OURS, so pump.h's rule
+           binds it: every pass services the wire. Unlike TEClick above
+           - a Toolbox loop with no hook to give - nothing here stops us
+           calling now_wire_pump, and not calling it left the connection
+           dead for as long as a finger rested on the transcript: the
+           15 s ask deadline never evaluated, no deltas drained, no ping
+           answered, and the CPU pegged, because a mouse held still made
+           this a spin loop.
+
+           Feedback is drawn live (the delta rows invert as the mouse
+           moves); the state redraws identically on the next update
+           event. The OLD band comes off by hand first - an invalidation
+           cannot repaint while the mouse is down, so leaving it to
+           clear_selection alone left the previous highlight on screen
+           for the whole drag. */
+        if (has_selection()) {
+            invert_transcript_rows(sel_lo(), sel_hi() + 1);
+        }
         clear_selection();
         if (line >= 0) {
             Point where;
 
-            g_sel_anchor = line;
-            g_sel_extent = line;
+            chat_transcript_select(&g_transcript, line, line);
             invert_transcript_rows(line, line + 1);
             while (StillDown()) {
                 int hit;
                 int old_lo;
                 int old_hi;
 
+                now_wire_pump();
+                if (!has_selection()) {
+                    /* The ring rolled every selected row away while the
+                       mouse was down; there is nothing left to extend. */
+                    break;
+                }
                 GetMouse(&where);
                 hit = transcript_line_at(where);
-                if (hit < 0 || hit == g_sel_extent) {
+                if (hit < 0 || hit == sel_extent()) {
                     continue;
                 }
                 old_lo = sel_lo();
                 old_hi = sel_hi();
-                g_sel_extent = hit;
+                chat_transcript_select(&g_transcript, sel_anchor(), hit);
                 /* Invert only what changed sides. */
                 if (sel_lo() < old_lo) {
                     invert_transcript_rows(sel_lo(), old_lo);
@@ -1969,6 +2113,9 @@ static Boolean chat_click(const EventRecord *event, Point local)
                     invert_transcript_rows(sel_hi() + 1, old_hi + 1);
                 }
             }
+            /* Live tracking drew the settled band itself; idle must not
+               read it as damage and repaint the pane behind it. */
+            note_selection_drawn();
         }
         return true;
     }
@@ -2075,6 +2222,13 @@ static void chat_idle(void)
         g_shown_lines = count;
         g_shown_open_len = g_transcript.feed.open_len;
     }
+    if (sel_lo() != g_shown_sel_lo || sel_hi() != g_shown_sel_hi) {
+        /* The rows under the band moved, so the band on screen is over
+           the wrong text. Only the transcript is stale. */
+        inval(&g_r.transcript);
+        g_shown_sel_lo = sel_lo();
+        g_shown_sel_hi = sel_hi();
+    }
     if (strcmp(g_status, g_shown_status) != 0) {
         inval(&g_r.status);
         strncpy(g_shown_status, g_status, sizeof g_shown_status - 1);
@@ -2091,9 +2245,24 @@ static void chat_idle(void)
     if (!g_asked_catalog && conn_phase() == kConnConnected) {
         g_want_catalog = true;
     }
+    if (!g_asked_skills && conn_phase() == kConnConnected) {
+        /* The same shape, and the contract's own words: the guest never
+           caches the skills roster across connections. A first ask that
+           timed out re-arms here too, rather than leaving the popup
+           dimmed until somebody leaves the page and comes back. */
+        g_want_skills = true;
+    }
     ask_when_free();
-    if (g_asked_catalog && conn_phase() != kConnConnected) {
+    if (conn_phase() != kConnConnected) {
         g_asked_catalog = false;      /* re-ask after a reconnect */
+        g_asked_skills = false;
+        if (g_skill_count > 0) {
+            /* A roster is a promise about ONE link. Dropped here, once,
+               when the link is: rebuilding per idle pass would be the
+               flicker loop the page's own rules forbid. */
+            g_skill_count = 0;
+            rebuild_skills_popup();
+        }
     }
 }
 
