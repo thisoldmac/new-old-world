@@ -84,6 +84,39 @@ sentence count, never the consequence, the quantity, or the scope.
 Macintosh.` → `Run diag on the Macintosh.` Help on a button describes
 what pressing it does.
 
+## Vocabulary
+
+**Use the word the adjacent tool would use.** A coined term reads as
+in-house shorthand even when it is precise, and the reader has to learn
+it before the label helps them.
+
+| Coined | Standard |
+| --- | --- |
+| `over the wire`, `across the wire`, `on the wire` | `over the connection` |
+| `the link` (host↔guest) | `the connection` |
+| `Remembered` (roster section) | `Saved` |
+| `remembered, not connected` | `saved, not connected` |
+| `quiet for 34s` | `idle for 34s` |
+| `swept at 09:12`, `measure the sweep` | `scanned at 09:12`, `measure the scan` |
+| `this app's MCP face` | `this app's MCP interface` |
+| `the guest's desktop roster` | `the guest's desktop listing` |
+
+Legitimate terms that only look coined, and stay:
+
+- **`link`, in the network-interface sense.** `Link, address and network
+  hardware on the Macintosh` is what a network tool calls it. The
+  host↔guest sense is the one that becomes `connection`.
+- **`probe`, `census`, `handshake`, `peer authentication`, `loopback`,
+  `resource fork`, `MacBinary`.** Standard in their fields.
+- **`Wire Timing`**, because it names the contract verb `wirestat`. A
+  title that mirrors a verb a person can type in the Console is honest;
+  casual `the wire` in prose beside it is not.
+
+`drive` / `driving` / `driven` is the app's word for which machine the
+host is operating. Like `MachineNaming` it is a product decision above
+this document — but it must not reach second person: `Nothing is driving
+this Mac but you` is two defects, not one.
+
 ## Length
 
 - **Label**: a noun phrase, usually two to four words. Never a sentence,
@@ -143,6 +176,7 @@ one has actually found here:
 | Causal chain | `\bso (there\|no\|none\|it\|that)\b` |
 | Question-shaped label | `Text\("(What\|How\|Which\|Why)\b` |
 | Typography | `\.\.\.` and `[a-z] - [a-z]` |
+| Coined vocabulary | `\b(the wire\|the link\|remembered\|swept\|sweep\|roster\|face)\b` |
 
 A match is a candidate, not a defect. Check it against **What is
 protected** before editing, and prefer leaving a line alone to making an

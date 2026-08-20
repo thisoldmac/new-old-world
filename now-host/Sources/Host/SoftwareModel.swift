@@ -574,7 +574,7 @@ final class SoftwareModel: ObservableObject, GuestScopedModel {
             guard result.ok, let rows = result.output?["catsearch"] else {
                 self.lastError = result.error?.message
                     ?? "\(MachineNaming.title(self.connection)) could not "
-                    + "measure the sweep"
+                    + "measure the scan"
                 return
             }
             self.sweepCost = rows.map {

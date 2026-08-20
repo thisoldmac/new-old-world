@@ -474,7 +474,7 @@ private struct ChatWorkspaceSettingsSection: View {
                        isOn: $model.attachesNOWTools)
                     .disabled(!model.isOn)
                     .help("The runtime reaches the connected machine "
-                          + "through this app's MCP face, so the same turn "
+                          + "through this app's MCP interface, so the same turn "
                           + "can change source and drive the machine.")
                 Text("Running commands covers builds, tests and deploys, "
                      + "and it is the tier where a mistake is no longer "

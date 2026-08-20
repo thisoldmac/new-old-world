@@ -224,7 +224,7 @@ struct MirrorControlView: View {
                     get: { source.emulateDesktop },
                     set: { source.emulateDesktop = $0 }
                 ))
-                Text("Off: the guest's desktop roster and exact icon positions. On: the Desktop Folder and mounted volumes, laid out locally.")
+                Text("Off: the guest's desktop listing and exact icon positions. On: the Desktop Folder and mounted volumes, laid out locally.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

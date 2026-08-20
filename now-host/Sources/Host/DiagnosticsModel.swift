@@ -150,7 +150,7 @@ enum GuestDiagnostics {
             measures: { connection in
                 "How long \(MachineNaming.sentence(connection)) takes to "
                 + "NOTICE a request, as the two distributions only it can "
-                + "take: the interval between its own wire service passes, "
+                + "take: the interval between its own network service passes, "
                 + "and the delay from Open Transport announcing that data "
                 + "arrived to its event loop reading it. Histograms, not "
                 + "medians — a cooperatively scheduled Mac has a tail that "

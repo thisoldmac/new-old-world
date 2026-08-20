@@ -471,8 +471,8 @@ struct DiagnosticsModuleView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Link")
                     .font(.subheadline.weight(.semibold))
-                Text("Measured at \(machine)'s end of the wire. "
-                     + "Link timing, not its network configuration.")
+                Text("Measured at \(machine)'s end of the connection. "
+                     + "Connection timing, not its network configuration.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

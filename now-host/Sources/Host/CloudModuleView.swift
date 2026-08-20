@@ -34,7 +34,7 @@ struct CloudModuleView: View {
             }
             Text("\(MachineNaming.thisMac)'s iCloud services shared with "
                  + "\(MachineNaming.simpleReference). "
-                 + "Each service answers on the wire exactly as it reads "
+                 + "Each service answers over the connection exactly as it reads "
                  + "here.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

@@ -128,7 +128,7 @@ struct ConnectionsModuleView: View {
                     }
                 }
                 if !model.snapshot.known.isEmpty {
-                    Section("Remembered") {
+                    Section("Saved") {
                         ForEach(model.snapshot.known) { row in
                             ConnectionListRow(row: row)
                                 .foregroundStyle(.secondary)
@@ -244,7 +244,7 @@ struct ConnectionsModuleView: View {
             return "\(row.displayName) — attached to all modules"
         case .connected: return "\(row.displayName) — connected"
         case .known:
-            return "\(row.displayName) — remembered, not connected"
+            return "\(row.displayName) — saved, not connected"
         }
     }
 

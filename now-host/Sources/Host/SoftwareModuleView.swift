@@ -461,7 +461,7 @@ struct SoftwareModuleView: View {
         guard let failed = model.rescanFailedAt,
               let at = model.fetchedAt else { return nil }
         return "Rescan failed at \(Self.time.string(from: failed)) — still "
-            + "showing the listing swept at \(Self.time.string(from: at))."
+            + "showing the listing scanned at \(Self.time.string(from: at))."
     }
 
     /// Nil while the sweep is recent enough that the clock time says it

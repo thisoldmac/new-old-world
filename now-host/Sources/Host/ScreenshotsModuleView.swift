@@ -42,7 +42,7 @@ struct ScreenshotsModuleView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Screen")
                         .font(.largeTitle.weight(.semibold))
-                    Text("Screen capture from \(model.connection.peerLabel), over the wire.")
+                    Text("Screen capture from \(model.connection.peerLabel), over the connection.")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -211,7 +211,7 @@ struct ScreenshotsModuleView: View {
                 } footer: {
                     /* A guard rail rather than a target — see maxFps. */
                     Text("Upper bound, not a target. Limits repeated "
-                         + "frames on the wire; the hardware captures well "
+                         + "frames on the connection; the hardware captures well "
                          + "below it.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -524,7 +524,7 @@ struct ScreenshotsModuleView: View {
             Text(model.connection.canCapture
                  ? "Press Capture to read "
                    + "\(MachineNaming.possessive(model.connection)) screen "
-                   + "across the wire."
+                   + "over the connection."
                  : "Not connected. "
                    + "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
                    + "connects to \(MachineNaming.thisMac).")

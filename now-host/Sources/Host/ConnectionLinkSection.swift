@@ -37,7 +37,7 @@ struct ConnectionLinkSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHead(
-                "Link",
+                "Connection",
                 caption: "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
                     + "connects in; \(MachineNaming.thisMac) listens.")
 
