@@ -129,6 +129,21 @@ enum ChatWorkspaceDefault {
     /// Restaged when the app version moves, never touched otherwise, so
     /// a person's own edits to a staged skill survive a relaunch but
     /// not an upgrade (the upgrade IS new skill text).
+    /// Staging for a folder NOW does not own: put the tree there only
+    /// when nothing is there, and never remove. A person's own
+    /// `.claude/skills` is theirs — and it also satisfies the prompt's
+    /// claim, because the runtime discovers whatever is in that path.
+    static func stageSkillsIfAbsent(
+        into root: URL, fileManager: FileManager = .default
+    ) {
+        let destination = root.appendingPathComponent(
+            ".claude/skills", isDirectory: true)
+        guard !fileManager.fileExists(atPath: destination.path) else {
+            return
+        }
+        stageSkills(into: root, fileManager: fileManager)
+    }
+
     private static func stageSkills(
         into root: URL, fileManager: FileManager
     ) {
@@ -262,8 +277,21 @@ final class ChatWorkspaceLaneStore: @unchecked Sendable {
            the one that makes the lane worth having. */
         let attaches = defaults.object(forKey: Self.nowToolsKey) as? Bool
             ?? true
+        let chosen = URL(fileURLWithPath: path, isDirectory: true)
+        /* The prompt tells every workspace turn that the skills are
+           staged under `.claude/skills` and to load them itself, so a
+           CHOSEN folder has to have them too — until now only the
+           self-provisioned one did, and a person who picked their own
+           folder got a prompt naming skills that were not there.
+           Non-destructively, and that is the whole subtlety: this
+           folder is the person's, it may be a repository with its own
+           `.claude/skills`, and replacing that would be NOW deleting
+           somebody's work. Present means theirs and left alone; absent
+           means ours to put there. */
+        ChatWorkspaceDefault.stageSkillsIfAbsent(
+            into: chosen, fileManager: fileManager)
         return .ready(ChatWorkspaceLane(
-            root: URL(fileURLWithPath: path, isDirectory: true),
+            root: chosen,
             permission: permission,
             attachesNOWTools: attaches,
             timeout: Self.defaultTimeout))

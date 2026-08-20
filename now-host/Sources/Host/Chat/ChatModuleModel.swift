@@ -215,8 +215,19 @@ final class ChatModuleModel: ObservableObject {
 
         let codexClient = CodexAppServerClient()
         self.codexClient = codexClient
+        /* The lane store reads THIS model's defaults, not the process
+           default suite. Two reasons, and the second is why it is a
+           bug rather than tidiness: a suffixed run (NOW_PREFS_SUFFIX)
+           must not read the desk's real lane, and a unit test that
+           injects its own suite must not — since absent-grant came to
+           mean granted — provision a real workspace under the
+           developer's Application Support and copy the skill tree into
+           it, which is what `swift test` was doing. */
+        let laneStore = ChatWorkspaceLaneStore(defaults: defaults)
         let runtimeProviders: [ChatProvider] = [
-            ClaudeCodeChatProvider(), CodexChatProvider(client: codexClient),
+            ClaudeCodeChatProvider(
+                client: ClaudeCodeClient(lanes: laneStore)),
+            CodexChatProvider(client: codexClient),
         ]
         self.runtimeProviders = runtimeProviders
         let registry = makeChatProviderRegistry(
@@ -231,7 +242,11 @@ final class ChatModuleModel: ObservableObject {
             },
             audit: ChatAuditSink(
                 adapter: agentIntegration, activity: agentActivity),
-            guestScreen: guestScreen)
+            guestScreen: guestScreen,
+            /* Same suite, same reason: a test injecting its own
+               defaults must not compose prompts from the desk's real
+               standing instructions. */
+            instructions: { laneStore.instructions() })
         /* NO Keychain read here, deliberately. This init runs on the
            main actor inside HostAppState — including in every test that
            builds one — and a Keychain item created by a differently-

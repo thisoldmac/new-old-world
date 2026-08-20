@@ -14,6 +14,12 @@ final class ChatSessionTests: XCTestCase {
             identity: .init(version: "chat-test", name: "Chat Test Host"))
         let defaults = UserDefaults(
             suiteName: "now.chat-tests.\(UUID().uuidString)")!
+        /* No lane in a unit test, said out loud. Absent-grant means
+           GRANTED since 2026-08-19, so a suite that stays silent here
+           provisions a real workspace under the developer's own
+           Application Support and copies the skill tree into it — which
+           `swift test` was doing until this line. */
+        defaults.set(false, forKey: ChatWorkspaceLaneStore.grantKey)
         return ChatModuleModel(
             agentIntegration: AgentIntegrationHostAdapter(listener: listener),
             guestFiles: GuestFilesCommandService(
@@ -40,16 +46,14 @@ final class ChatSessionTests: XCTestCase {
         for row in rows {
             XCTAssertNotNil(row.tools, "\(row.provider) reported no reach")
         }
-        // The four API providers speak through the harness; Codex is
-        // text-only by decision. Claude's reach reads the DESK's real
-        // lane state (the model builds its registry on the product
-        // defaults), and since the 2026-08-19 default flip that is
-        // "workspace" out of the box and "none" only after an explicit
-        // Turn Off — so this row asserts presence, not a value the
-        // desk can change under the test.
+        /* The four API providers speak through the harness; the two
+           subprocess runtimes are text-only. Claude's row is "none"
+           here because this model's lane store reads the suite the
+           test injected, where the grant is off — a deterministic
+           answer again, rather than one the desk could change. */
         XCTAssertEqual(rows.first { $0.provider == "anthropic" }?.tools,
                        "full")
-        XCTAssertNotNil(rows.first { $0.provider == "claude" }?.tools)
+        XCTAssertEqual(rows.first { $0.provider == "claude" }?.tools, "none")
         XCTAssertEqual(rows.first { $0.provider == "codex" }?.tools, "none")
     }
 
@@ -159,6 +163,12 @@ final class ChatSessionTests: XCTestCase {
             identity: .init(version: "chat-test", name: "Chat Test Host"))
         let defaults = UserDefaults(
             suiteName: "now.chat-tests.\(UUID().uuidString)")!
+        /* No lane in a unit test, said out loud. Absent-grant means
+           GRANTED since 2026-08-19, so a suite that stays silent here
+           provisions a real workspace under the developer's own
+           Application Support and copies the skill tree into it — which
+           `swift test` was doing until this line. */
+        defaults.set(false, forKey: ChatWorkspaceLaneStore.grantKey)
         let model = ChatModuleModel(
             agentIntegration: AgentIntegrationHostAdapter(listener: listener),
             guestFiles: GuestFilesCommandService(

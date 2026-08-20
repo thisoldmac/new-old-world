@@ -7,6 +7,73 @@ search:
 
 # Open issues
 
+## THE REVIEW THAT CAUGHT A NO-OP GUARD, AND WHAT IT LEFT OPEN (2026-08-19, `feat/agentic-loop`)
+
+A review pass before opening the pull request found 21 defects in the
+day's own work. The one worth reading twice:
+
+**A guard shipped as a no-op and its mutation test passed anyway.**
+`AgentIntegrationLocalServer` was taught to unlink the agent socket only
+while the path still named its own file, asking `fstat` of the bound
+descriptor. On Darwin `fstat` of a bound `AF_UNIX` socket reports the
+SOCKET's identity — `dev -1` — never the directory entry's, so the
+comparison answered "not mine" always: nothing was ever unlinked, and
+every quit left a stale socket for `removeStaleSocket` to probe away.
+Measured directly (`fstat dev=-1 ino=22093` against `lstat
+dev=16777229 ino=175772553`). The mutation test written beside it forced
+the OTHER direction — blind unlink — and duly failed, which is how a
+one-sided mutation certifies a guard that does nothing. The fix records
+the file's dev/inode at bind and compares that; both mutations now fail,
+each named by its own test, and the missing half ("a server removes its
+OWN socket") is now a test.
+
+**The rule this pays for again**: a guard needs the mutation it claims to
+catch AND the mutation that would make it vacuous. AGENTS.md already said
+the first half.
+
+Fixed in the same pass: unit tests provisioned a real workspace under the
+developer's Application Support and copied the skill tree into it (the
+lane store now reads the model's own defaults suite, and the suites say
+`grant = false` out loud); `ProjectStore.create` accepted line breaks in
+a display name, so a guest-supplied project name could inject a second
+`CKPROJECT` directive (the agent surface always refused these — the limit
+now lives once, in the store); and a chosen workspace folder was told by
+the prompt that skills were staged when only the self-provisioned one
+ever staged them (now staged non-destructively — a folder that already
+has `.claude/skills` keeps its own, because that folder is the person's).
+
+**Carried, not fixed** — each real, none blocking, all from the same
+review:
+
+- `bridgeWanted` cannot win its race: the post is delivered on the main
+  queue while the spawn proceeds immediately, so the first lane turn
+  after launch can still meet a server that is not up. Its test asserts
+  only that the notification eventually fires.
+- The per-project workspace fence is cwd-only. `now_guest_files_upload_file`
+  is still pinned to the lane ROOT, so `../OtherProject/binary` is
+  readable; and the sanitiser maps `a/b` and `a-b` onto one folder.
+- Nothing proves `ChatProjectContext` reaches a turn: nil it at either
+  face and the suite stays green while the guest-wire regresses to the
+  defect the frame exists to prevent.
+- `chat.skills` has no cursor, so a tree past 12 skills is unreachable
+  though `more` says otherwise; and `detail`'s length is stated three
+  ways (contract silent, host 96, guest 64).
+- `ChatWorkspaceDefault.stageSkills` races itself and copies on the main
+  actor; opening Settings provisions the workspace before a person can
+  decline it; restaging on a version bump is untested.
+- `HFSStandardVolumeTests` checks the Disk Copy 4.2 checksum against the
+  same function that wrote it — a tautology pinning only the offset.
+- Dead or lying after the day's transitions: `ClaudeCodeClient.hostExecutable`,
+  `ChatWorkspaceLaneStore.granted()` (false on a fresh install, where
+  absent means granted), `ChatProjectContext.toolchainPin` (never
+  populated, so two thirds of `projectFrame` are unreachable), and a
+  scatter of comments still describing the stdio bridge and the
+  off-by-default grant.
+- `docs/contract-coverage.md`'s prose still says the chat family is four
+  inbound types; the derivation moved to eight and the sentence did not —
+  the file's own documented failure mode, caught by the gate that
+  re-derives and not by a reader.
+
 ## GUEST-SIDE MPW: BOTH LANES RE-VERIFIED ON THIS BRANCH, AND WHAT THE RIG TAUGHT (2026-08-19, `feat/agentic-loop`)
 
 The same mac99/OS 9.1 rig that closed the Retro68 lane re-verified the

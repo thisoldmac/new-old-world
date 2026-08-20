@@ -264,6 +264,41 @@ final class AgentIntegrationProjectsTests: XCTestCase {
     /// The store's guest-digest guard is the authority story, so a
     /// guest-home create is a typed refusal that NAMES the import path
     /// — never a silently-host project.
+    /// A display name becomes a `name=` line in Project.ckp, so a line
+    /// break in one is a directive nobody wrote. The agent surface has
+    /// always refused these; the STORE did not, and the chat faces mint
+    /// through the store with a name a guest supplied — where CR is the
+    /// ordinary line ending.
+    func testTheStoreRefusesALineBreakInADisplayName() throws {
+        let projectStore = try store()
+        let document = Data("""
+            CKPROJECT 1
+            id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+            name=Injected
+            target=application
+            configuration=debug
+            toolchain=host-retro68@1
+            product=Build/Injected
+            type=APPL
+            creator=TEST
+            file=Sources/Main.c
+            """.utf8)
+        for hostile in ["Beeper\rtype=DANGER", "Beeper\ntype=DANGER",
+                        "Beeper\u{0}x"] {
+            XCTAssertThrowsError(
+                try projectStore.create(
+                    name: hostile, home: .host, projectDocument: document,
+                    files: [.init(path: "Sources/Main.c",
+                                  contents: Data("x".utf8))]),
+                "a name carrying \(hostile.debugDescription) was accepted")
+        }
+        // The ordinary name still works, so the guard is not a wall.
+        XCTAssertNoThrow(try projectStore.create(
+            name: "Beeper", home: .host, projectDocument: document,
+            files: [.init(path: "Sources/Main.c",
+                          contents: Data("x".utf8))]))
+    }
+
     func testCreateWithGuestHomeIsRefusedNamingTheImportPath() async throws {
         let adapter = adapter(store: try store())
         let refused = await adapter.projects(.init(

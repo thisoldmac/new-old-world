@@ -224,6 +224,30 @@ final class AgentIntegrationSocketTests: XCTestCase {
         XCTAssertThrowsError(try second.start())
     }
 
+    /// The other half of the succession rule, and the half whose
+    /// absence let the first version of the guard ship as a no-op: a
+    /// server that stops MUST remove its own socket file. That guard
+    /// asked `fstat` of the bound descriptor, which on Darwin reports
+    /// the socket's own identity (dev -1) and never the directory
+    /// entry's — so it answered "not mine" always, unlinked nothing,
+    /// and the successor test below passed anyway.
+    func testAStoppedServerRemovesItsOwnSocketFile() throws {
+        let (endpoint, root) = try temporaryEndpoint()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let server = try AgentIntegrationLocalServer(
+            endpoint: endpoint,
+            handler: { _ in .sessionHealth(.hostUnavailable) })
+        try server.start()
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: endpoint.socketURL.path))
+
+        server.stop()
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: endpoint.socketURL.path),
+            "a server's own socket file must not outlive it")
+    }
+
     /// The succession stomp, measured on the desk 2026-08-19: two app
     /// copies share one default path; the newer honestly replaced a
     /// dead file, and the OLDER copy's quit deleted the newer's socket

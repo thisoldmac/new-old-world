@@ -69,6 +69,18 @@ final class ProjectStore {
               name.unicodeScalars.count <= 64 else {
             throw ProjectStoreError.invalidProject("The display name must be 1-64 characters.")
         }
+        /* A name becomes a `name=` line in Project.ckp, so a line break
+           inside one is a second directive the person did not write.
+           The agent surface has always refused these; the store did
+           not, and the chat faces mint through the store with a name a
+           GUEST supplied — where CR is the ordinary line ending. The
+           limit belongs here, once, where every minting path reads it. */
+        guard !name.unicodeScalars.contains(where: {
+            $0 == "\n" || $0 == "\r" || $0 == "\0"
+        }) else {
+            throw ProjectStoreError.invalidProject(
+                "A display name cannot contain line breaks.")
+        }
         if home == .guest {
             guard let guestDigest, isSHA256(guestDigest) else {
                 throw ProjectStoreError.invalidProject(

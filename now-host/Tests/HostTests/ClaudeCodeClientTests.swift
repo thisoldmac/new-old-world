@@ -187,6 +187,45 @@ final class ClaudeCodeClientTests: XCTestCase {
             ChatHarness.workspaceSubdirectory(for: "a/b:c\0d"), "a-b-c-d")
     }
 
+    /// A CHOSEN folder gets the skills too — the prompt tells every
+    /// workspace turn they are staged and to load them itself — but
+    /// never by replacing a tree that is already there. That folder is
+    /// the person's, and it may be a repository with its own.
+    func testAChosenFolderIsStagedOnlyWhenNothingIsThere() throws {
+        let manager = FileManager.default
+        let mine = manager.temporaryDirectory
+            .appendingPathComponent("now-lane-\(UUID().uuidString)")
+        try manager.createDirectory(at: mine, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: mine) }
+        let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
+        defaults.set(mine.path, forKey: ChatWorkspaceLaneStore.rootKey)
+
+        _ = ChatWorkspaceLaneStore(defaults: defaults).state()
+
+        let staged = mine.appendingPathComponent(".claude/skills")
+        XCTAssertTrue(manager.fileExists(atPath: staged.path),
+                      "a chosen folder is promised skills too")
+
+        // Somebody else's tree is theirs: present means left alone.
+        let theirs = manager.temporaryDirectory
+            .appendingPathComponent("now-lane-\(UUID().uuidString)")
+        let theirSkills = theirs.appendingPathComponent(".claude/skills")
+        try manager.createDirectory(at: theirSkills,
+                                    withIntermediateDirectories: true)
+        let keepsake = theirSkills.appendingPathComponent("their-own.md")
+        try Data("theirs".utf8).write(to: keepsake)
+        defer { try? manager.removeItem(at: theirs) }
+        let otherDefaults = UserDefaults(
+            suiteName: "now.lane.\(UUID().uuidString)")!
+        otherDefaults.set(theirs.path, forKey: ChatWorkspaceLaneStore.rootKey)
+
+        _ = ChatWorkspaceLaneStore(defaults: otherDefaults).state()
+
+        XCTAssertEqual(try String(contentsOf: keepsake, encoding: .utf8),
+                       "theirs",
+                       "NOW replaced a tree it does not own")
+    }
+
     /// A lane turn that will spawn a companion asks for the agent
     /// bridge FIRST — the launch toggle is not a prohibition, and a
     /// desk with it off had every companion answer notSent (2026-08-19).
