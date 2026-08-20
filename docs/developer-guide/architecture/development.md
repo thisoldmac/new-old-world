@@ -95,13 +95,13 @@ operation ID, and `wait_for_settlement` returns its terminal state or an honest
 still-pending receipt. A direct action without a declared postcondition ends
 as `unconfirmed`; acceptance or dispatch is not relabeled as observed effect.
 
-NOW has two transports over the same in-process dispatcher. A client launches
-the normal `New Old World` executable in `--mcp-stdio` mode; the normal app owns
-the explicitly enabled authenticated loopback HTTP listener directly. Only the
-narrow stdio process reaches the running app through the private same-user
-socket. Cross-transport parity tests compare initialization and notification lifecycle,
-ping, resources, prompts, full tool descriptors and schemas, real tool results,
-and protocol errors. The same 46-tool conformance recipe runs against each.
+NOW's agent transport is the normal app's explicitly enabled
+Streamable HTTP listener on loopback. Its Access setting supports bearer,
+OAuth, and explicitly warned no-auth loopback. Client migration starts at
+**MCP > HTTP**: copy the displayed URL and the recipe matching the selected
+Access mode. The private same-user socket remains for NOW-owned local
+automation and emulator instrumentation; it is not an MCP transport. The
+49-tool conformance recipe runs through the real HTTP listener.
 HTTP separately validates bearer, loopback Host and Origin; bounds and expires
 sessions; supports explicit deletion; rejects ambiguous framing; and has a
 incremental-request liveness gate. HTTP was introduced without prior

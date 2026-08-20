@@ -5,7 +5,7 @@ import XCTest
 /// The transport tag rides BESIDE the log line the way `area` does: the
 /// line's text and file format are frozen, and only the writer may say
 /// which transport a line belongs to, because the text cannot — the audit
-/// message opens with the face, and the face is `mcp` for both transports.
+/// message opens with the transport-neutral `mcp` face.
 @MainActor
 final class HostLogTransportTagTests: XCTestCase {
     func testTaggedWriteLeavesTheLineTextIdentical() {
@@ -32,11 +32,11 @@ final class HostLogTransportTagTests: XCTestCase {
                                         log: log)
         let untagged = log.lines.last!
         AgentIntegrationAuditLog.record(event, drivenGuest: "pb1400c",
-                                        log: log, transport: .stdio)
+                                        log: log, transport: .http)
         let tagged = log.lines.last!
 
         XCTAssertEqual(untagged.text.dropFirst(8), tagged.text.dropFirst(8))
-        XCTAssertEqual(tagged.transport, "stdio")
+        XCTAssertEqual(tagged.transport, "http")
         XCTAssertTrue(tagged.area.hasPrefix("agent"))
     }
 }

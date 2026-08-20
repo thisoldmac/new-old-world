@@ -54,8 +54,6 @@ struct MCPModuleView: View {
     /// Nil in a preview or a test that has no server to run. The buttons are
     /// then absent rather than dead — a control that does nothing is the
     /// thing every page in this app is written to avoid.
-    var startStdio: (() -> Void)?
-    var stopStdio: (() -> Void)?
     var startHTTP: (() -> Void)?
     var stopHTTP: (() -> Void)?
     /// The page's card arrangement; every card draws through it.
@@ -130,7 +128,6 @@ struct MCPModuleView: View {
     @ViewBuilder
     private func cardBody(_ id: MCPCardID) -> some View {
         switch id {
-        case .transportStdio: stdioTransport
         case .transportHTTP: httpTransport
         case .presence: presence
         case .heldLane: heldLane
@@ -212,11 +209,11 @@ struct MCPModuleView: View {
         let activity = companions.activity
         return VStack(alignment: .leading, spacing: 2) {
             Divider().padding(.vertical, 2)
-            counterRow("Standard Input calls",
+            counterRow("Local agent calls",
                        "\(activity.totalRequests) since launch")
             counterRow("HTTP calls",
                        "\(model.httpRequests) since launch")
-            counterRow("Standard Input processes",
+            counterRow("Local agent processes",
                        activity.companions.count == 1
                            ? "1" : "\(activity.companions.count)")
             if activity.refusedPeers > 0 {
@@ -586,32 +583,10 @@ struct MCPModuleView: View {
     /// the safe direction. Starting after a failure is worth retrying too,
     /// since the usual cause is another copy of NOW that has since quit.
     ///
-    /// Whether each transport starts automatically at launch is a Settings
-    /// tab now, not a switch on this card — it is checked once a launch and
-    /// never mid-session, unlike everything else here.
-    private var stdioTransport: some View {
-        transportCard(
-            id: .transportStdio,
-            title: "Standard Input",
-            summary: "For MCP clients that launch a command. The New "
-                + "Old World executable runs in stdio mode and reaches "
-                + "this app over its same-user socket.",
-            state: model.stdio,
-            start: startStdio,
-            stop: stopStdio,
-            tail: .stdio,
-            details: { endpoint in
-                stdioDetails(endpoint)
-            },
-            configuration: {
-                stdioConfiguration
-            })
-    }
-
     private var httpTransport: some View {
         transportCard(
             id: .transportHTTP,
-            title: "HTTP",
+            title: "HTTP (Recommended)",
             summary: "For clients that connect to a URL. Runs inside "
                 + "New Old World, binds to loopback only, and "
                 + "authenticates as the access setting specifies.",
@@ -751,20 +726,6 @@ struct MCPModuleView: View {
         }
     }
 
-    private var stdioConfiguration: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Client command")
-                .font(.caption.weight(.medium))
-            copyRow(label: "Command", value: stdioCommand)
-            Text("Launched by each client on demand. Starting this "
-                    + "transport opens the same-user bridge those client "
-                    + "processes use.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     private func httpConfiguration(isRunning: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             LabeledContent("Loopback port") {
@@ -786,6 +747,26 @@ struct MCPModuleView: View {
                 .disabled(isRunning)
             }
             copyRow(label: "URL", value: plannedHTTPEndpoint)
+            Text(model.httpDiagnostic.description)
+                .font(.caption)
+                .foregroundStyle(model.httpDiagnostic.isFailure
+                    ? Color.orange : .secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            let recipes = MCPHTTPClientRecipes(endpoint: plannedHTTPEndpoint)
+            let selected = settings.httpAuthMode == .oauth
+                ? recipes.oauth
+                : settings.httpAuthMode == .bearer
+                    ? recipes.bearer : recipes.unauthenticated
+            if !selected.isEmpty {
+                Text("Client recipes")
+                    .font(.caption.weight(.medium))
+                ForEach(selected) { recipe in
+                    Button("Copy \(recipe.client) Configuration") {
+                        copy(recipe.configuration)
+                    }
+                    .controlSize(.small)
+                }
+            }
             Text(isRunning
                     ? "Stop HTTP before changing its port or access mode."
                     : "Reachable only from this Mac at 127.0.0.1.")
@@ -798,16 +779,6 @@ struct MCPModuleView: View {
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }
-    }
-
-    private func stdioDetails(_ socket: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            copyRow(label: "Private socket", value: socket)
-            Text("Accepts only processes running as the current macOS "
-                    + "user. No separately installed companion is "
-                    + "launched.")
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -872,11 +843,6 @@ struct MCPModuleView: View {
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
-    }
-
-    private var stdioCommand: String {
-        let path = Bundle.main.executableURL?.path ?? "New Old World"
-        return "\(path) --mcp-stdio"
     }
 
     private var plannedHTTPEndpoint: String {

@@ -23,8 +23,8 @@ enum AgentIntegrationAuditLog {
     /// `stream` is optional because the log is not: a build with no window
     /// open, and every test that only cares about the line, still writes it.
     /// `transport` is the route the report travelled, known only at the two
-    /// recording seams (the socket bridge is stdio; `HostMCPAuditSink` is
-    /// HTTP). It tags the log line so a transport card can tail its own
+    /// recording seam (`HostMCPAuditSink` for HTTP). It tags the log line so
+    /// the transport card can tail its own
     /// session; the composed text is unchanged.
     /// `records` is the third fan-out — the durable store — and `agent` is
     /// who did it, carried beside the event because the event itself stays
@@ -50,9 +50,7 @@ enum AgentIntegrationAuditLog {
         switch event.face {
         case .chat: return MCPAgentIdentity(kind: .chat)
         case .appIntent: return MCPAgentIdentity(kind: .appIntent)
-        case .mcp:
-            return MCPAgentIdentity(
-                kind: transport == .http ? .mcpHTTP : .mcpStdio)
+        case .mcp: return MCPAgentIdentity(kind: .mcpHTTP)
         }
     }
 

@@ -361,14 +361,33 @@ final class MCPOAuthTests: XCTestCase {
         XCTAssertEqual(store.load(), MCPOAuthPersistentState())
     }
 
+    func testOAuthAcceptsOnlyTheExactEmbeddedLaneCredential() async throws {
+        let (_, authority) = try Self.oauthService()
+        let service = Self.service(
+            mode: .oauth, oauth: authority,
+            embeddedAccessToken: "embedded-only")
+
+        let accepted = await service.respond(to: Self.post(
+            try Self.initializeBody(id: 1),
+            authorization: "Bearer embedded-only"))
+        XCTAssertEqual(accepted.status, 200)
+
+        let rejected = await service.respond(to: Self.post(
+            try Self.initializeBody(id: 2),
+            authorization: "Bearer another-local-token"))
+        XCTAssertEqual(rejected.status, 401)
+    }
+
     // MARK: Harness
 
     private static func service(
         mode: MCPHTTPAuthMode, bearerToken: String? = nil,
-        oauth: MCPOAuthAuthority? = nil) -> MCPHTTPService {
+        oauth: MCPOAuthAuthority? = nil,
+        embeddedAccessToken: String? = nil) -> MCPHTTPService {
         MCPHTTPService(
             configuration: .init(port: port, authMode: mode,
-                                 bearerToken: bearerToken),
+                                 bearerToken: bearerToken,
+                                 embeddedAccessToken: embeddedAccessToken),
             serverFactory: {
                 (NOWMCPServer(client: SocketAgentIntegrationClient(),
                               audit: LocalMCPAuditSink()),

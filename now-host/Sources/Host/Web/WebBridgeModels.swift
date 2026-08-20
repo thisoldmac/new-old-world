@@ -113,7 +113,7 @@ final class WebBridgeModel: ObservableObject {
     @Published var aiPlannerExecutable: String {
         didSet { save(aiPlannerExecutable, key: .aiPlanner) }
     }
-    /// Cloned from MCP's `stdioStartsAutomatically` pattern
+    /// Persisted launch policy, separate from current runtime state.
     /// (`MCPTransportPreferences.swift`), but defaulted OFF: the bundled
     /// Python helper is heavier to have running unasked than a same-process
     /// MCP transport, and a person who wants the relay every launch can
@@ -182,7 +182,7 @@ final class WebBridgeModel: ObservableObject {
             forKey: Key.allowPrivate.rawValue)
         aiPlannerExecutable = defaults.string(
             forKey: Key.aiPlanner.rawValue) ?? ""
-        // Default off: unlike MCP stdio, absence of the key must mean
+        // Default off: absence of the key must mean
         // "do not start", not "start" — UserDefaults.bool already reads
         // false for an unset key, so no unset-vs-false disambiguation is
         // needed here.

@@ -1,6 +1,11 @@
 import Foundation
 
 public enum AgentIntegrationLocalProtocol {
+    /// Version 15 adds a distinct, bounded MCP initialization report. An
+    /// older host must not silently discard the evidence while accepting a
+    /// companion whose actions it can still serve, so this shape change is
+    /// an explicit compatibility boundary rather than an audit extension.
+    ///
     /// Version 14 lets a project create say its GROUND: `home` and
     /// `toolchain` on the create operation. The version moves because a
     /// v13 host would decode the new request minus those two fields and
@@ -56,7 +61,7 @@ public enum AgentIntegrationLocalProtocol {
     /// edges, the host log's shape — rather than the row report. A v12
     /// companion would read the new result as a malformed row report, so
     /// the version moves.
-    public static let version = 14
+    public static let version = 15
     public static let maximumMessageBytes = 64 * 1024
 }
 
@@ -78,6 +83,8 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         /// has already performed so the host can write it into the log the
         /// person at the machine reads.
         case audit = "audit"
+        /// A successful MCP handshake, reported independently from actions.
+        case mcpInitialize = "mcp_initialize"
         /// Take a capture, or fetch one page of the one just taken, or
         /// abandon the wait for one in flight. Three intentions on one
         /// operation because they are one lane: a page is only meaningful
@@ -270,6 +277,12 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
     public var auditClientName: String? = nil
     public var auditClientVersion: String? = nil
     public var auditSessionKey: String? = nil
+    /// Successful MCP initialize identity. These fields exist only on the
+    /// lifecycle operation; keeping them separate from `audit*` prevents a
+    /// connection from appearing to have invoked a capability.
+    public var mcpClientName: String? = nil
+    public var mcpClientVersion: String? = nil
+    public var mcpSessionKey: String? = nil
     /// Bits per pixel to ask the guest's screen capture for. Present only
     /// when the `capture` operation is TAKING one.
     public var captureDepth: Int? = nil
@@ -621,6 +634,20 @@ public struct AgentIntegrationLocalRequest: Codable, Equatable, Sendable {
         request.auditClientName = clientName
         request.auditClientVersion = clientVersion
         request.auditSessionKey = sessionKey
+        return request
+    }
+
+    public static func mcpInitialize(
+        clientName: String?, clientVersion: String?, sessionKey: String?,
+        requestID: UUID = UUID()
+    ) -> Self {
+        var request = Self(
+            requestID: requestID, operation: .mcpInitialize,
+            launchSelection: nil, processReference: nil,
+            approvalReceipt: nil, guestFilePath: nil, guestFileCursor: nil)
+        request.mcpClientName = clientName
+        request.mcpClientVersion = clientVersion
+        request.mcpSessionKey = sessionKey
         return request
     }
 
@@ -1813,7 +1840,8 @@ public enum AgentIntegrationLocalCodec {
             "guestFileCursor", "guestFileUpload", "guestFileUploadID",
             "guestFileUploadOffset", "guestFileUploadChunk", "probeCostly",
             "auditEvent", "auditClientName", "auditClientVersion",
-            "auditSessionKey", "captureDepth", "captureID", "captureOffset",
+            "auditSessionKey", "mcpClientName", "mcpClientVersion",
+            "mcpSessionKey", "captureDepth", "captureID", "captureOffset",
             "captureAbandon",
             // P1a's fields. This list is one of the two gates every field
             // has to clear, and a field declared here and forgotten there
@@ -2081,6 +2109,32 @@ public enum AgentIntegrationLocalCodec {
                       <= identityBound else {
                 throw AgentIntegrationLocalTransportError.invalidMessage(
                     "Audit event does not match the schema")
+            }
+        case .mcpInitialize:
+            var lifecycleKeys: Set<String> = [
+                "version", "requestID", "operation", "mcpSessionKey",
+            ]
+            if request.mcpClientName != nil {
+                lifecycleKeys.insert("mcpClientName")
+            }
+            if request.mcpClientVersion != nil {
+                lifecycleKeys.insert("mcpClientVersion")
+            }
+            expectedKeys = lifecycleKeys
+            let bound = MCPClientInitialization.maximumIdentityScalars
+            guard request.auditEvent == nil,
+                  request.launchSelection == nil,
+                  request.processReference == nil,
+                  request.approvalReceipt == nil,
+                  request.guestFilePath == nil,
+                  request.guestFileCursor == nil,
+                  let session = request.mcpSessionKey, !session.isEmpty,
+                  session.unicodeScalars.count <= bound,
+                  (request.mcpClientName?.unicodeScalars.count ?? 0) <= bound,
+                  (request.mcpClientVersion?.unicodeScalars.count ?? 0)
+                    <= bound else {
+                throw AgentIntegrationLocalTransportError.invalidMessage(
+                    "MCP initialization does not match the schema")
             }
         case .capture:
             /* Three shapes on one operation, and exactly one of them per

@@ -12,7 +12,7 @@ import Foundation
    whatever policy the chosen directory carries (a repository's hooks,
    for instance). The New Old World half of such a turn is audited
    exactly as before, because the runtime reaches those capabilities
-   through this app's existing `--mcp-stdio` face; the file-and-shell
+   through this app's loopback HTTP MCP face; the file-and-shell
    half is not, and saying so is part of shipping it.
 
    Nothing here launches anything. It answers one question — may this
@@ -337,16 +337,15 @@ final class ChatWorkspaceLaneStore: @unchecked Sendable {
     }
 }
 
-/// The MCP configuration handed to a lane runtime: this same executable,
-/// in the `--mcp-stdio` mode it already has, so the runtime reaches the
-/// running app's capabilities through the face that already owns
-/// consent and audit. No second server, no second copy of the registry.
+/// The private HTTP MCP configuration handed to one lane runtime.
 enum ChatWorkspaceMCPConfig {
     static let serverName = "now"
+    static let bearerEnvironmentKey = "NOW_MCP_LANE_BEARER_TOKEN"
+    static let workspaceGrantEnvironmentKey = "NOW_MCP_WORKSPACE_GRANT"
 
-    /// Posted when a lane turn is about to spawn a companion that will
-    /// dial the agent socket, so the app can ensure the stdio bridge is
-    /// actually up. The bridge's "starts automatically" toggle is a
+    /// Posted when a lane turn is about to spawn a runtime that will dial
+    /// the HTTP listener, so the app can ensure it is actually up. The
+    /// listener's "starts automatically" toggle is a
     /// LAUNCH policy — on one desk it had been switched off during MCP
     /// debugging (2026-08-19), and from then on every lane turn's
     /// companion answered notSent with nothing anywhere saying why.
@@ -357,33 +356,28 @@ enum ChatWorkspaceMCPConfig {
     static let bridgeWanted =
         Notification.Name("dev.newoldworld.now.agent-bridge-wanted")
 
-    /// Nil when the executable cannot be found — the lane then runs
-    /// without New Old World's tools rather than with a broken server
-    /// the runtime would spend its turn retrying.
-    ///
-    /// `workspaceRoot` is the lane's granted folder, pinned onto the
-    /// companion's command line so `now_guest_files_upload_file` can read
-    /// files out of it. Spawn-time and explicit on purpose: the companion
-    /// must never discover a readable root ambiently, and nil keeps the
-    /// bare single-argument mode for a lane with no folder to grant.
+    /// The workspace grant is an opaque, one-use header separate from the
+    /// listener credential. The HTTP service redeems it only while creating
+    /// this runtime's session; repeated headers carry no authority.
     /// The lane runtime reaches NOW over the HTTP MCP — the transport
-    /// the product is converging on. The stdio companion this replaces
-    /// was a second copy of the app dialling a shared unix socket, and
-    /// it failed three separate ways on one desk in one evening
-    /// (ungranted lane, a predecessor's exit unlinking the successor's
-    /// socket, and a launch toggle silently binding nothing). HTTP is
-    /// one server, in the running host, Bearer-gated by a same-user
-    /// 0600 token file — and when it is down the failure is a connect
-    /// refusal with a port number in it, not a healthy-looking silence.
-    static func httpJSON(port: UInt16, token: String) -> String? {
+    /// the product owns. When it is down, the failure is a connect refusal
+    /// with a port number rather than a healthy-looking silence.
+    static func httpJSON(port: UInt16, authenticated: Bool) -> String? {
+        var headers = [
+            MCPHTTPWorkspaceGrantAuthority.headerName:
+                "${\(workspaceGrantEnvironmentKey)}",
+        ]
+        if authenticated {
+            headers["Authorization"] =
+                "Bearer ${\(bearerEnvironmentKey)}"
+        }
+        let server: [String: Any] = [
+            "type": "http",
+            "url": "http://127.0.0.1:\(port)/mcp",
+            "headers": headers,
+        ]
         let object: [String: Any] = [
-            "mcpServers": [
-                serverName: [
-                    "type": "http",
-                    "url": "http://127.0.0.1:\(port)/mcp",
-                    "headers": ["Authorization": "Bearer \(token)"],
-                ],
-            ],
+            "mcpServers": [serverName: server],
         ]
         guard let data = try? JSONSerialization.data(
             withJSONObject: object,
@@ -392,31 +386,4 @@ enum ChatWorkspaceMCPConfig {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// The sunset stdio shape, kept only for the `--mcp-stdio` entry
-    /// point's direct callers (external clients that spawn their own
-    /// companion). The lane no longer uses it.
-    static func json(executable: URL?, workspaceRoot: URL?) -> String? {
-        guard let executable else { return nil }
-        var args = ["--mcp-stdio"]
-        if let workspaceRoot {
-            args += ["--workspace-root", workspaceRoot.path]
-        }
-        let object: [String: Any] = [
-            "mcpServers": [
-                serverName: [
-                    "command": executable.path,
-                    "args": args,
-                ],
-            ],
-        ]
-        /* Slashes unescaped: this string is read by a person in a log or
-           a crash report as often as by the runtime, and `\/Apps\/New Old
-           World` is the kind of detail that sends somebody looking for a
-           quoting bug that is not there. */
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: object,
-            options: [.sortedKeys, .withoutEscapingSlashes])
-        else { return nil }
-        return String(decoding: data, as: UTF8.self)
-    }
 }

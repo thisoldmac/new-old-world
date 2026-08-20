@@ -74,16 +74,22 @@ public actor NOWMCPServer {
     /// answer; validated-then-discarded was the behaviour before anything
     /// recorded who called.
     private let identity: NOWMCPClientIdentity?
+    private let lifecycle: (any MCPClientLifecycleSink)?
+    private let workspaceGrant: HostWorkspaceGrant?
     private var initializeResponded = false
     private var initialized = false
 
     public init(client: AgentIntegrationClient,
                 registry: HostProjectionRegistry = .hostFaces,
                 audit: any HostProjectionAuditSink,
-                identity: NOWMCPClientIdentity? = nil) {
+                identity: NOWMCPClientIdentity? = nil,
+                lifecycle: (any MCPClientLifecycleSink)? = nil,
+                workspaceGrant: HostWorkspaceGrant? = nil) {
         self.client = client
         self.registry = registry
         self.identity = identity
+        self.lifecycle = lifecycle
+        self.workspaceGrant = workspaceGrant
         dispatch = HostProjectionDispatch(
             face: .mcp, registry: registry, audit: audit)
     }
@@ -117,7 +123,7 @@ public actor NOWMCPServer {
         switch method {
         case "initialize":
             guard !isNotification else { return nil }
-            return initialize(request, id: id)
+            return await initialize(request, id: id)
         case "notifications/initialized":
             guard isNotification, initializeResponded else { return nil }
             initialized = true
@@ -169,11 +175,11 @@ public actor NOWMCPServer {
                       message: "MCP message exceeds size limit")
     }
 
-    private func initialize(_ request: [String: Any], id: Any) -> Data {
+    private func initialize(_ request: [String: Any], id: Any) async -> Data {
         guard !initializeResponded,
+              Self.hasValidInitializeParameters(request),
               let params = request["params"] as? [String: Any],
               let requested = params["protocolVersion"] as? String,
-              params["capabilities"] is [String: Any],
               let clientInfo = params["clientInfo"] as? [String: Any] else {
             return errorResponse(id: id, code: -32602,
                                  message: "Invalid initialize parameters")
@@ -181,6 +187,12 @@ public actor NOWMCPServer {
         initializeResponded = true
         identity?.setClient(name: clientInfo["name"] as? String,
                             version: clientInfo["version"] as? String)
+        if let lifecycle {
+            lifecycle.recordInitialization(.init(
+                clientName: clientInfo["name"] as? String,
+                clientVersion: clientInfo["version"] as? String,
+                sessionKey: identity?.sessionKey))
+        }
         let version = Self.supportedVersions.contains(requested)
             ? requested : Self.supportedVersions[0]
         return successResponse(id: id, result: [
@@ -197,6 +209,17 @@ public actor NOWMCPServer {
             ],
             "instructions": Self.firstContactGuide,
         ])
+    }
+
+    public static func hasValidInitializeParameters(
+        _ request: [String: Any]
+    ) -> Bool {
+        guard let params = request["params"] as? [String: Any] else {
+            return false
+        }
+        return params["protocolVersion"] is String
+            && params["capabilities"] is [String: Any]
+            && params["clientInfo"] is [String: Any]
     }
 
     private static let firstContactGuide = """
@@ -401,7 +424,8 @@ public actor NOWMCPServer {
         let client = self.client.addressing(selector)
         let outcome = await dispatch.invoke(
             name,
-            arguments: .init(raw: params["arguments"]),
+            arguments: .init(raw: params["arguments"],
+                             workspaceGrant: workspaceGrant),
             guest: selector,
             through: client)
         switch outcome {

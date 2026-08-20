@@ -392,21 +392,13 @@ final class ModuleAtomicityOwnershipTests: XCTestCase {
         var calls: [String] = []
 
         runtime.configureTransports(
-            startStdio: { calls.append("start-stdio") },
-            stopStdio: { calls.append("stop-stdio") },
             startHTTP: { calls.append("start-http") },
             stopHTTP: { calls.append("stop-http") })
-        runtime.startStdio?()
-        runtime.stopStdio?()
         runtime.startHTTP?()
         runtime.stopHTTP?()
 
-        XCTAssertEqual(calls, [
-            "start-stdio", "stop-stdio", "start-http", "stop-http",
-        ])
+        XCTAssertEqual(calls, ["start-http", "stop-http"])
         runtime.shutDown()
-        XCTAssertNil(runtime.startStdio)
-        XCTAssertNil(runtime.stopStdio)
         XCTAssertNil(runtime.startHTTP)
         XCTAssertNil(runtime.stopHTTP)
     }

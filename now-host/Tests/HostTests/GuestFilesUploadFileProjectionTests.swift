@@ -10,15 +10,11 @@ import NOWAgentIntegration
 /// driven whole and in order**, offsets exact and the declared SHA-256
 /// computed from the file's real bytes.
 ///
-/// One class on purpose: `HostProjectionLocalRead` is process state, so
-/// every test that stages or clears it lives here where XCTest runs them
-/// serially, and setUp/tearDown leave it empty for everyone else.
 @MainActor
 final class GuestFilesUploadFileProjectionTests: XCTestCase {
     private var root: URL!
 
     override func setUp() async throws {
-        HostProjectionLocalRead.configure(workspaceRoot: nil)
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent(
                 "now-upload-file-\(UUID().uuidString)", isDirectory: true)
@@ -27,7 +23,6 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
     }
 
     override func tearDown() async throws {
-        HostProjectionLocalRead.configure(workspaceRoot: nil)
         try? FileManager.default.removeItem(at: root)
     }
 
@@ -74,7 +69,6 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
             .appendingPathComponent("now-outside-\(UUID().uuidString).txt")
         try Data("secret".utf8).write(to: outside)
         defer { try? FileManager.default.removeItem(at: outside) }
-        HostProjectionLocalRead.configure(workspaceRoot: root)
         let client = UploadFileRecordingClient()
 
         let outcome = await GuestFilesUploadFileProjection.invoke(
@@ -82,7 +76,7 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
                 "localPath": "../\(outside.lastPathComponent)",
                 "destinationPath": "Lab:steal.txt",
                 "container": "data",
-            ]),
+            ], workspaceGrant: .init(workspaceRoot: root)),
             through: client)
 
         guard case .invalidArguments(let reason) = outcome else {
@@ -90,6 +84,7 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
         }
         XCTAssertTrue(
             reason.contains("outside the chat workspace root"), reason)
+        XCTAssertFalse(reason.contains(outside.lastPathComponent), reason)
         let calls = await client.calls
         XCTAssertEqual(calls, [])
     }
@@ -102,7 +97,6 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
         let link = root.appendingPathComponent("innocent.txt")
         try FileManager.default.createSymbolicLink(
             at: link, withDestinationURL: outside)
-        HostProjectionLocalRead.configure(workspaceRoot: root)
         let client = UploadFileRecordingClient()
 
         let outcome = await GuestFilesUploadFileProjection.invoke(
@@ -110,7 +104,7 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
                 "localPath": "innocent.txt",
                 "destinationPath": "Lab:steal.txt",
                 "container": "data",
-            ]),
+            ], workspaceGrant: .init(workspaceRoot: root)),
             through: client)
 
         guard case .invalidArguments(let reason) = outcome else {
@@ -118,6 +112,7 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
         }
         XCTAssertTrue(
             reason.contains("outside the chat workspace root"), reason)
+        XCTAssertFalse(reason.contains("innocent.txt"), reason)
         let calls = await client.calls
         XCTAssertEqual(calls, [])
     }
@@ -127,7 +122,6 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
             .appendingPathComponent("now-outside-\(UUID().uuidString).txt")
         try Data("secret".utf8).write(to: outside)
         defer { try? FileManager.default.removeItem(at: outside) }
-        HostProjectionLocalRead.configure(workspaceRoot: root)
         let client = UploadFileRecordingClient()
 
         let outcome = await GuestFilesUploadFileProjection.invoke(
@@ -135,12 +129,13 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
                 "localPath": outside.path,
                 "destinationPath": "Lab:steal.txt",
                 "container": "data",
-            ]),
+            ], workspaceGrant: .init(workspaceRoot: root)),
             through: client)
 
-        guard case .invalidArguments = outcome else {
+        guard case .invalidArguments(let reason) = outcome else {
             return XCTFail("an absolute escape must be refused: \(outcome)")
         }
+        XCTAssertFalse(reason.contains(outside.path), reason)
         let calls = await client.calls
         XCTAssertEqual(calls, [])
     }
@@ -155,7 +150,6 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
         let handle = try FileHandle(forWritingTo: file)
         try handle.truncate(atOffset: UInt64(size))
         try handle.close()
-        HostProjectionLocalRead.configure(workspaceRoot: root)
         let client = UploadFileRecordingClient()
 
         let outcome = await GuestFilesUploadFileProjection.invoke(
@@ -163,13 +157,14 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
                 "localPath": "huge.bin",
                 "destinationPath": "Lab:huge.bin",
                 "container": "data",
-            ]),
+            ], workspaceGrant: .init(workspaceRoot: root)),
             through: client)
 
         guard case .invalidArguments(let reason) = outcome else {
             return XCTFail("an oversized file must be refused: \(outcome)")
         }
         XCTAssertTrue(reason.contains("32 MiB"), reason)
+        XCTAssertFalse(reason.contains("huge.bin"), reason)
         let calls = await client.calls
         XCTAssertEqual(calls, [])
     }
@@ -188,7 +183,6 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
             at: file.deletingLastPathComponent(),
             withIntermediateDirectories: true)
         try payload.write(to: file)
-        HostProjectionLocalRead.configure(workspaceRoot: root)
         let client = UploadFileRecordingClient()
 
         let outcome = await GuestFilesUploadFileProjection.invoke(
@@ -198,7 +192,7 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
                 "container": "macbinary",
                 "fileType": "APPL",
                 "creator": "NOWo",
-            ]),
+            ], workspaceGrant: .init(workspaceRoot: root)),
             through: client)
 
         guard case .value(let value) = outcome else {
@@ -243,7 +237,6 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
         let payload = Data(repeating: 7, count: chunk * 3)
         let file = root.appendingPathComponent("stall.bin")
         try payload.write(to: file)
-        HostProjectionLocalRead.configure(workspaceRoot: root)
         let client = UploadFileRecordingClient()
         await client.failAppend(
             at: chunk,
@@ -255,7 +248,7 @@ final class GuestFilesUploadFileProjectionTests: XCTestCase {
                 "localPath": "stall.bin",
                 "destinationPath": "Lab:stall.bin",
                 "container": "data",
-            ]),
+            ], workspaceGrant: .init(workspaceRoot: root)),
             through: client)
 
         guard case .value(let value) = outcome else {

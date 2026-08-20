@@ -54,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private(set) var settingsWindowController: SettingsWindowController?
     private var flash: StatusItemFlash?
     private var statusWatch: AnyCancellable?
-    private var mcpStdioBridgeServer: AgentIntegrationLocalServer?
+    private var agentLocalServer: AgentIntegrationLocalServer?
     private var mcpHTTPListener: MCPHTTPListener?
     private var mcpHTTPRunID: UUID?
     private let mcpTokenStore: MCPHTTPTokenStore?
@@ -71,8 +71,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            connected yet. The delegate owns the server object, so the pane
            reaches it through the app state rather than holding it. */
         state.configureMCPTransports(
-            startStdio: { [weak self] in self?.startMCPStdio() },
-            stopStdio: { [weak self] in self?.stopMCPStdio() },
             startHTTP: { [weak self] in self?.startMCPHTTP() },
             stopHTTP: { [weak self] in self?.stopMCPHTTP() })
         /* The deep-link seam: a module's "Settings…" button reaches
@@ -92,24 +90,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
            configured network service; Continuity may verify its own direct
            UDP path but must never own this permission. */
         state.localNetworkAccess.request()
+        startAgentLocalServer()
         let preferences = MCPTransportPreferences(defaults: defaults)
-        if preferences.stdioStartsAutomatically { startMCPStdio() }
         if preferences.httpStartsAutomatically { startMCPHTTP() }
         /* A lane turn about to spawn its runtime asks for the HTTP MCP,
-           whatever the launch toggle said — see the notification's own
-           comment for the desk that paid for this (and for stdio's
-           sunset). startMCPHTTP is idempotent, so a server already up
-           costs nothing. The lane root is pinned here too: the HTTP
-           server runs IN this process, so now_guest_files_upload_file's
-           allowed directory is the host's own Settings answer, taken
-           fresh per spawn. */
+           whatever the launch toggle said. startMCPHTTP is idempotent, so a server already up
+           costs nothing. Workspace authority travels separately as a
+           one-use HTTP-session grant in the lane's private MCP config. */
         NotificationCenter.default.addObserver(
             forName: ChatWorkspaceMCPConfig.bridgeWanted, object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                HostProjectionLocalRead.configure(
-                    workspaceRoot: ChatWorkspaceLaneStore().state().lane?.root)
                 self?.startMCPHTTP()
             }
         }
@@ -137,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         state.localNetworkAccess.cancel()
         state.shutDownModules()
         state.onboarding.stop()
-        mcpStdioBridgeServer?.stop()
+        agentLocalServer?.stop()
         mcpHTTPListener?.stop()
     }
 
@@ -577,12 +569,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     /// Failure keeps the human product intact; this optional surface must
     /// never become a prerequisite for launching or pairing NOW.
-    private func startMCPStdio() {
+    private func startAgentLocalServer() {
         /* Idempotent since the MCP pane can ask: standing a second server on
            the same path would take the socket away from the one already
            serving, which is a worse outcome than a button that does nothing
            because there is nothing to do. */
-        guard mcpStdioBridgeServer == nil else { return }
+        guard agentLocalServer == nil else { return }
         do {
             let server = try AgentIntegrationLocalServer(
                 /* The ledger is written on the accept thread; the pane that
@@ -595,8 +587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 }
             ) {
                 [agentIntegration = state.agentIntegration,
-                 guestFiles = state.guestFiles,
-                 records = state.mcpRecords] request in
+                 guestFiles = state.guestFiles] request in
                 /* Addressing is checked once, before any operation, so
                    no tool can be reached with a guest selector nobody
                    honoured. Session health is exempt: it is the call a
@@ -613,6 +604,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                    addressed. */
                 if request.operation != .sessionHealth,
                    request.operation != .audit,
+                   request.operation != .mcpInitialize,
                    request.operation != .projects,
                    /* Like projects: the store is this Mac's own and a
                       chat exists whether or not anything is connected,
@@ -789,16 +781,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     AgentIntegrationAuditLog.record(
                         event,
                         drivenGuest:
-                            agentIntegration.activeReference()?.id,
-                        transport: .stdio,
-                        agent: MCPAgentIdentity(
-                            kind: .mcpStdio,
-                            clientName: MCPAgentIdentity.bounded(
-                                request.auditClientName),
-                            clientVersion: MCPAgentIdentity.bounded(
-                                request.auditClientVersion),
-                            sessionKey: request.auditSessionKey),
-                        records: records)
+                            agentIntegration.activeReference()?.id)
+                    return .recorded
+                case .mcpInitialize:
+                    /* Kept only so a pre-removal local-protocol packet
+                       receives a bounded reply. It creates no live MCP
+                       lifecycle evidence. */
                     return .recorded
                 case .bringToFront:
                     /* The first of P1a's eleven to be wired (plan 005,
@@ -1124,39 +1112,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 }
             }
             try server.start()
-            mcpStdioBridgeServer = server
-            state.agentActivity.stdioOpened(
-                at: server.endpoint.socketURL.path)
+            agentLocalServer = server
         } catch {
             let reason = "\(error)"
             HostLog.shared.write(
                 .warn, "agent",
                 "local agent integration unavailable: \(reason)",
-                transport: .stdio)
-            /* The Agent page is told, because otherwise it would report
-               the honest "nothing has ever attached" beside a socket path
-               naming a file that is not there — and send somebody
-               configuring a client to look for it. */
-            state.agentActivity.stdioUnavailable(reason)
+                transport: nil)
         }
-    }
-
-    /// Switched off from the MCP pane.
-    ///
-    /// The socket goes and the record stays: what an agent already did to
-    /// this Mac is not undone by closing the door it came through, so the
-    /// activity stream and the presence ledger are left exactly as they are.
-    private func stopMCPStdio() {
-        guard let server = mcpStdioBridgeServer else {
-            state.agentActivity.stdioStopped()
-            return
-        }
-        server.stop()
-        mcpStdioBridgeServer = nil
-        HostLog.shared.write(.info, "agent",
-                             "stdio MCP endpoint stopped from the MCP pane",
-                             transport: .stdio)
-        state.agentActivity.stdioStopped()
     }
 
     /// HTTP is a transport of the server already owned by this app. It uses
@@ -1170,10 +1133,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 "Application Support is unavailable for the MCP token.")
             return
         }
+        let port = preferences.httpPort
+        let authMode = preferences.httpAuthMode
+        let endpoint = "http://127.0.0.1:\(port)/mcp"
+        state.agentActivity.httpConfigured(at: endpoint,
+                                           authMode: authMode)
         do {
             let token = try mcpTokenStore.loadOrCreate()
-            let port = preferences.httpPort
-            let authMode = preferences.httpAuthMode
             let runID = UUID()
             mcpHTTPRunID = runID
             let client = HostAgentIntegrationClient(
@@ -1189,10 +1155,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             }
             let listener = try MCPHTTPListener(
                 configuration: .init(port: port, authMode: authMode,
-                                     bearerToken: token),
-                serverFactory: { [adapter = state.agentIntegration,
+                    bearerToken: token,
+                    embeddedAccessToken: MCPHTTPEmbeddedCredentialAuthority
+                        .shared.token(port: port, authMode: authMode)),
+                sessionServerFactory: { [adapter = state.agentIntegration,
                                   activity = state.agentActivity,
-                                  records = state.mcpRecords] in
+                                  records = state.mcpRecords] workspaceGrant in
                     /* Per session, so the sink reads THIS session's
                        identity: the server fills the box at initialize and
                        the service adds the id it mints. */
@@ -1201,9 +1169,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         adapter: adapter, activity: activity,
                         identity: identity, records: records)
                     return (NOWMCPServer(client: client, audit: audit,
-                                         identity: identity),
+                                         identity: identity,
+                                         lifecycle: HostMCPInitializationSink(
+                                            records: records),
+                                         workspaceGrant: workspaceGrant),
                             identity)
                 },
+                workspaceGrants: .shared,
                 activityObserver: { [activity = state.agentActivity]
                     began, moment in
                     Task { @MainActor in
@@ -1214,6 +1186,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         }
                     }
                 },
+                initializationObserver: {
+                    [activity = state.agentActivity] moment in
+                    Task { @MainActor in
+                        activity.httpInitialized(at: moment)
+                    }
+                },
                 failureObserver: { [weak self] error in
                     Task { @MainActor in
                         guard let self, self.mcpHTTPRunID == runID else {
@@ -1221,6 +1199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         }
                         self.mcpHTTPListener = nil
                         self.mcpHTTPRunID = nil
+                        MCPHTTPEmbeddedCredentialAuthority.shared.invalidateAll()
                         self.state.mcpOAuthConsent.detach()
                         self.state.agentActivity.httpUnavailable("\(error)")
                         HostLog.shared.write(
@@ -1237,10 +1216,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     await MainActor.run {
                         guard self.mcpHTTPListener === listener,
                               self.mcpHTTPRunID == runID else { return }
-                        let endpoint = "http://127.0.0.1:\(port)/mcp"
                         self.state.agentActivity.httpOpened(
                             at: endpoint,
-                            bearerToken: authMode == .bearer ? token : nil)
+                            bearerToken: authMode == .bearer ? token : nil,
+                            authMode: authMode)
                         HostLog.shared.write(
                             .info, "mcp",
                             "HTTP MCP listening at \(endpoint)",
@@ -1252,6 +1231,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                               self.mcpHTTPRunID == runID else { return }
                         self.mcpHTTPListener = nil
                         self.mcpHTTPRunID = nil
+                        MCPHTTPEmbeddedCredentialAuthority.shared.invalidateAll()
+                        self.state.mcpOAuthConsent.detach()
                         self.state.agentActivity.httpUnavailable("\(error)")
                         HostLog.shared.write(
                             .warn, "mcp",
@@ -1262,6 +1243,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             }
         } catch {
             mcpHTTPRunID = nil
+            MCPHTTPEmbeddedCredentialAuthority.shared.invalidateAll()
+            state.mcpOAuthConsent.detach()
             state.agentActivity.httpUnavailable("\(error)")
             HostLog.shared.write(.warn, "mcp",
                                  "HTTP MCP unavailable: \(error)",
@@ -1273,6 +1256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         mcpHTTPRunID = nil
         mcpHTTPListener?.stop()
         mcpHTTPListener = nil
+        MCPHTTPEmbeddedCredentialAuthority.shared.invalidateAll()
         state.mcpOAuthConsent.detach()
         HostLog.shared.write(.info, "mcp",
                              "HTTP MCP stopped from the MCP pane",
@@ -1284,23 +1268,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 @main
 enum HostMain {
     static func main() {
-        /* Two accepted companion spellings, both exact: bare, and with the
-           chat workspace lane's granted folder pinned on. Anything else
-           still launches the app, unchanged — an argument vector this
-           entry point does not recognise must not half-become a server. */
         let arguments = Array(CommandLine.arguments.dropFirst())
-        let workspaceRoot: URL? =
-            arguments.count == 3 && arguments[0] == "--mcp-stdio"
-                && arguments[1] == "--workspace-root" && !arguments[2].isEmpty
-            ? URL(fileURLWithPath: arguments[2], isDirectory: true)
-            : nil
-        if arguments == ["--mcp-stdio"] || workspaceRoot != nil {
-            HostProjectionLocalRead.configure(workspaceRoot: workspaceRoot)
-            Task {
-                await MCPStdioTransport.run()
-                Foundation.exit(0)
-            }
-            dispatchMain()
+        if arguments.first == "--mcp-stdio" {
+            MCPStdioTombstone.writeDiagnostic()
+            Foundation.exit(64)
         }
         let application = NSApplication.shared
         application.setActivationPolicy(.regular)

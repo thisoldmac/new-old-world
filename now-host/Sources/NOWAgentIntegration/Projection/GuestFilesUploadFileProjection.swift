@@ -8,8 +8,8 @@ import Foundation
 /// round-trip — measured at 30–160 s per 8 KiB when the caller is an agent,
 /// which is slower than the private stage's own expiry. This row is for the
 /// one caller that has a PATH: the chat workspace lane, whose companion is
-/// spawned by the host with the person's granted folder pinned on the
-/// command line (`HostProjectionLocalRead`). It reads the file here, runs
+/// spawned by the host with the person's granted folder bound to its server
+/// session. It reads the file here, runs
 /// the same stage-and-commit lane internally, and returns the commit's own
 /// receipt — no byte crosses the model.
 ///
@@ -132,7 +132,7 @@ public enum GuestFilesUploadFileProjection: HostProjection {
            arguments may be perfect, and what is missing is the lane this
            companion was launched from. An invalid-arguments answer here
            reads as "your recipe is wrong" to every conforming client. */
-        guard let workspaceRoot = HostProjectionLocalRead.workspaceRoot else {
+        guard let workspaceRoot = arguments.workspaceGrant?.canonicalRoot else {
             return .value(.init(
                 AgentIntegrationGuestFileUploadCommitResult.hostUnavailable(
                     .init(
@@ -146,8 +146,7 @@ public enum GuestFilesUploadFileProjection: HostProjection {
            pinned may itself sit behind a symlink (/tmp does on macOS), and
            the candidate may hide an escape in a `..` or a link. What is
            compared is where the names actually land. */
-        let canonicalRoot = workspaceRoot.standardizedFileURL
-            .resolvingSymlinksInPath()
+        let canonicalRoot = workspaceRoot
         let candidate = localPath.hasPrefix("/")
             ? URL(fileURLWithPath: localPath)
             : canonicalRoot.appendingPathComponent(localPath)
@@ -157,23 +156,23 @@ public enum GuestFilesUploadFileProjection: HostProjection {
         guard canonical.path == rootPath
                 || canonical.path.hasPrefix(rootPath + "/") else {
             return .invalidArguments(
-                "now_guest_files_upload_file refuses \"\(localPath)\": it resolves outside the chat workspace root, and only files inside the folder the person granted are readable")
+                "now_guest_files_upload_file refuses a path that resolves outside the chat workspace root; only files inside the folder the person granted are readable")
         }
 
         guard let values = try? canonical.resourceValues(
                 forKeys: [.isRegularFileKey, .fileSizeKey]),
               values.isRegularFile == true else {
             return .invalidArguments(
-                "now_guest_files_upload_file refuses \"\(localPath)\": no regular file exists there inside the workspace")
+                "now_guest_files_upload_file requires a regular file inside the granted workspace")
         }
         if let size = values.fileSize, size > maximumLocalFileBytes {
             return .invalidArguments(
-                "now_guest_files_upload_file refuses \"\(localPath)\": \(size) bytes exceeds the 32 MiB single-call ceiling")
+                "now_guest_files_upload_file refuses a file over the 32 MiB single-call ceiling")
         }
         guard let bytes = try? Data(contentsOf: canonical),
               bytes.count <= maximumLocalFileBytes else {
             return .invalidArguments(
-                "now_guest_files_upload_file could not read \"\(localPath)\" inside the workspace")
+                "now_guest_files_upload_file could not read the requested workspace file")
         }
         let sha256 = SHA256.hash(data: bytes)
             .map { String(format: "%02x", $0) }.joined()

@@ -93,10 +93,8 @@ final class ClaudeCodeClientTests: XCTestCase {
     func testALaneUnclampsTheRuntimeAndNamesTheWorkspace() {
         let arguments = ClaudeCodeClient.arguments(
             model: "sonnet", lane: lane(.bypassPermissions),
-            mcpConfig: ChatWorkspaceMCPConfig.json(
-                executable: URL(fileURLWithPath: "/Apps/New Old World"),
-                workspaceRoot: URL(fileURLWithPath: "/tmp/now-lane",
-                                   isDirectory: true)))
+            mcpConfig: ChatWorkspaceMCPConfig.httpJSON(
+                port: 5254, authenticated: true))
 
         XCTAssertEqual(arguments.value(after: "--tools"), "default")
         XCTAssertEqual(arguments.value(after: "--permission-mode"),
@@ -109,8 +107,7 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertFalse(arguments.contains("--safe-mode"))
         XCTAssertTrue(arguments.contains("--strict-mcp-config"))
         let config = arguments.value(after: "--mcp-config") ?? ""
-        XCTAssertTrue(config.contains("--mcp-stdio"), config)
-        XCTAssertTrue(config.contains("/Apps/New Old World"), config)
+        XCTAssertTrue(config.contains("http://127.0.0.1:5254/mcp"), config)
     }
 
     func testALaneTurnIsNotToldToAvoidTools() {
@@ -136,8 +133,9 @@ final class ClaudeCodeClientTests: XCTestCase {
         let client = ClaudeCodeClient(
             runner: runner, executable: executable, environment: [:],
             lanes: ChatWorkspaceLaneStore(defaults: defaults),
-            hostExecutable: URL(fileURLWithPath: "/Apps/New Old World"),
-            httpEndpoint: { (port: 5254, token: "feedface") })
+            httpEndpoint: { MCPHTTPEmbeddedEndpoint(
+                port: 5254, authMode: .bearer,
+                authorizationToken: "feedface") })
 
         for try await _ in client.stream(ChatCompletionRequest(
             model: "sonnet", system: "", turns: [.user("hi")], tools: [],
@@ -153,8 +151,90 @@ final class ClaudeCodeClientTests: XCTestCase {
            socket to stomp. */
         let config = request.arguments.value(after: "--mcp-config") ?? ""
         XCTAssertTrue(config.contains("http://127.0.0.1:5254/mcp"), config)
-        XCTAssertTrue(config.contains("Bearer feedface"), config)
+        XCTAssertTrue(config.contains(
+            "Bearer ${\(ChatWorkspaceMCPConfig.bearerEnvironmentKey)}"),
+            config)
+        XCTAssertTrue(config.contains(
+            MCPHTTPWorkspaceGrantAuthority.headerName), config)
+        XCTAssertFalse(config.contains("feedface"),
+                       "the bearer must not be exposed in argv")
+        let grant = try XCTUnwrap(request.environment[
+            ChatWorkspaceMCPConfig.workspaceGrantEnvironmentKey])
+        XCTAssertFalse(config.contains(grant),
+                       "the workspace grant must not be exposed in argv")
+        XCTAssertEqual(request.environment[
+            ChatWorkspaceMCPConfig.bearerEnvironmentKey], "feedface")
         XCTAssertFalse(config.contains("--mcp-stdio"), config)
+    }
+
+    func testLaneHTTPConfigurationMatchesEveryAccessMode() async throws {
+        for (mode, token) in [
+            (MCPHTTPAuthMode.bearer, "bearer-private"),
+            (.oauth, "oauth-embedded-private"),
+            (.unauthenticated, nil),
+        ] {
+            let defaults = UserDefaults(
+                suiteName: "now.lane.\(UUID().uuidString)")!
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("now-lane-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(
+                at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            defaults.set(root.path, forKey: ChatWorkspaceLaneStore.rootKey)
+            let runner = ScriptedChatProcessRunner([[
+                "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false}",
+            ]])
+            let client = ClaudeCodeClient(
+                runner: runner, executable: executable, environment: [:],
+                lanes: ChatWorkspaceLaneStore(defaults: defaults),
+                httpEndpoint: { MCPHTTPEmbeddedEndpoint(
+                    port: 5254, authMode: mode,
+                    authorizationToken: token) },
+                workspaceGrant: { _ in "workspace-private" })
+
+            for try await _ in client.stream(ChatCompletionRequest(
+                model: "sonnet", system: "", turns: [.user("hi")],
+                tools: [], maxTokens: 100)) {}
+
+            let request = try XCTUnwrap(runner.requests.first)
+            let config = request.arguments.value(after: "--mcp-config") ?? ""
+            XCTAssertEqual(config.contains("Authorization"), token != nil)
+            XCTAssertEqual(request.environment[
+                ChatWorkspaceMCPConfig.bearerEnvironmentKey], token)
+            XCTAssertFalse(config.contains(token ?? "workspace-private"))
+        }
+    }
+
+    func testGrantCapacityFailureRefusesInsteadOfDroppingNOWTools()
+        async throws {
+        let defaults = UserDefaults(suiteName: "now.lane.\(UUID().uuidString)")!
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-lane-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        defaults.set(root.path, forKey: ChatWorkspaceLaneStore.rootKey)
+        let runner = ScriptedChatProcessRunner([])
+        let client = ClaudeCodeClient(
+            runner: runner, executable: executable, environment: [:],
+            lanes: ChatWorkspaceLaneStore(defaults: defaults),
+            httpEndpoint: { MCPHTTPEmbeddedEndpoint(
+                port: 5254, authMode: .bearer,
+                authorizationToken: "private") },
+            workspaceGrant: { _ in nil })
+
+        do {
+            for try await _ in client.stream(ChatCompletionRequest(
+                model: "sonnet", system: "", turns: [.user("hi")],
+                tools: [], maxTokens: 100)) {}
+            XCTFail("capacity exhaustion must refuse the turn")
+        } catch {
+            let fault = ChatFault.from(error)
+            XCTAssertEqual(fault.code, "unreachable")
+            XCTAssertTrue(fault.reason.contains("capacity is exhausted"))
+        }
+        XCTAssertTrue(runner.requests.isEmpty,
+                      "the runtime must not launch with a different tool set")
     }
 
     /// A filed conversation works in ITS project's subfolder — one
@@ -246,7 +326,9 @@ final class ClaudeCodeClientTests: XCTestCase {
         let client = ClaudeCodeClient(
             runner: runner, executable: executable, environment: [:],
             lanes: ChatWorkspaceLaneStore(defaults: defaults),
-            httpEndpoint: { (port: 5254, token: "feedface") })
+            httpEndpoint: { MCPHTTPEmbeddedEndpoint(
+                port: 5254, authMode: .bearer,
+                authorizationToken: "feedface") })
 
         for try await _ in client.stream(ChatCompletionRequest(
             model: "sonnet", system: "", turns: [.user("hi")], tools: [],
@@ -467,17 +549,13 @@ final class ClaudeCodeClientTests: XCTestCase {
         XCTAssertNil(environment["UNRELATED_SECRET"])
     }
 
-    /// A lane spawns this app's own MCP companion under the runtime,
-    /// and that companion finds its host by this suffix. Dropped, it
-    /// silently reaches whichever host owns the default socket.
-    func testMinimalEnvironmentCarriesTheAgentSocketSuffix() {
+    func testMinimalEnvironmentDoesNotExposeTheLocalAutomationSocket() {
         let environment = ChatSubprocessEnvironment.minimal(from: [
             "HOME": "/tmp/home", "PATH": "/usr/bin",
             "NOW_AGENT_SOCKET_SUFFIX": "lane-under-test",
         ])
 
-        XCTAssertEqual(environment["NOW_AGENT_SOCKET_SUFFIX"],
-                       "lane-under-test")
+        XCTAssertNil(environment["NOW_AGENT_SOCKET_SUFFIX"])
     }
 
     func testMinimalEnvironmentMakesFallbackRuntimeDependenciesVisible() {

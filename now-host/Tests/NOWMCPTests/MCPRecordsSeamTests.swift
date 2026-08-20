@@ -10,6 +10,7 @@ final class MCPRecordsSeamTests: XCTestCase {
     /// session id it minted.
     func testHTTPInitializeFillsTheIdentityBox() async throws {
         let identity = NOWMCPClientIdentity()
+        let lifecycle = MCPInitializationSpy()
         let service = MCPHTTPService(
             configuration: .init(port: 5254,
                                  authMode: .unauthenticated,
@@ -17,7 +18,7 @@ final class MCPRecordsSeamTests: XCTestCase {
             serverFactory: {
                 (NOWMCPServer(client: SocketAgentIntegrationClient(),
                               audit: LocalMCPAuditSink(),
-                              identity: identity),
+                              identity: identity, lifecycle: lifecycle),
                  identity)
             })
         let body = try JSONSerialization.data(withJSONObject: [
@@ -40,6 +41,11 @@ final class MCPRecordsSeamTests: XCTestCase {
         XCTAssertEqual(identity.clientName, "Claude Code")
         XCTAssertEqual(identity.clientVersion, "2.1")
         XCTAssertEqual(identity.sessionKey,
+                       reply.headers["Mcp-Session-Id"])
+        let recorded = lifecycle.last
+        XCTAssertEqual(recorded?.clientName, "Claude Code")
+        XCTAssertEqual(recorded?.clientVersion, "2.1")
+        XCTAssertEqual(recorded?.sessionKey,
                        reply.headers["Mcp-Session-Id"])
     }
 
@@ -70,6 +76,25 @@ final class MCPRecordsSeamTests: XCTestCase {
             try AgentIntegrationLocalCodec.decodeRequest(oversized))
     }
 
+    func testLocalInitializationRequestHasItsOwnBoundedShape() throws {
+        let request = try AgentIntegrationLocalCodec.encode(
+            .mcpInitialize(clientName: "Claude Code", clientVersion: "2.1",
+                           sessionKey: "pid:42"))
+        let decoded = try AgentIntegrationLocalCodec.decodeRequest(request)
+        XCTAssertEqual(decoded.operation, .mcpInitialize)
+        XCTAssertEqual(decoded.mcpClientName, "Claude Code")
+        XCTAssertEqual(decoded.mcpClientVersion, "2.1")
+        XCTAssertEqual(decoded.mcpSessionKey, "pid:42")
+        XCTAssertNil(decoded.auditEvent,
+                     "lifecycle evidence is not an invented action")
+
+        let oversized = try AgentIntegrationLocalCodec.encode(
+            .mcpInitialize(clientName: String(repeating: "n", count: 201),
+                           clientVersion: nil, sessionKey: "pid:42"))
+        XCTAssertThrowsError(
+            try AgentIntegrationLocalCodec.decodeRequest(oversized))
+    }
+
     /// The fan-out's third arm: a recorded event lands in the store, with
     /// the face naming an honest kind when nobody stated an identity.
     @MainActor
@@ -89,5 +114,20 @@ final class MCPRecordsSeamTests: XCTestCase {
         let row = await iterator.next()
         XCTAssertEqual(row?.agentName, "Chat")
         XCTAssertEqual(row?.targetMachine, "pb1400c")
+    }
+}
+
+private final class MCPInitializationSpy: MCPClientLifecycleSink,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var recorded: MCPClientInitialization?
+
+    var last: MCPClientInitialization? {
+        lock.withLock { recorded }
+    }
+
+    func recordInitialization(_ initialization: MCPClientInitialization) {
+        lock.withLock { recorded = initialization }
     }
 }

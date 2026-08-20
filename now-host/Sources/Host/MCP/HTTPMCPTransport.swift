@@ -4,8 +4,7 @@ import NOWAgentIntegration
 
 /// How the HTTP transport decides whether a request may speak MCP. The
 /// loopback Host and Origin checks apply in every mode; this only selects
-/// what the Authorization header must carry. stdio is uid-authenticated by
-/// the kernel and has no mode.
+/// what the Authorization header must carry.
 enum MCPHTTPAuthMode: String, CaseIterable, Sendable {
     case unauthenticated = "none"
     case bearer
@@ -16,17 +15,20 @@ struct MCPHTTPConfiguration: Equatable {
     let port: UInt16
     let authMode: MCPHTTPAuthMode
     let bearerToken: String?
+    let embeddedAccessToken: String?
     let maximumHeaderBytes: Int
     let maximumSessions: Int
     let sessionLifetime: TimeInterval
 
     init(port: UInt16, authMode: MCPHTTPAuthMode, bearerToken: String?,
+         embeddedAccessToken: String? = nil,
          maximumHeaderBytes: Int = 16 * 1024,
          maximumSessions: Int = 8,
          sessionLifetime: TimeInterval = 30 * 60) {
         self.port = port
         self.authMode = authMode
         self.bearerToken = bearerToken
+        self.embeddedAccessToken = embeddedAccessToken
         self.maximumHeaderBytes = maximumHeaderBytes
         self.maximumSessions = maximumSessions
         self.sessionLifetime = sessionLifetime
@@ -41,6 +43,30 @@ struct MCPHTTPConfiguration: Equatable {
                   maximumHeaderBytes: maximumHeaderBytes,
                   maximumSessions: maximumSessions,
                   sessionLifetime: sessionLifetime)
+    }
+}
+
+/// One ephemeral credential shared only between the running HTTP listener
+/// and NOW's embedded Claude lane. It is neither a workspace grant nor an
+/// external OAuth identity, and it is never persisted or shown in the UI.
+final class MCPHTTPEmbeddedCredentialAuthority: @unchecked Sendable {
+    static let shared = MCPHTTPEmbeddedCredentialAuthority()
+
+    private let lock = NSLock()
+    private var oauthTokenByPort: [UInt16: String] = [:]
+
+    func token(port: UInt16, authMode: MCPHTTPAuthMode) -> String? {
+        guard authMode == .oauth else { return nil }
+        return lock.withLock {
+            if let existing = oauthTokenByPort[port] { return existing }
+            let token = MCPOAuthAuthority.randomHex(32)
+            oauthTokenByPort[port] = token
+            return token
+        }
+    }
+
+    func invalidateAll() {
+        lock.withLock { oauthTokenByPort.removeAll() }
     }
 }
 
@@ -185,13 +211,61 @@ struct MCPHTTPResponse: Equatable {
     }
 }
 
+/// One-use handoff from the embedded Chat lane to one HTTP session. Holding
+/// the listener's bearer/OAuth credential cannot mint or redeem another
+/// workspace; only an exact, live opaque token can.
+final class MCPHTTPWorkspaceGrantAuthority: @unchecked Sendable {
+    static let headerName = "x-now-workspace-grant"
+    static let shared = MCPHTTPWorkspaceGrantAuthority()
+
+    private struct Pending {
+        let grant: HostWorkspaceGrant
+        let expiresAt: Date
+    }
+
+    private let lock = NSLock()
+    private let maximumOutstanding: Int
+    private let lifetime: TimeInterval
+    private var pending: [String: Pending] = [:]
+
+    init(maximumOutstanding: Int = 8, lifetime: TimeInterval = 30) {
+        self.maximumOutstanding = max(1, maximumOutstanding)
+        self.lifetime = max(1, lifetime)
+    }
+
+    func issue(workspaceRoot: URL, now: Date = Date()) -> String? {
+        lock.withLock {
+            pending = pending.filter { $0.value.expiresAt > now }
+            guard pending.count < maximumOutstanding else { return nil }
+            let token = MCPOAuthAuthority.randomHex(32)
+            pending[token] = .init(
+                grant: HostWorkspaceGrant(workspaceRoot: workspaceRoot),
+                expiresAt: now.addingTimeInterval(lifetime))
+            return token
+        }
+    }
+
+    func redeem(_ token: String, now: Date) -> HostWorkspaceGrant? {
+        lock.withLock {
+            pending = pending.filter { $0.value.expiresAt > now }
+            guard token.utf8.count == 64,
+                  let entry = pending.removeValue(forKey: token),
+                  entry.expiresAt > now else { return nil }
+            return entry.grant
+        }
+    }
+}
+
 actor MCPHTTPService {
     /// One server AND its identity box per session: the server fills the
     /// box at initialize, the service adds the session id it mints, and the
     /// audit sink the factory built beside them reads it at record time.
     typealias ServerFactory = @Sendable ()
         -> (server: NOWMCPServer, identity: NOWMCPClientIdentity)
+    typealias SessionServerFactory = @Sendable (HostWorkspaceGrant?)
+        -> (server: NOWMCPServer, identity: NOWMCPClientIdentity)
     typealias ActivityObserver = @Sendable (_ began: Bool, _ at: Date) -> Void
+    typealias InitializationObserver = @Sendable (_ at: Date) -> Void
 
     private struct Session {
         let server: NOWMCPServer
@@ -200,18 +274,37 @@ actor MCPHTTPService {
     }
 
     private let configuration: MCPHTTPConfiguration
-    private let serverFactory: ServerFactory
+    private let serverFactory: SessionServerFactory
+    private let workspaceGrants: MCPHTTPWorkspaceGrantAuthority
     private let activityObserver: ActivityObserver?
+    private let initializationObserver: InitializationObserver?
     private let oauth: MCPOAuthAuthority?
     private var sessions: [String: Session] = [:]
 
     init(configuration: MCPHTTPConfiguration,
          serverFactory: @escaping ServerFactory,
          activityObserver: ActivityObserver? = nil,
+         initializationObserver: InitializationObserver? = nil,
          oauth: MCPOAuthAuthority? = nil) {
         self.configuration = configuration
-        self.serverFactory = serverFactory
+        self.serverFactory = { _ in serverFactory() }
+        self.workspaceGrants = .shared
         self.activityObserver = activityObserver
+        self.initializationObserver = initializationObserver
+        self.oauth = oauth
+    }
+
+    init(configuration: MCPHTTPConfiguration,
+         sessionServerFactory: @escaping SessionServerFactory,
+         workspaceGrants: MCPHTTPWorkspaceGrantAuthority,
+         activityObserver: ActivityObserver? = nil,
+         initializationObserver: InitializationObserver? = nil,
+         oauth: MCPOAuthAuthority? = nil) {
+        self.configuration = configuration
+        self.serverFactory = sessionServerFactory
+        self.workspaceGrants = workspaceGrants
+        self.activityObserver = activityObserver
+        self.initializationObserver = initializationObserver
         self.oauth = oauth
     }
 
@@ -243,10 +336,14 @@ actor MCPHTTPService {
             let challenge = "Bearer resource_metadata=\"http://\(host)"
                 + "/.well-known/oauth-protected-resource/mcp\""
             guard let value = request.headers["authorization"],
-                  value.hasPrefix("Bearer "), let oauth,
-                  await oauth.validateAccessToken(
-                    String(value.dropFirst("Bearer ".count)), now: now)
-            else {
+                  value.hasPrefix("Bearer "), let oauth else {
+                return response(401,
+                                headers: ["WWW-Authenticate": challenge])
+            }
+            let token = String(value.dropFirst("Bearer ".count))
+            let valid = token == configuration.embeddedAccessToken
+                ? true : await oauth.validateAccessToken(token, now: now)
+            guard valid else {
                 return response(401,
                                 headers: ["WWW-Authenticate": challenge])
             }
@@ -291,7 +388,7 @@ actor MCPHTTPService {
                 as? [String: Any],
               let method = object["method"] as? String else {
             return jsonResponse(
-                await serverFactory().server.handle(request.body))
+                await serverFactory(nil).server.handle(request.body))
         }
         let observesAgentCall = method == "tools/call"
         if observesAgentCall { activityObserver?(true, now) }
@@ -306,17 +403,36 @@ actor MCPHTTPService {
             guard sessions.count < configuration.maximumSessions else {
                 return response(429, headers: ["Retry-After": "30"])
             }
-            let (server, identity) = serverFactory()
+            guard NOWMCPServer.hasValidInitializeParameters(object) else {
+                let reply = await serverFactory(nil).server
+                    .handle(request.body)
+                return reply.map { jsonResponse($0) } ?? response(202)
+            }
+            let workspaceGrant: HostWorkspaceGrant?
+            if let token =
+                request.headers[MCPHTTPWorkspaceGrantAuthority.headerName] {
+                guard let redeemed = workspaceGrants.redeem(token, now: now)
+                else { return response(403) }
+                workspaceGrant = redeemed
+            } else {
+                workspaceGrant = nil
+            }
+            let (server, identity) = serverFactory(workspaceGrant)
+            let id = UUID().uuidString.lowercased()
+            /* The lifecycle sink runs as part of a successful initialize,
+               so the transport-owned session identity must exist before
+               the server handles that message. Invalid initialize requests
+               are never stored and never receive this id. */
+            identity.setSessionKey(id)
             guard let reply = await server.handle(request.body) else {
                 return response(202)
             }
             guard let version = Self.protocolVersion(in: reply) else {
                 return jsonResponse(reply)
             }
-            let id = UUID().uuidString.lowercased()
-            identity.setSessionKey(id)
             sessions[id] = .init(server: server, protocolVersion: version,
                                  lastUsed: now)
+            initializationObserver?(now)
             return jsonResponse(reply, headers: ["Mcp-Session-Id": id])
         }
 
@@ -514,6 +630,7 @@ final class MCPHTTPListener: @unchecked Sendable {
     init(configuration: MCPHTTPConfiguration,
          serverFactory: @escaping MCPHTTPService.ServerFactory,
          activityObserver: MCPHTTPService.ActivityObserver? = nil,
+         initializationObserver: MCPHTTPService.InitializationObserver? = nil,
          failureObserver: FailureObserver? = nil,
          oauth: MCPOAuthAuthority? = nil) throws {
         self.configuration = configuration
@@ -521,7 +638,26 @@ final class MCPHTTPListener: @unchecked Sendable {
         service = MCPHTTPService(configuration: configuration,
                                  serverFactory: serverFactory,
                                  activityObserver: activityObserver,
+                                 initializationObserver: initializationObserver,
                                  oauth: oauth)
+    }
+
+    init(configuration: MCPHTTPConfiguration,
+         sessionServerFactory: @escaping MCPHTTPService.SessionServerFactory,
+         workspaceGrants: MCPHTTPWorkspaceGrantAuthority,
+         activityObserver: MCPHTTPService.ActivityObserver? = nil,
+         initializationObserver: MCPHTTPService.InitializationObserver? = nil,
+         failureObserver: FailureObserver? = nil,
+         oauth: MCPOAuthAuthority? = nil) throws {
+        self.configuration = configuration
+        self.failureObserver = failureObserver
+        service = MCPHTTPService(
+            configuration: configuration,
+            sessionServerFactory: sessionServerFactory,
+            workspaceGrants: workspaceGrants,
+            activityObserver: activityObserver,
+            initializationObserver: initializationObserver,
+            oauth: oauth)
     }
 
     /// Start the in-process listener and return when the port is bound.
