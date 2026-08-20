@@ -143,6 +143,7 @@ final class MCPRecordsModel: ObservableObject {
     /// with the filter's own claim.
     private func absorb(_ row: MCPActionRow) {
         guard loadState == .ready else { return }
+        Task { await refreshEntities() }
         if let outcome = filter.outcome,
            row.action.outcome != outcome { return }
         if let agentID = filter.agentID,
@@ -153,7 +154,6 @@ final class MCPRecordsModel: ObservableObject {
            row.action.sessionID != sessionID { return }
         guard rows.first?.id != row.id else { return }
         rows.insert(row, at: 0)
-        Task { await refreshEntities() }
     }
 
     private func refreshEntities() async {

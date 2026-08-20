@@ -340,6 +340,8 @@ final class ChatWorkspaceLaneStore: @unchecked Sendable {
 /// The private HTTP MCP configuration handed to one lane runtime.
 enum ChatWorkspaceMCPConfig {
     static let serverName = "now"
+    static let bearerEnvironmentKey = "NOW_MCP_LANE_BEARER_TOKEN"
+    static let workspaceGrantEnvironmentKey = "NOW_MCP_WORKSPACE_GRANT"
 
     /// Posted when a lane turn is about to spawn a runtime that will dial
     /// the HTTP listener, so the app can ensure it is actually up. The
@@ -370,17 +372,17 @@ enum ChatWorkspaceMCPConfig {
     /// one server, in the running host, Bearer-gated by a same-user
     /// 0600 token file — and when it is down the failure is a connect
     /// refusal with a port number in it, not a healthy-looking silence.
-    static func httpJSON(port: UInt16, token: String,
-                         workspaceGrant: String) -> String? {
+    static func httpJSON(port: UInt16) -> String? {
         let object: [String: Any] = [
             "mcpServers": [
                 serverName: [
                     "type": "http",
                     "url": "http://127.0.0.1:\(port)/mcp",
                     "headers": [
-                        "Authorization": "Bearer \(token)",
+                        "Authorization":
+                            "Bearer ${\(bearerEnvironmentKey)}",
                         MCPHTTPWorkspaceGrantAuthority.headerName:
-                            workspaceGrant,
+                            "${\(workspaceGrantEnvironmentKey)}",
                     ],
                 ],
             ],

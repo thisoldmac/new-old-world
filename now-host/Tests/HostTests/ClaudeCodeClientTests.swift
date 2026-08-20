@@ -153,9 +153,19 @@ final class ClaudeCodeClientTests: XCTestCase {
            socket to stomp. */
         let config = request.arguments.value(after: "--mcp-config") ?? ""
         XCTAssertTrue(config.contains("http://127.0.0.1:5254/mcp"), config)
-        XCTAssertTrue(config.contains("Bearer feedface"), config)
+        XCTAssertTrue(config.contains(
+            "Bearer ${\(ChatWorkspaceMCPConfig.bearerEnvironmentKey)}"),
+            config)
         XCTAssertTrue(config.contains(
             MCPHTTPWorkspaceGrantAuthority.headerName), config)
+        XCTAssertFalse(config.contains("feedface"),
+                       "the bearer must not be exposed in argv")
+        let grant = try XCTUnwrap(request.environment[
+            ChatWorkspaceMCPConfig.workspaceGrantEnvironmentKey])
+        XCTAssertFalse(config.contains(grant),
+                       "the workspace grant must not be exposed in argv")
+        XCTAssertEqual(request.environment[
+            ChatWorkspaceMCPConfig.bearerEnvironmentKey], "feedface")
         XCTAssertFalse(config.contains("--mcp-stdio"), config)
     }
 

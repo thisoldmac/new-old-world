@@ -7,6 +7,27 @@ search:
 
 # Open issues
 
+## DEPRECATION CANDIDATE, NOT SUNSET: Standard Input MCP remains executable (2026-08-20, `docs/stdio-mcp-sunset-plan`)
+
+HTTP is now the recommended MCP transport and clean installations leave
+Standard Input off, but this branch deliberately retains `--mcp-stdio`, its
+manual Start/Stop controls, and transport parity for one released compatibility
+cycle. Advancing to the diagnostic tombstone remains blocked on all of the
+following evidence being complete at the same release revision:
+
+* a numbered deprecation release and a complete released compatibility cycle;
+* migrated consumer receipts and installation-local initialization/action
+  evidence, including an explicit disposition for Agentis;
+* a live HTTP qualification path through the shipping host adapter rather than
+  the deterministic no-host conformance stand-in;
+* no unresolved severity-1 or severity-2 HTTP replacement defects;
+* current-head Emulator QA and applicable physical-machine QA;
+* an owner-approved, buildable rollback release.
+
+The window extends when any item is incomplete. Phase 3 must not turn stdio
+into a tombstone, and Phase 4 must not delete it, merely because time elapsed or
+the host-only automated suites are green.
+
 ## FIXED: the host suite took the keyboard of whoever ran it — and that is why one Continuity test was "intermittent" (2026-08-20, `fix/host-test-keyboard-tap`)
 
 Reported as "something in the host test suite blocks my keyboard while it

@@ -108,6 +108,7 @@ final class ClaudeCodeClient: @unchecked Sendable {
         }
         let lane = lanes.state().lane
         var mcpConfig: String?
+        var requestEnvironment = environment
         if lane?.attachesNOWTools == true {
             /* Before the spawn, not after the first refusal: the
                runtime's very first ToolSearch can be the turn's first
@@ -120,8 +121,11 @@ final class ClaudeCodeClient: @unchecked Sendable {
                let grant = MCPHTTPWorkspaceGrantAuthority.shared.issue(
                     workspaceRoot: lane.root) {
                 mcpConfig = ChatWorkspaceMCPConfig.httpJSON(
-                    port: endpoint.port, token: endpoint.token,
-                    workspaceGrant: grant)
+                    port: endpoint.port)
+                requestEnvironment[ChatWorkspaceMCPConfig
+                    .bearerEnvironmentKey] = endpoint.token
+                requestEnvironment[ChatWorkspaceMCPConfig
+                    .workspaceGrantEnvironmentKey] = grant
             }
         }
         let request = ChatSubprocessRequest(
@@ -131,7 +135,7 @@ final class ClaudeCodeClient: @unchecked Sendable {
                 mcpConfig: mcpConfig),
             standardInput: Data(Self.prompt(completion, lane: lane).utf8),
             timeout: lane?.timeout ?? 180,
-            environment: environment,
+            environment: requestEnvironment,
             /* The lane's directory IS the working directory — narrowed
                to the conversation's project subfolder when it has one,
                so one project's turn cannot scavenge another's artifacts

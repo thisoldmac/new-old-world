@@ -109,7 +109,7 @@ enum MCPHTTPDiagnosticState: Equatable, CustomStringConvertible {
             return "Not configured for this launch."
         case .configured(let endpoint, let mode):
             return "Configured for \(endpoint) using \(mode.label); "
-                + "waiting to bind."
+                + "listener is not bound."
         case .listenerBound(let endpoint, let mode):
             return "Listening at \(endpoint) using \(mode.label); no client "
                 + "has initialized."
