@@ -1,4 +1,5 @@
 import Foundation
+import Network
 @testable import Host
 @testable import NOWAgentIntegration
 
@@ -257,19 +258,42 @@ final class MCPHTTPClient: MCPConformanceClient, @unchecked Sendable {
     }
 
     init(environment: [String: String]? = nil) throws {
-        let port = UInt16.random(in: 40_000...60_000)
         token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-        endpoint = URL(string: "http://127.0.0.1:\(port)/mcp")!
         let configured = environment ?? ProcessInfo.processInfo.environment
         let socket = try Self.agentEndpoint(environment: configured)
-        listener = try MCPHTTPListener(
-            configuration: .init(port: port, bearerToken: token),
-            serverFactory: {
-                (NOWMCPServer(
-                    client: SocketAgentIntegrationClient(endpoint: socket),
-                    audit: LocalMCPAuditSink(endpoint: socket)),
-                 NOWMCPClientIdentity())
-            })
+        let bearerToken = token
+        let serverFactory: MCPHTTPService.ServerFactory = {
+            (NOWMCPServer(
+                client: SocketAgentIntegrationClient(endpoint: socket),
+                audit: LocalMCPAuditSink(endpoint: socket)),
+             NOWMCPClientIdentity())
+        }
+        /* A random high port collides on a shared CI runner often enough to
+           matter (EADDRINUSE, 2026-08-20). The port must be known before the
+           listener exists — it is baked into the endpoint URL and the
+           configuration — so bind-and-retry with a fresh draw is the fix,
+           not port 0. */
+        var attempt = 0
+        while true {
+            attempt += 1
+            let port = UInt16.random(in: 40_000...60_000)
+            let candidate = try MCPHTTPListener(
+                configuration: .init(port: port, bearerToken: bearerToken),
+                serverFactory: serverFactory)
+            do {
+                try Self.startAndAwaitBind(candidate)
+            } catch let error as NWError
+                where error == .posix(.EADDRINUSE) && attempt < 5 {
+                candidate.stop()
+                continue
+            }
+            listener = candidate
+            endpoint = URL(string: "http://127.0.0.1:\(port)/mcp")!
+            return
+        }
+    }
+
+    private static func startAndAwaitBind(_ listener: MCPHTTPListener) throws {
         let ready = DispatchSemaphore(value: 0)
         let startError = StartErrorBox()
         Task {
