@@ -43,7 +43,7 @@ final class NOWAPIEventStreamTests: XCTestCase {
     func testFileAndDisconnectEventsNeverLeakPrivateStrings() throws {
         let key = GuestKey(machine: try XCTUnwrap(GuestID("pb1400c")),
                            session: UUID())
-        let secretURL = URL(fileURLWithPath: "/Users/private/Secret Folder/file")
+        let secretURL = URL(fileURLWithPath: "/Volumes/Secret Disk/Secret Folder/file")
         let file = try XCTUnwrap(NOWAPIPublicEventTranslator.translate(
             .fileReceived(key, url: secretURL, bytes: 12,
                           guestName: "private-guest-name")))
@@ -52,7 +52,7 @@ final class NOWAPIEventStreamTests: XCTestCase {
         let encoded = String(data: try JSONEncoder().encode([file, disconnected]),
                              encoding: .utf8) ?? ""
 
-        XCTAssertFalse(encoded.contains("/Users/private"))
+        XCTAssertFalse(encoded.contains("/Volumes/Secret Disk"))
         XCTAssertFalse(encoded.contains("Secret Folder"))
         XCTAssertFalse(encoded.contains("private-guest-name"))
         XCTAssertFalse(encoded.contains("/private/reason"))
