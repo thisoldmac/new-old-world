@@ -76,9 +76,9 @@ No removal decision may cite that last observation as proof of zero use.
 - **History:** `mcp-stdio` remains decodable and visible in durable records
   after the live transport is gone. Historical data is not rewritten or
   deleted.
-- **Timing:** readiness and observed-use gates decide progression. The
-  deprecation window lasts at least one complete release; elapsed time alone
-  is never sufficient.
+- **Timing:** this is a pre-alpha transport cleanup, so no released
+  compatibility cycle or elapsed-time window is required. HTTP readiness and
+  explicit consumer disposition decide progression.
 - **Contract:** the guest wire contract and projection catalog do not change.
   This is a host transport and authorization migration.
 
@@ -89,7 +89,7 @@ In scope:
 - live stdio entry point, bridge server, Unix-socket client, settings, UI,
   logging, records identity, tests, and current-state documentation;
 - HTTP readiness needed to replace every supported stdio workflow;
-- migration diagnostics and a bounded tombstone release; and
+- migration diagnostics and a bounded tombstone test; and
 - emulator and metal evidence required by repository policy.
 
 Out of scope:
@@ -259,13 +259,14 @@ the test fixture and app preferences.
 
 ## Phase 2 — deprecate stdio while it still works
 
-This phase begins the compatibility window.
+This phase makes migration visible while the implementation work is in
+flight. It does not create a promise to ship a stdio-compatible release.
 
 ### Product behavior
 
 - Change a missing stdio preference from auto-start to off.
-- Preserve an existing explicit stdio-on preference for the deprecation
-  release; do not silently rewrite it.
+- Preserve an existing explicit stdio-on preference while stdio remains in
+  the tree; do not silently rewrite it.
 - Keep explicit Start/Stop and `--mcp-stdio` functional, but mark both
   **Deprecated** and show the exact HTTP migration path.
 - Make HTTP the first and recommended transport in the MCP module and docs.
@@ -273,14 +274,13 @@ This phase begins the compatibility window.
   Stdout remains pure MCP framing.
 - Show the last local stdio initialization/action evidence and explain its
   installation-local scope.
-- Publish release notes naming the last release in which stdio is expected to
-  execute, while reserving the right to extend the window if readiness or
-  usage evidence is incomplete.
+- Document the breaking removal in whichever pre-alpha candidate first omits
+  stdio; do not invent a separate compatibility release.
 
 ### Compatibility verification
 
-- A real command-launch client can still initialize, list, and call during the
-  deprecation release.
+- A real command-launch client can still initialize, list, and call while the
+  deprecation implementation remains in the tree.
 - The warning cannot corrupt stdout framing.
 - Existing explicit preferences survive an upgrade.
 - A clean install does not start the stdio bridge.
@@ -288,22 +288,20 @@ This phase begins the compatibility window.
 
 ### Phase 2 exit gate
 
-Sunset requires all of the following:
+Sunset requires all of the following, with no release-cycle or elapsed-time
+gate:
 
-- at least one complete released deprecation cycle;
-- no unexplained stdio initialization or action on the installation-local
-  evidence window selected during Phase 0;
 - every known consumer migrated, retired, or explicitly accepted as broken;
 - no open severity-1 or severity-2 HTTP replacement defect;
 - emulator QA and applicable physical-machine QA on the current candidate;
   and
-- an owner-approved rollback build and release note.
+- a release note for the first pre-alpha candidate that omits stdio.
 
 ## Phase 3 — sunset with a diagnostic tombstone
 
-Stdio stops being a transport in this phase, but the old entry point remains
-recognizable for one bounded release so stale client configurations fail
-quickly and explainably.
+Stdio stops being a transport in this phase. The old entry point may remain as
+a narrow diagnostic while the deletion lands so stale client configurations
+fail quickly and explainably; it does not need to survive a release boundary.
 
 - Remove stdio startup, listener/socket ownership, settings, normal MCP card,
   and current-session controls.
@@ -312,15 +310,16 @@ quickly and explainably.
   the app or emitting protocol-looking stdout.
 - Retain historical stdio agents, sessions, and actions in the records UI.
 - Keep a current support page for the tombstone message to reference.
-- Do not add a hidden environment override. Rollback is the previous signed
-  release or a revert, not a secret second transport.
+- Do not add a hidden environment override. Rollback is a revert, not a secret
+  second transport.
 
-The tombstone release proves that stale configuration fails visibly instead
-of hanging or opening the normal app.
+The tombstone test proves that stale configuration fails visibly instead of
+hanging or opening the normal app.
 
 ## Phase 4 — remove the implementation
 
-After the tombstone window and the same usage/readiness audit:
+Once the tombstone behavior is proved, Phase 4 may land immediately in the
+same pre-alpha change:
 
 - delete `MCPStdioTransport` and its line framer/output-only implementation;
 - delete the stdio-only socket bridge, local client, audit sink, launch
@@ -329,7 +328,9 @@ After the tombstone window and the same usage/readiness audit:
 - delete stdio liveness, subprocess, parity, preference, UI, and ownership
   tests, replacing—not merely removing—the behavioral coverage with HTTP-only
   conformance and historical-record fixtures;
-- stop recognizing `--mcp-stdio` after the documented tombstone release;
+- stop recognizing `--mcp-stdio` when the final implementation residue is
+  removed, or retain only a transport-free diagnostic if that is the smaller
+  and clearer stale-configuration failure;
 - remove current-state stdio instructions from the user guide, agent boundary,
   status, MCP coverage, settings, source-text gates, and screenshots;
 - leave historical plans and dated issue evidence intact; and
@@ -361,7 +362,9 @@ with proof that the mutated build completed and the intended test ran.
 
 ## Delivery sequence
 
-Use small PRs; do not mix the compatibility window with final deletion.
+Use reviewable commits. Phases 2 through 4 may share one pre-alpha PR once the
+HTTP exit gates are green; there is no required release boundary between
+them.
 
 1. **Due-diligence receipt:** consumer matrix, support verification, unique
    capability trace, security decision, and baseline HTTP results.
@@ -369,22 +372,21 @@ Use small PRs; do not mix the compatibility window with final deletion.
    tests.
 3. **HTTP proof and history:** independent conformance, lifecycle evidence,
    legacy/unknown database decoding, and migration recipes.
-4. **Deprecation release:** stdio off by default, warning and migration UI,
-   complete docs and release notes.
-5. **Sunset release:** remove the live bridge and ship the diagnostic
-   `--mcp-stdio` tombstone.
-6. **Removal release:** delete the tombstone and implementation residue while
-   retaining historical records compatibility.
+4. **Deprecation implementation:** stdio off by default, warning and migration
+   UI, complete docs.
+5. **Sunset and removal:** after the HTTP gates pass, remove the live bridge,
+   prove the diagnostic failure, and delete transport residue while retaining
+   historical records compatibility. This may occur in the same pre-alpha PR.
 
 Each PR re-derives current docs and tests at its merge revision. A green test
 from an earlier phase is evidence for that revision only.
 
 ## Rollback and stop conditions
 
-During deprecation, rollback means re-enabling the still-present explicit
-stdio path while fixing HTTP. During and after sunset, rollback means shipping
-the last signed stdio-capable release or reverting the sunset PR; the records
-schema remains backward-compatible so no data restoration is required.
+Before deletion, rollback means re-enabling the still-present explicit stdio
+path while fixing HTTP. After deletion, rollback means reverting the removal
+commits; the records schema remains backward-compatible so no data restoration
+is required.
 
 Stop progression when any of these occurs:
 
@@ -401,6 +403,6 @@ Stop progression when any of these occurs:
 New Old World owns one live MCP endpoint: authenticated loopback HTTP in the
 running host. Every supported consumer uses it; every external session has
 explicit, session-local authority; the full registry is independently
-conformance-tested; stale stdio configurations received a bounded diagnostic
-window; current docs advertise no stdio transport; and historical stdio audit
-records remain accurate and readable.
+conformance-tested; stale stdio configurations fail with a bounded diagnostic;
+current docs advertise no stdio transport; and historical stdio audit records
+remain accurate and readable.

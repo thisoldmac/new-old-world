@@ -10,20 +10,19 @@ puts HTTP first and supplies loopback recipes for bearer and OAuth; explicit
 warned no-auth loopback remains supported. An HTTP identity alone receives no
 modern-Mac workspace root.
 
-Standard Input remains functional for one compatibility release but is off by
-default when no preference exists. Existing explicit on and off preferences
-remain unchanged. Every `--mcp-stdio` process writes one bounded migration
-warning to stderr while stdout remains MCP framing. The module separately
-shows the last local stdio initialization and audited action and labels their
-installation-local scope.
+Standard Input remains functional while the pre-alpha removal work is in
+flight but is off by default when no preference exists. Existing explicit on
+and off preferences remain unchanged. Every `--mcp-stdio` process writes one
+bounded migration warning to stderr while stdout remains MCP framing. The
+module separately shows the last local stdio initialization and audited action
+and labels their installation-local scope.
 
-This is a **deprecation candidate**, not a sunset or release publication.
-Repository history has no numbered product release or GitHub release to name
-for it yet. The first numbered release containing this change is expected to
-be the last one in which stdio executes, but that window must be extended if
-consumer migration, observed-use, HTTP defects, emulator QA, physical-machine
-QA, or an owner-approved rollback build remains incomplete. No tombstone or
-implementation deletion is included here.
+This is an in-tree **deprecation candidate**, not a compatibility-release
+promise. Because NOW is pre-alpha, the tombstone and implementation deletion
+may follow in the same development line as soon as consumer disposition, HTTP
+replacement defects, emulator QA, and physical-machine QA are complete. No
+released deprecation cycle or observed zero-use window is required. This
+revision itself does not yet include the tombstone or implementation deletion.
 
 ## 2026-08-14 — Hardware, MCP, Files appearance, and shelf navigation are tested; runtime follow-up remains
 

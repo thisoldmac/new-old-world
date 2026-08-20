@@ -53,11 +53,10 @@ The host exposes independent controls for:
       port. The card says so in warning copy; the loopback Host and Origin
       checks still apply.
 - **Standard Input (Deprecated)**, a narrow `New Old World --mcp-stdio`
-  process launched by an MCP client. It remains functional during this
-  compatibility release and writes one migration warning to stderr at each
-  process start. MCP replies on stdout remain newline-delimited JSON-RPC only.
-  Its card retains Start, Stop, and the copyable command for rollback and
-  migration testing.
+  process launched by an MCP client. It remains functional while removal work
+  is in flight and writes one migration warning to stderr at each process
+  start. MCP replies on stdout remain newline-delimited JSON-RPC only. Its card
+  retains Start, Stop, and the copyable command for migration testing.
 
 ## Migrate a client to HTTP
 
@@ -112,16 +111,14 @@ database has no matching evidence; it is not telemetry and is not proof that
 another installation or private client configuration is unused. Paths,
 arguments, payloads, file bytes, and credentials are not displayed.
 
-## Deprecation release
+## Pre-alpha removal
 
-This source change is the Standard Input deprecation release candidate. NOW's
-release procedure assigns a public name only when a `release/vX.Y.Z` branch
-and immutable numbered candidate tag are cut; no such version has been chosen
-for this change yet. The first numbered release containing this change is
-expected to be the last release in which Standard Input executes. Release
-qualification must extend that window instead of advancing to the diagnostic
-tombstone if HTTP readiness, consumer migration, local-use evidence, emulator
-QA, or applicable physical-machine QA is incomplete.
+Standard Input is deprecated while the replacement work remains in the tree.
+NOW is pre-alpha, so this does not promise a separately shipped compatibility
+release. Once HTTP readiness, consumer disposition, emulator QA, and
+applicable physical-machine QA are complete, the live transport may be removed
+in the same development line. The first numbered candidate that omits it will
+call out the breaking removal and the Streamable HTTP migration path.
 
 ## On the classic Mac
 
