@@ -13,6 +13,8 @@ final class NOWAPIFileTransferService {
     nonisolated static let maximumChunkBytes =
         AgentIntegrationGuestFilePolicy.maximumUploadChunkBytes
     nonisolated static let maximumTransfers = 256
+    nonisolated static let downloadRetention: TimeInterval = 5 * 60
+    nonisolated static let downloadCleanupGrace: TimeInterval = 30
 
     struct Transfer: Codable, Equatable, Sendable {
         enum Direction: String, Codable, Sendable { case upload, download }
@@ -52,15 +54,20 @@ final class NOWAPIFileTransferService {
 
     private let driver: any NOWAPIFileDriving
     private let clock: @Sendable () -> Date
+    private let transferLimit: Int
     private var transfers: [UUID: Transfer] = [:]
+    private var reservations: Set<UUID> = []
+    private var pendingDownloadCleanup: [URL: Date] = [:]
     /// The public operation holding the real guest bulk lane. Upload stages
     /// do not claim it; commit does. One ID across both directions mirrors
     /// the listener's actual one-lane contract.
     private var wireTransferID: UUID?
 
     init(driver: any NOWAPIFileDriving,
+         transferLimit: Int = NOWAPIFileTransferService.maximumTransfers,
          clock: @escaping @Sendable () -> Date = Date.init) {
         self.driver = driver
+        self.transferLimit = max(1, transferLimit)
         self.clock = clock
     }
 
@@ -97,8 +104,9 @@ final class NOWAPIFileTransferService {
                 message: "API v1 accepts one file up to 32 MiB.",
                 reach: "request")
         }
-        try reserveTransferSlot()
+        let reservation = try reserveTransferSlot()
         let result = await driver.apiBeginUpload(request)
+        reservations.remove(reservation)
         guard case .completed(let receipt, let stage?, nil) = result,
               receipt.outcome == .success else {
             throw problem(result, fallback: "upload_not_admitted")
@@ -130,10 +138,16 @@ final class NOWAPIFileTransferService {
         }
         let result = await driver.apiAppendUpload(
             uploadID: transferID, offset: offset, bytes: bytes)
+        guard let current = transfers[transferID] else {
+            throw Problem(status: 404, code: "transfer_not_found",
+                          message: "No transfer has that ID.", reach: "transfer")
+        }
+        guard current.state == .staging else { return current }
         guard case .completed(let receipt, let stage?, nil) = result,
               receipt.outcome == .success else {
             throw problem(result, fallback: "upload_chunk_refused")
         }
+        transfer = current
         transfer.transferredBytes = stage.receivedBytes
         transfer.expiresAt = stage.expiresAt
         transfer.updatedAt = clock()
@@ -178,10 +192,15 @@ final class NOWAPIFileTransferService {
                   path: String) async throws(Problem) -> Transfer {
         let guest = try addressedGuest(
             guestID, expectedSessionID: expectedSessionID)
-        try reserveTransferSlot()
-        let id = UUID()
-        try claimLane(id)
+        let id = try reserveTransferSlot()
+        do {
+            try claimLane(id)
+        } catch {
+            reservations.remove(id)
+            throw error
+        }
         let now = clock()
+        reservations.remove(id)
         transfers[id] = Transfer(
             id: id, guestID: guest.id, guestSessionID: guest.sessionID,
             direction: .download, guestPath: path, state: .running,
@@ -190,8 +209,17 @@ final class NOWAPIFileTransferService {
             createdAt: now, updatedAt: now, contentURL: nil)
         let result = await driver.apiDownloadFile(path: path)
         releaseLane(id)
-        guard transfers[id]?.state != .cancelled else { return transfers[id]! }
-        var transfer = transfers[id]!
+        guard let current = transfers[id] else {
+            releaseUnretainedDownload(result)
+            throw Problem(status: 404, code: "transfer_not_found",
+                          message: "The transfer was no longer retained.",
+                          reach: "transfer")
+        }
+        guard current.state != .cancelled else {
+            releaseUnretainedDownload(result)
+            return current
+        }
+        var transfer = current
         transfer.updatedAt = clock()
         switch result {
         case .completed(let receipt, let value?, nil)
@@ -199,9 +227,6 @@ final class NOWAPIFileTransferService {
             transfer.state = .completed
             transfer.expectedBytes = value.bytes
             transfer.transferredBytes = value.bytes
-            transfer.contentAvailable = true
-            transfer.contentType = value.container == "macbinary"
-                ? "application/macbinary" : "application/octet-stream"
             guard let hostPath = value.hostPath else {
                 transfer.state = .failed
                 transfer.failure = .init(
@@ -210,6 +235,11 @@ final class NOWAPIFileTransferService {
                 transfers[id] = transfer
                 return transfer
             }
+            transfer.contentAvailable = true
+            transfer.contentType = value.container == "macbinary"
+                ? "application/macbinary" : "application/octet-stream"
+            transfer.expiresAt = transfer.updatedAt.addingTimeInterval(
+                Self.downloadRetention)
             transfer.contentURL = URL(fileURLWithPath: hostPath)
         case .completed(_, _, let failure):
             transfer.state = .failed
@@ -239,7 +269,7 @@ final class NOWAPIFileTransferService {
 
     func content(id: UUID) async throws(Problem) -> (URL, Int, String) {
         await expireStages()
-        guard let transfer = transfers[id] else {
+        guard var transfer = transfers[id] else {
             throw Problem(status: 404, code: "transfer_not_found",
                           message: "No transfer has that ID.", reach: "transfer")
         }
@@ -254,6 +284,11 @@ final class NOWAPIFileTransferService {
                           message: "That transfer has no completed content.",
                           reach: "transfer")
         }
+        /* A response opens the file after this actor returns. Renewing the
+           short lease keeps expiry from unlinking the name in that gap; once
+           open, POSIX permits the bounded response to finish after cleanup. */
+        transfer.expiresAt = clock().addingTimeInterval(Self.downloadRetention)
+        transfers[id] = transfer
         return (url, byteCount,
                 transfer.contentType ?? "application/octet-stream")
     }
@@ -273,7 +308,12 @@ final class NOWAPIFileTransferService {
             }
         case .running:
             _ = driver.apiCancelTransfer()
-        case .completed, .failed, .cancelled, .expired:
+        case .completed:
+            enqueueDownloadCleanup(transfer)
+            transfer.contentAvailable = false
+            transfer.contentURL = nil
+            transfer.expiresAt = nil
+        case .failed, .cancelled, .expired:
             return transfer
         }
         /* Mark first. The in-flight call may settle successfully after the
@@ -352,23 +392,29 @@ final class NOWAPIFileTransferService {
         if wireTransferID == id { wireTransferID = nil }
     }
 
-    private func reserveTransferSlot() throws(Problem) {
-        if transfers.count >= Self.maximumTransfers {
+    private func reserveTransferSlot() throws(Problem) -> UUID {
+        drainDownloadCleanup()
+        let occupied = transfers.count + reservations.count
+        if occupied >= transferLimit {
             let settled = transfers.values.filter {
                 $0.state == .completed || $0.state == .failed
                     || $0.state == .cancelled || $0.state == .expired
             }.sorted { $0.updatedAt < $1.updatedAt }
             for transfer in settled.prefix(
-                transfers.count - Self.maximumTransfers + 1) {
+                occupied - transferLimit + 1) {
+                enqueueDownloadCleanup(transfer)
                 transfers.removeValue(forKey: transfer.id)
             }
         }
-        guard transfers.count < Self.maximumTransfers else {
+        guard transfers.count + reservations.count < transferLimit else {
             throw Problem(
                 status: 429, code: "transfer_registry_full",
                 message: "Too many nonterminal transfers are retained.",
                 reach: "host")
         }
+        let reservation = UUID()
+        reservations.insert(reservation)
+        return reservation
     }
 
     private func refreshWireProgress() {
@@ -386,18 +432,58 @@ final class NOWAPIFileTransferService {
 
     private func expireStages() async {
         let now = clock()
+        drainDownloadCleanup(now: now)
         let expired = transfers.values.filter {
             $0.state == .staging && ($0.expiresAt ?? .distantFuture) < now
         }.map(\.id)
         for id in expired {
-            guard await driver.apiAbandonUpload(uploadID: id) else {
-                continue
-            }
-            var transfer = transfers[id]!
+            _ = await driver.apiAbandonUpload(uploadID: id)
+            guard var transfer = transfers[id], transfer.state == .staging,
+                  (transfer.expiresAt ?? .distantFuture) < now else { continue }
             transfer.state = .expired
             transfer.updatedAt = now
             transfers[id] = transfer
         }
+        for id in transfers.values.filter({
+            $0.direction == .download && $0.state == .completed
+                && ($0.expiresAt ?? .distantFuture) < now
+        }).map(\.id) {
+            guard var transfer = transfers[id], transfer.state == .completed
+            else { continue }
+            enqueueDownloadCleanup(transfer, now: now)
+            transfer.state = .expired
+            transfer.contentAvailable = false
+            transfer.updatedAt = now
+            transfer.expiresAt = nil
+            transfer.contentURL = nil
+            transfers[id] = transfer
+        }
+    }
+
+    private func enqueueDownloadCleanup(_ transfer: Transfer, now: Date? = nil) {
+        guard transfer.direction == .download, let url = transfer.contentURL
+        else { return }
+        let deadline = (now ?? clock()).addingTimeInterval(
+            Self.downloadCleanupGrace)
+        pendingDownloadCleanup[url] = max(
+            pendingDownloadCleanup[url] ?? .distantPast, deadline)
+    }
+
+    private func drainDownloadCleanup(now: Date? = nil) {
+        let instant = now ?? clock()
+        for (url, deadline) in pendingDownloadCleanup where deadline <= instant {
+            _ = driver.apiReleaseDownload(at: url)
+            pendingDownloadCleanup.removeValue(forKey: url)
+        }
+    }
+
+    private func releaseUnretainedDownload(
+        _ result: AgentIntegrationGuestFileDownloadResult
+    ) {
+        guard case .completed(let receipt, let value?, nil) = result,
+              receipt.outcome == .success,
+              let hostPath = value.hostPath else { return }
+        _ = driver.apiReleaseDownload(at: URL(fileURLWithPath: hostPath))
     }
 
     private func problem<Value>(
@@ -432,6 +518,7 @@ protocol NOWAPIFileDriving: AnyObject {
     func apiCommitUpload(uploadID: UUID) async
         -> AgentIntegrationGuestFileUploadCommitResult
     func apiAbandonUpload(uploadID: UUID) async -> Bool
+    func apiReleaseDownload(at url: URL) -> Bool
     func apiCancelTransfer() -> AgentIntegrationTransferCancelResult
     func apiTransferProgress() -> (received: Int, expected: Int)?
 }
@@ -482,6 +569,9 @@ final class NOWAPIHostFileDriver: NOWAPIFileDriving {
     }
     func apiAbandonUpload(uploadID: UUID) async -> Bool {
         await files.abandonUpload(uploadID: uploadID)
+    }
+    func apiReleaseDownload(at url: URL) -> Bool {
+        files.releaseAgentDownload(at: url)
     }
     func apiCancelTransfer() -> AgentIntegrationTransferCancelResult {
         adapter.cancelTransfer()

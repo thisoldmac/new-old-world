@@ -111,31 +111,21 @@ enum MCPHTTPTokenStoreError: Error, LocalizedError, Equatable {
     }
 }
 
-/// A same-user bearer secret beside NOW's other private application data.
-/// It is generated only when a person first starts HTTP, written atomically,
-/// and mode 0600. The MCP page can copy it but never renders it as ordinary
-/// text or writes it to the log.
-struct MCPHTTPTokenStore {
+/// One same-user HTTP secret beside NOW's other private application data.
+/// Route-family wrappers below choose distinct files so possession of an API
+/// key never grants the agent-only MCP surface (or vice versa).
+private struct LocalHTTPSecretStore {
     let url: URL
     let legacyURL: URL?
 
-    init(url: URL? = nil, legacyURL: URL? = nil,
-         fileManager: FileManager = .default) throws {
-        if let url {
-            self.url = url
-            self.legacyURL = legacyURL
-            return
-        }
+    static func applicationSupportDirectory(
+        fileManager: FileManager
+    ) throws -> URL {
         guard let support = fileManager.urls(
             for: .applicationSupportDirectory, in: .userDomainMask).first
         else { throw MCPHTTPTokenStoreError.noApplicationSupport }
-        let directory = support
-            .appendingPathComponent(ProductIdentity.displayName,
-                                    isDirectory: true)
-        self.url = directory.appendingPathComponent(
-            "now-api-key", isDirectory: false)
-        self.legacyURL = directory.appendingPathComponent(
-            "mcp-http-token", isDirectory: false)
+        return support.appendingPathComponent(
+            ProductIdentity.displayName, isDirectory: true)
     }
 
     func loadOrCreate(fileManager: FileManager = .default) throws -> String {
@@ -185,5 +175,63 @@ struct MCPHTTPTokenStore {
             throw MCPHTTPTokenStoreError.invalidStoredToken
         }
         return token
+    }
+}
+
+/// The existing bearer secret remains byte-for-byte stable for MCP clients.
+/// Its neutral filename is retained because S6 already migrated live clients
+/// there; changing it again would silently rotate their credential.
+struct MCPHTTPTokenStore {
+    private let store: LocalHTTPSecretStore
+
+    init(url: URL? = nil, legacyURL: URL? = nil,
+         fileManager: FileManager = .default) throws {
+        if let url {
+            store = LocalHTTPSecretStore(url: url, legacyURL: legacyURL)
+        } else {
+            let directory = try LocalHTTPSecretStore
+                .applicationSupportDirectory(fileManager: fileManager)
+            store = LocalHTTPSecretStore(
+                url: directory.appendingPathComponent("now-api-key"),
+                legacyURL: directory.appendingPathComponent("mcp-http-token"))
+        }
+    }
+
+    func loadOrCreate(fileManager: FileManager = .default) throws -> String {
+        try store.loadOrCreate(fileManager: fileManager)
+    }
+}
+
+/// The developer API has a separate credential and therefore cannot be used
+/// as an MCP bearer token even when both routes share one listener.
+struct NOWAPIKeyStore {
+    private let store: LocalHTTPSecretStore
+
+    init(url: URL? = nil, fileManager: FileManager = .default) throws {
+        if let url {
+            store = LocalHTTPSecretStore(url: url, legacyURL: nil)
+        } else {
+            let directory = try LocalHTTPSecretStore
+                .applicationSupportDirectory(fileManager: fileManager)
+            store = LocalHTTPSecretStore(
+                url: directory.appendingPathComponent("now-application-api-key"),
+                legacyURL: nil)
+        }
+    }
+
+    func loadOrCreate(fileManager: FileManager = .default) throws -> String {
+        try store.loadOrCreate(fileManager: fileManager)
+    }
+}
+
+struct NOWHTTPRouteCredentials: Equatable {
+    let mcpBearerToken: String
+    let apiKey: String
+
+    static func load(mcp: MCPHTTPTokenStore,
+                     api: NOWAPIKeyStore,
+                     fileManager: FileManager = .default) throws -> Self {
+        .init(mcpBearerToken: try mcp.loadOrCreate(fileManager: fileManager),
+              apiKey: try api.loadOrCreate(fileManager: fileManager))
     }
 }

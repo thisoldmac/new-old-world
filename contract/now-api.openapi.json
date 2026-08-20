@@ -43,12 +43,14 @@
       "post": {
         "operationId": "operations.invoke",
         "summary": "Invoke one projection-backed public operation",
-        "description": "The operation is admitted only when its neutral catalog adjudication is public. Agent-only conveniences and MCP compositions are never reachable here.",
+        "description": "The operation is admitted only when its neutral catalog adjudication is public and generic. Read operations accept an omitted guest, a stable guest ID, or an exact session ID. Mutating operations require an exact session ID in the guest field. First-class file, guest-list, and transfer-cancel resources are not reachable here, so their private projection inputs cannot leak through this route. Agent-only conveniences and MCP compositions are never reachable here.",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericOperationInvocation" } } } },
         "responses": {
           "200": { "description": "A typed neutral operation outcome", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericOperationResult" } } } },
           "400": { "$ref": "#/components/responses/BadRequest" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" }
         }
       }
     },
@@ -104,7 +106,9 @@
           "200": { "$ref": "#/components/responses/ConsoleCommandResult" },
           "400": { "$ref": "#/components/responses/ConsoleCommandResult" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
-          "404": { "$ref": "#/components/responses/NotFound" }
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" }
         }
       }
     },
@@ -116,7 +120,12 @@
           { "name": "path", "in": "query", "schema": { "$ref": "#/components/schemas/GuestFilePath" } },
           { "name": "cursor", "in": "query", "schema": { "type": "integer", "minimum": 0 } }
         ],
-        "responses": { "200": { "description": "A bounded guest file listing" } }
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestFileListResult" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
       }
     },
     "/guests/{guestID}/files/stat": {
@@ -124,7 +133,12 @@
       "get": {
         "operationId": "files.stat",
         "parameters": [{ "name": "path", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/GuestFilePath" } }],
-        "responses": { "200": { "description": "An exact guest file observation" } }
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestFileStatResult" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
       }
     },
     "/guests/{guestID}/files/mutations": {
@@ -133,7 +147,14 @@
         "operationId": "files.mutate",
         "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestFileMutation" } } } },
-        "responses": { "200": { "description": "A typed guest file mutation receipt" } }
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestFileMutationResult" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
       }
     },
     "/guests/{guestID}/transfers/uploads": {
@@ -143,7 +164,14 @@
         "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
         "description": "Admits one private upload stage. Send sequential raw chunks with PUT /transfers/{transferID}/content; HTTP Transfer-Encoding chunked is not supported.",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UploadAdmission" } } } },
-        "responses": { "201": { "description": "A staging transfer resource" }, "413": { "description": "The declared file exceeds 32 MiB" } }
+        "responses": {
+          "201": { "$ref": "#/components/responses/Transfer" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/BadRequest" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
       }
     },
     "/guests/{guestID}/transfers/downloads": {
@@ -152,16 +180,22 @@
         "operationId": "files.get",
         "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "path": { "$ref": "#/components/schemas/GuestFilePath" } }, "required": ["path"], "additionalProperties": false } } } },
-        "responses": { "200": { "description": "A settled download transfer resource" } }
+        "responses": {
+          "200": { "$ref": "#/components/responses/Transfer" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
       }
     },
     "/transfers": {
-      "get": { "operationId": "transfers.list", "responses": { "200": { "description": "Transfers known to this host launch" } } }
+      "get": { "operationId": "transfers.list", "responses": { "200": { "$ref": "#/components/responses/TransferList" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
     },
     "/transfers/{transferID}": {
       "parameters": [{ "$ref": "#/components/parameters/TransferID" }],
-      "get": { "operationId": "transfers.get", "responses": { "200": { "description": "One transfer resource" } } },
-      "delete": { "operationId": "transfers.cancel", "responses": { "200": { "description": "Cancellation requested or an already settled transfer" } } }
+      "get": { "operationId": "transfers.get", "responses": { "200": { "$ref": "#/components/responses/Transfer" }, "404": { "$ref": "#/components/responses/NotFound" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } },
+      "delete": { "operationId": "transfers.cancel", "responses": { "200": { "$ref": "#/components/responses/Transfer" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
     },
     "/transfers/{transferID}/content": {
       "parameters": [{ "$ref": "#/components/parameters/TransferID" }],
@@ -170,13 +204,13 @@
         "description": "Appends one sequential raw chunk to a private upload stage. This is application-level chunking across bounded requests, not HTTP Transfer-Encoding chunked.",
         "parameters": [{ "name": "offset", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } }],
         "requestBody": { "required": true, "content": { "application/octet-stream": { "schema": { "type": "string", "contentEncoding": "binary", "maxLength": 8192 } } } },
-        "responses": { "200": { "description": "Updated staging transfer" } }
+        "responses": { "200": { "$ref": "#/components/responses/Transfer" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "413": { "$ref": "#/components/responses/BadRequest" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } }
       },
-      "get": { "operationId": "transfers.content", "responses": { "200": { "description": "Completed download bytes" }, "409": { "description": "Content is not complete" } } }
+      "get": { "operationId": "transfers.content", "responses": { "200": { "$ref": "#/components/responses/BinaryContent" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
     },
     "/transfers/{transferID}/commit": {
       "parameters": [{ "$ref": "#/components/parameters/TransferID" }],
-      "post": { "operationId": "transfers.commit", "responses": { "200": { "description": "Settled upload transfer" } } }
+      "post": { "operationId": "transfers.commit", "responses": { "200": { "$ref": "#/components/responses/Transfer" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
     },
     "/listener": {
       "get": {
@@ -274,6 +308,36 @@
         "description": "Typed operation result",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationResult" } } }
       },
+      "GuestFileListResult": {
+        "description": "A bounded guest file listing or typed guest-files failure",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestFileListResult" } } }
+      },
+      "GuestFileStatResult": {
+        "description": "An exact guest file observation or typed guest-files failure",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestFileStatResult" } } }
+      },
+      "GuestFileMutationResult": {
+        "description": "A typed guest file mutation receipt and outcome",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestFileMutationResult" } } }
+      },
+      "Transfer": {
+        "description": "One private transfer resource, including a typed failure when it settled unsuccessfully",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransferSummary" } } }
+      },
+      "TransferList": {
+        "description": "Transfers known to this host launch",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransferList" } } }
+      },
+      "BinaryContent": {
+        "description": "Completed download bytes",
+        "headers": {
+          "Content-Length": { "schema": { "type": "integer", "minimum": 0, "maximum": 33554432 } }
+        },
+        "content": {
+          "application/octet-stream": { "schema": { "type": "string", "contentEncoding": "binary", "maxLength": 33554432 } },
+          "application/macbinary": { "schema": { "type": "string", "contentEncoding": "binary", "maxLength": 33554432 } }
+        }
+      },
       "Unauthorized": {
         "description": "Missing or invalid X-API-Key",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
@@ -284,6 +348,18 @@
       },
       "NotFound": {
         "description": "The addressed API resource does not exist",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "Conflict": {
+        "description": "The addressed session or resource changed, or the requested state conflicts with its current state",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "PreconditionRequired": {
+        "description": "An unsafe guest operation requires an exact current guest session selector",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "ServiceUnavailable": {
+        "description": "The host service required by this operation is unavailable",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
       }
     },
@@ -562,6 +638,121 @@
         ],
         "additionalProperties": false
       },
+      "GuestFileFailure": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "minLength": 1, "maxLength": 96 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "transferEvidence": { "type": "object", "additionalProperties": true }
+        },
+        "required": ["code", "message"],
+        "additionalProperties": false
+      },
+      "GuestFileUnavailable": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "minLength": 1, "maxLength": 96 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "required": ["code", "message"],
+        "additionalProperties": false
+      },
+      "GuestFileReceipt": {
+        "type": "object",
+        "properties": {
+          "commandID": { "type": "string", "format": "uuid" },
+          "sessionID": { "type": "string", "format": "uuid" },
+          "policyVersion": { "type": "integer", "minimum": 1 },
+          "operation": { "type": "string", "enum": ["capabilities", "list", "stat", "download", "readText", "tailText", "put", "mkdir", "move", "delete", "trash", "restore", "deployTree", "prune"] },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "completedAt": { "type": "string", "format": "date-time" },
+          "outcome": { "type": "string", "enum": ["success", "unavailable", "staleSession", "notFound", "scanLimit", "refused", "expired", "conflict", "failed"] },
+          "wireRequestCount": { "type": "integer", "minimum": 0 },
+          "affectedPaths": { "type": "array", "items": { "$ref": "#/components/schemas/GuestFilePath" } }
+        },
+        "required": ["commandID", "policyVersion", "operation", "startedAt", "completedAt", "outcome", "wireRequestCount", "affectedPaths"],
+        "additionalProperties": false
+      },
+      "GuestFileEntry": {
+        "type": "object",
+        "properties": {
+          "path": { "$ref": "#/components/schemas/GuestFilePath" },
+          "name": { "type": "string", "maxLength": 31 },
+          "isFolder": { "type": "boolean" },
+          "fileType": { "type": "string", "minLength": 4, "maxLength": 4 },
+          "creator": { "type": "string", "minLength": 4, "maxLength": 4 },
+          "dataBytes": { "type": "integer", "minimum": 0 },
+          "resourceBytes": { "type": "integer", "minimum": 0 },
+          "modified": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "observationReference": { "type": "string", "maxLength": 45 }
+        },
+        "required": ["path", "name", "isFolder"],
+        "additionalProperties": false
+      },
+      "GuestFileListing": {
+        "type": "object",
+        "properties": {
+          "path": { "$ref": "#/components/schemas/GuestFilePath" },
+          "entries": { "type": "array", "items": { "$ref": "#/components/schemas/GuestFileEntry" } },
+          "hasMore": { "type": "boolean" },
+          "nextCursor": { "type": "integer", "minimum": 0 },
+          "rootLabel": { "type": "string", "maxLength": 31 },
+          "observedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["path", "entries", "hasMore", "observedAt"],
+        "additionalProperties": false
+      },
+      "GuestFileMutationOutcome": {
+        "type": "object",
+        "properties": {
+          "mutation": { "type": "string", "enum": ["move", "trash", "restore", "mkdir"] },
+          "path": { "$ref": "#/components/schemas/GuestFilePath" },
+          "trashedAs": { "type": "string", "maxLength": 31 },
+          "observedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["mutation", "observedAt"],
+        "additionalProperties": false
+      },
+      "GuestFileListResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/GuestFileResult" },
+          { "properties": { "value": { "$ref": "#/components/schemas/GuestFileListing" } } }
+        ]
+      },
+      "GuestFileStatResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/GuestFileResult" },
+          { "properties": { "value": { "$ref": "#/components/schemas/GuestFileEntry" } } }
+        ]
+      },
+      "GuestFileMutationResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/GuestFileResult" },
+          { "properties": { "value": { "$ref": "#/components/schemas/GuestFileMutationOutcome" } } }
+        ]
+      },
+      "GuestFileResult": {
+        "type": "object",
+        "description": "The concrete route fixes value to its route-specific schema. hostAvailable false carries unavailable; true carries receipt and exactly one of value or failure.",
+        "properties": {
+          "hostAvailable": { "type": "boolean" },
+          "receipt": { "$ref": "#/components/schemas/GuestFileReceipt" },
+          "value": { "oneOf": [
+            { "$ref": "#/components/schemas/GuestFileListing" },
+            { "$ref": "#/components/schemas/GuestFileEntry" },
+            { "$ref": "#/components/schemas/GuestFileMutationOutcome" }
+          ] },
+          "failure": { "$ref": "#/components/schemas/GuestFileFailure" },
+          "unavailable": { "$ref": "#/components/schemas/GuestFileUnavailable" }
+        },
+        "required": ["hostAvailable"],
+        "oneOf": [
+          { "properties": { "hostAvailable": { "const": false } }, "required": ["unavailable"], "not": { "anyOf": [{ "required": ["receipt"] }, { "required": ["value"] }, { "required": ["failure"] }] } },
+          { "properties": { "hostAvailable": { "const": true } }, "required": ["receipt", "value"], "not": { "anyOf": [{ "required": ["unavailable"] }, { "required": ["failure"] }] } },
+          { "properties": { "hostAvailable": { "const": true } }, "required": ["receipt", "failure"], "not": { "anyOf": [{ "required": ["unavailable"] }, { "required": ["value"] }] } }
+        ],
+        "additionalProperties": false
+      },
       "TransferSummary": {
         "type": "object",
         "properties": {
@@ -574,12 +765,21 @@
           "transferredBytes": { "type": "integer", "minimum": 0 },
           "expectedBytes": { "type": "integer", "minimum": 0, "maximum": 33554432 },
           "expiresAt": { "type": "string", "format": "date-time" },
+          "failure": { "$ref": "#/components/schemas/GuestFileFailure" },
           "contentAvailable": { "type": "boolean" },
           "contentType": { "type": "string" },
           "createdAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time" }
         },
         "required": ["id", "guestID", "guestSessionID", "direction", "guestPath", "state", "transferredBytes", "contentAvailable", "createdAt", "updatedAt"],
+        "additionalProperties": false
+      },
+      "TransferList": {
+        "type": "object",
+        "properties": {
+          "transfers": { "type": "array", "items": { "$ref": "#/components/schemas/TransferSummary" } }
+        },
+        "required": ["transfers"],
         "additionalProperties": false
       },
       "GenericOperationInvocation": {
@@ -641,7 +841,7 @@
   },
   "x-now-compatibility": {
     "apiMajor": 1,
-    "schemaRevision": 6,
+    "schemaRevision": 7,
     "policy": "Additive optional fields and operations may ship within v1; required-field meaning and disposition semantics remain stable."
   },
   "x-now-operation-catalog": [
@@ -660,15 +860,10 @@
     {"operationId":"diagnostics.framebuffer","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"diagnostics.transfer","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"files.capabilities","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
-    {"operationId":"files.get","effect":"bulkTransfer","addressing":"stableOrSessionGuest","rendering":"generic"},
-    {"operationId":"files.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
-    {"operationId":"files.mutate","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"files.reveal","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
-    {"operationId":"files.stat","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"guests.capabilities","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"guests.census","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"guests.facts","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
-    {"operationId":"guests.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"interface.control.act","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"interface.menu.act","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"interface.observe","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
@@ -693,7 +888,6 @@
     {"operationId":"screen.capture","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"screen.stream","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
     {"operationId":"software.launch","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
-    {"operationId":"software.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
-    {"operationId":"transfers.cancel","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"}
+    {"operationId":"software.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"}
   ]
 }

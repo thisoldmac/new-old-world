@@ -234,10 +234,11 @@ Stdio remains an MCP transport only.
 V1 remains loopback-only. Remote/LAN serving, TLS termination, a background
 daemon, and automatic app launching are later security/deployment decisions.
 The dedicated developer-facing key bootstrap promised by the earlier design is
-not implemented. The shared secret is currently copyable only through the MCP
-bearer-mode card, while the official CLI may read its private mode-0600
-application credential. D-040 keeps a proper application-facing copy/bootstrap
-control open; third-party clients must not parse the private file.
+not implemented. The API and MCP routes use distinct private credentials; the
+MCP bearer-mode card cannot reveal the API key, while the official CLI may read
+the mode-0600 application credential. D-040 keeps a proper application-facing
+copy/bootstrap control open; third-party clients must not parse the private
+file.
 
 ### Resource and action families
 

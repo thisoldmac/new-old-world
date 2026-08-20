@@ -78,6 +78,10 @@ final class GuestFilesCommandService {
             clock: clock)
     }
 
+    func releaseDownloadLanding(at url: URL) -> Bool {
+        downloads?.releaseLanding(at: url) ?? false
+    }
+
     func capabilities() async -> GuestFileCommandResponse<
         GuestFileCapabilities
     > {

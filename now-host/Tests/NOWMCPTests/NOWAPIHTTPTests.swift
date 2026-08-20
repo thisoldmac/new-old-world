@@ -115,15 +115,26 @@ final class NOWAPIHTTPTests: XCTestCase {
             "POST", "/api/v1/operations/now_projects",
             body: Data(#"{"arguments":{}}"#.utf8)))
         XCTAssertEqual(agentOnly.status, 404)
+
+        for firstClass in [
+            "files.get", "files.list", "files.mutate", "files.stat",
+            "guests.list", "transfers.cancel",
+        ] {
+            let hidden = await service.respond(to: apiRequest(
+                "POST", "/api/v1/operations/\(firstClass)",
+                body: Data(#"{"arguments":{}}"#.utf8)))
+            XCTAssertEqual(hidden.status, 404, firstClass)
+        }
         XCTAssertEqual(fixture.operationInvocations.count, 1)
     }
 
     func testGenericMutationRequiresExactSessionBeforeDispatch() async throws {
         let fixture = FixtureHost()
+        let audit = NOWAPIAuditSpy()
         fixture.operationOutcome = .init(
             disposition: .completed, valueJSON: Data(#"{"ok":true}"#.utf8),
             attachmentJSON: nil, errorCode: nil, errorMessage: nil)
-        let service = makeHTTPService(host: fixture)
+        let service = makeHTTPService(host: fixture, audit: audit)
 
         for body in [
             Data(#"{"arguments":{}}"#.utf8),
@@ -141,11 +152,24 @@ final class NOWAPIHTTPTests: XCTestCase {
             body: Data(#"{"guest":"pb1400c-11111111-1111-1111-1111-111111111111","arguments":{}}"#.utf8)))
         XCTAssertEqual(exact.status, 200)
         XCTAssertEqual(fixture.operationInvocations.count, 1)
+
+        let stale = await service.respond(to: apiRequest(
+            "POST", "/api/v1/operations/processes.quit",
+            body: Data(#"{"guest":"pb1400c-22222222-2222-2222-2222-222222222222","arguments":{}}"#.utf8)))
+        XCTAssertEqual(stale.status, 409)
+        XCTAssertEqual(fixture.operationInvocations.count, 1)
+
+        let events = await audit.recorded()
+        XCTAssertEqual(events.map(\.target), [nil, "pb1400c", "pb1400c", "pb1400c"])
+        XCTAssertEqual(events.map(\.disposition), [
+            .refused, .refused, .completed, .refused,
+        ])
     }
 
     func testUnsafeGuestRouteRejectsReplacedSessionBeforeDispatch() async throws {
         let fixture = FixtureHost()
-        let service = makeHTTPService(host: fixture)
+        let audit = NOWAPIAuditSpy()
+        let service = makeHTTPService(host: fixture, audit: audit)
         let stale = await service.respond(to: request(
             "POST", "/api/v1/guests/pb1400c/commands",
             headers: [
@@ -162,6 +186,46 @@ final class NOWAPIHTTPTests: XCTestCase {
             body: Data(#"{"command":"help"}"#.utf8)))
         XCTAssertEqual(missing.status, 428)
         XCTAssertTrue(fixture.commands.isEmpty)
+
+        let events = await audit.recorded()
+        XCTAssertEqual(events.map(\.operationID), [
+            "commands.execute", "commands.execute",
+        ])
+        XCTAssertEqual(events.map(\.target), ["pb1400c", "pb1400c"])
+        XCTAssertEqual(events.map(\.disposition), [.refused, .refused])
+    }
+
+    func testGenericRefusalDenialAndFailureAuditTruthfully() async throws {
+        let fixture = FixtureHost()
+        let audit = NOWAPIAuditSpy()
+        let service = makeHTTPService(host: fixture, audit: audit)
+        let exact = "pb1400c-11111111-1111-1111-1111-111111111111"
+
+        fixture.operationOutcome = .init(
+            disposition: .refused, valueJSON: nil, attachmentJSON: nil,
+            errorCode: "invalid_arguments", errorMessage: "invalid")
+        _ = await service.respond(to: apiRequest(
+            "POST", "/api/v1/operations/processes.list",
+            body: Data(#"{"guest":"pb1400c","arguments":{}}"#.utf8)))
+
+        fixture.operationOutcome = .init(
+            disposition: .refused, valueJSON: nil, attachmentJSON: nil,
+            errorCode: "guest_consent_refused", errorMessage: "denied")
+        _ = await service.respond(to: apiRequest(
+            "POST", "/api/v1/operations/processes.quit",
+            body: Data("{\"guest\":\"\(exact)\",\"arguments\":{}}".utf8)))
+
+        fixture.operationOutcome = .init(
+            disposition: .failed, valueJSON: nil, attachmentJSON: nil,
+            errorCode: "operation_failed", errorMessage: "failed")
+        _ = await service.respond(to: apiRequest(
+            "POST", "/api/v1/operations/processes.list",
+            body: Data(#"{"guest":"pb1400c","arguments":{}}"#.utf8)))
+
+        let dispositions = await audit.recorded().map(\.disposition)
+        XCTAssertEqual(dispositions, [
+            .refused, .denied, .failed,
+        ])
     }
 
     func testRouterSnapshotCannotMaskDriverOwnedReplacementSession() async throws {
@@ -318,6 +382,43 @@ final class NOWAPIHTTPTests: XCTestCase {
         XCTAssertFalse(String(describing: events).contains(secret))
     }
 
+    func testFailedTransferResponseMatchesPublishedSchemaIncludingFailure() async throws {
+        let driver = HTTPFileDriver()
+        let router = makeFileRouter(files: NOWAPIFileTransferService(
+            driver: driver))
+        let admitted = await router.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/transfers/uploads",
+            body: uploadBody(path: "Drop Box:fixture.bin", bytes: 0)))
+        let transferID = try XCTUnwrap(
+            try object(admitted.body)["id"] as? String)
+        let settled = await router.respond(to: apiRequest(
+            "POST", "/api/v1/transfers/\(transferID)/commit"))
+        let fixture = try object(settled.body)
+        XCTAssertEqual(fixture["state"] as? String, "failed")
+        XCTAssertNotNil(fixture["failure"])
+
+        let document = try Self.contractDocument()
+        let components = try XCTUnwrap(document["components"] as? [String: Any])
+        let schemas = try XCTUnwrap(components["schemas"] as? [String: Any])
+        let transfer = try XCTUnwrap(schemas["TransferSummary"] as? [String: Any])
+        let properties = try XCTUnwrap(transfer["properties"] as? [String: Any])
+        XCTAssertTrue(Set(fixture.keys).isSubset(of: Set(properties.keys)))
+        let failure = try XCTUnwrap(fixture["failure"] as? [String: Any])
+        let failureSchema = try XCTUnwrap(
+            schemas["GuestFileFailure"] as? [String: Any])
+        let failureProperties = try XCTUnwrap(
+            failureSchema["properties"] as? [String: Any])
+        XCTAssertTrue(Set(failure.keys).isSubset(of: Set(failureProperties.keys)))
+
+        let paths = try XCTUnwrap(document["paths"] as? [String: Any])
+        let contentRoute = try XCTUnwrap(
+            paths["/transfers/{transferID}/content"] as? [String: Any])
+        let get = try XCTUnwrap(contentRoute["get"] as? [String: Any])
+        let responses = try XCTUnwrap(get["responses"] as? [String: Any])
+        XCTAssertEqual((responses["200"] as? [String: String])?["$ref"],
+                       "#/components/responses/BinaryContent")
+    }
+
     func testConsoleCommandRouteReturnsTheGuestResult() async throws {
         let fixture = FixtureHost()
         let service = makeHTTPService(host: fixture)
@@ -348,6 +449,29 @@ final class NOWAPIHTTPTests: XCTestCase {
         XCTAssertEqual(arguments["wait"], .flag(true))
         XCTAssertEqual(arguments["title"], .text("General"))
         XCTAssertNil(fixture.commands.first?.request.argumentLine)
+    }
+
+    func testConsoleCommandKeepsIntegerZeroAndOneDistinctFromBooleans()
+        async throws {
+        let fixture = FixtureHost()
+        let service = makeHTTPService(host: fixture)
+        let response = await service.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/commands",
+            body: Data(#"{"command":"winact","arguments":{"zero":0,"one":1,"off":false,"on":true}}"#.utf8)))
+
+        XCTAssertEqual(response.status, 200)
+        let arguments = try XCTUnwrap(fixture.commands.first?.request.arguments)
+        XCTAssertEqual(arguments["zero"], .number(0))
+        XCTAssertEqual(arguments["one"], .number(1))
+        XCTAssertEqual(arguments["off"], .flag(false))
+        XCTAssertEqual(arguments["on"], .flag(true))
+
+        let fractional = await service.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/commands",
+            body: Data(#"{"command":"winact","arguments":{"part":1.5}}"#.utf8)))
+        XCTAssertEqual(fractional.status, 400)
+        XCTAssertEqual(try errorCode(fractional), "invalid_command_arguments")
+        XCTAssertEqual(fixture.commands.count, 1)
     }
 
     func testConsoleCommandRejectsAmbiguousAndOversizedInputBeforeDispatch() async throws {
@@ -401,7 +525,7 @@ final class NOWAPIHTTPTests: XCTestCase {
         let recorded = await audit.recorded()
         let event = try XCTUnwrap(recorded.first)
         XCTAssertEqual(event.operationID, "connections.disconnect")
-        XCTAssertEqual(event.target, "pb1400c-11111111-1111-1111-1111-111111111111")
+        XCTAssertEqual(event.target, "pb1400c")
         XCTAssertEqual(event.disposition, .completed)
     }
 
@@ -438,6 +562,41 @@ final class NOWAPIHTTPTests: XCTestCase {
         XCTAssertEqual(process.terminationStatus, 0,
                        String(data: errors.fileHandleForReading.readDataToEndOfFile(),
                               encoding: .utf8) ?? "")
+    }
+
+    func testCompletedRequestDisarmsTheParseDeadlineWhileResponseIsPending()
+        async throws {
+        let port = try availablePort()
+        let fixture = FixtureHost()
+        fixture.commandDelay = .milliseconds(100)
+        let listener = try MCPHTTPListener(
+            configuration: .init(port: port, authMode: .bearer,
+                                 bearerToken: "mcp-token"),
+            serverFactory: {
+                (NOWMCPServer(client: SocketAgentIntegrationClient(),
+                              audit: LocalMCPAuditSink()),
+                 NOWMCPClientIdentity())
+            },
+            apiRouter: NOWAPIHTTPRouter(
+                apiKey: Self.apiKey,
+                contractDigest: String(repeating: "d", count: 64),
+                host: fixture),
+            requestParseTimeout: 0.02)
+        try await listener.start()
+        defer { listener.stop() }
+
+        var request = URLRequest(url: URL(
+            string: "http://127.0.0.1:\(port)/api/v1/guests/pb1400c/commands")!)
+        request.httpMethod = "POST"
+        request.setValue(Self.apiKey, forHTTPHeaderField: "X-API-Key")
+        request.setValue("pb1400c-11111111-1111-1111-1111-111111111111",
+                         forHTTPHeaderField: "X-NOW-Guest-Session")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Data(#"{"command":"help"}"#.utf8)
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(try object(data)["disposition"] as? String, "completed")
     }
 
     private func makeHTTPService(
@@ -528,6 +687,15 @@ final class NOWAPIHTTPTests: XCTestCase {
         }
         return UInt16(bigEndian: bound.sin_port)
     }
+
+    private static func contractDocument() throws -> [String: Any] {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        return try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: Data(contentsOf: root.appendingPathComponent(
+                "contract/now-api.openapi.json"))) as? [String: Any])
+    }
 }
 
 @MainActor
@@ -537,6 +705,7 @@ private final class FixtureHost: NOWAPIHostServing {
     var stopCount = 0
     var commands: [(guestID: String, request: NOWAPIConsoleCommandRequest)] = []
     var commandOutcome: NOWAPIConsoleCommandOutcome?
+    var commandDelay: Duration?
     var operationOutcome: NOWAPIOperationInvocationOutcome?
     var operationInvocations: [(operationID: String, guest: String?)] = []
 
@@ -588,12 +757,20 @@ private final class FixtureHost: NOWAPIHostServing {
         completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void
     ) {
         commands.append((guestID, request))
-        completion(commandOutcome ?? .init(
+        let outcome = commandOutcome ?? .init(
             guestID: guestID,
             sessionID: "pb1400c-11111111-1111-1111-1111-111111111111",
             disposition: .completed,
             output: ["help": [["help", "list commands"]]],
-            outputObjects: nil, error: nil))
+            outputObjects: nil, error: nil)
+        if let commandDelay {
+            Task {
+                try? await Task.sleep(for: commandDelay)
+                completion(outcome)
+            }
+        } else {
+            completion(outcome)
+        }
     }
 
     func apiInvokeOperation(
@@ -674,6 +851,7 @@ private final class HTTPFileDriver: NOWAPIFileDriving {
     func apiAbandonUpload(uploadID: UUID) async -> Bool {
         stages.removeValue(forKey: uploadID) != nil
     }
+    func apiReleaseDownload(at url: URL) -> Bool { false }
     func apiCancelTransfer() -> AgentIntegrationTransferCancelResult {
         .hostUnavailable
     }

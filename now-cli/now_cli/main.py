@@ -62,8 +62,10 @@ class API:
         self.key = key
         self._major_checked = False
 
-    def _connection(self) -> http.client.HTTPConnection:
-        return http.client.HTTPConnection(self.host, self.port, timeout=15)
+    def _connection(
+        self, timeout: float | None = 15
+    ) -> http.client.HTTPConnection:
+        return http.client.HTTPConnection(self.host, self.port, timeout=timeout)
 
     def request(self, method: str, path: str, body: Any = None,
                 headers: dict[str, str] | None = None,
@@ -107,7 +109,8 @@ class API:
         if status >= 400:
             problem = value.get("error", {}) if isinstance(value, dict) else {}
             message = problem.get("message") or f"NOW API returned HTTP {status}"
-            code = EXIT_UNAVAILABLE if status in {404, 409, 503} else EXIT_INVALID
+            code = (EXIT_UNAVAILABLE
+                    if status in {404, 409, 429, 503} else EXIT_INVALID)
             raise CLIError(message, code)
         if isinstance(value, dict):
             disposition = value.get("disposition")
@@ -139,6 +142,17 @@ class API:
                 raise CLIError(
                     f"download content returned HTTP {response.status}",
                     EXIT_UNAVAILABLE)
+            content_length = response.getheader("Content-Length")
+            try:
+                expected = int(content_length) if content_length is not None else -1
+            except ValueError as error:
+                raise CLIError(
+                    "download content returned an invalid Content-Length",
+                    EXIT_INCOMPATIBLE) from error
+            if expected < 0:
+                raise CLIError(
+                    "download content did not declare a valid Content-Length",
+                    EXIT_INCOMPATIBLE)
             descriptor, raw = tempfile.mkstemp(
                 prefix=".now-download-", dir=destination.parent)
             temporary = Path(raw)
@@ -148,6 +162,10 @@ class API:
                 while chunk := response.read(64 * 1024):
                     output.write(chunk); written += len(chunk)
                 output.flush(); os.fsync(output.fileno())
+            if written != expected:
+                raise CLIError(
+                    f"download content length mismatch: expected {expected}, got {written}",
+                    EXIT_TRANSPORT)
             if force:
                 os.replace(temporary, destination)
             else:
@@ -187,7 +205,7 @@ def load_key(explicit: str | None) -> str:
         return explicit
     if os.environ.get("NOW_API_KEY"):
         return os.environ["NOW_API_KEY"]
-    token = state_dir() / "now-api-key"
+    token = state_dir() / "now-application-api-key"
     try:
         mode = token.stat().st_mode & 0o777
         if mode & 0o077:
@@ -357,8 +375,8 @@ def run(args: argparse.Namespace, api: API, state: State) -> Any:
     if args.domain == "files":
         guest = require_guest(args, state)
         base = f"/guests/{quote(guest, safe='')}"
-        if args.verb == "list": return api.json("GET", base + "/files?" + urlencode({"path": args.path}))
-        if args.verb == "stat": return api.json("GET", base + "/files/stat?" + urlencode({"path": args.path}))
+        if args.verb == "list": return api.json("GET", base + "/files?" + urlencode({"path": args.path}, quote_via=quote))
+        if args.verb == "stat": return api.json("GET", base + "/files/stat?" + urlencode({"path": args.path}, quote_via=quote))
         session = exact_session(api, guest)
         session_header = {"X-NOW-Guest-Session": session}
         mutations = {
@@ -412,17 +430,35 @@ def run(args: argparse.Namespace, api: API, state: State) -> Any:
         return api.json("DELETE", "/transfers/" + quote(args.transfer, safe=""), mutation=True)
     if args.domain == "events":
         api.identity()
-        connection = api._connection()
+        # The server sends heartbeats, so a socket read deadline adds only a
+        # second, competing liveness policy and can kill a healthy watch.
+        connection = api._connection(timeout=None)
         try:
             connection.request("GET", api.base + "/events", headers={"X-API-Key": api.key, "Accept": "text/event-stream"})
             response = connection.getresponse()
-            if response.status != 200: raise CLIError(f"event stream returned HTTP {response.status}", EXIT_TRANSPORT)
+            if response.status != 200:
+                payload = response.read()
+                try:
+                    problem = json.loads(payload)
+                except ValueError:
+                    problem = {}
+                detail = problem.get("error", {}) if isinstance(problem, dict) else {}
+                message = (detail.get("message") if isinstance(detail, dict)
+                           else None) or f"event stream returned HTTP {response.status}"
+                code = (EXIT_UNAVAILABLE if response.status in
+                        {404, 409, 429, 503} else EXIT_TRANSPORT)
+                raise CLIError(message, code)
             for raw in response:
                 line = raw.decode("utf-8", "replace").rstrip()
                 if line.startswith("data:"):
                     value = json.loads(line[5:].strip()); emit(value, args.as_json)
         except KeyboardInterrupt:
             raise CLIError("event watch interrupted", 130)
+        except CLIError:
+            raise
+        except (OSError, http.client.HTTPException, ValueError) as error:
+            raise CLIError(
+                f"event stream failed: {error}", EXIT_TRANSPORT) from error
         finally:
             connection.close()
         return None

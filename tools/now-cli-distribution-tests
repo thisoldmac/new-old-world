@@ -113,6 +113,35 @@ class DistributionTests(unittest.TestCase):
         self.assertNotIn('/usr/bin/ditto --norsrc --noqtn "$source_dir/now_cli"',
                          project)
 
+    def test_xcode_target_owns_cli_bundle_phase(self) -> None:
+        project = (ROOT / "now-host/NewOldWorld.xcodeproj/project.pbxproj").read_text()
+        target = project.split("A1000060 /* New Old World */ = {", 1)[1]
+        target = target.split("};", 1)[0]
+        self.assertIn("A100008A /* Bundle NOW CLI */", target)
+        phase = project.split("A100008A /* Bundle NOW CLI */ = {", 1)[1]
+        phase = phase.split("};", 1)[0]
+        self.assertIn('scripts/stage-now-cli', phase)
+
+    def test_xcode_build_contains_runnable_bundled_cli(self) -> None:
+        output = self.root / "xcode-output"
+        derived = self.root / "xcode-derived"
+        subprocess.run([
+            "xcodebuild",
+            "-project", ROOT / "now-host/NewOldWorld.xcodeproj",
+            "-scheme", "New Old World",
+            "-configuration", "Debug",
+            "-derivedDataPath", derived,
+            f"CONFIGURATION_BUILD_DIR={output}",
+            "CODE_SIGNING_ALLOWED=NO",
+            "build",
+        ], check=True, text=True, capture_output=True)
+        command = output / "New Old World.app/Contents/Resources/bin/now"
+        self.assertTrue(command.is_file())
+        self.assertTrue(os.access(command, os.X_OK))
+        result = subprocess.run([command, "--help"], check=True, text=True,
+                                capture_output=True)
+        self.assertIn("NOW v1 API", result.stdout)
+
     def test_independent_client_uses_only_public_contract(self) -> None:
         checkout = self.clean_tree()
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0),

@@ -77,8 +77,9 @@ The short table is navigation, not a claim of parity. The [module reference](doc
 - The listener is for a trusted local network; secure transport is not available yet.
 - The public developer API is loopback-only, uses one `X-API-Key`, and has no
   OAuth or scopes in v1. The host does not yet have a dedicated developer-key
-  bootstrap control; the shared secret is currently copied through the MCP
-  HTTP bearer card, while the bundled CLI reads the private credential itself.
+  bootstrap control. Its credential is distinct from the MCP bearer token; the
+  bundled CLI can read the private API credential itself, while third-party
+  clients currently need an explicitly supplied key.
 - Each remembered machine can be given its own listening port, which is how
   the host tells two emulated Macs apart when they all reach it from the same
   loopback address. Assigning one opens the socket but does not repoint a

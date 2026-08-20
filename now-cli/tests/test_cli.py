@@ -54,6 +54,19 @@ class Server:
 
 
 class CLITests(unittest.TestCase):
+    def test_load_key_reads_only_the_application_api_credential(self):
+        with tempfile.TemporaryDirectory() as home:
+            support = Path(home) / "Library" / "Application Support" / "New Old World"
+            support.mkdir(parents=True)
+            mcp_key = support / "now-api-key"
+            mcp_key.write_text("mcp-secret\n")
+            mcp_key.chmod(0o600)
+            application_key = support / "now-application-api-key"
+            application_key.write_text("api-secret\n")
+            application_key.chmod(0o600)
+            with mock.patch.dict(os.environ, {"HOME": home}, clear=True):
+                self.assertEqual(cli.load_key(None), "api-secret")
+
     @staticmethod
     def empty_state():
         state = object.__new__(cli.State); state.value = {}
@@ -106,6 +119,71 @@ class CLITests(unittest.TestCase):
         api.request = mock.Mock(return_value=(
             200, {}, json.dumps(resource).encode()))
         self.assertEqual(api.json("GET", "/guests/pb1400c"), resource)
+
+    def test_http_429_is_unavailable(self):
+        api = object.__new__(cli.API)
+        api.request = mock.Mock(return_value=(
+            429, {}, json.dumps({"error": {"message": "capacity reached"}}).encode()))
+        with self.assertRaises(cli.CLIError) as raised:
+            api.json("GET", "/events")
+        self.assertEqual(raised.exception.code, cli.EXIT_UNAVAILABLE)
+        self.assertEqual(str(raised.exception), "capacity reached")
+
+    def test_file_query_encodes_spaces_as_percent_twenty(self):
+        class FakeAPI:
+            def json(self, method, path, body=None, mutation=False, headers=None):
+                self.path = path
+                return {"entries": []}
+        api = FakeAPI()
+        args = cli.parser().parse_args([
+            "--guest", "pb", "files", "list", "Desktop Folder:My File"])
+        cli.run(args, api, self.empty_state())
+        self.assertEqual(
+            api.path, "/guests/pb/files?path=Desktop%20Folder%3AMy%20File")
+        self.assertNotIn("+", api.path)
+
+    def test_download_requires_exact_declared_content_length_before_install(self):
+        class Response:
+            status = 200
+            def getheader(self, name):
+                return "4" if name == "Content-Length" else None
+            def read(self, _size=None):
+                if hasattr(self, "done"): return b""
+                self.done = True
+                return b"abc"
+        class Connection:
+            def request(self, *_args, **_kwargs): pass
+            def getresponse(self): return Response()
+            def close(self): pass
+        api = cli.API("http://127.0.0.1:1/api/v1", "key")
+        api.identity = mock.Mock(return_value={"apiMajor": 1})
+        api._connection = mock.Mock(return_value=Connection())
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "answer"
+            with self.assertRaises(cli.CLIError) as raised:
+                api.download("/transfers/id/content", destination)
+            self.assertFalse(destination.exists())
+        self.assertEqual(raised.exception.code, cli.EXIT_TRANSPORT)
+        self.assertIn("expected 4, got 3", str(raised.exception))
+
+    def test_event_429_is_unavailable_and_watch_has_no_read_deadline(self):
+        class Response:
+            status = 429
+            def read(self):
+                return json.dumps({"error": {"message": "stream limit"}}).encode()
+        class Connection:
+            def request(self, *_args, **_kwargs): pass
+            def getresponse(self): return Response()
+            def close(self): pass
+        api = cli.API("http://127.0.0.1:1/api/v1", "key")
+        api.identity = mock.Mock(return_value={"apiMajor": 1})
+        api._connection = mock.Mock(return_value=Connection())
+        args = cli.parser().parse_args(["events", "watch"])
+        with self.assertRaises(cli.CLIError) as raised:
+            cli.run(args, api, self.empty_state())
+        self.assertEqual(raised.exception.code, cli.EXIT_UNAVAILABLE)
+        self.assertEqual(str(raised.exception), "stream limit")
+        api._connection.assert_called_once_with(timeout=None)
 
     def test_json_mode_preserves_refused_payload_and_nonzero_exit(self):
         payload = {

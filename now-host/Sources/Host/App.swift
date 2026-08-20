@@ -44,9 +44,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     init(defaults: UserDefaults = UserDefaults(
         suiteName: ProductIdentity.preferencesSuite) ?? .standard,
-         mcpTokenStore: MCPHTTPTokenStore? = try? MCPHTTPTokenStore()) {
+         mcpTokenStore: MCPHTTPTokenStore? = try? MCPHTTPTokenStore(),
+         apiKeyStore: NOWAPIKeyStore? = try? NOWAPIKeyStore()) {
         self.defaults = defaults
         self.mcpTokenStore = mcpTokenStore
+        self.apiKeyStore = apiKeyStore
         super.init()
     }
     private var statusItem: NSStatusItem?
@@ -58,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var mcpHTTPListener: MCPHTTPListener?
     private var mcpHTTPRunID: UUID?
     private let mcpTokenStore: MCPHTTPTokenStore?
+    private let apiKeyStore: NOWAPIKeyStore?
     private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1165,13 +1168,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func startMCPHTTP() {
         guard mcpHTTPListener == nil else { return }
         let preferences = MCPTransportPreferences(defaults: defaults)
-        guard let mcpTokenStore else {
+        guard let mcpTokenStore, let apiKeyStore else {
             state.agentActivity.httpUnavailable(
-                "Application Support is unavailable for the MCP token.")
+                "Application Support is unavailable for HTTP credentials.")
             return
         }
         do {
-            let token = try mcpTokenStore.loadOrCreate()
+            let credentials = try NOWHTTPRouteCredentials.load(
+                mcp: mcpTokenStore, api: apiKeyStore)
             let port = preferences.httpPort
             let authMode = preferences.httpAuthMode
             let runID = UUID()
@@ -1193,7 +1197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 agentIntegration: state.agentIntegration)
             let listener = try MCPHTTPListener(
                 configuration: .init(port: port, authMode: authMode,
-                                     bearerToken: token),
+                                     bearerToken: credentials.mcpBearerToken),
                 serverFactory: { [adapter = state.agentIntegration,
                                   activity = state.agentActivity,
                                   records = state.mcpRecords] in
@@ -1234,7 +1238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 },
                 oauth: oauth,
                 apiRouter: NOWAPIHTTPRouter(
-                    apiKey: token,
+                    apiKey: credentials.apiKey,
                     contractDigest: NOWAPIOperationIDs.contractDigest,
                     host: apiHost,
                     audit: HostNOWAPIAuditSink(records: state.mcpRecords),
@@ -1250,7 +1254,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         let endpoint = "http://127.0.0.1:\(port)/mcp"
                         self.state.agentActivity.httpOpened(
                             at: endpoint,
-                            bearerToken: authMode == .bearer ? token : nil)
+                            bearerToken: authMode == .bearer
+                                ? credentials.mcpBearerToken : nil)
                         HostLog.shared.write(
                             .info, "mcp",
                             "HTTP MCP listening at \(endpoint)",

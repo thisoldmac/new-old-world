@@ -151,6 +151,210 @@ final class NOWAPIFileTransferServiceTests: XCTestCase {
         XCTAssertEqual(driver.cancelCount, 1)
     }
 
+    func testCapacityBoundaryRejectsAnotherNonterminalTransfer() async throws {
+        let driver = FileDriverFixture()
+        let service = NOWAPIFileTransferService(driver: driver, transferLimit: 1)
+        _ = try await service.beginUpload(
+            guestID: "pb1400c", request: upload(bytes: 1))
+        do {
+            _ = try await service.beginUpload(
+                guestID: "pb1400c", request: upload(bytes: 1))
+            XCTFail("a second nonterminal transfer exceeded capacity")
+        } catch {
+            XCTAssertEqual(error.code, "transfer_registry_full")
+        }
+        XCTAssertEqual(driver.beginCount, 1)
+    }
+
+    func testSimultaneousBeginsReserveCapacityBeforeDriverReturns() async throws {
+        let driver = FileDriverFixture()
+        driver.blockBegins = true
+        let service = NOWAPIFileTransferService(driver: driver, transferLimit: 1)
+        let first = Task {
+            try await service.beginUpload(
+                guestID: "pb1400c", request: upload(bytes: 1))
+        }
+        while driver.beginContinuations.isEmpty { await Task.yield() }
+        do {
+            _ = try await service.beginUpload(
+                guestID: "pb1400c", request: upload(bytes: 1))
+            XCTFail("a concurrent begin crossed the reserved boundary")
+        } catch {
+            XCTAssertEqual(error.code, "transfer_registry_full")
+        }
+        driver.finishBlockedBegin()
+        _ = try await first.value
+        XCTAssertEqual(driver.beginCount, 1)
+    }
+
+    func testAppendSettlingAfterCancelCannotResurrectStage() async throws {
+        let driver = FileDriverFixture()
+        driver.blockAppends = true
+        driver.abandonKeepsStage = true
+        let service = NOWAPIFileTransferService(driver: driver)
+        let transfer = try await service.beginUpload(
+            guestID: "pb1400c", request: upload(bytes: 1))
+        let appending = Task {
+            try await service.appendUpload(
+                transferID: transfer.id, offset: 0, bytes: Data([1]))
+        }
+        while driver.appendContinuation == nil { await Task.yield() }
+        _ = try await service.cancel(id: transfer.id)
+        driver.finishBlockedAppend()
+        let result = try await appending.value
+        XCTAssertEqual(result.state, .cancelled)
+        let retained = await service.transfer(id: transfer.id)
+        XCTAssertEqual(retained?.state, .cancelled)
+    }
+
+    func testDownloadSettlementAfterCancelledRowEvictionDoesNotTrap() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root,
+                                                withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("late.bin")
+        try Data([1]).write(to: url)
+        let driver = FileDriverFixture()
+        driver.blockDownloads = true
+        driver.downloadURL = url
+        driver.ownedDownloads.insert(url)
+        let service = NOWAPIFileTransferService(driver: driver, transferLimit: 1)
+        let downloading = Task {
+            try await service.download(guestID: "pb1400c", path: "one.bin")
+        }
+        while driver.downloadContinuation == nil { await Task.yield() }
+        let transfers = await service.listTransfers()
+        let running = try XCTUnwrap(transfers.first)
+        _ = try await service.cancel(id: running.id)
+        _ = try await service.beginUpload(
+            guestID: "pb1400c", request: upload(bytes: 1))
+        driver.finishBlockedDownload()
+        do {
+            _ = try await downloading.value
+            XCTFail("an evicted download unexpectedly settled")
+        } catch let error as NOWAPIFileTransferService.Problem {
+            XCTAssertEqual(error.code, "transfer_not_found")
+        }
+        XCTAssertEqual(driver.releasedDownloads, [url])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testOwnerAlreadyExpiredStageStillExpiresLocally() async throws {
+        let clock = FileClock(Date(timeIntervalSince1970: 100))
+        let driver = FileDriverFixture()
+        driver.expiry = Date(timeIntervalSince1970: 101)
+        let service = NOWAPIFileTransferService(driver: driver) { clock.now }
+        let transfer = try await service.beginUpload(
+            guestID: "pb1400c", request: upload(bytes: 1))
+        driver.expireOwnedStage(transfer.id)
+        clock.now = Date(timeIntervalSince1970: 102)
+        let retained = await service.transfer(id: transfer.id)
+        XCTAssertEqual(retained?.state, .expired)
+    }
+
+    func testCompletedDownloadIsServedThenOwnerCleanedAfterRetention() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root,
+                                                withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("download.bin")
+        try Data([1, 2, 3, 4]).write(to: url)
+        let clock = FileClock(Date(timeIntervalSince1970: 100))
+        let driver = FileDriverFixture()
+        driver.downloadURL = url
+        driver.ownedDownloads.insert(url)
+        let service = NOWAPIFileTransferService(driver: driver) { clock.now }
+
+        let transfer = try await service.download(
+            guestID: "pb1400c", path: "download.bin")
+        let content = try await service.content(id: transfer.id)
+        XCTAssertEqual(content.0, url)
+        XCTAssertEqual(content.1, 4)
+
+        clock.now = Date(timeIntervalSince1970:
+            100 + NOWAPIFileTransferService.downloadRetention + 1)
+        let expired = await service.transfer(id: transfer.id)
+        XCTAssertEqual(expired?.state, .expired)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        clock.now = clock.now.addingTimeInterval(
+            NOWAPIFileTransferService.downloadCleanupGrace + 1)
+        _ = await service.listTransfers()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(driver.releasedDownloads, [url])
+    }
+
+    func testDownloadStoreReleaseRejectsPathsItDoesNotOwn() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString, isDirectory: true)
+        let elsewhere = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: elsewhere)
+        }
+        let store = try AgentDownloadStore(rootURL: root)
+        let owned = root.appendingPathComponent("owned.bin")
+        try Data([1]).write(to: owned)
+        try Data([1]).write(to: elsewhere)
+        XCTAssertTrue(store.releaseLanding(at: owned))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: owned.path))
+        XCTAssertFalse(store.releaseLanding(at: elsewhere))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: elsewhere.path))
+    }
+
+    func testCancellingCompletedDownloadQueuesOwnerCleanup() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root,
+                                                withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("cancel.bin")
+        try Data([1]).write(to: url)
+        let clock = FileClock(Date(timeIntervalSince1970: 100))
+        let driver = FileDriverFixture()
+        driver.downloadURL = url
+        driver.ownedDownloads.insert(url)
+        let service = NOWAPIFileTransferService(driver: driver) { clock.now }
+        let transfer = try await service.download(
+            guestID: "pb1400c", path: "cancel.bin")
+
+        let cancelled = try await service.cancel(id: transfer.id)
+        XCTAssertEqual(cancelled.state, .cancelled)
+        XCTAssertFalse(cancelled.contentAvailable)
+        clock.now = clock.now.addingTimeInterval(
+            NOWAPIFileTransferService.downloadCleanupGrace + 1)
+        _ = await service.listTransfers()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testCapacityEvictionQueuesCompletedDownloadCleanup() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root,
+                                                withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("evict.bin")
+        try Data([1]).write(to: url)
+        let clock = FileClock(Date(timeIntervalSince1970: 100))
+        let driver = FileDriverFixture()
+        driver.downloadURL = url
+        driver.ownedDownloads.insert(url)
+        let service = NOWAPIFileTransferService(
+            driver: driver, transferLimit: 1) { clock.now }
+        _ = try await service.download(
+            guestID: "pb1400c", path: "evict.bin")
+        _ = try await service.beginUpload(
+            guestID: "pb1400c", request: upload(bytes: 1))
+
+        clock.now = clock.now.addingTimeInterval(
+            NOWAPIFileTransferService.downloadCleanupGrace + 1)
+        _ = await service.listTransfers()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(driver.releasedDownloads, [url])
+    }
+
     private func upload(bytes: Int) -> AgentIntegrationGuestFileUploadBegin {
         .init(destinationPath: "Drop Box:test.bin", bytes: bytes,
               sha256: String(repeating: "0", count: 64), container: "data")
@@ -175,6 +379,16 @@ private final class FileDriverFixture: NOWAPIFileDriving {
     var abandoned: [UUID] = []
     var commitFailure: AgentIntegrationGuestFileFailure?
     var blockCommits = false
+    var blockBegins = false
+    var blockAppends = false
+    var blockDownloads = false
+    var abandonKeepsStage = false
+    var downloadURL: URL?
+    var ownedDownloads: Set<URL> = []
+    var releasedDownloads: [URL] = []
+    var beginContinuations: [CheckedContinuation<Void, Never>] = []
+    var appendContinuation: CheckedContinuation<Void, Never>?
+    var downloadContinuation: CheckedContinuation<Void, Never>?
     var commitContinuation:
         CheckedContinuation<AgentIntegrationGuestFileUploadCommitResult, Never>?
     var blockedCommitID: UUID?
@@ -190,11 +404,29 @@ private final class FileDriverFixture: NOWAPIFileDriving {
     func apiMutateFile(_ request: AgentIntegrationGuestFileMutationRequest)
         async -> AgentIntegrationGuestFileMutationResult { .hostUnavailable(.host) }
     func apiDownloadFile(path: String) async
-        -> AgentIntegrationGuestFileDownloadResult { .hostUnavailable(.host) }
+        -> AgentIntegrationGuestFileDownloadResult {
+        if blockDownloads {
+            await withCheckedContinuation { downloadContinuation = $0 }
+        }
+        guard let downloadURL,
+              let bytes = try? downloadURL.resourceValues(
+                forKeys: [.fileSizeKey]).fileSize else {
+            return .hostUnavailable(.host)
+        }
+        return .completed(
+            receipt: receipt(.success),
+            value: .init(guestPath: path, hostPath: downloadURL.path,
+                         bytes: bytes, container: "data", crc32: nil,
+                         resumeToken: nil, elapsedMs: 1),
+            failure: nil)
+    }
 
     func apiBeginUpload(_ request: AgentIntegrationGuestFileUploadBegin) async
         -> AgentIntegrationGuestFileUploadStageResult {
         beginCount += 1
+        if blockBegins && beginCount == 1 {
+            await withCheckedContinuation { beginContinuations.append($0) }
+        }
         let id = UUID()
         stages[id] = (request.destinationPath, request.bytes, 0)
         return .completed(receipt: receipt(.success), value: stage(id), failure: nil)
@@ -202,6 +434,9 @@ private final class FileDriverFixture: NOWAPIFileDriving {
     func apiAppendUpload(uploadID: UUID, offset: Int, bytes: Data) async
         -> AgentIntegrationGuestFileUploadStageResult {
         appendCount += 1
+        if blockAppends {
+            await withCheckedContinuation { appendContinuation = $0 }
+        }
         guard var value = stages[uploadID], value.received == offset else {
             return failedStage("now-files-upload-offset-conflict")
         }
@@ -220,7 +455,14 @@ private final class FileDriverFixture: NOWAPIFileDriving {
     }
     func apiAbandonUpload(uploadID: UUID) async -> Bool {
         abandoned.append(uploadID)
+        if abandonKeepsStage { return stages[uploadID] != nil }
         return stages.removeValue(forKey: uploadID) != nil
+    }
+    func apiReleaseDownload(at url: URL) -> Bool {
+        releasedDownloads.append(url)
+        guard ownedDownloads.remove(url) != nil else { return false }
+        try? FileManager.default.removeItem(at: url)
+        return true
     }
     func apiCancelTransfer() -> AgentIntegrationTransferCancelResult {
         cancelCount += 1
@@ -233,6 +475,23 @@ private final class FileDriverFixture: NOWAPIFileDriving {
         commitContinuation = nil
         blockedCommitID = nil
         continuation.resume(returning: commitResult(id))
+    }
+    func finishBlockedBegin() {
+        blockBegins = false
+        beginContinuations.removeFirst().resume()
+    }
+    func finishBlockedAppend() {
+        blockAppends = false
+        appendContinuation?.resume()
+        appendContinuation = nil
+    }
+    func finishBlockedDownload() {
+        blockDownloads = false
+        downloadContinuation?.resume()
+        downloadContinuation = nil
+    }
+    func expireOwnedStage(_ id: UUID) {
+        stages.removeValue(forKey: id)
     }
 
     private func stage(_ id: UUID) -> AgentIntegrationGuestFileUploadStage {

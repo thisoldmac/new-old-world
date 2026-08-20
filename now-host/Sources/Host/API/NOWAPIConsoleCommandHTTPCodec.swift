@@ -47,10 +47,20 @@ enum NOWAPIConsoleCommandHTTPCodec {
                     return .failure(.init(code: "invalid_command_arguments",
                                           message: "A command argument name is invalid or too long."))
                 }
-                if let flag = value as? Bool {
-                    parsed[name] = .flag(flag)
-                } else if let number = value as? Int {
-                    parsed[name] = .number(number)
+                if let number = value as? NSNumber {
+                    if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                        parsed[name] = .flag(number.boolValue)
+                    } else {
+                        let isFloatingPoint = ["f", "d"].contains(
+                            String(cString: number.objCType))
+                        guard !isFloatingPoint,
+                              let integer = Int(number.stringValue) else {
+                            return .failure(.init(
+                                code: "invalid_command_arguments",
+                                message: "Arguments accept bounded strings, integers, and booleans only."))
+                        }
+                        parsed[name] = .number(integer)
+                    }
                 } else if let text = value as? String,
                           text.utf8.count <= NOWAPIConsoleCommandService.maximumArgumentTextBytes {
                     parsed[name] = .text(text)

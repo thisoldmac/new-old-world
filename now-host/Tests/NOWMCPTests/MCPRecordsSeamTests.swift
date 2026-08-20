@@ -27,6 +27,18 @@ private actor CompletionProbe {
     func value() -> Bool { completed }
 }
 
+private actor CapturingAPIRecordSink: NOWAPIDurableRecordSink {
+    private var events: [HostProjectionAuditEvent] = []
+
+    func persistAPIRecord(event: HostProjectionAuditEvent,
+                          agent: MCPAgentIdentity,
+                          drivenGuest: String?) async {
+        events.append(event)
+    }
+
+    func recorded() -> [HostProjectionAuditEvent] { events }
+}
+
 /// The identity seam: who-called travels BESIDE the audit event, from each
 /// transport to the records store, without the event's own shape changing.
 final class MCPRecordsSeamTests: XCTestCase {
@@ -162,5 +174,23 @@ final class MCPRecordsSeamTests: XCTestCase {
         await task.value
         let completedAfterRelease = await completion.value()
         XCTAssertTrue(completedAfterRelease)
+    }
+
+    func testAPIAuditPreservesAnsweredRefusedDeniedAndFailedOutcomes() async {
+        let records = CapturingAPIRecordSink()
+        let sink = HostNOWAPIAuditSink(records: records)
+        for disposition in [
+            NOWAPIAuditEvent.Disposition.completed, .refused, .denied, .failed,
+        ] {
+            await sink.record(.init(
+                requestID: UUID(), operationID: "processes.quit",
+                target: "pb1400c", disposition: disposition))
+        }
+
+        let events = await records.recorded()
+        XCTAssertEqual(events.map(\.outcome), [
+            .answered, .refused, .denied, .failed,
+        ])
+        XCTAssertEqual(events.map(\.reason), [nil, "refused", "denied", "failed"])
     }
 }

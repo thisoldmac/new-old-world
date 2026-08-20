@@ -44,6 +44,36 @@ final class NOWOperationCatalogTests: XCTestCase {
             withJSONObject: derived, options: [.sortedKeys])
         XCTAssertEqual(left, right)
     }
+
+    func testOpenAPIGenericEnumMatchesRuntimeAndCLIMetadataExactly() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let document = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: Data(contentsOf: root.appendingPathComponent(
+                "contract/now-api.openapi.json"))) as? [String: Any])
+        let paths = try XCTUnwrap(document["paths"] as? [String: Any])
+        let route = try XCTUnwrap(paths["/operations/{operationID}"]
+            as? [String: Any])
+        let parameters = try XCTUnwrap(route["parameters"] as? [[String: Any]])
+        let schema = try XCTUnwrap(parameters.first?["schema"] as? [String: Any])
+        let openAPI = Set(try XCTUnwrap(schema["enum"] as? [String]))
+        let metadata = try XCTUnwrap(
+            document["x-now-cli-operation-metadata"] as? [[String: Any]])
+        let cli = Set(metadata.compactMap { $0["operationId"] as? String })
+
+        XCTAssertEqual(openAPI, NOWOperationInventory.genericPublicOperationIDs)
+        XCTAssertEqual(cli, openAPI)
+        for resourceOperation in [
+            "files.get", "files.list", "files.mutate", "files.stat",
+            "guests.list", "transfers.cancel",
+        ] {
+            XCTAssertNil(NOWOperationInventory.genericProjectionCapability(
+                forPublicOperationID: resourceOperation), resourceOperation)
+            XCTAssertTrue(NOWOperationInventory.publicOperationIDs.contains(
+                resourceOperation), resourceOperation)
+        }
+    }
     func testEveryProjectionHasOneCompleteAdjudicationAndExposureDeclaration() {
         let entries = HostProjectionCatalog.projections.compactMap(
             NOWOperationInventory.entry(for:))
@@ -88,7 +118,7 @@ final class NOWOperationCatalogTests: XCTestCase {
 
     func testTheCheckedOpenAPIIdentitySetMatchesTheAdjudicatedCatalog() {
         XCTAssertEqual(NOWAPIOperationIDs.apiMajor, 1)
-        XCTAssertEqual(NOWAPIOperationIDs.schemaRevision, 6)
+        XCTAssertEqual(NOWAPIOperationIDs.schemaRevision, 7)
         XCTAssertEqual(NOWAPIOperationIDs.all,
                        NOWOperationInventory.publicOperationIDs)
     }

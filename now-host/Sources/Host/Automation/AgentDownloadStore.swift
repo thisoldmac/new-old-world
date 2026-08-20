@@ -167,6 +167,26 @@ final class AgentDownloadStore {
         return Landing(url: destination, bytes: staged.byteCount)
     }
 
+    /// Removes only a settled file that this store could have minted.
+    ///
+    /// API transfer retention must not turn a serialized host path back into
+    /// deletion authority. Re-resolving the parent and rejecting symlinks
+    /// keeps cleanup inside this store's private, flat landing directory.
+    func releaseLanding(at url: URL) -> Bool {
+        let candidate = url.standardizedFileURL
+        guard candidate.deletingLastPathComponent() == rootURL.standardizedFileURL
+        else { return false }
+        var status = stat()
+        guard lstat(candidate.path, &status) == 0,
+              status.st_mode & S_IFMT == S_IFREG else { return false }
+        do {
+            try FileManager.default.removeItem(at: candidate)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// A host filename derived from the guest's name, never the guest's name
     /// used as a path.
     ///

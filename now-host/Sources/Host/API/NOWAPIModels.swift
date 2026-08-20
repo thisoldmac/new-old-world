@@ -103,7 +103,12 @@ struct NOWAPIConsoleCommandOutcome: Equatable, Sendable {
 }
 
 struct NOWAPIAuditEvent: Equatable, Sendable {
-    enum Disposition: String, Sendable { case completed, refused, failed }
+    enum Disposition: String, Sendable {
+        case completed
+        case refused
+        case denied
+        case failed
+    }
     let requestID: UUID
     let operationID: String
     let target: String?

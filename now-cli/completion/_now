@@ -3,7 +3,7 @@
 local -a domains generic_operations candidates
 local domain="" verb="" domain_index=0 word i
 domains=(guests connections console files transfers events api)
-generic_operations=(catalog.search diagnostics.capture diagnostics.framebuffer diagnostics.transfer files.capabilities files.get files.list files.mutate files.reveal files.stat guests.capabilities guests.census guests.facts guests.list interface.control.act interface.menu.act interface.observe interface.text.get interface.text.set interface.window.act logs.guest.tail logs.host.tail mirror.act mirror.find mirror.journal mirror.lifecycle mirror.metrics mirror.snapshot mirror.start mirror.status mirror.wait mirror.waitForSettlement processes.activate processes.list processes.quit screen.capture screen.stream software.launch software.list transfers.cancel)
+generic_operations=(catalog.search diagnostics.capture diagnostics.framebuffer diagnostics.transfer files.capabilities files.reveal guests.capabilities guests.census guests.facts interface.control.act interface.menu.act interface.observe interface.text.get interface.text.set interface.window.act logs.guest.tail logs.host.tail mirror.act mirror.find mirror.journal mirror.lifecycle mirror.metrics mirror.snapshot mirror.start mirror.status mirror.wait mirror.waitForSettlement processes.activate processes.list processes.quit screen.capture screen.stream software.launch software.list)
 for ((i=2; i<CURRENT; i++)); do
   word="${words[i]}"
   if (( domain_index == 0 )) && (( $domains[(Ie)$word] )); then

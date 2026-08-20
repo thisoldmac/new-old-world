@@ -654,7 +654,7 @@ final class GuestListener: ObservableObject {
     @discardableResult
     func disconnect(_ key: GuestKey) -> Bool {
         guard let live = sessions[key] else { return false }
-        note("Disconnected (machineBySession[key]?.lastName ?? live.guestName)",
+        note("Disconnected \(machineBySession[key]?.lastName ?? live.guestName)",
              session: key)
         live.close(sending: Bye(code: .shuttingDown,
                                 reason: "Disconnected by the host"))

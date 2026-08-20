@@ -94,6 +94,29 @@ final class MCPHTTPTransportTests: XCTestCase {
                        0o600)
     }
 
+    func testAPIAndMCPRoutesLoadDistinctPrivateCredentials() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-http-credentials-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let mcpURL = root.appendingPathComponent("now-api-key")
+        let apiURL = root.appendingPathComponent("now-application-api-key")
+
+        let credentials = try NOWHTTPRouteCredentials.load(
+            mcp: MCPHTTPTokenStore(url: mcpURL),
+            api: NOWAPIKeyStore(url: apiURL))
+
+        XCTAssertNotEqual(credentials.mcpBearerToken, credentials.apiKey)
+        XCTAssertEqual(credentials.mcpBearerToken.utf8.count, 64)
+        XCTAssertEqual(credentials.apiKey.utf8.count, 64)
+        for url in [mcpURL, apiURL] {
+            let attributes = try FileManager.default.attributesOfItem(
+                atPath: url.path)
+            XCTAssertEqual(
+                (attributes[.posixPermissions] as? NSNumber)?.intValue,
+                0o600)
+        }
+    }
+
     func testParserAcceptsIncrementalBodyAndRejectsAmbiguousFraming() throws {
         let body = Data(#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#.utf8)
         let head = Data(("POST /mcp HTTP/1.1\r\n"

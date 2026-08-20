@@ -39,6 +39,10 @@ extension GuestFilesCommandService {
             failure: response.failure.map(\.agentValue))
     }
 
+    func releaseAgentDownload(at url: URL) -> Bool {
+        releaseDownloadLanding(at: url)
+    }
+
     func agentMutate(_ request: AgentIntegrationGuestFileMutationRequest)
         async -> AgentIntegrationGuestFileMutationResult {
         let response = await mutate(request)

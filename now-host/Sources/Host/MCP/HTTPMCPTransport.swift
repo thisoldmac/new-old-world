@@ -543,6 +543,7 @@ final class MCPHTTPListener: @unchecked Sendable {
     private let configuration: MCPHTTPConfiguration
     private let service: MCPHTTPService
     private let failureObserver: FailureObserver?
+    private let requestParseTimeout: TimeInterval
     private let queue = DispatchQueue(label: "dev.newoldworld.mcp-http")
     private var listener: NWListener?
 
@@ -551,9 +552,11 @@ final class MCPHTTPListener: @unchecked Sendable {
          activityObserver: MCPHTTPService.ActivityObserver? = nil,
          failureObserver: FailureObserver? = nil,
          oauth: MCPOAuthAuthority? = nil,
-         apiRouter: NOWAPIHTTPRouter? = nil) throws {
+         apiRouter: NOWAPIHTTPRouter? = nil,
+         requestParseTimeout: TimeInterval = 15) throws {
         self.configuration = configuration
         self.failureObserver = failureObserver
+        self.requestParseTimeout = requestParseTimeout
         service = MCPHTTPService(configuration: configuration,
                                  serverFactory: serverFactory,
                                  activityObserver: activityObserver,
@@ -616,7 +619,7 @@ final class MCPHTTPListener: @unchecked Sendable {
         let exchange = MCPHTTPConnection(
             connection: connection, service: service,
             maximumHeaderBytes: configuration.maximumHeaderBytes,
-            queue: queue)
+            queue: queue, requestParseTimeout: requestParseTimeout)
         exchange.start()
     }
 }
@@ -625,10 +628,12 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     private let connection: NWConnection
     private let service: MCPHTTPService
     private let queue: DispatchQueue
+    private let requestParseTimeout: TimeInterval
     private var parser: BoundedHTTPRequestParser
     private var finished = false
     private var peerClosed = false
     private var activeStream: (any MCPHTTPStreamingBody)?
+    private var parseDeadline: DispatchWorkItem?
     /// `NWListener` does not retain the object that installed the receive
     /// callback. Keep this exchange alive until its one response is sent;
     /// without this ownership the accepted TCP connection remains open but
@@ -636,10 +641,12 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     private var keepAlive: MCPHTTPConnection?
 
     init(connection: NWConnection, service: MCPHTTPService,
-         maximumHeaderBytes: Int, queue: DispatchQueue) {
+         maximumHeaderBytes: Int, queue: DispatchQueue,
+         requestParseTimeout: TimeInterval) {
         self.connection = connection
         self.service = service
         self.queue = queue
+        self.requestParseTimeout = requestParseTimeout
         parser = .init(maximumHeaderBytes: maximumHeaderBytes)
     }
 
@@ -656,9 +663,12 @@ private final class MCPHTTPConnection: @unchecked Sendable {
             }
         }
         connection.start(queue: queue)
-        queue.asyncAfter(deadline: .now() + 15) { [weak self] in
+        let deadline = DispatchWorkItem { [weak self] in
             self?.finish(.init(status: 400))
         }
+        parseDeadline = deadline
+        queue.asyncAfter(deadline: .now() + requestParseTimeout,
+                         execute: deadline)
         receive()
     }
 
@@ -679,6 +689,8 @@ private final class MCPHTTPConnection: @unchecked Sendable {
             }
             do {
                 if let data, let request = try self.parser.append(data) {
+                    self.parseDeadline?.cancel()
+                    self.parseDeadline = nil
                     self.monitorPeerClose()
                     Task {
                         let response = await self.service.respond(to: request)
@@ -705,7 +717,12 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     }
 
     private func finish(_ response: MCPHTTPResponse) {
-        guard !finished else { return }
+        parseDeadline?.cancel()
+        parseDeadline = nil
+        guard !finished else {
+            response.streamingBody?.cancel()
+            return
+        }
         guard !peerClosed else {
             response.streamingBody?.cancel()
             keepAlive = nil

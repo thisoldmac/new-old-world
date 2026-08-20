@@ -42,11 +42,12 @@ API v1 has one application key and no scopes. It does not accept a bearer
 header or an MCP OAuth access token. The sibling `/mcp` route retains its own
 none, bearer, and OAuth modes; those modes do not change `/api/v1`.
 
-The host currently exposes the shared secret through **Copy Bearer Token** on
-the MCP HTTP card when bearer mode is selected. The official CLI can also read
-the same private mode-0600 application credential automatically. A dedicated
-application-facing copy/bootstrap control is not yet present; third-party
-applications should not discover or parse the private credential file.
+The host stores a distinct mode-0600 application credential for the API. The
+official CLI can read it automatically. The MCP HTTP card's **Copy Bearer
+Token** control exposes only the separate MCP bearer credential and cannot
+bootstrap an API client. A dedicated application-facing copy/bootstrap control
+is not yet present; third-party applications should not discover or parse the
+private credential file.
 
 ## Resource model
 

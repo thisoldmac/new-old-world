@@ -22,12 +22,26 @@ struct HostNOWAPIAuditSink: NOWAPIAuditSink {
     let records: (any NOWAPIDurableRecordSink)?
 
     func record(_ event: NOWAPIAuditEvent) async {
-        let outcome: HostProjectionAuditEvent.Outcome =
-            event.disposition == .completed ? .answered : .refused
+        let outcome: HostProjectionAuditEvent.Outcome
+        let reason: String?
+        switch event.disposition {
+        case .completed:
+            outcome = .answered
+            reason = nil
+        case .refused:
+            outcome = .refused
+            reason = "refused"
+        case .denied:
+            outcome = .denied
+            reason = "denied"
+        case .failed:
+            outcome = .failed
+            reason = "failed"
+        }
         let projectionEvent = HostProjectionAuditEvent(
             capability: HostCapabilityID(event.operationID), face: .api,
             guest: event.target, outcome: outcome,
-            reason: event.disposition == .completed ? nil : "refused")
+            reason: reason)
         await MainActor.run {
             AgentIntegrationAuditLog.record(
                 projectionEvent, drivenGuest: nil, transport: .http,

@@ -63,6 +63,23 @@ public enum NOWOperationInventory {
         return nil
     }
 
+    /// Projection reach through the generic HTTP operation endpoint.
+    ///
+    /// Some projection-backed operations have first-class resource routes.
+    /// Keeping that distinction here prevents their private projection input
+    /// shapes (for example `hostPath`, or host-global transfer cancellation)
+    /// from leaking through `/operations/{operationID}`.
+    public static func genericProjectionCapability(
+        forPublicOperationID operationID: String,
+        registry: HostProjectionRegistry = .hostFaces
+    ) -> HostCapabilityID? {
+        guard genericPublicOperationIDs.contains(operationID) else {
+            return nil
+        }
+        return projectionCapability(forPublicOperationID: operationID,
+                                    registry: registry)
+    }
+
     public static func publicOperationEffect(
         for operationID: String,
         registry: HostProjectionRegistry = .hostFaces
@@ -78,7 +95,8 @@ public enum NOWOperationInventory {
     ) -> [[String: Any]] {
         registry.projections.compactMap { projection in
             guard let entry = entry(for: projection),
-                  case .publicOperation(let operationID) = entry.adjudication
+                  case .publicOperation(let operationID) = entry.adjudication,
+                  genericPublicOperationIDs.contains(operationID)
             else { return nil }
             return [
                 "operationId": operationID,
@@ -170,6 +188,22 @@ public enum NOWOperationInventory {
             case .agentOnly: return []
             }
         }).union(apiNativeOperationIDs)
+
+    /// The exact projection-backed surface admitted by
+    /// `POST /operations/{operationID}`. The remaining public projection
+    /// operations are rendered only by their first-class resource routes.
+    public static let genericPublicOperationIDs: Set<String> = Set(
+        adjudications.values.compactMap { adjudication -> String? in
+            guard case .publicOperation(let operationID) = adjudication,
+                  !firstClassProjectionOperationIDs.contains(operationID)
+            else { return nil }
+            return operationID
+        })
+
+    private static let firstClassProjectionOperationIDs: Set<String> = [
+        "files.get", "files.list", "files.mutate", "files.stat",
+        "guests.list", "transfers.cancel",
+    ]
 
     private static let workspaceReason =
         "This tool resolves chat-workspace authority; applications supply "

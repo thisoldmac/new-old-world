@@ -38,6 +38,16 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
         }
         let path = request.target.split(separator: "?", maxSplits: 1)
             .first.map(String.init) ?? request.target
+        if Self.isFileResourcePath(path),
+           let response = await respondToFileResources(
+               request, path: path, requestID: requestID) {
+            return response
+        }
+        if path.hasPrefix("/api/v1/operations/"),
+           let response = await respondToGenericOperation(
+               request, path: path, requestID: requestID) {
+            return response
+        }
         let response: MCPHTTPResponse
         switch (request.method, path) {
         case ("GET", "/api/v1"):
@@ -73,69 +83,6 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             }
             response = json(200, requestID: requestID,
                             object: ["operations": rows])
-        case ("POST", let value)
-            where value.hasPrefix("/api/v1/operations/"):
-            let operationID = String(value.dropFirst(
-                "/api/v1/operations/".count))
-            guard !operationID.isEmpty,
-                  NOWOperationInventory.projectionCapability(
-                    forPublicOperationID: operationID) != nil else {
-                return error(404, requestID: requestID,
-                             code: "operation_not_found",
-                             message: "No generic public operation has that ID.",
-                             reach: "operation")
-            }
-            guard let invocation = Self.operationInvocation(request.body) else {
-                await record(requestID, operationID, nil, .refused)
-                return error(400, requestID: requestID,
-                             code: "operation_request_invalid",
-                             message: "The invocation accepts only guest and arguments.",
-                             reach: "request")
-            }
-            if NOWOperationInventory.publicOperationEffect(
-                    for: operationID) != .read {
-                guard let selector = invocation.guest,
-                      GuestKey.parse(selector) != nil else {
-                    await record(requestID, operationID,
-                                 invocation.guest, .refused)
-                    return error(
-                        428, requestID: requestID,
-                        code: "exact_session_required",
-                        message: "Mutating generic operations require an exact guest session selector.",
-                        reach: "session")
-                }
-            }
-            let addressedGuest = invocation.guest
-            let outcome = await host.apiInvokeOperation(
-                operationID: operationID, guest: addressedGuest,
-                argumentsJSON: invocation.argumentsJSON)
-            var object: [String: Any] = [
-                "requestId": requestID.uuidString.lowercased(),
-                "operationId": operationID,
-                "disposition": outcome.disposition.rawValue,
-            ]
-            object["guest"] = addressedGuest
-            if let data = outcome.valueJSON,
-               let value = try? JSONSerialization.jsonObject(with: data) {
-                object["value"] = value
-            }
-            if let data = outcome.attachmentJSON,
-               let attachment = try? JSONSerialization.jsonObject(with: data) {
-                object["attachment"] = attachment
-            }
-            if let code = outcome.errorCode,
-               let message = outcome.errorMessage {
-                object["error"] = ["code": code, "message": message,
-                                   "reach": "operation"]
-            }
-            response = json(200, requestID: requestID, object: object)
-            let disposition: NOWAPIAuditEvent.Disposition
-            switch outcome.disposition {
-            case .completed: disposition = .completed
-            case .refused: disposition = .refused
-            case .unavailable, .failed: disposition = .failed
-            }
-            await record(requestID, operationID, addressedGuest, disposition)
         case ("GET", "/api/v1/events"):
             guard request.headers["last-event-id"] == nil,
                   !request.target.contains("?") else {
@@ -172,6 +119,218 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             let guests = await host.apiGuests().map(Self.guestJSON)
             response = json(200, requestID: requestID,
                             object: ["guests": guests])
+        case ("GET", let value) where value.hasPrefix("/api/v1/guests/"):
+            let id = String(value.dropFirst("/api/v1/guests/".count))
+            guard !id.isEmpty, let guest = await host.apiGuest(id: id) else {
+                return error(404, requestID: requestID,
+                             code: "guest_not_found",
+                             message: "No guest has that stable ID.",
+                             reach: "guest")
+            }
+            response = json(200, requestID: requestID,
+                            object: Self.guestDetailJSON(guest))
+        case ("POST", let value)
+            where value.hasPrefix("/api/v1/guests/")
+                && value.hasSuffix("/commands"):
+            let prefix = "/api/v1/guests/"
+            let id = String(value.dropFirst(prefix.count)
+                .dropLast("/commands".count))
+            guard !id.isEmpty, let guest = await host.apiGuest(id: id) else {
+                await record(requestID, "commands.execute", id, .refused)
+                return error(404, requestID: requestID,
+                             code: "guest_not_found",
+                             message: "No guest has that stable ID.",
+                             reach: "guest")
+            }
+            if let problem = await exactSessionProblem(
+                request, guestID: id, requestID: requestID,
+                operationID: "commands.execute") { return problem }
+            let command: NOWAPIConsoleCommandRequest
+            switch NOWAPIConsoleCommandHTTPCodec.parse(request.body) {
+            case .success(let parsed): command = parsed
+            case .failure(let problem):
+                await record(requestID, "commands.execute", id, .refused)
+                let outcome = NOWAPIConsoleCommandOutcome(
+                    guestID: id, sessionID: guest.summary.sessionID,
+                    disposition: .invalid, output: nil,
+                    outputObjects: nil,
+                    error: .init(code: problem.code,
+                                 message: problem.message,
+                                 reach: "request"))
+                return json(400, requestID: requestID,
+                            object: NOWAPIConsoleCommandHTTPCodec.render(
+                                requestID, outcome))
+            }
+            let outcome = await executeCommand(
+                guestID: id,
+                expectedSessionID: request.headers["x-now-guest-session"]!,
+                request: command)
+            response = json(200, requestID: requestID,
+                            object: NOWAPIConsoleCommandHTTPCodec.render(
+                                requestID, outcome))
+            let auditDisposition: NOWAPIAuditEvent.Disposition
+            switch outcome.disposition {
+            case .completed: auditDisposition = .completed
+            case .invalid, .unadvertised, .refused: auditDisposition = .refused
+            case .timedOut, .disconnected, .failed: auditDisposition = .failed
+            }
+            await record(requestID, "commands.execute", id,
+                         auditDisposition)
+        case ("GET", "/api/v1/listener"):
+            response = json(200, requestID: requestID,
+                            object: Self.listenerJSON(await host.apiListener()))
+        case ("PUT", "/api/v1/listener"):
+            let value = await host.apiStartListener()
+            response = json(200, requestID: requestID,
+                            object: Self.listenerJSON(value))
+            await record(requestID, "listener.start", nil, .completed)
+        case ("DELETE", "/api/v1/listener"):
+            let value = await host.apiStopListener()
+            response = json(200, requestID: requestID,
+                            object: Self.listenerJSON(value))
+            await record(requestID, "listener.stop", nil, .completed)
+        case ("GET", "/api/v1/connections"):
+            let values = await host.apiConnections().map(Self.connectionJSON)
+            response = json(200, requestID: requestID,
+                            object: ["connections": values])
+        case ("DELETE", let value)
+            where value.hasPrefix("/api/v1/connections/"):
+            let sessionID = String(value.dropFirst(
+                "/api/v1/connections/".count))
+            guard let session = GuestKey.parse(sessionID) else {
+                await record(requestID, "connections.disconnect", nil,
+                             .refused)
+                return error(400, requestID: requestID,
+                             code: "invalid_session_id",
+                             message: "Disconnect requires an exact session ID.",
+                             reach: "session")
+            }
+            guard await host.apiDisconnect(sessionID: sessionID) else {
+                await record(requestID, "connections.disconnect",
+                             session.machine.slug,
+                             .refused)
+                return error(404, requestID: requestID,
+                             code: "session_not_found",
+                             message: "That exact session is not connected.",
+                             reach: "session")
+            }
+            response = json(200, requestID: requestID, object: [
+                "requestId": requestID.uuidString.lowercased(),
+                "operationId": "connections.disconnect",
+                "disposition": "completed",
+                "value": ["sessionId": sessionID],
+            ])
+            await record(requestID, "connections.disconnect",
+                         session.machine.slug,
+                         .completed)
+        default:
+            response = error(404, requestID: requestID, code: "not_found",
+                             message: "No API route matches this request.",
+                             reach: "request")
+        }
+        return response
+    }
+
+    private func respondToGenericOperation(
+        _ request: MCPHTTPRequest, path: String, requestID: UUID
+    ) async -> MCPHTTPResponse? {
+        let response: MCPHTTPResponse
+        switch (request.method, path) {
+        case ("POST", let value)
+            where value.hasPrefix("/api/v1/operations/"):
+            let operationID = String(value.dropFirst(
+                "/api/v1/operations/".count))
+            guard !operationID.isEmpty,
+                  NOWOperationInventory.genericProjectionCapability(
+                    forPublicOperationID: operationID) != nil else {
+                return error(404, requestID: requestID,
+                             code: "operation_not_found",
+                             message: "No generic public operation has that ID.",
+                             reach: "operation")
+            }
+            guard let invocation = Self.operationInvocation(request.body) else {
+                await record(requestID, operationID, nil, .refused)
+                return error(400, requestID: requestID,
+                             code: "operation_request_invalid",
+                             message: "The invocation accepts only guest and arguments.",
+                             reach: "request")
+            }
+            if NOWOperationInventory.publicOperationEffect(
+                    for: operationID) != .read {
+                guard let selector = invocation.guest,
+                      let key = GuestKey.parse(selector) else {
+                    await record(requestID, operationID,
+                                 Self.auditGuestTarget(invocation.guest),
+                                 .refused)
+                    return error(
+                        428, requestID: requestID,
+                        code: "exact_session_required",
+                        message: "Mutating generic operations require an exact guest session selector.",
+                        reach: "session")
+                }
+                guard let guest = await host.apiGuest(id: key.machine.slug),
+                      guest.summary.sessionID == selector else {
+                    await record(requestID, operationID, key.machine.slug,
+                                 .refused)
+                    return error(
+                        409, requestID: requestID,
+                        code: "guest_session_changed",
+                        message: "The guest session changed; refetch before retrying.",
+                        reach: "session")
+                }
+            }
+            let addressedGuest = invocation.guest
+            let outcome = await host.apiInvokeOperation(
+                operationID: operationID, guest: addressedGuest,
+                argumentsJSON: invocation.argumentsJSON)
+            var object: [String: Any] = [
+                "requestId": requestID.uuidString.lowercased(),
+                "operationId": operationID,
+                "disposition": outcome.disposition.rawValue,
+            ]
+            object["guest"] = addressedGuest
+            if let data = outcome.valueJSON,
+               let value = try? JSONSerialization.jsonObject(with: data) {
+                object["value"] = value
+            }
+            if let data = outcome.attachmentJSON,
+               let attachment = try? JSONSerialization.jsonObject(with: data) {
+                object["attachment"] = attachment
+            }
+            if let code = outcome.errorCode,
+               let message = outcome.errorMessage {
+                object["error"] = ["code": code, "message": message,
+                                   "reach": "operation"]
+            }
+            response = json(200, requestID: requestID, object: object)
+            let disposition: NOWAPIAuditEvent.Disposition
+            switch outcome.disposition {
+            case .completed: disposition = .completed
+            case .refused:
+                disposition = outcome.errorCode == "guest_consent_refused"
+                    ? .denied : .refused
+            case .unavailable, .failed: disposition = .failed
+            }
+            await record(requestID, operationID,
+                         Self.auditGuestTarget(addressedGuest), disposition)
+        default:
+            return nil
+        }
+        return response
+    }
+
+    private static func isFileResourcePath(_ path: String) -> Bool {
+        path.hasPrefix("/api/v1/transfers")
+            || (path.hasPrefix("/api/v1/guests/")
+                && (path.contains("/files")
+                    || path.contains("/transfers/")))
+    }
+
+    private func respondToFileResources(
+        _ request: MCPHTTPRequest, path: String, requestID: UUID
+    ) async -> MCPHTTPResponse? {
+        let response: MCPHTTPResponse
+        switch (request.method, path) {
         case ("GET", let value)
             where value.hasPrefix("/api/v1/guests/")
                 && value.hasSuffix("/files"):
@@ -217,7 +376,8 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                 return unavailableFiles(requestID)
             }
             if let problem = await exactSessionProblem(
-                request, guestID: id, requestID: requestID) { return problem }
+                request, guestID: id, requestID: requestID,
+                operationID: "files.mutate") { return problem }
             guard let requestValue = Self.mutation(request.body) else {
                 await record(requestID, "files.mutate", id, .refused)
                 return error(400, requestID: requestID,
@@ -247,7 +407,8 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                 return unavailableFiles(requestID)
             }
             if let problem = await exactSessionProblem(
-                request, guestID: id, requestID: requestID) { return problem }
+                request, guestID: id, requestID: requestID,
+                operationID: "files.put") { return problem }
             guard let upload = try? JSONDecoder().decode(
                 AgentIntegrationGuestFileUploadBegin.self,
                 from: request.body) else {
@@ -279,7 +440,8 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                 return unavailableFiles(requestID)
             }
             if let problem = await exactSessionProblem(
-                request, guestID: id, requestID: requestID) { return problem }
+                request, guestID: id, requestID: requestID,
+                operationID: "files.get") { return problem }
             guard let object = try? JSONSerialization.jsonObject(
                     with: request.body) as? [String: Any],
                   object.count == 1, let filePath = object["path"] as? String
@@ -434,111 +596,8 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
                              reach: "transfer")
             }
             response = codable(200, requestID: requestID, transfer)
-        case ("GET", let value) where value.hasPrefix("/api/v1/guests/"):
-            let id = String(value.dropFirst("/api/v1/guests/".count))
-            guard !id.isEmpty, let guest = await host.apiGuest(id: id) else {
-                return error(404, requestID: requestID,
-                             code: "guest_not_found",
-                             message: "No guest has that stable ID.",
-                             reach: "guest")
-            }
-            response = json(200, requestID: requestID,
-                            object: Self.guestDetailJSON(guest))
-        case ("POST", let value)
-            where value.hasPrefix("/api/v1/guests/")
-                && value.hasSuffix("/commands"):
-            let prefix = "/api/v1/guests/"
-            let id = String(value.dropFirst(prefix.count)
-                .dropLast("/commands".count))
-            guard !id.isEmpty, let guest = await host.apiGuest(id: id) else {
-                await record(requestID, "commands.execute", id, .refused)
-                return error(404, requestID: requestID,
-                             code: "guest_not_found",
-                             message: "No guest has that stable ID.",
-                             reach: "guest")
-            }
-            if let problem = await exactSessionProblem(
-                request, guestID: id, requestID: requestID) { return problem }
-            let command: NOWAPIConsoleCommandRequest
-            switch NOWAPIConsoleCommandHTTPCodec.parse(request.body) {
-            case .success(let parsed): command = parsed
-            case .failure(let problem):
-                await record(requestID, "commands.execute", id, .refused)
-                let outcome = NOWAPIConsoleCommandOutcome(
-                    guestID: id, sessionID: guest.summary.sessionID,
-                    disposition: .invalid, output: nil,
-                    outputObjects: nil,
-                    error: .init(code: problem.code,
-                                 message: problem.message,
-                                 reach: "request"))
-                return json(400, requestID: requestID,
-                            object: NOWAPIConsoleCommandHTTPCodec.render(
-                                requestID, outcome))
-            }
-            let outcome = await executeCommand(
-                guestID: id,
-                expectedSessionID: request.headers["x-now-guest-session"]!,
-                request: command)
-            response = json(200, requestID: requestID,
-                            object: NOWAPIConsoleCommandHTTPCodec.render(
-                                requestID, outcome))
-            let auditDisposition: NOWAPIAuditEvent.Disposition
-            switch outcome.disposition {
-            case .completed: auditDisposition = .completed
-            case .invalid, .unadvertised, .refused: auditDisposition = .refused
-            case .timedOut, .disconnected, .failed: auditDisposition = .failed
-            }
-            await record(requestID, "commands.execute", id,
-                         auditDisposition)
-        case ("GET", "/api/v1/listener"):
-            response = json(200, requestID: requestID,
-                            object: Self.listenerJSON(await host.apiListener()))
-        case ("PUT", "/api/v1/listener"):
-            let value = await host.apiStartListener()
-            response = json(200, requestID: requestID,
-                            object: Self.listenerJSON(value))
-            await record(requestID, "listener.start", nil, .completed)
-        case ("DELETE", "/api/v1/listener"):
-            let value = await host.apiStopListener()
-            response = json(200, requestID: requestID,
-                            object: Self.listenerJSON(value))
-            await record(requestID, "listener.stop", nil, .completed)
-        case ("GET", "/api/v1/connections"):
-            let values = await host.apiConnections().map(Self.connectionJSON)
-            response = json(200, requestID: requestID,
-                            object: ["connections": values])
-        case ("DELETE", let value)
-            where value.hasPrefix("/api/v1/connections/"):
-            let sessionID = String(value.dropFirst(
-                "/api/v1/connections/".count))
-            guard GuestKey.parse(sessionID) != nil else {
-                await record(requestID, "connections.disconnect", sessionID,
-                             .refused)
-                return error(400, requestID: requestID,
-                             code: "invalid_session_id",
-                             message: "Disconnect requires an exact session ID.",
-                             reach: "session")
-            }
-            guard await host.apiDisconnect(sessionID: sessionID) else {
-                await record(requestID, "connections.disconnect", sessionID,
-                             .refused)
-                return error(404, requestID: requestID,
-                             code: "session_not_found",
-                             message: "That exact session is not connected.",
-                             reach: "session")
-            }
-            response = json(200, requestID: requestID, object: [
-                "requestId": requestID.uuidString.lowercased(),
-                "operationId": "connections.disconnect",
-                "disposition": "completed",
-                "value": ["sessionId": sessionID],
-            ])
-            await record(requestID, "connections.disconnect", sessionID,
-                         .completed)
         default:
-            response = error(404, requestID: requestID, code: "not_found",
-                             message: "No API route matches this request.",
-                             reach: "request")
+            return nil
         }
         return response
     }
@@ -559,10 +618,12 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
     }
 
     private func exactSessionProblem(
-        _ request: MCPHTTPRequest, guestID: String, requestID: UUID
+        _ request: MCPHTTPRequest, guestID: String, requestID: UUID,
+        operationID: String
     ) async -> MCPHTTPResponse? {
         guard let expected = request.headers["x-now-guest-session"],
               GuestKey.parse(expected) != nil else {
+            await record(requestID, operationID, guestID, .refused)
             return error(428, requestID: requestID,
                          code: "guest_session_required",
                          message: "Unsafe guest operations require an exact X-NOW-Guest-Session precondition.",
@@ -570,6 +631,7 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
         }
         guard let guest = await host.apiGuest(id: guestID),
               guest.summary.sessionID == expected else {
+            await record(requestID, operationID, guestID, .refused)
             return error(409, requestID: requestID,
                          code: "guest_session_changed",
                          message: "The guest session changed; refetch before retrying.",
@@ -726,6 +788,12 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
 
     private static func transferTarget(_ id: UUID) -> String {
         id.uuidString.lowercased()
+    }
+
+    private static func auditGuestTarget(_ selector: String?) -> String? {
+        guard let selector else { return nil }
+        if let key = GuestKey.parse(selector) { return key.machine.slug }
+        return GuestID(selector)?.slug
     }
 
     private static func mutation(_ body: Data)

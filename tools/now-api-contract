@@ -45,6 +45,8 @@ def rendered(document: dict, digest: str) -> str:
         "ConsoleCommandDisposition", "ConsoleCommandResult", "TransferSummary",
         "PublicEventGuest", "PublicEvent",
         "GenericOperationInvocation", "GenericOperationResult",
+        "GuestFileListResult", "GuestFileStatResult",
+        "GuestFileMutationResult", "TransferList",
     }
     schemas = set(document.get("components", {}).get("schemas", {}))
     missing = sorted(required_schemas - schemas)
@@ -68,6 +70,49 @@ def rendered(document: dict, digest: str) -> str:
         "/operations/{operationID}", {}).get("post", {})
     if generic_route.get("operationId") != "operations.invoke":
         raise ValueError("generic public reach must bind POST /operations/{operationID}")
+    generic_parameters = document["paths"]["/operations/{operationID}"][
+        "parameters"]
+    generic_ids = generic_parameters[0].get("schema", {}).get("enum")
+    if not isinstance(generic_ids, list) or generic_ids != sorted(set(generic_ids)):
+        raise ValueError("generic operation enum must be sorted and unique")
+    metadata_ids = [row.get("operationId") for row in document.get(
+        "x-now-cli-operation-metadata", []) if isinstance(row, dict)]
+    if metadata_ids != generic_ids:
+        raise ValueError(
+            "runtime and CLI generic operation metadata must equal the "
+            "OpenAPI generic operation enum")
+    for status in ("409", "428"):
+        if status not in generic_route.get("responses", {}):
+            raise ValueError(f"generic operation reach must declare {status}")
+    response_refs = {
+        ("/guests/{guestID}/files", "get", "200"):
+            "#/components/responses/GuestFileListResult",
+        ("/guests/{guestID}/files/stat", "get", "200"):
+            "#/components/responses/GuestFileStatResult",
+        ("/guests/{guestID}/files/mutations", "post", "200"):
+            "#/components/responses/GuestFileMutationResult",
+        ("/guests/{guestID}/transfers/uploads", "post", "201"):
+            "#/components/responses/Transfer",
+        ("/guests/{guestID}/transfers/downloads", "post", "200"):
+            "#/components/responses/Transfer",
+        ("/transfers", "get", "200"):
+            "#/components/responses/TransferList",
+        ("/transfers/{transferID}", "get", "200"):
+            "#/components/responses/Transfer",
+        ("/transfers/{transferID}", "delete", "200"):
+            "#/components/responses/Transfer",
+        ("/transfers/{transferID}/content", "put", "200"):
+            "#/components/responses/Transfer",
+        ("/transfers/{transferID}/commit", "post", "200"):
+            "#/components/responses/Transfer",
+        ("/transfers/{transferID}/content", "get", "200"):
+            "#/components/responses/BinaryContent",
+    }
+    for (path, method, status), expected in response_refs.items():
+        actual = document["paths"][path][method]["responses"][status].get("$ref")
+        if actual != expected:
+            raise ValueError(
+                f"{method.upper()} {path} {status} must use {expected}")
     schema_revision = document.get("x-now-compatibility", {}).get(
         "schemaRevision")
     if not isinstance(schema_revision, int) or schema_revision < 1:

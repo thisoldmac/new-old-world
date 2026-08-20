@@ -679,6 +679,20 @@ final class GuestListenerTests: XCTestCase {
         }
     }
 
+    func testHostDisconnectLogInterpolatesTheGuestName() async throws {
+        let guest = FakeGuest(port: listener.boundPort!)
+        guest.start()
+        try guest.send(guestHello(name: "PowerBook 1400c"))
+        try await waitUntil("connected") { self.listener.guests.count == 1 }
+        let key = try XCTUnwrap(listener.guests.first?.key)
+
+        XCTAssertTrue(listener.disconnect(key))
+        XCTAssertTrue(listener.log.contains {
+            $0.text == "Disconnected PowerBook 1400c"
+                && $0.sessionID == key.text
+        })
+    }
+
     func testByeDisconnectsCalmly() async throws {
         let guest = FakeGuest(port: listener.boundPort!)
         guest.start()
