@@ -34,6 +34,12 @@ final class MCPHTTPClientRecipesTests: XCTestCase {
                        Set(["Codex", "Claude Code", "Agentis"]))
         XCTAssertEqual(Set(recipes.oauth.map(\.client)),
                        Set(["Codex", "Claude Code"]))
+        XCTAssertEqual(Set(recipes.unauthenticated.map(\.client)),
+                       Set(["Codex", "Claude Code", "Agentis"]))
+        XCTAssertTrue(recipes.unauthenticated.allSatisfy {
+            !$0.configuration.contains("Bearer")
+                && !$0.configuration.contains("NOW_MCP_BEARER_TOKEN")
+        })
     }
 
     func testClaudeBearerRecipePersistsEnvironmentExpansionInMCPJSON()

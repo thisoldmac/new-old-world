@@ -177,9 +177,9 @@ public actor NOWMCPServer {
 
     private func initialize(_ request: [String: Any], id: Any) async -> Data {
         guard !initializeResponded,
+              Self.hasValidInitializeParameters(request),
               let params = request["params"] as? [String: Any],
               let requested = params["protocolVersion"] as? String,
-              params["capabilities"] is [String: Any],
               let clientInfo = params["clientInfo"] as? [String: Any] else {
             return errorResponse(id: id, code: -32602,
                                  message: "Invalid initialize parameters")
@@ -209,6 +209,17 @@ public actor NOWMCPServer {
             ],
             "instructions": Self.firstContactGuide,
         ])
+    }
+
+    public static func hasValidInitializeParameters(
+        _ request: [String: Any]
+    ) -> Bool {
+        guard let params = request["params"] as? [String: Any] else {
+            return false
+        }
+        return params["protocolVersion"] is String
+            && params["capabilities"] is [String: Any]
+            && params["clientInfo"] is [String: Any]
     }
 
     private static let firstContactGuide = """

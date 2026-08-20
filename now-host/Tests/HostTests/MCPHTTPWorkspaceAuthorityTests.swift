@@ -80,6 +80,32 @@ final class MCPHTTPWorkspaceAuthorityTests: XCTestCase {
         XCTAssertEqual(refused.status, 403)
     }
 
+    func testInvalidInitializeDoesNotConsumeWorkspaceGrant() async throws {
+        let roots = try WorkspaceRoots()
+        defer { roots.remove() }
+        let grants = MCPHTTPWorkspaceGrantAuthority(
+            maximumOutstanding: 1, lifetime: 30)
+        let service = service(grants)
+        let token = try XCTUnwrap(grants.issue(workspaceRoot: roots.a))
+
+        let invalid = await service.respond(to: request(
+            Self.body(id: 1, method: "initialize", params: [
+                "protocolVersion": Self.version,
+                "clientInfo": ["name": "workspace-test", "version": "1"],
+            ]), grant: token))
+        XCTAssertEqual(invalid.status, 200)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: invalid.body)
+                as? [String: Any])
+        XCTAssertEqual((object["error"] as? [String: Any])?["code"] as? Int,
+                       -32602)
+        XCTAssertNil(invalid.headers["Mcp-Session-Id"])
+
+        let accepted = await initializeResponse(service, grant: token)
+        XCTAssertEqual(accepted.status, 200)
+        XCTAssertNotNil(accepted.headers["Mcp-Session-Id"])
+    }
+
     func testOutstandingGrantSetIsBounded() throws {
         let roots = try WorkspaceRoots()
         defer { roots.remove() }

@@ -62,4 +62,29 @@ struct MCPHTTPClientRecipes: Equatable {
                 """),
         ]
     }
+
+    var unauthenticated: [Recipe] {
+        [
+            .init(client: "Codex", configuration: """
+                [mcp_servers.now]
+                url = "\(endpoint)"
+                """),
+            .init(client: "Claude Code", configuration: """
+                {
+                  "mcpServers": {
+                    "now": {
+                      "type": "http",
+                      "url": "\(endpoint)"
+                    }
+                  }
+                }
+                """),
+            .init(client: "Agentis", configuration: """
+                Name: New Old World
+                Transport: Streamable HTTP
+                URL: \(endpoint)
+                Authentication: None
+                """),
+        ]
+    }
 }

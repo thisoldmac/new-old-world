@@ -818,7 +818,8 @@ struct MCPModuleView: View {
             let recipes = MCPHTTPClientRecipes(endpoint: plannedHTTPEndpoint)
             let selected = settings.httpAuthMode == .oauth
                 ? recipes.oauth
-                : settings.httpAuthMode == .bearer ? recipes.bearer : []
+                : settings.httpAuthMode == .bearer
+                    ? recipes.bearer : recipes.unauthenticated
             if !selected.isEmpty {
                 Text("Client recipes")
                     .font(.caption.weight(.medium))

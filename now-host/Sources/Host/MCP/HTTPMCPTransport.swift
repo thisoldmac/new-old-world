@@ -373,6 +373,11 @@ actor MCPHTTPService {
             guard sessions.count < configuration.maximumSessions else {
                 return response(429, headers: ["Retry-After": "30"])
             }
+            guard NOWMCPServer.hasValidInitializeParameters(object) else {
+                let reply = await serverFactory(nil).server
+                    .handle(request.body)
+                return reply.map { jsonResponse($0) } ?? response(202)
+            }
             let workspaceGrant: HostWorkspaceGrant?
             if let token =
                 request.headers[MCPHTTPWorkspaceGrantAuthority.headerName] {
