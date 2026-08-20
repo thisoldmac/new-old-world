@@ -29,6 +29,22 @@
         }
       }
     },
+    "/events": {
+      "get": {
+        "operationId": "events.watch",
+        "summary": "Watch live public change hints",
+        "description": "Live-only Server-Sent Events with bounded buffering. Events are refetch hints, not replacement state. Replay cursors and Last-Event-ID are rejected; after every reconnect, refetch the named resources before trusting local state.",
+        "parameters": [
+          { "name": "Accept", "in": "header", "required": true, "schema": { "type": "string", "const": "text/event-stream" } }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/EventStream" },
+          "406": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "description": "Replay was requested, but v1 is live-only", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
     "/guests": {
       "get": {
         "operationId": "guests.list",
@@ -207,6 +223,17 @@
         "description": "Exact live guest sessions",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ConnectionList" } } }
       },
+      "EventStream": {
+        "description": "A live-only stream. Heartbeat comments carry no state. On stream.ready, stream.resync-required, or reconnect, refetch the listed resources; v1 retains no replay log.",
+        "headers": {
+          "Cache-Control": { "schema": { "type": "string", "const": "no-store" } }
+        },
+        "content": {
+          "text/event-stream": {
+            "schema": { "$ref": "#/components/schemas/PublicEvent" }
+          }
+        }
+      },
       "ConsoleCommandResult": {
         "description": "Bounded result from the exact addressed guest session",
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ConsoleCommandResult" } } }
@@ -309,6 +336,30 @@
           "connections": { "type": "array", "items": { "$ref": "#/components/schemas/ConnectionSummary" } }
         },
         "required": ["connections"],
+        "additionalProperties": false
+      },
+      "PublicEventGuest": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "sessionId": { "type": "string", "minLength": 38, "maxLength": 180 }
+        },
+        "required": ["id", "sessionId"],
+        "additionalProperties": false
+      },
+      "PublicEvent": {
+        "type": "object",
+        "description": "A privacy-reviewed invalidation hint. No host path, URL, private enum value, or guest-supplied diagnostic string is present.",
+        "properties": {
+          "type": { "type": "string", "enum": ["stream.ready", "stream.resync-required", "guest.connected", "guest.disconnected", "guest.changed", "guests.changed", "listener.changed", "transfer.progressed", "transfers.changed", "files.changed", "processes.changed"] },
+          "guest": { "$ref": "#/components/schemas/PublicEventGuest" },
+          "receivedBytes": { "type": "integer", "minimum": 0 },
+          "expectedBytes": { "type": "integer", "minimum": 0 },
+          "liveOnly": { "type": "boolean" },
+          "replay": { "type": "boolean" },
+          "refetch": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^/api/v1/" } }
+        },
+        "required": ["type", "refetch"],
         "additionalProperties": false
       },
       "ErrorEnvelope": {
@@ -525,11 +576,11 @@
   },
   "x-now-compatibility": {
     "apiMajor": 1,
-    "schemaRevision": 3,
+    "schemaRevision": 4,
     "policy": "Additive optional fields and operations may ship within v1; required-field meaning and disposition semantics remain stable."
   },
   "x-now-operation-catalog": [
-    "api.identity", "catalog.search", "commands.execute", "connections.disconnect", "connections.list", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer",
+    "api.identity", "catalog.search", "commands.execute", "connections.disconnect", "connections.list", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer", "events.watch",
     "files.capabilities", "files.get", "files.list", "files.mutate", "files.put", "files.reveal", "files.stat",
     "guests.capabilities", "guests.census", "guests.facts", "guests.list", "guests.status",
     "interface.control.act", "interface.menu.act", "interface.observe", "interface.text.get", "interface.text.set", "interface.window.act",

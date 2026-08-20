@@ -156,6 +156,14 @@ struct BoundedHTTPRequestParser {
 
 typealias BoundedMCPHTTPRequestParser = BoundedHTTPRequestParser
 
+/// A response body that remains open. `next` has at most one outstanding
+/// consumer, and the connection requests another piece only after the prior
+/// network write completes.
+protocol MCPHTTPStreamingBody: AnyObject, Sendable {
+    func next(_ completion: @escaping @Sendable (Data?) -> Void)
+    func cancel()
+}
+
 struct MCPHTTPResponse: Equatable {
     let status: Int
     var headers: [String: String] = [:]
@@ -164,6 +172,14 @@ struct MCPHTTPResponse: Equatable {
     /// this in bounded pieces; API downloads never become one giant `Data`.
     var bodyFileURL: URL? = nil
     var bodyFileLength: Int? = nil
+    var streamingBody: (any MCPHTTPStreamingBody)? = nil
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.status == rhs.status && lhs.headers == rhs.headers
+            && lhs.body == rhs.body && lhs.bodyFileURL == rhs.bodyFileURL
+            && lhs.bodyFileLength == rhs.bodyFileLength
+            && (lhs.streamingBody != nil) == (rhs.streamingBody != nil)
+    }
 
     var wireHeadData: Data {
         let phrase: String
@@ -178,6 +194,7 @@ struct MCPHTTPResponse: Equatable {
         case 404: phrase = "Not Found"
         case 405: phrase = "Method Not Allowed"
         case 406: phrase = "Not Acceptable"
+        case 409: phrase = "Conflict"
         case 413: phrase = "Content Too Large"
         case 415: phrase = "Unsupported Media Type"
         case 429: phrase = "Too Many Requests"
@@ -185,8 +202,13 @@ struct MCPHTTPResponse: Equatable {
         default: phrase = "Internal Server Error"
         }
         var fields = headers
-        fields["Content-Length"] = "\(bodyFileLength ?? body.count)"
-        fields["Connection"] = "close"
+        if streamingBody == nil {
+            fields["Content-Length"] = "\(bodyFileLength ?? body.count)"
+            fields["Connection"] = "close"
+        } else {
+            fields["Connection"] = "keep-alive"
+            fields["Transfer-Encoding"] = "chunked"
+        }
         var head = "HTTP/1.1 \(status) \(phrase)\r\n"
         for key in fields.keys.sorted() {
             head += "\(key): \(fields[key]!)\r\n"
@@ -622,6 +644,8 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     private let queue: DispatchQueue
     private var parser: BoundedHTTPRequestParser
     private var finished = false
+    private var peerClosed = false
+    private var activeStream: (any MCPHTTPStreamingBody)?
     /// `NWListener` does not retain the object that installed the receive
     /// callback. Keep this exchange alive until its one response is sent;
     /// without this ownership the accepted TCP connection remains open but
@@ -638,6 +662,16 @@ private final class MCPHTTPConnection: @unchecked Sendable {
 
     func start() {
         keepAlive = self
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .failed, .cancelled:
+                self?.activeStream?.cancel()
+                self?.activeStream = nil
+                self?.keepAlive = nil
+            default:
+                break
+            }
+        }
         connection.start(queue: queue)
         queue.asyncAfter(deadline: .now() + 15) { [weak self] in
             self?.finish(.init(status: 400))
@@ -662,6 +696,7 @@ private final class MCPHTTPConnection: @unchecked Sendable {
             }
             do {
                 if let data, let request = try self.parser.append(data) {
+                    self.monitorPeerClose()
                     Task {
                         let response = await self.service.respond(to: request)
                         self.queue.async { self.finish(response) }
@@ -688,7 +723,27 @@ private final class MCPHTTPConnection: @unchecked Sendable {
 
     private func finish(_ response: MCPHTTPResponse) {
         guard !finished else { return }
+        guard !peerClosed else {
+            response.streamingBody?.cancel()
+            keepAlive = nil
+            return
+        }
         finished = true
+        if let stream = response.streamingBody {
+            activeStream = stream
+            connection.send(content: response.wireHeadData,
+                            completion: .contentProcessed {
+                [weak self] error in
+                guard let self, error == nil else {
+                    stream.cancel()
+                    self?.connection.cancel()
+                    self?.keepAlive = nil
+                    return
+                }
+                self.sendStream(stream)
+            })
+            return
+        }
         if let fileURL = response.bodyFileURL,
            let fileLength = response.bodyFileLength {
             connection.send(content: response.wireHeadData,
@@ -710,6 +765,56 @@ private final class MCPHTTPConnection: @unchecked Sendable {
                             connection.cancel()
                             keepAlive = nil
                         })
+    }
+
+    /// The request parser is one-shot, but a live response must still learn
+    /// when its client closes. A concurrent one-byte receive is only a close
+    /// witness: request pipelining is unsupported, so any further input also
+    /// terminates this exchange.
+    private func monitorPeerClose() {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1) {
+            [weak self] _, _, _, _ in
+            guard let self else { return }
+            self.peerClosed = true
+            self.activeStream?.cancel()
+            self.activeStream = nil
+            self.connection.cancel()
+            self.keepAlive = nil
+        }
+    }
+
+    private func sendStream(_ stream: any MCPHTTPStreamingBody) {
+        stream.next { [weak self] piece in
+            guard let self else { stream.cancel(); return }
+            self.queue.async { [self] in
+                guard let piece else {
+                    stream.cancel()
+                    self.activeStream = nil
+                    self.connection.send(
+                        content: Data("0\r\n\r\n".utf8), isComplete: true,
+                        completion: .contentProcessed { [weak self] _ in
+                            self?.connection.cancel()
+                            self?.keepAlive = nil
+                        })
+                    return
+                }
+                let header = Data(String(piece.count, radix: 16).utf8)
+                let chunk = header + Data("\r\n".utf8) + piece
+                    + Data("\r\n".utf8)
+                self.connection.send(content: chunk,
+                                     completion: .contentProcessed {
+                    [weak self] error in
+                    guard let self, error == nil else {
+                        stream.cancel()
+                        self?.activeStream = nil
+                        self?.connection.cancel()
+                        self?.keepAlive = nil
+                        return
+                    }
+                    self.sendStream(stream)
+                })
+            }
+        }
     }
 
     /// One file-backed response, read and sent in bounded pieces. Network's

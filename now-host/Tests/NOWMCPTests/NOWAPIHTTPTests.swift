@@ -440,6 +440,7 @@ final class NOWAPIHTTPTests: XCTestCase {
 
 @MainActor
 private final class FixtureHost: NOWAPIHostServing {
+    let eventBus = HostEventBus()
     var disconnected: [String] = []
     var stopCount = 0
     var commands: [(guestID: String, request: NOWAPIConsoleCommandRequest)] = []
@@ -481,6 +482,10 @@ private final class FixtureHost: NOWAPIHostServing {
         guard sessionID == apiGuests()[0].sessionID else { return false }
         disconnected.append(sessionID)
         return true
+    }
+
+    func apiEventStream() -> NOWAPISSEStream {
+        NOWAPISSEStream(bus: eventBus, startsHeartbeat: false)
     }
 
     func apiExecuteCommand(

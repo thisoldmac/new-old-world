@@ -113,6 +113,10 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
         return listener.disconnect(key)
     }
 
+    func apiEventStream() -> NOWAPISSEStream {
+        NOWAPISSEStream(bus: listener.events)
+    }
+
     func apiExecuteCommand(
         guestID: String, request: NOWAPIConsoleCommandRequest,
         completion: @escaping (NOWAPIConsoleCommandOutcome) -> Void

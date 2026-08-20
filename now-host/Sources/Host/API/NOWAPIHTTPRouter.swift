@@ -8,6 +8,7 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
     static let maximumBodyBytes = 64 * 1024
     private static let renderedOperationIDs: Set<String> = [
         "api.identity", "commands.execute", "connections.disconnect", "connections.list",
+        "events.watch",
         "files.get", "files.list", "files.mutate", "files.put", "files.stat",
         "guests.list", "guests.status", "listener.start",
         "listener.status", "listener.stop", "operations.list",
@@ -63,6 +64,31 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             }
             response = json(200, requestID: requestID,
                             object: ["operations": rows])
+        case ("GET", "/api/v1/events"):
+            guard request.headers["last-event-id"] == nil,
+                  !request.target.contains("?") else {
+                return error(
+                    409, requestID: requestID,
+                    code: "event_replay_unsupported",
+                    message: "Events are live-only. Refetch resources before reconnecting.",
+                    reach: "request")
+            }
+            let accepted = Set((request.headers["accept"] ?? "")
+                .lowercased().split(separator: ",")
+                .map { $0.split(separator: ";", maxSplits: 1)[0]
+                    .trimmingCharacters(in: .whitespaces) })
+            guard accepted.contains("text/event-stream") else {
+                return error(406, requestID: requestID,
+                             code: "event_stream_not_accepted",
+                             message: "Accept: text/event-stream is required.",
+                             reach: "request")
+            }
+            response = .init(
+                status: 200,
+                headers: ["Content-Type": "text/event-stream; charset=utf-8",
+                          "Cache-Control": "no-store",
+                          "X-Accel-Buffering": "no"],
+                streamingBody: await host.apiEventStream())
         case ("GET", "/api/v1/guests"):
             let guests = await host.apiGuests().map(Self.guestJSON)
             response = json(200, requestID: requestID,

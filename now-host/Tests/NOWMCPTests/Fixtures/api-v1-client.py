@@ -23,3 +23,22 @@ assert body["apiMajor"] == 1
 assert len(body["contractDigest"]) == 64
 assert "jsonrpc" not in body
 assert "tools" not in body
+
+# http.client is the independent framing oracle here: getresponse/readline
+# decodes the HTTP/1.1 chunked response before exposing SSE lines.
+connection.request(
+    "GET", "/api/v1/events",
+    headers={"X-API-Key": api_key, "Accept": "text/event-stream"},
+)
+events = connection.getresponse()
+assert events.status == 200, events.status
+assert events.getheader("Transfer-Encoding") == "chunked"
+assert events.readline().decode("utf-8") == "event: stream.ready\n"
+ready = events.readline().decode("utf-8")
+assert ready.startswith("data: "), ready
+ready_body = json.loads(ready.removeprefix("data: "))
+assert ready_body["liveOnly"] is True
+assert ready_body["replay"] is False
+assert ready_body["refetch"]
+assert events.readline() == b"\n"
+connection.close()

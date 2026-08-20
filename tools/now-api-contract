@@ -40,11 +40,18 @@ def rendered(document: dict, digest: str) -> str:
         "OperationError", "OperationResult", "GuestSummary",
         "ListenerStatus", "ConnectionSummary", "ConsoleCommandRequest",
         "ConsoleCommandDisposition", "ConsoleCommandResult", "TransferSummary",
+        "PublicEventGuest", "PublicEvent",
     }
     schemas = set(document.get("components", {}).get("schemas", {}))
     missing = sorted(required_schemas - schemas)
     if missing:
         raise ValueError("missing core schemas: " + ", ".join(missing))
+    event_route = document.get("paths", {}).get("/events", {}).get("get", {})
+    if event_route.get("operationId") != "events.watch":
+        raise ValueError("events.watch must bind GET /events")
+    event_description = event_route.get("description", "")
+    if "Live-only" not in event_description or "refetch" not in event_description:
+        raise ValueError("events.watch must state live-only refetch semantics")
     schema_revision = document.get("x-now-compatibility", {}).get(
         "schemaRevision")
     if not isinstance(schema_revision, int) or schema_revision < 1:

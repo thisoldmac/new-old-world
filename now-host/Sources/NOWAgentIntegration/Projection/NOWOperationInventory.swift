@@ -108,6 +108,7 @@ public enum NOWOperationInventory {
     public static let apiNativeOperationIDs: Set<String> = [
         "api.identity", "commands.execute", "connections.disconnect",
         "connections.list", "guests.status", "listener.start",
+        "events.watch",
         "listener.status", "listener.stop", "operations.list",
         "transfers.commit", "transfers.content", "transfers.get",
         "transfers.list", "transfers.uploadChunk",

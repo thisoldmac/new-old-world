@@ -3,8 +3,8 @@ import Foundation
 
 public enum NOWAPIOperationIDs {
     public static let apiMajor = 1
-    public static let schemaRevision = 3
-    public static let contractDigest = "7df62e6188253df4271e71c5b4f226cc6925083f240fdfcd46bf3ccb4977d5e7"
+    public static let schemaRevision = 4
+    public static let contractDigest = "b8277050304b1fcdbf0ffbc0ab622edeaaf4d793f9cf8658948855210a030874"
     public static let all: Set<String> = [
         "api.identity",
         "catalog.search",
@@ -14,6 +14,7 @@ public enum NOWAPIOperationIDs {
         "diagnostics.capture",
         "diagnostics.framebuffer",
         "diagnostics.transfer",
+        "events.watch",
         "files.capabilities",
         "files.get",
         "files.list",

@@ -28,7 +28,7 @@ final class NOWOperationCatalogTests: XCTestCase {
 
     func testTheCheckedOpenAPIIdentitySetMatchesTheAdjudicatedCatalog() {
         XCTAssertEqual(NOWAPIOperationIDs.apiMajor, 1)
-        XCTAssertEqual(NOWAPIOperationIDs.schemaRevision, 3)
+        XCTAssertEqual(NOWAPIOperationIDs.schemaRevision, 4)
         XCTAssertEqual(NOWAPIOperationIDs.all,
                        NOWOperationInventory.publicOperationIDs)
     }
