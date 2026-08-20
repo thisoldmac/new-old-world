@@ -16,7 +16,7 @@
      Sharing:  Macintosh HD:Lab:
      (o) One folder   ( ) The whole startup disk    [Choose Folder...]
      [Send File...]   [===== the send's own bar =====]
-     Files you get land in: Downloads      [Change...]  [Open Folder]
+     Received files are saved in: Downloads      [Change...]  [Open Folder]
 
    THREE THINGS CHANGED SHAPE, each because the old one lied a little:
 
@@ -257,7 +257,7 @@ void files_share_content(const WorkshopSceneWriter *writer)
     files_run(writer, &g_r.sharing_value, false, true, truncMiddle,
               g_shown_root);
     files_run(writer, &g_r.into_label, false, false, truncEnd,
-              "Files you get land in:");
+              "Received files are saved in:");
     files_run(writer, &g_r.into_value, false, true, truncMiddle,
               g_shown_into);
 }

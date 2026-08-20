@@ -9,7 +9,7 @@ const WorkshopModuleDefinition *screenshots_module_definition(void)
         "screen",
         "Screenshots",
         "Capture this Mac, send a still, or stream its screen.",
-        "Screenshots still lives in its own window (Windows menu).",
+        "Screenshots is a window in the Windows menu.",
         "Capture and stream",
         129,
         kWorkshopModuleTierCore,

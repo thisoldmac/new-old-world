@@ -11,7 +11,7 @@ const WorkshopModuleDefinition *preferences_module_definition(void)
         "How this window behaves. Drag a row to rearrange the rail; "
             "settings are saved between launches.",
         "Preferences is not in this window yet.",
-        "How this window behaves",
+        "Window settings",
         142,
         kWorkshopModuleTierCore,
         NULL,
