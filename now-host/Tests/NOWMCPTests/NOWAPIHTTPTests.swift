@@ -84,8 +84,149 @@ final class NOWAPIHTTPTests: XCTestCase {
         XCTAssertTrue(identifiers.contains("connections.disconnect"))
         XCTAssertTrue(identifiers.contains("commands.execute"))
         XCTAssertFalse(identifiers.contains("now_list_machines"))
-        XCTAssertFalse(identifiers.contains("files.put"),
-                       "S4 operations are not runtime-bound in S2")
+        XCTAssertTrue(identifiers.contains("files.put"))
+        XCTAssertTrue(identifiers.contains("transfers.content"))
+    }
+
+    func testUploadRouteAdmitsMetadataAndRawChunkWithoutMCPVocabulary() async throws {
+        let driver = HTTPFileDriver()
+        let files = NOWAPIFileTransferService(driver: driver)
+        let router = NOWAPIHTTPRouter(
+            apiKey: Self.apiKey,
+            contractDigest: String(repeating: "d", count: 64),
+            host: FixtureHost(), files: files)
+        let admitted = await router.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/transfers/uploads",
+            body: Data((#"{"destinationPath":"Drop Box:test.bin","bytes":2,"sha256":""#
+                + String(repeating: "0", count: 64)
+                + #"","container":"data"}"#).utf8)))
+        XCTAssertEqual(admitted.status, 201)
+        let transfer = try object(admitted.body)
+        let id = try XCTUnwrap(transfer["id"] as? String)
+
+        let chunk = await router.respond(to: apiRequest(
+            "PUT", "/api/v1/transfers/\(id)/content?offset=0",
+            body: Data([1, 2])))
+        XCTAssertEqual(chunk.status, 200)
+        XCTAssertEqual(try object(chunk.body)["transferredBytes"] as? Int, 2)
+        XCTAssertEqual(driver.appendCount, 1)
+    }
+
+    func testMalformedQueryIsRejectedBeforeFileDispatch() async throws {
+        let driver = HTTPFileDriver()
+        let files = NOWAPIFileTransferService(driver: driver)
+        let router = makeFileRouter(files: files)
+
+        let list = await router.respond(to: apiRequest(
+            "GET", "/api/v1/guests/pb1400c/files?path"))
+        let stat = await router.respond(to: apiRequest(
+            "GET", "/api/v1/guests/pb1400c/files/stat?path=%ZZ"))
+
+        XCTAssertEqual(list.status, 400)
+        XCTAssertEqual(try errorCode(list), "query_invalid")
+        XCTAssertEqual(stat.status, 400)
+        XCTAssertEqual(try errorCode(stat), "query_invalid")
+        XCTAssertEqual(driver.listCount, 0)
+        XCTAssertEqual(driver.statCount, 0)
+    }
+
+    func testDuplicateQueryKeysAreRejectedAcrossFileRoutes() async throws {
+        let driver = HTTPFileDriver()
+        let files = NOWAPIFileTransferService(driver: driver)
+        let router = makeFileRouter(files: files)
+        let admitted = await router.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/transfers/uploads",
+            body: uploadBody(path: "Drop Box:test.bin", bytes: 2)))
+        let id = try XCTUnwrap(try object(admitted.body)["id"] as? String)
+
+        let list = await router.respond(to: apiRequest(
+            "GET", "/api/v1/guests/pb1400c/files?path=one&path=two"))
+        let stat = await router.respond(to: apiRequest(
+            "GET", "/api/v1/guests/pb1400c/files/stat?path=one&path=two"))
+        let chunk = await router.respond(to: apiRequest(
+            "PUT", "/api/v1/transfers/\(id)/content?offset=0&offset=1",
+            body: Data([1, 2])))
+
+        for response in [list, stat, chunk] {
+            XCTAssertEqual(response.status, 400)
+            XCTAssertEqual(try errorCode(response), "query_invalid")
+        }
+        XCTAssertEqual(driver.listCount, 0)
+        XCTAssertEqual(driver.statCount, 0)
+        XCTAssertEqual(driver.appendCount, 0)
+    }
+
+    func testFileTransferMutationsAuditOutcomeAndNeverSensitivePayload() async throws {
+        let audit = NOWAPIAuditSpy()
+        let driver = HTTPFileDriver()
+        let files = NOWAPIFileTransferService(driver: driver)
+        let router = makeFileRouter(files: files, audit: audit)
+        let secret = "private-path-and-bytes-must-not-enter-audit"
+
+        let mutation = await router.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/files/mutations",
+            body: Data("{\"mutation\":\"mkdir\",\"path\":\"\(secret)\"}".utf8)))
+        XCTAssertEqual(mutation.status, 200)
+
+        driver.mutationResult = .hostUnavailable(.host)
+        let failedMutation = await router.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/files/mutations",
+            body: Data("{\"mutation\":\"mkdir\",\"path\":\"\(secret)\"}".utf8)))
+        XCTAssertEqual(failedMutation.status, 200)
+
+        let refusedUpload = await router.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/transfers/uploads",
+            body: uploadBody(path: secret,
+                             bytes: NOWAPIFileTransferService.maximumFileBytes + 1)))
+        XCTAssertEqual(refusedUpload.status, 413)
+
+        let admitted = await router.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/transfers/uploads",
+            body: uploadBody(path: secret, bytes: 2)))
+        let transferID = try XCTUnwrap(
+            try object(admitted.body)["id"] as? String)
+        let chunk = await router.respond(to: apiRequest(
+            "PUT", "/api/v1/transfers/\(transferID)/content?offset=0",
+            body: Data(secret.utf8.prefix(2))))
+        XCTAssertEqual(chunk.status, 200)
+        let commit = await router.respond(to: apiRequest(
+            "POST", "/api/v1/transfers/\(transferID)/commit"))
+        XCTAssertEqual(commit.status, 200)
+        XCTAssertEqual(try object(commit.body)["state"] as? String, "failed")
+
+        let download = await router.respond(to: apiRequest(
+            "POST", "/api/v1/guests/pb1400c/transfers/downloads",
+            body: Data("{\"path\":\"\(secret)\"}".utf8)))
+        XCTAssertEqual(download.status, 200)
+        XCTAssertEqual(try object(download.body)["state"] as? String, "failed")
+
+        let settledCancel = await router.respond(to: apiRequest(
+            "DELETE", "/api/v1/transfers/\(transferID)"))
+        XCTAssertEqual(settledCancel.status, 200)
+
+        let missingID = UUID()
+        let cancel = await router.respond(to: apiRequest(
+            "DELETE", "/api/v1/transfers/\(missingID.uuidString)"))
+        XCTAssertEqual(cancel.status, 404)
+
+        let events = await audit.recorded()
+        XCTAssertEqual(events.map(\.operationID), [
+            "files.mutate", "files.mutate", "files.put", "files.put",
+            "transfers.uploadChunk", "transfers.commit", "files.get",
+            "transfers.cancel", "transfers.cancel",
+        ])
+        XCTAssertEqual(events.map(\.disposition), [
+            .completed, .failed, .refused, .completed, .completed, .failed,
+            .failed, .completed, .refused,
+        ])
+        XCTAssertEqual(events.map(\.target), [
+            "pb1400c", "pb1400c", "pb1400c", "pb1400c",
+            transferID.lowercased(),
+            transferID.lowercased(),
+            "pb1400c", transferID.lowercased(),
+            missingID.uuidString.lowercased(),
+        ])
+        XCTAssertFalse(String(describing: events).contains(secret))
     }
 
     func testConsoleCommandRouteReturnsTheGuestResult() async throws {
@@ -229,6 +370,25 @@ final class NOWAPIHTTPTests: XCTestCase {
                 audit: audit))
     }
 
+    private func makeFileRouter(
+        files: NOWAPIFileTransferService,
+        audit: any NOWAPIAuditSink = NOWAPINullAuditSink()
+    ) -> NOWAPIHTTPRouter {
+        NOWAPIHTTPRouter(
+            apiKey: Self.apiKey,
+            contractDigest: String(repeating: "d", count: 64),
+            host: FixtureHost(), audit: audit, files: files)
+    }
+
+    private func uploadBody(path: String, bytes: Int) -> Data {
+        try! JSONSerialization.data(withJSONObject: [
+            "destinationPath": path,
+            "bytes": bytes,
+            "sha256": String(repeating: "0", count: 64),
+            "container": "data",
+        ])
+    }
+
     private func apiRequest(_ method: String, _ target: String,
                             body: Data = Data()) -> MCPHTTPRequest {
         request(method, target, headers: ["x-api-key": Self.apiKey], body: body)
@@ -341,4 +501,72 @@ private actor NOWAPIAuditSpy: NOWAPIAuditSink {
     private(set) var events: [NOWAPIAuditEvent] = []
     func record(_ event: NOWAPIAuditEvent) { events.append(event) }
     func recorded() -> [NOWAPIAuditEvent] { events }
+}
+
+@MainActor
+private final class HTTPFileDriver: NOWAPIFileDriving {
+    var appendCount = 0
+    var listCount = 0
+    var statCount = 0
+    var mutationResult: AgentIntegrationGuestFileMutationResult?
+    private var stages: [UUID: Int] = [:]
+    func apiFileGuest(id: String) -> NOWAPICommandGuest? {
+        guard id == "pb1400c" else { return nil }
+        return .init(id: id, sessionID: "pb1400c-session", isActive: true,
+                     agentAccess: .fullAccess)
+    }
+    func apiListFiles(path: String, cursor: Int?) async
+        -> AgentIntegrationGuestFileListResult {
+        listCount += 1
+        return .hostUnavailable(.host)
+    }
+    func apiStatFile(path: String) async
+        -> AgentIntegrationGuestFileStatResult {
+        statCount += 1
+        return .hostUnavailable(.host)
+    }
+    func apiMutateFile(_ request: AgentIntegrationGuestFileMutationRequest)
+        async -> AgentIntegrationGuestFileMutationResult {
+        if let mutationResult { return mutationResult }
+        return .completed(receipt: receipt(.success), value: .init(
+            mutation: request.mutation, path: request.path,
+            observedAt: Date()), failure: nil)
+    }
+    func apiDownloadFile(path: String) async
+        -> AgentIntegrationGuestFileDownloadResult { .hostUnavailable(.host) }
+    func apiBeginUpload(_ request: AgentIntegrationGuestFileUploadBegin) async
+        -> AgentIntegrationGuestFileUploadStageResult {
+        let id = UUID(); stages[id] = 0
+        return .completed(receipt: receipt(.success), value: .init(
+            uploadID: id, destinationPath: request.destinationPath,
+            expectedBytes: request.bytes, receivedBytes: 0,
+            maximumChunkBytes: 8192, expiresAt: Date().addingTimeInterval(600),
+            hostAvailableBytesAtStart: 1_000_000,
+            hostReservedBytes: request.bytes, sealed: false), failure: nil)
+    }
+    func apiAppendUpload(uploadID: UUID, offset: Int, bytes: Data) async
+        -> AgentIntegrationGuestFileUploadStageResult {
+        appendCount += 1; stages[uploadID] = offset + bytes.count
+        return .completed(receipt: receipt(.success), value: .init(
+            uploadID: uploadID, destinationPath: "Drop Box:test.bin",
+            expectedBytes: 2, receivedBytes: offset + bytes.count,
+            maximumChunkBytes: 8192, expiresAt: Date().addingTimeInterval(600),
+            hostAvailableBytesAtStart: 1_000_000, hostReservedBytes: 2,
+            sealed: false), failure: nil)
+    }
+    func apiCommitUpload(uploadID: UUID) async
+        -> AgentIntegrationGuestFileUploadCommitResult { .hostUnavailable(.host) }
+    func apiAbandonUpload(uploadID: UUID) async -> Bool {
+        stages.removeValue(forKey: uploadID) != nil
+    }
+    func apiCancelTransfer() -> AgentIntegrationTransferCancelResult {
+        .hostUnavailable
+    }
+    func apiTransferProgress() -> (received: Int, expected: Int)? { nil }
+    private func receipt(_ outcome: AgentIntegrationGuestFileOutcome)
+        -> AgentIntegrationGuestFileReceipt {
+        .init(commandID: UUID(), sessionID: UUID(), policyVersion: 1,
+              operation: .put, startedAt: Date(), completedAt: Date(),
+              outcome: outcome, wireRequestCount: 0)
+    }
 }

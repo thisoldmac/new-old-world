@@ -544,6 +544,10 @@ final class GuestFilesCommandService {
         await uploadCommands.commit(uploadID: uploadID)
     }
 
+    func abandonUpload(uploadID: UUID) async -> Bool {
+        await uploadCommands.abandon(uploadID: uploadID)
+    }
+
     /// Move, trash, restore or create one item. The authority, the bounds
     /// and the one-request rule live in `GuestFileMutationCommands`.
     func mutate(_ request: AgentIntegrationGuestFileMutationRequest) async

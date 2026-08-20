@@ -109,6 +109,8 @@ public enum NOWOperationInventory {
         "api.identity", "commands.execute", "connections.disconnect",
         "connections.list", "guests.status", "listener.start",
         "listener.status", "listener.stop", "operations.list",
+        "transfers.commit", "transfers.content", "transfers.get",
+        "transfers.list", "transfers.uploadChunk",
     ]
 
     public static let publicOperationIDs: Set<String> = Set(

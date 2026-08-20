@@ -100,6 +100,23 @@ final class MCPHTTPTransportTests: XCTestCase {
         }
     }
 
+    func testFileBackedResponseDoesNotMaterializeContentInWireBuffer() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "now-http-stream-\(UUID().uuidString)")
+        let bytes = Data(repeating: 0x5a, count: 128 * 1024)
+        try bytes.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let response = MCPHTTPResponse(
+            status: 200, headers: ["Content-Type": "application/octet-stream"],
+            bodyFileURL: url, bodyFileLength: bytes.count)
+
+        XCTAssertLessThan(response.wireData.count, 1024)
+        let head = try XCTUnwrap(String(data: response.wireData,
+                                       encoding: .utf8))
+        XCTAssertTrue(head.contains("Content-Length: \(bytes.count)"))
+        XCTAssertEqual(response.body.count, 0)
+    }
+
     func testHTTPRequiresLoopbackHostBearerAndSafeOrigin() async throws {
         let service = service()
         let initialize = try Self.initializeBody(id: 1)

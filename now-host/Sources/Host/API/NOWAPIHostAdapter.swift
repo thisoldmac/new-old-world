@@ -8,11 +8,21 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
     private let listener: GuestListener
     private let settings: SettingsModel
     private let commands: NOWAPIConsoleCommandService
+    private let files: NOWAPIFileTransferService?
 
-    init(listener: GuestListener, settings: SettingsModel) {
+    init(listener: GuestListener, settings: SettingsModel,
+         guestFiles: GuestFilesCommandService? = nil,
+         agentIntegration: AgentIntegrationHostAdapter? = nil) {
         self.listener = listener
         self.settings = settings
         commands = NOWAPIConsoleCommandService(driver: listener)
+        if let guestFiles, let agentIntegration {
+            files = NOWAPIFileTransferService(driver: NOWAPIHostFileDriver(
+                listener: listener, files: guestFiles,
+                adapter: agentIntegration))
+        } else {
+            files = nil
+        }
     }
 
     func apiGuests() -> [NOWAPIGuestSummary] {
@@ -110,4 +120,6 @@ final class NOWAPIHostAdapter: NOWAPIHostServing {
         commands.execute(guestID: guestID, request: request,
                          completion: completion)
     }
+
+    func apiFiles() -> NOWAPIFileTransferService? { files }
 }

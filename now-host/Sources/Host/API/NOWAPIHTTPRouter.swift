@@ -8,22 +8,28 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
     static let maximumBodyBytes = 64 * 1024
     private static let renderedOperationIDs: Set<String> = [
         "api.identity", "commands.execute", "connections.disconnect", "connections.list",
+        "files.get", "files.list", "files.mutate", "files.put", "files.stat",
         "guests.list", "guests.status", "listener.start",
         "listener.status", "listener.stop", "operations.list",
+        "transfers.cancel", "transfers.commit", "transfers.content",
+        "transfers.get", "transfers.list", "transfers.uploadChunk",
     ]
 
     private let apiKey: String
     private let contractDigest: String
     private let host: any NOWAPIHostServing
     private let audit: any NOWAPIAuditSink
+    private let files: NOWAPIFileTransferService?
 
     init(apiKey: String, contractDigest: String,
          host: any NOWAPIHostServing,
-         audit: any NOWAPIAuditSink = NOWAPINullAuditSink()) {
+         audit: any NOWAPIAuditSink = NOWAPINullAuditSink(),
+         files: NOWAPIFileTransferService? = nil) {
         self.apiKey = apiKey
         self.contractDigest = contractDigest
         self.host = host
         self.audit = audit
+        self.files = files
     }
 
     func respond(to request: MCPHTTPRequest) async -> MCPHTTPResponse {
@@ -61,6 +67,256 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             let guests = await host.apiGuests().map(Self.guestJSON)
             response = json(200, requestID: requestID,
                             object: ["guests": guests])
+        case ("GET", let value)
+            where value.hasPrefix("/api/v1/guests/")
+                && value.hasSuffix("/files"):
+            guard let files else { return unavailableFiles(requestID) }
+            let id = String(value.dropFirst("/api/v1/guests/".count)
+                .dropLast("/files".count))
+            guard let query = Self.query(request.target) else {
+                return invalidQuery(requestID)
+            }
+            let cursor = query["cursor"].flatMap(Int.init)
+            do {
+                let result = try await files.listFiles(
+                    guestID: id, path: query["path"] ?? "", cursor: cursor)
+                response = codable(200, requestID: requestID, result)
+                await record(requestID, "files.list", id, .completed)
+            } catch let problem {
+                return fileProblem(problem, requestID)
+            }
+        case ("GET", let value)
+            where value.hasPrefix("/api/v1/guests/")
+                && value.hasSuffix("/files/stat"):
+            guard let files else { return unavailableFiles(requestID) }
+            let id = String(value.dropFirst("/api/v1/guests/".count)
+                .dropLast("/files/stat".count))
+            guard let query = Self.query(request.target) else {
+                return invalidQuery(requestID)
+            }
+            do {
+                let result = try await files.statFile(
+                    guestID: id, path: query["path"] ?? "")
+                response = codable(200, requestID: requestID, result)
+                await record(requestID, "files.stat", id, .completed)
+            } catch let problem {
+                return fileProblem(problem, requestID)
+            }
+        case ("POST", let value)
+            where value.hasPrefix("/api/v1/guests/")
+                && value.hasSuffix("/files/mutations"):
+            let id = String(value.dropFirst("/api/v1/guests/".count)
+                .dropLast("/files/mutations".count))
+            guard let files else {
+                await record(requestID, "files.mutate", id, .failed)
+                return unavailableFiles(requestID)
+            }
+            guard let requestValue = Self.mutation(request.body) else {
+                await record(requestID, "files.mutate", id, .refused)
+                return error(400, requestID: requestID,
+                             code: "file_mutation_invalid",
+                             message: "The file mutation shape is invalid.",
+                             reach: "request")
+            }
+            do {
+                let result = try await files.mutateFile(
+                    guestID: id, request: requestValue)
+                response = codable(200, requestID: requestID, result)
+                await record(requestID, "files.mutate", id,
+                             Self.auditDisposition(result))
+            } catch let problem {
+                return await auditedFileProblem(
+                    problem, requestID, "files.mutate", id)
+            }
+        case ("POST", let value)
+            where value.hasPrefix("/api/v1/guests/")
+                && value.hasSuffix("/transfers/uploads"):
+            let id = String(value.dropFirst("/api/v1/guests/".count)
+                .dropLast("/transfers/uploads".count))
+            guard let files else {
+                await record(requestID, "files.put", id, .failed)
+                return unavailableFiles(requestID)
+            }
+            guard let upload = try? JSONDecoder().decode(
+                AgentIntegrationGuestFileUploadBegin.self,
+                from: request.body) else {
+                await record(requestID, "files.put", id, .refused)
+                return error(400, requestID: requestID,
+                             code: "upload_invalid",
+                             message: "Upload metadata is invalid.",
+                             reach: "request")
+            }
+            do {
+                let transfer = try await files.beginUpload(
+                    guestID: id, request: upload)
+                response = codable(201, requestID: requestID, transfer)
+                await record(requestID, "files.put", id,
+                             Self.auditDisposition(transfer))
+            } catch let problem {
+                return await auditedFileProblem(
+                    problem, requestID, "files.put", id)
+            }
+        case ("POST", let value)
+            where value.hasPrefix("/api/v1/guests/")
+                && value.hasSuffix("/transfers/downloads"):
+            let id = String(value.dropFirst("/api/v1/guests/".count)
+                .dropLast("/transfers/downloads".count))
+            guard let files else {
+                await record(requestID, "files.get", id, .failed)
+                return unavailableFiles(requestID)
+            }
+            guard let object = try? JSONSerialization.jsonObject(
+                    with: request.body) as? [String: Any],
+                  object.count == 1, let filePath = object["path"] as? String
+            else {
+                await record(requestID, "files.get", id, .refused)
+                return error(400, requestID: requestID,
+                             code: "download_invalid",
+                             message: "Download requires one path.",
+                             reach: "request")
+            }
+            do {
+                let transfer = try await files.download(
+                    guestID: id, path: filePath)
+                response = codable(200, requestID: requestID, transfer)
+                await record(requestID, "files.get", id,
+                             Self.auditDisposition(transfer))
+            } catch let problem {
+                return await auditedFileProblem(
+                    problem, requestID, "files.get", id)
+            }
+        case ("GET", "/api/v1/transfers"):
+            guard let files else { return unavailableFiles(requestID) }
+            response = codable(200, requestID: requestID,
+                               ["transfers": await files.listTransfers()])
+        case ("PUT", let value)
+            where value.hasPrefix("/api/v1/transfers/")
+                && value.hasSuffix("/content"):
+            let raw = String(value.dropFirst("/api/v1/transfers/".count)
+                .dropLast("/content".count))
+            let parsedID = UUID(uuidString: raw)
+            let target = parsedID.map(Self.transferTarget)
+            guard let files else {
+                await record(requestID, "transfers.uploadChunk", target,
+                             .failed)
+                return unavailableFiles(requestID)
+            }
+            guard let query = Self.query(request.target) else {
+                await record(requestID, "transfers.uploadChunk", target,
+                             .refused)
+                return invalidQuery(requestID)
+            }
+            guard let id = parsedID,
+                  let offset = query["offset"].flatMap(Int.init) else {
+                await record(requestID, "transfers.uploadChunk", target,
+                             .refused)
+                return error(400, requestID: requestID,
+                             code: "upload_chunk_invalid",
+                             message: "Upload content requires a transfer ID and offset.",
+                             reach: "request")
+            }
+            do {
+                let transfer = try await files.appendUpload(
+                    transferID: id, offset: offset, bytes: request.body)
+                response = codable(200, requestID: requestID, transfer)
+                await record(requestID, "transfers.uploadChunk",
+                             Self.transferTarget(id),
+                             Self.auditDisposition(transfer))
+            } catch let problem {
+                return await auditedFileProblem(
+                    problem, requestID, "transfers.uploadChunk",
+                    Self.transferTarget(id))
+            }
+        case ("POST", let value)
+            where value.hasPrefix("/api/v1/transfers/")
+                && value.hasSuffix("/commit"):
+            let raw = String(value.dropFirst("/api/v1/transfers/".count)
+                .dropLast("/commit".count))
+            let parsedID = UUID(uuidString: raw)
+            let target = parsedID.map(Self.transferTarget)
+            guard let files else {
+                await record(requestID, "transfers.commit", target, .failed)
+                return unavailableFiles(requestID)
+            }
+            guard let id = UUID(uuidString: raw) else {
+                await record(requestID, "transfers.commit", nil, .refused)
+                return error(400, requestID: requestID,
+                             code: "transfer_id_invalid",
+                             message: "Commit requires a transfer ID.",
+                             reach: "request")
+            }
+            do {
+                let transfer = try await files.commitUpload(transferID: id)
+                response = codable(200, requestID: requestID, transfer)
+                await record(requestID, "transfers.commit",
+                             Self.transferTarget(id),
+                             Self.auditDisposition(transfer))
+            } catch let problem {
+                return await auditedFileProblem(
+                    problem, requestID, "transfers.commit",
+                    Self.transferTarget(id))
+            }
+        case ("GET", let value)
+            where value.hasPrefix("/api/v1/transfers/")
+                && value.hasSuffix("/content"):
+            guard let files else { return unavailableFiles(requestID) }
+            let raw = String(value.dropFirst("/api/v1/transfers/".count)
+                .dropLast("/content".count))
+            guard let id = UUID(uuidString: raw) else {
+                return error(400, requestID: requestID,
+                             code: "transfer_id_invalid",
+                             message: "Content requires a transfer ID.",
+                             reach: "request")
+            }
+            do {
+                let (url, byteCount, contentType) =
+                    try await files.content(id: id)
+                response = .init(status: 200, headers: [
+                    "Content-Type": contentType,
+                    "X-Request-Id": requestID.uuidString.lowercased(),
+                    "Cache-Control": "no-store",
+                ], bodyFileURL: url, bodyFileLength: byteCount)
+            } catch let problem {
+                return fileProblem(problem, requestID)
+            }
+        case ("DELETE", let value)
+            where value.hasPrefix("/api/v1/transfers/"):
+            let raw = String(value.dropFirst("/api/v1/transfers/".count))
+            let parsedID = UUID(uuidString: raw)
+            let target = parsedID.map(Self.transferTarget)
+            guard let files else {
+                await record(requestID, "transfers.cancel", target, .failed)
+                return unavailableFiles(requestID)
+            }
+            guard let id = UUID(uuidString: raw) else {
+                await record(requestID, "transfers.cancel", nil, .refused)
+                return error(400, requestID: requestID,
+                             code: "transfer_id_invalid",
+                             message: "Cancel requires a transfer ID.",
+                             reach: "request")
+            }
+            do {
+                let transfer = try await files.cancel(id: id)
+                response = codable(200, requestID: requestID, transfer)
+                await record(requestID, "transfers.cancel",
+                             Self.transferTarget(id), .completed)
+            } catch let problem {
+                return await auditedFileProblem(
+                    problem, requestID, "transfers.cancel",
+                    Self.transferTarget(id))
+            }
+        case ("GET", let value)
+            where value.hasPrefix("/api/v1/transfers/"):
+            guard let files else { return unavailableFiles(requestID) }
+            let raw = String(value.dropFirst("/api/v1/transfers/".count))
+            guard let id = UUID(uuidString: raw),
+                  let transfer = await files.transfer(id: id) else {
+                return error(404, requestID: requestID,
+                             code: "transfer_not_found",
+                             message: "No transfer has that ID.",
+                             reach: "transfer")
+            }
+            response = codable(200, requestID: requestID, transfer)
         case ("GET", let value) where value.hasPrefix("/api/v1/guests/"):
             let id = String(value.dropFirst("/api/v1/guests/".count))
             guard !id.isEmpty, let guest = await host.apiGuest(id: id) else {
@@ -205,6 +461,155 @@ final class NOWAPIHTTPRouter: @unchecked Sendable {
             "X-Request-Id": requestID.uuidString.lowercased(),
             "Cache-Control": "no-store",
         ], uniquingKeysWith: { first, _ in first }), body: body)
+    }
+
+    private func codable<Value: Encodable>(
+        _ status: Int, requestID: UUID, _ value: Value
+    ) -> MCPHTTPResponse {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let body = try? encoder.encode(value) else {
+            return error(500, requestID: requestID,
+                         code: "response_encoding_failed",
+                         message: "The API response could not be encoded.",
+                         reach: "host")
+        }
+        return .init(status: status, headers: [
+            "Content-Type": "application/json",
+            "X-Request-Id": requestID.uuidString.lowercased(),
+            "Cache-Control": "no-store",
+        ], body: body)
+    }
+
+    private func unavailableFiles(_ requestID: UUID) -> MCPHTTPResponse {
+        error(503, requestID: requestID,
+              code: "files_unavailable",
+              message: "The host file service is unavailable.", reach: "host")
+    }
+
+    private func fileProblem(
+        _ problem: NOWAPIFileTransferService.Problem, _ requestID: UUID
+    ) -> MCPHTTPResponse {
+        error(problem.status, requestID: requestID, code: problem.code,
+              message: problem.message, reach: problem.reach)
+    }
+
+    private func auditedFileProblem(
+        _ problem: NOWAPIFileTransferService.Problem,
+        _ requestID: UUID, _ operationID: String, _ target: String?
+    ) async -> MCPHTTPResponse {
+        await record(requestID, operationID, target,
+                     Self.auditDisposition(problem))
+        return fileProblem(problem, requestID)
+    }
+
+    private func invalidQuery(_ requestID: UUID) -> MCPHTTPResponse {
+        error(400, requestID: requestID, code: "query_invalid",
+              message: "Query parameters must be well formed and unique.",
+              reach: "request")
+    }
+
+    private static func query(_ target: String) -> [String: String]? {
+        guard let marker = target.firstIndex(of: "?") else { return [:] }
+        let rawQuery = target[target.index(after: marker)...]
+        guard !rawQuery.isEmpty else { return nil }
+        var result: [String: String] = [:]
+        for field in rawQuery.split(separator: "&", omittingEmptySubsequences: false) {
+            guard !field.isEmpty,
+                  let separator = field.firstIndex(of: "=") else { return nil }
+            let rawName = field[..<separator]
+            let rawValue = field[field.index(after: separator)...]
+            guard let name = decodedQueryComponent(rawName), !name.isEmpty,
+                  let value = decodedQueryComponent(rawValue),
+                  result[name] == nil else { return nil }
+            result[name] = value
+        }
+        return result
+    }
+
+    private static func decodedQueryComponent(_ raw: Substring) -> String? {
+        let bytes = Array(raw.utf8)
+        var index = 0
+        while index < bytes.count {
+            if bytes[index] == 0x25 {
+                guard index + 2 < bytes.count,
+                      isHex(bytes[index + 1]), isHex(bytes[index + 2])
+                else { return nil }
+                index += 3
+            } else {
+                index += 1
+            }
+        }
+        return String(raw).removingPercentEncoding
+    }
+
+    private static func isHex(_ byte: UInt8) -> Bool {
+        (0x30...0x39).contains(byte) || (0x41...0x46).contains(byte)
+            || (0x61...0x66).contains(byte)
+    }
+
+    private static func auditDisposition<Value>(
+        _ result: AgentIntegrationGuestFileResult<Value>
+    ) -> NOWAPIAuditEvent.Disposition {
+        switch result {
+        case .hostUnavailable:
+            return .failed
+        case .completed(let receipt, _, _):
+            switch receipt.outcome {
+            case .success: return .completed
+            case .failed, .unavailable: return .failed
+            default: return .refused
+            }
+        }
+    }
+
+    private static func auditDisposition(
+        _ transfer: NOWAPIFileTransferService.Transfer
+    ) -> NOWAPIAuditEvent.Disposition {
+        switch transfer.state {
+        case .failed: return .failed
+        case .cancelled, .expired: return .refused
+        case .staging, .running, .completed: return .completed
+        }
+    }
+
+    private static func auditDisposition(
+        _ problem: NOWAPIFileTransferService.Problem
+    ) -> NOWAPIAuditEvent.Disposition {
+        problem.status >= 500 ? .failed : .refused
+    }
+
+    private static func transferTarget(_ id: UUID) -> String {
+        id.uuidString.lowercased()
+    }
+
+    private static func mutation(_ body: Data)
+        -> AgentIntegrationGuestFileMutationRequest? {
+        guard let object = try? JSONSerialization.jsonObject(with: body)
+                as? [String: Any],
+              let mutation = object["mutation"] as? String,
+              let path = object["path"] as? String else { return nil }
+        switch mutation {
+        case "move":
+            guard let destination = object["destinationPath"] as? String,
+                  object.keys.allSatisfy({
+                      ["mutation", "path", "destinationPath"].contains($0)
+                  }) else { return nil }
+            return .move(path: path, toPath: destination)
+        case "trash":
+            guard object.count == 2 else { return nil }
+            return .trash(path: path)
+        case "restore":
+            guard let trashedAs = object["trashedAs"] as? String,
+                  object.keys.allSatisfy({
+                      ["mutation", "path", "trashedAs"].contains($0)
+                  }) else { return nil }
+            return .restore(trashedAs: trashedAs, toPath: path)
+        case "mkdir":
+            guard object.count == 2 else { return nil }
+            return .makeFolder(path: path)
+        default: return nil
+        }
     }
 
     private static func requestID(_ raw: String?) -> UUID {

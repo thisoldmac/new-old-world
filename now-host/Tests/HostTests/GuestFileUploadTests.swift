@@ -5,6 +5,29 @@ import XCTest
 
 @MainActor
 final class GuestUploadStagingStoreTests: XCTestCase {
+    func testPartialStageCannotSeal() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try GuestUploadStagingStore(
+            rootURL: root,
+            capacity: { .init(availableBytes: 1_000,
+                              policyHeadroomBytes: 0) })
+        let bytes = Data([1, 2, 3, 4])
+        let status: GuestUploadStagingStore.Status
+        switch await store.begin(
+            expectedBytes: bytes.count, expectedSHA256: sha256(bytes)) {
+        case .success(let value): status = value
+        case .failure(let failure): return XCTFail(failure.message)
+        }
+        _ = await store.append(uploadID: status.uploadID, offset: 0,
+                               bytes: bytes.prefix(2))
+        guard case .failure(let failure) = await store.seal(
+            uploadID: status.uploadID) else {
+            return XCTFail("a partial stage was sealed")
+        }
+        XCTAssertEqual(failure.code, "now-files-upload-incomplete")
+    }
+
     func testDiskPolicyRefusesAReservationBeyondUsableCapacity()
         async throws {
         let root = temporaryDirectory()

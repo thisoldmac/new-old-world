@@ -160,8 +160,12 @@ struct MCPHTTPResponse: Equatable {
     let status: Int
     var headers: [String: String] = [:]
     var body = Data()
+    /// A private, already-settled file response. The connection writer reads
+    /// this in bounded pieces; API downloads never become one giant `Data`.
+    var bodyFileURL: URL? = nil
+    var bodyFileLength: Int? = nil
 
-    var wireData: Data {
+    var wireHeadData: Data {
         let phrase: String
         switch status {
         case 200: phrase = "OK"
@@ -181,14 +185,18 @@ struct MCPHTTPResponse: Equatable {
         default: phrase = "Internal Server Error"
         }
         var fields = headers
-        fields["Content-Length"] = "\(body.count)"
+        fields["Content-Length"] = "\(bodyFileLength ?? body.count)"
         fields["Connection"] = "close"
         var head = "HTTP/1.1 \(status) \(phrase)\r\n"
         for key in fields.keys.sorted() {
             head += "\(key): \(fields[key]!)\r\n"
         }
         head += "\r\n"
-        return Data(head.utf8) + body
+        return Data(head.utf8)
+    }
+
+    var wireData: Data {
+        wireHeadData + body
     }
 }
 
@@ -681,10 +689,72 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     private func finish(_ response: MCPHTTPResponse) {
         guard !finished else { return }
         finished = true
+        if let fileURL = response.bodyFileURL,
+           let fileLength = response.bodyFileLength {
+            connection.send(content: response.wireHeadData,
+                            completion: .contentProcessed {
+                [weak self] error in
+                guard let self, error == nil,
+                      let handle = try? FileHandle(forReadingFrom: fileURL)
+                else {
+                    self?.connection.cancel()
+                    self?.keepAlive = nil
+                    return
+                }
+                self.sendFile(handle, remaining: fileLength)
+            })
+            return
+        }
         connection.send(content: response.wireData,
                         completion: .contentProcessed { [self, connection] _ in
                             connection.cancel()
                             keepAlive = nil
                         })
+    }
+
+    /// One file-backed response, read and sent in bounded pieces. Network's
+    /// completion callback supplies the backpressure: the next piece is not
+    /// read until the previous one has been consumed.
+    private func sendFile(_ handle: FileHandle, remaining: Int) {
+        guard remaining > 0 else {
+            try? handle.close()
+            connection.send(content: nil, isComplete: true,
+                            completion: .contentProcessed {
+                [weak self] _ in
+                self?.connection.cancel()
+                self?.keepAlive = nil
+            })
+            return
+        }
+        let piece: Data
+        do {
+            piece = try handle.read(upToCount: min(64 * 1024, remaining))
+                ?? Data()
+        } catch {
+            try? handle.close()
+            connection.cancel()
+            keepAlive = nil
+            return
+        }
+        guard !piece.isEmpty else {
+            try? handle.close()
+            connection.send(content: nil, isComplete: true,
+                            completion: .contentProcessed {
+                [weak self] _ in
+                self?.connection.cancel()
+                self?.keepAlive = nil
+            })
+            return
+        }
+        connection.send(content: piece, completion: .contentProcessed {
+            [weak self] error in
+            guard let self, error == nil else {
+                try? handle.close()
+                self?.connection.cancel()
+                self?.keepAlive = nil
+                return
+            }
+            self.sendFile(handle, remaining: remaining - piece.count)
+        })
     }
 }
