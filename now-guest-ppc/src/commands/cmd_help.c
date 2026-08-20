@@ -674,7 +674,7 @@ static const char *const d_chat[] = {
     "                 this Mac, there on the modern one",
     "    --mode M     chat looks, plan writes a plan,",
     "                 build may change things",
-    "  Skills are instructions the other Mac keeps - the",
+    "  Skills are instructions Other Mac keeps - the",
     "  classic Mac ones ship with it. Type them as text:",
     "    chat /skills            list them",
     "    chat /<name>            load one for this chat",
