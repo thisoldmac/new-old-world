@@ -1,0 +1,154 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "New Old World API",
+    "version": "1.0.0",
+    "summary": "The first public, client-neutral API for New Old World"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "servers": [
+    { "url": "http://127.0.0.1:{port}/api/v1", "variables": { "port": { "default": "19870" } } }
+  ],
+  "security": [{ "apiKey": [] }],
+  "paths": {},
+  "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "A host-issued local application key. MCP authentication is a separate protocol concern."
+      }
+    },
+    "schemas": {
+      "APIVersion": {
+        "type": "object",
+        "properties": {
+          "major": { "type": "integer", "const": 1 },
+          "schemaRevision": { "type": "integer", "minimum": 1 },
+          "contractDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "required": ["major", "schemaRevision", "contractDigest"],
+        "additionalProperties": false
+      },
+      "GuestAddress": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "sessionId": { "type": "string", "minLength": 1, "maxLength": 180 }
+        },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "OperationDisposition": {
+        "type": "string",
+        "enum": ["completed", "refused", "unavailable", "failed", "cancelled"]
+      },
+      "OperationError": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "minLength": 1, "maxLength": 96 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "reach": { "type": "string", "enum": ["request", "host", "guest", "session", "resource"] }
+        },
+        "required": ["code", "message", "reach"],
+        "additionalProperties": false
+      },
+      "OperationResult": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "format": "uuid" },
+          "operationId": { "type": "string", "minLength": 3, "maxLength": 128 },
+          "guest": { "$ref": "#/components/schemas/GuestAddress" },
+          "disposition": { "$ref": "#/components/schemas/OperationDisposition" },
+          "value": { "type": "object" },
+          "error": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["requestId", "operationId", "disposition"],
+        "allOf": [
+          {
+            "if": { "properties": { "disposition": { "const": "completed" } } },
+            "then": { "required": ["value"], "not": { "required": ["error"] } },
+            "else": { "required": ["error"], "not": { "required": ["value"] } }
+          }
+        ],
+        "additionalProperties": false
+      },
+      "GuestSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "connected": { "type": "boolean" },
+          "connectedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "displayName", "connected"],
+        "additionalProperties": false
+      },
+      "ListenerStatus": {
+        "type": "object",
+        "properties": {
+          "state": { "type": "string", "enum": ["idle", "listening", "connected", "failed"] },
+          "desiredPorts": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+          "boundPorts": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+          "failure": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["state", "desiredPorts", "boundPorts"],
+        "additionalProperties": false
+      },
+      "ConnectionSummary": {
+        "type": "object",
+        "properties": {
+          "guest": { "$ref": "#/components/schemas/GuestAddress" },
+          "connectedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["guest", "connectedAt"],
+        "additionalProperties": false
+      },
+      "ConsoleCommandRequest": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string", "minLength": 1, "maxLength": 96 },
+          "arguments": { "type": "object" },
+          "argumentLine": { "type": "string", "maxLength": 4096 }
+        },
+        "required": ["command"],
+        "oneOf": [
+          { "required": ["arguments"], "not": { "required": ["argumentLine"] } },
+          { "required": ["argumentLine"], "not": { "required": ["arguments"] } },
+          { "not": { "anyOf": [{ "required": ["arguments"] }, { "required": ["argumentLine"] }] } }
+        ],
+        "additionalProperties": false
+      },
+      "TransferSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "guest": { "$ref": "#/components/schemas/GuestAddress" },
+          "direction": { "type": "string", "enum": ["upload", "download"] },
+          "state": { "type": "string", "enum": ["staging", "queued", "running", "completed", "failed", "cancelled"] },
+          "bytesCompleted": { "type": "integer", "minimum": 0 },
+          "bytesTotal": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["id", "guest", "direction", "state", "bytesCompleted"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "x-now-compatibility": {
+    "apiMajor": 1,
+    "schemaRevision": 1,
+    "policy": "Additive optional fields and operations may ship within v1; required-field meaning and disposition semantics remain stable."
+  },
+  "x-now-operation-catalog": [
+    "catalog.search", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer",
+    "files.capabilities", "files.get", "files.list", "files.mutate", "files.put", "files.reveal", "files.stat",
+    "guests.capabilities", "guests.census", "guests.facts", "guests.list",
+    "interface.control.act", "interface.menu.act", "interface.observe", "interface.text.get", "interface.text.set", "interface.window.act",
+    "logs.guest.tail", "logs.host.tail",
+    "mirror.act", "mirror.find", "mirror.journal", "mirror.lifecycle", "mirror.metrics", "mirror.snapshot", "mirror.start", "mirror.status", "mirror.wait", "mirror.waitForSettlement",
+    "processes.activate", "processes.list", "processes.quit",
+    "screen.capture", "screen.stream", "software.launch", "software.list", "transfers.cancel"
+  ]
+}

@@ -57,7 +57,7 @@ final class AgentIntegrationDevelopmentTests: XCTestCase {
                         "candidateID", "productRef", "attemptID"])
         XCTAssertEqual(DevelopmentProjection.authorityDomain,
                        .hostProjectsAndGuest)
-        let descriptor = DevelopmentProjection.mcpDescriptor
+        let descriptor = DevelopmentProjection.operationDescriptor.mcpToolDescriptor
         let schema = descriptor["inputSchema"] as? [String: Any]
         let branches = schema?["oneOf"] as? [[String: Any]] ?? []
         let operations = branches.compactMap { branch in

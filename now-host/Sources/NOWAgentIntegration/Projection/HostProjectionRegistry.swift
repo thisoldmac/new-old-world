@@ -52,7 +52,7 @@ public struct HostProjectionRegistry: @unchecked Sendable {
     public var catalogDigest: String {
         var hash: UInt64 = 14_695_981_039_346_656_037
         for projection in projections {
-            var descriptor = projection.mcpDescriptor
+            var descriptor = projection.operationDescriptor.mcpToolDescriptor
             descriptor["name"] = projection.capability.rawValue
             guard let data = try? JSONSerialization.data(
                 withJSONObject: descriptor, options: [.sortedKeys]) else { continue }

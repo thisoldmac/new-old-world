@@ -198,9 +198,9 @@ extension HostFaceReach {
 ///   host-owned root.
 /// - **bound** — cap what one call may cost or return, and reject
 ///   arguments the guest should never be asked to parse.
-/// - **render** — turn one typed host result into one face's shape. The
-///   MCP face's shape is `mcpDescriptor`; a later face renders the same
-///   projection its own way, and neither may re-decide the answer.
+/// - **render** — publish neutral schemas and presentation data. MCP and
+///   later faces render the same descriptor their own way, and none may
+///   re-decide the answer.
 ///
 /// Composition over data the guest just supplied is permitted and is not
 /// deciding: `now_launch_software` lists the catalog, matches exactly one
@@ -268,7 +268,7 @@ public protocol HostProjection {
     /// said `performed: true`. A misspelled VALUE was already refused there;
     /// a misspelled KEY was not, which is the worse half.
     ///
-    /// **The set is read off this row's own published `mcpDescriptor`, never
+    /// **The set is read off this row's neutral operation descriptor, never
     /// guessed.** `HostProjectionArgumentStrictnessTests` asserts it equals
     /// the `inputSchema`'s `properties` keys for every registered row, which
     /// is what stops this declaration from rebuilding the same class of bug
@@ -306,11 +306,10 @@ public protocol HostProjection {
     /// only the fact it alone knows.
     static var availabilityNote: String { get }
 
-    /// The MCP face's rendering: title, description, input and output
-    /// schema, annotations. The tool's `name` and the `guest` selector are
-    /// injected by the renderer, so a row cannot misspell its own identity
-    /// or omit addressing.
-    static var mcpDescriptor: [String: Any] { get }
+    /// Transport-neutral title, summary, request/result schemas, stability,
+    /// and typed effect hints. Protocol-specific names, addressing envelopes,
+    /// and annotations are injected by their renderers.
+    static var operationDescriptor: NOWOperationDescriptor { get }
 
     /// Validate, bound, and delegate. Everything a caller may ask is
     /// checked here; nothing about the machine is answered here.

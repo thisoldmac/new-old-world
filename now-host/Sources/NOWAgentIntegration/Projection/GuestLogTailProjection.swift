@@ -93,7 +93,7 @@ public enum GuestLogTailProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest's command table names tail."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let policy = AgentIntegrationGuestLogPolicy.self
         let failure: [String: Any] = [
             "type": "object",

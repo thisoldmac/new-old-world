@@ -31,7 +31,7 @@ public enum GuestFilesListProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves file.list."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "List New Old World Guest Files",
             "description":

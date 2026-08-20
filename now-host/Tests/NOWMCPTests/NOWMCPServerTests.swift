@@ -199,7 +199,7 @@ final class NOWMCPServerTests: XCTestCase {
     ///
     /// - **It reads the rendered payload, not the descriptors.** The root
     ///   type is injected by `NOWMCPServer.tools`, so checking
-    ///   `mcpDescriptor` directly would check the wrong artifact — it is
+    ///   `operationDescriptor` directly would check the wrong artifact — it is
     ///   what goes over the wire that a client validates.
     /// - **Its tool list is the catalog's**, arrived at through `tools/list`
     ///   rather than restated here. A fixture would test one half twice, and
@@ -292,7 +292,7 @@ final class NOWMCPServerTests: XCTestCase {
     /// not read.
     func testNoProjectionDeclaresANonObjectSchemaRoot() {
         for projection in HostProjectionCatalog.projections {
-            let descriptor = projection.mcpDescriptor
+            let descriptor = projection.operationDescriptor.mcpToolDescriptor
             let name = projection.capability.rawValue
             for key in ["inputSchema", "outputSchema"] {
                 guard let schema = descriptor[key] as? [String: Any],

@@ -56,7 +56,7 @@ final class AgentIntegrationProjectsTests: XCTestCase {
     }
 
     func testMCPContractDiscriminatesEveryProjectOperationAndApplyGuard() {
-        let descriptor = ProjectsProjection.mcpDescriptor
+        let descriptor = ProjectsProjection.operationDescriptor.mcpToolDescriptor
         let schema = descriptor["inputSchema"] as? [String: Any]
         let branches = schema?["oneOf"] as? [[String: Any]] ?? []
         let operations = branches.compactMap { branch -> String? in

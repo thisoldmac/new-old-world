@@ -69,7 +69,7 @@ public actor NOWMCPServer {
     /// that does leaves a line in the person's log. The sink is a required
     /// argument rather than a default, so a face cannot be assembled without
     /// saying where its audit events go.
-    private let dispatch: HostProjectionDispatch
+    private let service: NOWService
     /// Filled from `initialize`'s clientInfo when the transport wants the
     /// answer; validated-then-discarded was the behaviour before anything
     /// recorded who called.
@@ -84,7 +84,7 @@ public actor NOWMCPServer {
         self.client = client
         self.registry = registry
         self.identity = identity
-        dispatch = HostProjectionDispatch(
+        service = NOWService(
             face: .mcp, registry: registry, audit: audit)
     }
 
@@ -334,35 +334,8 @@ public actor NOWMCPServer {
     /// something false about its own result rather than omitting something
     /// uniform, so it is left exactly as written here and failed by the gate.
     private var tools: [[String: Any]] {
-        registry.projections.map { projection in
-            var tool = projection.mcpDescriptor
-            tool["name"] = projection.capability.rawValue
-            for key in ["inputSchema", "outputSchema"] {
-                guard var schema = tool[key] as? [String: Any],
-                      schema["type"] == nil else { continue }
-                schema["type"] = "object"
-                tool[key] = schema
-            }
-            guard var schema = tool["inputSchema"] as? [String: Any] else {
-                return tool
-            }
-            var properties =
-                (schema["properties"] as? [String: Any]) ?? [:]
-            if projection.acceptsGuestAddressing {
-                properties["guest"] = [
-                    "type": "string",
-                    "description": Self.guestSelectorHelp,
-                ]
-            }
-            schema["properties"] = properties
-            tool["inputSchema"] = schema
-            return tool
-        }
+        NOWMCPToolRenderer.tools(for: registry)
     }
-
-    private static let guestSelectorHelp = """
-        Which connected Mac this call is about. A machine id (for example         pb1400c) means whatever is connected to that machine now and         follows a reconnection; a session id (machine id, a hyphen and a         UUID, as reported by now_list_machines) means one connection and         fails once it has ended rather than being answered by its         successor. Omit to address the machine the host is currently         driving. Naming a connected machine the host is not driving is         refused, never answered by the other one.
-        """
 
     private func callTool(_ request: [String: Any], id: Any) async -> Data {
         guard var params = request["params"] as? [String: Any],
@@ -399,8 +372,8 @@ public actor NOWMCPServer {
            that leaves no trace. `HostProjectionAuditGateTests` fails when
            anything here calls a projection's `invoke` itself. */
         let client = self.client.addressing(selector)
-        let outcome = await dispatch.invoke(
-            name,
+        let outcome = await service.invokeProjection(
+            named: name,
             arguments: .init(raw: params["arguments"]),
             guest: selector,
             through: client)

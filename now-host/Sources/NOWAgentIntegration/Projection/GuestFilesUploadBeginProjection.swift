@@ -42,7 +42,7 @@ public enum GuestFilesUploadBeginProjection: HostProjection {
         + "staging is available regardless; the commit is where the guest's "
         + "put lane is needed."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "Begin a New Old World Guest File Upload",
             "description":

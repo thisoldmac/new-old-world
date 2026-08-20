@@ -114,7 +114,7 @@ public enum StreamScreenProjection: HostProjection {
     /// unknown keys nobody refused.
     public static let acceptedArguments = Argument.all
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "Stream the New Old World Guest's Screen",
             "description":

@@ -39,7 +39,7 @@ public enum TransferApprovedArtifactProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest accepts a host-driven put."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let failure: [String: Any] = [
             "type": "object",
             "properties": [

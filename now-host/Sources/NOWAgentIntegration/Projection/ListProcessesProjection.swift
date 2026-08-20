@@ -33,7 +33,7 @@ public enum ListProcessesProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves process.list."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "List New Old World Guest Processes",
             "description":

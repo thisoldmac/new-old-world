@@ -253,7 +253,7 @@ public enum FramebufferProbeProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves the vprobe command."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let variant = HostProjectionSchema.resultVariant
         return [
             "title": "Measure a New Old World Guest's Framebuffer Read Cost",
@@ -353,7 +353,7 @@ public enum CaptureDiagnosticsProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves the shotdiag command."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let variant = HostProjectionSchema.resultVariant
         return [
             "title": "Read Where a New Old World Guest's Capture Read From",
@@ -449,7 +449,7 @@ public enum TransferDiagnosticsProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves the putstat command."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let variant = HostProjectionSchema.resultVariant
         return [
             "title": "Read a New Old World Guest's Transfer Diagnostics",

@@ -476,7 +476,7 @@ final class AgentIntegrationCatalogSearchTests: XCTestCase {
     /// annotations do not promise a free retry. Both are the whole of what
     /// this row does about its cost, so both are gated.
     func testTheDescriptorPricesTheCallAndDoesNotClaimIdempotence() throws {
-        let descriptor = CatalogSearchProjection.mcpDescriptor
+        let descriptor = CatalogSearchProjection.operationDescriptor.mcpToolDescriptor
         let description = try XCTUnwrap(
             descriptor["description"] as? String)
         XCTAssertTrue(description.contains("EXPENSIVE"))

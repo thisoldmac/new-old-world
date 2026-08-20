@@ -36,7 +36,7 @@ public enum GuestFilesStatProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves file.list."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         var path = GuestFilesSchema.path
         path["minLength"] = 1
         return [

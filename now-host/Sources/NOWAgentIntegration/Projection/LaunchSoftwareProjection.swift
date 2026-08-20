@@ -99,7 +99,7 @@ public enum LaunchSoftwareProjection: HostProjection {
         ]
     }
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let receipt: [String: Any] = [
             "type": "object",
             "properties": [

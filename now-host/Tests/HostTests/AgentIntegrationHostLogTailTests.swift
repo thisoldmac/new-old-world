@@ -168,7 +168,7 @@ final class AgentIntegrationHostLogTailTests: XCTestCase {
         XCTAssertEqual(policy.maximumLineCount, HostLog.ringCapacity)
         XCTAssertEqual(HostLog.ringCapacity, policy.ringCapacity)
 
-        let schema = HostLogTailProjection.mcpDescriptor["inputSchema"]
+        let schema = HostLogTailProjection.operationDescriptor.mcpToolDescriptor["inputSchema"]
             as? [String: Any]
         let lines = (schema?["properties"] as? [String: Any])?["lines"]
             as? [String: Any]
@@ -429,7 +429,7 @@ final class AgentIntegrationHostLogTailTests: XCTestCase {
         }
 
         let description = HostLogTailProjection
-            .mcpDescriptor["description"] as? String ?? ""
+            .operationDescriptor.mcpToolDescriptor["description"] as? String ?? ""
         for area in HostLogTailProjection.areaExamples {
             XCTAssertTrue(
                 description.contains("\"\(area)\""),

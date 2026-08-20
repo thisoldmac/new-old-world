@@ -53,8 +53,8 @@ the quickest alarm that the review surface has changed.
 | ID | Observed drift | Evidence at `3922d2ab` | Disposition | Status |
 |---|---|---|---|---|
 | D-001 | Earlier draft and spike described 48 registry rows | `HostProjectionCatalog.swift` contains 49 `Projection.self` entries; `ChatsProjection` and `GuestFilesUploadFileProjection` postdate the spike baseline | Remove the frozen command manifest as authority; bind current rows to the neutral operation catalog and recheck before every dependent slice | resolved-in-plan |
-| D-002 | Earlier plan described HTTP as bearer-token-only | `MCPHTTPAuthMode` now has `none`, `bearer`, and `oauth`; user guide and tests describe all three | Reuse all current auth implementations for `/api/v1`; decide whether full OAuth ships in the first CLI | owner-decision |
-| D-003 | Earlier CLI state model allowed only cache + preferred guest | OAuth introduces client registration plus access/refresh credentials | Keep public registration metadata in CLI state and credentials in Keychain; exact first-release OAuth scope remains A2 | owner-decision |
+| D-002 | Earlier plan described HTTP as bearer-token-only | `MCPHTTPAuthMode` now has `none`, `bearer`, and `oauth`; user guide and tests describe all three | API v1 uses a host-issued `X-API-Key`; MCP authentication remains unchanged; OAuth and scopes are deferred rather than inherited from MCP | resolved-in-plan |
+| D-003 | Earlier CLI state model allowed only cache + preferred guest | OAuth would introduce client registration plus access/refresh credentials | Superseded for v1 by `X-API-Key`; the CLI stores one API key using the credential-storage decision in its slice | superseded |
 | D-004 | Earlier plan treated audit as a per-call log | `MCP Records/records.sqlite` now stores bounded agents, sessions, targets, and actions without arguments/payloads | Generalize the bounded record around the shared service; API and MCP adapters do not log arguments or payloads | resolved-in-plan |
 | D-005 | Earlier plan said every row already answered one completed/refused/unavailable envelope | Live results use several discriminators (`outcome`, `available`, `ok`) and consent/argument refusals may be JSON-RPC errors | Add one transport-neutral service disposition beside the typed domain value; MCP and HTTP render it without JSON field inference | resolved-in-plan |
 | D-006 | Review language called the proposed public metadata “API v2” because `projectionCatalogVersion` is already 1 | No shipped surface is named/versioned `now-api`; catalog version is an internal compiled-surface identity | The first published product contract is now-api v1; keep public API version distinct from catalog version | resolved-in-plan |
@@ -84,10 +84,10 @@ the quickest alarm that the review surface has changed.
 | ID | Decision | Current options | Status | Resolution evidence |
 |---|---|---|---|---|
 | A1 | First-release network reach | loopback only; LAN/remote with a new security/deployment design | open | Recommended: loopback only |
-| A2 | OAuth in first CLI release | full OAuth + Keychain; bearer/none only with explicit OAuth refusal | open | Recommended: full OAuth as independent-client proof |
+| A2 | API v1 authentication | `X-API-Key`; OAuth; bearer token | decided | Michelle selected `X-API-Key`; MCP authentication remains unchanged; OAuth is deferred, 2026-08-20 |
 | A3 | Distribution | bundled command; repository installer; both | open | Recommended: both |
 | A4 | Transfer staging ceiling and retention | derive from current 32 MiB single-file bound; approve another measured ceiling/expiry | open | Requires S4 measurement |
-| A5 | API scopes | read/control/transfer/admin split; another reviewed split | open | Recommended split is in the plan |
+| A5 | API scopes | read/control/transfer/admin split; another reviewed split | superseded | V1 API-key authorization has no scope model; revisit with OAuth or another multi-principal design |
 | D5 | Meaning of `scripts` | AppleScript owns product domain; local runner is `now dev tasks` | decided | Michelle, 2026-08-16 |
 | D6 | API product boundary | third-party developer API with CLI as first client; not an MCP wrapper | decided | Michelle, 2026-08-20 |
 | D7 | MCP relationship | semantic child of the NOW API; transport sibling to HTTP | decided | Michelle, 2026-08-20 |
@@ -99,6 +99,7 @@ the quickest alarm that the review surface has changed.
 |---|---|---:|---|---:|---|---|
 | 2026-08-20 | plan rewrite / `3922d2ab` | 49 | none, bearer, OAuth | 14 | D-001–D-015 | Plan corrected; no implementation started |
 | 2026-08-20 | architecture rewrite / `3922d2ab` | 49 | none, bearer, OAuth | 14 | D-016–D-026 | MCP-centered plan superseded by one public API with HTTP/MCP adapters; no implementation started |
+| 2026-08-20 | S1 / `3b50e8b7` | 49 | API: `X-API-Key`; MCP: none, bearer, OAuth | 14 | API auth decision resolves D-002/D-003/A2/A5 | Neutral descriptor migration, 49-row adjudication, OpenAPI identity, checked generation, shared service seam, and MCP golden parity implemented and focused-tested in the same change |
 
 ## Prototype evidence retained
 

@@ -522,7 +522,7 @@ final class AgentIntegrationDownloadTests: XCTestCase {
     func testThePublishedCeilingIsTheEnforcedOne() {
         XCTAssertEqual(AgentDownloadStore.maximumBytes,
                        AgentDownloadPolicy.maximumBytes)
-        let schema = GuestFilesDownloadProjection.mcpDescriptor
+        let schema = GuestFilesDownloadProjection.operationDescriptor.mcpToolDescriptor
         let output = schema["outputSchema"] as? [String: Any]
         XCTAssertNotNil(output, "the row must publish an output schema")
     }

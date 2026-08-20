@@ -34,7 +34,7 @@ public enum GuestFilesUploadCommitProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest accepts a host-driven put."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "Commit a New Old World Guest File Upload",
             "description":

@@ -80,7 +80,7 @@ public enum CaptureScreenProjection: HostProjection {
         static let all: Set<String> = [depth, abandon]
     }
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "Capture the New Old World Guest's Screen",
             "description":

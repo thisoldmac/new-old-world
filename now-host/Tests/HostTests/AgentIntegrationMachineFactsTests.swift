@@ -541,7 +541,7 @@ final class AgentIntegrationMachineFactsTests: XCTestCase {
     /// mis-summarise.
     func testTheDescriptionSaysWhatIsMissingWithoutSlanderingTheMachine()
         throws {
-        let descriptor = MachineFactsProjection.mcpDescriptor
+        let descriptor = MachineFactsProjection.operationDescriptor.mcpToolDescriptor
         let description = try XCTUnwrap(
             descriptor["description"] as? String)
         XCTAssertTrue(
