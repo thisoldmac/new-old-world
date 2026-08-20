@@ -284,7 +284,7 @@ void now_net_status_text(const NetFacts *facts, char *out, long cap)
     }
     if (facts->inet.state == kNetFactPresent) {
         char buf[96];
-        snprintf(buf, sizeof buf, "%s  ·  %d port%s",
+        snprintf(buf, sizeof buf, "%s  -  %d port%s",
                  facts->inet.address, (int)facts->port_count,
                  facts->port_count == 1 ? "" : "s");
         put(out, cap, buf);

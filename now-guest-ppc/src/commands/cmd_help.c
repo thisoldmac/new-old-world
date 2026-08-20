@@ -593,7 +593,7 @@ static const char *const d_put[] = {
 
 static const char *const d_cancel[] = {
     "  Stops whatever file is moving, in whichever",
-    "  direction — a file arriving from Other Mac or",
+    "  direction - a file arriving from Other Mac or",
     "  one this Mac asked for. It needs no name: the lane",
     "  is one transfer wide, so there is only ever one",
     "  thing to stop. A file this Mac is SENDING cannot be",
