@@ -50,7 +50,7 @@ struct DevelopmentModuleView: View {
 
     private var authority: some View {
         section("Authority") {
-            Text("Project tools can read and write only \(model.projectsRootDescription). Guest builds and publication separately require Full access on the connected Mac.")
+            Text("Project tools read and write only \(model.projectsRootDescription). Guest builds and publication additionally require Full access on the connected Mac.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -93,7 +93,7 @@ struct DevelopmentModuleView: View {
                     Button("Discard") { model.discardWorkspace() }
                 }
             } else {
-                Text("No workspace is open. A guest-home workspace changes a recoverable host copy, not the active guest project.")
+                Text("No workspace open. A guest-home workspace modifies a recoverable host copy, not the active guest project.")
                     .font(.callout).foregroundStyle(.secondary)
                 Button("Open Workspace") { model.openWorkspace() }
                     .disabled(model.selectedProject == nil)
@@ -104,7 +104,7 @@ struct DevelopmentModuleView: View {
     private var environment: some View {
         section("Toolchains, Builds & Runs") {
             if model.environmentRows.isEmpty {
-                Text("No qualified guest toolchain has been reported. Toolchain roots are registered on \(MachineNaming.simpleReference) and are never exposed as Files or agent paths.")
+                Text("No qualified guest toolchain reported. Toolchain roots are registered on \(MachineNaming.simpleReference) and are never exposed as Files or agent paths.")
                     .font(.callout).foregroundStyle(.secondary)
             } else {
                 Grid(alignment: .leadingFirstTextBaseline,
@@ -169,7 +169,7 @@ struct DevelopmentModuleView: View {
             ProjectLocationPicker(
                 toolchain: $projectToolchain,
                 guestToolchainQualified: model.guestToolchainQualified)
-            Text("The working source and its Git history stay inside New Old World's application-owned Projects directory.")
+            Text("Working source and Git history stay in New Old World's application-owned Projects directory.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
@@ -197,7 +197,7 @@ struct DevelopmentModuleView: View {
             Text("Import Guest Project").font(.headline)
             TextField("32-character project ID", text: $guestProjectID)
                 .font(.system(.body, design: .monospaced))
-            Text("NOW reads a coherent snapshot beneath the Projects folder selected on \(MachineNaming.simpleReference), verifies it, and stores a private Git history mirror. The active guest source is not changed.")
+            Text("Reads and verifies a coherent snapshot beneath the Projects folder selected on \(MachineNaming.simpleReference), then stores a private Git history mirror. The active guest source is unchanged.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()

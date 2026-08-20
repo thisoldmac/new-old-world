@@ -55,7 +55,7 @@ struct SoftwareModuleView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Software")
                     .font(.largeTitle.weight(.semibold))
-                Text("What is installed on \(peerLabel).")
+                Text("Installed software on \(peerLabel).")
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -288,8 +288,8 @@ struct SoftwareModuleView: View {
             Image(systemName: "hand.point.up.left")
                 .font(.system(size: 26))
                 .foregroundStyle(.tertiary)
-            Text("Select an item to see its version, size, and where it "
-                 + "lives — and to launch it or show it in the Finder.")
+            Text("Select an item for its version, size and location, and to "
+                 + "launch it or show it in the Finder.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

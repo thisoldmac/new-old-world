@@ -59,7 +59,7 @@ struct ChatModuleView: View {
             ChatComposer(
                 draft: $draft, state: composerState,
                 placeholder: model.models.isEmpty
-                    ? "Set up a provider to start"
+                    ? "No provider configured"
                     : "Ask about the connected machine…",
                 send: submit, stop: model.cancel)
         }
@@ -98,7 +98,7 @@ struct ChatModuleView: View {
             }
             .buttonStyle(.borderless)
             .disabled(model.isStreaming || model.transcript.isEmpty)
-            .help("Start a fresh conversation")
+            .help("New conversation")
 
             Button(action: openSettings) {
                 Image(systemName: "slider.horizontal.3")
@@ -356,9 +356,9 @@ struct ChatProvidersSheet: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
                 cardHeader("Claude (Experimental)", entry("claude"))
-                Text("Uses an independently installed Claude Code runtime. "
-                     + "Anthropic has not approved this as a third-party "
-                     + "subscription integration, and programmatic use may "
+                Text("Uses an independently installed Claude Code "
+                     + "runtime. Not an Anthropic-approved third-party "
+                     + "subscription integration; programmatic use may "
                      + "draw from separate Agent SDK credit.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -448,7 +448,7 @@ struct ChatProvidersSheet: View {
                 cardHeader("Codex (ChatGPT)", entry("codex"))
                 Text("ChatGPT subscription access through the installed "
                      + "Codex runtime. Codex owns the browser callback and "
-                     + "credentials; NOW never receives the tokens.")
+                     + "credentials; tokens never reach NOW.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

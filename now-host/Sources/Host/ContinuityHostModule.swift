@@ -112,8 +112,8 @@ struct ContinuityModuleView: View {
                     .toggleStyle(.switch)
                     .disabled(!connected)
                     .help("Pass the pointer to "
-                          + "\(connectedMachineName()) when it crosses "
-                          + "the shared edge in the arrangement.")
+                          + "\(connectedMachineName()) at the shared edge "
+                          + "in the arrangement.")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
@@ -147,9 +147,9 @@ private struct ContinuityPointerCard: View {
     var body: some View {
         GroupBox("Pointer") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("The guest pointer is acquired only after the host "
-                     + "pointer crosses the shared edge in the display "
-                     + "layout. Guest mouse input returns control here.")
+                Text("The guest pointer is acquired at the shared edge "
+                     + "in the display layout. Guest mouse input returns "
+                     + "control here.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -180,10 +180,9 @@ private struct ContinuityPointerCard: View {
                     Text("Entry inset: "
                          + "\(Int(edge.edgeGeometry.entryInsetPixels)) px")
                 }
-                .help("How far inside the guest boundary a crossing "
-                      + "re-enters — the click-wiggle guard that keeps an "
-                      + "ordinary click from tipping straight back across "
-                      + "the edge it just crossed.")
+                .help("Re-entry depth past the guest boundary. Guards "
+                      + "against a click tipping straight back across the "
+                      + "edge it just crossed.")
                 Stepper(value: Binding(
                     get: { edge.edgeGeometry.deadzoneDepth },
                     set: { controller.setEdgeDeadzoneDepth($0) }),
@@ -192,10 +191,10 @@ private struct ContinuityPointerCard: View {
                     Text("File-drag deadzone: "
                          + "\(Int(edge.edgeGeometry.deadzoneDepth)) px")
                 }
-                .help("How far the file-drag catch surface widens for the "
-                      + "length of a guest→host handoff. Zero means the "
-                      + "cursor must return to the very physical edge "
-                      + "before this Mac tries to take over the drag.")
+                .help("Extra width on the file-drag catch surface during "
+                      + "a guest→host handoff. Zero requires the cursor to "
+                      + "reach the physical edge before this Mac takes "
+                      + "over the drag.")
                 Toggle("Send keyboard input to guest",
                        isOn: $controller.keyboardForwardingEnabled)
                     .disabled(!controller.edgeModeActive)
@@ -206,10 +205,10 @@ private struct ContinuityPointerCard: View {
                     }
                 }
                 .disabled(!controller.edgeModeActive)
-                Text("The return shortcut is always handled by this Mac "
-                     + "and is never sent to the guest. Keyboard delivery "
-                     + "covers Event Manager applications and modifiers; "
-                     + "it does not synthesize GetKeys or physical ADB state.")
+                Text("The return shortcut is handled by this Mac and "
+                     + "never sent to the guest. Delivery covers Event "
+                     + "Manager applications and modifiers; GetKeys and "
+                     + "physical ADB state are not synthesized.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -229,9 +228,9 @@ private struct ContinuityPointerCard: View {
                     accessibilityRow
                 }
                 Text("Primary clicks and held motion follow the pointer "
-                     + "into the guest. Guest mouse input immediately "
-                     + "returns control to that Mac. Diagnostic probes "
-                     + "live in Logs.")
+                     + "into the guest. Guest mouse input returns control "
+                     + "to that Mac. Diagnostic probes "
+                     + "are in Logs.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -251,10 +250,10 @@ private struct ContinuityPointerCard: View {
             Label("Accessibility permission needed",
                   systemImage: "exclamationmark.triangle")
                 .font(.caption.weight(.semibold))
-            Text("Turn on \(ProductIdentity.displayName) under Privacy & "
-                 + "Security › Accessibility, then come back to this app — "
-                 + "capture picks itself up. Without it the pointer still "
-                 + "crosses, but host clicks also reach apps on this Mac.")
+            Text("Enable \(ProductIdentity.displayName) under Privacy & "
+                 + "Security › Accessibility; capture resumes on return to "
+                 + "this app. Without it the pointer still crosses, but "
+                 + "host clicks also reach apps on this Mac.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -285,12 +284,12 @@ private struct ContinuityPointerCard: View {
                 .font(.caption.monospaced())
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("macOS grants Accessibility to a particular copy of an "
-                 + "app, not to the app in general. If the Accessibility "
+            Text("macOS grants Accessibility per copy of an app, not "
+                 + "per app. If the Accessibility "
                  + "list already shows \(ProductIdentity.displayName) "
                  + "switched on, that grant belongs to a different copy. "
-                 + "Move this one into your Applications folder and open "
-                 + "it from there, then grant it once.")
+                 + "Move this copy into the Applications folder, open it "
+                 + "from there, and grant it once.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

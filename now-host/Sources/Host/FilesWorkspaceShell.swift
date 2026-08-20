@@ -606,7 +606,7 @@ private struct FilesGuestUnavailable: View {
                 .font(.system(size: 36, weight: .light))
             Text("No \(MachineNaming.properNoun) Connected")
                 .font(.headline)
-            Text("Guest files will appear here when a Mac connects.")
+            Text("Guest files appear once a Mac connects.")
                 .font(.callout)
         }
         .foregroundStyle(.secondary)
@@ -716,11 +716,11 @@ private struct FilesPlacesSidebar: View {
         switch location.origin {
         case .root: return "Go to \(place)"
         case .folderManager:
-            return "\(place) — found through the guest Folder Manager."
+            return "\(place) — from the guest Folder Manager."
         case .probed:
-            return "\(place) — found by probing this folder name."
+            return "\(place) — found by name probe."
         case .pinned:
-            return "\(place) — added by you."
+            return "\(place) — added manually."
         }
     }
 }
@@ -779,7 +779,7 @@ private struct FilesSettingsPane: View {
                 if model.startupDirectory == .custom {
                     TextField("Folder relative to the share",
                               text: $model.customStartupPath)
-                    Text("Use colons between folders, for example " +
+                    Text("Colon-separated, for example " +
                          "System Folder:Extensions.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -824,8 +824,8 @@ private struct FilesSharingPane: View {
                 }
             }
             Section("How It Works") {
-                Text("The Browser panel shows this folder. Drag its files " +
-                     "into the \(MachineNaming.properNoun) pane to copy them to " +
+                Text("Shown in the Browser panel. Drag files into the " +
+                     "\(MachineNaming.properNoun) pane to copy them to " +
                      model.connection.peerLabel + ".")
                     .foregroundStyle(.secondary)
             }

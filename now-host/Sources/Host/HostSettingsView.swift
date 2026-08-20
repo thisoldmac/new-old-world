@@ -194,7 +194,7 @@ private struct GlassPreview: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Window chrome")
                     .fontWeight(.medium)
-                Text("Accessibility settings can replace glass with material.")
+                Text("Accessibility settings may replace glass with material.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -250,9 +250,8 @@ private struct MCPSettingsSection: View {
                        isOn: $model.stdioStartsAutomatically)
                 Toggle("Start HTTP automatically",
                        isOn: $model.httpStartsAutomatically)
-                Text("Applies the next time New Old World launches. The "
-                     + "MCP page shows whether each transport is running "
-                     + "now and its socket or port.")
+                Text("Applies at next launch. Current transport state, "
+                     + "socket and port are on the MCP page.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -295,7 +294,7 @@ private struct WebSettingsSection: View {
                 TextField("AI model folder or planner executable (optional)",
                           text: $model.aiPlannerExecutable)
                 Text("A model folder uses the optional MLX adapter. "
-                     + "Compatible Page is always the fallback; AI may "
+                     + "Compatible Page is the fallback; AI may "
                      + "reorder original blocks, but cannot write links "
                      + "or text.")
                     .font(.caption)
@@ -307,7 +306,7 @@ private struct WebSettingsSection: View {
             }
             Section("Service") {
                 Toggle("Start automatically", isOn: $model.startsAutomatically)
-                Text("Applies the next time New Old World launches.")
+                Text("Applies at next launch.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -331,8 +330,8 @@ private struct LogsSettingsSection: View {
                 Toggle("Log to disk", isOn: Binding(
                     get: { model.persistsToDisk },
                     set: { model.setPersistsToDisk($0) }))
-                Text("Written beside this Mac's own event log. The Logs "
-                     + "page shows the file's path once this is on.")
+                Text("Written beside this Mac's event log. The file's "
+                     + "path appears on the Logs page once enabled.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -359,10 +358,9 @@ private struct NewConnectionDefaultsSection: View {
     var body: some View {
         Form {
             Section("Continuity") {
-                Text("A Mac that has never connected before starts with "
-                     + "these values. Once it has connected, its own "
-                     + "settings live on the Continuity page and these no "
-                     + "longer apply to it.")
+                Text("Defaults for a Mac that has never connected. After "
+                     + "a first connection, per-machine settings on the "
+                     + "Continuity page take over.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -392,9 +390,8 @@ private struct NewConnectionDefaultsSection: View {
                 }
             }
             Section("Mirror") {
-                Text("Mirror's Finder-emulation controls are still "
-                     + "evolving and remain per-Mac only, on the Mirror "
-                     + "page — they are not part of this restructure yet.")
+                Text("Mirror's Finder-emulation controls remain per-Mac "
+                     + "only, on the Mirror page.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -419,15 +416,14 @@ private struct ChatWorkspaceSettingsSection: View {
     var body: some View {
         Form {
             Section("Chat Workspace") {
-                Text("Chat normally reaches only the connected classic "
-                     + "machine, through tools this app owns and logs. A "
-                     + "workspace goes further: the Claude runtime gets "
-                     + "its own file and command tools in ONE folder on "
-                     + "this Mac, so a chat can read source, build it and "
-                     + "test it — including New Old World's own. Those "
-                     + "tools are governed by the mode below and by "
-                     + "whatever policy that folder carries, not by this "
-                     + "app's per-tool consent.")
+                Text("Chat reaches only the connected classic machine, "
+                     + "through tools this app owns and logs. A workspace "
+                     + "adds file and command tools for the Claude runtime "
+                     + "in ONE folder on this Mac, so a chat can read, "
+                     + "build and test source — including New Old World's "
+                     + "own. Those tools are governed by the mode below "
+                     + "and that folder's policy, not by this app's "
+                     + "per-tool consent.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -489,10 +485,9 @@ private struct ChatWorkspaceSettingsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Section("Instructions") {
-                Text("Your own standing instructions, added to every "
-                     + "conversation whichever model answers it — tone, "
-                     + "priorities, house rules. They cannot widen what "
-                     + "a turn may touch.")
+                Text("Standing instructions, added to every conversation "
+                     + "whichever model answers — tone, priorities, house "
+                     + "rules. They cannot widen what a turn may touch.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

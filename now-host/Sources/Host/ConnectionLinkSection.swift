@@ -39,7 +39,7 @@ struct ConnectionLinkSection: View {
             SectionHead(
                 "The link",
                 caption: "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
-                    + "dials in; \(MachineNaming.thisMac) only listens.")
+                    + "connects in; \(MachineNaming.thisMac) only listens.")
 
             /* The port and its switch on one line, not in a Form. A Form
                draws a labelled settings sheet, and this is no longer a
@@ -84,8 +84,8 @@ struct ConnectionLinkSection: View {
                     Button("Stop") { onboarding.stop() }
                         .controlSize(.small)
                 } else {
-                    Text("Hosts the PPC app, settings, extension and local "
-                         + "dependencies for an old browser.")
+                    Text("Serves the PPC app, settings, extension and "
+                         + "local dependencies to an old browser.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -231,8 +231,8 @@ struct ConnectionListenerLog: View {
         let visibleEntries = entries
         if !visibleEntries.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                SectionHead("Log", caption: "What the listener on "
-                    + "\(MachineNaming.thisMac) has done, newest first.")
+                SectionHead("Log", caption: "Listener activity on "
+                    + "\(MachineNaming.thisMac), newest first.")
                 ScrollView {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(visibleEntries.reversed()) { entry in

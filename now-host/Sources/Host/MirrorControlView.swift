@@ -48,32 +48,31 @@ struct MirrorToolbarView: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .fixedSize()
-                .help("How much of \(MachineNaming.possessive(nil)) screen one point here "
-                      + "is worth. Every numbered stop is a power of two, so "
-                      + "the pixels stay exact.")
+                .help("Guest pixels per point in this view. Every "
+                      + "numbered stop is a power of two, so pixels stay "
+                      + "exact.")
             }
             Button(run.running ? "Stop" : "Start") {
                 if run.running { run.stop() } else { run.start() }
             }
             .disabled(!run.running && !model.connection.canCapture)
             .help(run.running
-                  ? "Stop asking \(MachineNaming.simpleReference) for its screen. Every "
-                    + "Mirror request refuses until it is started again."
-                  : "Start asking \(MachineNaming.simpleReference) for its screen.")
+                  ? "Stop reading \(MachineNaming.possessive(nil)) screen. "
+                    + "Mirror requests refuse until restarted."
+                  : "Start reading \(MachineNaming.possessive(nil)) screen.")
             Button(presentation.isDetached ? "Attach" : "Detach") {
                 setDetached(!presentation.isDetached)
             }
             .help(presentation.isDetached
-                  ? "Bring the Mirror back into this page."
-                  : "Put the Mirror in a window of its own. It keeps "
-                    + "running either way.")
+                  ? "Return the Mirror to this page."
+                  : "Move the Mirror to its own window. It keeps running "
+                    + "either way.")
             Toggle(isOn: $presentation.inspectorShown) {
                 Image(systemName: "sidebar.trailing")
             }
             .toggleStyle(.button)
-            .help("Show the planes, the resident's lifecycle and what the "
-                  + "last scene reported. The acts are the Events drawer "
-                  + "under the picture.")
+            .help("Planes, resident lifecycle and the last scene "
+                  + "report. Acts are in the Events drawer below.")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -105,10 +104,10 @@ struct MirrorToolbarView: View {
     private var stateLine: String {
         if run.running {
             return presentation.isDetached
-                ? "Running — showing in its own window"
+                ? "Running — in its own window"
                 : "Running"
         }
-        if run.wantsRunning { return "Waiting for a Mac to come back" }
+        if run.wantsRunning { return "Waiting for a Mac to reconnect" }
         return "Stopped"
     }
 }
@@ -203,7 +202,7 @@ struct MirrorControlView: View {
                           || !model.connection.canCapture)
             Button("Rebuild State") { source.rebuildGuestState() }
                 .disabled(!source.running)
-                .help("Discard cached Finder and application state, then read the guest again")
+                .help("Discard cached Finder and application state and re-read the guest")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -217,7 +216,7 @@ struct MirrorControlView: View {
                     get: { source.emulateFinderWindows },
                     set: { source.emulateFinderWindows = $0 }
                 ))
-                Text("Experimental: the guest owns which Finder windows exist and their chrome; this Mac renders and operates their interiors from semantic file data. Some Finder behaviors remain incomplete.")
+                Text("Experimental. The guest owns which Finder windows exist and their chrome; this Mac renders and operates their interiors from semantic file data. Some Finder behaviors are incomplete.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -225,7 +224,7 @@ struct MirrorControlView: View {
                     get: { source.emulateDesktop },
                     set: { source.emulateDesktop = $0 }
                 ))
-                Text("Off uses the guest's desktop roster and exact icon positions. On lays out the Desktop Folder and mounted volumes locally.")
+                Text("Off: the guest's desktop roster and exact icon positions. On: the Desktop Folder and mounted volumes, laid out locally.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -245,7 +244,7 @@ struct MirrorControlView: View {
                     set: { source.syncEmulatedFinderView = $0 }
                 ))
                 .disabled(!source.emulateFinderWindows)
-                Text("Development controls. Host actions appear immediately; enabled properties reconcile with later guest observations. View type remains host-only unless its sync is enabled.")
+                Text("Development controls. Host actions apply immediately; enabled properties reconcile with later guest observations. View type is host-only unless its sync is enabled.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -288,7 +287,7 @@ struct MirrorControlView: View {
                             Text(pack.id).tag(pack.id)
                         }
                     }
-                    Text("A changed pack is loaded on next launch.")
+                    Text("Loaded on next launch.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 if let ingestion {
@@ -329,15 +328,13 @@ private struct MirrorAssetIngestCard: View {
                    folder the classic Mac shares, and on a real desk it
                    usually is not. Saying so here is cheaper than the
                    refusal that used to arrive mid-transfer. */
-                .help("Copy this Mac's own System file, theme and fonts "
-                      + "over the wire and build an asset pack from them. "
-                      + "Around half a minute. The classic Mac must be "
-                      + "sharing its whole disk rather than one folder, "
-                      + "or its System Folder is out of reach — NOW "
-                      + "checks and says so before copying anything. "
-                      + "Tried once on a PowerBook 1400c and refused for "
-                      + "exactly that reason; no pack has been built from "
-                      + "a real Macintosh yet.")
+                .help("Build an asset pack from this Mac's System file, "
+                      + "theme and fonts, copied over the wire. Around "
+                      + "half a minute. Requires the classic Mac to share "
+                      + "its whole disk, not one folder; NOW checks before "
+                      + "copying. Untested on real hardware — the one "
+                      + "attempt, on a PowerBook 1400c, refused for that "
+                      + "reason.")
                 if ingestion.isRunning {
                     ProgressView().controlSize(.small)
                 }
@@ -356,7 +353,7 @@ private struct MirrorAssetIngestCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if case .finished = ingestion.phase {
-                Text("Select it above to use it; it loads on next launch.")
+                Text("Select above to use. Loads on next launch.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -391,9 +388,8 @@ private struct ContinuityControlCard: View {
                        isOn: $source.mirrorCursorEnabled)
                     .disabled(!mirrorRunning)
                 Text("Moves the guest cursor while the pointer is over "
-                     + "the rendered Mirror. Screen-edge Continuity is "
-                     + "its own module; while it owns the shared edge, "
-                     + "this cursor stands down.")
+                     + "the rendered Mirror. Yields to Continuity while "
+                     + "that module owns the shared edge.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
