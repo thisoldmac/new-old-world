@@ -1163,6 +1163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         do {
             let token = try mcpTokenStore.loadOrCreate()
             let port = preferences.httpPort
+            let authMode = preferences.httpAuthMode
             let runID = UUID()
             mcpHTTPRunID = runID
             let client = HostAgentIntegrationClient(
@@ -1170,8 +1171,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             let audit = HostMCPAuditSink(
                 adapter: state.agentIntegration,
                 activity: state.agentActivity)
+            var oauth: MCPOAuthAuthority?
+            if authMode == .oauth {
+                let authority = MCPOAuthAuthority(
+                    store: try MCPOAuthStateStore())
+                state.mcpOAuthConsent.attach(authority)
+                oauth = authority
+            } else {
+                state.mcpOAuthConsent.detach()
+            }
             let listener = try MCPHTTPListener(
-                configuration: .init(port: port, bearerToken: token),
+                configuration: .init(port: port, authMode: authMode,
+                                     bearerToken: token),
                 serverFactory: {
                     NOWMCPServer(client: client, audit: audit)
                 },
@@ -1192,11 +1203,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         }
                         self.mcpHTTPListener = nil
                         self.mcpHTTPRunID = nil
+                        self.state.mcpOAuthConsent.detach()
                         self.state.agentActivity.httpUnavailable("\(error)")
                         HostLog.shared.write(
                             .warn, "mcp", "HTTP MCP failed: \(error)")
                     }
-                })
+                },
+                oauth: oauth)
             mcpHTTPListener = listener
             Task { [weak self, weak listener] in
                 guard let self, let listener else { return }
@@ -1207,7 +1220,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                               self.mcpHTTPRunID == runID else { return }
                         let endpoint = "http://127.0.0.1:\(port)/mcp"
                         self.state.agentActivity.httpOpened(
-                            at: endpoint, bearerToken: token)
+                            at: endpoint,
+                            bearerToken: authMode == .bearer ? token : nil)
                         HostLog.shared.write(
                             .info, "mcp", "HTTP MCP listening at \(endpoint)")
                     }
@@ -1235,6 +1249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         mcpHTTPRunID = nil
         mcpHTTPListener?.stop()
         mcpHTTPListener = nil
+        state.mcpOAuthConsent.detach()
         HostLog.shared.write(.info, "mcp",
                              "HTTP MCP stopped from the MCP pane")
         state.agentActivity.httpStopped()

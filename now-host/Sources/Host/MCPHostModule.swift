@@ -17,6 +17,9 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
     let companions: AgentCompanionModel
     let listener: GuestListener
     let transportSettings: MCPTransportSettingsModel
+    /// May be a detached model on a host that never runs oauth mode; the
+    /// page then simply has no consent rows to draw.
+    let oauthConsent: MCPOAuthConsentModel
     /// `{ context.showSettings(.mcp) }`, captured once at construction the
     /// same way `MirrorHostModule` captures `context.selectModule` — the
     /// page's "Settings…" button for the start-automatically toggles that
@@ -34,6 +37,7 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
         }
         self.activity = activity
         self.companions = companions
+        oauthConsent = context.mcpOAuthConsent ?? MCPOAuthConsentModel()
         listener = context.listener
         transportSettings = MCPTransportSettingsModel(
             defaults: context.defaults)
@@ -82,6 +86,7 @@ enum MCPHostModule {
                 companions: runtime.companions,
                 listener: runtime.listener,
                 settings: runtime.transportSettings,
+                oauthConsent: runtime.oauthConsent,
                 openSettings: runtime.openSettings,
                 startStdio: runtime.startStdio,
                 stopStdio: runtime.stopStdio,
