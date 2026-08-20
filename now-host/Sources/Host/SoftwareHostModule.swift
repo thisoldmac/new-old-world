@@ -24,8 +24,8 @@ enum SoftwareHostModule {
             id: "software",
             title: "Software",
             symbol: "shippingbox",
-            summary: "What is installed on "
-                + "\(MachineNaming.simpleReference), and launching it"),
+            summary: "Installed software on "
+                + "\(MachineNaming.simpleReference)"),
         makeRuntime: { SoftwareHostModuleRuntime(context: $0) },
         makeView: { _, runtime in
             guard let runtime = runtime as? SoftwareHostModuleRuntime else {

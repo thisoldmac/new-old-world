@@ -59,9 +59,8 @@ struct DiagnosticsModuleView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Diagnostics")
                 .font(.headline)
-            Text("What \(machine) can measure about "
-                    + "itself. Which of these it serves is its own answer, "
-                    + "read from its command table.")
+            Text("Measurements served by \(machine), "
+                    + "from its command table.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -169,9 +168,9 @@ struct DiagnosticsModuleView: View {
                 }
             }
         } else {
-            emptyState(symbol: "sidebar.left", title: "Select a diagnostic",
-                       message: "Pick one on the left to see what it "
-                           + "measures, what it costs, and what it said.")
+            emptyState(symbol: "sidebar.left", title: "No diagnostic selected",
+                       message: "Select one for its measurement, cost "
+                           + "and last result.")
         }
     }
 
@@ -204,7 +203,7 @@ struct DiagnosticsModuleView: View {
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
-                .help("Copies the rows as text, in \(machine)'s own wording.")
+                .help("Copy rows as text, unmodified.")
             }
             Button {
                 run(state)
@@ -215,7 +214,7 @@ struct DiagnosticsModuleView: View {
             .disabled(!availability.isRunnable || !model.isConnected
                       || state.isRunning)
             .help(availability.reason
-                  ?? "Runs \(state.diagnostic.verb) on \(machine).")
+                  ?? "Run \(state.diagnostic.verb) on \(machine).")
         }
         .padding(12)
     }
@@ -311,9 +310,7 @@ struct DiagnosticsModuleView: View {
                rows has told us nothing, and until this line existed the page
                drew an empty space for it — indistinguishable from a table of
                zeroes, which is a real measurement. */
-            Label("\(MachineNaming.startingSentence(machine)) answered but "
-                    + "sent no measurements. That is not a reading of zero — "
-                    + "it is no reading at all.",
+            Label("Answered with no measurements. Not a reading of zero.",
                   systemImage: "questionmark.circle")
                 .font(.callout)
                 .foregroundStyle(.orange)
@@ -323,8 +320,8 @@ struct DiagnosticsModuleView: View {
                under a description is the one place a reader cannot tell
                "nothing came back" from "nothing was asked". */
             VStack(alignment: .leading, spacing: 6) {
-                Label("Not run yet. Running it spends what the line above "
-                        + "says it costs, on \(machine).",
+                Label("Not run yet. Costs \(machine) the time shown "
+                        + "above.",
                       systemImage: "play.circle")
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -335,11 +332,8 @@ struct DiagnosticsModuleView: View {
                    is told the run is also the asking. */
                 if case .unproven = model.availability(for: state),
                    state.serving == .unknown {
-                    Label("\(MachineNaming.startingSentence(machine)) has "
-                            + "not listed its commands yet, so whether it "
-                            + "serves this is not established. Running it "
-                            + "asks — and it answers in its own words if it "
-                            + "cannot.",
+                    Label("Support unknown — \(machine) has not listed "
+                            + "its commands. Run to check.",
                           systemImage: "questionmark.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -364,18 +358,15 @@ struct DiagnosticsModuleView: View {
     private func transfer(_ reading: TransferDiagnosticsReading) -> some View {
         if reading.hasReceivedNothing {
             VStack(alignment: .leading, spacing: 8) {
-                Label("No file has been received by \(machine) since New "
-                        + "Old World started there, so there is no "
-                        + "transfer to describe. Nothing is wrong: these "
-                        + "counters describe the LAST received file, and "
-                        + "there has not been one yet. Send it a file and "
-                        + "this fills in.",
+                Label("No file received since New Old World started on "
+                        + "\(machine). These counters describe the last "
+                        + "received file.",
                       systemImage: "tray")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if !reading.live.isEmpty {
-                    Text("Live on the connection right now")
+                    Text("Live on the connection")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     rows(reading.live)
@@ -464,7 +455,7 @@ struct DiagnosticsModuleView: View {
         if let mean = histogram.mean { parts.append("mean \(mean)") }
         if let min = histogram.minimum { parts.append("min \(min)") }
         if let max = histogram.maximum { parts.append("max \(max)") }
-        return parts.isEmpty ? "The machine sent no summary for this."
+        return parts.isEmpty ? "No summary."
             : parts.joined(separator: "  ·  ")
     }
 
@@ -478,11 +469,10 @@ struct DiagnosticsModuleView: View {
     private var linkTimingCard: some View {
         if !model.linkTiming.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text("The link itself")
+                Text("Link")
                     .font(.subheadline.weight(.semibold))
-                Text("Measured at \(machine)'s end of the wire, not at this "
-                     + "one. These moved here from Networking: they describe "
-                     + "the link, not that machine's networking.")
+                Text("Measured at \(machine)'s end of the wire. "
+                     + "Link timing, not its network configuration.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -544,8 +534,8 @@ struct DiagnosticsModuleView: View {
         emptyState(
             symbol: "cable.connector.slash",
             title: "No \(MachineNaming.properNoun) Connected",
-            message: "The \(MachineNaming.commonNoun) dials "
-                + "\(MachineNaming.thisMac). Once it connects, the "
-                + "diagnostics it serves can be run and read here.")
+            message: "The \(MachineNaming.commonNoun) connects to "
+                + "\(MachineNaming.thisMac). Diagnostics appear "
+                + "once connected.")
     }
 }

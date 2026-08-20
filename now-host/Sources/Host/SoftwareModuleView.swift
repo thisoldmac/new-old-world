@@ -330,9 +330,9 @@ struct SoftwareModuleView: View {
                 .foregroundStyle(.secondary)
             Text("No \(MachineNaming.properNoun) Connected")
                 .font(.title2.weight(.semibold))
-            Text("The \(MachineNaming.commonNoun) dials "
-                 + "\(MachineNaming.thisMac); what is installed on it "
-                 + "appears here once it does.")
+            Text("The \(MachineNaming.commonNoun) connects to "
+                 + "\(MachineNaming.thisMac). Installed software appears "
+                 + "once connected.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)
@@ -379,11 +379,9 @@ struct SoftwareModuleView: View {
                     Label("Rescan", systemImage: "arrow.clockwise")
                 }
                 .disabled(!model.canBrowse || model.isLoading)
-                .help("Sweeps this domain on \(peerLabel) again. The "
-                      + "listing is read once per machine per domain and "
-                      + "kept for as long as that machine stays connected, "
-                      + "so this button is the only thing that re-reads "
-                      + "its disk.")
+                .help("Re-scan this domain on \(peerLabel). Listings "
+                      + "are cached for the life of the connection; this "
+                      + "is the only re-read.")
 
                 // What building the Applications list COSTS the
                 // machine being driven, as opposed to what is in it.

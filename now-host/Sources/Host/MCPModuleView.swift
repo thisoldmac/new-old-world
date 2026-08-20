@@ -255,7 +255,7 @@ struct MCPModuleView: View {
     private var consent: some View {
         card {
             VStack(alignment: .leading, spacing: 8) {
-                Text("What each \(MachineNaming.properNoun) has agreed to")
+                Text("Consent")
                     .font(.headline)
                 Text("Each machine answers this for itself, and can "
                         + "change its answer while connected. It is "
@@ -307,7 +307,7 @@ struct MCPModuleView: View {
     private var activity: some View {
         card {
             VStack(alignment: .leading, spacing: 8) {
-                Text("What an agent has done")
+                Text("Activity")
                     .font(.headline)
                 if model.events.isEmpty {
                     Text(emptyStreamSentence)

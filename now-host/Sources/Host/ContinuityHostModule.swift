@@ -46,9 +46,8 @@ enum ContinuityHostModule {
             id: "continuity",
             title: "Continuity",
             symbol: "cursorarrow.motionlines",
-            summary: "Place \(MachineNaming.simpleReference) beside this "
-                + "Mac and pass the pointer and keyboard across their "
-                + "shared edge",
+            summary: "Pointer and keyboard across the edge shared with "
+                + "\(MachineNaming.simpleReference)",
             tier: .experimental),
         makeRuntime: { try ContinuityHostModuleRuntime(context: $0) },
         makeView: { _, runtime in

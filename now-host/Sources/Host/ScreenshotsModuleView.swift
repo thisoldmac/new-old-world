@@ -164,7 +164,7 @@ struct ScreenshotsModuleView: View {
         } label: {
             Label("Settings", systemImage: "slider.horizontal.3")
         }
-        .help("How captures and streams cross the wire")
+        .help("Capture and transfer settings")
     }
 
     /// The wire plumbing, and nothing else.
@@ -521,11 +521,12 @@ struct ScreenshotsModuleView: View {
             Text("Nothing Captured Yet")
                 .font(.title2.weight(.semibold))
             Text(model.connection.canCapture
-                 ? "Press Capture to pull "
+                 ? "Press Capture to read "
                    + "\(MachineNaming.possessive(model.connection)) screen "
                    + "across the wire."
-                 : "Connect \(MachineNaming.simpleReference) first — it "
-                   + "dials \(MachineNaming.thisMac).")
+                 : "Not connected. "
+                   + "\(MachineNaming.startingSentence(MachineNaming.simpleReference)) "
+                   + "connects to \(MachineNaming.thisMac).")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)

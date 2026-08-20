@@ -27,8 +27,8 @@ enum FilesHostModule {
             id: "files",
             title: "Files",
             symbol: "folder",
-            summary: "Browse \(MachineNaming.possessive(nil)) share, and "
-                + "move files both ways"),
+            summary: "\(MachineNaming.possessive(nil)) file share, "
+                + "both directions"),
         makeRuntime: { FilesHostModuleRuntime(context: $0) },
         makeView: { _, runtime in
             guard let runtime = runtime as? FilesHostModuleRuntime else {

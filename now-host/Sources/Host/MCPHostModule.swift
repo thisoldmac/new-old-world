@@ -67,8 +67,8 @@ enum MCPHostModule {
             id: "mcp",
             title: "MCP",
             symbol: "app.connected.to.app.below.fill",
-            summary: "The MCP server agents reach "
-                + "\(MachineNaming.thisMac) through",
+            summary: "MCP server for agent access to "
+                + "\(MachineNaming.thisMac)",
             placement: .footer,
             tier: .experimental),
         makeRuntime: { try MCPHostModuleRuntime(context: $0) },

@@ -17,8 +17,8 @@ enum CloudHostModule {
             id: "icloud",
             title: "iCloud",
             symbol: "icloud",
-            summary: "What of \(MachineNaming.thisMac)'s iCloud "
-                + "\(MachineNaming.simpleReference) may browse",
+            summary: "\(MachineNaming.thisMac)'s iCloud services shared "
+                + "with \(MachineNaming.simpleReference)",
             tier: .experimental),
         makeRuntime: { CloudHostModuleRuntime(context: $0) },
         makeView: { _, runtime in

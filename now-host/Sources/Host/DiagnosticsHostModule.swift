@@ -24,8 +24,8 @@ enum DiagnosticsHostModule {
             id: "diagnostics",
             title: "Diagnostics",
             symbol: "stethoscope",
-            summary: "Measure \(MachineNaming.possessive(nil)) screen "
-                + "reads and file transfers",
+            summary: "Screen-read and file-transfer measurements for "
+                + "\(MachineNaming.simpleReference)",
             tier: .debug),
         makeRuntime: { DiagnosticsHostModuleRuntime(context: $0) },
         makeView: { _, runtime in

@@ -223,7 +223,7 @@ struct MirrorModuleView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(.bar)
-        .help("What this Mac has been asked to do, and what became of it.")
+        .help("Request history and outcomes")
         if presentation.eventsShown {
             Divider()
             MirrorEventStreamView(timeline: timeline, cycles: cycles,

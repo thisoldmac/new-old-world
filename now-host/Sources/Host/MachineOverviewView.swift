@@ -195,7 +195,7 @@ private struct MachineHardwareSummary: View {
                 MachineOverviewEmptyState(text: note)
             } else {
                 MachineOverviewEmptyState(
-                    text: "Connect this Mac to read its hardware overview.")
+                    text: "Connect this Mac for its hardware overview.")
             }
         }
     }
@@ -250,7 +250,7 @@ private struct MachineApplicationsSummary: View {
             } else {
                 MachineOverviewEmptyState(text: isConnected
                     ? "No foreground applications were reported."
-                    : "Connect this Mac to see its running applications.")
+                    : "Connect this Mac for its running applications.")
             }
         }
     }

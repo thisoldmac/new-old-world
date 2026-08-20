@@ -48,7 +48,7 @@ struct ProcessesModuleView: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Processes")
                     .font(.largeTitle.weight(.semibold))
-                Text("What is running on "
+                Text("Running processes on "
                      + "\(MachineNaming.sentence(model.connection)).")
                     .foregroundStyle(.secondary)
             }
@@ -114,9 +114,9 @@ struct ProcessesModuleView: View {
                 .foregroundStyle(.secondary)
             Text("No \(MachineNaming.properNoun) Connected")
                 .font(.title2.weight(.semibold))
-            Text("The \(MachineNaming.commonNoun) dials "
-                 + "\(MachineNaming.thisMac); its running processes "
-                 + "appear here once it does.")
+            Text("The \(MachineNaming.commonNoun) connects to "
+                 + "\(MachineNaming.thisMac). Processes appear once "
+                 + "connected.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 460)
@@ -180,7 +180,7 @@ struct ProcessesModuleView: View {
             Image(systemName: "sidebar.right")
                 .font(.system(size: 28))
                 .foregroundStyle(.tertiary)
-            Text("Select a process to see what it is and drive it.")
+            Text("Select a process for its details and controls.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             // With no process picked there is no other pane to carry a

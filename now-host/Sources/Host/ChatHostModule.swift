@@ -41,7 +41,7 @@ enum ChatHostModule {
             id: "chat",
             title: "Chat",
             symbol: "bubble.left.and.bubble.right",
-            summary: "Talk to a model that can see and drive "
+            summary: "A model with access to "
                 + "\(MachineNaming.simpleReference)",
             tier: .experimental),
         makeRuntime: { try ChatHostModuleRuntime(context: $0) },

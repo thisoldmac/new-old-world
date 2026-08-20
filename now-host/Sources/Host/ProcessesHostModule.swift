@@ -24,8 +24,8 @@ enum ProcessesHostModule {
             id: "processes",
             title: "Processes",
             symbol: "cpu",
-            summary: "What is running on \(MachineNaming.simpleReference), "
-                + "and quit or raise it"),
+            summary: "Running processes on "
+                + "\(MachineNaming.simpleReference)"),
         makeRuntime: { ProcessesHostModuleRuntime(context: $0) },
         makeView: { _, runtime in
             guard let runtime = runtime as? ProcessesHostModuleRuntime else {
