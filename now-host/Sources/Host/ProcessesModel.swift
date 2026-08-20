@@ -54,6 +54,11 @@ struct ProcessWire {
 /// honest about being a snapshot from the moment it was asked.
 @MainActor
 final class ProcessesModel: ObservableObject, GuestScopedModel {
+    /// Where `copyPreview`/`copyToPasteboard` writes. `.general` is the
+    /// person's own clipboard, which is why a test must name its own board
+    /// rather than take theirs (`CapturePasteboard`).
+    var pasteboardForCopying: NSPasteboard = .general
+
     @Published var connection: GuestConnectionState = .disconnected {
         didSet { connectionChanged(from: oldValue) }
     }
@@ -329,17 +334,11 @@ final class ProcessesModel: ObservableObject, GuestScopedModel {
 
     /// The shown capture on the pasteboard, as an image.
     ///
-    /// The same six lines as `ScreenshotModuleModel.copyToPasteboard`, which
-    /// is where this belongs — it is an instance method on a model this page
-    /// cannot reach, and the smallest fix is to make that one `static` (or
-    /// move it beside `CaptureDecoder`) and have both sides call it.
+    /// Both pages copy a capture through `CapturePasteboard`, which is the
+    /// fix the note that used to sit here asked for.
     func copyPreview() {
         guard let record = preview else { return }
-        let rep = NSBitmapImageRep(cgImage: record.image)
-        let image = NSImage(size: rep.size)
-        image.addRepresentation(rep)
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects([image])
+        CapturePasteboard.copy(record, to: pasteboardForCopying)
     }
 
     /// The shown capture as a PNG, encoded by the one encoder this app has.

@@ -24,8 +24,25 @@ case "$signing" in
         ;;
 esac
 
+# `--fast` is the INNER LOOP, not the gate. It drops the two checks that
+# cannot change between one edit and the next — the no-pack pass and the
+# Release configuration — and says so at the end, because a lane that looks
+# like the gate and is not is worse than no lane. CI and scripts/test-all
+# call the full form; ContinuityGateWiringTests fails if either grows a
+# `--fast`.
+fast=no
+args=""
+for arg in "$@"; do
+    case "$arg" in
+        --fast) fast=yes ;;
+        *) args="${args:+$args }$arg" ;;
+    esac
+done
+# shellcheck disable=SC2086
+set -- $args
+
 if [ "$#" -gt 1 ]; then
-    echo "usage: $0 [/absolute/scratch/directory]" >&2
+    echo "usage: $0 [--fast] [/absolute/scratch/directory]" >&2
     exit 64
 fi
 
@@ -79,6 +96,7 @@ run_swift_step() {
 # See scripts/test-mirrorkit for the reasoning: the Platinum asset pack is
 # a runtime dependency, tests needing its bytes skip by name without one,
 # and a machine that HAS the pack must not let those skips stand.
+pack_present=unknown
 if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
     pack=${NOW_MIRROR_ASSETS:-}
     if [ -z "$pack" ]; then
@@ -88,11 +106,20 @@ if [ -z "${NOW_REQUIRE_ASSET_PACK:-}" ]; then
     if [ -n "$pack" ] && [ -f "$pack/manifest.json" ]; then
         NOW_REQUIRE_ASSET_PACK=1
         export NOW_REQUIRE_ASSET_PACK
+        pack_present=yes
         echo "==> asset pack found ($pack) — pack gates ENFORCED"
     else
+        pack_present=no
         echo "==> asset pack absent — pack gates will SKIP by name"
         echo "    (tools/extract-assets-offline; docs/asset-pack.md)"
     fi
+else
+    # Somebody asserted the answer. `1` means they have a pack and want the
+    # gates to bite; anything else is not a claim either way, so the
+    # second pass stays.
+    case "${NOW_REQUIRE_ASSET_PACK}" in
+        1|true|TRUE|True) pack_present=yes ;;
+    esac
 fi
 
 # The fixture directory's shape, before anything reads it. Both of these
@@ -119,12 +146,32 @@ run_swift_step "$scratch_root/swift-test.log" \
 # hole as a gate nothing invokes. It has already earned its keep once:
 # it caught a render assertion whose sample point only meant what it
 # meant with the pack's own font metrics.
-echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
-run_swift_step "$scratch_root/swift-test-no-assets.log" \
-    env NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
-    NOW_DEFER_CONCURRENT_SOCKET_TEST=1 \
-    swift test --package-path "$repo_root/now-host" \
-    --scratch-path "$scratch_root/swift"
+#
+# **It is only a second pass on a machine that HAS a pack.** Without one,
+# the run above already resolved no pack and already took every
+# degradation path, so re-running 2,941 tests under `NOW_MIRROR_ASSETS=none`
+# repeats an identical environment verbatim — 169 seconds proving what the
+# first pass proved, on CI and on every fresh clone, which is where this
+# gate runs most often. Skipping it there loses no coverage because there
+# is no second environment to cover; skipping it on a pack desk would lose
+# the only run that watches degradation, so that one still happens.
+#
+# `unknown` runs it: an outside `NOW_REQUIRE_ASSET_PACK` that is not `1`
+# asserts nothing about a pack either way, and a gate guesses in the
+# direction of running.
+if [ "$pack_present" = no ]; then
+    echo "==> skipping the NOW_MIRROR_ASSETS=none pass — no pack resolved,"
+    echo "    so the run above WAS the no-pack run (identical environment)."
+elif [ "$fast" = yes ]; then
+    echo "==> --fast: skipping the NOW_MIRROR_ASSETS=none pass"
+else
+    echo "==> swift test again with NOW_MIRROR_ASSETS=none (honest degradation)"
+    run_swift_step "$scratch_root/swift-test-no-assets.log" \
+        env NOW_MIRROR_ASSETS=none NOW_REQUIRE_ASSET_PACK= \
+        NOW_DEFER_CONCURRENT_SOCKET_TEST=1 \
+        swift test --package-path "$repo_root/now-host" \
+        --scratch-path "$scratch_root/swift"
+fi
 
 # This stress case's server handler is deliberately MainActor-isolated, like
 # the shipping host. Running it alongside two thousand other tests made the
@@ -141,8 +188,11 @@ run_swift_step "$scratch_root/swift-test-concurrent-socket.log" \
     AgentIntegrationSocketTests.testConcurrentHealthCallsReceiveIndependentReplies
 
 # Debug and Release differ in whole-module optimisation, which has caught
-# errors the other configuration accepts. Both, or the gate has a hole.
-for configuration in Debug Release; do
+# errors the other configuration accepts. Both, or the gate has a hole —
+# so only `--fast`, which does not claim to be the gate, builds one.
+configurations="Debug Release"
+[ "$fast" = yes ] && configurations="Debug"
+for configuration in $configurations; do
     echo "==> xcodebuild $configuration"
     if [ "$signing" = release ]; then
         xcodebuild \
@@ -179,4 +229,11 @@ for configuration in Debug Release; do
     fi
 done
 
-echo "==> host gate passed"
+if [ "$fast" = yes ]; then
+    echo "==> host gate passed --fast — NOT the gate."
+    echo "    Not run: the Release configuration, and (on a pack machine)"
+    echo "    the NOW_MIRROR_ASSETS=none pass. Run scripts/test-host with no"
+    echo "    flag before committing."
+else
+    echo "==> host gate passed"
+fi

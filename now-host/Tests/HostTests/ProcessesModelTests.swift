@@ -247,9 +247,13 @@ final class ProcessesModelTests: XCTestCase {
         let model = connected(fake)
         model.screenshotApp(target)
 
-        NSPasteboard.general.clearContents()
+        /* This machine's own clipboard is not this test's to spend
+           (`CapturePasteboard`). */
+        let board = NSPasteboard(name: .init("now.test.copy.\(UUID())"))
+        model.pasteboardForCopying = board
+        board.clearContents()
         model.copyPreview()
-        XCTAssertTrue(NSPasteboard.general.canReadObject(
+        XCTAssertTrue(board.canReadObject(
             forClasses: [NSImage.self], options: nil))
     }
 
