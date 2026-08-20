@@ -596,7 +596,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             ) {
                 [agentIntegration = state.agentIntegration,
                  guestFiles = state.guestFiles,
-                 activity = state.agentActivity,
                  records = state.mcpRecords] request in
                 /* Addressing is checked once, before any operation, so
                    no tool can be reached with a guest selector nobody
@@ -791,7 +790,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         event,
                         drivenGuest:
                             agentIntegration.activeReference()?.id,
-                        stream: activity,
                         transport: .stdio,
                         agent: MCPAgentIdentity(
                             kind: .mcpStdio,

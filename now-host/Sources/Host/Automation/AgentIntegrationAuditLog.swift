@@ -33,14 +33,12 @@ enum AgentIntegrationAuditLog {
     static func record(_ event: HostProjectionAuditEvent,
                        drivenGuest: String?,
                        log: HostLog = .shared,
-                       stream: AgentActivityModel? = nil,
                        transport: MCPTransportKind? = nil,
                        agent: MCPAgentIdentity? = nil,
                        records: MCPRecordsRecorder? = nil) {
         log.write(level(event), area,
                   event.logMessage(drivenGuest: drivenGuest),
                   transport: transport)
-        stream?.record(event, drivenGuest: drivenGuest)
         records?.record(event: event,
                         agent: agent ?? fallbackIdentity(event, transport),
                         drivenGuest: drivenGuest)

@@ -429,7 +429,6 @@ struct ChatAuditSink: HostProjectionAuditSink {
             AgentIntegrationAuditLog.record(
                 event,
                 drivenGuest: adapter.activeReference()?.id,
-                stream: activity,
                 agent: MCPAgentIdentity(kind: .chat),
                 records: records)
         }

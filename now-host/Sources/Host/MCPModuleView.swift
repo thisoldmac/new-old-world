@@ -1,4 +1,5 @@
 import AppKit
+import NOWAgentIntegration
 import SwiftUI
 
 /// The MCP page: the server an agent reaches this Mac through — whether it
@@ -62,8 +63,13 @@ struct MCPModuleView: View {
     /// Injected so previews and tests can feed a private ring; the app
     /// passes the shared one.
     @ObservedObject var hostLog: HostLog = .shared
+    /// The durable history behind the activity card, and the one source
+    /// the page reads for it.
+    @ObservedObject var records: MCPRecordsModel
     /// The card a drag handle lifted; live-reorder follows it.
     @State private var dragged: MCPCardID?
+    /// The record a person opened; the sheet pivots from it.
+    @State private var inspected: MCPInspectedEntity?
 
     /// Below this, two columns cannot both hold a sentence, so the page
     /// degrades to one stacked column (the detail pane's own minimum is
@@ -371,59 +377,141 @@ struct MCPModuleView: View {
     private var activity: some View {
         collapsibleCard(.activity, title: "What an agent has done") {
             VStack(alignment: .leading, spacing: 8) {
-                if model.events.isEmpty {
-                    Text(emptyStreamSentence)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                switch records.loadState {
+                case .loading:
+                    ProgressView().controlSize(.small)
+                case .unavailable(let reason):
+                    Text(reason)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.orange)
+                        .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    ForEach(model.events) { event in
-                        eventRow(event)
+                case .ready:
+                    historyFilterBar
+                    if records.rows.isEmpty {
+                        Text(emptyStreamSentence)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        ForEach(records.rows) { row in
+                            actionRow(row)
+                        }
+                        if records.canLoadMore {
+                            Button("Show Older") {
+                                Task { await records.loadMore() }
+                            }
+                            .controlSize(.small)
+                        }
                     }
                 }
             }
+            .onAppear { records.start() }
+        }
+        .sheet(item: $inspected) { entity in
+            MCPEntityDetailSheet(entity: entity, model: records)
         }
     }
 
-    /// Two different silences. A stream that is empty because nothing ever
-    /// attached is the resting state and is already explained above, so
-    /// repeating it would be the pane saying the same thing twice; a stream
-    /// that is empty while a companion HAS attached is a real and slightly
-    /// surprising fact — something connected and asked for nothing this
-    /// side records — and says so.
-    private var emptyStreamSentence: String {
-        model.combinedActivity(companions.activity).hasEverAttached
-            ? "An agent has connected but no call has been reported "
-                + "yet. Every capability an agent invokes is reported here "
-                + "as it happens."
-            : "Nothing yet — no agent has invoked anything."
+    private var historyFilterBar: some View {
+        HStack(spacing: 8) {
+            Picker("Outcome", selection: Binding(
+                get: { records.filter.outcome },
+                set: { outcome in
+                    var filter = records.filter
+                    filter.outcome = outcome
+                    records.setFilter(filter)
+                })) {
+                Text("All outcomes")
+                    .tag(HostProjectionAuditEvent.Outcome?.none)
+                Text("Answered")
+                    .tag(HostProjectionAuditEvent.Outcome?.some(.answered))
+                Text("Refused")
+                    .tag(HostProjectionAuditEvent.Outcome?.some(.refused))
+                Text("Denied")
+                    .tag(HostProjectionAuditEvent.Outcome?.some(.denied))
+            }
+            .labelsHidden()
+            .fixedSize()
+            Picker("Agent", selection: Binding(
+                get: { records.filter.agentID },
+                set: { id in
+                    var filter = records.filter
+                    filter.agentID = id
+                    records.setFilter(filter)
+                })) {
+                Text("Any agent").tag(Int64?.none)
+                ForEach(records.agents) { agent in
+                    Text(agent.displayName).tag(Int64?.some(agent.id))
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            Picker("Machine", selection: Binding(
+                get: { records.filter.targetID },
+                set: { id in
+                    var filter = records.filter
+                    filter.targetID = id
+                    records.setFilter(filter)
+                })) {
+                Text("Any machine").tag(Int64?.none)
+                ForEach(records.targets) { target in
+                    Text(target.machineID).tag(Int64?.some(target.id))
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
     }
 
-    private func eventRow(_ event: AgentActivityEvent) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: symbol(event))
-                .foregroundStyle(tint(event))
+    private func actionRow(_ row: MCPActionRow) -> some View {
+        let action = row.action
+        let isDestructive = AgentActivityEvent.isDestructive(
+            action.capability)
+        return HStack(alignment: .top, spacing: 8) {
+            Image(systemName: actionSymbol(action, isDestructive))
+                .foregroundStyle(actionTint(action, isDestructive))
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(event.title)
-                        .font(.callout.weight(.medium))
-                    if event.isDestructive {
+                    Button {
+                        inspected = .action(action.id)
+                    } label: {
+                        Text(AgentActivityEvent.title(
+                            for: action.capability))
+                            .font(.callout.weight(.medium))
+                    }
+                    .buttonStyle(.plain)
+                    if isDestructive {
                         Text("changes the Mac")
                             .font(.caption2)
                             .foregroundStyle(.orange)
                     }
                     Spacer(minLength: 0)
-                    Text(Self.clock.string(from: event.at))
+                    Text(Self.clock.string(from: action.at))
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
-                Text(subtitle(event))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let reason = event.reason {
+                HStack(spacing: 6) {
+                    entityChip(row.agentName) {
+                        inspected = .agent(action.agentID)
+                    }
+                    if let machine = row.targetMachine,
+                       let targetID = action.targetID {
+                        entityChip(machine) {
+                            inspected = .target(targetID)
+                        }
+                    }
+                    Text("\(action.capability) · "
+                        + action.outcome.rawValue)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                if let reason = action.reason {
                     /* The projection's own refusal sentence, verbatim. It
                        is what the caller was told, and rewording it here
                        would leave the person and the agent reading two
@@ -438,26 +526,45 @@ struct MCPModuleView: View {
         .padding(.top, 4)
     }
 
-    /// The identifiers stay visible beside the phrase: the tool name is what
-    /// a person will find in the log and in whatever client made the call,
-    /// and the machine is the fact that says which Mac this happened to.
-    private func subtitle(_ event: AgentActivityEvent) -> String {
-        let face = event.face == .mcp ? "MCP" : "AppIntent"
-        let machine = event.machine ?? "no machine"
-        let outcome = event.outcome == .answered ? "answered" : "refused"
-        return "\(face) · \(event.capability) · \(machine) · \(outcome)"
+    private func entityChip(_ label: String,
+                            open: @escaping () -> Void) -> some View {
+        Button(action: open) {
+            Text(label)
+                .font(.caption)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(.quaternary.opacity(0.6),
+                            in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
-    private func symbol(_ event: AgentActivityEvent) -> String {
-        event.outcome == .refused
-            ? "hand.raised.circle"
-            : (event.isDestructive
+    private func actionSymbol(_ action: MCPActionRecord,
+                              _ isDestructive: Bool) -> String {
+        action.outcome == .answered
+            ? (isDestructive
                 ? "exclamationmark.circle" : "checkmark.circle")
+            : "hand.raised.circle"
     }
 
-    private func tint(_ event: AgentActivityEvent) -> Color {
-        if event.outcome == .refused { return .orange }
-        return event.isDestructive ? .orange : .secondary
+    private func actionTint(_ action: MCPActionRecord,
+                            _ isDestructive: Bool) -> Color {
+        action.outcome == .answered && !isDestructive
+            ? .secondary : .orange
+    }
+
+    /// Two different silences. A stream that is empty because nothing ever
+    /// attached is the resting state and is already explained above, so
+    /// repeating it would be the pane saying the same thing twice; a stream
+    /// that is empty while a companion HAS attached is a real and slightly
+    /// surprising fact — something connected and asked for nothing this
+    /// side records — and says so.
+    private var emptyStreamSentence: String {
+        model.combinedActivity(companions.activity).hasEverAttached
+            ? "An agent has connected but no call has been reported "
+                + "yet. Every capability an agent invokes is reported here "
+                + "as it happens."
+            : "Nothing yet — no agent has invoked anything."
     }
 
     private func tint(_ tone: AgentPresenceReading.Tone) -> Color {

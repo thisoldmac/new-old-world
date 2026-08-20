@@ -6,7 +6,8 @@ import NOWAgentIntegration
 /// the log, because an agent call that succeeded must not become an error
 /// over bookkeeping.
 final class MCPRecordsRecorder: @unchecked Sendable {
-    private let database: MCPRecordsDatabase
+    /// Readable so the history model queries the same store this writes.
+    let database: MCPRecordsDatabase
     private let insertions: AsyncStream<MCPActionRow>.Continuation
     /* One warning per launch, not one per drop: a wedged disk during a busy
        agent run must not flood the log it is warning into. Lock-guarded —

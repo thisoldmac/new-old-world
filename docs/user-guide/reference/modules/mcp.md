@@ -71,6 +71,16 @@ context menu offers the same moves for the keyboard), and the arrangement
 persists across launches. Each transport card also discloses a **Session
 log**: the host log's lines for that transport from this run of the app.
 
+The activity card reads a durable record, not a per-launch ring: every
+audited call lands in a private database beside NOW's other application
+data, kept 180 days. Rows filter by outcome, agent, and machine; the agent
+and machine chips on a row — and the row itself — open a detail sheet for
+that record, which pivots between an agent, its sessions, the machines it
+drove, and individual actions. The record stores what the audit line
+already said — capability, face, machine, outcome, bounded refusal reason,
+plus the client name an MCP client stated about itself — and never
+arguments or payloads.
+
 ## On the classic Mac
 
 The PowerPC MCP page sets the machine's ceiling. It cannot supply host-local

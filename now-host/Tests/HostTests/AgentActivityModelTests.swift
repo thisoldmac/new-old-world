@@ -89,23 +89,28 @@ final class AgentActivityModelTests: XCTestCase {
         }
     }
 
-    /// **Closing the door does not erase what came through it.** The record
-    /// of an agent's calls is the reason the pane exists; a stop that
-    /// cleared it would lose exactly the history somebody stops the server
-    /// to go and read.
-    func testStoppingTheServerKeepsWhatAnAgentAlreadyDid() {
-        let model = AgentActivityModel()
-        model.stdioOpened(at: "/tmp/x/host.sock")
-        model.record(
-            HostProjectionAuditEvent(
+    /// **Closing the door does not erase what came through it.** History
+    /// lives in the records store now; transport lifecycle is state on this
+    /// model and never touches the record.
+    func testStoppingTheServerKeepsWhatAnAgentAlreadyDid() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-activity-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try MCPRecordsDatabase(root: root)
+        try await database.record(
+            event: HostProjectionAuditEvent(
                 capability: ListProcessesProjection.capability, face: .mcp,
                 guest: "PB 180c", outcome: .answered, reason: nil),
-            drivenGuest: nil)
+            agent: MCPAgentIdentity(kind: .mcpStdio),
+            drivenGuest: nil, at: Date())
+        let model = AgentActivityModel()
+        model.stdioOpened(at: "/tmp/x/host.sock")
 
         model.stdioStopped()
 
-        XCTAssertEqual(model.events.count, 1)
-        XCTAssertEqual(model.events.first?.capability,
+        let rows = try await database.actions(matching: MCPActionQuery())
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.action.capability,
                        ListProcessesProjection.capability.rawValue)
     }
 
@@ -205,42 +210,45 @@ final class AgentActivityModelTests: XCTestCase {
 
     // MARK: - The stream
 
-    /// The stream answers "what did it do", which the presence ledger
-    /// deliberately refuses to record. It carries exactly the audit event's
-    /// fields — and the row's own words for the capability, read from the
-    /// registry rather than from a table kept here.
-    func testAnEventCarriesTheRowsOwnWordsAndItsDestructiveHint() {
-        let model = AgentActivityModel()
-        model.record(
-            HostProjectionAuditEvent(
+    /// The record answers "what did it do", which the presence ledger
+    /// deliberately refuses to record. It stores exactly the audit event's
+    /// fields; the row's own words come from the registry at draw time.
+    func testARecordedActionCarriesTheRowsOwnWordsAndItsHint() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-activity-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try MCPRecordsDatabase(root: root)
+        let start = Date(timeIntervalSince1970: 1_000)
+        try await database.record(
+            event: HostProjectionAuditEvent(
                 capability: GuestFilesMutateProjection.capability,
                 face: .mcp, guest: nil, outcome: .answered),
-            drivenGuest: "pb1400c")
-        model.record(
-            HostProjectionAuditEvent(
+            agent: MCPAgentIdentity(kind: .mcpStdio),
+            drivenGuest: "pb1400c", at: start)
+        try await database.record(
+            event: HostProjectionAuditEvent(
                 capability: ListProcessesProjection.capability,
                 face: .mcp, guest: "q950", outcome: .refused,
                 reason: "now_list_processes accepts no arguments"),
-            drivenGuest: "pb1400c")
+            agent: MCPAgentIdentity(kind: .mcpStdio),
+            drivenGuest: "pb1400c", at: start.addingTimeInterval(1))
 
         // Newest first: the question is asked in that order.
-        XCTAssertEqual(model.events.first?.capability,
-                       "now_list_processes")
-        XCTAssertEqual(model.events.first?.machine, "q950",
+        let rows = try await database.actions(matching: MCPActionQuery())
+        XCTAssertEqual(rows.first?.action.capability, "now_list_processes")
+        XCTAssertEqual(rows.first?.targetMachine, "q950",
                        "A named machine is the caller's, not the driven one.")
-        XCTAssertEqual(model.events.first?.reason,
+        XCTAssertEqual(rows.first?.action.reason,
                        "now_list_processes accepts no arguments")
-        XCTAssertEqual(model.events.first?.isDestructive, false)
-
-        let mutation = try? XCTUnwrap(model.events.last)
-        XCTAssertEqual(mutation?.isDestructive, true,
-                       "The row declares itself destructive; the page reads "
-                       + "that rather than deciding it again.")
-        XCTAssertEqual(mutation?.machine, "pb1400c",
+        XCTAssertEqual(rows.last?.targetMachine, "pb1400c",
                        "An omitted selector resolves to the driven machine.")
+        let capability = try XCTUnwrap(rows.last?.action.capability)
+        XCTAssertTrue(AgentActivityEvent.isDestructive(capability),
+                      "The row declares itself destructive; the page reads "
+                      + "that rather than deciding it again.")
         // The row's MCP title, less the product name it repeats.
-        XCTAssertEqual(mutation?.title, "Change the Guest's Files")
-        XCTAssertFalse(mutation?.title.contains("New Old World") ?? true)
+        XCTAssertEqual(AgentActivityEvent.title(for: capability),
+                       "Change the Guest's Files")
     }
 
     /// Every registered capability has words, because the title comes from
@@ -258,31 +266,16 @@ final class AgentActivityModelTests: XCTestCase {
         }
     }
 
-    /// The page is the glance, not the record — the log is the record and
-    /// keeps 2000 lines. So the stream is bounded, and drops the oldest.
-    func testTheStreamIsBoundedAndDropsTheOldest() {
-        let model = AgentActivityModel()
-        for _ in 0..<(AgentActivityModel.rememberedEvents + 5) {
-            model.record(
-                HostProjectionAuditEvent(
-                    capability: SessionHealthProjection.capability,
-                    face: .mcp, guest: nil, outcome: .answered),
-                drivenGuest: nil)
-        }
-        XCTAssertEqual(model.events.count,
-                       AgentActivityModel.rememberedEvents)
-        let ids = model.events.map(\.id)
-        XCTAssertEqual(ids.first, AgentActivityModel.rememberedEvents + 4,
-                       "Newest first.")
-        XCTAssertEqual(ids.last, 5, "The oldest five are gone.")
-    }
-
-    /// One call, both readers. The log line and the pane row are composed
+    /// One call, both readers. The log line and the durable record come
     /// from the same typed event at the same seam, so a reporting site
     /// cannot write one and forget the other — which is exactly how the
     /// visible half of rule 3 went missing for twelve capabilities.
-    func testOneAuditCallReachesBothTheLogAndThePage() throws {
-        let model = AgentActivityModel()
+    func testOneAuditCallReachesBothTheLogAndTheRecord() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-activity-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let recorder = MCPRecordsRecorder(
+            database: try MCPRecordsDatabase(root: root))
         let log = HostLog.shared
         let before = log.lines.count
         AgentIntegrationAuditLog.record(
@@ -290,15 +283,16 @@ final class AgentActivityModelTests: XCTestCase {
                 capability: RevealItemProjection.capability,
                 face: .mcp, guest: nil, outcome: .answered),
             drivenGuest: "pb1400c",
-            stream: model)
+            records: recorder)
 
         XCTAssertEqual(log.lines.count, before + 1)
         let line = try XCTUnwrap(log.lines.last?.text)
         XCTAssertTrue(line.contains("mcp now_reveal_item guest=pb1400c "
                                     + "answered"), line)
-        XCTAssertEqual(model.events.count, 1)
-        XCTAssertEqual(model.events.first?.capability, "now_reveal_item")
-        XCTAssertEqual(model.events.first?.machine, "pb1400c")
+        var iterator = recorder.inserted.makeAsyncIterator()
+        let row = await iterator.next()
+        XCTAssertEqual(row?.action.capability, "now_reveal_item")
+        XCTAssertEqual(row?.targetMachine, "pb1400c")
     }
 
     // MARK: - The machine's own answer
