@@ -28,7 +28,7 @@ final class HostLog: ObservableObject {
         /// Which MCP transport produced this line, when the writer knew —
         /// the same beside-the-text argument as `area`, and NOT recoverable
         /// from the text: audit lines open with the face, and the face is
-        /// `mcp` for both transports. Nil for everything else, including
+        /// `mcp` for HTTP. Nil for everything else, including
         /// every line written before the tag existed.
         let transport: String?
 
@@ -154,9 +154,7 @@ final class HostLog: ObservableObject {
     }
 }
 
-/// The two MCP transports, as a log-line tag. The writer states it because
-/// only the writer knows: the audit event's face is `mcp` either way.
+/// The MCP transport tag. The audit event's face is transport-neutral.
 enum MCPTransportKind: String, Sendable {
-    case stdio
     case http
 }

@@ -4,9 +4,7 @@ import XCTest
 /// **Every advertised tool, called by a real client, classified.**
 ///
 /// The gate the transport defect of 2026-08-07 needed and did not have.
-/// `StdioTransportLivenessTests` next door proves the loop answers *one*
-/// message with stdio open; this proves the whole surface does, and says
-/// what each tool answered.
+/// This proves the whole HTTP surface answers and says what each tool did.
 ///
 /// ## What it does and does not prove
 ///
@@ -14,8 +12,7 @@ import XCTest
 /// honest answer is a refusal naming the absent host. That is still worth
 /// gating, and it is precisely the gate that was missing: it exercises the
 /// transport, the handshake, the dispatch and every tool's argument
-/// validation against a client that holds the pipe open. **A tool that only
-/// works when a driver closes stdin fails here immediately.**
+/// validation through the shipping loopback listener.
 ///
 /// With `NOW_MCP_CONFORMANCE_LIVE=1` and a host running, the same run means
 /// something stronger: `now-host-unavailable` becomes a failure, because a
@@ -37,10 +34,10 @@ final class MCPClientConformanceTests: XCTestCase {
 
     /// Whether this run spawned its companion with a chat workspace root.
     ///
-    /// False today: `hostExecutable()` is launched with `--mcp-stdio` and
-    /// nothing else, so the one row that reads local bytes answers that it
-    /// has no lane — correctly, and scored `expected-unavailable` rather
-    /// than `refused`. It is a flag rather than a constant because the
+    /// False today: neither conformance client receives a workspace grant,
+    /// so the one row that reads local bytes answers that it has no lane —
+    /// correctly, and scored `expected-unavailable` rather than `refused`.
+    /// It is a flag rather than a constant because the
     /// verdict must invert the day a run does pin one: the same sentence
     /// from a configured host is a false answer, not an honest one.
     private static var workspacePinned: Bool { false }
@@ -51,17 +48,28 @@ final class MCPClientConformanceTests: XCTestCase {
 
     // MARK: The gate
 
-    func testEveryAdvertisedToolAnswersARealStdioClient() throws {
-        let client = try MCPClient(executable: Self.hostExecutable(),
-                                   environment: Self.environment())
-        defer { client.shutDown() }
-        try exerciseEveryAdvertisedTool(client, transport: "stdio")
-    }
-
     func testEveryAdvertisedToolAnswersARealHTTPClient() throws {
         let client = try MCPHTTPClient(environment: Self.environment())
         defer { client.shutDown() }
         try exerciseEveryAdvertisedTool(client, transport: "HTTP")
+    }
+
+    func testHTTPConformanceCannotRegressToTheLocalSocketAdapter() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("MCPClientConformance.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let start = try XCTUnwrap(source.range(
+            of: "final class MCPHTTPClient"))
+        let end = try XCTUnwrap(source.range(
+            of: "// MARK: - Classification",
+            range: start.lowerBound..<source.endIndex))
+        let httpHarness = source[start.lowerBound..<end.lowerBound]
+
+        XCTAssertTrue(httpHarness.contains("HTTPConformanceNoHostClient"))
+        XCTAssertFalse(httpHarness.contains("SocketAgentIntegrationClient"),
+                       "HTTP must not prove itself through the local socket "
+                        + "adapter")
     }
 
     private func exerciseEveryAdvertisedTool(
@@ -137,8 +145,7 @@ final class MCPClientConformanceTests: XCTestCase {
     /// The resource URI still owns routing; protocol metadata must not turn an
     /// advertised first-contact resource into an "Unknown NOW resource".
     func testAdvertisedFirstContactResourceAcceptsClientMetadata() throws {
-        let client = try MCPClient(executable: Self.hostExecutable(),
-                                   environment: Self.environment())
+        let client = try MCPHTTPClient(environment: Self.environment())
         defer { client.shutDown() }
 
         _ = try client.handshake()
@@ -453,29 +460,6 @@ final class MCPClientConformanceTests: XCTestCase {
         return environment
     }
 
-    // MARK: The binary
-
-    /// The built companion, beside the test bundle. Fails rather than
-    /// skips, for the reason `StdioTransportLivenessTests` states: it is a
-    /// product of this same package, so its absence is a broken build.
-    private static func hostExecutable() throws -> URL {
-        let candidate = Bundle(for: MCPClientConformanceTests.self)
-            .bundleURL
-            .deletingLastPathComponent()
-            .appendingPathComponent("Host")
-        guard FileManager.default.isExecutableFile(atPath: candidate.path)
-        else {
-            XCTFail("""
-                No New Old World Host executable beside the test bundle at \
-                \(candidate.path). It is a product of this same package, so \
-                this is a build that did not produce the one-bundle stdio \
-                entry point rather than a \
-                missing tool — and this gate does not skip.
-                """)
-            throw CocoaError(.fileNoSuchFile)
-        }
-        return candidate
-    }
 }
 
 /// The verdict for a precondition this surface cannot mint.

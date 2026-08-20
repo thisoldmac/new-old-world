@@ -1127,20 +1127,6 @@ final class NOWMCPServerTests: XCTestCase {
         XCTAssertTrue(responses.allSatisfy { $0["result"] != nil })
     }
 
-    func testStdioFramerBoundsAnOversizedRequest() {
-        var framer = BoundedMCPLineFramer()
-        let data = Data(repeating: 0x41,
-                        count: NOWMCPServer.maximumMessageBytes + 1)
-            + Data([0x0A])
-
-        let events = framer.append(data)
-
-        XCTAssertEqual(events.count, 1)
-        guard case .oversized = events[0] else {
-            return XCTFail("expected one bounded oversized event")
-        }
-    }
-
 }
 
 private struct StubAgentIntegrationClient: AgentIntegrationClient {

@@ -5,8 +5,8 @@ import XCTest
 /// machine.**
 ///
 /// Both production adapters must override every lane the MCP catalog can call:
-/// `SocketAgentIntegrationClient` for stdio and
-/// `HostAgentIntegrationClient` for in-process HTTP. `AgentIntegrationClient`
+/// `SocketAgentIntegrationClient` for NOW-owned local automation and
+/// `HostAgentIntegrationClient` for in-process MCP. `AgentIntegrationClient`
 /// gives most of its requirements a
 /// default — deliberately, and the rule at the head of that file argues for
 /// it: seven stub conformers across the test tree implement only their own
@@ -68,9 +68,9 @@ import XCTest
 final class MCPClientForwardingTests: XCTestCase {
 
     private static let clientPaths = [
-        "stdio socket":
+        "local automation socket":
             "now-host/Sources/Host/MCP/SocketAgentIntegrationClient.swift",
-        "in-process HTTP":
+        "in-process host":
             "now-host/Sources/Host/MCP/HostAgentIntegrationClient.swift",
     ]
     private static let protocolPath =
@@ -84,7 +84,7 @@ final class MCPClientForwardingTests: XCTestCase {
     /// This is the half that names the defect directly. A projection is a
     /// published MCP row; if the method it calls is not forwarded, that row
     /// is advertised and dead.
-    func testEveryLaneAProjectionAsksForIsForwardedByBothTransports() throws {
+    func testEveryLaneAProjectionAsksForIsForwardedByBothAdapters() throws {
         var asked: [String: Set<String>] = [:]
         for file in try Self.projectionSources() {
             let source = try Self.read(file)
@@ -98,14 +98,14 @@ final class MCPClientForwardingTests: XCTestCase {
             asked.isEmpty,
             "Read no client calls out of \(Self.projectionDirectory).")
 
-        for (transport, path) in Self.clientPaths {
+        for (adapter, path) in Self.clientPaths {
             let forwarded = try Self.declaredMethods(in: path)
             XCTAssertFalse(forwarded.isEmpty,
                            "Read no methods out of \(path).")
             let dead = asked.filter { !forwarded.contains($0.key) }
             XCTAssertTrue(dead.isEmpty, """
                 These lanes are ASKED FOR by a registered projection and NOT \
-                forwarded by the \(transport) adapter, so that MCP transport \
+                forwarded by the \(adapter) adapter, so that surface \
                 answers the protocol default from a host that is up:
 
                 \(Self.describe(dead))
@@ -124,7 +124,7 @@ final class MCPClientForwardingTests: XCTestCase {
     /// and the projection's author has no way to see that from the call
     /// site. Caught here, it is one commit earlier and in the file that
     /// caused it.
-    func testEveryClientRequirementIsForwardedByBothTransports() throws {
+    func testEveryClientRequirementIsForwardedByBothAdapters() throws {
         let source = try Self.read(Self.protocolPath)
         guard
             let start = source.range(
@@ -148,13 +148,13 @@ final class MCPClientForwardingTests: XCTestCase {
             "Read no requirements out of the AgentIntegrationClient "
                 + "protocol body.")
 
-        for (transport, path) in Self.clientPaths {
+        for (adapter, path) in Self.clientPaths {
             let forwarded = try Self.declaredMethods(in: path)
             let missing = required.subtracting(forwarded).sorted()
             XCTAssertTrue(missing.isEmpty, """
-                AgentIntegrationClient requires these and the \(transport) \
+                AgentIntegrationClient requires these and the \(adapter) \
                 adapter does not forward them, so they answer their protocol \
-                default over that MCP transport:
+                default over that adapter:
 
                 \(missing.joined(separator: ", "))
 

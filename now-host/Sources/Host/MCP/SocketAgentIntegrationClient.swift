@@ -1,9 +1,9 @@
 import Foundation
 import NOWAgentIntegration
 
-/// The stdio mode's one way to reach the running host: a bounded local
-/// request per call over the per-uid private socket. It launches nothing and
-/// keeps no state about the guest between calls.
+/// A bounded local-automation request per call over the per-uid private
+/// socket. It launches nothing and keeps no state about the guest between
+/// calls.
 struct SocketAgentIntegrationClient: AgentIntegrationClient {
     private var client: AgentIntegrationLocalClient?
     private let startupError: Error?
@@ -191,8 +191,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         }
     }
 
-    /// The row this stdio process exists for, more than most: an agent on
-    /// this socket is the caller with no other way to open the window.
+    /// A local agent on this socket has no other way to open the window.
     func mirrorOpen() async -> AgentIntegrationMirrorOpenResult {
         guard let client else {
             return .init(unavailable: unavailable(for: startupError))
@@ -666,7 +665,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
         case .incompatibleProtocol(let expected, let actual):
             return .init(
                 code: "now-host-companion-incompatible",
-                message: "New Old World host protocol \(actual) is incompatible with stdio bridge protocol \(expected). Launch stdio from the matching New Old World build.")
+                message: "New Old World host protocol \(actual) is incompatible with local automation protocol \(expected). Use tools from the matching New Old World build.")
         // Passed through as itself. "This host is driving another
         // machine" is a fact about ADDRESSING, and flattening it into a
         // communication failure would tell a caller to retry the one
@@ -706,7 +705,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
                   let compatibility = health.compatibility else {
                 return .init(
                     code: "now-host-companion-incompatible",
-                    message: "The running New Old World host does not publish the required compatibility preflight. Launch stdio from the matching New Old World build.")
+                    message: "The running New Old World host does not publish the required compatibility preflight. Use local tools from the matching New Old World build.")
             }
             guard compatibility.companionProtocol
                     == AgentIntegrationLocalProtocol.version,
@@ -716,7 +715,7 @@ struct SocketAgentIntegrationClient: AgentIntegrationClient {
                     == HostProjectionRegistry.hostFaces.catalogDigest else {
                 return .init(
                     code: "now-host-companion-incompatible",
-                    message: "The running app and stdio bridge publish different protocol or projection catalogs. Launch stdio from the matching New Old World build.")
+                    message: "The running app and local automation client publish different protocol or projection catalogs. Use local tools from the matching New Old World build.")
             }
             return nil
         } catch {

@@ -308,18 +308,6 @@ final class HostProjectionAuditTests: XCTestCase {
     /// `.invoke(`, so a comment can only ADD an offender — a loud false
     /// failure, never a silent pass — and its failure message reports line
     /// NUMBERS, which stripping would shift off the real source.
-    func testTheStdioEntryPointPassesTheLocalSink() throws {
-        let text = try GateSource.hostSwift(
-            "now-host/Sources/Host/MCP/StdioMCPTransport.swift")
-        XCTAssertTrue(
-            text.contains("audit: LocalMCPAuditSink(identity: identity)"),
-            """
-            NOW's stdio entry point does not hand the MCP face the sink \
-            that reports to the running host, so its invocations would \
-            reach no log a person reads.
-            """)
-    }
-
     func testTheHTTPEntryPointPassesTheHostSink() throws {
         let text = try GateSource.hostSwift("now-host/Sources/Host/App.swift")
         XCTAssertTrue(text.contains("let audit = HostMCPAuditSink("), """

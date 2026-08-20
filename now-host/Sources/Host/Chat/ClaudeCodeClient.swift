@@ -11,44 +11,63 @@ struct ClaudeRuntimeStatus: Equatable, Sendable {
     }
 }
 
+struct MCPHTTPEmbeddedEndpoint: Equatable, Sendable {
+    let port: UInt16
+    let authMode: MCPHTTPAuthMode
+    let authorizationToken: String?
+}
+
 final class ClaudeCodeClient: @unchecked Sendable {
     private let runner: ChatSubprocessRunning
     private let executable: URL?
     private let environment: [String: String]
     private let lanes: ChatWorkspaceLaneStore
-    /// This app's own binary — still handed to the sunset stdio config
-    /// shape for external callers; the lane itself rides HTTP.
-    private let hostExecutable: URL?
     /// Where the HTTP MCP answers, read fresh per spawn: the running
     /// host's own port preference and the same 0600 Bearer token file
     /// the MCP page copies from. nil — no Application Support, an
     /// unreadable token — means the lane runs without NOW's tools
     /// rather than with a server it cannot authenticate to.
     private let httpEndpoint:
-        @Sendable () -> (port: UInt16, token: String)?
+        @Sendable () -> MCPHTTPEmbeddedEndpoint?
+    private let workspaceGrant: @Sendable (URL) -> String?
 
     init(
         runner: ChatSubprocessRunning = SystemChatSubprocessRunner(),
         executable: URL? = ChatRuntimeLocator.executable(named: "claude"),
         environment: [String: String] = ChatSubprocessEnvironment.minimal(),
         lanes: ChatWorkspaceLaneStore = ChatWorkspaceLaneStore(),
-        hostExecutable: URL? = Bundle.main.executableURL,
         httpEndpoint: @escaping @Sendable ()
-            -> (port: UInt16, token: String)? = {
+            -> MCPHTTPEmbeddedEndpoint? = {
             guard let defaults = UserDefaults(
-                suiteName: ProductIdentity.preferencesSuite),
-                let token = try? MCPHTTPTokenStore().loadOrCreate()
-            else { return nil }
-            return (MCPTransportPreferences(defaults: defaults).httpPort,
-                    token)
+                suiteName: ProductIdentity.preferencesSuite) else { return nil }
+            let preferences = MCPTransportPreferences(defaults: defaults)
+            let mode = preferences.httpAuthMode
+            let token: String?
+            switch mode {
+            case .bearer:
+                guard let bearer = try? MCPHTTPTokenStore().loadOrCreate()
+                else { return nil }
+                token = bearer
+            case .oauth:
+                token = MCPHTTPEmbeddedCredentialAuthority.shared.token(
+                    port: preferences.httpPort, authMode: mode)
+            case .unauthenticated:
+                token = nil
+            }
+            return MCPHTTPEmbeddedEndpoint(
+                port: preferences.httpPort, authMode: mode,
+                authorizationToken: token)
+        },
+        workspaceGrant: @escaping @Sendable (URL) -> String? = {
+            MCPHTTPWorkspaceGrantAuthority.shared.issue(workspaceRoot: $0)
         }
     ) {
         self.runner = runner
         self.executable = executable
         self.environment = environment
         self.lanes = lanes
-        self.hostExecutable = hostExecutable
         self.httpEndpoint = httpEndpoint
+        self.workspaceGrant = workspaceGrant
     }
 
     /// The lane as it stands right now. Asked per turn and per popup
@@ -107,6 +126,8 @@ final class ClaudeCodeClient: @unchecked Sendable {
             }
         }
         let lane = lanes.state().lane
+        var mcpConfig: String?
+        var requestEnvironment = environment
         if lane?.attachesNOWTools == true {
             /* Before the spawn, not after the first refusal: the
                runtime's very first ToolSearch can be the turn's first
@@ -115,20 +136,39 @@ final class ClaudeCodeClient: @unchecked Sendable {
                and pinning the lane root for local reads. */
             NotificationCenter.default.post(
                 name: ChatWorkspaceMCPConfig.bridgeWanted, object: nil)
+            guard let lane, let endpoint = httpEndpoint() else {
+                return Self.failedStream(
+                    "NOW tools were requested, but the HTTP MCP endpoint "
+                        + "could not be configured.")
+            }
+            guard let grant = workspaceGrant(lane.root) else {
+                return Self.failedStream(
+                    "NOW tools were requested, but the private workspace "
+                        + "grant capacity is exhausted. Retry the turn.")
+            }
+            guard let config = ChatWorkspaceMCPConfig.httpJSON(
+                    port: endpoint.port,
+                    authenticated: endpoint.authorizationToken != nil) else {
+                return Self.failedStream(
+                    "NOW tools were requested, but their private HTTP "
+                        + "configuration could not be encoded.")
+            }
+            mcpConfig = config
+            if let token = endpoint.authorizationToken {
+                requestEnvironment[ChatWorkspaceMCPConfig
+                    .bearerEnvironmentKey] = token
+            }
+            requestEnvironment[ChatWorkspaceMCPConfig
+                .workspaceGrantEnvironmentKey] = grant
         }
         let request = ChatSubprocessRequest(
             executable: executable,
             arguments: Self.arguments(
                 model: completion.model, lane: lane,
-                mcpConfig: lane?.attachesNOWTools == true
-                    ? httpEndpoint().flatMap {
-                        ChatWorkspaceMCPConfig.httpJSON(
-                            port: $0.port, token: $0.token)
-                    }
-                    : nil),
+                mcpConfig: mcpConfig),
             standardInput: Data(Self.prompt(completion, lane: lane).utf8),
             timeout: lane?.timeout ?? 180,
-            environment: environment,
+            environment: requestEnvironment,
             /* The lane's directory IS the working directory — narrowed
                to the conversation's project subfolder when it has one,
                so one project's turn cannot scavenge another's artifacts
@@ -167,6 +207,14 @@ final class ClaudeCodeClient: @unchecked Sendable {
                 }
             }
             continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    private static func failedStream(_ reason: String)
+        -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: ChatFault.refuse(
+                code: "unreachable", reason: reason))
         }
     }
 

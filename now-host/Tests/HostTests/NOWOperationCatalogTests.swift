@@ -130,7 +130,7 @@ final class NOWOperationCatalogTests: XCTestCase {
         let tools = NOWMCPToolRenderer.tools(for: .hostFaces)
         let data = try JSONSerialization.data(
             withJSONObject: tools, options: [.sortedKeys])
-        XCTAssertEqual(Self.fnv1a(data), "43b50cd743217432")
+        XCTAssertEqual(Self.fnv1a(data), "fe8b6f5cb597c80f")
     }
 
     private static func fnv1a(_ data: Data) -> String {

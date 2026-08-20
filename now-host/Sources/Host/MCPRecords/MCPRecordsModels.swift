@@ -7,12 +7,37 @@ import NOWAgentIntegration
 /// The presence ledger (`AgentCompanionActivity`) is untouched — the records
 /// store is a separate answer to a separate question.
 struct MCPAgentIdentity: Equatable, Sendable {
-    enum Kind: String, Sendable {
+    enum Kind: Equatable, Sendable {
         case api
-        case mcpHTTP = "mcp-http"
-        case mcpStdio = "mcp-stdio"
+        case mcpHTTP
+        case mcpStdio
         case chat
-        case appIntent = "intent"
+        case appIntent
+        /// A row written by a newer or retired face. Keep its spelling so
+        /// opening an old database never rewrites history into a known kind.
+        case unknown(String)
+
+        init(databaseValue: String) {
+            switch databaseValue {
+            case "api": self = .api
+            case "mcp-http": self = .mcpHTTP
+            case "mcp-stdio": self = .mcpStdio
+            case "chat": self = .chat
+            case "intent": self = .appIntent
+            default: self = .unknown(databaseValue)
+            }
+        }
+
+        var databaseValue: String {
+            switch self {
+            case .api: return "api"
+            case .mcpHTTP: return "mcp-http"
+            case .mcpStdio: return "mcp-stdio"
+            case .chat: return "chat"
+            case .appIntent: return "intent"
+            case .unknown(let raw): return raw
+            }
+        }
     }
 
     let kind: Kind
@@ -53,6 +78,7 @@ struct MCPAgentRecord: Identifiable, Equatable, Sendable {
             case .mcpStdio: return "Unknown stdio client"
             case .chat: return "Chat"
             case .appIntent: return "App Intent"
+            case .unknown: return "Unknown legacy client"
             }
         }
         return clientVersion.isEmpty
@@ -65,6 +91,21 @@ struct MCPSessionRecord: Identifiable, Equatable, Sendable {
     let agentID: Int64
     let sessionKey: String?
     let startedAt: Date
+    let lastSeen: Date
+    let firstInitializedAt: Date?
+    let lastInitializedAt: Date?
+}
+
+/// The latest successful initialize for one transport, separate from what
+/// that client later asked the host to do. These facts never leave this
+/// installation.
+struct MCPInitializationEvidence: Equatable, Sendable {
+    let kind: MCPAgentIdentity.Kind
+    let agentName: String
+    let clientName: String
+    let clientVersion: String
+    let sessionKey: String
+    let firstSeen: Date
     let lastSeen: Date
 }
 

@@ -1,7 +1,7 @@
 ---
 page_id: mcp-module-reference
 title: MCP module
-description: Control NOW's stdio and HTTP MCP transports, inspect the machine grant ceiling, and review recent agent activity without treating connection as consent.
+description: Configure NOW's HTTP MCP transport, inspect the machine grant ceiling, and review recent agent activity without treating connection as consent.
 doc_type: reference
 audience: operator
 lifecycle: experimental
@@ -9,7 +9,7 @@ authority: [docs/agent-integration.md, docs/mcp-coverage.md]
 module_ids: [mcp]
 source_dependencies: [docs/agent-integration.md, docs/mcp-coverage.md, now-host/Sources/Host/MCP, now-host/Sources/NOWAgentIntegration, now-guest-ppc/src/mcp]
 media_ids: [mcp-host, mcp-ppc]
-last_verified: 2026-08-14
+last_verified: 2026-08-20
 ---
 
 <!-- now-doc-provenance: generated reviewed=false -->
@@ -18,26 +18,24 @@ last_verified: 2026-08-14
 
 ## What it does
 
-MCP presents NOW's two local client transports and the selected classic Mac's
-explicit ceiling on what an agent may observe or change. Both transports use
-one catalog and dispatcher inside NOW; there is no separately installed MCP
-service.
+MCP presents NOW's local Streamable HTTP endpoint and the selected classic
+Mac's explicit ceiling on what an agent may observe or change. The catalog,
+dispatcher, and listener live inside NOW; there is no separately installed
+MCP service or Standard Input transport.
 
 ![The macOS MCP module showing transport and grant state](../../../assets/screenshots/modules/mcp/host.svg){ .now-placeholder }
 
 ## Availability
 
-The host app owns both transports and all projections. PowerPC provides the
+The host app owns the transport and all projections. PowerPC provides the
 machine consent page. NOW-68K does not expose this MCP consent surface.
 
 ## On the modern Mac
 
-The host exposes independent controls for:
+The host exposes controls for:
 
-- **Standard Input**, a narrow `New Old World --mcp-stdio` process launched by
-  an MCP client. Its card copies the executable command and shows the private
-  same-user socket it uses to reach the already-running app.
-- **HTTP**, a loopback listener running directly inside the normal NOW app.
+- **HTTP (Recommended)**, a loopback listener running directly inside the
+  normal NOW app.
   Its card exposes an editable loopback port and an **Access** mode while
   stopped, and shows and copies the derived URL. Access has three settings,
   applied the next time HTTP starts:
@@ -53,12 +51,30 @@ The host exposes independent controls for:
     - **No authentication**: any process on this Mac can drive NOW over the
       port. The card says so in warning copy; the loopback Host and Origin
       checks still apply.
+## Migrate a client to HTTP
 
-Each card has independent **Start** and **Stop** controls, which affect the
-current app session. The persisted launch policy is not here: **Start
-Standard Input automatically** and **Start HTTP automatically** live in the
-Settings window's MCP tab, because they are read once at launch and never
-mid-session. They apply the next time NOW opens.
+1. Open **MCP > HTTP (Recommended)** in New Old World.
+2. Select **Bearer token**, **OAuth**, or the explicitly warned **No
+   authentication** loopback mode. Bearer is the default, not a migration
+   requirement.
+3. Start HTTP and copy the displayed `http://127.0.0.1:<port>/mcp` URL.
+4. For bearer or OAuth, use the matching copyable client recipe on the HTTP
+   card. Do not copy credentials into logs or documentation.
+5. Initialize the client over HTTP and exercise its normal tool workflow.
+
+`New Old World --mcp-stdio` has been removed. A stale configuration receives
+one diagnostic on stderr and no MCP protocol output; update it to the URL and
+access mode shown here.
+
+An HTTP credential identifies and authenticates a transport session; it does
+not grant a modern-Mac workspace. Ordinary external HTTP sessions start with
+no host-readable root. The embedded Chat lane can redeem one bounded,
+session-scoped workspace grant without retargeting another session.
+
+The HTTP card has **Start** and **Stop** controls, which affect the current app
+session. The persisted **Start HTTP automatically** policy lives in the
+Settings window's MCP tab because it is read once at launch and never
+mid-session. It applies the next time NOW opens.
 
 The module also shows the shared catalog, selected machine, available
 capabilities, grant state, and auditable calls. A running transport is not a
@@ -81,6 +97,11 @@ already said — capability, face, machine, outcome, bounded refusal reason,
 plus the client name an MCP client stated about itself — and never
 arguments or payloads.
 
+Historical Standard Input initialization and action rows remain readable in
+the installation-local activity database. They are migration evidence, not a
+live transport or telemetry. Paths, arguments, payloads, file bytes, and
+credentials are not displayed.
+
 ## On the classic Mac
 
 The PowerPC MCP page sets the machine's ceiling. It cannot supply host-local
@@ -91,10 +112,8 @@ credentials or prove that an MCP client can reach the host.
 ## Common tasks
 
 - Confirm the selected machine and requested capability before granting.
-- Start only the transport required by the client, or set its automatic-start
-  switch in Settings for a transport that should be restored whenever NOW
-  opens.
-- Copy connection details from the relevant transport card rather than
+- Start HTTP for supported clients.
+- Copy connection details from the HTTP card rather than
   locating a helper executable.
 - Read the recent call record after an agent action.
 
@@ -122,7 +141,7 @@ and [MCP coverage](../../../mcp-coverage.md).
 
 <!-- derived-doc v1
 sources: now-host/Sources/NOWAgentIntegration/Projection/HostProjectionCatalog.swift now-host/Sources/Host/AgentCompanionModel.swift docs/mcp-coverage.md scripts/docs-source-group tools/docs-gate
-sources-sha1: 2bbc52bc7da2e9a8be95ea83df9115a3a4ad2b7f
+sources-sha1: 9564e001e6ae4408330926673898a02efc69bf8f
 derive mcp-catalog sha256=0ba13827bca56a75d20d341f2455f7a8a90118af7b0e962864459ae1221bf6cb lines=3
     scripts/docs-source-group mcp
 rederived: pending
@@ -333,5 +352,8 @@ rederived: 2026-08-20T12:58:33-0400 d656ad93 sources
 rederived: 2026-08-20T13:32:56-0400 30931464 sources
 rederived: 2026-08-20T15:12:29-0400 918f1e03 sources
 rederived: 2026-08-20T15:19:46-0400 918f1e03 sources
+rederived: 2026-08-20T15:33:40-0400 bff285cd sources
+rederived: 2026-08-20T15:45:16-0400 fab7b9aa sources
 rederived: 2026-08-20T16:23:41-0400 9dc8e356 sources
+rederived: 2026-08-20T16:56:14-0400 a86a7a18 sources
 -->

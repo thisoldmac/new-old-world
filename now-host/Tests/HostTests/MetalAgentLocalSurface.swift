@@ -264,7 +264,7 @@ final class MetalAgentLocalSurface {
         case .launchSoftware, .requestQuit, .transferApprovedArtifact,
              .guestFilesCapabilities, .guestFilesList, .guestFilesStat,
              .guestFilesUploadBegin, .guestFilesUploadAppend,
-             .guestFilesUploadCommit, .audit,
+             .guestFilesUploadCommit, .audit, .mcpInitialize,
              /* P1a's eleven, refused here for the same reason and one more:
                 on this rig they are not merely out of scope, they are
                 unserved everywhere — so a gate that let one through would

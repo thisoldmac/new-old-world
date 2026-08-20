@@ -26,7 +26,7 @@ struct MCPCardLayoutStore {
                    destroying state this build does not understand. */
                 return .standard
             }
-            let loaded = stored.sanitised()
+            let loaded = stored.migratedToCurrent().sanitised()
             persist(loaded, replacing: data)
             return loaded
         }

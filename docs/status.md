@@ -2,6 +2,28 @@
 
 # Status: what works and what does not
 
+## 2026-08-20 — HTTP is NOW's only MCP transport
+
+Streamable HTTP now stands on its own conformance, listener, authentication,
+session, lifecycle-record, and session-scoped workspace tests. The MCP module
+puts HTTP first and supplies loopback recipes for bearer and OAuth; explicit
+warned no-auth loopback remains supported. An HTTP identity alone receives no
+modern-Mac workspace root.
+
+The live Standard Input implementation, settings, card, automatic-start
+preference, conformance harness, and parity tests are removed. A stale
+`--mcp-stdio` launch exits unsuccessfully after one bounded stderr diagnostic
+and writes no protocol output. Historical Standard Input rows remain readable
+in the private activity database. NOW's same-user local automation socket also
+remains: emulator and host tooling use it directly, but it is not an MCP
+transport.
+
+Emulator QA passed on mac99 / Mac OS 9.1 with the branch guest and extension
+staged into a private clone. The shipping host connected to that guest and its
+HTTP listener completed initialize, listed all 49 tools, probed live guest
+capabilities, and returned the guest process list in the explicitly configured
+no-auth mode. This is emulator evidence, not physical-machine verification.
+
 ## 2026-08-14 — Hardware, MCP, Files appearance, and shelf navigation are tested; runtime follow-up remains
 
 PowerPC volume census now prefers the wide HFS volume API, avoiding the legacy

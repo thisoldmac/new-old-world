@@ -24,6 +24,106 @@ final class MCPRecordsDatabaseTests: XCTestCase {
         XCTAssertTrue(none.isEmpty)
     }
 
+    func testInitializationAndActionEvidenceStayIndependent() async throws {
+        let database = try MCPRecordsDatabase(
+            root: root, now: Date(timeIntervalSince1970: 110))
+        let identity = MCPAgentIdentity(
+            kind: .mcpStdio, clientName: "Claude Code",
+            clientVersion: "2.1", sessionKey: "pid:42")
+        let first = Date(timeIntervalSince1970: 1_000)
+        let lastInitialization = first.addingTimeInterval(5)
+        let actionAt = first.addingTimeInterval(10)
+
+        try await database.recordInitialization(
+            agent: identity, at: first)
+        try await database.recordInitialization(
+            agent: identity, at: lastInitialization)
+        try await database.record(
+            event: Self.event(outcome: .answered), agent: identity,
+            drivenGuest: nil, at: actionAt)
+
+        let initialization = try await database.latestInitialization(
+            kind: .mcpStdio)
+        XCTAssertEqual(initialization?.agentName, "Claude Code 2.1")
+        XCTAssertEqual(initialization?.sessionKey, "pid:42")
+        XCTAssertEqual(initialization?.firstSeen, first)
+        XCTAssertEqual(initialization?.lastSeen, lastInitialization)
+
+        let action = try await database.latestAction(kind: .mcpStdio)
+        XCTAssertEqual(action?.action.at, actionAt)
+        XCTAssertEqual(action?.agentName, "Claude Code 2.1")
+    }
+
+    func testVersionOneFixtureKeepsStdioAndPresentsUnknownKindsSafely()
+        async throws {
+        try FileManager.default.createDirectory(
+            at: root, withIntermediateDirectories: true)
+        let url = root.appendingPathComponent("records.sqlite")
+        let fixture = try SQLiteConnection(url: url)
+        try fixture.execute("""
+            CREATE TABLE agents (
+              id INTEGER PRIMARY KEY, kind TEXT NOT NULL,
+              client_name TEXT NOT NULL DEFAULT '',
+              client_version TEXT NOT NULL DEFAULT '',
+              first_seen REAL NOT NULL, last_seen REAL NOT NULL,
+              UNIQUE(kind, client_name, client_version));
+            CREATE TABLE sessions (
+              id INTEGER PRIMARY KEY, agent_id INTEGER NOT NULL,
+              session_key TEXT, started_at REAL NOT NULL,
+              last_seen REAL NOT NULL);
+            CREATE TABLE targets (
+              id INTEGER PRIMARY KEY, machine_id TEXT NOT NULL UNIQUE,
+              first_seen REAL NOT NULL, last_seen REAL NOT NULL);
+            CREATE TABLE actions (
+              id INTEGER PRIMARY KEY, at REAL NOT NULL,
+              agent_id INTEGER NOT NULL, session_id INTEGER,
+              target_id INTEGER, capability TEXT NOT NULL,
+              face TEXT NOT NULL, outcome TEXT NOT NULL, reason TEXT);
+            INSERT INTO agents VALUES
+              (1, 'mcp-http', 'HTTP Client', '1', 100, 100),
+              (2, 'mcp-stdio', 'stdio Client', '2', 101, 101),
+              (3, 'future-transport', 'Future Client', '3', 102, 102);
+            INSERT INTO sessions VALUES
+              (1, 1, 'http-session', 100, 100),
+              (2, 2, 'pid:42', 101, 101),
+              (3, 3, 'future-session', 102, 102);
+            INSERT INTO actions VALUES
+              (1, 100, 1, 1, NULL, 'now_list_machines', 'mcp',
+               'answered', NULL),
+              (2, 101, 2, 2, NULL, 'now_list_machines', 'mcp',
+               'answered', NULL),
+              (3, 102, 3, 3, NULL, 'now_list_machines', 'mcp',
+               'answered', NULL);
+            """)
+        fixture.userVersion = 1
+
+        let database = try MCPRecordsDatabase(
+            root: root, now: Date(timeIntervalSince1970: 110))
+        let agents = try await database.agents()
+        XCTAssertEqual(agents.first { $0.id == 1 }?.kind, .mcpHTTP)
+        XCTAssertEqual(agents.first { $0.id == 2 }?.kind, .mcpStdio)
+        XCTAssertEqual(agents.first { $0.id == 3 }?.kind,
+                       .unknown("future-transport"))
+        XCTAssertEqual(agents.first { $0.id == 3 }?.displayName,
+                       "Future Client 3")
+        let actions = try await database.actions(matching: .init())
+        XCTAssertEqual(actions.count, 3)
+        XCTAssertEqual(actions.first?.agentName, "Future Client 3")
+
+        let model = await MainActor.run {
+            MCPRecordsModel(recorder: MCPRecordsRecorder(database: database))
+        }
+        let detail = await model.detail(for: .agent(3))
+        XCTAssertEqual(detail.subtitle, "An unknown historical client")
+
+        let verify = try SQLiteConnection(url: url)
+        let statement = try verify.prepare(
+            "SELECT kind FROM agents WHERE id = 3")
+        XCTAssertTrue(try statement.step())
+        XCTAssertEqual(statement.string(at: 0), "future-transport",
+                       "opening the fixture must not rewrite unknown rows")
+    }
+
     func testAgentsDedupAcrossSessionsAndUnknownsShareOneRow() async throws {
         let database = try MCPRecordsDatabase(root: root)
         let start = Date(timeIntervalSince1970: 1_000)
@@ -147,6 +247,23 @@ final class MCPRecordsDatabaseTests: XCTestCase {
         let row = await iterator.next()
         XCTAssertEqual(row?.action.capability, "now_list_machines")
         XCTAssertEqual(row?.agentName, "Chat")
+    }
+
+    func testRecorderPublishesInitializationOnlyAfterItIsDurable()
+        async throws {
+        let database = try MCPRecordsDatabase(root: root)
+        let recorder = MCPRecordsRecorder(database: database)
+        let identity = MCPAgentIdentity(
+            kind: .mcpStdio, clientName: "client", sessionKey: "pid:7")
+
+        recorder.recordInitialization(agent: identity)
+
+        var iterator = recorder.initialized.makeAsyncIterator()
+        let evidence = await iterator.next()
+        XCTAssertEqual(evidence?.sessionKey, "pid:7")
+        let durable = try await database.latestInitialization(
+            kind: .mcpStdio)
+        XCTAssertNotNil(durable)
     }
 
     private static func event(

@@ -43,6 +43,21 @@ What remains open:
 - V1 is loopback-only. Remote/LAN serving, TLS termination, daemon lifecycle,
   multi-principal authorization, OAuth, and scopes remain unimplemented
   security/deployment decisions.
+## FIXED AND EMULATOR-TESTED: Standard Input MCP is removed (2026-08-20, `docs/stdio-mcp-sunset-plan`)
+
+Streamable HTTP is NOW's only live MCP transport. The Standard Input
+implementation and product controls are gone; `--mcp-stdio` is a diagnostic
+tombstone with no protocol output. Known HTTP consumers are migrated where NOW
+owns their configuration. Agentis remains explicitly accepted as broken until
+it supports the configured HTTP route. The focused HTTP, authentication,
+workspace-authority, lifecycle, catalog, and removal suites pass. Emulator QA
+then staged the branch guest and extension on mac99 / Mac OS 9.1, connected the
+shipping host on the lane-derived wire port, and initialized the live HTTP
+listener in explicit no-auth mode. The listener advertised 49 tools;
+`now_session_capabilities` probed the guest and `now_list_processes` returned
+its live process table. Physical-machine QA is separate and is not claimed by
+this host-transport change.
+
 ## FIXED: the host suite took the keyboard of whoever ran it — and that is why one Continuity test was "intermittent" (2026-08-20, `fix/host-test-keyboard-tap`)
 
 Reported as "something in the host test suite blocks my keyboard while it

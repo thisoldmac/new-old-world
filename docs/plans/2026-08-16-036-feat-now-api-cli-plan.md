@@ -36,7 +36,7 @@ NOWOperationCatalog + typed NOWService        product semantics and dispatch
        +------+----------------+
        |                       |
        v                       v
-HTTP /api/v1 adapter      MCP adapter (/mcp + stdio)
+HTTP /api/v1 adapter      MCP adapter (/mcp only)
        |                       |
        v                       v
 now CLI + developer apps      agents
@@ -229,7 +229,9 @@ They share socket ownership, bounded connection parsing, request limits, and
 audit infrastructure, but apply separate authentication policies. They do not
 share protocol sessions:
 an API caller never performs MCP `initialize`, `tools/list`, or `tools/call`.
-Stdio remains an MCP transport only.
+There is no live stdio MCP transport. `--mcp-stdio` is a diagnostic tombstone
+that emits no MCP protocol. The private local socket remains an automation
+boundary, not an MCP transport and not an API or CLI fallback.
 
 V1 remains loopback-only. Remote/LAN serving, TLS termination, a background
 daemon, and automatic app launching are later security/deployment decisions.

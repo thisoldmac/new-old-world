@@ -10,7 +10,6 @@ enum MCPCardColumn: String, Codable, Sendable {
 /// persistence contract; renaming one orphans every saved layout that
 /// mentions it.
 enum MCPCardID: String, Codable, CaseIterable, Sendable {
-    case transportStdio = "transport.stdio"
     case transportHTTP = "transport.http"
     case presence
     case heldLane = "held-lane"
@@ -25,7 +24,7 @@ enum MCPCardID: String, Codable, CaseIterable, Sendable {
 
     /// Only transport cards carry a session log tail.
     var hasLogTail: Bool {
-        self == .transportStdio || self == .transportHTTP
+        self == .transportHTTP
     }
 }
 
@@ -36,7 +35,7 @@ enum MCPCardID: String, Codable, CaseIterable, Sendable {
 /// newer build with a card this one has never heard of still decodes; the
 /// unknown id is dropped by `sanitised` instead of failing the whole blob.
 struct MCPCardLayout: Codable, Equatable {
-    static let currentVersion = 1
+    static let currentVersion = 3
 
     var version: Int
     var left: [String]
@@ -56,6 +55,15 @@ struct MCPCardLayout: Codable, Equatable {
                 .map(\.rawValue),
             collapsed: [],
             openLogTails: [])
+    }
+
+    /// The version advances when a card leaves the product. `sanitised`
+    /// removes that retired raw id while preserving every surviving card's
+    /// relative order and state.
+    func migratedToCurrent() -> MCPCardLayout {
+        var migrated = self
+        migrated.version = Self.currentVersion
+        return migrated
     }
 
     /// A layout every card of this build appears in exactly once, with

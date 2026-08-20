@@ -245,12 +245,9 @@ final class LocalNetworkAccessControllerTests: XCTestCase {
         let app = try GateSource.hostSwift("now-host/Sources/Host/App.swift")
         let request = try XCTUnwrap(
             app.range(of: "state.localNetworkAccess.request()"))
-        let stdio = try XCTUnwrap(app.range(
-            of: "if preferences.stdioStartsAutomatically { startMCPStdio() }"))
         let http = try XCTUnwrap(app.range(
             of: "if preferences.httpStartsAutomatically { startMCPHTTP() }"))
 
-        XCTAssertLessThan(request.lowerBound, stdio.lowerBound)
         XCTAssertLessThan(request.lowerBound, http.lowerBound)
     }
 }

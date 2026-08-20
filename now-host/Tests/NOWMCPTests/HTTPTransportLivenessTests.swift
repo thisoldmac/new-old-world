@@ -51,6 +51,41 @@ final class HTTPTransportLivenessTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(tools.count, 42)
     }
 
+    func testListenerStopsRestartsAndRefusesASecondOwnerOfThePort()
+        async throws {
+        let port = try Self.unusedPort()
+        let token = String(repeating: "r", count: 32)
+        let first = try Self.listener(port: port, token: token)
+        try await first.start()
+
+        let collision = try Self.listener(port: port, token: token)
+        do {
+            try await collision.start()
+            collision.stop()
+            return XCTFail("a second listener unexpectedly owned the port")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("Address")
+                || String(describing: error).contains("48"), "\(error)")
+        }
+
+        first.stop()
+        try await Task.sleep(nanoseconds: 150_000_000)
+        let restarted = try Self.listener(port: port, token: token)
+        try await restarted.start()
+        restarted.stop()
+    }
+
+    private static func listener(port: UInt16, token: String) throws
+        -> MCPHTTPListener {
+        try MCPHTTPListener(
+            configuration: .init(port: port, bearerToken: token),
+            serverFactory: {
+                (NOWMCPServer(client: HTTPConformanceNoHostClient(),
+                              audit: LocalMCPAuditSink()),
+                 NOWMCPClientIdentity())
+            })
+    }
+
     private static func post(
         _ body: Data, to endpoint: URL, token: String,
         session: String? = nil, protocolVersion: String? = nil

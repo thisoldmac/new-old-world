@@ -108,6 +108,7 @@ the quickest alarm that the review surface has changed.
 | D-054 | API refusals and outcomes were incompletely described and inconsistently audited | OpenAPI omitted 409/428 and concrete file/transfer response schemas; exact-session refusals bypassed records; failed and denied outcomes collapsed into refused | Publish every emitted status/schema, audit pre-dispatch session refusals, preserve denied/refused/failed distinctions, and sanitize audit targets to stable guest IDs | implemented in integration review; mutation-tested |
 | D-055 | Repository staging tests could pass while the Xcode target omitted the CLI bundle phase | Grepping project text does not prove target membership or the artifact a user launches | Verify PBX target membership and build an unsigned app, then execute the bundled CLI from the resulting app bundle | implemented in integration review; mutation-tested |
 | D-056 | Moving MCP list rendering into `NOWMCPToolRenderer` left the host face-parity guard inspecting the old server file | The runtime renderer and dispatch remained correct, but the full host gate could no longer prove that every registry row was both listed and callable | Inspect the dedicated renderer for the unfiltered registry map and the server for name-based dispatch lookup; mutation-test the renderer half with a filtered map | implemented after origin/main integration; mutation-tested |
+| D-057 | The API/CLI plan still described stdio as a live sibling MCP transport | Upstream `4f326b93` removed live stdio MCP; Streamable HTTP at `/mcp` is the only live MCP transport, while `--mcp-stdio` is a protocol-silent diagnostic tombstone and the private socket is local automation only. Its removal also corrected two MCP tool descriptions whose captured rendering still named stdio | Preserve the HTTP-only removal, keep `/api/v1` beside `/mcp` on the shared bounded listener, provide no stdio or private-protocol fallback in the API or CLI, and recapture the deliberate MCP rendering change | reconciled against origin/main; golden guard caught the stale capture; focused API/MCP/workspace/tombstone/catalog/CLI and docs gates pass |
 
 ## Owner decision register
 
@@ -120,7 +121,7 @@ the quickest alarm that the review surface has changed.
 | A5 | API scopes | read/control/transfer/admin split; another reviewed split | superseded | V1 API-key authorization has no scope model; revisit with OAuth or another multi-principal design |
 | D5 | Meaning of `scripts` | AppleScript owns product domain; local runner is `now dev tasks` | decided | Michelle, 2026-08-16 |
 | D6 | API product boundary | third-party developer API with CLI as first client; not an MCP wrapper | decided | Michelle, 2026-08-20 |
-| D7 | MCP relationship | semantic child of the NOW API; transport sibling to HTTP | decided | Michelle, 2026-08-20 |
+| D7 | MCP relationship | semantic child of the NOW API; separate protocol adapter beside the REST API on the shared HTTP listener | decided | Michelle, 2026-08-20; transport narrowed to HTTP-only by upstream `4f326b93` |
 | D8 | Public resource noun | guest; machine reserved for physical hardware/profile contexts | decided | Michelle, 2026-08-20 |
 
 ## Slice reconciliation log
@@ -137,6 +138,7 @@ the quickest alarm that the review surface has changed.
 | 2026-08-20 | S6 / base `306ebc42` | 49 | API: `X-API-Key`; MCP: none, bearer, OAuth | 14 | D-036–D-039 record credential migration, exact-session dispatch, generated CLI metadata, and typed neutral result disposition | Every deliberately public projection-backed operation now reaches checked generic HTTP dispatch; agent-only conveniences and MCP compositions remain excluded with checked reasons. The API-only stdlib Python CLI covers guests, listener/connections, console, files/transfers, events, and generic public calls with human/JSON output, generated grammar/completion, exact-session mutation preconditions, bounded transfer I/O and cancellation. Typed projection producers supply the public completed/refused/unavailable/failed envelope before erasure, with no JSON field inference. Focused Swift and Python gates pass; full gate and product QA remain pending. |
 | 2026-08-20 | S7 / base `918f1e03` | 49 | API: `X-API-Key`; MCP: none, bearer, OAuth | 14 | D-040–D-044 record bootstrap, transfer-watch, live-completion, error-reach, and distribution-profile drift | Xcode and manual host bundles use one CLI staging helper, the app and repository share a guarded installer, public API and task-oriented CLI guides are published, and the distribution profile pins the sealed CLI shape. Five clean-tree distribution tests, thirteen CLI tests, nineteen release tests, the complete docs gate, contract generation/check, and an unsigned Xcode Debug bundle pass; exact overwrite, stager bypass, error-reach, and distribution-profile mutations fail. Full repository gate and product QA remain pending. |
 | 2026-08-20 | simplify / base `a4c05db6` | 49 | API: `X-API-Key`; MCP: none, bearer, OAuth | 14 | D-045–D-048 record listener idempotence, SSE admission, audit backpressure, and stable progress timestamps | Shared secret comparison and contract generation are deduplicated; listener start preserves live guests, concurrent SSE leases are capped, API record persistence settles before the request returns, and unchanged progress is a no-op. Exact listener restart, stream over-admission, detached persistence, and timestamp-churn mutations fail their focused guards. |
+| 2026-08-20 | origin/main reconciliation / `4f326b93` | 49 | API: `X-API-Key`; MCP HTTP: none, bearer, OAuth | 14 | D-057 records stdio MCP removal | The merged host keeps `/api/v1` and HTTP-only `/mcp` on one bounded listener, preserves HTTP MCP initialization and workspace-grant authority, and does not restore stdio MCP or introduce a private-protocol fallback. Focused API/MCP/workspace/tombstone/catalog and CLI tests plus the complete docs gate pass; full repository gate and current-head product QA remain pending. |
 
 ## Prototype evidence retained
 
@@ -146,9 +148,10 @@ The prototype on `feat/now-cli-sketch` demonstrated, against its dated host:
   now informs neutral operation-to-CLI generation rather than tools/list;
 - a per-invocation MCP-over-HTTP client must release its MCP session, which
   remains MCP evidence rather than a requirement for the new HTTP API client;
-- stdio can complete MCP initialization without reaching a live host, so a
-  transport fallback must be visible and host availability must be tested
-  separately;
+- the then-live stdio transport could complete MCP initialization without
+  reaching a live host. That remains dated prototype evidence only: upstream
+  `4f326b93` removed live stdio MCP, so current clients must use `/mcp` and
+  current availability proof must exercise HTTP;
 - generic scripting exit codes need a published cross-operation disposition.
 
 It did not prove current 49-row parity, current auth-mode interoperability,

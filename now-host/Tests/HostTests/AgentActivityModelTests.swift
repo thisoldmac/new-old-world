@@ -47,40 +47,9 @@ final class AgentActivityModelTests: XCTestCase {
         XCTAssertTrue(idle.detail.contains("1 hour ago"), idle.detail)
     }
 
-    /// An endpoint that never opened reports the same `.neverAttached` — it
-    /// is the honest reading, nothing reached it — so the page has to carry
-    /// the reason separately or it prints a socket path to a file that does
-    /// not exist.
-    func testAFailedEndpointIsItsOwnStateRatherThanAnEmptyPage() {
-        let model = AgentActivityModel()
-        XCTAssertEqual(model.stdio, .unopened)
-        model.stdioUnavailable("Refusing to replace an unsafe endpoint")
-        XCTAssertEqual(
-            model.stdio,
-            .unavailable("Refusing to replace an unsafe endpoint"))
-        model.stdioOpened(at: "/tmp/x/host.sock")
-        XCTAssertEqual(model.stdio, .open(endpoint: "/tmp/x/host.sock"))
-    }
-
     // MARK: - The server's lifecycle, which the MCP pane owns
 
-    /// **Stopped is not "never started", and neither is "did not start".**
-    ///
-    /// The MCP pane draws one line off this state and offers one button, so
-    /// three different reasons the socket is absent have to stay three
-    /// states: a person whose client cannot connect is told whether they
-    /// switched it off, whether it failed, or whether it has yet to run.
-    func testAServerStoppedByHandIsItsOwnStateAndNotAFailure() {
-        let model = AgentActivityModel()
-        model.stdioOpened(at: "/tmp/x/host.sock")
-        XCTAssertTrue(model.stdio.isRunning)
-
-        model.stdioStopped()
-
-        XCTAssertEqual(model.stdio, .stopped)
-        XCTAssertFalse(model.stdio.isRunning,
-                       "A stopped server offers Start, never Stop.")
-        XCTAssertNotEqual(model.stdio, .unopened)
+    func testNonrunningHTTPStatesAreNeverReportedAsRunning() {
         for state in [MCPTransportState.unopened, .stopped,
                       .unavailable("no")] {
             XCTAssertFalse(state.isRunning,
@@ -91,7 +60,7 @@ final class AgentActivityModelTests: XCTestCase {
     /// **Closing the door does not erase what came through it.** History
     /// lives in the records store now; transport lifecycle is state on this
     /// model and never touches the record.
-    func testStoppingTheServerKeepsWhatAnAgentAlreadyDid() async throws {
+    func testHistoricalStdioRecordRemainsAfterTransportRemoval() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("now-activity-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
@@ -102,28 +71,16 @@ final class AgentActivityModelTests: XCTestCase {
                 guest: "PB 180c", outcome: .answered, reason: nil),
             agent: MCPAgentIdentity(kind: .mcpStdio),
             drivenGuest: nil, at: Date())
-        let model = AgentActivityModel()
-        model.stdioOpened(at: "/tmp/x/host.sock")
-
-        model.stdioStopped()
-
         let rows = try await database.actions(matching: MCPActionQuery())
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(rows.first?.action.capability,
                        ListProcessesProjection.capability.rawValue)
     }
 
-    /// The two transports are independently operable. Stopping the
-    /// client-launched stdio bridge must not take down NOW's HTTP listener.
-    func testTransportLifecycleStatesAreIndependent() {
+    func testHTTPStopPreservesItsDistinctLifecycleState() {
         let model = AgentActivityModel()
-        model.stdioOpened(at: "/tmp/new-old-world.sock")
         model.httpOpened(at: "http://127.0.0.1:5254/mcp",
                          bearerToken: "secret")
-
-        model.stdioStopped()
-
-        XCTAssertEqual(model.stdio, .stopped)
         XCTAssertEqual(model.http,
                        .open(endpoint: "http://127.0.0.1:5254/mcp"))
         XCTAssertEqual(model.httpBearerToken, "secret")
@@ -131,6 +88,52 @@ final class AgentActivityModelTests: XCTestCase {
         model.httpStopped()
         XCTAssertEqual(model.http, .stopped)
         XCTAssertNil(model.httpBearerToken)
+    }
+
+    func testHTTPDiagnosticSeparatesConfigurationBindInitializeAndFailure() {
+        let model = AgentActivityModel()
+        let endpoint = "http://127.0.0.1:5254/mcp"
+
+        model.httpConfigured(at: endpoint, authMode: .bearer)
+        XCTAssertEqual(model.httpDiagnostic,
+                       .configured(endpoint: endpoint, authMode: .bearer))
+
+        model.httpOpened(at: endpoint, bearerToken: "never-render-this")
+        XCTAssertEqual(model.httpDiagnostic,
+                       .listenerBound(endpoint: endpoint,
+                                      authMode: .bearer))
+
+        model.httpInitialized(at: Date(timeIntervalSince1970: 42))
+        XCTAssertEqual(model.httpDiagnostic,
+                       .authenticatedAndInitialized(
+                            endpoint: endpoint, authMode: .bearer,
+                            lastInitialized: Date(timeIntervalSince1970: 42)))
+
+        model.httpStopped()
+        XCTAssertEqual(model.httpDiagnostic,
+                       .configured(endpoint: endpoint, authMode: .bearer))
+
+        model.httpOpened(at: endpoint, bearerToken: nil)
+
+        model.httpUnavailable("Address already in use")
+        XCTAssertEqual(model.httpDiagnostic,
+                       .failed("Address already in use"))
+        XCTAssertFalse(model.httpDiagnostic.description
+            .contains("never-render-this"))
+    }
+
+    func testUnauthenticatedInitializeDoesNotClaimAuthentication() {
+        let model = AgentActivityModel()
+        let endpoint = "http://127.0.0.1:5254/mcp"
+        model.httpConfigured(at: endpoint, authMode: .unauthenticated)
+        model.httpOpened(at: endpoint, bearerToken: nil,
+                         authMode: .unauthenticated)
+        model.httpInitialized()
+
+        XCTAssertTrue(model.httpDiagnostic.description
+            .contains("initialized"))
+        XCTAssertFalse(model.httpDiagnostic.description
+            .contains("authenticated"))
     }
 
     func testPresenceCombinesStdioAndHTTPWithoutDoubleCountingEither() {
