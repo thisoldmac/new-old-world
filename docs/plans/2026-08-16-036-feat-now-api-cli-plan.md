@@ -1,470 +1,675 @@
 <!-- now-doc-provenance: generated reviewed=false -->
 
-# 036 — now-api and now-cli: plan
+# 036 — NOW public API and power-user CLI: plan
 
 Status: **architecture review, not approved for implementation** (rewritten
-2026-08-20 against `origin/main` `3922d2ab`). This plan supersedes the option
-list in issue #33 and the earlier draft on `feat/now-cli-sketch`. That branch's
-prototype remains evidence; it is not product code and is not carried into
-this branch.
+2026-08-20 against `origin/main` `3922d2ab`). This version supersedes both
+the option list in issue #33 and the MCP-centered draft previously committed
+on this branch. The prototype on `feat/now-cli-sketch` remains dated evidence;
+it is not product code and is not carried forward.
 
-The product direction already established in discussion remains the center:
+This plan prepares the whole API/CLI body of work for execution. Its phases are
+sequencing and verification boundaries, not default stopping points.
 
-- Build the API with the CLI as its first client.
-- Keep the CLI Python, standard-library-first, user-facing, and out of
-  process on purpose. It must obtain product capabilities through the
-  published surface rather than shared Swift compilation.
-- Publish the host registry through the existing MCP server. Do not add a
-  REST bridge, daemon, guest listener, second socket, or second dispatch
-  implementation.
-- Generate ordinary CLI commands from the published surface. Hand-written
-  composition is permitted only where one user action genuinely spans
-  several published calls, and every exception is inventoried and gated.
+## Product decision
 
-The current source observations and their dispositions live in the companion
-[drift ledger](2026-08-20-036-now-api-cli-drift-ledger.md). The plan states
-intent; the ledger says which live facts that intent was checked against.
+NOW is gaining one public developer API for applications and automation, with
+an official CLI as its first demanding client. The API is not a developer
+wrapper around an agent tool.
 
-## Naming and version correction
+MCP has two precise relationships to that API:
 
-There is no shipped `now-api` v1 today. The first public contract created by
-this work is therefore **now-api v1**.
-
-`HostProjectionRegistry.catalogVersion` currently equals `1`, but that is an
-existing internal compatibility identity for the compiled projection catalog.
-It is not proof that a public product API already exists, and it must not be
-renamed or presented as `now-api v1` by implication. The two versions answer
-different questions:
-
-| Identity | Owner | Meaning |
-|---|---|---|
-| `nowApiVersion` | published MCP extension | Shape and semantics a now-api client may depend on; first value is `1` |
-| `projectionCatalogVersion` | host implementation | Compatibility shape of the compiled projection catalog and companion |
-| `projectionCatalogDigest` | host implementation, exposed as identity | Exact published catalog descriptors compiled into this host |
-| host build | host implementation | Exact executable implementation serving the descriptors |
-
-The public compatibility statement for pre-1.0 clients is deliberately small:
-
-- the same `nowApiVersion` means the same required public shape and
-  semantics;
-- the same catalog digest means the same catalog description, not necessarily
-  identical runtime behavior;
-- the host build identifies the implementation;
-- a breaking change to the required public shape moves `nowApiVersion`;
-- an additive row or descriptor-content change moves the digest, not the API
-  version;
-- no broader cross-version compatibility promise exists before 1.0.
-
-## Live baseline
-
-The implementation begins from current `origin/main`, not from the prototype
-branch's August 16 snapshot.
-
-| Surface | Current observation at `3922d2ab` | Consequence |
-|---|---|---|
-| Registry | 49 `HostProjection` rows | Never use the earlier 48-row table as an implementation manifest |
-| Local adapter | `AgentIntegrationLocalProtocol.version == 14` | Internal transport only; not part of now-api |
-| HTTP authentication | unauthenticated, bearer, or OAuth | CLI bootstrap must be mode-aware |
-| HTTP sessions | eight by default, 30-minute expiry, explicit `DELETE` | A short-lived CLI owns and closes every session it creates |
-| Audit | durable MCP agent/session/target/action records | CLI identity and every call are visible through the existing audit path |
-| Result shapes | heterogeneous (`outcome`, `available`, `ok`, plus JSON-RPC errors) | Generic exit codes require a real common result disposition, not prose claiming one exists |
-
-No count in this section is a standing product claim. The drift ledger records
-the source and recheck command; implementation re-derives before every slice
-that depends on it.
-
-## Architecture
-
-### One authority, one published rendering, one first client
+- **Semantically, MCP is a child of the NOW API.** It may render and constrain
+  public NOW operations for an agent, but it does not own a second set of
+  product meanings.
+- **Mechanically, MCP and HTTP are sibling protocol adapters.** Both call the
+  same typed service in-process. Neither calls the other over localhost and
+  neither reimplements guest behavior.
 
 ```text
-HostProjectionCatalog + HostProjection rows       registry authority
-                 |
-                 v
-NOWMCPServer tools/list + tools/call               existing MCP face
-                 |
-                 +-- stdio companion              same-UID host adapter
-                 +-- loopback Streamable HTTP     none / bearer / OAuth
-                                  |
-                                  v
-                              now-cli              first now-api v1 client
+contract/now-api.openapi.json                 public wire authority
+              |
+              v
+NOWOperationCatalog + typed NOWService        product semantics and dispatch
+              |
+       +------+----------------+
+       |                       |
+       v                       v
+HTTP /api/v1 adapter      MCP adapter (/mcp + stdio)
+       |                       |
+       v                       v
+now CLI + developer apps      agents
 ```
 
-`now-api` is not a new process. It is the explicitly named and versioned
-client contract published by the existing MCP face. The internal local socket
-operations, Swift model types, guest wire, and listener implementation remain
-private.
+The current projection catalog, dispatch, consent, audit, and host automation
+are the implementation foundation. Their MCP-shaped presentation is not the
+new API contract.
 
-If the CLI needs a product fact that the public rendering cannot express, the
-default diagnosis is an API defect in that rendering. The repair belongs in
-the registry or its MCP renderer, not in a CLI-only host-state side channel.
-Local endpoint and credential discovery are the narrow bootstrap exception
-described below; they locate and authenticate the API but do not answer a
-product capability.
+## Vocabulary
 
-### now-api v1 published contract
+The normalized public noun is **guest**:
 
-A conforming v1 client may depend on exactly these parts:
+- routes use `/guests`;
+- DTOs use `guestID` and `guestSessionID`;
+- the CLI uses `now guests` and `--guest`;
+- operation IDs use the `guests` domain.
 
-1. MCP `initialize`, `tools/list`, `tools/call`, and the Streamable HTTP
-   session lifecycle including `DELETE`.
-2. Ordinary MCP tool fields: `name`, `title`, `description`, `inputSchema`,
-   `outputSchema`, and annotations.
-3. One namespaced now-api metadata object per tool containing:
-   `nowApiVersion`, `domain`, canonical `verb`, short `summary`, and
-   structured `examples` whose arguments are JSON values rather than shell
-   strings.
-4. One namespaced now-api result-disposition object on every successful
-   `tools/call` result: `completed`, `refused`, or `unavailable`, with
-   structured `code`, `message`, and `reach` where the state supplies them.
-   Existing `structuredContent` remains the tool-specific value and is not
-   wrapped or rewritten merely for the CLI.
-5. JSON-RPC errors for malformed calls, unknown tools, invalid arguments, and
-   consent denial. The v1 contract states how those map into a CLI refusal
-   without pretending they are successful tool results.
-6. `now_list_machines` for current host/guest identity and
-   `now_session_capabilities` for the connected guest's per-tool
-   `available` / `unavailable` / `unproven` state.
-7. Host compatibility identity: catalog version, catalog digest, and host
-   build, read from the current session-health response.
+Use **machine** only when the subject is physical hardware or a durable lab
+machine profile. Existing internal names such as `MachineFactsProjection` do
+not have to be mechanically renamed to establish the public vocabulary.
 
-The exact extension namespace remains an owner decision before implementation;
-the semantic members above do not. Tests consume the chosen namespace through
-one constant so it cannot fork across renderer, fixtures, and clients.
+There is no shipped public NOW API today. This work creates **NOW API v1**.
+`HostProjectionRegistry.catalogVersion`, the local adapter protocol version,
+the host build, and the public API major are separate identities and must never
+be presented as a single version.
 
-### Result disposition is additive
+## Users and required workflows
 
-The current result types are intentionally varied because they carry different
-domain answers. now-api v1 does not flatten those answers into one lowest
-common denominator.
+### Application developers
 
-Instead, `HostProjectionValue` gains a small typed disposition beside its
-encoded value. `NOWMCPServer` renders that disposition as namespaced result
-metadata while leaving `structuredContent`, image attachments, and existing
-output schemas intact. A result type or adapter must state its disposition
-through a typed seam; the renderer must not infer it by searching arbitrary
-JSON for `available`, `ok`, or `outcome`.
+A developer can build a local macOS application or automation against a
+published, versioned HTTP contract without implementing MCP. At minimum the
+contract supports:
 
-This is the generic basis for CLI exit codes:
+- discovering connected guests and their stable/session identities;
+- reading listener, connection, capability, and guest status;
+- starting or stopping NOW's inbound guest listener;
+- disconnecting an exact live guest session;
+- running a declared guest console command and receiving its bounded result;
+- listing, inspecting, uploading, downloading, moving, trashing, restoring,
+  and creating guest files within the product's existing bounds;
+- observing connection, transfer, and relevant guest-state changes;
+- invoking the other current host capabilities deliberately admitted to the
+  public operation catalog after the MCP inventory is adjudicated;
+- authenticating without reading private host implementation state.
 
-| CLI exit | Meaning |
+### Power users
+
+The official CLI makes the common operations short, inspectable, and
+scriptable:
+
+```text
+now guests list
+now guests status --guest pb1400c
+now connections list
+now connections start
+now connections stop
+now connections disconnect <guest-session-id>
+now console --guest pb1400c gestalt
+now console --guest pb1400c --line 'catalog applications'
+now files list --guest pb1400c 'Macintosh HD:Lab:'
+now files put --guest pb1400c ./DiskCopy.img 'Macintosh HD:Lab:DiskCopy.img'
+now files get --guest pb1400c 'Macintosh HD:Lab:Report' ./Report.bin
+now transfers list
+now transfers watch <transfer-id>
+now events watch --guest pb1400c
+```
+
+Human output is the default. `--json` emits the API response shape without a
+second CLI-only interpretation. Mutations return stable exit codes and never
+turn a refusal into success because prose happened to look friendly.
+
+## Connection semantics
+
+Classic guests dial the host. The host cannot initiate a new TCP connection
+to a running guest, so the public API must not invent a `connect guest`
+operation that the product cannot perform.
+
+The lifecycle operations are instead explicit:
+
+| Product operation | Meaning |
 |---|---|
-| `0` | completed |
-| `2` | refused, including invalid arguments or consent denial |
-| `3` | capability or target unavailable |
-| `4` | no usable transport or authentication could be established |
-| `5` | client/API incompatibility or malformed server result |
+| `listener.get` | Read desired/bound/failed ports and idle/listening/connected/failed state |
+| `listener.start` | Start accepting inbound guest connections on the configured profile ports |
+| `listener.stop` | Stop accepting and gracefully close all current guest sessions |
+| `connections.list` | List exact live sessions and the stable guests they belong to |
+| `connections.disconnect` | Gracefully close one exact session; an auto-reconnecting guest may return |
 
-`--json` prints the complete MCP tool result, including its now-api metadata;
-it does not substitute the CLI's human rendering.
+The CLI groups listener lifecycle under `now connections start|stop` because
+that is the power-user intent, while help and JSON state name the actual
+listener operation. `disconnect` is not `forget`, and `stop` is not a deny
+list. Roster rename, durable forget, port reassignment, and changing the host
+UI's driven guest remain separate administrative operations until their
+authority and safety contracts are deliberately added.
 
-### Published presentation is client-neutral
+## One canonical operation model
 
-The API publishes a semantic `domain` and canonical `verb`, not a
-CLI-specific `cliName`. The first client renders those as
-`now <domain> <verb>`, while another client may render the same identity
-differently.
+### Neutral descriptors
 
-Examples are structured:
+Every public operation has one `NOWOperationDescriptor` containing:
+
+- stable `operationID` (`guests.list`, `listener.start`, `files.put`, etc.);
+- API major and additive schema revision identity;
+- semantic domain, verb, title, summary, and structured examples;
+- typed request and response schema references;
+- authority domain and required guest capabilities;
+- effect class: read, bounded mutation, disruptive mutation, or bulk transfer;
+- idempotency and cancellation behavior;
+- addressability: host-wide, stable guest, or exact guest session;
+- exposure declarations for HTTP, CLI, MCP, and app UI, each with evidence or
+  an explicit reason it is not rendered.
+
+The descriptor contains no MCP tool dictionary and no shell spelling. The MCP
+adapter derives tool descriptors and annotations. The CLI derives ordinary
+domain/verb grammar, then owns a small typed composition table only where one
+human action spans several operations.
+
+The existing 49-row MCP registry is evidence and implementation inventory, not
+an automatic public API manifest. Each current row is adjudicated into exactly
+one category:
+
+1. a public NOW operation rendered by HTTP and, where suitable, MCP;
+2. an MCP composition over one or more public NOW operations;
+3. an agent-only convenience with a checked reason it is not a developer
+   contract.
+
+The workspace-file upload is the model for the distinction: the public
+operation is `files.put`; reading a path inside a chat-granted workspace is
+an MCP-specific way to supply that operation's source. Chat orchestration,
+workspace grants, model-facing guidance, and similar agent mechanics do not
+become public application concepts merely because a tool already exists.
+
+### Typed service and dispatch
+
+`NOWService` is the in-process application boundary used by every adapter. It
+addresses a request, applies authentication/authorization and guest consent,
+bounds it, invokes the existing host service, records the audit event, and
+returns a typed result.
+
+The existing `HostProjectionDispatch` behavior is preserved and generalized
+rather than copied. Existing projection implementations continue to delegate
+to `AgentIntegrationClient` and host automation. Listener and connection
+administration join through typed service methods over `GuestListener`; they
+do not masquerade as guest-owned facts.
+
+The service result envelope is transport-neutral:
 
 ```json
 {
-  "title": "List the Lab folder",
-  "arguments": { "path": "Lab" }
+  "requestId": "...",
+  "operationId": "files.put",
+  "guest": { "id": "pb1400c", "sessionId": "..." },
+  "disposition": "completed",
+  "value": {}
 }
 ```
 
-The CLI derives shell syntax from the schema and arguments. No client parses a
-shell command string to recover API data.
+`disposition` is one of `completed`, `refused`, `unavailable`, `failed`,
+or `cancelled`. A non-completed answer carries a stable code, safe message,
+and reach. Domain values remain typed beneath `value`; adapters do not infer
+success by searching arbitrary JSON for `ok`, `available`, or `outcome`.
 
-Every row must declare a domain, verb, summary, and at least one structured
-example when it has required arguments. There are no default implementations:
-a new row that has not considered its human surface fails to compile.
+### Public contract authority
 
-### Authority and audit
+`contract/now-api.openapi.json` is an OpenAPI 3.1 document and the public HTTP
+wire authority. JSON is deliberate: repository scripts and the Python CLI can
+parse and validate it with their standard libraries, without adding a YAML
+runtime dependency.
 
-The CLI has no privileged face. Guest consent, guest standing, path bounds,
-receipts, and auditing remain host-side in `HostProjectionDispatch`. The
-official CLI supplies bounded MCP `clientInfo` so the durable MCP record can
-identify its stated name and version; that identity is visibility, not an
-authorization boundary.
+A contract change starts there. A checked generator produces the Swift schema
+identities/descriptors and CLI fixtures that would otherwise be duplicated.
+The runtime operation catalog binds typed handlers to contract `operationId`s;
+tests fail for an unbound contract operation, an uncontracted public handler,
+or schema drift in either adapter.
 
-The three HTTP modes do not change product authority:
+The existing `contract/asyncapi.yaml` remains the authority for host/guest wire
+messages. The public HTTP contract does not restate that wire.
 
-- unauthenticated accepts any process that can reach the loopback listener;
-- bearer accepts the existing same-user token;
-- OAuth uses the host's authorization-code + PKCE flow and human consent.
+## Public HTTP API v1
 
-The stdio companion remains kernel/same-UID authenticated. Moving between
-transports is always announced on stderr. A fallback that completes an MCP
-handshake without a live host is not reported as a live host connection.
+### Network shape
 
-### Bootstrap and credential ownership
+The current loopback HTTP service becomes one listener with two route families:
 
-The official local CLI and a third-party client have different bootstrap
-paths but reach the same API:
+- `/api/v1/...` — ordinary NOW developer API;
+- `/mcp` — MCP Streamable HTTP as today.
 
-- The official CLI may discover the saved loopback port and selected HTTP
-  authentication mode from NOW's local preferences, then authenticate by the
-  corresponding mode. This is discovery only; no capability answer comes
-  from preferences.
-- A third-party client receives a URL and authentication material through the
-  host's MCP page or follows the standard OAuth challenge and metadata.
-- Bearer secrets are read from the existing mode-`0600` token file.
-- OAuth client registration metadata may live in CLI state, but access and
-  refresh tokens belong in macOS Keychain. They are not JSON cache entries.
-- Unauthenticated mode sends no credential.
-- `--url` overrides local discovery for an explicitly supplied endpoint.
+They share socket ownership, authentication policy, connection parsing,
+request limits, and audit infrastructure. They do not share protocol sessions:
+an API caller never performs MCP `initialize`, `tools/list`, or `tools/call`.
+Stdio remains an MCP transport only.
 
-Full OAuth support in the first CLI release remains an owner decision. If it
-is deferred, the CLI must refuse OAuth mode explicitly and may offer stdio
-only when the host actually exposes the same-UID socket. It may not silently
-downgrade the selected HTTP authentication posture.
+V1 remains loopback-only. Remote/LAN serving, TLS termination, a background
+daemon, and automatic app launching are later security/deployment decisions.
+Third-party local applications receive a URL and standard auth bootstrap from
+the NOW host UI rather than reading private preferences.
 
-### State ownership and lifetimes
+### Resource and action families
 
-The host remains authoritative. CLI state is separated by meaning:
+Exact paths are finalized in the OpenAPI contract, but v1 owns these
+semantics:
 
-| State | Lifetime and key | Use |
+```text
+GET    /api/v1                         API identity and contract links
+GET    /api/v1/operations              neutral operation catalog
+
+GET    /api/v1/guests                  stable guests plus live session state
+GET    /api/v1/guests/{guestID}        identity, status, and capabilities
+
+GET    /api/v1/listener                configured/bound ports and state
+PUT    /api/v1/listener                start on configured profile ports
+DELETE /api/v1/listener                stop listener and close sessions
+
+GET    /api/v1/connections             exact live guest sessions
+DELETE /api/v1/connections/{sessionID} disconnect one exact session
+
+POST   /api/v1/guests/{guestID}/commands
+
+GET    /api/v1/guests/{guestID}/files
+GET    /api/v1/guests/{guestID}/files/content
+POST   /api/v1/guests/{guestID}/transfers
+GET    /api/v1/transfers/{transferID}
+DELETE /api/v1/transfers/{transferID}
+GET    /api/v1/transfers/{transferID}/content
+
+POST   /api/v1/operations/{operationID}
+GET    /api/v1/events
+```
+
+The generic operation endpoint gives applications access to the remaining
+typed catalog without proliferating bespoke routes. First-class resource
+routes exist for the core workflows where HTTP semantics materially help:
+identity, lifecycle, commands, files, transfers, and events.
+
+### Authentication and authority
+
+The API reuses the current host's unauthenticated, bearer, and OAuth modes and
+their implementation, but defines API scopes separately from MCP tool
+sessions. Recommended scopes are:
+
+- `now.read` — guests, status, capabilities, listings, and events;
+- `now.control` — bounded guest commands and mutations;
+- `now.transfer` — file upload/download and transfer cancellation;
+- `now.admin` — listener stop/start and exact-session disconnect.
+
+Unauthenticated mode remains a deliberate host setting and conveys the same
+local authority the mode currently conveys. Bearer uses the existing
+same-user secret. OAuth uses authorization code + PKCE and human consent.
+Credentials are never returned in discovery documents or written into normal
+CLI JSON state.
+
+Every mutation is audited through the shared service. The audit record names
+the authenticated client, operation, addressed guest/session, disposition,
+and bounded timing; it does not persist command arguments, file bytes, private
+paths, or returned payloads.
+
+### Console commands
+
+`commands.execute` is an explicit v1 operation, not a CLI escape into a local
+socket. It uses `GuestListener.runScheduledCommand`, which reaches the same
+guest command dispatcher as typed features and the guest's own console.
+
+The request accepts either:
+
+- a declared command name with typed arguments; or
+- a command name plus the raw argument line that the guest's console grammar
+  parses.
+
+The host validates that the connected guest advertised the command, applies
+the guest's agent-access tier, limits names/arguments/output, uses the existing
+watchdog, and audits the operation without storing arguments. Unknown,
+unadvertised, timed-out, and disconnected are distinct typed dispositions.
+There is no host shell, arbitrary process execution, or command batching.
+
+### Files and transfers
+
+The public API does not send bulk bytes as base64 MCP tool arguments.
+
+Uploads stream an HTTP request body into bounded private host staging, compute
+size and SHA-256 while receiving, then create a transfer resource that enters
+the guest's existing single transfer lane. Downloads create or identify a
+transfer and stream the completed host artifact as binary. Metadata states the
+container (`data` or `macbinary`), classic type/creator when known, length,
+digest, guest path, and disposition.
+
+Transfer resources provide:
+
+- opaque transfer ID;
+- direction and exact guest session;
+- queued/running/completed/refused/failed/cancelled state;
+- byte progress where the underlying lane reports it;
+- timestamps, digest, and safe refusal/failure code;
+- cancellation through the existing bidirectional transfer cancel seam;
+- bounded retention and private-stage cleanup.
+
+The existing one-transfer-per-guest constraint remains true and visible.
+HTTP backpressure, disconnect, retry, idempotency, and staging expiry are
+specified before implementation. An interrupted HTTP upload never silently
+becomes a guest transfer.
+
+MCP exposes the same transfer semantics through safe references: a granted
+workspace file, staged bytes, or an existing transfer ID. The current
+workspace-upload projection remains an agent convenience, not the public
+developer file protocol.
+
+### Events
+
+`GET /api/v1/events` is a server-sent event stream backed by `HostEventBus`.
+V1 publishes a privacy-reviewed subset:
+
+- listener state changed;
+- guest connected/disconnected and roster changed;
+- transfer progressed/ended;
+- file tree changed;
+- capability/status invalidation where a stable public schema exists.
+
+Events carry event type, timestamp, applicable guest/session/transfer IDs, and
+a bounded typed value. They never expose host file URLs, private paths, logs,
+or internal Swift enum descriptions.
+
+V1 is a live stream with heartbeat and explicit reconnect semantics. It does
+not claim durable replay until an event store exists. A reconnecting client
+refetches current resource state; `Last-Event-ID` is not accepted as proof of
+replay the server cannot provide.
+
+## MCP adapter
+
+MCP continues to be a first-class agent surface, but its descriptor becomes a
+rendering of `NOWOperationDescriptor` plus MCP-only annotations:
+
+- tool name and agent-facing description;
+- read-only/destructive/idempotent hints;
+- guest-addressing argument injection;
+- consent explanations;
+- workspace grants and artifact attachment rendering;
+- MCP session and JSON-RPC error mechanics.
+
+Every MCP tool binds a canonical `operationID`. Every public operation declares
+one of:
+
+- rendered in MCP;
+- represented by a named MCP composition over the same service;
+- not representable in MCP, with a checked reason such as binary request body
+  or continuous event stream.
+
+Absence from MCP does not create a second meaning. For example, an HTTP file
+body is transport-only; the underlying `files.put` operation and transfer
+resource remain the same operation MCP initiates by workspace reference.
+
+Existing MCP clients must continue to work through additive migration. Golden
+tests capture current `tools/list`, tool-call results, consent behavior, and
+audit records before descriptor extraction; the refactor must preserve them
+except for explicitly reviewed additions.
+
+## CLI architecture and behavior
+
+The CLI is Python, standard-library-first, out of process, and a real public
+API client. It never imports Swift code, reads the host's local socket
+protocol, or falls back to MCP. If the public API is unavailable, it fails with
+an actionable transport/authentication error instead of proving a different
+surface works.
+
+Modules follow real ownership:
+
+```text
+now-cli/
+  now_cli/
+    api/             HTTP, auth, contract identity, SSE
+    model/           generated/public DTO bindings
+    commands/        guests, connections, console, files, transfers, events
+    render/          human tables/progress and JSON passthrough
+    state/           endpoint preference and non-secret caches
+    completion/      bounded schema/resource completion
+  tests/
+```
+
+### Discovery and state
+
+The official CLI may discover the saved loopback URL and selected auth mode
+through one documented host bootstrap seam. That seam locates the API only; it
+does not answer guest status or capabilities. Third-party clients use the host
+UI's connection material or OAuth metadata.
+
+CLI state is separated by meaning:
+
+| State | Key/lifetime | Rule |
 |---|---|---|
-| Registry cache | endpoint + now-api version + catalog digest | Offline surface/help only |
-| Preferred machine | endpoint/profile + stable machine id | User preference; survives guest reconnect |
-| Listing cache | exact guest connection session + listing kind | Index/name convenience; refused after reconnect |
-| Filesystem completion hints | stable machine id + share label + path | 30-second fresh window, LRU-capped, stale hints permitted on deadline |
-| OAuth public registration | endpoint | Reusable client registration metadata |
-| OAuth tokens | Keychain | Credentials, never ordinary CLI JSON state |
+| Endpoint preference | named host profile | URL and non-secret display name only |
+| Contract cache | endpoint + API major + contract digest | Offline help; never capability truth |
+| Preferred guest | endpoint + stable guest ID | Convenience; every response echoes resolved session |
+| Listing/completion hints | exact session + kind, short TTL | Hints only; mutations refetch |
+| OAuth public registration | endpoint | Reusable public metadata |
+| OAuth tokens | Keychain | Never ordinary CLI JSON |
 
-A cached listing or completion hint never decides an action. Name resolution,
-file destinations, and any mutation refetch the relevant listing in the same
-breath. A stale completion costs a wasted Tab press, never a wrong target.
+### Grammar, help, and completion
 
-### Generated and composed commands
+One-to-one domain/verb commands derive from the neutral operation catalog and
+OpenAPI schemas. A small checked composition table owns friendlier workflows
+such as `now connections start` mapping to `listener.start`. It is not a
+copied capability catalog.
 
-The implementation derives the command inventory from current `tools/list`.
-This plan deliberately does not freeze a 49-row copy that will look
-authoritative after the 50th row lands.
+Every public operation is either reachable from a CLI command or explicitly
+marked library-only with a reason. `now api operations` exposes the canonical
+inventory and `now api call <operation-id> --json-arguments ...` provides a
+developer/power-user escape hatch without bypassing validation.
 
-Commands fall into three classes:
+Help distinguishes the stable API surface from what the currently addressed
+guest actually supports. Completion uses contract enums and bounded live
+lookups with a short deadline; it never performs a mutation and never turns a
+stale hint into a target decision.
 
-1. **Generated:** one domain/verb maps to one registry row; flags,
-   requiredness, enums, examples, and help come from the API.
-2. **Composed:** one user operation invokes several published rows or exposes
-   an operation discriminator as subcommands. The CLI owns one typed table
-   naming every component row. Tests fail if a component disappears or any
-   current registry row becomes unreachable through the CLI.
-3. **CLI-local:** help, API inspection, connection diagnostics, machine
-   preference, completion generation, and `now dev tasks`. These are labelled
-   local and never presented as host capabilities.
+### Exit status
 
-Likely composed families include status, staged file upload, and rows whose
-own input schema declares an operation enum. The exact list is derived and
-reviewed in the implementation slice; this sentence is not permission to
-invent friendlier behavior that changes host semantics.
+| Exit | Meaning |
+|---:|---|
+| `0` | completed |
+| `2` | refused or invalid invocation |
+| `3` | guest/capability/resource unavailable |
+| `4` | transport or authentication failure |
+| `5` | API incompatibility or malformed server response |
+| `6` | operation failed after admission |
+| `130` | locally interrupted; cancellation attempted when applicable |
 
-### References and paths
+`--json` still uses these exits. Connection stop and other disruptive actions
+require an interactive confirmation unless `--yes` is supplied; the HTTP API
+itself remains non-interactive and relies on `now.admin` authorization.
 
-Reference-shaped arguments accept an opaque id, exact name, or an index from
-the last listing of that kind:
+## First-release scope
 
-- opaque ids pass through for host validation;
-- names resolve exactly once against a fresh listing, with ambiguity refused;
-- indices resolve only against a listing stamped with the current guest
-  connection session;
-- stale references render the host refusal rather than becoming a CLI guess.
+V1 includes:
 
-The CLI renders guest file paths in Unix form and converts once at the invoke
-boundary to the wire's share-relative HFS-colon form. The API description for
-the file rows must state the wire grammar before the CLI depends on it. Tests
-cover root, nesting, and the classic `/`-in-name to `:`-on-Unix swap in both
-directions.
+- neutral operation descriptors and one shared dispatch/service boundary;
+- generated OpenAPI contract and compatibility identity;
+- loopback HTTP API beside `/mcp` on the existing service;
+- guest roster, status, capabilities, listener lifecycle, connection listing,
+  and exact-session disconnect;
+- declared guest console command execution;
+- core guest file operations, binary transfer resources, progress, and cancel;
+- a live SSE event subset;
+- an adjudicated disposition for every current MCP projection, with HTTP
+  renderings for operations admitted to the public API and checked
+  mappings/reasons for the rest;
+- MCP migration onto the neutral catalog without client regression;
+- the Python CLI, auth modes claimed by the release, completion,
+  distribution, and user/developer documentation.
 
-### Help and completion
+V1 does not include:
 
-`now help`, `now <domain> help`, and verb `--help` are generated from the
-cached-or-live API description. When connected, domain help joins the
-capability report without collapsing its three states. Offline help says
-**surface, not this guest**.
+- initiating an outbound connection to a classic guest;
+- remote/LAN exposure, TLS termination, or a background daemon;
+- arbitrary host shell/process execution;
+- roster forget/rename, profile port reassignment, or driven-guest mutation;
+- a new guest message or command solely for API convenience;
+- AppleScript/App Intents, official language SDK packages, or `now dev tasks`;
+- durable event replay or concurrent guest transfer lanes.
 
-`now completion bash|zsh` emits thin shell adapters around one hidden
-completion entry point:
-
-- static candidates come from the registry cache;
-- live references use a roughly 300 ms deadline and fall back to cached hints
-  or silence;
-- filesystem candidates list the partial path's parent and use a 30-second
-  freshness window with stale-while-deadline behavior;
-- completion never performs a mutation or settles a costly capability probe.
-
-### The local development-task exception
-
-Michelle's 2026-08-16 naming decision remains: AppleScript owns the
-`scripts` product domain, and the local repository runner is
-`now dev tasks`.
-
-`now dev tasks` is explicitly CLI-local. It derives executable tasks from a
-registered `scripts/` directory, passes argv/stdin/stdout/exit status through,
-and does not touch MCP, the guest, or now-api. Its inclusion in the executable
-does not make workstation scripts part of the public host API.
-
-## Scope of the first release
-
-The first now-api/now-cli release covers the capabilities already published
-by the current host registry plus the metadata/result contract needed to
-consume them generically.
-
-It does **not** add:
-
-- host listener mutation, roster rename/forget, or driven-machine mutation;
-- AppleScript projection, libraries, compile-checking, dictionaries, or a 68K
-  OSA implementation;
-- a guest wire or contract change;
-- `now shell`;
-- REST, a daemon, remote non-loopback serving, or app launching;
-- a second host dispatch implementation.
-
-Host administration and AppleScript are follow-on product arcs. They must not
-be smuggled into the API foundation as metadata work.
+Generated clients from OpenAPI are supported as a developer workflow, but
+shipping and maintaining official Swift/TypeScript/Python SDK packages is a
+later product commitment.
 
 ## Implementation slices
 
-Each slice begins by reconciling the drift ledger against its actual base
-revision.
+Each slice begins by reconciling the drift ledger against its actual base.
+Contract, source, tests, and docs move together; implementation continues
+through the whole approved plan rather than stopping after the foundation.
 
-### S1 — publish now-api v1 atomically
+### S1 — contract and neutral operation seam
 
-One host/API PR:
+- add `contract/now-api.openapi.json`, compatibility rules, standard errors,
+  operation/result envelopes, and the initial core schemas;
+- introduce `NOWOperationDescriptor`, typed exposure declarations, and the
+  checked contract binding/generator;
+- inventory every current MCP projection as public operation, composition, or
+  agent-only convenience before adding it to OpenAPI;
+- migrate `HostProjection` rows away from `mcpDescriptor` to neutral request,
+  response, effect, and presentation data;
+- generalize `HostProjectionDispatch` into the shared service boundary while
+  preserving addressing, consent, bounds, audit, and existing handlers;
+- render current MCP descriptors from the neutral catalog;
+- capture then enforce golden MCP parity.
 
-- add the chosen public namespace and `nowApiVersion == 1`;
-- add required domain, verb, summary, and structured-example declarations to
-  every registry row;
-- add the typed result disposition beside `HostProjectionValue`;
-- render tool and result metadata through `NOWMCPServer`;
-- retain existing structured results and conforming MCP behavior;
-- extend registry, schema, descriptor, parity, and conformance tests;
-- rederive MCP coverage and current documentation.
+Mutation evidence: an unbound OpenAPI operation, an uncontracted public
+handler, a missing exposure declaration, schema drift, and one altered MCP
+descriptor each fail the intended gate.
 
-This is one PR rather than the earlier S1/S2 split because both halves modify
-the same public contract and both trigger the repository's Emulator QA and
-Metal QA policy. No intermediate state where fields exist but are unpublished
-has product value.
+### S2 — HTTP foundation, identity, guests, and connections
 
-Mutation evidence must prove: an omitted row field fails compilation; a stale
-structured example fails schema validation; a renderer dropping one row's
-metadata fails; and a tool value misclassified as completed/unavailable fails
-the result-disposition test.
+- refactor the current HTTP listener into shared parsing/auth plus route
+  adapters for `/mcp` and `/api/v1`;
+- add API identity, contract digest, operation catalog, standard errors,
+  request IDs, limits, and auth scopes;
+- expose guests, status/capabilities, listener state/start/stop, live
+  connections, and exact-session disconnect;
+- prove stopping the guest listener does not stop the developer API listener;
+- add API audit records without arguments or payloads;
+- build a minimal fixture client that knows no Swift or MCP.
 
-### S2 — CLI transport, authentication, and lifecycle core
+Mutation evidence: cross-route auth bypass, a stop that leaves a bound guest
+port, a disconnect aimed by stable ID instead of exact session, and a private
+host field leaked into JSON each fail.
 
-Create `now-cli/` from behavior learned in the prototype, not by copying the
-prototype forward unreviewed:
+### S3 — console operation
 
-- stdlib-first Python package/executable layout with internal modules by real
-  ownership rather than one catch-all file;
-- HTTP request/session lifecycle and unconditional best-effort `DELETE` on
-  normal exit, error, and signals;
-- unauthenticated and bearer paths;
-- OAuth DCR, PKCE, loopback callback, browser consent, refresh, revocation
-  response handling, and Keychain storage if full OAuth is approved;
-- stdio companion fallback with explicit diagnostics;
-- fake HTTP and stdio servers covering framing, session pressure, auth modes,
-  fallback, and host-unavailable behavior;
-- `scripts/test-cli`, added to `scripts/test-all` before the host gate.
+- add the OpenAPI command request/result schemas and limits;
+- validate the command against the addressed guest's advertised command
+  table;
+- route typed arguments or raw argument line through
+  `runScheduledCommand` with the existing watchdog;
+- enforce control scope, consent tier, output bounds, and argument-free audit;
+- add CLI `now console` behavior and completion from the guest command table.
 
-The current host's three auth modes become the interop matrix. A self-test is
-not real-client interop; the CLI must connect to a current host in each mode
-the release claims.
+Mutation evidence: an unadvertised command, wrong guest, omitted watchdog,
+oversized result, and audit payload capture each fail.
 
-### S3 — generated grammar, outcome handling, and help
+### S4 — binary files and transfer resources
 
-- typed model for tools/list plus now-api metadata;
-- generated domain/verb grammar and schema-derived flags;
-- JSON-first coercion with explicit handling for arrays/objects;
-- generic result-disposition to exit-code mapping;
-- human rendering and verbatim `--json`;
-- connection-aware and offline-honest help;
-- parity test: every published row is reachable through a generated or
-  declared composed command.
+- add streaming upload staging, digest/length verification, expiry, and
+  cleanup;
+- bind admitted uploads and downloads to the existing guest transfer lane;
+- add transfer list/get/cancel/content resources and state transitions;
+- adapt current file list/stat/mutation operations to first-class routes;
+- expose transfer progress through the neutral service;
+- implement CLI file and transfer commands with progress and interruption.
 
-### S4 — machine, reference, path, and completion UX
+Mutation evidence: partial upload admission, traversal/symlink escape, digest
+mismatch, stale-session delivery, abandoned stage leakage, concurrent-lane
+violation, and cancel-settles-success each fail.
 
-- `now guests`, `now use`, and per-call `--guest`;
-- stable machine preference separated from exact-session listing caches;
-- opaque-id / exact-name / session-stamped-index resolution;
-- Unix/HFS path normalization at one invoke boundary;
-- Bash and Zsh completion with bounded live deadlines and hint-only caches.
+### S5 — events
 
-### S5 — local development tasks
+- define the privacy-reviewed public event schemas in OpenAPI;
+- add a route mode that keeps an SSE response alive with heartbeat and
+  bounded buffering;
+- translate the allowed `HostEventBus` subset without internal enum strings or
+  host paths;
+- specify reconnect/refetch behavior without claiming replay;
+- add `now events watch` and transfer watch behavior.
 
-- `now dev tasks list|run|register`;
-- derived executable inventory and descriptions;
-- passthrough argv, stdio, and exit status;
-- completion from the same derived inventory;
-- tests that refuse non-executable, missing, ambiguous, or unregistered tasks.
+Mutation evidence: slow-consumer unbounded growth, leaked host URL/path,
+wrong-guest event identity, and false replay acceptance each fail.
 
-### S6 — distribution and user documentation
+### S6 — complete API/MCP/CLI reach and UX
 
-The release is not complete when a script exists only in a checkout.
+- render every remaining public neutral operation through generic HTTP
+  invocation;
+- finish the MCP exposure/reason matrix and agent-specific compositions;
+- finish generated CLI grammar, human rendering, JSON passthrough, help,
+  preferred guest, safe references, and Bash/Zsh completion;
+- prove every operation's declared faces are real or carry a checked reason;
+- run live interop against every auth mode claimed by the release.
 
-- settle bundle/repository installation and the stable `now` executable path;
-- document Python and macOS prerequisites;
-- document URL/auth bootstrap for the official CLI and third-party clients;
-- add the user-guide page, README works/does-not-work pair, and open-issues
-  closeout;
-- verify a clean-machine/clean-clone installation path appropriate to the
-  chosen distribution decision.
+### S7 — distribution and documentation
+
+- settle bundle/repository installation and a stable `now` executable path;
+- document OpenAPI discovery, authentication, scopes, compatibility, errors,
+  events, transfer lifecycle, and local-only network posture;
+- publish CLI task-oriented guides for guests, connections, console, files,
+  transfers, and scripting;
+- update README works/does-not-work, contract coverage, and open issues;
+- verify a clean-clone installation and an independent fixture application
+  generated or written solely from the public contract.
+
+## Compatibility policy
+
+- `/api/v1` and OpenAPI `info.version` identify the first public major.
+- Additive optional fields, operations, and event types may ship within v1.
+- Existing required fields do not change meaning within v1.
+- Removing an operation, narrowing accepted input, changing a required field,
+  or changing disposition semantics requires a new major or an explicitly
+  documented compatibility bridge.
+- The contract digest identifies the exact published OpenAPI document.
+- The host build identifies the implementation serving it.
+- MCP catalog version/digest and the internal local protocol remain separate
+  implementation identities.
+
+Clients must ignore unknown optional fields and event types, but never unknown
+dispositions or API majors. The official CLI refuses a newer unsupported major
+before attempting a mutation.
 
 ## Owner decisions before implementation
 
 | ID | Decision | Recommended default | Blocks |
 |---|---|---|---|
-| A1 | Exact namespaced MCP metadata key | Reverse-domain NOW-owned key, one constant | S1 |
-| A2 | Publish canonical short verbs or mechanical row-derived verbs | Canonical semantic short `verb` | S1 |
-| A3 | Full OAuth in the first official CLI release | Yes; it is the first real-client interop proof | S2 |
-| A4 | Distribution: bundled tool, repository installer, or both | Bundle plus repository development entry point | S6 |
-| A5 | Public pre-1.0 compatibility wording | The narrow version/digest/build statement in this plan | S1 docs |
+| A1 | First-release network reach | Loopback only | S2 |
+| A2 | Full OAuth in the first CLI release | Yes; it proves third-party auth rather than same-user shortcuts | S2/S6 |
+| A3 | Distribution | Bundle plus repository development entry point | S7 |
+| A4 | Transfer staging ceiling and retention | Derive from existing 32 MiB single-file bound; short private retention with explicit cleanup | S4 |
+| A5 | Exact OAuth scopes and disruptive-operation split | Four scopes in this plan; `now.admin` for listener/disconnect | S2 |
 
-Already decided:
+Already decided by Michelle on 2026-08-20:
 
-- D5: AppleScript owns `scripts`; the local runner is `now dev tasks`.
-
-Deferred from this plan rather than silently decided:
-
-- publishing a host-administration mutation domain;
-- server-side session eviction/reuse beyond the existing expiry and client
-  `DELETE` contract;
-- AppleScript capability scope across PPC and 68K guests.
+- the API is for third-party developers, not an MCP wrapper;
+- the CLI is for power-user guest operations;
+- MCP is a semantic child of the API and a transport sibling to HTTP;
+- `guest` is the normalized public noun;
+- this is the first public API, therefore v1.
 
 ## Verification contract
 
 | Claim | Required evidence |
 |---|---|
-| Public surface is registry-derived | Current catalog parity test and CLI reachability test |
-| now-api v1 is generic | Fixture client uses only published metadata, schemas, result disposition, and identity oracles |
-| Existing MCP clients remain conforming | MCP conformance suites ignore the additive namespaced metadata and still pass |
-| Results are generically classifiable | One test per disposition plus invalid-argument and consent JSON-RPC errors |
-| HTTP lifecycle is bounded | DELETE leak mutation fails; 429 is actionable; signal/error cleanup covered |
-| Auth claims are real | Live CLI interop against every claimed current host auth mode |
-| Offline help is honest | Cache fixture labels surface-only and never asserts guest availability |
-| Target selection is safe | Exact-session stale index, ambiguous name, stable machine preference, and host refusal tests |
-| Path conversion is lossless | Root/nesting and slash-colon round-trip fixtures |
-| Completion cannot decide | Deadline/cache tests plus fresh refetch at every actual resolution/mutation |
-| Product change is landable | `scripts/test-all`, current-head Emulator QA and Metal QA for S1, plus applicable docs gates |
+| One semantic API exists | Contract-to-catalog binding and face parity matrix; no adapter-owned product handler and no automatic MCP-to-API promotion |
+| MCP remains compatible | Golden descriptor/call fixtures and current MCP conformance suites |
+| Developer API is independent of MCP | Fixture client performs core workflows without MCP initialization or tool names |
+| CLI proves the public API | Network trace/fixture shows only `/api/v1`; no local protocol or MCP fallback |
+| Guest addressing is safe | Stable-ID versus exact-session mutation tests and response identity echo |
+| Listener lifecycle is honest | Start/stop/bind failure tests and explicit proof that host cannot dial a guest |
+| Console reaches the shared guest face | Wire fixture plus `CommandParityTests`; no second command implementation |
+| Binary transfer is bounded | Streaming/backpressure, staging cleanup, digest, session, lane, and cancel tests |
+| Events are honest | Live-only reconnect test, bounded slow consumer, identity and privacy fixtures |
+| Auth claims are real | Live independent-client interop against every claimed mode and scope |
+| Public compatibility is enforceable | Old-v1 fixture suite runs against the new host revision |
+| Product change is landable | `scripts/test-all`, applicable docs gates, current-head Emulator QA and Metal QA for product slices |
 
-Builds, Tested, and Metal-verified remain distinct statuses. A live host
-interop result proves only the host and authentication mode named in its
-receipt.
+Builds, Tested, and Metal-verified remain distinct. An HTTP fixture proves the
+host/API path it exercised; it does not prove guest behavior on a PowerBook.
 
 ## Stop conditions
 
 Stop and return to architecture review if:
 
-- a required CLI behavior can only be implemented by reading private host
-  capability state outside bootstrap;
-- a generic result disposition cannot be stated without erasing a domain
-  fact existing clients need;
-- OAuth credential storage would put refresh/access tokens in ordinary JSON;
-- a new command requires guest or contract behavior not already published;
-- the generated grammar needs per-row client code outside the declared
-  composition table;
-- distribution requires a new dependency or deployment target not approved by
-  Michelle.
+- an adapter needs private host state or a bespoke product handler to satisfy
+  a public operation;
+- HTTP and MCP need different meanings for the same operation rather than
+  transport-specific representations;
+- a requested `connect` behavior would require pretending the host can dial a
+  guest;
+- console execution cannot be bounded or authorized without silently
+  narrowing the guest's declared command semantics;
+- transfer streaming would bypass the existing guest lane, path policy,
+  consent, or receipt authority;
+- OAuth credentials would be stored in ordinary JSON;
+- remote exposure, a daemon, a new dependency, or a guest contract change is
+  required without owner approval;
+- the implementation produces a second operation catalog that can drift from
+  OpenAPI or the runtime binding.
