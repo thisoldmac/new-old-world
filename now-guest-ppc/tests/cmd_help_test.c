@@ -89,12 +89,79 @@ static void test_help_documents_itself(void)
     check(d != NULL && d->wire == 1, "help must be a wire command");
 }
 
+/* Every detail line is indented two spaces and fits the console.
+ *
+ * Both properties were broken and neither was visible from the source: two
+ * arrays wrote their lines flush-left, so those commands' help rendered
+ * against the margin while the other 59 hung under a two-space indent, and
+ * nothing said the console is 80 columns wide. console_model.c appends a
+ * detail line verbatim, so what is written here is what a person reads.
+ */
+static void test_detail_lines_are_indented_and_fit(void)
+{
+    int i, j;
+
+    for (i = 0; kNowCommandDocs[i].name != NULL; ++i) {
+        const NowCommandDoc *d = &kNowCommandDocs[i];
+
+        if (d->detail == NULL) {
+            continue;
+        }
+        for (j = 0; d->detail[j] != NULL; ++j) {
+            const char *line = d->detail[j];
+
+            /* An empty line is a paragraph break and carries no indent;
+               mirror, mirrorlog and cycle all use them, and they are the
+               reason this loop tests emptiness before indentation. */
+            if (line[0] == '\0') {
+                continue;
+            }
+            check(line[0] == ' ' && line[1] == ' ', d->name);
+            check(strlen(line) <= 72, d->name);
+        }
+    }
+}
+
+/* Nothing drawn may carry a byte outside ASCII.
+ *
+ * docs/guest-ui-start-here.md: a UTF-8 literal renders as mojibake through
+ * DrawString, and this table reaches DrawString on this Mac's own console.
+ * It carried a U+2014 em dash until 2026-08-20. MacRoman byte values are
+ * the supported way to draw a non-ASCII glyph; a source character is not.
+ */
+static void test_no_high_bytes_reach_the_screen(void)
+{
+    int i, j;
+
+    for (i = 0; kNowCommandDocs[i].name != NULL; ++i) {
+        const NowCommandDoc *d = &kNowCommandDocs[i];
+        const char *p;
+
+        for (p = d->summary; *p != '\0'; ++p) {
+            check((unsigned char)*p < 0x80, d->name);
+        }
+        for (p = d->usage; *p != '\0'; ++p) {
+            check((unsigned char)*p < 0x80, d->name);
+        }
+        if (d->detail == NULL) {
+            continue;
+        }
+        for (j = 0; d->detail[j] != NULL; ++j) {
+            for (p = d->detail[j]; *p != '\0'; ++p) {
+                check((unsigned char)*p < 0x80, d->name);
+            }
+        }
+    }
+}
+
 int main(void)
 {
     test_every_row_is_documented();
     test_names_are_unique();
     test_lookup();
     test_help_documents_itself();
+    test_detail_lines_are_indented_and_fit();
+    test_no_high_bytes_reach_the_screen();
 
     if (g_failures != 0) {
         fprintf(stderr, "%d failure(s)\n", g_failures);

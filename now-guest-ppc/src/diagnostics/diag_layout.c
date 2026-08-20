@@ -234,10 +234,10 @@ long diag_body_line(DiagProbe probe, DiagCardState state, int index,
                guest" about vprobe - which both guests serve - would be a
                confident wrong answer. */
             strncpy(out, probe == kDiagShotDiag
-                             ? "Nothing is wrong with the machine - the "
-                               "68K guest is the one that serves it."
-                             : "Nothing is wrong with the machine - this "
-                               "build predates the measurement.",
+                             ? "Not a fault - the 68K guest is the one "
+                               "that serves it."
+                             : "Not a fault - this build predates the "
+                               "measurement.",
                     (size_t)cap - 1);
             out[cap - 1] = '\0';
         }

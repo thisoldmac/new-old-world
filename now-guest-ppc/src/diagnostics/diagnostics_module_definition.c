@@ -8,9 +8,9 @@ const WorkshopModuleDefinition *diagnostics_module_definition(void)
         kWorkshopDiagnostics,
         "diagnostics",
         "Diagnostics",
-        "What this Mac can measure about itself. Each one says what it "
-            "costs before it is spent.",
-        "Diagnostics has not moved in yet.",
+        "Measurements this Mac can take of itself. Each states "
+            "its cost before it runs.",
+        "Diagnostics is not in this window yet.",
         "Measure this Mac",
         138,
         kWorkshopModuleTierDebug,

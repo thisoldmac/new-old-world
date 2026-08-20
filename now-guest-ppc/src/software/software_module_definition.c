@@ -8,10 +8,10 @@ const WorkshopModuleDefinition *software_module_definition(void)
         kWorkshopSoftware,
         "software",
         "Software",
-        "What is installed on this Mac, and starting it. Applications sweep "
-        "the disk; the rest read the System Folder.",
-        "Software has not moved in yet.",
-        "What is installed",
+        "Installed software on this Mac, and starting it. Applications "
+        "scan the disk; the rest read the System Folder.",
+        "Software is not in this window yet.",
+        "Installed software",
         136,
         kWorkshopModuleTierCore,
         NULL,

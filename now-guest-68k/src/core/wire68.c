@@ -3058,7 +3058,7 @@ static void service_dialing(void)
     }
     /* kNetFailed here means the connect itself never reached kNetConnected
      * - no stream to say goodbye on. */
-    teardown_and_retry("wire: dial failed", NULL);
+    teardown_and_retry("wire: connect failed", NULL);
 }
 
 static void service_greeting(void)

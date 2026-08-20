@@ -9,7 +9,7 @@ const WorkshopModuleDefinition *web_module_definition(void)
         "web",
         "Web",
         "Modern pages translated on Other Mac for a classic browser here.",
-        "Web has not moved in yet.",
+        "Web is not in this window yet.",
         "Classic browser gateway",
         145,
         kWorkshopModuleTierExperimental,

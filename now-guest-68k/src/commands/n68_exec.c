@@ -112,7 +112,7 @@ static void show_help(N68ExecEmit emit, void *ctx, const char *topic)
         return;
     }
 
-    out(emit, ctx, "NOW-68K console. Commands run on THIS machine.");
+    out(emit, ctx, "NOW-68K console. Commands run on this machine.");
 
     /* The SAME list the wire's `help` answers from (commands68.h), not a
      * second copy. A hand-written list here agreed with that one right up
@@ -306,7 +306,7 @@ static void show_transfer(N68ExecEmit emit, void *ctx)
             pos = 0;
             (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                         tx.last_ok ? "last sent: "
-                                                   : "last send FAILED: ");
+                                                   : "last send failed: ");
             (void)now68k_fmt_append_str(line, (long)sizeof line, &pos,
                                         tx.last_name);
             (void)now68k_fmt_append_str(line, (long)sizeof line, &pos, ", ");

@@ -399,7 +399,7 @@ resource 'DITL' (303) {
         /* 4 here   */ {48, 16, 64, 304},
             RadioButton { enabled, "On this Mac, built here with MPW" };
         /* 5 there  */ {70, 16, 86, 304},
-            RadioButton { enabled, "On the other Mac, built there and sent here" };
+            RadioButton { enabled, "On Other Mac, built there and sent here" };
         /* 6 status */ {94, 16, 132, 304}, StaticText { disabled, "" };
         /* 7 label  */ {20, 16, 36, 70}, StaticText { disabled, "Name:" };
     }
@@ -505,7 +505,7 @@ resource 'MENU' (136) {
 resource 'MENU' (137) {
     137, textMenuProc, allEnabled, enabled, "Models",
     {
-        "(ask the other Mac)", noIcon, noKey, noMark, plain
+        "(ask Other Mac)", noIcon, noKey, noMark, plain
     }
 };
 

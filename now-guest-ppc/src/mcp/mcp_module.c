@@ -70,13 +70,13 @@ static void emit_account(const WorkshopSceneWriter *writer)
 
     if (writer != NULL) {
         workshop_scene_add(writer, kWorkshopSceneStaticText,
-                           "What this Mac has said", &g_r.answer_heading,
+                           "Consent", &g_r.answer_heading,
                            true);
     } else {
         UseThemeFont(kThemeSmallEmphasizedSystemFont, smSystemScript);
         MoveTo(g_r.answer_heading.left,
                (short)(g_r.answer_heading.top + 12));
-        CopyCStringToPascal("What this Mac has said", text);
+        CopyCStringToPascal("Consent", text);
         DrawString(text);
         UseThemeFont(kThemeSmallSystemFont, smSystemScript);
     }

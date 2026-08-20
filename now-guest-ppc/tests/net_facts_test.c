@@ -106,7 +106,7 @@ int main(void)
        exonerate the machine. "Unavailable" reads as a broken Mac; the
        truth is that Open Transport publishes no way to ask. */
     check(strstr(now_net_state_sentence(kNetFactUndocumented),
-                 "Nothing is wrong with this Mac") != NULL,
+                 "Not a fault on this Mac") != NULL,
           "the undocumented sentence exonerates the machine");
     check(strstr(now_net_state_sentence(kNetFactUndocumented),
                  "Open Transport") != NULL,

@@ -8,9 +8,9 @@ const WorkshopModuleDefinition *chat_module_definition(void)
         kWorkshopChat,
         "chat",
         "Chat",
-        "A model on Other Mac's harness, talking about THIS Mac. It "
-            "can look at what runs here, with the access MCP grants.",
-        "Chat has not moved in yet.",
+        "A model running on Other Mac, answering about this Mac. "
+            "Its access is what MCP grants.",
+        "Chat is not in this window yet.",
         "Ask Other Mac's model",
         141,
         kWorkshopModuleTierExperimental,
