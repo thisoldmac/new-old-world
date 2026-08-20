@@ -100,6 +100,49 @@ final class MCPHTTPTransportTests: XCTestCase {
         }
     }
 
+    func testParserEnforcesHeaderAndProtocolBodyBounds() throws {
+        var header = BoundedMCPHTTPRequestParser(maximumHeaderBytes: 32)
+        XCTAssertThrowsError(try header.append(
+            Data(String(repeating: "H", count: 33).utf8))) {
+            XCTAssertEqual($0 as? MCPHTTPRequestParseError,
+                           .headersTooLarge)
+        }
+
+        var body = BoundedMCPHTTPRequestParser()
+        let head = "POST /mcp HTTP/1.1\r\nHost: localhost:\(Self.port)\r\n"
+            + "Content-Length: \(NOWMCPServer.maximumMessageBytes + 1)\r\n\r\n"
+        XCTAssertThrowsError(try body.append(Data(head.utf8))) {
+            XCTAssertEqual($0 as? MCPHTTPRequestParseError, .bodyTooLarge)
+        }
+    }
+
+    func testHTTPRejectsWrongPathVerbContentAndAcceptHeaders() async throws {
+        let service = service()
+        let initialize = try Self.initializeBody(id: 1)
+        let base = Self.post(initialize)
+
+        let wrongPath = await service.respond(to: .init(
+            method: "POST", target: "/not-mcp", headers: base.headers,
+            body: initialize))
+        XCTAssertEqual(wrongPath.status, 404)
+        let get = await service.respond(to: .init(
+            method: "GET", target: "/mcp", headers: base.headers,
+            body: Data()))
+        XCTAssertEqual(get.status, 405)
+        var wrongContent = base.headers
+        wrongContent["content-type"] = "text/plain"
+        let unsupported = await service.respond(to: .init(
+            method: "POST", target: "/mcp", headers: wrongContent,
+            body: initialize))
+        XCTAssertEqual(unsupported.status, 415)
+        var wrongAccept = base.headers
+        wrongAccept["accept"] = "application/json"
+        let unacceptable = await service.respond(to: .init(
+            method: "POST", target: "/mcp", headers: wrongAccept,
+            body: initialize))
+        XCTAssertEqual(unacceptable.status, 406)
+    }
+
     func testHTTPRequiresLoopbackHostBearerAndSafeOrigin() async throws {
         let service = service()
         let initialize = try Self.initializeBody(id: 1)
@@ -219,6 +262,30 @@ final class MCPHTTPTransportTests: XCTestCase {
         XCTAssertEqual(expired.status, 200)
     }
 
+    func testOnlySuccessfulAuthenticatedInitializeReportsDiagnosticState()
+        async throws {
+        let probe = HTTPInitializationProbe()
+        let service = MCPHTTPService(
+            configuration: .init(port: Self.port, bearerToken: Self.token),
+            serverFactory: Self.serverFactory,
+            initializationObserver: { probe.record($0) })
+        let moment = Date(timeIntervalSince1970: 42)
+        let body = try Self.initializeBody(id: 1)
+
+        var unauthorizedHeaders = Self.post(body).headers
+        unauthorizedHeaders["authorization"] = nil
+        let unauthorized = await service.respond(to: .init(
+            method: "POST", target: "/mcp", headers: unauthorizedHeaders,
+            body: body), now: moment)
+        XCTAssertEqual(unauthorized.status, 401)
+        XCTAssertTrue(probe.moments.isEmpty)
+
+        let initialized = await service.respond(
+            to: Self.post(body), now: moment)
+        XCTAssertEqual(initialized.status, 200)
+        XCTAssertEqual(probe.moments, [moment])
+    }
+
     private func service() -> MCPHTTPService {
         MCPHTTPService(
             configuration: .init(
@@ -272,4 +339,12 @@ final class MCPHTTPTransportTests: XCTestCase {
     private static func object(_ data: Data) throws -> NSDictionary {
         try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? NSDictionary)
     }
+}
+
+private final class HTTPInitializationProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [Date] = []
+
+    var moments: [Date] { lock.withLock { stored } }
+    func record(_ moment: Date) { lock.withLock { stored.append(moment) } }
 }

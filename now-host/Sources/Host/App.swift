@@ -1177,10 +1177,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                 "Application Support is unavailable for the MCP token.")
             return
         }
+        let port = preferences.httpPort
+        let authMode = preferences.httpAuthMode
+        let endpoint = "http://127.0.0.1:\(port)/mcp"
+        state.agentActivity.httpConfigured(at: endpoint,
+                                           authMode: authMode)
         do {
             let token = try mcpTokenStore.loadOrCreate()
-            let port = preferences.httpPort
-            let authMode = preferences.httpAuthMode
             let runID = UUID()
             mcpHTTPRunID = runID
             let client = HostAgentIntegrationClient(
@@ -1225,6 +1228,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                         }
                     }
                 },
+                initializationObserver: {
+                    [activity = state.agentActivity] moment in
+                    Task { @MainActor in
+                        activity.httpInitialized(at: moment)
+                    }
+                },
                 failureObserver: { [weak self] error in
                     Task { @MainActor in
                         guard let self, self.mcpHTTPRunID == runID else {
@@ -1248,10 +1257,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                     await MainActor.run {
                         guard self.mcpHTTPListener === listener,
                               self.mcpHTTPRunID == runID else { return }
-                        let endpoint = "http://127.0.0.1:\(port)/mcp"
                         self.state.agentActivity.httpOpened(
                             at: endpoint,
-                            bearerToken: authMode == .bearer ? token : nil)
+                            bearerToken: authMode == .bearer ? token : nil,
+                            authMode: authMode)
                         HostLog.shared.write(
                             .info, "mcp",
                             "HTTP MCP listening at \(endpoint)",

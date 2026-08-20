@@ -240,6 +240,7 @@ actor MCPHTTPService {
     typealias SessionServerFactory = @Sendable (HostWorkspaceGrant?)
         -> (server: NOWMCPServer, identity: NOWMCPClientIdentity)
     typealias ActivityObserver = @Sendable (_ began: Bool, _ at: Date) -> Void
+    typealias InitializationObserver = @Sendable (_ at: Date) -> Void
 
     private struct Session {
         let server: NOWMCPServer
@@ -251,17 +252,20 @@ actor MCPHTTPService {
     private let serverFactory: SessionServerFactory
     private let workspaceGrants: MCPHTTPWorkspaceGrantAuthority
     private let activityObserver: ActivityObserver?
+    private let initializationObserver: InitializationObserver?
     private let oauth: MCPOAuthAuthority?
     private var sessions: [String: Session] = [:]
 
     init(configuration: MCPHTTPConfiguration,
          serverFactory: @escaping ServerFactory,
          activityObserver: ActivityObserver? = nil,
+         initializationObserver: InitializationObserver? = nil,
          oauth: MCPOAuthAuthority? = nil) {
         self.configuration = configuration
         self.serverFactory = { _ in serverFactory() }
         self.workspaceGrants = .shared
         self.activityObserver = activityObserver
+        self.initializationObserver = initializationObserver
         self.oauth = oauth
     }
 
@@ -269,11 +273,13 @@ actor MCPHTTPService {
          sessionServerFactory: @escaping SessionServerFactory,
          workspaceGrants: MCPHTTPWorkspaceGrantAuthority,
          activityObserver: ActivityObserver? = nil,
+         initializationObserver: InitializationObserver? = nil,
          oauth: MCPOAuthAuthority? = nil) {
         self.configuration = configuration
         self.serverFactory = sessionServerFactory
         self.workspaceGrants = workspaceGrants
         self.activityObserver = activityObserver
+        self.initializationObserver = initializationObserver
         self.oauth = oauth
     }
 
@@ -392,6 +398,7 @@ actor MCPHTTPService {
             }
             sessions[id] = .init(server: server, protocolVersion: version,
                                  lastUsed: now)
+            initializationObserver?(now)
             return jsonResponse(reply, headers: ["Mcp-Session-Id": id])
         }
 
@@ -589,6 +596,7 @@ final class MCPHTTPListener: @unchecked Sendable {
     init(configuration: MCPHTTPConfiguration,
          serverFactory: @escaping MCPHTTPService.ServerFactory,
          activityObserver: MCPHTTPService.ActivityObserver? = nil,
+         initializationObserver: MCPHTTPService.InitializationObserver? = nil,
          failureObserver: FailureObserver? = nil,
          oauth: MCPOAuthAuthority? = nil) throws {
         self.configuration = configuration
@@ -596,6 +604,7 @@ final class MCPHTTPListener: @unchecked Sendable {
         service = MCPHTTPService(configuration: configuration,
                                  serverFactory: serverFactory,
                                  activityObserver: activityObserver,
+                                 initializationObserver: initializationObserver,
                                  oauth: oauth)
     }
 
@@ -603,6 +612,7 @@ final class MCPHTTPListener: @unchecked Sendable {
          sessionServerFactory: @escaping MCPHTTPService.SessionServerFactory,
          workspaceGrants: MCPHTTPWorkspaceGrantAuthority,
          activityObserver: MCPHTTPService.ActivityObserver? = nil,
+         initializationObserver: MCPHTTPService.InitializationObserver? = nil,
          failureObserver: FailureObserver? = nil,
          oauth: MCPOAuthAuthority? = nil) throws {
         self.configuration = configuration
@@ -612,6 +622,7 @@ final class MCPHTTPListener: @unchecked Sendable {
             sessionServerFactory: sessionServerFactory,
             workspaceGrants: workspaceGrants,
             activityObserver: activityObserver,
+            initializationObserver: initializationObserver,
             oauth: oauth)
     }
 

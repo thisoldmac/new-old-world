@@ -257,15 +257,13 @@ final class MCPHTTPClient: MCPConformanceClient, @unchecked Sendable {
         }
     }
 
-    init(environment: [String: String]? = nil) throws {
+    init(environment _: [String: String]? = nil) throws {
         token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-        let configured = environment ?? ProcessInfo.processInfo.environment
-        let socket = try Self.agentEndpoint(environment: configured)
         let bearerToken = token
         let serverFactory: MCPHTTPService.ServerFactory = {
             (NOWMCPServer(
-                client: SocketAgentIntegrationClient(endpoint: socket),
-                audit: LocalMCPAuditSink(endpoint: socket)),
+                client: HTTPConformanceNoHostClient(),
+                audit: LocalMCPAuditSink()),
              NOWMCPClientIdentity())
         }
         /* A random high port collides on a shared CI runner often enough to
@@ -463,11 +461,34 @@ final class MCPHTTPClient: MCPConformanceClient, @unchecked Sendable {
             ?? { throw Failure(detail: "HTTP request produced no outcome") }()
     }
 
-    static func agentEndpoint(environment: [String: String]) throws
-        -> AgentIntegrationEndpoint {
-        try AgentIntegrationEndpoint.forUser(
-            rawSuffix: environment["NOW_AGENT_SOCKET_SUFFIX"])
+}
+
+/// The HTTP-only gate's deterministic in-process product boundary. It says
+/// exactly what a running host adapter says when it has no connected guest,
+/// without proving HTTP by crossing the stdio companion's Unix socket.
+struct HTTPConformanceNoHostClient: AgentIntegrationClient {
+    func sessionHealth() async -> AgentIntegrationSessionHealthResult {
+        .hostUnavailable
     }
+    func sessionCapabilities(probeCostly: Bool) async
+        -> AgentIntegrationSessionCapabilitiesResult { .unavailable(.host) }
+    func listProcesses() async -> AgentIntegrationProcessListResult {
+        .guestUnavailable
+    }
+    func launchSoftware(_ selection: AgentIntegrationLaunchSelection) async
+        -> AgentIntegrationLaunchSoftwareResult { .unavailable(.host) }
+    func requestQuit(reference: String) async
+        -> AgentIntegrationQuitResult { .unavailable(.host) }
+    func transferApprovedArtifact(receipt: String) async
+        -> AgentIntegrationArtifactTransferResult { .unavailable(.host) }
+    func guestFilesCapabilities() async
+        -> AgentIntegrationGuestFileCapabilitiesResult {
+        .hostUnavailable(.host)
+    }
+    func listGuestFiles(path: String, cursor: Int?) async
+        -> AgentIntegrationGuestFileListResult { .hostUnavailable(.host) }
+    func statGuestFile(path: String) async
+        -> AgentIntegrationGuestFileStatResult { .hostUnavailable(.host) }
 }
 
 // MARK: - Classification

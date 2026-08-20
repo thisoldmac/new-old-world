@@ -786,6 +786,25 @@ struct MCPModuleView: View {
                 .disabled(isRunning)
             }
             copyRow(label: "URL", value: plannedHTTPEndpoint)
+            Text(model.httpDiagnostic.description)
+                .font(.caption)
+                .foregroundStyle(model.httpDiagnostic.isFailure
+                    ? Color.orange : .secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            let recipes = MCPHTTPClientRecipes(endpoint: plannedHTTPEndpoint)
+            let selected = settings.httpAuthMode == .oauth
+                ? recipes.oauth
+                : settings.httpAuthMode == .bearer ? recipes.bearer : []
+            if !selected.isEmpty {
+                Text("Client recipes")
+                    .font(.caption.weight(.medium))
+                ForEach(selected) { recipe in
+                    Button("Copy \(recipe.client) Configuration") {
+                        copy(recipe.configuration)
+                    }
+                    .controlSize(.small)
+                }
+            }
             Text(isRunning
                     ? "Stop HTTP before changing its port or access mode."
                     : "Reachable only from this Mac at 127.0.0.1.")

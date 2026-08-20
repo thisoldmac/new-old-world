@@ -133,6 +133,52 @@ final class AgentActivityModelTests: XCTestCase {
         XCTAssertNil(model.httpBearerToken)
     }
 
+    func testHTTPDiagnosticSeparatesConfigurationBindInitializeAndFailure() {
+        let model = AgentActivityModel()
+        let endpoint = "http://127.0.0.1:5254/mcp"
+
+        model.httpConfigured(at: endpoint, authMode: .bearer)
+        XCTAssertEqual(model.httpDiagnostic,
+                       .configured(endpoint: endpoint, authMode: .bearer))
+
+        model.httpOpened(at: endpoint, bearerToken: "never-render-this")
+        XCTAssertEqual(model.httpDiagnostic,
+                       .listenerBound(endpoint: endpoint,
+                                      authMode: .bearer))
+
+        model.httpInitialized(at: Date(timeIntervalSince1970: 42))
+        XCTAssertEqual(model.httpDiagnostic,
+                       .authenticatedAndInitialized(
+                            endpoint: endpoint, authMode: .bearer,
+                            lastInitialized: Date(timeIntervalSince1970: 42)))
+
+        model.httpStopped()
+        XCTAssertEqual(model.httpDiagnostic,
+                       .configured(endpoint: endpoint, authMode: .bearer))
+
+        model.httpOpened(at: endpoint, bearerToken: nil)
+
+        model.httpUnavailable("Address already in use")
+        XCTAssertEqual(model.httpDiagnostic,
+                       .failed("Address already in use"))
+        XCTAssertFalse(model.httpDiagnostic.description
+            .contains("never-render-this"))
+    }
+
+    func testUnauthenticatedInitializeDoesNotClaimAuthentication() {
+        let model = AgentActivityModel()
+        let endpoint = "http://127.0.0.1:5254/mcp"
+        model.httpConfigured(at: endpoint, authMode: .unauthenticated)
+        model.httpOpened(at: endpoint, bearerToken: nil,
+                         authMode: .unauthenticated)
+        model.httpInitialized()
+
+        XCTAssertTrue(model.httpDiagnostic.description
+            .contains("initialized"))
+        XCTAssertFalse(model.httpDiagnostic.description
+            .contains("authenticated"))
+    }
+
     func testPresenceCombinesStdioAndHTTPWithoutDoubleCountingEither() {
         let model = AgentActivityModel()
         let stdioFirst = Date(timeIntervalSince1970: 100)

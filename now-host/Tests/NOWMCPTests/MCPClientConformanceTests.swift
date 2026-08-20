@@ -14,8 +14,8 @@ import XCTest
 /// honest answer is a refusal naming the absent host. That is still worth
 /// gating, and it is precisely the gate that was missing: it exercises the
 /// transport, the handshake, the dispatch and every tool's argument
-/// validation against a client that holds the pipe open. **A tool that only
-/// works when a driver closes stdin fails here immediately.**
+/// validation through an actual transport. Stdio holds its pipe open; HTTP
+/// owns the shipping loopback listener in process.
 ///
 /// With `NOW_MCP_CONFORMANCE_LIVE=1` and a host running, the same run means
 /// something stronger: `now-host-unavailable` becomes a failure, because a
@@ -37,10 +37,10 @@ final class MCPClientConformanceTests: XCTestCase {
 
     /// Whether this run spawned its companion with a chat workspace root.
     ///
-    /// False today: `hostExecutable()` is launched with `--mcp-stdio` and
-    /// nothing else, so the one row that reads local bytes answers that it
-    /// has no lane — correctly, and scored `expected-unavailable` rather
-    /// than `refused`. It is a flag rather than a constant because the
+    /// False today: neither conformance client receives a workspace grant,
+    /// so the one row that reads local bytes answers that it has no lane —
+    /// correctly, and scored `expected-unavailable` rather than `refused`.
+    /// It is a flag rather than a constant because the
     /// verdict must invert the day a run does pin one: the same sentence
     /// from a configured host is a false answer, not an honest one.
     private static var workspacePinned: Bool { false }
@@ -62,6 +62,24 @@ final class MCPClientConformanceTests: XCTestCase {
         let client = try MCPHTTPClient(environment: Self.environment())
         defer { client.shutDown() }
         try exerciseEveryAdvertisedTool(client, transport: "HTTP")
+    }
+
+    func testHTTPConformanceCannotRegressToTheStdioSocketAdapter() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("MCPClientConformance.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let start = try XCTUnwrap(source.range(
+            of: "final class MCPHTTPClient"))
+        let end = try XCTUnwrap(source.range(
+            of: "// MARK: - Classification",
+            range: start.lowerBound..<source.endIndex))
+        let httpHarness = source[start.lowerBound..<end.lowerBound]
+
+        XCTAssertTrue(httpHarness.contains("HTTPConformanceNoHostClient"))
+        XCTAssertFalse(httpHarness.contains("SocketAgentIntegrationClient"),
+                       "HTTP must not prove itself through stdio's socket "
+                        + "adapter")
     }
 
     private func exerciseEveryAdvertisedTool(

@@ -92,6 +92,55 @@ enum MCPTransportState: Equatable {
     }
 }
 
+/// The useful operational answer for HTTP, kept separate from the transport
+/// switch. A bound listener has not necessarily authenticated a client, and
+/// a configured endpoint has not necessarily claimed its port.
+enum MCPHTTPDiagnosticState: Equatable, CustomStringConvertible {
+    case notConfigured
+    case configured(endpoint: String, authMode: MCPHTTPAuthMode)
+    case listenerBound(endpoint: String, authMode: MCPHTTPAuthMode)
+    case authenticatedAndInitialized(
+        endpoint: String, authMode: MCPHTTPAuthMode, lastInitialized: Date)
+    case failed(String)
+
+    var description: String {
+        switch self {
+        case .notConfigured:
+            return "Not configured for this launch."
+        case .configured(let endpoint, let mode):
+            return "Configured for \(endpoint) using \(mode.label); "
+                + "waiting to bind."
+        case .listenerBound(let endpoint, let mode):
+            return "Listening at \(endpoint) using \(mode.label); no client "
+                + "has initialized."
+        case .authenticatedAndInitialized(let endpoint, let mode, _):
+            if mode == .unauthenticated {
+                return "A client initialized at \(endpoint) with no "
+                    + "authentication configured."
+            }
+            return "A client authenticated and initialized at \(endpoint) "
+                + "using \(mode.label)."
+        case .failed(let reason):
+            return "HTTP failed: \(reason)"
+        }
+    }
+
+    var isFailure: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+}
+
+extension MCPHTTPAuthMode {
+    fileprivate var label: String {
+        switch self {
+        case .bearer: return "a bearer token"
+        case .oauth: return "OAuth"
+        case .unauthenticated: return "no authentication"
+        }
+    }
+}
+
 /// What has reached this host's local agent endpoint, in the pane's own
 /// vocabulary: the audit stream, and where the socket is.
 ///
@@ -104,6 +153,8 @@ enum MCPTransportState: Equatable {
 final class AgentActivityModel: ObservableObject {
     @Published private(set) var stdio: MCPTransportState = .unopened
     @Published private(set) var http: MCPTransportState = .unopened
+    @Published private(set) var httpDiagnostic: MCPHTTPDiagnosticState =
+        .notConfigured
     /// Available only while HTTP is running. The view offers an explicit
     /// Copy action and never prints the secret into its normal hierarchy.
     @Published private(set) var httpBearerToken: String?
@@ -131,19 +182,59 @@ final class AgentActivityModel: ObservableObject {
 
     /// `bearerToken` is nil when the listener runs in a mode that has no
     /// copyable secret (unauthenticated, oauth).
-    func httpOpened(at endpoint: String, bearerToken: String?) {
+    func httpConfigured(at endpoint: String, authMode: MCPHTTPAuthMode) {
+        httpDiagnostic = .configured(endpoint: endpoint, authMode: authMode)
+    }
+
+    func httpOpened(at endpoint: String, bearerToken: String?,
+                    authMode: MCPHTTPAuthMode = .bearer) {
         http = .open(endpoint: endpoint)
         httpBearerToken = bearerToken
+        if case .authenticatedAndInitialized(
+            let initializedEndpoint, let initializedMode, let moment
+        ) = httpDiagnostic, initializedEndpoint == endpoint {
+            httpDiagnostic = .authenticatedAndInitialized(
+                endpoint: endpoint, authMode: initializedMode,
+                lastInitialized: moment)
+        } else {
+            httpDiagnostic = .listenerBound(endpoint: endpoint,
+                                            authMode: authMode)
+        }
+    }
+
+    func httpInitialized(at moment: Date = Date()) {
+        let endpoint: String
+        let authMode: MCPHTTPAuthMode
+        switch httpDiagnostic {
+        case .configured(let boundEndpoint, let boundMode),
+             .listenerBound(let boundEndpoint, let boundMode),
+             .authenticatedAndInitialized(let boundEndpoint, let boundMode, _):
+            endpoint = boundEndpoint
+            authMode = boundMode
+        default:
+            return
+        }
+        httpDiagnostic = .authenticatedAndInitialized(
+            endpoint: endpoint, authMode: authMode, lastInitialized: moment)
     }
 
     func httpUnavailable(_ reason: String) {
         http = .unavailable(reason)
         httpBearerToken = nil
+        httpDiagnostic = .failed(reason)
     }
 
     func httpStopped() {
         http = .stopped
         httpBearerToken = nil
+        switch httpDiagnostic {
+        case .listenerBound(let endpoint, let authMode),
+             .authenticatedAndInitialized(let endpoint, let authMode, _):
+            httpDiagnostic = .configured(endpoint: endpoint,
+                                         authMode: authMode)
+        default:
+            break
+        }
     }
 
     func httpRequestBegan(at moment: Date = Date()) {
