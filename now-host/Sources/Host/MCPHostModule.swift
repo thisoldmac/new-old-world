@@ -20,6 +20,9 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
     /// May be a detached model on a host that never runs oauth mode; the
     /// page then simply has no consent rows to draw.
     let oauthConsent: MCPOAuthConsentModel
+    /// The page's card arrangement, owned here so it persists through the
+    /// same defaults every other module preference travels in.
+    let cardLayout: MCPCardLayoutModel
     /// `{ context.showSettings(.mcp) }`, captured once at construction the
     /// same way `MirrorHostModule` captures `context.selectModule` — the
     /// page's "Settings…" button for the start-automatically toggles that
@@ -38,6 +41,7 @@ final class MCPHostModuleRuntime: HostModuleRuntime {
         self.activity = activity
         self.companions = companions
         oauthConsent = context.mcpOAuthConsent ?? MCPOAuthConsentModel()
+        cardLayout = MCPCardLayoutModel(defaults: context.defaults)
         listener = context.listener
         transportSettings = MCPTransportSettingsModel(
             defaults: context.defaults)
@@ -91,6 +95,7 @@ enum MCPHostModule {
                 startStdio: runtime.startStdio,
                 stopStdio: runtime.stopStdio,
                 startHTTP: runtime.startHTTP,
-                stopHTTP: runtime.stopHTTP))
+                stopHTTP: runtime.stopHTTP,
+                layoutModel: runtime.cardLayout))
         })
 }

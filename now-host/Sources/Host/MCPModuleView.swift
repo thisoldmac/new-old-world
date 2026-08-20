@@ -57,21 +57,79 @@ struct MCPModuleView: View {
     var stopStdio: (() -> Void)?
     var startHTTP: (() -> Void)?
     var stopHTTP: (() -> Void)?
+    /// The page's card arrangement; every card draws through it.
+    @ObservedObject var layoutModel: MCPCardLayoutModel
+    /// Injected so previews and tests can feed a private ring; the app
+    /// passes the shared one.
+    @ObservedObject var hostLog: HostLog = .shared
+    /// The card a drag handle lifted; live-reorder follows it.
+    @State private var dragged: MCPCardID?
+
+    /// Below this, two columns cannot both hold a sentence, so the page
+    /// degrades to one stacked column (the detail pane's own minimum is
+    /// 480). VSplitView is not an option here — the render harness draws
+    /// it as nothing — and the narrow fallback is a plain stack.
+    private static let twoColumnMinimumWidth: CGFloat = 560
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScrollView {
-                VStack(spacing: 12) {
-                    transports
-                    presence
-                    heldLane
-                    consent
-                    activity
+            GeometryReader { geometry in
+                if geometry.size.width >= Self.twoColumnMinimumWidth {
+                    HSplitView {
+                        column(.left)
+                        column(.right)
+                    }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach(layoutModel.layout.cards(in: .left)
+                                + layoutModel.layout.cards(in: .right),
+                                id: \.self) { id in
+                                cardBody(id)
+                            }
+                        }
+                        .padding(12)
+                    }
                 }
-                .padding(12)
             }
+        }
+    }
+
+    private func column(_ side: MCPCardColumn) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(layoutModel.layout.cards(in: side),
+                        id: \.self) { id in
+                    cardBody(id)
+                        .onDrop(of: [.plainText],
+                                delegate: MCPCardDropDelegate(
+                                    target: id, column: side,
+                                    layoutModel: layoutModel,
+                                    dragged: $dragged))
+                }
+            }
+            .padding(12)
+        }
+        .frame(minWidth: 220, maxWidth: .infinity, maxHeight: .infinity)
+        /* The column itself is the drop target a card needs to land in an
+           EMPTY column, or after the last card. */
+        .onDrop(of: [.plainText],
+                delegate: MCPCardDropDelegate(
+                    target: nil, column: side,
+                    layoutModel: layoutModel, dragged: $dragged))
+    }
+
+    @ViewBuilder
+    private func cardBody(_ id: MCPCardID) -> some View {
+        switch id {
+        case .transportStdio: stdioTransport
+        case .transportHTTP: httpTransport
+        case .presence: presence
+        case .heldLane: heldLane
+        case .consent: consent
+        case .activity: activity
         }
     }
 
@@ -113,11 +171,13 @@ struct MCPModuleView: View {
     /// reading on its own, and only while the page is actually on screen,
     /// which is a timer nobody has to remember to invalidate.
     private var presence: some View {
-        TimelineView(.periodic(from: Date(), by: 5)) { context in
-            let reading = AgentPresenceReading(
-                model.combinedActivity(companions.activity),
-                                               asOf: context.date)
-            card {
+        /* The TimelineView lives INSIDE the collapsible content, so a
+           collapsed presence card runs no five-second re-derivation. */
+        collapsibleCard(.presence, title: "Agent presence") {
+            TimelineView(.periodic(from: Date(), by: 5)) { context in
+                let reading = AgentPresenceReading(
+                    model.combinedActivity(companions.activity),
+                    asOf: context.date)
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: reading.symbol)
                         .font(.system(size: 22))
@@ -200,8 +260,10 @@ struct MCPModuleView: View {
     /// without having to know which page a stream lives on.
     @ViewBuilder
     private var heldLane: some View {
+        /* Its layout slot persists either way; only the rendering is
+           conditional, so the card comes back where the person left it. */
         if listener.streamOrigin == .agent {
-            card {
+            collapsibleCard(.heldLane, title: "Live screen stream") {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.system(size: 22))
@@ -255,10 +317,10 @@ struct MCPModuleView: View {
     /// went stale would be this pane vouching for a permission the person
     /// had already withdrawn.
     private var consent: some View {
-        card {
+        collapsibleCard(
+            .consent,
+            title: "What each \(MachineNaming.properNoun) has agreed to") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("What each \(MachineNaming.properNoun) has agreed to")
-                    .font(.headline)
                 Text("Each machine answers this for itself, and can "
                         + "change its answer while connected. It is "
                         + "changed on that machine, not here.")
@@ -307,10 +369,8 @@ struct MCPModuleView: View {
     // MARK: the stream
 
     private var activity: some View {
-        card {
+        collapsibleCard(.activity, title: "What an agent has done") {
             VStack(alignment: .leading, spacing: 8) {
-                Text("What an agent has done")
-                    .font(.headline)
                 if model.events.isEmpty {
                     Text(emptyStreamSentence)
                         .font(.callout)
@@ -427,56 +487,66 @@ struct MCPModuleView: View {
     /// Whether each transport starts automatically at launch is a Settings
     /// tab now, not a switch on this card — it is checked once a launch and
     /// never mid-session, unlike everything else here.
-    private var transports: some View {
-        VStack(spacing: 12) {
-            transportCard(
-                title: "Standard Input",
-                summary: "For MCP clients that launch a command. The same "
-                    + "New Old World executable runs in a narrow stdio mode "
-                    + "and reaches this app through its same-user socket.",
-                state: model.stdio,
-                start: startStdio,
-                stop: stopStdio,
-                details: { endpoint in
-                    stdioDetails(endpoint)
-                },
-                configuration: {
-                    stdioConfiguration
-                })
-            transportCard(
-                title: "HTTP",
-                summary: "For clients that connect to a URL. HTTP runs "
-                    + "inside New Old World, binds only to loopback, and "
-                    + "authenticates clients the way its access setting "
-                    + "says to.",
-                state: model.http,
-                start: startHTTP,
-                stop: stopHTTP,
-                details: { _ in
-                    httpDetails
-                },
-                configuration: {
-                    httpConfiguration(isRunning: model.http.isRunning)
-                })
-        }
+    private var stdioTransport: some View {
+        transportCard(
+            id: .transportStdio,
+            title: "Standard Input",
+            summary: "For MCP clients that launch a command. The same "
+                + "New Old World executable runs in a narrow stdio mode "
+                + "and reaches this app through its same-user socket.",
+            state: model.stdio,
+            start: startStdio,
+            stop: stopStdio,
+            tail: .stdio,
+            details: { endpoint in
+                stdioDetails(endpoint)
+            },
+            configuration: {
+                stdioConfiguration
+            })
+    }
+
+    private var httpTransport: some View {
+        transportCard(
+            id: .transportHTTP,
+            title: "HTTP",
+            summary: "For clients that connect to a URL. HTTP runs "
+                + "inside New Old World, binds only to loopback, and "
+                + "authenticates clients the way its access setting "
+                + "says to.",
+            state: model.http,
+            start: startHTTP,
+            stop: stopHTTP,
+            tail: .http,
+            details: { _ in
+                httpDetails
+            },
+            configuration: {
+                httpConfiguration(isRunning: model.http.isRunning)
+            })
     }
 
     private func transportCard<Details: View, Configuration: View>(
+        id: MCPCardID,
         title: String,
         summary: String,
         state: MCPTransportState,
         start: (() -> Void)?,
         stop: (() -> Void)?,
-        @ViewBuilder details: (String) -> Details,
-        @ViewBuilder configuration: () -> Configuration
+        tail: MCPTransportKind,
+        @ViewBuilder details: @escaping (String) -> Details,
+        @ViewBuilder configuration: @escaping () -> Configuration
     ) -> some View {
-        card {
+        MCPCollapsibleCard(
+            id: id, title: title, layoutModel: layoutModel,
+            dragged: $dragged,
+            accessories: {
+                /* In the header, not the body: Stop stays reachable while
+                   the card is collapsed. */
+                lifecycleButton(state: state, start: start, stop: stop)
+            },
+            content: {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center) {
-                    Text(title).font(.headline)
-                    Spacer(minLength: 12)
-                    lifecycleButton(state: state, start: start, stop: stop)
-                }
                 HStack(spacing: 6) {
                     Image(systemName: state.isRunning
                             ? "circle.fill" : "circle")
@@ -509,8 +579,50 @@ struct MCPModuleView: View {
                             + "is unchanged.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
+                logTailDisclosure(id, kind: tail)
+            }
+        })
+    }
+
+    /// The tail's own little disclosure, persisted with the layout. Not a
+    /// drag surface, and built lazily: a shut tail filters nothing.
+    private func logTailDisclosure(_ id: MCPCardID,
+                                   kind: MCPTransportKind) -> some View {
+        let open = layoutModel.layout.isLogTailOpen(id)
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    layoutModel.toggleLogTail(id)
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: open
+                        ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                    Text("Session log")
+                        .font(.caption.weight(.medium))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(open ? "Hide session log"
+                                     : "Show session log")
+            if open {
+                MCPTransportLogTail(kind: kind, log: hostLog)
             }
         }
+    }
+
+    private func collapsibleCard<Content: View>(
+        _ id: MCPCardID, title: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        MCPCollapsibleCard(
+            id: id, title: title, layoutModel: layoutModel,
+            dragged: $dragged,
+            accessories: { EmptyView() },
+            content: content)
     }
 
     private func runningLine(_ state: MCPTransportState) -> String {
@@ -669,18 +781,6 @@ struct MCPModuleView: View {
 
     private var plannedHTTPEndpoint: String {
         "http://127.0.0.1:\(settings.httpPort)/mcp"
-    }
-
-    // MARK: chrome
-
-    private func card<Content: View>(
-        @ViewBuilder _ content: () -> Content
-    ) -> some View {
-        content()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(.quaternary.opacity(0.35),
-                        in: RoundedRectangle(cornerRadius: 8))
     }
 
     private static let clock: DateFormatter = {
