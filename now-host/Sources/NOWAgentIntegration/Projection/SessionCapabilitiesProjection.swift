@@ -46,7 +46,7 @@ public enum SessionCapabilitiesProjection: HostProjection {
         "enum": ["available", "unavailable", "unproven"],
     ]
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "New Old World Session Capabilities",
             "description":

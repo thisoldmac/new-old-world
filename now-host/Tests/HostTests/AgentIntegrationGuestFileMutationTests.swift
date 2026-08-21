@@ -129,7 +129,7 @@ final class AgentIntegrationGuestFileMutationTests: XCTestCase {
     /// "reversible by whoever kept the receipt" is not non-destructive.
     func testTheRowAnnouncesItselfAsDestructiveAndNotIdempotent() throws {
         let annotations = try XCTUnwrap(
-            GuestFilesMutateProjection.mcpDescriptor["annotations"]
+            GuestFilesMutateProjection.operationDescriptor.mcpToolDescriptor["annotations"]
                 as? [String: Any])
 
         XCTAssertEqual(annotations["readOnlyHint"] as? Bool, false)

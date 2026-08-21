@@ -135,6 +135,8 @@ python3 "$script_dir/../tools/macbinary-identity-tests.py" \
     || fail "MacBinary artifact identity gate"
 "$script_dir/../tools/release-tests" \
     || fail "distribution assembler gate"
+"$script_dir/../tools/now-cli-distribution-tests" \
+    || fail "NOW CLI clean-tree distribution gate"
 
 echo
 echo "==> [3/8] Web Bridge gate"

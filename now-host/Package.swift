@@ -42,6 +42,7 @@ let package = Package(
                     resources: [.copy("Fixtures")]),
         .testTarget(name: "NOWMCPTests",
                     dependencies: ["Host", "NOWAgentIntegration"],
-                    path: "Tests/NOWMCPTests"),
+                    path: "Tests/NOWMCPTests",
+                    resources: [.copy("Fixtures")]),
     ]
 )

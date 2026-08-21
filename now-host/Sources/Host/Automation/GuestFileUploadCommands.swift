@@ -364,6 +364,20 @@ final class GuestFileUploadCommands {
         }
     }
 
+    /// Ends a staged upload before it enters the guest transfer lane.
+    ///
+    /// This is the same private-stage cleanup used by expiry and stale-session
+    /// refusal, exposed so an HTTP transfer resource can be cancelled without
+    /// waiting ten minutes for its expiry task. A commit already in flight is
+    /// cancelled through the transfer lane instead; deleting its source here
+    /// would race the reader that owns it.
+    func abandon(uploadID: UUID) async -> Bool {
+        guard authorities[uploadID] != nil,
+              !committing.contains(uploadID) else { return false }
+        await discard(uploadID)
+        return true
+    }
+
     private func put(
         authority: Authority,
         source: OutboundFileSource

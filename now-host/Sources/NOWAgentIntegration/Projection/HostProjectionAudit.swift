@@ -32,6 +32,7 @@ import Foundation
 /// app-UI grant regardless of which face asks.
 public enum HostInvokingFace: String, Codable, Sendable {
     case mcp
+    case api
     case appIntent = "intent"
     /// The host's own chat harness: a language model a person is talking to
     /// (from the host page or over the chat.* wire family) using projections
@@ -96,6 +97,10 @@ public struct HostProjectionAuditEvent: Codable, Equatable, Sendable {
         /// that host reject EVERY request from this companion, which is a
         /// far worse trade for one enum value.
         case denied
+        /// The adapter or host failed before it could produce an answer.
+        /// This is distinct from a caller refusal and from the guest's own
+        /// policy denial.
+        case failed
     }
 
     /// The bound on the refusal sentence. A row's refusal text is a written

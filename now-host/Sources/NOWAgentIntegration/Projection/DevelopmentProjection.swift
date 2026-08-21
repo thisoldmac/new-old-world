@@ -30,7 +30,7 @@ public enum DevelopmentProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves project snapshot, stage, build and run commands."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "Build and Run a New Old World Project",
             "description":

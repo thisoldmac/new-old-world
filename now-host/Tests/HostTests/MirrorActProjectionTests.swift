@@ -90,7 +90,7 @@ final class MirrorActProjectionTests: XCTestCase {
     private func schema(
         _ projection: any HostProjection.Type, _ key: String
     ) -> [String: Any] {
-        (projection.mcpDescriptor[key] as? [String: Any]) ?? [:]
+        (projection.operationDescriptor.mcpToolDescriptor[key] as? [String: Any]) ?? [:]
     }
 
     private func inputProperties(
@@ -217,7 +217,7 @@ final class MirrorActProjectionTests: XCTestCase {
 
     func testEveryActRowRendersACompleteDescriptorWithoutItsOwnName() {
         for row in rows {
-            let descriptor = row.mcpDescriptor
+            let descriptor = row.operationDescriptor.mcpToolDescriptor
             for key in ["title", "description", "inputSchema",
                         "outputSchema", "annotations"] {
                 XCTAssertNotNil(
@@ -770,7 +770,7 @@ final class MirrorActProjectionTests: XCTestCase {
            which is the read `now_text_get` alone is exempt from — it
            publishes a reading rather than a dispatch. */
         for row in rows where row.capability != TextGetProjection.capability {
-            let rendered = "\(row.mcpDescriptor)"
+            let rendered = "\(row.operationDescriptor.mcpToolDescriptor)"
             let name = row.capability.rawValue
             XCTAssertTrue(
                 rendered.contains("NOT a claim"),

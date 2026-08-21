@@ -66,6 +66,7 @@
 				A1000080 /* Resources */,
 				A1000088 /* Bundle NOW Web Bridge */,
 				A1000089 /* Bundle Classic Mac Skills */,
+				A100008A /* Bundle NOW CLI */,
 			);
 			buildRules = (
 			);
@@ -171,6 +172,22 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -eu\nsource_dir=\"$SRCROOT/../skills\"\ntarget_dir=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/skills\"\n/bin/rm -rf \"$target_dir\"\n/bin/mkdir -p \"$(/usr/bin/dirname \"$target_dir\")\"\n/usr/bin/ditto --norsrc --noqtn \"$source_dir\" \"$target_dir\"\n";
+		};
+		A100008A /* Bundle NOW CLI */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../now-cli",
+			);
+			name = "Bundle NOW CLI";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n\"$SRCROOT/../scripts/stage-now-cli\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

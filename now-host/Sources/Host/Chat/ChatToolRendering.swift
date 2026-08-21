@@ -27,7 +27,7 @@ enum ChatToolRendering {
         registry.projections.compactMap { projection in
             guard include(projection.capability.rawValue) else { return nil }
             guard mode.mayAct || isReadOnly(projection) else { return nil }
-            let descriptor = projection.mcpDescriptor
+            let descriptor = projection.operationDescriptor.mcpToolDescriptor
             let schema = apiSafeSchema(
                 (descriptor["inputSchema"] as? [String: Any])
                     ?? ["type": "object"])
@@ -45,7 +45,7 @@ enum ChatToolRendering {
     /// not act, because the safe reading of silence is the restrictive
     /// one — the same rule the mode field itself follows on the wire.
     static func isReadOnly(_ projection: any HostProjection.Type) -> Bool {
-        isReadOnly(descriptor: projection.mcpDescriptor)
+        isReadOnly(descriptor: projection.operationDescriptor.mcpToolDescriptor)
     }
 
     /// The reading, over a descriptor rather than a type, so the rule

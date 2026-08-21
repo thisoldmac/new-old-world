@@ -17,7 +17,7 @@ private enum MirrorStateProjectionSchema {
         properties: [String: Any], required: [String] = [],
         annotations: [String: Any] =
             HostProjectionSchema.readOnlyAnnotations
-    ) -> [String: Any] {
+    ) -> NOWOperationDescriptor {
         [
             "title": title,
             "description": description,
@@ -57,7 +57,7 @@ public enum MirrorStatusProjection: HostProjection {
     public static let acceptedArguments: Set<String> = []
     public static let faces = MirrorStateProjectionReach.faces
     public static let availabilityNote = MirrorStateProjectionReach.availability
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Status",
             description: "Experimental. Returns the retained semantic UI snapshot identity, sequence, digest, completeness, exact reducer generations, and publication reason without polling the guest again.",
@@ -90,7 +90,7 @@ public enum MirrorMetricsProjection: HostProjection {
     public static let acceptedArguments: Set<String> = []
     public static let faces = MirrorStateProjectionReach.faces
     public static let availabilityNote = MirrorStateProjectionReach.availability
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Metrics",
             description: "Experimental. Returns semantic action clocks, scene-cycle clocks, and unified guest-work queue brackets without polling the guest.",
@@ -120,7 +120,7 @@ public enum MirrorLifecycleProjection: HostProjection {
     public static let acceptedArguments: Set<String> = []
     public static let faces = MirrorStateProjectionReach.faces
     public static let availabilityNote = MirrorStateProjectionReach.availability
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Lifecycle",
             description: "Experimental. Returns the NOW Extension lifecycle, build fingerprint, plane bits, and host policy that qualify retained semantic UI evidence.",
@@ -150,7 +150,7 @@ public enum MirrorJournalProjection: HostProjection {
     public static let acceptedArguments: Set<String> = []
     public static let faces = MirrorStateProjectionReach.faces
     public static let availabilityNote = MirrorStateProjectionReach.availability
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Journal",
             description: "Experimental. Returns the shared bounded semantic-operation journal with source, target, postcondition, outcome, and reason.",
@@ -180,7 +180,7 @@ public enum MirrorSettlementProjection: HostProjection {
     ]
     public static let faces = MirrorStateProjectionReach.faces
     public static let availabilityNote = MirrorStateProjectionReach.availability
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         MirrorStateProjectionSchema.descriptor(
             title: "Wait for Semantic UI Operation Settlement",
             description: "Waits by the exact operation ID returned by now_semantic_ui_act. It never retries or dispatches an action. A bounded timeout returns the still-pending journal record; a later call can observe confirmation after timeout or refusal.",
@@ -242,8 +242,8 @@ public enum MirrorDriveProjection: HostProjection {
         "Runs the gesture through the native Mirror's own action executor "
         + "and mutation broker, exactly as a click in the Mirror window "
         + "does; settlement comes from a later guest observation."
-    public static var mcpDescriptor: [String: Any] {
-        var descriptor = MirrorStateProjectionSchema.descriptor(
+    public static var operationDescriptor: NOWOperationDescriptor {
+        let descriptor = MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Action",
             description: "Experimental. Acts through the shared semantic executor using entities from now_semantic_ui_snapshot. Choose only a published gesture and follow its per-gesture argument branch. Retained entityIDs belong here; opaque now-element references belong to the direct now_control_act, now_window_act, and now_text_* family. Returns an operation record; dispatch is not proof of effect, so wait or re-read state to verify.",
             properties: [
@@ -302,7 +302,7 @@ public enum MirrorDriveProjection: HostProjection {
                 "idempotentHint": false,
                 "openWorldHint": false,
             ])
-        var input = descriptor["inputSchema"] as? [String: Any] ?? [:]
+        var input = descriptor.inputSchema
         input["allOf"] = [[
             "oneOf": AgentIntegrationMirrorDriveGesture.allCases.map {
                 gesture -> [String: Any] in
@@ -317,8 +317,13 @@ public enum MirrorDriveProjection: HostProjection {
                 ]
             },
         ]]
-        descriptor["inputSchema"] = input
-        return descriptor
+        return NOWOperationDescriptor(
+            title: descriptor.title,
+            summary: descriptor.summary,
+            inputSchema: input,
+            outputSchema: descriptor.outputSchema,
+            effectHints: descriptor.effectHints,
+            stability: descriptor.stability)
     }
     public static func invoke(_ arguments: HostProjectionArguments,
                               through client: AgentIntegrationClient) async
@@ -370,7 +375,7 @@ public enum MirrorOpenProjection: HostProjection {
         + "is already open. Sends the guest nothing; refused when no Mac "
         + "is connected, because a Mirror with nothing behind it "
         + "publishes an empty state no call can get out of."
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         MirrorStateProjectionSchema.descriptor(
             title: "Start Experimental Semantic UI State",
             description: "Experimental. Starts the host's retained semantic UI state engine. The human Mirror is a sibling view over the same engine; this operation may show that view but sends the classic Mac nothing. Call before other now_semantic_ui_* tools if state is not running.",
@@ -400,7 +405,7 @@ public enum MirrorSnapshotProjection: HostProjection {
     public static let acceptedArguments: Set<String> = []
     public static let faces = MirrorStateProjectionReach.faces
     public static let availabilityNote = MirrorStateProjectionReach.availability
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         MirrorStateProjectionSchema.descriptor(
             title: "Experimental Semantic UI Snapshot",
             description: "Experimental. The first UI-context read: returns the immutable retained semantic projection with identity, coverage, freshness, stable process/window entities, menubar rows, geometry, controls, dialogs, Finder items, and bounded content evidence. Call this before now_observe_elements and read its coverage and content before deciding whether to escalate; do not launch direct observation in parallel. Prefer this over pixels for desktop and application context.",
@@ -424,7 +429,7 @@ public enum MirrorFindProjection: HostProjection {
     public static let acceptedArguments: Set<String> = ["query"]
     public static let faces = MirrorStateProjectionReach.faces
     public static let availabilityNote = MirrorStateProjectionReach.availability
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         MirrorStateProjectionSchema.descriptor(
             title: "Find an Experimental Semantic UI Entity",
             description: "Experimental. Finds stable process or window entities in retained semantic UI state without creating a second observer.",
@@ -458,7 +463,7 @@ public enum MirrorWaitProjection: HostProjection {
     ]
     public static let faces = MirrorStateProjectionReach.faces
     public static let availabilityNote = MirrorStateProjectionReach.availability
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         MirrorStateProjectionSchema.descriptor(
             title: "Wait for Experimental Semantic UI State",
             description: "Experimental. Waits for retained semantic UI state newer than the supplied snapshot ID. It never creates a second guest poll; timeout is a bounded non-green result.",

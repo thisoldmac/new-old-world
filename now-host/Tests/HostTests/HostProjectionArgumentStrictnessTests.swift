@@ -41,7 +41,7 @@ final class HostProjectionArgumentStrictnessTests: XCTestCase {
     /// parameter the gate admits that no caller was ever told about.
     func testEveryRowsAcceptedSetIsExactlyItsPublishedSchemasProperties() {
         for projection in HostProjectionRegistry.hostFaces.projections {
-            let schema = projection.mcpDescriptor["inputSchema"]
+            let schema = projection.operationDescriptor.mcpToolDescriptor["inputSchema"]
                 as? [String: Any]
             XCTAssertNotNil(
                 schema,
@@ -66,7 +66,7 @@ final class HostProjectionArgumentStrictnessTests: XCTestCase {
     /// no longer has.
     func testEveryRowsSchemaDeclaresItselfClosed() {
         for projection in HostProjectionRegistry.hostFaces.projections {
-            let schema = (projection.mcpDescriptor["inputSchema"]
+            let schema = (projection.operationDescriptor.mcpToolDescriptor["inputSchema"]
                 as? [String: Any]) ?? [:]
             XCTAssertEqual(
                 schema["additionalProperties"] as? Bool, false,
@@ -296,7 +296,7 @@ private enum CarelessProjection: HostProjection {
     ]
     static let availabilityNote = "A test fixture."
 
-    static var mcpDescriptor: [String: Any] {
+    static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "A test fixture",
             "description": "A test fixture.",
@@ -314,7 +314,7 @@ private enum CarelessProjection: HostProjection {
         through client: AgentIntegrationClient
     ) async -> HostProjectionOutcome {
         await ran.note()
-        return .value(.init(["ok": true]))
+        return .value(.init(["ok": true], disposition: .completed))
     }
 }
 

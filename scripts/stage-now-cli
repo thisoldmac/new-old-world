@@ -1,0 +1,25 @@
+#!/bin/sh
+# Stage the exact repository CLI into an unsigned app bundle.
+set -eu
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: $0 /absolute/path/to/New Old World.app" >&2
+    exit 64
+fi
+case "$1" in /*.app) bundle=$1 ;; *) echo "stage-now-cli: expected an absolute .app path" >&2; exit 64 ;; esac
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+source_dir=$(dirname "$script_dir")/now-cli
+resources="$bundle/Contents/Resources"
+target_bin="$resources/bin"
+
+[ -d "$bundle/Contents" ] || {
+    echo "stage-now-cli: bundle has no Contents directory: $bundle" >&2
+    exit 66
+}
+/bin/rm -rf "$target_bin/now_cli" "$resources/completions"
+/bin/mkdir -p "$target_bin" "$resources/completions"
+/usr/bin/ditto --norsrc --noqtn "$source_dir/now_cli" "$target_bin/now_cli"
+/bin/cp "$source_dir/now" "$source_dir/install-now-cli" "$target_bin/"
+/bin/chmod 755 "$target_bin/now" "$target_bin/install-now-cli"
+/usr/bin/ditto --norsrc --noqtn "$source_dir/completion" "$resources/completions"

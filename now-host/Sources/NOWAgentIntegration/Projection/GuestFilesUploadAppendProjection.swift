@@ -31,7 +31,7 @@ public enum GuestFilesUploadAppendProjection: HostProjection {
         "Accepts bytes into a private host stage and sends the guest no "
         + "message."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "Append a New Old World Guest File Upload",
             "description":

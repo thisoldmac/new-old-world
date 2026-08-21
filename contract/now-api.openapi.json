@@ -1,0 +1,893 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "New Old World API",
+    "version": "1.0.0",
+    "summary": "The first public, client-neutral API for New Old World"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "servers": [
+    { "url": "http://127.0.0.1:{port}/api/v1", "variables": { "port": { "default": "19870" } } }
+  ],
+  "security": [{ "apiKey": [] }],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "api.identity",
+        "responses": {
+          "200": { "$ref": "#/components/responses/APIIdentity" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/operations": {
+      "get": {
+        "operationId": "operations.list",
+        "responses": {
+          "200": { "$ref": "#/components/responses/OperationCatalog" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/operations/{operationID}": {
+      "parameters": [
+        { "name": "operationID", "in": "path", "required": true,
+          "schema": { "type": "string", "enum": [
+            "catalog.search", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer",
+            "files.capabilities", "files.reveal", "guests.capabilities", "guests.census", "guests.facts",
+            "interface.control.act", "interface.menu.act", "interface.observe", "interface.text.get", "interface.text.set", "interface.window.act",
+            "logs.guest.tail", "logs.host.tail", "mirror.act", "mirror.find", "mirror.journal", "mirror.lifecycle", "mirror.metrics", "mirror.snapshot", "mirror.start", "mirror.status", "mirror.wait", "mirror.waitForSettlement",
+            "processes.activate", "processes.list", "processes.quit", "screen.capture", "screen.stream", "software.launch", "software.list"
+          ] } }
+      ],
+      "post": {
+        "operationId": "operations.invoke",
+        "summary": "Invoke one projection-backed public operation",
+        "description": "The operation is admitted only when its neutral catalog adjudication is public and generic. Read operations accept an omitted guest, a stable guest ID, or an exact session ID. Mutating operations require an exact session ID in the guest field. First-class file, guest-list, and transfer-cancel resources are not reachable here, so their private projection inputs cannot leak through this route. Agent-only conveniences and MCP compositions are never reachable here.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericOperationInvocation" } } } },
+        "responses": {
+          "200": { "description": "A typed neutral operation outcome", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericOperationResult" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "operationId": "events.watch",
+        "summary": "Watch live public change hints",
+        "description": "Live-only Server-Sent Events with bounded buffering. Events are refetch hints, not replacement state. Replay cursors and Last-Event-ID are rejected; after every reconnect, refetch the named resources before trusting local state.",
+        "parameters": [
+          { "name": "Accept", "in": "header", "required": true, "schema": { "type": "string", "const": "text/event-stream" } }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/EventStream" },
+          "406": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "description": "Replay was requested, but v1 is live-only", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/guests": {
+      "get": {
+        "operationId": "guests.list",
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestList" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/guests/{guestID}": {
+      "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
+      "get": {
+        "operationId": "guests.status",
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestDetail" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/guests/{guestID}/commands": {
+      "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
+      "post": {
+        "operationId": "commands.execute",
+        "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConsoleCommandRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "$ref": "#/components/responses/ConsoleCommandResult" },
+          "400": { "$ref": "#/components/responses/ConsoleCommandResult" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" }
+        }
+      }
+    },
+    "/guests/{guestID}/files": {
+      "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
+      "get": {
+        "operationId": "files.list",
+        "parameters": [
+          { "name": "path", "in": "query", "schema": { "$ref": "#/components/schemas/GuestFilePath" } },
+          { "name": "cursor", "in": "query", "schema": { "type": "integer", "minimum": 0 } }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestFileListResult" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/guests/{guestID}/files/stat": {
+      "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
+      "get": {
+        "operationId": "files.stat",
+        "parameters": [{ "name": "path", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/GuestFilePath" } }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestFileStatResult" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/guests/{guestID}/files/mutations": {
+      "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
+      "post": {
+        "operationId": "files.mutate",
+        "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestFileMutation" } } } },
+        "responses": {
+          "200": { "$ref": "#/components/responses/GuestFileMutationResult" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/guests/{guestID}/transfers/uploads": {
+      "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
+      "post": {
+        "operationId": "files.put",
+        "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
+        "description": "Admits one private upload stage. Send sequential raw chunks with PUT /transfers/{transferID}/content; HTTP Transfer-Encoding chunked is not supported.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UploadAdmission" } } } },
+        "responses": {
+          "201": { "$ref": "#/components/responses/Transfer" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "413": { "$ref": "#/components/responses/BadRequest" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/guests/{guestID}/transfers/downloads": {
+      "parameters": [{ "$ref": "#/components/parameters/GuestID" }],
+      "post": {
+        "operationId": "files.get",
+        "parameters": [{ "$ref": "#/components/parameters/ExpectedGuestSession" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "path": { "$ref": "#/components/schemas/GuestFilePath" } }, "required": ["path"], "additionalProperties": false } } } },
+        "responses": {
+          "200": { "$ref": "#/components/responses/Transfer" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "428": { "$ref": "#/components/responses/PreconditionRequired" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/transfers": {
+      "get": { "operationId": "transfers.list", "responses": { "200": { "$ref": "#/components/responses/TransferList" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
+    },
+    "/transfers/{transferID}": {
+      "parameters": [{ "$ref": "#/components/parameters/TransferID" }],
+      "get": { "operationId": "transfers.get", "responses": { "200": { "$ref": "#/components/responses/Transfer" }, "404": { "$ref": "#/components/responses/NotFound" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } },
+      "delete": { "operationId": "transfers.cancel", "responses": { "200": { "$ref": "#/components/responses/Transfer" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
+    },
+    "/transfers/{transferID}/content": {
+      "parameters": [{ "$ref": "#/components/parameters/TransferID" }],
+      "put": {
+        "operationId": "transfers.uploadChunk",
+        "description": "Appends one sequential raw chunk to a private upload stage. This is application-level chunking across bounded requests, not HTTP Transfer-Encoding chunked.",
+        "parameters": [{ "name": "offset", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } }],
+        "requestBody": { "required": true, "content": { "application/octet-stream": { "schema": { "type": "string", "contentEncoding": "binary", "maxLength": 8192 } } } },
+        "responses": { "200": { "$ref": "#/components/responses/Transfer" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "413": { "$ref": "#/components/responses/BadRequest" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } }
+      },
+      "get": { "operationId": "transfers.content", "responses": { "200": { "$ref": "#/components/responses/BinaryContent" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
+    },
+    "/transfers/{transferID}/commit": {
+      "parameters": [{ "$ref": "#/components/parameters/TransferID" }],
+      "post": { "operationId": "transfers.commit", "responses": { "200": { "$ref": "#/components/responses/Transfer" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "$ref": "#/components/responses/NotFound" }, "409": { "$ref": "#/components/responses/Conflict" }, "503": { "$ref": "#/components/responses/ServiceUnavailable" } } }
+    },
+    "/listener": {
+      "get": {
+        "operationId": "listener.status",
+        "responses": { "200": { "$ref": "#/components/responses/ListenerStatus" } }
+      },
+      "put": {
+        "operationId": "listener.start",
+        "responses": { "200": { "$ref": "#/components/responses/ListenerStatus" } }
+      },
+      "delete": {
+        "operationId": "listener.stop",
+        "responses": { "200": { "$ref": "#/components/responses/ListenerStatus" } }
+      }
+    },
+    "/connections": {
+      "get": {
+        "operationId": "connections.list",
+        "responses": { "200": { "$ref": "#/components/responses/ConnectionList" } }
+      }
+    },
+    "/connections/{sessionID}": {
+      "parameters": [{ "$ref": "#/components/parameters/SessionID" }],
+      "delete": {
+        "operationId": "connections.disconnect",
+        "responses": {
+          "200": { "$ref": "#/components/responses/OperationResult" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "GuestID": {
+        "name": "guestID", "in": "path", "required": true,
+        "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "SessionID": {
+        "name": "sessionID", "in": "path", "required": true,
+        "schema": { "type": "string", "minLength": 38, "maxLength": 180 }
+      },
+      "TransferID": {
+        "name": "transferID", "in": "path", "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "ExpectedGuestSession": {
+        "name": "X-NOW-Guest-Session", "in": "header", "required": true,
+        "description": "Exact session observed immediately before an unsafe stable-guest operation. A replacement session returns 409 before dispatch.",
+        "schema": { "type": "string", "minLength": 38, "maxLength": 180 }
+      }
+    },
+    "responses": {
+      "APIIdentity": {
+        "description": "API identity and contract digest",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/APIIdentity" } } }
+      },
+      "OperationCatalog": {
+        "description": "Runtime-bound client-neutral operation catalog",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationCatalog" } } }
+      },
+      "GuestList": {
+        "description": "Remembered guests with live session state",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestList" } } }
+      },
+      "GuestDetail": {
+        "description": "Guest identity, status, and observed capabilities",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestDetail" } } }
+      },
+      "ListenerStatus": {
+        "description": "Guest listener state",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ListenerStatus" } } }
+      },
+      "ConnectionList": {
+        "description": "Exact live guest sessions",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ConnectionList" } } }
+      },
+      "EventStream": {
+        "description": "A live-only stream. Heartbeat comments carry no state. On stream.ready, stream.resync-required, or reconnect, refetch the listed resources; v1 retains no replay log.",
+        "headers": {
+          "Cache-Control": { "schema": { "type": "string", "const": "no-store" } }
+        },
+        "content": {
+          "text/event-stream": {
+            "schema": { "$ref": "#/components/schemas/PublicEvent" }
+          }
+        }
+      },
+      "ConsoleCommandResult": {
+        "description": "Bounded result from the exact addressed guest session",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ConsoleCommandResult" } } }
+      },
+      "OperationResult": {
+        "description": "Typed operation result",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationResult" } } }
+      },
+      "GuestFileListResult": {
+        "description": "A bounded guest file listing or typed guest-files failure",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestFileListResult" } } }
+      },
+      "GuestFileStatResult": {
+        "description": "An exact guest file observation or typed guest-files failure",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestFileStatResult" } } }
+      },
+      "GuestFileMutationResult": {
+        "description": "A typed guest file mutation receipt and outcome",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GuestFileMutationResult" } } }
+      },
+      "Transfer": {
+        "description": "One private transfer resource, including a typed failure when it settled unsuccessfully",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransferSummary" } } }
+      },
+      "TransferList": {
+        "description": "Transfers known to this host launch",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransferList" } } }
+      },
+      "BinaryContent": {
+        "description": "Completed download bytes",
+        "headers": {
+          "Content-Length": { "schema": { "type": "integer", "minimum": 0, "maximum": 33554432 } }
+        },
+        "content": {
+          "application/octet-stream": { "schema": { "type": "string", "contentEncoding": "binary", "maxLength": 33554432 } },
+          "application/macbinary": { "schema": { "type": "string", "contentEncoding": "binary", "maxLength": 33554432 } }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid X-API-Key",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "BadRequest": {
+        "description": "The request is malformed or unsafe",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "NotFound": {
+        "description": "The addressed API resource does not exist",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "Conflict": {
+        "description": "The addressed session or resource changed, or the requested state conflicts with its current state",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "PreconditionRequired": {
+        "description": "An unsafe guest operation requires an exact current guest session selector",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "ServiceUnavailable": {
+        "description": "The host service required by this operation is unavailable",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      }
+    },
+    "securitySchemes": {
+      "apiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "A host-issued local application key. MCP authentication is a separate protocol concern."
+      }
+    },
+    "schemas": {
+      "APIIdentity": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "const": "New Old World API" },
+          "apiMajor": { "type": "integer", "const": 1 },
+          "schemaRevision": { "type": "integer", "minimum": 1 },
+          "contractDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "operations": { "type": "string", "const": "/api/v1/operations" },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "maximumHeaderBytes": { "type": "integer", "minimum": 1 },
+              "maximumRequestBodyBytes": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["maximumHeaderBytes", "maximumRequestBodyBytes"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "apiMajor", "schemaRevision", "contractDigest", "operations", "limits"],
+        "additionalProperties": false
+      },
+      "OperationCatalog": {
+        "type": "object",
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "operationId": { "type": "string", "minLength": 3, "maxLength": 128 },
+                "available": { "type": "boolean", "const": true },
+                "rendering": { "type": "string", "enum": ["resource", "generic"] },
+                "title": { "type": "string" },
+                "summary": { "type": "string" },
+                "inputSchema": { "type": "object" },
+                "effect": { "type": "string", "enum": ["read", "boundedMutation", "disruptiveMutation", "bulkTransfer"] },
+                "addressing": { "type": "string", "enum": ["hostWide", "stableOrSessionGuest", "exactGuestSession"] },
+                "capability": { "type": "string" }
+              },
+              "required": ["operationId", "available"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["operations"],
+        "additionalProperties": false
+      },
+      "GuestList": {
+        "type": "object",
+        "properties": {
+          "guests": { "type": "array", "items": { "$ref": "#/components/schemas/GuestSummary" } }
+        },
+        "required": ["guests"],
+        "additionalProperties": false
+      },
+      "GuestDetail": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "connected": { "type": "boolean" },
+          "connectedAt": { "type": "string", "format": "date-time" },
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "build": { "type": "string" },
+          "operatingSystem": { "type": "string" },
+          "agentAccess": { "type": "string" },
+          "capabilities": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "displayName", "connected", "name", "capabilities"],
+        "additionalProperties": false
+      },
+      "ConnectionList": {
+        "type": "object",
+        "properties": {
+          "connections": { "type": "array", "items": { "$ref": "#/components/schemas/ConnectionSummary" } }
+        },
+        "required": ["connections"],
+        "additionalProperties": false
+      },
+      "PublicEventGuest": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "sessionId": { "type": "string", "minLength": 38, "maxLength": 180 }
+        },
+        "required": ["id", "sessionId"],
+        "additionalProperties": false
+      },
+      "PublicEvent": {
+        "type": "object",
+        "description": "A privacy-reviewed invalidation hint. No host path, URL, private enum value, or guest-supplied diagnostic string is present.",
+        "properties": {
+          "type": { "type": "string", "enum": ["stream.ready", "stream.resync-required", "guest.connected", "guest.disconnected", "guest.changed", "guests.changed", "listener.changed", "transfer.progressed", "transfers.changed", "files.changed", "processes.changed"] },
+          "guest": { "$ref": "#/components/schemas/PublicEventGuest" },
+          "receivedBytes": { "type": "integer", "minimum": 0 },
+          "expectedBytes": { "type": "integer", "minimum": 0 },
+          "liveOnly": { "type": "boolean" },
+          "replay": { "type": "boolean" },
+          "refetch": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^/api/v1/" } }
+        },
+        "required": ["type", "refetch"],
+        "additionalProperties": false
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "format": "uuid" },
+          "error": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["requestId", "error"],
+        "additionalProperties": false
+      },
+      "APIVersion": {
+        "type": "object",
+        "properties": {
+          "major": { "type": "integer", "const": 1 },
+          "schemaRevision": { "type": "integer", "minimum": 1 },
+          "contractDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        },
+        "required": ["major", "schemaRevision", "contractDigest"],
+        "additionalProperties": false
+      },
+      "GuestAddress": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "sessionId": { "type": "string", "minLength": 1, "maxLength": 180 }
+        },
+        "required": ["id"],
+        "additionalProperties": false
+      },
+      "OperationDisposition": {
+        "type": "string",
+        "enum": ["completed", "refused", "unavailable", "failed", "cancelled"]
+      },
+      "OperationError": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "minLength": 1, "maxLength": 96 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "reach": { "type": "string", "enum": ["request", "host", "guest", "session", "resource", "operation", "transfer"] }
+        },
+        "required": ["code", "message", "reach"],
+        "additionalProperties": false
+      },
+      "OperationResult": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "format": "uuid" },
+          "operationId": { "type": "string", "minLength": 3, "maxLength": 128 },
+          "guest": { "$ref": "#/components/schemas/GuestAddress" },
+          "disposition": { "$ref": "#/components/schemas/OperationDisposition" },
+          "value": { "type": "object" },
+          "error": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["requestId", "operationId", "disposition"],
+        "allOf": [
+          {
+            "if": { "properties": { "disposition": { "const": "completed" } } },
+            "then": { "required": ["value"], "not": { "required": ["error"] } },
+            "else": { "required": ["error"], "not": { "required": ["value"] } }
+          }
+        ],
+        "additionalProperties": false
+      },
+      "GuestSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "sessionId": { "type": "string" },
+          "displayName": { "type": "string" },
+          "connected": { "type": "boolean" },
+          "connectedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "displayName", "connected"],
+        "additionalProperties": false
+      },
+      "ListenerStatus": {
+        "type": "object",
+        "properties": {
+          "state": { "type": "string", "enum": ["idle", "listening", "connected", "failed"] },
+          "desiredPorts": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+          "boundPorts": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } },
+          "failure": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["state", "desiredPorts", "boundPorts"],
+        "additionalProperties": false
+      },
+      "ConnectionSummary": {
+        "type": "object",
+        "properties": {
+          "guest": { "$ref": "#/components/schemas/GuestAddress" },
+          "connectedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["guest", "connectedAt"],
+        "additionalProperties": false
+      },
+      "ConsoleCommandRequest": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string", "minLength": 1, "maxLength": 96,
+            "pattern": "^[A-Za-z0-9._-]+$", "x-now-maximumUTF8Bytes": 96
+          },
+          "arguments": {
+            "type": "object",
+            "maxProperties": 32,
+            "propertyNames": {
+              "minLength": 1, "maxLength": 96,
+              "x-now-maximumUTF8Bytes": 96
+            },
+            "additionalProperties": {
+              "oneOf": [
+                { "type": "string", "maxLength": 4096, "x-now-maximumUTF8Bytes": 4096 },
+                { "type": "integer" },
+                { "type": "boolean" }
+              ]
+            }
+          },
+          "argumentLine": {
+            "type": "string", "maxLength": 4096,
+            "x-now-maximumUTF8Bytes": 4096
+          }
+        },
+        "required": ["command"],
+        "oneOf": [
+          { "required": ["arguments"], "not": { "required": ["argumentLine"] } },
+          { "required": ["argumentLine"], "not": { "required": ["arguments"] } },
+          { "not": { "anyOf": [{ "required": ["arguments"] }, { "required": ["argumentLine"] }] } }
+        ],
+        "additionalProperties": false
+      },
+      "ConsoleCommandDisposition": {
+        "type": "string",
+        "enum": ["completed", "invalid", "unadvertised", "timed-out", "disconnected", "refused", "failed"]
+      },
+      "ConsoleCommandResult": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "format": "uuid" },
+          "operationId": { "type": "string", "const": "commands.execute" },
+          "guest": { "$ref": "#/components/schemas/GuestAddress" },
+          "disposition": { "$ref": "#/components/schemas/ConsoleCommandDisposition" },
+          "value": {
+            "type": "object",
+            "properties": {
+              "output": { "type": "object" },
+              "outputObjects": { "type": "object" }
+            },
+            "additionalProperties": false,
+            "x-now-maximumEncodedBytes": 65536
+          },
+          "error": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["requestId", "operationId", "guest", "disposition"],
+        "allOf": [
+          {
+            "if": { "properties": { "disposition": { "const": "completed" } } },
+            "then": { "required": ["value"], "not": { "required": ["error"] } },
+            "else": { "required": ["error"], "not": { "required": ["value"] } }
+          }
+        ],
+        "additionalProperties": false
+      },
+      "GuestFileFailure": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "minLength": 1, "maxLength": 96 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "transferEvidence": { "type": "object", "additionalProperties": true }
+        },
+        "required": ["code", "message"],
+        "additionalProperties": false
+      },
+      "GuestFileUnavailable": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "minLength": 1, "maxLength": 96 },
+          "message": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "required": ["code", "message"],
+        "additionalProperties": false
+      },
+      "GuestFileReceipt": {
+        "type": "object",
+        "properties": {
+          "commandID": { "type": "string", "format": "uuid" },
+          "sessionID": { "type": "string", "format": "uuid" },
+          "policyVersion": { "type": "integer", "minimum": 1 },
+          "operation": { "type": "string", "enum": ["capabilities", "list", "stat", "download", "readText", "tailText", "put", "mkdir", "move", "delete", "trash", "restore", "deployTree", "prune"] },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "completedAt": { "type": "string", "format": "date-time" },
+          "outcome": { "type": "string", "enum": ["success", "unavailable", "staleSession", "notFound", "scanLimit", "refused", "expired", "conflict", "failed"] },
+          "wireRequestCount": { "type": "integer", "minimum": 0 },
+          "affectedPaths": { "type": "array", "items": { "$ref": "#/components/schemas/GuestFilePath" } }
+        },
+        "required": ["commandID", "policyVersion", "operation", "startedAt", "completedAt", "outcome", "wireRequestCount", "affectedPaths"],
+        "additionalProperties": false
+      },
+      "GuestFileEntry": {
+        "type": "object",
+        "properties": {
+          "path": { "$ref": "#/components/schemas/GuestFilePath" },
+          "name": { "type": "string", "maxLength": 31 },
+          "isFolder": { "type": "boolean" },
+          "fileType": { "type": "string", "minLength": 4, "maxLength": 4 },
+          "creator": { "type": "string", "minLength": 4, "maxLength": 4 },
+          "dataBytes": { "type": "integer", "minimum": 0 },
+          "resourceBytes": { "type": "integer", "minimum": 0 },
+          "modified": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+          "observationReference": { "type": "string", "maxLength": 45 }
+        },
+        "required": ["path", "name", "isFolder"],
+        "additionalProperties": false
+      },
+      "GuestFileListing": {
+        "type": "object",
+        "properties": {
+          "path": { "$ref": "#/components/schemas/GuestFilePath" },
+          "entries": { "type": "array", "items": { "$ref": "#/components/schemas/GuestFileEntry" } },
+          "hasMore": { "type": "boolean" },
+          "nextCursor": { "type": "integer", "minimum": 0 },
+          "rootLabel": { "type": "string", "maxLength": 31 },
+          "observedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["path", "entries", "hasMore", "observedAt"],
+        "additionalProperties": false
+      },
+      "GuestFileMutationOutcome": {
+        "type": "object",
+        "properties": {
+          "mutation": { "type": "string", "enum": ["move", "trash", "restore", "mkdir"] },
+          "path": { "$ref": "#/components/schemas/GuestFilePath" },
+          "trashedAs": { "type": "string", "maxLength": 31 },
+          "observedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["mutation", "observedAt"],
+        "additionalProperties": false
+      },
+      "GuestFileListResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/GuestFileResult" },
+          { "properties": { "value": { "$ref": "#/components/schemas/GuestFileListing" } } }
+        ]
+      },
+      "GuestFileStatResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/GuestFileResult" },
+          { "properties": { "value": { "$ref": "#/components/schemas/GuestFileEntry" } } }
+        ]
+      },
+      "GuestFileMutationResult": {
+        "allOf": [
+          { "$ref": "#/components/schemas/GuestFileResult" },
+          { "properties": { "value": { "$ref": "#/components/schemas/GuestFileMutationOutcome" } } }
+        ]
+      },
+      "GuestFileResult": {
+        "type": "object",
+        "description": "The concrete route fixes value to its route-specific schema. hostAvailable false carries unavailable; true carries receipt and exactly one of value or failure.",
+        "properties": {
+          "hostAvailable": { "type": "boolean" },
+          "receipt": { "$ref": "#/components/schemas/GuestFileReceipt" },
+          "value": { "oneOf": [
+            { "$ref": "#/components/schemas/GuestFileListing" },
+            { "$ref": "#/components/schemas/GuestFileEntry" },
+            { "$ref": "#/components/schemas/GuestFileMutationOutcome" }
+          ] },
+          "failure": { "$ref": "#/components/schemas/GuestFileFailure" },
+          "unavailable": { "$ref": "#/components/schemas/GuestFileUnavailable" }
+        },
+        "required": ["hostAvailable"],
+        "oneOf": [
+          { "properties": { "hostAvailable": { "const": false } }, "required": ["unavailable"], "not": { "anyOf": [{ "required": ["receipt"] }, { "required": ["value"] }, { "required": ["failure"] }] } },
+          { "properties": { "hostAvailable": { "const": true } }, "required": ["receipt", "value"], "not": { "anyOf": [{ "required": ["unavailable"] }, { "required": ["failure"] }] } },
+          { "properties": { "hostAvailable": { "const": true } }, "required": ["receipt", "failure"], "not": { "anyOf": [{ "required": ["unavailable"] }, { "required": ["value"] }] } }
+        ],
+        "additionalProperties": false
+      },
+      "TransferSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "guestID": { "type": "string" },
+          "guestSessionID": { "type": "string" },
+          "direction": { "type": "string", "enum": ["upload", "download"] },
+          "guestPath": { "$ref": "#/components/schemas/GuestFilePath" },
+          "state": { "type": "string", "enum": ["staging", "running", "completed", "failed", "cancelled", "expired"] },
+          "transferredBytes": { "type": "integer", "minimum": 0 },
+          "expectedBytes": { "type": "integer", "minimum": 0, "maximum": 33554432 },
+          "expiresAt": { "type": "string", "format": "date-time" },
+          "failure": { "$ref": "#/components/schemas/GuestFileFailure" },
+          "contentAvailable": { "type": "boolean" },
+          "contentType": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "guestID", "guestSessionID", "direction", "guestPath", "state", "transferredBytes", "contentAvailable", "createdAt", "updatedAt"],
+        "additionalProperties": false
+      },
+      "TransferList": {
+        "type": "object",
+        "properties": {
+          "transfers": { "type": "array", "items": { "$ref": "#/components/schemas/TransferSummary" } }
+        },
+        "required": ["transfers"],
+        "additionalProperties": false
+      },
+      "GenericOperationInvocation": {
+        "type": "object",
+        "properties": {
+          "guest": { "type": "string", "minLength": 1, "maxLength": 128,
+                     "description": "A stable guest ID or exact guest session ID." },
+          "arguments": { "type": "object" }
+        },
+        "additionalProperties": false
+      },
+      "GenericOperationResult": {
+        "type": "object",
+        "properties": {
+          "requestId": { "type": "string", "format": "uuid" },
+          "operationId": { "type": "string" },
+          "guest": { "type": "string" },
+          "disposition": { "type": "string", "enum": ["completed", "refused", "unavailable", "failed"],
+                           "description": "Transport-neutral semantic disposition supplied by the typed projection producer; adapters do not infer it from encoded JSON fields." },
+          "value": {},
+          "attachment": { "type": "object", "properties": {
+            "mediaType": { "type": "string" }, "base64": { "type": "string", "contentEncoding": "base64" }
+          }, "required": ["mediaType", "base64"], "additionalProperties": false },
+          "error": { "$ref": "#/components/schemas/OperationError" }
+        },
+        "required": ["requestId", "operationId", "disposition"],
+        "additionalProperties": false
+      },
+      "GuestFilePath": {
+        "type": "string", "maxLength": 223,
+        "description": "Canonical root-relative HFS path. Each MacRoman segment is at most 31 bytes; absolute, empty-segment, dot, and dot-dot spellings are refused."
+      },
+      "GuestFileMutation": {
+        "type": "object",
+        "properties": {
+          "mutation": { "type": "string", "enum": ["move", "trash", "restore", "mkdir"] },
+          "path": { "$ref": "#/components/schemas/GuestFilePath" },
+          "destinationPath": { "$ref": "#/components/schemas/GuestFilePath" },
+          "trashedAs": { "type": "string", "maxLength": 31 }
+        },
+        "required": ["mutation", "path"],
+        "additionalProperties": false
+      },
+      "UploadAdmission": {
+        "type": "object",
+        "properties": {
+          "destinationPath": { "$ref": "#/components/schemas/GuestFilePath" },
+          "bytes": { "type": "integer", "minimum": 0, "maximum": 33554432 },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "container": { "type": "string", "enum": ["data", "macbinary"] },
+          "fileType": { "type": "string", "minLength": 4, "maxLength": 4 },
+          "creator": { "type": "string", "minLength": 4, "maxLength": 4 },
+          "modified": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+        },
+        "required": ["destinationPath", "bytes", "sha256", "container"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "x-now-compatibility": {
+    "apiMajor": 1,
+    "schemaRevision": 7,
+    "policy": "Additive optional fields and operations may ship within v1; required-field meaning and disposition semantics remain stable."
+  },
+  "x-now-operation-catalog": [
+    "api.identity", "catalog.search", "commands.execute", "connections.disconnect", "connections.list", "diagnostics.capture", "diagnostics.framebuffer", "diagnostics.transfer", "events.watch",
+    "files.capabilities", "files.get", "files.list", "files.mutate", "files.put", "files.reveal", "files.stat",
+    "guests.capabilities", "guests.census", "guests.facts", "guests.list", "guests.status",
+    "interface.control.act", "interface.menu.act", "interface.observe", "interface.text.get", "interface.text.set", "interface.window.act",
+    "listener.start", "listener.status", "listener.stop", "logs.guest.tail", "logs.host.tail",
+    "mirror.act", "mirror.find", "mirror.journal", "mirror.lifecycle", "mirror.metrics", "mirror.snapshot", "mirror.start", "mirror.status", "mirror.wait", "mirror.waitForSettlement",
+    "operations.list", "processes.activate", "processes.list", "processes.quit",
+    "screen.capture", "screen.stream", "software.launch", "software.list", "transfers.cancel", "transfers.commit", "transfers.content", "transfers.get", "transfers.list", "transfers.uploadChunk"
+  ],
+  "x-now-cli-operation-metadata": [
+    {"operationId":"catalog.search","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"diagnostics.capture","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"diagnostics.framebuffer","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"diagnostics.transfer","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"files.capabilities","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"files.reveal","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"guests.capabilities","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"guests.census","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"guests.facts","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.control.act","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.menu.act","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.observe","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.text.get","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.text.set","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"interface.window.act","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"logs.guest.tail","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"logs.host.tail","effect":"read","addressing":"hostWide","rendering":"generic"},
+    {"operationId":"mirror.act","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.find","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.journal","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.lifecycle","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.metrics","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.snapshot","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.start","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.status","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.wait","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"mirror.waitForSettlement","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"processes.activate","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"processes.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"processes.quit","effect":"disruptiveMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"screen.capture","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"screen.stream","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"software.launch","effect":"boundedMutation","addressing":"stableOrSessionGuest","rendering":"generic"},
+    {"operationId":"software.list","effect":"read","addressing":"stableOrSessionGuest","rendering":"generic"}
+  ]
+}

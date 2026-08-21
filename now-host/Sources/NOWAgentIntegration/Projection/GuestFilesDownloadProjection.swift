@@ -102,7 +102,7 @@ public enum GuestFilesDownloadProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves file.list and file.get."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         var path = GuestFilesSchema.path
         path["minLength"] = 1
         return [

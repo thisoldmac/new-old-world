@@ -25,7 +25,7 @@ public enum ProjectsProjection: HostProjection {
     public static let availabilityNote =
         "The running host owns a bounded Application Support Projects root."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "New Old World Projects",
             "description":

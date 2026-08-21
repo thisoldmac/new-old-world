@@ -43,9 +43,9 @@ struct AgentActivityEvent: Identifiable, Equatable {
     /// says the name rather than inventing a phrase for it.
     static func title(for capability: String) -> String {
         guard let row = HostProjectionRegistry.hostFaces
-            .projection(named: capability),
-            let title = row.mcpDescriptor["title"] as? String
+            .projection(named: capability)
         else { return capability }
+        let title = row.operationDescriptor.title
         /* The product's own name, dropped: these titles are written for a
            tool list in somebody else's client, where "New Old World" is
            what tells them which Mac is meant. Inside NOW it is every row's
@@ -57,11 +57,8 @@ struct AgentActivityEvent: Identifiable, Equatable {
 
     static func isDestructive(_ capability: String) -> Bool {
         guard let row = HostProjectionRegistry.hostFaces
-            .projection(named: capability),
-            let annotations =
-                row.mcpDescriptor["annotations"] as? [String: Any]
-        else { return false }
-        return annotations["destructiveHint"] as? Bool ?? false
+            .projection(named: capability) else { return false }
+        return row.operationDescriptor.effectHints.destructive
     }
 }
 

@@ -6,7 +6,7 @@ doc_type: reference
 audience: developer
 lifecycle: current
 authority: [product/features.yaml, docs/distribution-profile.yaml]
-source_dependencies: [product/features.yaml, docs/distribution-profile.yaml, docs/developer-guide/architecture/updating.md, docs/resident-components.md, scripts/assemble-release, scripts/build-host-app, scripts/build-guests, tools/docs-gate, tools/release-tests, tools/release/artifacts.py, tools/release/image.py, tools/release/manifest.py, tools/release/profile.py, tools/write-update-manifest.py]
+source_dependencies: [product/features.yaml, docs/distribution-profile.yaml, docs/developer-guide/architecture/updating.md, docs/resident-components.md, scripts/assemble-release, scripts/build-host-app, scripts/build-guests, scripts/stage-now-cli, now-cli/install-now-cli, tools/docs-gate, tools/release-tests, tools/now-cli-distribution-tests, tools/release/artifacts.py, tools/release/image.py, tools/release/manifest.py, tools/release/profile.py, tools/write-update-manifest.py]
 media_ids: []
 last_verified: 2026-08-13
 ---
@@ -50,6 +50,8 @@ how its exact bytes are recorded, and which deployment choices are supported.
 - The **release manifest** records identities, composition, provenance, and
   exact digests. `SHA256SUMS` is the transport-friendly checksum projection of
   the public outputs.
+- The **NOW CLI** is the API-only Python client sealed at
+  `Contents/Resources/bin/now`, with its installer and completions beside it.
 
 ## Required outputs
 
@@ -59,11 +61,16 @@ component bytes:
 | Output | Contract |
 | --- | --- |
 | macOS DMG | Contains the finalized New Old World host application and its embedded onboarding resources. |
+| Bundled NOW CLI | Contains `bin/now`, `bin/install-now-cli`, its Python package, and Bash/Zsh completions inside the finalized host app. |
 | Embedded app resources | Contains the PPC application, NOW Extension, their update metadata, and the approved CarbonLib installer package. |
 | Generic classic `.img.bin` | Contains the PPC application, optional NOW Extension, and the approved CarbonLib installer package; contains no personalized preferences. |
 | Loose application + sidecar | `New Old World.bin` and `New Old World.bin.now-update.json`. |
 | Loose Extension + sidecar | `NOW Extension.bin` and `NOW Extension.bin.now-update.json`. |
 | Release evidence | `release-manifest.json` and `SHA256SUMS`. |
+
+The bundled NOW CLI is a sealed first-party resource inside the host app, not
+a tenth top-level release output. `first_party_bundled_resources.now_cli` in
+the distribution profile pins its repository path and four bundle paths.
 
 The embedded catalog and generic image must resolve the same PPC application,
 Extension, and CarbonLib input identities as the release manifest. Repacking a
@@ -158,6 +165,14 @@ embeds the exact catalog, signs only after embedding, creates the generic HFS
 image and DMG, and finally writes the manifest and checksum projection. Run
 `tools/release-tests` for its focused validation and image-construction gate.
 
+The Xcode build and the manual ad-hoc SwiftPM fallback both call
+`scripts/stage-now-cli`; that helper is the one owner of the bundled CLI shape.
+After copying the app from the DMG into `/Applications`, run its bundled
+`Contents/Resources/bin/install-now-cli` to create `~/.local/bin/now`. Never
+install a symlink to a mounted DMG, because ejecting it removes the target.
+The repository development entry point uses the same installer under
+`now-cli/install-now-cli`.
+
 ## Evidence and refusal
 
 The release assembler fails closed on unknown inputs, unexpected files, stale
@@ -166,5 +181,5 @@ mixed source revisions, mutation after signing, and output-directory reuse.
 The manifest makes each input's source class, filename, version/build identity,
 artifact digest, provenance, and license-acceptance requirement inspectable.
 
-The assembler, static classic image, and signing pipeline are implemented. A
-host self-updater remains deferred.
+The assembler, static classic image, signing pipeline, and bundled/repository
+CLI installation are implemented. A host self-updater remains deferred.

@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""Clean-tree distribution and public-contract client proof for the NOW CLI."""
+
+from __future__ import annotations
+
+import http.server
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import unittest
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class FixtureHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        if self.headers.get("X-API-Key") != "fixture-key":
+            self.send_error(401)
+            return
+        values = {
+            "/api/v1": {"apiMajor": 1, "contract": "/api/v1/openapi.json"},
+            "/api/v1/guests": {"guests": []},
+        }
+        value = values.get(self.path)
+        if value is None:
+            self.send_error(404)
+            return
+        body = json.dumps(value).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_: object) -> None:
+        pass
+
+
+class DistributionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory(prefix="now-cli-dist-")
+        self.root = Path(self.temp.name)
+
+    def tearDown(self) -> None:
+        self.temp.cleanup()
+
+    def clean_tree(self) -> Path:
+        checkout = self.root / "checkout"
+        checkout.mkdir()
+        for relative in ("now-cli", "contract", "fixtures", "scripts"):
+            shutil.copytree(ROOT / relative, checkout / relative)
+        project = checkout / "now-host/NewOldWorld.xcodeproj"
+        project.parent.mkdir(parents=True)
+        shutil.copytree(ROOT / "now-host/NewOldWorld.xcodeproj", project)
+        return checkout
+
+    def test_clean_tree_installs_stable_executable(self) -> None:
+        checkout = self.clean_tree()
+        prefix = self.root / "prefix"
+        subprocess.run(
+            [checkout / "now-cli/install-now-cli", "--prefix", prefix],
+            check=True, text=True, capture_output=True,
+            env={**os.environ, "HOME": str(self.root / "home")})
+        command = prefix / "bin/now"
+        self.assertTrue(command.is_symlink())
+        result = subprocess.run(
+            [command, "--help"], check=True, text=True, capture_output=True,
+            env={**os.environ, "HOME": str(self.root / "home")})
+        self.assertIn("Control classic guests through the NOW v1 API",
+                      result.stdout)
+
+    def test_installer_refuses_unrelated_command_without_force(self) -> None:
+        checkout = self.clean_tree()
+        prefix = self.root / "prefix"
+        (prefix / "bin").mkdir(parents=True)
+        unrelated = prefix / "bin/now"
+        unrelated.write_text("somebody else's command\n")
+        result = subprocess.run([
+            checkout / "now-cli/install-now-cli", "--prefix", prefix,
+        ], text=True, capture_output=True,
+           env={**os.environ, "HOME": str(self.root / "home")})
+        self.assertEqual(result.returncode, 73)
+        self.assertEqual(unrelated.read_text(), "somebody else's command\n")
+        self.assertIn("refusing to replace unrelated", result.stderr)
+
+    def test_bundle_staging_has_installable_stable_shape(self) -> None:
+        checkout = self.clean_tree()
+        bundle = self.root / "New Old World.app"
+        (bundle / "Contents/Resources").mkdir(parents=True)
+        subprocess.run([checkout / "scripts/stage-now-cli", bundle], check=True)
+        bundled = bundle / "Contents/Resources/bin"
+        self.assertTrue((bundled / "now").is_file())
+        self.assertTrue((bundled / "install-now-cli").is_file())
+        self.assertTrue((bundled / "now_cli/main.py").is_file())
+        prefix = self.root / "installed"
+        subprocess.run([bundled / "install-now-cli", "--prefix", prefix],
+                       check=True, capture_output=True, text=True)
+        result = subprocess.run([prefix / "bin/now", "--help"], check=True,
+                                capture_output=True, text=True)
+        self.assertIn("NOW v1 API", result.stdout)
+
+    def test_every_host_bundle_path_uses_one_cli_stager(self) -> None:
+        checkout = self.clean_tree()
+        project = (checkout / "now-host/NewOldWorld.xcodeproj/project.pbxproj").read_text()
+        manual = (checkout / "scripts/build-host-app").read_text()
+        self.assertIn('scripts/stage-now-cli', project)
+        self.assertIn('"$script_dir/stage-now-cli" "$bundle"', manual)
+        self.assertNotIn('/usr/bin/ditto --norsrc --noqtn "$source_dir/now_cli"',
+                         project)
+
+    def test_xcode_target_owns_cli_bundle_phase(self) -> None:
+        project = (ROOT / "now-host/NewOldWorld.xcodeproj/project.pbxproj").read_text()
+        target = project.split("A1000060 /* New Old World */ = {", 1)[1]
+        target = target.split("};", 1)[0]
+        self.assertIn("A100008A /* Bundle NOW CLI */", target)
+        phase = project.split("A100008A /* Bundle NOW CLI */ = {", 1)[1]
+        phase = phase.split("};", 1)[0]
+        self.assertIn('scripts/stage-now-cli', phase)
+
+    def test_xcode_build_contains_runnable_bundled_cli(self) -> None:
+        output = self.root / "xcode-output"
+        derived = self.root / "xcode-derived"
+        subprocess.run([
+            "xcodebuild",
+            "-project", ROOT / "now-host/NewOldWorld.xcodeproj",
+            "-scheme", "New Old World",
+            "-configuration", "Debug",
+            "-derivedDataPath", derived,
+            f"CONFIGURATION_BUILD_DIR={output}",
+            "CODE_SIGNING_ALLOWED=NO",
+            "build",
+        ], check=True, text=True, capture_output=True)
+        command = output / "New Old World.app/Contents/Resources/bin/now"
+        self.assertTrue(command.is_file())
+        self.assertTrue(os.access(command, os.X_OK))
+        result = subprocess.run([command, "--help"], check=True, text=True,
+                                capture_output=True)
+        self.assertIn("NOW v1 API", result.stdout)
+
+    def test_independent_client_uses_only_public_contract(self) -> None:
+        checkout = self.clean_tree()
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0),
+                                                 FixtureHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            result = subprocess.run([
+                sys.executable, checkout / "fixtures/now-api-client.py",
+                "--contract", checkout / "contract/now-api.openapi.json",
+                "--base-url", f"http://127.0.0.1:{server.server_port}",
+                "--api-key", "fixture-key",
+            ], check=True, text=True, capture_output=True)
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+        value = json.loads(result.stdout)
+        self.assertEqual(value["identity"]["apiMajor"], 1)
+        self.assertEqual(value["guests"], {"guests": []})
+        source = (checkout / "fixtures/now-api-client.py").read_text()
+        self.assertNotIn("/mcp", source)
+        self.assertNotIn("tools/list", source)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

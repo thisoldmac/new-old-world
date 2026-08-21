@@ -2,6 +2,43 @@ import XCTest
 @testable import Host
 @testable import NOWAgentIntegration
 
+private actor BlockingAPIRecordSink: NOWAPIDurableRecordSink {
+    private var started = false
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func persistAPIRecord(event: HostProjectionAuditEvent,
+                          agent: MCPAgentIdentity,
+                          drivenGuest: String?) async {
+        started = true
+        await withCheckedContinuation { releaseContinuation = $0 }
+    }
+
+    func hasStarted() -> Bool { started }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+}
+
+private actor CompletionProbe {
+    private var completed = false
+    func finish() { completed = true }
+    func value() -> Bool { completed }
+}
+
+private actor CapturingAPIRecordSink: NOWAPIDurableRecordSink {
+    private var events: [HostProjectionAuditEvent] = []
+
+    func persistAPIRecord(event: HostProjectionAuditEvent,
+                          agent: MCPAgentIdentity,
+                          drivenGuest: String?) async {
+        events.append(event)
+    }
+
+    func recorded() -> [HostProjectionAuditEvent] { events }
+}
+
 /// The identity seam: who-called travels BESIDE the audit event, from each
 /// transport to the records store, without the event's own shape changing.
 final class MCPRecordsSeamTests: XCTestCase {
@@ -114,6 +151,72 @@ final class MCPRecordsSeamTests: XCTestCase {
         let row = await iterator.next()
         XCTAssertEqual(row?.agentName, "Chat")
         XCTAssertEqual(row?.targetMachine, "pb1400c")
+    }
+
+    /// API records reuse the bounded store without acquiring an arguments or
+    /// payload field: the bridge can carry only operation, target, and result.
+    @MainActor
+    func testAPIAuditReachesBoundedRecordsAsAnApplicationClient() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("now-api-seam-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let database = try MCPRecordsDatabase(root: root)
+        let recorder = MCPRecordsRecorder(database: database)
+        var iterator = recorder.inserted.makeAsyncIterator()
+
+        await HostNOWAPIAuditSink(records: recorder).record(.init(
+            requestID: UUID(), operationID: "connections.disconnect",
+            target: "pb1400c-session", disposition: .completed))
+
+        let persisted = try await database.actions(
+            matching: MCPActionQuery(limit: 1))
+        XCTAssertEqual(persisted.count, 1,
+                       "awaiting the API audit sink must include persistence")
+        let row = await iterator.next()
+        XCTAssertEqual(row?.agentName, "NOW API client")
+        XCTAssertEqual(row?.targetMachine, "pb1400c-session")
+        XCTAssertEqual(row?.action.face, .api)
+        XCTAssertEqual(row?.action.capability, "connections.disconnect")
+    }
+
+    func testAPIAuditDoesNotReturnBeforeDurablePersistenceSettles() async throws {
+        let records = BlockingAPIRecordSink()
+        let completion = CompletionProbe()
+        let task = Task {
+            await HostNOWAPIAuditSink(records: records).record(.init(
+                requestID: UUID(), operationID: "connections.disconnect",
+                target: "pb1400c-session", disposition: .completed))
+            await completion.finish()
+        }
+        while !(await records.hasStarted()) {
+            await Task.yield()
+        }
+        try await Task.sleep(for: .milliseconds(10))
+        let completedEarly = await completion.value()
+        XCTAssertFalse(completedEarly)
+
+        await records.release()
+        await task.value
+        let completedAfterRelease = await completion.value()
+        XCTAssertTrue(completedAfterRelease)
+    }
+
+    func testAPIAuditPreservesAnsweredRefusedDeniedAndFailedOutcomes() async {
+        let records = CapturingAPIRecordSink()
+        let sink = HostNOWAPIAuditSink(records: records)
+        for disposition in [
+            NOWAPIAuditEvent.Disposition.completed, .refused, .denied, .failed,
+        ] {
+            await sink.record(.init(
+                requestID: UUID(), operationID: "processes.quit",
+                target: "pb1400c", disposition: disposition))
+        }
+
+        let events = await records.recorded()
+        XCTAssertEqual(events.map(\.outcome), [
+            .answered, .refused, .denied, .failed,
+        ])
+        XCTAssertEqual(events.map(\.reason), [nil, "refused", "denied", "failed"])
     }
 }
 

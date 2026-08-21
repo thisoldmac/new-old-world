@@ -198,9 +198,9 @@ extension HostFaceReach {
 ///   host-owned root.
 /// - **bound** — cap what one call may cost or return, and reject
 ///   arguments the guest should never be asked to parse.
-/// - **render** — turn one typed host result into one face's shape. The
-///   MCP face's shape is `mcpDescriptor`; a later face renders the same
-///   projection its own way, and neither may re-decide the answer.
+/// - **render** — publish neutral schemas and presentation data. MCP and
+///   later faces render the same descriptor their own way, and none may
+///   re-decide the answer.
 ///
 /// Composition over data the guest just supplied is permitted and is not
 /// deciding: `now_launch_software` lists the catalog, matches exactly one
@@ -268,7 +268,7 @@ public protocol HostProjection {
     /// said `performed: true`. A misspelled VALUE was already refused there;
     /// a misspelled KEY was not, which is the worse half.
     ///
-    /// **The set is read off this row's own published `mcpDescriptor`, never
+    /// **The set is read off this row's neutral operation descriptor, never
     /// guessed.** `HostProjectionArgumentStrictnessTests` asserts it equals
     /// the `inputSchema`'s `properties` keys for every registered row, which
     /// is what stops this declaration from rebuilding the same class of bug
@@ -306,11 +306,10 @@ public protocol HostProjection {
     /// only the fact it alone knows.
     static var availabilityNote: String { get }
 
-    /// The MCP face's rendering: title, description, input and output
-    /// schema, annotations. The tool's `name` and the `guest` selector are
-    /// injected by the renderer, so a row cannot misspell its own identity
-    /// or omit addressing.
-    static var mcpDescriptor: [String: Any] { get }
+    /// Transport-neutral title, summary, request/result schemas, stability,
+    /// and typed effect hints. Protocol-specific names, addressing envelopes,
+    /// and annotations are injected by their renderers.
+    static var operationDescriptor: NOWOperationDescriptor { get }
 
     /// Validate, bound, and delegate. Everything a caller may ask is
     /// checked here; nothing about the machine is answered here.
@@ -465,6 +464,13 @@ public enum HostProjectionOutcome: Sendable {
 /// row whose metadata says one thing and whose attachment shows another
 /// would be two facts about one machine.
 public struct HostProjectionValue: Sendable {
+    /// The semantic result proved while the producer's result is still
+    /// strongly typed. Transport adapters copy this value; they never infer
+    /// it by inspecting encoded JSON.
+    public enum Disposition: String, Equatable, Sendable {
+        case completed, refused, unavailable, failed
+    }
+
     /// A non-JSON rendering of this result, for faces that can carry one.
     public enum Attachment: Sendable {
         /// Image bytes and their media type — `image/png` for a capture.
@@ -472,17 +478,166 @@ public struct HostProjectionValue: Sendable {
     }
 
     private let encodeValue: @Sendable (JSONEncoder) throws -> Data
+    public let disposition: Disposition
     public let attachment: Attachment?
 
     public init<Value: Encodable & Sendable>(
         _ value: Value,
+        disposition: Disposition,
         attachment: Attachment? = nil
     ) {
         encodeValue = { try $0.encode(value) }
+        self.disposition = disposition
         self.attachment = attachment
     }
 
     public func encoded(using encoder: JSONEncoder) throws -> Data {
         try encodeValue(encoder)
+    }
+}
+
+// MARK: - Typed public result families
+
+extension HostProjectionValue {
+    public init(_ value: AgentIntegrationChatResult) {
+        self.init(value, disposition: value.ok ? .completed : .unavailable)
+    }
+
+    public init(_ value: AgentIntegrationProjectResult) {
+        self.init(value, disposition: value.ok ? .completed : .unavailable)
+    }
+
+    public init(_ value: AgentIntegrationArtifactTransferResult) {
+        let disposition: Disposition
+        switch value {
+        case .delivered: disposition = .completed
+        case .unavailable: disposition = .unavailable
+        case .expired, .refused: disposition = .refused
+        case .failed: disposition = .failed
+        }
+        self.init(value, disposition: disposition)
+    }
+
+    public init<Value: Codable & Equatable & Sendable>(
+        _ value: AgentIntegrationProjectedResult<Value>,
+        attachment: Attachment? = nil
+    ) {
+        let disposition: Disposition
+        switch value {
+        case .completed: disposition = .completed
+        case .refused: disposition = .refused
+        case .unavailable: disposition = .unavailable
+        }
+        self.init(value, disposition: disposition, attachment: attachment)
+    }
+
+    public init<Value: Codable & Equatable & Sendable>(
+        _ value: AgentIntegrationGuestFileResult<Value>,
+        attachment: Attachment? = nil
+    ) {
+        let disposition: Disposition
+        switch value {
+        case .hostUnavailable:
+            disposition = .unavailable
+        case .completed(let receipt, _, _):
+            switch receipt.outcome {
+            case .success: disposition = .completed
+            case .unavailable: disposition = .unavailable
+            case .failed: disposition = .failed
+            case .staleSession, .notFound, .scanLimit, .refused, .expired,
+                 .conflict:
+                disposition = .refused
+            }
+        }
+        self.init(value, disposition: disposition, attachment: attachment)
+    }
+
+    public init(_ value: AgentIntegrationSessionHealthResult) {
+        let disposition: Disposition
+        switch value {
+        case .available: disposition = .completed
+        case .unavailable: disposition = .unavailable
+        }
+        self.init(value, disposition: disposition)
+    }
+
+    public init(_ value: AgentIntegrationSessionCapabilitiesResult) {
+        let disposition: Disposition
+        switch value {
+        case .available: disposition = .completed
+        case .unavailable: disposition = .unavailable
+        }
+        self.init(value, disposition: disposition)
+    }
+
+    public init(_ value: AgentIntegrationProcessListResult) {
+        let disposition: Disposition
+        switch value {
+        case .available: disposition = .completed
+        case .unavailable: disposition = .unavailable
+        }
+        self.init(value, disposition: disposition)
+    }
+
+    public init(_ value: AgentIntegrationLaunchSoftwareResult) {
+        let disposition: Disposition
+        switch value {
+        case .launched: disposition = .completed
+        case .unavailable: disposition = .unavailable
+        case .ambiguous, .notFound, .refused: disposition = .refused
+        }
+        self.init(value, disposition: disposition)
+    }
+
+    public init(_ value: AgentIntegrationQuitResult) {
+        let disposition: Disposition
+        switch value {
+        case .requestSent: disposition = .completed
+        case .unavailable: disposition = .unavailable
+        case .stale, .notFound, .refused: disposition = .refused
+        }
+        self.init(value, disposition: disposition)
+    }
+
+    public init(_ value: AgentIntegrationCaptureAnswer,
+                attachment: Attachment? = nil) {
+        let disposition: Disposition
+        switch value.outcome {
+        case .captured, .abandoned: disposition = .completed
+        case .refused: disposition = .refused
+        case .unavailable: disposition = .unavailable
+        }
+        self.init(value, disposition: disposition, attachment: attachment)
+    }
+
+    public init(_ value: AgentIntegrationStreamAnswer,
+                attachment: Attachment? = nil) {
+        let disposition: Disposition
+        switch value.outcome {
+        case .opened, .closed, .frame: disposition = .completed
+        case .refused: disposition = .refused
+        case .unavailable: disposition = .unavailable
+        }
+        self.init(value, disposition: disposition, attachment: attachment)
+    }
+
+    public init(_ value: AgentIntegrationMirrorReadResult) {
+        self.init(value, disposition: value.available ? .completed : .unavailable)
+    }
+
+    public init(_ value: AgentIntegrationMirrorDriveResult) {
+        let disposition: Disposition
+        if !value.available {
+            disposition = .unavailable
+        } else if value.operation?.outcome == "not-dispatched" {
+            disposition = .refused
+        } else {
+            disposition = .completed
+        }
+        self.init(value, disposition: disposition)
+    }
+
+    public init(_ value: AgentIntegrationMirrorOpenResult) {
+        self.init(value, disposition: value.showing ? .completed : .unavailable)
     }
 }

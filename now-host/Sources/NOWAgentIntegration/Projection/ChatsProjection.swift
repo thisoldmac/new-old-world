@@ -39,7 +39,7 @@ public enum ChatsProjection: HostProjection {
     public static let availabilityNote =
         "The running host owns a bounded Application Support chats store."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "New Old World Saved Chats",
             "description":

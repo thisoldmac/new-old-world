@@ -79,7 +79,7 @@ public enum TransferCancelProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves file.cancel."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let receipt: [String: Any] = [
             "type": "object",
             "properties": [

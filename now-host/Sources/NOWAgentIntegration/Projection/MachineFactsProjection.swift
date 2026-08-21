@@ -218,7 +218,7 @@ public enum MachineFactsProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest's command table names gestalt."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let policy = AgentIntegrationMachineFactsPolicy.self
         let failure: [String: Any] = [
             "type": "object",

@@ -112,6 +112,7 @@ nav:
           - Install the NOW Extension: user-guide/how-to/install-extension.md
           - Recover a connection: user-guide/how-to/recover-a-connection.md
           - Transfer a file: user-guide/how-to/transfer-a-file.md
+          - Use the NOW command line: user-guide/how-to/use-now-cli.md
           - Upgrade, roll back, or remove: user-guide/how-to/upgrade-rollback-remove.md
       - Explanations:
           - Two Macs, one contract: user-guide/explanation/two-macs-one-contract.md
@@ -170,6 +171,7 @@ nav:
           - Distribution and bundle standard: developer-guide/reference/distribution-standard.md
           - MPW and the development starter pack: developer-guide/reference/development-starter-pack.md
           - Documentation standard: developer-guide/reference/documentation-standard.md
+          - NOW API v1: developer-guide/reference/now-api.md
           - Generated AsyncAPI reference: generated/asyncapi.md
   - Engineering records:
       - Current status: status.md

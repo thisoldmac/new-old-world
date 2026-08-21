@@ -70,12 +70,16 @@ final class MCPHTTPEmbeddedCredentialAuthority: @unchecked Sendable {
     }
 }
 
-struct MCPHTTPRequest: Equatable {
+struct BoundedHTTPRequest: Equatable {
     let method: String
     let target: String
     let headers: [String: String]
     let body: Data
 }
+
+/// Compatibility spelling for MCP callers while the socket now serves both
+/// the public API and MCP route adapters.
+typealias MCPHTTPRequest = BoundedHTTPRequest
 
 enum MCPHTTPRequestParseError: Error, Equatable {
     case malformed
@@ -87,7 +91,7 @@ enum MCPHTTPRequestParseError: Error, Equatable {
 /// One bounded HTTP/1.1 request. The listener closes every connection after
 /// its response, so pipelining and chunked bodies are deliberately not part of
 /// this local transport. Streamable HTTP does not require either one.
-struct BoundedMCPHTTPRequestParser {
+struct BoundedHTTPRequestParser {
     private var pending = Data()
     private var expectedBodyBytes: Int?
     private var parsedHead: (method: String, target: String,
@@ -176,12 +180,27 @@ struct BoundedMCPHTTPRequestParser {
     }
 }
 
-struct MCPHTTPResponse: Equatable {
+typealias BoundedMCPHTTPRequestParser = BoundedHTTPRequestParser
+
+/// A response body that remains open. `next` has at most one outstanding
+/// consumer, and the connection requests another piece only after the prior
+/// network write completes.
+protocol MCPHTTPStreamingBody: AnyObject, Sendable {
+    func next(_ completion: @escaping @Sendable (Data?) -> Void)
+    func cancel()
+}
+
+struct MCPHTTPResponse {
     let status: Int
     var headers: [String: String] = [:]
     var body = Data()
+    /// A private, already-settled file response. The connection writer reads
+    /// this in bounded pieces; API downloads never become one giant `Data`.
+    var bodyFileURL: URL? = nil
+    var bodyFileLength: Int? = nil
+    var streamingBody: (any MCPHTTPStreamingBody)? = nil
 
-    var wireData: Data {
+    var wireHeadData: Data {
         let phrase: String
         switch status {
         case 200: phrase = "OK"
@@ -194,20 +213,32 @@ struct MCPHTTPResponse: Equatable {
         case 404: phrase = "Not Found"
         case 405: phrase = "Method Not Allowed"
         case 406: phrase = "Not Acceptable"
+        case 409: phrase = "Conflict"
         case 413: phrase = "Content Too Large"
         case 415: phrase = "Unsupported Media Type"
+        case 428: phrase = "Precondition Required"
         case 429: phrase = "Too Many Requests"
+        case 503: phrase = "Service Unavailable"
         default: phrase = "Internal Server Error"
         }
         var fields = headers
-        fields["Content-Length"] = "\(body.count)"
-        fields["Connection"] = "close"
+        if streamingBody == nil {
+            fields["Content-Length"] = "\(bodyFileLength ?? body.count)"
+            fields["Connection"] = "close"
+        } else {
+            fields["Connection"] = "keep-alive"
+            fields["Transfer-Encoding"] = "chunked"
+        }
         var head = "HTTP/1.1 \(status) \(phrase)\r\n"
         for key in fields.keys.sorted() {
             head += "\(key): \(fields[key]!)\r\n"
         }
         head += "\r\n"
-        return Data(head.utf8) + body
+        return Data(head.utf8)
+    }
+
+    var wireData: Data {
+        wireHeadData + body
     }
 }
 
@@ -279,19 +310,22 @@ actor MCPHTTPService {
     private let activityObserver: ActivityObserver?
     private let initializationObserver: InitializationObserver?
     private let oauth: MCPOAuthAuthority?
+    private let apiRouter: NOWAPIHTTPRouter?
     private var sessions: [String: Session] = [:]
 
     init(configuration: MCPHTTPConfiguration,
          serverFactory: @escaping ServerFactory,
          activityObserver: ActivityObserver? = nil,
          initializationObserver: InitializationObserver? = nil,
-         oauth: MCPOAuthAuthority? = nil) {
+         oauth: MCPOAuthAuthority? = nil,
+         apiRouter: NOWAPIHTTPRouter? = nil) {
         self.configuration = configuration
         self.serverFactory = { _ in serverFactory() }
         self.workspaceGrants = .shared
         self.activityObserver = activityObserver
         self.initializationObserver = initializationObserver
         self.oauth = oauth
+        self.apiRouter = apiRouter
     }
 
     init(configuration: MCPHTTPConfiguration,
@@ -299,17 +333,31 @@ actor MCPHTTPService {
          workspaceGrants: MCPHTTPWorkspaceGrantAuthority,
          activityObserver: ActivityObserver? = nil,
          initializationObserver: InitializationObserver? = nil,
-         oauth: MCPOAuthAuthority? = nil) {
+         oauth: MCPOAuthAuthority? = nil,
+         apiRouter: NOWAPIHTTPRouter? = nil) {
         self.configuration = configuration
         self.serverFactory = sessionServerFactory
         self.workspaceGrants = workspaceGrants
         self.activityObserver = activityObserver
         self.initializationObserver = initializationObserver
         self.oauth = oauth
+        self.apiRouter = apiRouter
     }
 
     func respond(to request: MCPHTTPRequest, now: Date = Date()) async
         -> MCPHTTPResponse {
+        if request.target == "/api/v1"
+            || request.target.hasPrefix("/api/v1/") {
+            guard let host = validatedHost(request.headers["host"]) else {
+                return response(400)
+            }
+            _ = host
+            if let origin = request.headers["origin"], !validOrigin(origin) {
+                return response(403)
+            }
+            guard let apiRouter else { return response(404) }
+            return await apiRouter.respond(to: request)
+        }
         /* /mcp is matched on the whole target: it never carries a query.
            Only the oauth routes split path from query. */
         if request.target != "/mcp" {
@@ -579,19 +627,8 @@ actor MCPHTTPService {
     private func validAuthorization(_ value: String?) -> Bool {
         guard let value, value.hasPrefix("Bearer "),
               let token = configuration.bearerToken else { return false }
-        return Self.constantTimeEqual(
+        return constantTimeSecretEqual(
             String(value.dropFirst("Bearer ".count)), token)
-    }
-
-    private static func constantTimeEqual(_ lhs: String, _ rhs: String) -> Bool {
-        let left = Array(lhs.utf8), right = Array(rhs.utf8)
-        var difference = UInt8(truncatingIfNeeded: left.count ^ right.count)
-        for index in 0..<max(left.count, right.count) {
-            let l = index < left.count ? left[index] : 0
-            let r = index < right.count ? right[index] : 0
-            difference |= l ^ r
-        }
-        return difference == 0
     }
 
     private func jsonResponse(_ body: Data?,
@@ -624,6 +661,7 @@ final class MCPHTTPListener: @unchecked Sendable {
     private let configuration: MCPHTTPConfiguration
     private let service: MCPHTTPService
     private let failureObserver: FailureObserver?
+    private let requestParseTimeout: TimeInterval
     private let queue = DispatchQueue(label: "dev.newoldworld.mcp-http")
     private var listener: NWListener?
 
@@ -632,14 +670,18 @@ final class MCPHTTPListener: @unchecked Sendable {
          activityObserver: MCPHTTPService.ActivityObserver? = nil,
          initializationObserver: MCPHTTPService.InitializationObserver? = nil,
          failureObserver: FailureObserver? = nil,
-         oauth: MCPOAuthAuthority? = nil) throws {
+         oauth: MCPOAuthAuthority? = nil,
+         apiRouter: NOWAPIHTTPRouter? = nil,
+         requestParseTimeout: TimeInterval = 15) throws {
         self.configuration = configuration
         self.failureObserver = failureObserver
+        self.requestParseTimeout = requestParseTimeout
         service = MCPHTTPService(configuration: configuration,
                                  serverFactory: serverFactory,
                                  activityObserver: activityObserver,
                                  initializationObserver: initializationObserver,
-                                 oauth: oauth)
+                                 oauth: oauth,
+                                 apiRouter: apiRouter)
     }
 
     init(configuration: MCPHTTPConfiguration,
@@ -648,16 +690,20 @@ final class MCPHTTPListener: @unchecked Sendable {
          activityObserver: MCPHTTPService.ActivityObserver? = nil,
          initializationObserver: MCPHTTPService.InitializationObserver? = nil,
          failureObserver: FailureObserver? = nil,
-         oauth: MCPOAuthAuthority? = nil) throws {
+         oauth: MCPOAuthAuthority? = nil,
+         apiRouter: NOWAPIHTTPRouter? = nil,
+         requestParseTimeout: TimeInterval = 15) throws {
         self.configuration = configuration
         self.failureObserver = failureObserver
+        self.requestParseTimeout = requestParseTimeout
         service = MCPHTTPService(
             configuration: configuration,
             sessionServerFactory: sessionServerFactory,
             workspaceGrants: workspaceGrants,
             activityObserver: activityObserver,
             initializationObserver: initializationObserver,
-            oauth: oauth)
+            oauth: oauth,
+            apiRouter: apiRouter)
     }
 
     /// Start the in-process listener and return when the port is bound.
@@ -715,7 +761,7 @@ final class MCPHTTPListener: @unchecked Sendable {
         let exchange = MCPHTTPConnection(
             connection: connection, service: service,
             maximumHeaderBytes: configuration.maximumHeaderBytes,
-            queue: queue)
+            queue: queue, requestParseTimeout: requestParseTimeout)
         exchange.start()
     }
 }
@@ -724,8 +770,12 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     private let connection: NWConnection
     private let service: MCPHTTPService
     private let queue: DispatchQueue
-    private var parser: BoundedMCPHTTPRequestParser
+    private let requestParseTimeout: TimeInterval
+    private var parser: BoundedHTTPRequestParser
     private var finished = false
+    private var peerClosed = false
+    private var activeStream: (any MCPHTTPStreamingBody)?
+    private var parseDeadline: DispatchWorkItem?
     /// `NWListener` does not retain the object that installed the receive
     /// callback. Keep this exchange alive until its one response is sent;
     /// without this ownership the accepted TCP connection remains open but
@@ -733,19 +783,34 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     private var keepAlive: MCPHTTPConnection?
 
     init(connection: NWConnection, service: MCPHTTPService,
-         maximumHeaderBytes: Int, queue: DispatchQueue) {
+         maximumHeaderBytes: Int, queue: DispatchQueue,
+         requestParseTimeout: TimeInterval) {
         self.connection = connection
         self.service = service
         self.queue = queue
+        self.requestParseTimeout = requestParseTimeout
         parser = .init(maximumHeaderBytes: maximumHeaderBytes)
     }
 
     func start() {
         keepAlive = self
+        connection.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .failed, .cancelled:
+                self?.activeStream?.cancel()
+                self?.activeStream = nil
+                self?.keepAlive = nil
+            default:
+                break
+            }
+        }
         connection.start(queue: queue)
-        queue.asyncAfter(deadline: .now() + 15) { [weak self] in
+        let deadline = DispatchWorkItem { [weak self] in
             self?.finish(.init(status: 400))
         }
+        parseDeadline = deadline
+        queue.asyncAfter(deadline: .now() + requestParseTimeout,
+                         execute: deadline)
         receive()
     }
 
@@ -766,6 +831,9 @@ private final class MCPHTTPConnection: @unchecked Sendable {
             }
             do {
                 if let data, let request = try self.parser.append(data) {
+                    self.parseDeadline?.cancel()
+                    self.parseDeadline = nil
+                    self.monitorPeerClose()
                     Task {
                         let response = await self.service.respond(to: request)
                         self.queue.async { self.finish(response) }
@@ -791,12 +859,149 @@ private final class MCPHTTPConnection: @unchecked Sendable {
     }
 
     private func finish(_ response: MCPHTTPResponse) {
-        guard !finished else { return }
+        parseDeadline?.cancel()
+        parseDeadline = nil
+        guard !finished else {
+            response.streamingBody?.cancel()
+            return
+        }
+        guard !peerClosed else {
+            response.streamingBody?.cancel()
+            keepAlive = nil
+            return
+        }
         finished = true
+        if let stream = response.streamingBody {
+            activeStream = stream
+            connection.send(content: response.wireHeadData,
+                            completion: .contentProcessed {
+                [weak self] error in
+                guard let self, error == nil else {
+                    stream.cancel()
+                    self?.connection.cancel()
+                    self?.keepAlive = nil
+                    return
+                }
+                self.sendStream(stream)
+            })
+            return
+        }
+        if let fileURL = response.bodyFileURL,
+           let fileLength = response.bodyFileLength {
+            connection.send(content: response.wireHeadData,
+                            completion: .contentProcessed {
+                [weak self] error in
+                guard let self, error == nil,
+                      let handle = try? FileHandle(forReadingFrom: fileURL)
+                else {
+                    self?.connection.cancel()
+                    self?.keepAlive = nil
+                    return
+                }
+                self.sendFile(handle, remaining: fileLength)
+            })
+            return
+        }
         connection.send(content: response.wireData,
                         completion: .contentProcessed { [self, connection] _ in
                             connection.cancel()
                             keepAlive = nil
                         })
+    }
+
+    /// The request parser is one-shot, but a live response must still learn
+    /// when its client closes. A concurrent one-byte receive is only a close
+    /// witness: request pipelining is unsupported, so any further input also
+    /// terminates this exchange.
+    private func monitorPeerClose() {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1) {
+            [weak self] _, _, _, _ in
+            guard let self else { return }
+            self.peerClosed = true
+            self.activeStream?.cancel()
+            self.activeStream = nil
+            self.connection.cancel()
+            self.keepAlive = nil
+        }
+    }
+
+    private func sendStream(_ stream: any MCPHTTPStreamingBody) {
+        stream.next { [weak self] piece in
+            guard let self else { stream.cancel(); return }
+            self.queue.async { [self] in
+                guard let piece else {
+                    stream.cancel()
+                    self.activeStream = nil
+                    self.connection.send(
+                        content: Data("0\r\n\r\n".utf8), isComplete: true,
+                        completion: .contentProcessed { [weak self] _ in
+                            self?.connection.cancel()
+                            self?.keepAlive = nil
+                        })
+                    return
+                }
+                let header = Data(String(piece.count, radix: 16).utf8)
+                let chunk = header + Data("\r\n".utf8) + piece
+                    + Data("\r\n".utf8)
+                self.connection.send(content: chunk,
+                                     completion: .contentProcessed {
+                    [weak self] error in
+                    guard let self, error == nil else {
+                        stream.cancel()
+                        self?.activeStream = nil
+                        self?.connection.cancel()
+                        self?.keepAlive = nil
+                        return
+                    }
+                    self.sendStream(stream)
+                })
+            }
+        }
+    }
+
+    /// One file-backed response, read and sent in bounded pieces. Network's
+    /// completion callback supplies the backpressure: the next piece is not
+    /// read until the previous one has been consumed.
+    private func sendFile(_ handle: FileHandle, remaining: Int) {
+        guard remaining > 0 else {
+            try? handle.close()
+            connection.send(content: nil, isComplete: true,
+                            completion: .contentProcessed {
+                [weak self] _ in
+                self?.connection.cancel()
+                self?.keepAlive = nil
+            })
+            return
+        }
+        let piece: Data
+        do {
+            piece = try handle.read(upToCount: min(64 * 1024, remaining))
+                ?? Data()
+        } catch {
+            try? handle.close()
+            connection.cancel()
+            keepAlive = nil
+            return
+        }
+        guard !piece.isEmpty else {
+            try? handle.close()
+            connection.send(content: nil, isComplete: true,
+                            completion: .contentProcessed {
+                [weak self] _ in
+                self?.connection.cancel()
+                self?.keepAlive = nil
+            })
+            return
+        }
+        connection.send(content: piece, completion: .contentProcessed {
+            [weak self] error in
+            guard let self, error == nil else {
+                try? handle.close()
+                self?.connection.cancel()
+                self?.keepAlive = nil
+                return
+            }
+            self.sendFile(handle, remaining: remaining - piece.count)
+        })
     }
 }

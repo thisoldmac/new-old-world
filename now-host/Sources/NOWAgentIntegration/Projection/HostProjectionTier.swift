@@ -39,8 +39,8 @@ public enum HostCapabilityTier: String, Sendable, CaseIterable, Comparable {
 /// The tier a row needs, **derived from what the row already publishes**.
 ///
 /// There is no fourth per-row field and there must not be one. Every row
-/// already declares MCP's `readOnlyHint` in its `mcpDescriptor` annotations,
-/// because that is what an agent reads before calling it; a tier declared
+/// already declares whether its neutral operation is read-only, which the
+/// MCP renderer publishes as `readOnlyHint`; a tier declared
 /// separately would be a second statement of the same fact, free to disagree
 /// with the first. This arc has collapsed four hand-maintained capability
 /// lists already — one of them a tool partition that broke the moment
@@ -68,7 +68,7 @@ public enum HostCapabilityTierDerivation {
     public static func annotations(
         of projection: any HostProjection.Type
     ) -> [String: Any]? {
-        projection.mcpDescriptor["annotations"] as? [String: Any]
+        projection.operationDescriptor.mcpToolDescriptor["annotations"] as? [String: Any]
     }
 
     /// One declared hint as an honest three-state: true, false, or **not
@@ -91,7 +91,8 @@ public enum HostCapabilityTierDerivation {
     public static func requiredTier(
         of projection: any HostProjection.Type
     ) -> HostCapabilityTier {
-        hint("readOnlyHint", of: projection) == true ? .readOnly : .fullAccess
+        projection.operationDescriptor.effectHints.readOnly
+            ? .readOnly : .fullAccess
     }
 }
 

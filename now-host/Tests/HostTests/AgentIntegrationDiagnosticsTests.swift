@@ -496,7 +496,7 @@ final class AgentIntegrationDiagnosticsTests: XCTestCase {
         for row in [FramebufferProbeProjection.self as any HostProjection.Type,
                     CaptureDiagnosticsProjection.self,
                     TransferDiagnosticsProjection.self] {
-            let descriptor = row.mcpDescriptor
+            let descriptor = row.operationDescriptor.mcpToolDescriptor
             let annotations = try XCTUnwrap(
                 descriptor["annotations"] as? [String: Any])
             XCTAssertEqual(annotations["readOnlyHint"] as? Bool, true,
@@ -523,14 +523,14 @@ final class AgentIntegrationDiagnosticsTests: XCTestCase {
     func testTheFramebufferProbeDescriptionRefusesToImplyCaptureIsBroken()
         throws {
         let description = try XCTUnwrap(
-            FramebufferProbeProjection.mcpDescriptor["description"]
+            FramebufferProbeProjection.operationDescriptor.mcpToolDescriptor["description"]
                 as? String)
         XCTAssertTrue(description.contains("CopyBits"))
         XCTAssertTrue(description.contains("different paths"),
                       "The description must say the two paths differ: "
                           + "\(description)")
         let capture = try XCTUnwrap(
-            CaptureDiagnosticsProjection.mcpDescriptor["description"]
+            CaptureDiagnosticsProjection.operationDescriptor.mcpToolDescriptor["description"]
                 as? String)
         XCTAssertTrue(capture.contains("NOT a capture"),
                       "shotdiag stages a capture and produces no image; a "

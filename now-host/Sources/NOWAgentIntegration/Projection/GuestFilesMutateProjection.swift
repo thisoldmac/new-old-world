@@ -103,7 +103,7 @@ public enum GuestFilesMutateProjection: HostProjection {
         "The connected guest serves file.move, file.trash, file.restore "
         + "and file.mkdir."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "Change the New Old World Guest's Files",
             "description":

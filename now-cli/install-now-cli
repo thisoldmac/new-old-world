@@ -1,0 +1,62 @@
+#!/bin/sh
+# Install the NOW CLI from either a repository checkout or the app bundle.
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+prefix=${HOME}/.local
+force=no
+
+usage() {
+    echo "usage: $0 [--prefix DIRECTORY] [--force]" >&2
+    exit 64
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --prefix)
+            [ "$#" -ge 2 ] || usage
+            prefix=$2
+            shift 2
+            ;;
+        --force) force=yes; shift ;;
+        -h|--help)
+            echo "usage: $0 [--prefix DIRECTORY] [--force]"
+            exit 0
+            ;;
+        *) usage ;;
+    esac
+done
+
+case "$prefix" in
+    /*) ;;
+    *) echo "install-now-cli: --prefix must be an absolute path" >&2; exit 64 ;;
+esac
+
+source_now="$script_dir/now"
+[ -x "$source_now" ] || {
+    echo "install-now-cli: no executable NOW CLI beside this installer" >&2
+    exit 66
+}
+
+bin="$prefix/bin"
+mkdir -p "$bin"
+link="$bin/now"
+if [ -e "$link" ] || [ -L "$link" ]; then
+    current=""
+    [ -L "$link" ] && current=$(readlink "$link")
+    if [ "$current" != "$source_now" ] && [ "$force" != yes ]; then
+        echo "install-now-cli: refusing to replace unrelated $link (use --force)" >&2
+        exit 73
+    fi
+fi
+temporary="$bin/.now-link.$$"
+trap 'rm -f "$temporary"' EXIT INT TERM
+ln -s "$source_now" "$temporary"
+mv -f "$temporary" "$link"
+trap - EXIT INT TERM
+
+echo "$link"
+case ":${PATH}:" in
+    *":$bin:"*) ;;
+    *) echo "Add $bin to PATH to run: now" >&2 ;;
+esac

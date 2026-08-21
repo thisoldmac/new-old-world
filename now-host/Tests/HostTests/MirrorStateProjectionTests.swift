@@ -3,7 +3,7 @@ import XCTest
 
 final class MirrorStateProjectionTests: XCTestCase {
     private var driveInputSchema: [String: Any] {
-        (MirrorDriveProjection.mcpDescriptor["inputSchema"]
+        (MirrorDriveProjection.operationDescriptor.mcpToolDescriptor["inputSchema"]
             as? [String: Any]) ?? [:]
     }
 
@@ -23,7 +23,7 @@ final class MirrorStateProjectionTests: XCTestCase {
             MirrorWaitProjection.self,
             MirrorSettlementProjection.self,
         ] {
-            let annotations = row.mcpDescriptor["annotations"]
+            let annotations = row.operationDescriptor.mcpToolDescriptor["annotations"]
                 as? [String: Any]
             XCTAssertEqual(annotations?["readOnlyHint"] as? Bool, true)
             XCTAssertTrue(row.requires.isEmpty,

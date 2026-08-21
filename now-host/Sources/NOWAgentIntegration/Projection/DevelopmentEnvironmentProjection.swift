@@ -36,7 +36,7 @@ public enum DevelopmentEnvironmentProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest's command table names development."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let policy = AgentIntegrationDevelopmentEnvironmentPolicy.self
         let failure: [String: Any] = [
             "type": "object",

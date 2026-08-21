@@ -234,7 +234,7 @@ public enum SoftwareInventoryProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves software.list."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let bounds = AgentIntegrationSoftwareInventoryBounds.self
         let failure: [String: Any] = [
             "type": "object",

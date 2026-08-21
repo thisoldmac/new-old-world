@@ -2,6 +2,22 @@
 
 # Who serves what
 
+## Public host surfaces
+
+The guest-wire tables below remain the authority for what either classic guest
+serves. The public developer surface is a separate host-side projection:
+
+| Face | Authority | Relationship | Current proof |
+| --- | --- | --- | --- |
+| HTTP `/api/v1` | `contract/now-api.openapi.json` | Public application API using `X-API-Key` | focused host/API and independent-client tests; full gate pending |
+| `now` CLI | OpenAPI plus generated CLI metadata | First-party API client; no MCP or private-protocol fallback | Python CLI and clean-tree distribution tests; hand-driving pending |
+| MCP `/mcp` | Neutral operation catalog rendered as MCP | Semantic child of the API; HTTP-only protocol adapter on the shared listener | golden descriptor/call, initialization, workspace-authority, and HTTP transport suites; current-head product QA pending |
+
+This host projection changes no `contract/asyncapi.yaml` message and adds no
+guest verb. Console and file operations reuse the existing guest dispatchers;
+their served/proven status is still described below. The API can expose only
+the capability a connected guest actually serves.
+
 Two guests speak this contract and they serve different amounts of it.
 This is the inventory: every message type each guest handles, what it
 does not, and — separately, because they are different questions — how
@@ -1639,6 +1655,10 @@ rederived: 2026-08-20T11:43:41-0400 ae5aa666 unchanged
 rederived: 2026-08-20T12:58:07-0400 d656ad93 unchanged
 rederived: 2026-08-20T12:58:32-0400 d656ad93 unchanged
 rederived: 2026-08-20T13:32:55-0400 30931464 sources
+rederived: 2026-08-20T15:12:28-0400 918f1e03 unchanged
+rederived: 2026-08-20T15:19:45-0400 918f1e03 unchanged
 rederived: 2026-08-20T15:33:39-0400 bff285cd unchanged
 rederived: 2026-08-20T15:45:15-0400 fab7b9aa unchanged
+rederived: 2026-08-20T16:23:40-0400 9dc8e356 unchanged
+rederived: 2026-08-20T16:56:13-0400 a86a7a18 unchanged
 -->

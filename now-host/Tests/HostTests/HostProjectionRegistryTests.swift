@@ -79,7 +79,7 @@ final class HostProjectionRegistryTests: XCTestCase {
     func testEveryRowRendersACompleteDescriptorWithoutItsOwnName() {
         for projection in HostProjectionRegistry.hostFaces.projections {
             let name = projection.capability.rawValue
-            let descriptor = projection.mcpDescriptor
+            let descriptor = projection.operationDescriptor.mcpToolDescriptor
             XCTAssertNil(
                 descriptor["name"],
                 "\(name) writes its own tool name into its descriptor. "
@@ -105,7 +105,7 @@ final class HostProjectionRegistryTests: XCTestCase {
     /// escalation tools must also carry it locally. A small client may choose
     /// from one tool description without consulting either optional surface.
     func testDirectAndPixelEscalationsStateTheirPlaceInTheEvidenceLadder() {
-        let direct = ObserveElementsProjection.mcpDescriptor["description"]
+        let direct = ObserveElementsProjection.operationDescriptor.mcpToolDescriptor["description"]
             as? String ?? ""
         XCTAssertTrue(
             direct.contains("now_semantic_ui_snapshot"), direct)
@@ -114,14 +114,14 @@ final class HostProjectionRegistryTests: XCTestCase {
         XCTAssertTrue(
             direct.contains("Do not call this in parallel"), direct)
 
-        let retained = MirrorSnapshotProjection.mcpDescriptor["description"]
+        let retained = MirrorSnapshotProjection.operationDescriptor.mcpToolDescriptor["description"]
             as? String ?? ""
         XCTAssertTrue(
             retained.contains("now_observe_elements"), retained)
         XCTAssertTrue(
             retained.contains("before deciding whether to escalate"), retained)
 
-        let pixels = CaptureScreenProjection.mcpDescriptor["description"]
+        let pixels = CaptureScreenProjection.operationDescriptor.mcpToolDescriptor["description"]
             as? String ?? ""
         XCTAssertTrue(
             pixels.contains("genuinely visual"), pixels)
@@ -134,7 +134,7 @@ final class HostProjectionRegistryTests: XCTestCase {
     /// that handoff explicit: otherwise a caller naturally feeds the most
     /// specific-looking field to a boundary that intentionally refuses it.
     func testLaunchExplainsHowToUseAnInventoryResult() {
-        let launch = LaunchSoftwareProjection.mcpDescriptor["description"]
+        let launch = LaunchSoftwareProjection.operationDescriptor.mcpToolDescriptor["description"]
             as? String ?? ""
         XCTAssertTrue(
             launch.contains("now_software_inventory"), launch)
@@ -241,7 +241,14 @@ private enum DuplicateHealthProjection: HostProjection {
                 + "catalog, so no face can reach it."))
         })
     static let availabilityNote = "Never reached."
-    static var mcpDescriptor: [String: Any] { [:] }
+    static var operationDescriptor: NOWOperationDescriptor {
+        [
+            "title": "Never reached",
+            "description": "A duplicate test fixture.",
+            "inputSchema": ["type": "object"],
+            "annotations": HostProjectionSchema.readOnlyAnnotations,
+        ]
+    }
 
     static func invoke(
         _ arguments: HostProjectionArguments,

@@ -78,6 +78,10 @@ final class GuestFilesCommandService {
             clock: clock)
     }
 
+    func releaseDownloadLanding(at url: URL) -> Bool {
+        downloads?.releaseLanding(at: url) ?? false
+    }
+
     func capabilities() async -> GuestFileCommandResponse<
         GuestFileCapabilities
     > {
@@ -542,6 +546,10 @@ final class GuestFilesCommandService {
     func commitUpload(uploadID: UUID) async
         -> GuestFileCommandResponse<GuestFileUploadTransferReceipt> {
         await uploadCommands.commit(uploadID: uploadID)
+    }
+
+    func abandonUpload(uploadID: UUID) async -> Bool {
+        await uploadCommands.abandon(uploadID: uploadID)
     }
 
     /// Move, trash, restore or create one item. The authority, the bounds

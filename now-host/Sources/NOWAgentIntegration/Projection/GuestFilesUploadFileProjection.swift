@@ -57,7 +57,7 @@ public enum GuestFilesUploadFileProjection: HostProjection {
         + "must sit inside the chat workspace folder this companion was "
         + "launched with."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         [
             "title": "Upload a Workspace File to the New Old World Guest",
             "description":

@@ -198,7 +198,7 @@ public enum CatalogSearchProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves the catsearch command."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let policy = AgentIntegrationCatalogSearchPolicy.self
         let failure: [String: Any] = [
             "type": "object",

@@ -44,9 +44,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
 
     init(defaults: UserDefaults = UserDefaults(
         suiteName: ProductIdentity.preferencesSuite) ?? .standard,
-         mcpTokenStore: MCPHTTPTokenStore? = try? MCPHTTPTokenStore()) {
+         mcpTokenStore: MCPHTTPTokenStore? = try? MCPHTTPTokenStore(),
+         apiKeyStore: NOWAPIKeyStore? = try? NOWAPIKeyStore()) {
         self.defaults = defaults
         self.mcpTokenStore = mcpTokenStore
+        self.apiKeyStore = apiKeyStore
         super.init()
     }
     private var statusItem: NSStatusItem?
@@ -58,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private var mcpHTTPListener: MCPHTTPListener?
     private var mcpHTTPRunID: UUID?
     private let mcpTokenStore: MCPHTTPTokenStore?
+    private let apiKeyStore: NOWAPIKeyStore?
     private var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1128,9 +1131,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
     private func startMCPHTTP() {
         guard mcpHTTPListener == nil else { return }
         let preferences = MCPTransportPreferences(defaults: defaults)
-        guard let mcpTokenStore else {
+        guard let mcpTokenStore, let apiKeyStore else {
             state.agentActivity.httpUnavailable(
-                "Application Support is unavailable for the MCP token.")
+                "Application Support is unavailable for HTTP credentials.")
             return
         }
         let port = preferences.httpPort
@@ -1139,7 +1142,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
         state.agentActivity.httpConfigured(at: endpoint,
                                            authMode: authMode)
         do {
-            let token = try mcpTokenStore.loadOrCreate()
+            let credentials = try NOWHTTPRouteCredentials.load(
+                mcp: mcpTokenStore, api: apiKeyStore)
             let runID = UUID()
             mcpHTTPRunID = runID
             let client = HostAgentIntegrationClient(
@@ -1153,9 +1157,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
             } else {
                 state.mcpOAuthConsent.detach()
             }
+            let apiHost = NOWAPIHostAdapter(
+                listener: state.listener, settings: state.settings,
+                guestFiles: state.guestFiles,
+                agentIntegration: state.agentIntegration)
             let listener = try MCPHTTPListener(
                 configuration: .init(port: port, authMode: authMode,
-                    bearerToken: token,
+                    bearerToken: credentials.mcpBearerToken,
                     embeddedAccessToken: MCPHTTPEmbeddedCredentialAuthority
                         .shared.token(port: port, authMode: authMode)),
                 sessionServerFactory: { [adapter = state.agentIntegration,
@@ -1207,7 +1215,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                             transport: .http)
                     }
                 },
-                oauth: oauth)
+                oauth: oauth,
+                apiRouter: NOWAPIHTTPRouter(
+                    apiKey: credentials.apiKey,
+                    contractDigest: NOWAPIOperationIDs.contractDigest,
+                    host: apiHost,
+                    audit: HostNOWAPIAuditSink(records: state.mcpRecords),
+                    files: apiHost.apiFiles()))
             mcpHTTPListener = listener
             Task { [weak self, weak listener] in
                 guard let self, let listener else { return }
@@ -1218,7 +1232,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate,
                               self.mcpHTTPRunID == runID else { return }
                         self.state.agentActivity.httpOpened(
                             at: endpoint,
-                            bearerToken: authMode == .bearer ? token : nil,
+                            bearerToken: authMode == .bearer
+                                ? credentials.mcpBearerToken : nil,
                             authMode: authMode)
                         HostLog.shared.write(
                             .info, "mcp",

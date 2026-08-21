@@ -7,6 +7,42 @@ search:
 
 # Open issues
 
+## BUILT AND TESTED, NOT DRIVEN BY HAND: public API v1 and `now` CLI (2026-08-20, `docs/now-api-cli-plan-refresh`)
+
+NOW now has a client-neutral OpenAPI 3.1 contract, one typed operation service,
+an ordinary loopback `/api/v1` adapter, and an API-only power-user CLI. MCP is
+a semantic child rendered through its own sibling adapter; existing MCP auth
+and protocol sessions remain separate. Public resources say **guest**, and API
+v1 uses `X-API-Key` without OAuth or scopes.
+
+Tests cover cross-route authentication, typed result dispositions,
+exact-session mutations, advertised console commands, bounded transfers,
+live-only events, CLI grammar/exit behavior, clean-tree installation, and an
+independent OpenAPI-only fixture client. The app bundle carries the CLI and a
+shared installer; the repository offers the same development entry point.
+
+What remains open:
+
+- `scripts/test-all` passed stages 1–7 on the integrated branch. Its live-guest
+  stage skipped because no `NOW_GUEST_LIVE` was supplied, so current-head
+  Emulator QA and Metal QA remain undone. Nothing here is metal-verified.
+- The API and CLI have not been driven by a person against a live host and
+  guest. The independent client proves ordinary HTTP contract use, not guest
+  behavior.
+- The host has no dedicated developer-facing API-key copy/bootstrap control.
+  The API credential is distinct from the token exposed through the MCP
+  bearer-mode card. The official CLI can read its private mode-0600
+  application credential, but a third-party application must not treat that
+  file as public API.
+- The CLI exposes transfer list/status/cancel and live event hints, but does
+  not yet have the planned convenience spelling `transfers watch`; scripts
+  must refetch transfer status after event hints.
+- CLI help and Bash/Zsh completion are generated from static public domains
+  and operation IDs. They do not yet perform bounded live guest lookups or
+  hide commands unsupported by the currently selected guest.
+- V1 is loopback-only. Remote/LAN serving, TLS termination, daemon lifecycle,
+  multi-principal authorization, OAuth, and scopes remain unimplemented
+  security/deployment decisions.
 ## FIXED AND EMULATOR-TESTED: Standard Input MCP is removed (2026-08-20, `docs/stdio-mcp-sunset-plan`)
 
 Streamable HTTP is NOW's only live MCP transport. The Standard Input

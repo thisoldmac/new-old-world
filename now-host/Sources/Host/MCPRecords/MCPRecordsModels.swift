@@ -8,6 +8,7 @@ import NOWAgentIntegration
 /// store is a separate answer to a separate question.
 struct MCPAgentIdentity: Equatable, Sendable {
     enum Kind: Equatable, Sendable {
+        case api
         case mcpHTTP
         case mcpStdio
         case chat
@@ -18,6 +19,7 @@ struct MCPAgentIdentity: Equatable, Sendable {
 
         init(databaseValue: String) {
             switch databaseValue {
+            case "api": self = .api
             case "mcp-http": self = .mcpHTTP
             case "mcp-stdio": self = .mcpStdio
             case "chat": self = .chat
@@ -28,6 +30,7 @@ struct MCPAgentIdentity: Equatable, Sendable {
 
         var databaseValue: String {
             switch self {
+            case .api: return "api"
             case .mcpHTTP: return "mcp-http"
             case .mcpStdio: return "mcp-stdio"
             case .chat: return "chat"
@@ -70,6 +73,7 @@ struct MCPAgentRecord: Identifiable, Equatable, Sendable {
     var displayName: String {
         if clientName.isEmpty {
             switch kind {
+            case .api: return "NOW API client"
             case .mcpHTTP: return "Unknown HTTP client"
             case .mcpStdio: return "Unknown stdio client"
             case .chat: return "Chat"

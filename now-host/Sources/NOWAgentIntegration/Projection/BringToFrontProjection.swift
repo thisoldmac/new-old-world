@@ -59,7 +59,7 @@ public enum BringToFrontProjection: HostProjection {
     public static let availabilityNote =
         "The connected guest serves process.list and process.front."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let failure: [String: Any] = [
             "type": "object",
             "properties": [

@@ -575,7 +575,7 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
     /// cursor a caller could pass is a page they could skip.
     func testTheInputSchemaOffersCountAndAreaAndNothingThatNamesAFile()
         throws {
-        let descriptor = GuestLogTailProjection.mcpDescriptor
+        let descriptor = GuestLogTailProjection.operationDescriptor.mcpToolDescriptor
         let input = try XCTUnwrap(
             descriptor["inputSchema"] as? [String: Any])
         let properties = try XCTUnwrap(
@@ -607,7 +607,7 @@ final class AgentIntegrationGuestLogTailTests: XCTestCase {
     /// the unavailable arm every row shares.
     func testTheOutputSchemaDeclaresTheUnavailableArm() throws {
         let output = try XCTUnwrap(
-            GuestLogTailProjection.mcpDescriptor["outputSchema"]
+            GuestLogTailProjection.operationDescriptor.mcpToolDescriptor["outputSchema"]
                 as? [String: Any])
         let variants = try XCTUnwrap(output["oneOf"] as? [[String: Any]])
         let outcomes = variants.compactMap {

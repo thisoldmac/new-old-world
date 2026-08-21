@@ -80,7 +80,7 @@ public enum HostLogTailProjection: HostProjection {
         + "launch, so this row is available whether or not a Macintosh is "
         + "connected and whether or not disk logging is on."
 
-    public static var mcpDescriptor: [String: Any] {
+    public static var operationDescriptor: NOWOperationDescriptor {
         let policy = AgentIntegrationHostLogPolicy.self
         let completed: [String: Any] = [
             "type": "object",
