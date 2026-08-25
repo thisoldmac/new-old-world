@@ -100,6 +100,17 @@ enum ContinuityDatagramCodec {
         return Data(bytes)
     }
 
+    /// The keepalive clock resends the latest state with only the keepalive
+    /// flag added. Re-flagging the already-encoded bytes here — where the
+    /// layout is owned — keeps the up-to-60 Hz send path at one encode per
+    /// datagram instead of two.
+    static func withKeepaliveFlag(_ data: Data) -> Data {
+        var copy = data
+        copy[copy.startIndex + 7] |= UInt8(truncatingIfNeeded:
+            ContinuityStateDatagram.Flags.keepalive.rawValue)
+        return copy
+    }
+
     static func decodeState(_ data: Data) throws -> ContinuityStateDatagram {
         let bytes = [UInt8](data)
         guard bytes.count == ContinuityStateDatagram.byteCount else {
