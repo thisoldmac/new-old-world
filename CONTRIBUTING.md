@@ -7,6 +7,10 @@ contribution looks like here more than any style rule does, so start with
 the honest version of what you can and cannot do without a classic Mac on
 your desk.
 
+Contributions are accepted under the repository's [MIT license](LICENSE);
+by submitting a pull request you agree your change is licensed the same
+way.
+
 ## What you can do without vintage hardware
 
 Most of the tree, as it turns out.
@@ -163,6 +167,13 @@ Both commands refuse a dirty tree or a local revision other than the current PR
 head. A later push therefore needs fresh evidence. The emulator sweep is a
 required local review, not a claim that emulator behavior settles hardware
 behavior.
+
+Both attestations also require GitHub write permission on this repository,
+so a first-time contributor working from a fork cannot record them. That
+is expected: propose the change, state plainly what you exercised and on
+what, and a maintainer runs and records the QA statuses before merge. Your
+PR is complete without them; the merge just waits on a maintainer's
+machine time.
 
 Only the human owner may waive metal QA, interactively and with a concrete
 reason:

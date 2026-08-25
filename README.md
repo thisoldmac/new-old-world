@@ -6,6 +6,14 @@ Use a classic Macintosh from a modern Mac without turning either interface into 
 
 > **Alpha:** useful paths exist, compatibility is deliberately narrow, and several features are tested or emulator-verified rather than proven on physical hardware. The guided setup flow is not yet end-to-end hardware verified. Read [current limitations](docs/user-guide/reference/limitations.md) before relying on it.
 
+You do not need vintage hardware to get started. The host app builds with
+Xcode alone, most of the test surface runs on any modern Mac
+([what you can do without vintage hardware](CONTRIBUTING.md#what-you-can-do-without-vintage-hardware)),
+and an emulated classic Mac (QEMU `mac99` running OS 9) connects as an
+ordinary guest — that is how this project's own emulator verification runs.
+The product does not yet detect or manage emulators, and the user guide does
+not yet document that path; it assumes a real classic Mac.
+
 ![Placeholder for the macOS host overview](docs/assets/screenshots/overview/host.svg)
 
 ![Placeholder for the PowerPC Workshop overview](docs/assets/screenshots/overview/workshop.svg)
@@ -193,3 +201,9 @@ the developer guide and linked from the agent path.
 ## Security
 
 Read [SECURITY.md](SECURITY.md). Do not expose the listener directly to an untrusted network. The release documentation gate will refuse publication until the canonical website origin, website repository, and vulnerability-reporting contact are configured; those values are intentionally not guessed in this branch.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party-derived content is listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); the repository
+distributes no Apple software.
