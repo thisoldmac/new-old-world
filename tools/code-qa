@@ -418,6 +418,11 @@ def selftest() -> None:
             raise AssertionError("a metal-attestation guard did not refuse")
     confirm_human_metal_claim(actor, 7, "abc123",
                               interactive=True, reader=lambda _: phrase)
+    # And the wiring: a correct guard nobody calls is mutation 4. attest()
+    # touches the network, so ask its source instead of running it.
+    import inspect
+    if "confirm_human_metal_claim(actor, number, sha)" not in inspect.getsource(attest):
+        raise AssertionError("attest() does not invoke the metal human guard")
     print("code-qa selftest: passed")
 
 
