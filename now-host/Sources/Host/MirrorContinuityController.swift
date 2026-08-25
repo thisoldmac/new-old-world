@@ -1506,11 +1506,11 @@ final class MirrorContinuityController: ObservableObject,
 
     private func sendState(inside: Bool, keepalive: Bool) {
         guard let udp, phase == .active else { return }
-        keepaliveClock.update(payload: encodedState(
-            inside: inside, keepalive: true))
+        let wire = encodedState(inside: inside, keepalive: keepalive)
+        keepaliveClock.update(payload: keepalive
+            ? wire : ContinuityDatagramCodec.withKeepaliveFlag(wire))
         sentDatagrams &+= 1
-        udp.send(content: encodedState(inside: inside, keepalive: keepalive),
-                 completion: .idempotent)
+        udp.send(content: wire, completion: .idempotent)
     }
 
     private func encodedState(inside: Bool, keepalive: Bool) -> Data {

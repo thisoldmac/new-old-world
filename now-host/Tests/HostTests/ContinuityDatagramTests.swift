@@ -20,6 +20,31 @@ final class ContinuityDatagramTests: XCTestCase {
         XCTAssertEqual(try ContinuityDatagramCodec.decodeState(data), packet)
     }
 
+    func testWithKeepaliveFlagAddsOnlyThatBitAndIsIdempotent() throws {
+        let packet = ContinuityStateDatagram(
+            nonceHi: 0x0123_4567, nonceLo: 0x89AB_CDEF,
+            epoch: 0x1020_3040, positionSequence: 7,
+            h: -2, v: 342, buttonGeneration: 3,
+            flags: [.inside, .primaryDown, .carriedLevel], requestedHz: 30,
+            hostStamp: 0x5566_7788,
+            previousButtonGeneration: 2, previousButtonDown: true)
+        let wire = ContinuityDatagramCodec.encode(packet)
+
+        let flagged = ContinuityDatagramCodec.withKeepaliveFlag(wire)
+        var expected = packet
+        expected.flags.insert(.keepalive)
+        XCTAssertEqual(try ContinuityDatagramCodec.decodeState(flagged),
+                       expected)
+        // Nothing but the flag word may move, and the source is untouched.
+        XCTAssertEqual(wire, ContinuityDatagramCodec.encode(packet))
+        XCTAssertEqual(ContinuityDatagramCodec.withKeepaliveFlag(flagged),
+                       flagged)
+        // A non-zero-based Data slice must flag the same byte.
+        let shifted = (Data([0xAA, 0xBB]) + wire)[2...]
+        XCTAssertEqual(ContinuityDatagramCodec.withKeepaliveFlag(shifted),
+                       flagged)
+    }
+
     func testStateRejectsUnknownBitsAndNonzeroReservedField() {
         var packet = [UInt8](ContinuityDatagramCodec.encode(
             ContinuityStateDatagram(
