@@ -163,6 +163,11 @@ Two successes must exist on the pull request's current head:
        tools/code-qa attest-metal --pr N --machine "machine name" \
          --summary "what was exercised and observed"
 
+   Recording it is interactive: an allow-listed actor at a live terminal
+   types a confirmation phrase, the same three guards as the override
+   below, because a metal PASS is a human claim — someone watched real
+   hardware — and a token cannot authenticate that.
+
 Both commands refuse a dirty tree or a local revision other than the current PR
 head. A later push therefore needs fresh evidence. The emulator sweep is a
 required local review, not a claim that emulator behavior settles hardware

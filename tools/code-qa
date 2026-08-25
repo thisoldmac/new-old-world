@@ -158,6 +158,29 @@ def initialize(number: int) -> None:
     print("required" if required else "exempt")
 
 
+def confirm_human_metal_claim(actor: str, number: int, sha: str, *,
+                              interactive: bool | None = None,
+                              reader=input) -> None:
+    """Metal QA certifies a human act - someone watched real hardware - and
+    the gh token an agent runs under names the maintainer, not the person at
+    the desk. So the PASS claim carries the same three guards as the
+    override: the policy allow-list, a live terminal, and a typed phrase
+    naming actor, PR and head. The override had these from the start while
+    the stronger claim had none (issue #46)."""
+    allowed = set(policy()["human_override_actors"])
+    if actor not in allowed:
+        raise Refusal(f"@{actor} is not authorized to attest metal QA")
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    if not interactive:
+        raise Refusal("metal attestation requires an interactive human terminal")
+    phrase = f"I, {actor}, watched metal QA pass for PR #{number} at {sha}"
+    print("This records that a person watched the QA pass on physical hardware.")
+    print(f"Type exactly:\n{phrase}")
+    if reader("> ").strip() != phrase:
+        raise Refusal("confirmation did not match; no attestation was recorded")
+
+
 def attest(number: int, kind: str, summary: str, machine: str | None) -> None:
     pr, paths = pull_request(number)
     if not needs_product_qa(paths):
@@ -165,6 +188,8 @@ def attest(number: int, kind: str, summary: str, machine: str | None) -> None:
     sha = str(pr["head"]["sha"])
     require_local_head(sha)
     actor = current_actor()
+    if kind == "metal":
+        confirm_human_metal_claim(actor, number, sha)
     context = "Emulator QA" if kind == "emulator" else "Metal QA"
     machine_line = f"\n- Machine: {machine}" if machine else ""
     body = (
@@ -277,6 +302,13 @@ def github_command(number: int, actor: str, permission: str,
         raise Refusal(
             f"@{actor} has {permission or 'no'} permission; recording QA "
             "needs write access")
+    if action == "metal":
+        # The same trust model as the CLI path: a metal PASS is a human
+        # claim, so the GitHub gesture is restricted to the same actors as
+        # the override rather than to anyone whose token has write (#46).
+        allowed = set(policy()["human_override_actors"])
+        if actor not in allowed:
+            raise Refusal(f"@{actor} is not authorized to attest metal QA")
     if len(text) < 8:
         raise Refusal(
             "state the evidence, e.g. /qa emulator: swept modules A-C on "
@@ -355,6 +387,42 @@ def selftest() -> None:
         got = parse_qa_command(body)
         if got != expected:
             raise AssertionError(f"parse_qa_command({body!r}) = {got!r}, wanted {expected!r}")
+
+    # The metal PASS claim carries the override's guards (#46). Each case
+    # can be refused ONLY by the guard it targets - the disallowed actor is
+    # handed its own correct phrase - because the first version of this
+    # block passed with the allow-list deleted: the wrong phrase refused in
+    # its place, which is a guard green for the wrong reason.
+    actors = policy()["human_override_actors"]
+    if not actors:
+        raise AssertionError("policy names no human_override_actors; the "
+                             "metal guards would refuse everyone")
+    actor = actors[0]
+    phrase = f"I, {actor}, watched metal QA pass for PR #7 at abc123"
+    refusals = [
+        lambda: confirm_human_metal_claim(
+            "not-a-listed-human", 7, "abc123", interactive=True,
+            reader=lambda _: "I, not-a-listed-human, watched metal QA "
+                             "pass for PR #7 at abc123"),
+        lambda: confirm_human_metal_claim(
+            actor, 7, "abc123", interactive=False, reader=lambda _: phrase),
+        lambda: confirm_human_metal_claim(
+            actor, 7, "abc123", interactive=True, reader=lambda _: "yes"),
+    ]
+    for attempt in refusals:
+        try:
+            attempt()
+        except Refusal:
+            pass
+        else:
+            raise AssertionError("a metal-attestation guard did not refuse")
+    confirm_human_metal_claim(actor, 7, "abc123",
+                              interactive=True, reader=lambda _: phrase)
+    # And the wiring: a correct guard nobody calls is mutation 4. attest()
+    # touches the network, so ask its source instead of running it.
+    import inspect
+    if "confirm_human_metal_claim(actor, number, sha)" not in inspect.getsource(attest):
+        raise AssertionError("attest() does not invoke the metal human guard")
     print("code-qa selftest: passed")
 
 
