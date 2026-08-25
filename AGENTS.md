@@ -187,7 +187,9 @@ Both: comments say **why**, not what. Match the surrounding density.
   rerun of native tests. The metal status records QA on the applicable physical
   machine with the build and machine guards above. Record them with
   `tools/code-qa`; a later push invalidates both because GitHub requires them on
-  the new head. Only the human owner may run `tools/code-qa override-metal`, and
+  the new head. The metal attestation is itself interactive and allow-listed —
+  a metal PASS is a human claim, and an agent's token names the maintainer,
+  not a person at the desk. Only the human owner may run `tools/code-qa override-metal`, and
   an override is explicit evidence of missing metal proof, never
   metal-verification. Agents must stop and ask; they may not invoke or answer
   its interactive confirmation. GitHub Team cannot enforce required environment
