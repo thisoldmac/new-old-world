@@ -15,7 +15,7 @@ from a skill repository that lives outside this project:
   untracked, including three `SKILL.md` files. So this copy matches no
   commit of the source, and the sha above locates the neighbourhood
   rather than the content.
-- **Content digest of this copy**: `0a4a5b456231a19198a71d7630aac98d859ee90db4c31aecf6c1a5ad7a35b576`
+- **Content digest of this copy**: `065ad53bb9fec19f042f1f628f12ccc8ca8140ef9ace3d3f7e9c8ee0dfa831d1`
   (`find skills -type f | sort | xargs shasum -a 256 | shasum -a 256`)
 - **Extracted**: 2026-08-19
 
@@ -40,8 +40,12 @@ job is refusing exactly that (`ci.yml`, "No lab configuration in the
 tree"). The citations here name the artifact relative to its root
 instead: `toolchain/universal/CIncludes` in a Retro68 build rather than
 the path on the machine that read it. The evidence is the same; the
-desk is gone. A re-extraction will bring the paths back, so
-`tools/sync-classic-skills` reporting those six lines as "changed" is
+desk is gone. The same pass later reached
+`classic-mac-emulator-harness/references/local-implementation.md`, whose
+asset and toolchain pointers named one desk's `~/Lab/...` layout; they
+now name the artifact relative to its root plus the environment variable
+that locates it. A re-extraction will bring the paths back, so
+`tools/sync-classic-skills` reporting those lines as "changed" is
 the expected answer, not a fix to apply.
 
 Two things follow for whoever touches this next:

@@ -1,13 +1,16 @@
 # Local Implementation Pointer (timbottu)
 
 This file is **environment-specific**, not portable doctrine. It names the concrete
-tooling that implements the blessed lifecycle on this machine. If the tooling moves
-or is absent, the doctrine in `SKILL.md`, `lifecycle.md`, and `anti-patterns.md`
-still holds; re-point this file, do not rewrite those.
+tooling that implements the blessed lifecycle on the desk that holds a harness
+checkout. If the tooling moves or is absent, the doctrine in `SKILL.md`,
+`lifecycle.md`, and `anti-patterns.md` still holds; re-point this file, do not
+rewrite those.
 
-Local harness repository: `~/Lab/Code/timbottu`. Its `AGENTS.md > Operating the
-VM` and `docs/05`, `docs/06`, `docs/10`, `docs/26`, `docs/29`, `docs/44` are the
-upstream authority for everything below. Verify a path exists before relying on it.
+The harness lives in the `timbottu` repository; the desk that holds one knows
+where its checkout is, and every command below is relative to that checkout's
+root. Its `AGENTS.md > Operating the VM` and `docs/05`, `docs/06`, `docs/10`,
+`docs/26`, `docs/29`, `docs/44` are the upstream authority for everything below.
+Verify a path exists before relying on it.
 
 ## Lifecycle commands
 
@@ -29,9 +32,10 @@ upstream authority for everything below. Verify a path exists before relying on 
 
 ## Control channel (harness plane)
 
-- Blessed consumer entrypoint: the `mcp` server (`timbottu_mcp`, Streamable HTTP on
-  `127.0.0.1:5251`) for the 0.7 runtime. The legacy `mcp-classic` FastMCP server is
-  the developer workbench for the raw wire surface.
+- Blessed consumer entrypoint: the `mcp` server (`timbottu_mcp`, Streamable HTTP,
+  loopback-only on its configured port) for the 0.7 runtime. The legacy
+  `mcp-classic` FastMCP server is the developer workbench for the raw wire
+  surface.
 - Raw one-shot workbench client: `tools/hc <verb> [args…] --host 127.0.0.1 --port
   1400 --timeout N` (args are positional — always pass `--host`/`--port`, and
   identity-check the reply). First-contact sequence: `ping` → `gestalt` → `observe`.
@@ -42,14 +46,13 @@ upstream authority for everything below. Verify a path exists before relying on 
 
 ## Assets and toolchain (env-overridable)
 
-- mac99 base image: `~/Lab/Assets/os91-qemu/os91-runner.qcow2`
-  (`TIMBOTTU_IMAGE`); ready snapshot tag `runner-ready`.
-- QEMU binaries (source-built, SDL display): `~/Lab/Code/timbottu/qemu/build/`
-  (`qemu-system-ppc`, `qemu-system-m68k`, `qemu-img`); override with
+- mac99 base image: an OS 9.1 runner qcow2, named by `TIMBOTTU_IMAGE`; ready
+  snapshot tag `runner-ready`.
+- QEMU binaries (source-built, SDL display): the harness checkout's own QEMU
+  build tree (`qemu-system-ppc`, `qemu-system-m68k`, `qemu-img`); override with
   `TIMBOTTU_QEMU` / `TIMBOTTU_QEMU_IMG`.
-- Retro68 PPC toolchain:
-  `~/Lab/Tools/Retro68-build/toolchain/powerpc-apple-macos/cmake/retroppc.toolchain.cmake`
-  (`TBT_RETRO68_TOOLCHAIN`).
+- Retro68 PPC toolchain: `powerpc-apple-macos/cmake/retroppc.toolchain.cmake`
+  inside a Retro68 build tree, named by `TBT_RETRO68_TOOLCHAIN`.
 - Reference headless rig: `next/tools/run-emulator-spike` (preflight-gates tools,
   assets, and ports; launches a session-private mac99 clone; waits request-level;
   stages; and QMP-`quit`s only its own exact-PID VM on cleanup).
