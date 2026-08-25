@@ -27,7 +27,7 @@ typedef struct {
     unsigned long selector;
     const char *name;       /* Apple symbol minus the gestalt prefix */
     short kind;
-    const char *comment;    /* Apple's header comment, or "" */
+    const char *comment;    /* meaning note beyond name+kind, or "" */
 } NowCensusSelector;
 
 typedef struct {
